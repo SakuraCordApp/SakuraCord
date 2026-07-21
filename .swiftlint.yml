@@ -1,0 +1,13 @@
+included:
+  - App/Sources
+  - Packages
+excluded:
+  - .build
+line_length:
+  warning: 160
+  error: 220
+type_body_length: 500
+file_length: 800
+identifier_name:
+  min_length: 2
+

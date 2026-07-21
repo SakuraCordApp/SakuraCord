@@ -1,0 +1,5 @@
+--swiftversion 6.4
+--indent 4
+--commas inline
+--stripunusedargs closure-only
+--disable blankLinesAtEndOfScope,blankLinesBetweenScopes,braces,conditionalAssignment,docComments,enumNamespaces,hoistAwait,hoistPatternLet,hoistTry,indent,modifierOrder,noForceTryInTests,noForceUnwrapInTests,numberFormatting,opaqueGenericParameters,preferKeyPath,redundantMemberwiseInit,redundantNilInit,redundantParens,redundantReturn,redundantSelf,redundantThrows,redundantType,redundantVariable,redundantViewBuilder,sortImports,swiftTestingTestCaseNames,trailingCommas,wrapArguments,wrapFunctionBodies,wrapIfExpressionBodies,wrapIfStatementBodies,wrapLoopBodies,wrapMultilineStatementBraces,wrapPropertyBodies

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Workspace version="1.0">
+   <FileRef location="group:App"></FileRef>
+   <FileRef location="group:Packages/SakuraCordModels"></FileRef>
+   <FileRef location="group:Packages/DiscordProtocol"></FileRef>
+   <FileRef location="group:Packages/SakuraCordPersistence"></FileRef>
+   <FileRef location="group:Packages/MessageRendering"></FileRef>
+   <FileRef location="group:Packages/MediaPipeline"></FileRef>
+   <FileRef location="group:Packages/SakuraCordPluginSDK"></FileRef>
+</Workspace>
+

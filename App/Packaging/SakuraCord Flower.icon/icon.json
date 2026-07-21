@@ -1,0 +1,119 @@
+{
+  "fill" : {
+    "automatic-gradient" : "display-p3:0.92549,0.75294,0.90196,1.00000",
+    "orientation" : {
+      "start" : {
+        "x" : 0.5,
+        "y" : 1
+      },
+      "stop" : {
+        "x" : 0.5,
+        "y" : 0
+      }
+    }
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "image-name" : "sakura-layer-05-deep-details.svg",
+          "name" : "sakura-layer-05-deep-details",
+          "position" : {
+            "scale" : 0.56,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        }
+      ],
+      "lighting" : "individual",
+      "name" : "Top Layer",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.6
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.2
+      }
+    },
+    {
+      "layers" : [
+        {
+          "image-name" : "sakura-layer-02-petal-fill.svg",
+          "name" : "sakura-layer-02-petal-fill",
+          "position" : {
+            "scale" : 0.56,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        },
+        {
+          "image-name" : "sakura-layer-01-base 2.svg",
+          "name" : "sakura-layer-01-base 2",
+          "position" : {
+            "scale" : 0.56,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        }
+      ],
+      "name" : "Middle Layer",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.6
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.2
+      }
+    },
+    {
+      "layers" : [
+        {
+          "image-name" : "sakura-layer-04-mid-shadows.svg",
+          "name" : "sakura-layer-04-mid-shadows",
+          "position" : {
+            "scale" : 0.56,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        },
+        {
+          "image-name" : "sakura-layer-03-light-details.svg",
+          "name" : "sakura-layer-03-light-details",
+          "position" : {
+            "scale" : 0.56,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        }
+      ],
+      "lighting" : "combined",
+      "name" : "Bottom Layer",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.6
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.2
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}

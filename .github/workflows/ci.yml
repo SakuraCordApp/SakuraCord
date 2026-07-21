@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: xcode-27
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+          xcrun --sdk macosx --show-sdk-version
+      - name: Install SwiftFormat
+        env:
+          SWIFTFORMAT_VERSION: 0.62.1
+          SWIFTFORMAT_SHA256: 7cb1cb1fae04932047c7015441c543848e8e60e1572d808d080e0a1f1661114a
+        run: |
+          curl --fail --location --retry 3 \
+            --output "$RUNNER_TEMP/swiftformat.zip" \
+            "https://github.com/nicklockwood/SwiftFormat/releases/download/$SWIFTFORMAT_VERSION/swiftformat.zip"
+          echo "$SWIFTFORMAT_SHA256  $RUNNER_TEMP/swiftformat.zip" | shasum -a 256 --check
+          ditto -x -k "$RUNNER_TEMP/swiftformat.zip" "$RUNNER_TEMP/swiftformat"
+          echo "$RUNNER_TEMP/swiftformat" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/swiftformat/swiftformat" --version
+      - name: Build
+        run: ./script/ci.sh
+
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: xcode-27
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate release tag
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tags must use vMAJOR.MINOR.PATCH (for example, v0.1.0)." >&2
+            exit 1
+          fi
+          echo "SAKURACORD_VERSION=$version" >> "$GITHUB_ENV"
+          echo "SAKURACORD_BUILD_NUMBER=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+      - name: Install DMG tooling
+        run: |
+          python3 -m venv "$RUNNER_TEMP/dmgbuild"
+          "$RUNNER_TEMP/dmgbuild/bin/pip" install "dmgbuild==1.6.7"
+          echo "DMGBUILD=$RUNNER_TEMP/dmgbuild/bin/dmgbuild" >> "$GITHUB_ENV"
+      - name: Package DMG
+        run: ./script/package_dmg.sh
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/SakuraCord.dmg --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/SakuraCord.dmg \
+              --title "SakuraCord $GITHUB_REF_NAME" \
+              --verify-tag \
+              --generate-notes
+          fi

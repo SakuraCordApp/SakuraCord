@@ -1,0 +1,96 @@
+name: cpp
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["**"]
+
+env:
+  CMAKE_BUILD_PARALLEL_LEVEL: 3
+  CMAKE_TOOLCHAIN_FILE: ${{ github.workspace }}/cpp/vcpkg/scripts/buildsystems/vcpkg.cmake
+  VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/vcpkg_cache,readwrite
+  VCPKG_CACHE_DIR: ${{ github.workspace }}/vcpkg_cache
+
+defaults:
+  run:
+    working-directory: ./cpp
+    shell: bash
+
+jobs:
+  debug-test:
+    strategy:
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel, windows-latest]
+        crypto: [openssl_3, openssl_1.1, boringssl]
+      fail-fast: false
+
+    runs-on: ${{matrix.runner}}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: "recursive"
+          fetch-depth: 0
+
+      - uses: ./.github/actions/prepare-build
+        with:
+          runner: ${{ matrix.runner }}
+          crypto: ${{ matrix.crypto }}
+          cache-dir: ${{ env.VCPKG_CACHE_DIR }}
+          make-args: BUILD_TYPE=Debug SSL=${{ matrix.crypto }} BUILD_SHARED_LIBS=ON TESTING=ON SANITIZERS=ON MSVC_RUNTIME_LIBRARY=MultiThreadedDebug
+
+      - name: build libdave
+        run: make dev-sanitizers BUILD_DIR='${{ env.BUILD_DIR }}'
+
+      - name: test
+        run: make dtest BUILD_DIR='${{ env.BUILD_DIR }}' BUILD_TYPE=Debug
+
+      - name: test-capi
+        run: make dtest-capi BUILD_DIR='${{ env.BUILD_DIR }}' BUILD_TYPE=Debug
+
+  release-build:
+    strategy:
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel, windows-latest]
+        crypto: [boringssl]
+      fail-fast: false
+
+    runs-on: ${{matrix.runner}}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: "recursive"
+          fetch-depth: 0
+
+      - uses: ./.github/actions/prepare-build
+        with:
+          runner: ${{ matrix.runner }}
+          crypto: ${{ matrix.crypto }}
+          cache-dir: ${{ env.VCPKG_CACHE_DIR }}
+          make-args: BUILD_TYPE=Release SSL=${{ matrix.crypto }} BUILD_SHARED_LIBS=ON TESTING=ON INSTALL_VCPKG_LICENSES=ON MSVC_RUNTIME_LIBRARY=MultiThreaded
+
+      - name: build libdave
+        run: make all BUILD_DIR='${{ env.BUILD_DIR }}' BUILD_TYPE=Release
+
+      - name: run tests
+        if: ${{ runner.os != 'Windows' }}
+        run: make dtest BUILD_DIR='${{ env.BUILD_DIR }}' BUILD_TYPE=Release
+
+      - name: run C api tests
+        run: make dtest-capi BUILD_DIR='${{ env.BUILD_DIR }}' BUILD_TYPE=Release
+
+      - name: prepare artifacts (install)
+        run: make install BUILD_DIR='${{ env.BUILD_DIR }}' BUILD_TYPE=Release
+
+      - name: check licenses
+        run: ls -la '${{ env.BUILD_DIR }}/install/licenses' | grep -q "boringssl\|openssl"
+
+      - name: upload build artifacts
+        uses: actions/upload-artifact@v6
+        if: ${{ github.event_name == 'push' }}
+        with:
+          path: ${{ env.BUILD_DIR }}/install
+          name: libdave-${{ runner.os }}-${{ runner.arch }}-${{ matrix.crypto }}
+          if-no-files-found: error

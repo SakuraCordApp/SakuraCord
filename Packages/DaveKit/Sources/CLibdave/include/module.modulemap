@@ -1,0 +1,4 @@
+module CLibdave {
+    umbrella "dave"
+    export *
+}

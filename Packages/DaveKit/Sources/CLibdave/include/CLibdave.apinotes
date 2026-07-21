@@ -1,0 +1,15 @@
+---
+Name: CLibdave
+Tags:
+- Name: DAVECodec
+  EnumExtensibility: closed
+- Name: DAVEMediaType
+  EnumExtensibility: closed
+  SwiftName: MediaType
+- Name: DAVELoggingSeverity
+  EnumExtensibility: closed
+Enumerators:
+- Name: DAVE_MEDIA_TYPE_AUDIO
+  SwiftName: MediaType.audio
+- Name: DAVE_MEDIA_TYPE_VIDEO
+  SwiftName: MediaType.video

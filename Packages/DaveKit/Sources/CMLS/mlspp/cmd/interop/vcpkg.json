@@ -1,0 +1,22 @@
+{
+  "name": "mlspp-interop",
+  "version-string": "0.1",
+  "description": "Interop harness for Cisco MLS C++ library",
+  "dependencies": [
+   {
+      "name": "openssl",
+      "version>=": "3.5.0"
+    },
+    "protobuf",
+    "grpc",
+    "gflags",
+    "nlohmann-json"
+  ],
+  "builtin-baseline": "3bbc2809d3625cb83a0d7cbd413bd6ad769d46d4",
+  "overrides": [
+    {
+      "name": "openssl",
+      "version-string": "3.5.0"
+    }
+  ]
+}
