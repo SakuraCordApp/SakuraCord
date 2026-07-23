@@ -202,10 +202,10 @@ struct ComposerTextView: NSViewRepresentable {
     let onSubmit: () -> Void
     var onAutocompleteCommand: (ComposerAutocompleteCommand) -> Bool = { _ in false }
     var capturesUnfocusedTyping = false
+    var maximumHeight: CGFloat = 150
     @Binding var selection: NSRange?
     @Binding var isFocused: Bool
 
-    private let maximumHeight: CGFloat = 150
     private let font = NSFont.systemFont(ofSize: 15)
 
     func makeCoordinator() -> Coordinator {

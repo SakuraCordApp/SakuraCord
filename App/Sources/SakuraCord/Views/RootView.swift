@@ -42,6 +42,7 @@ private struct ChatRootView: View {
     @State private var showLogin = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var supplementaryPaneFrame = CGRect.zero
+    @State private var presentsForumComposer = false
 
     var body: some View {
         @Bindable var model = model
@@ -76,7 +77,10 @@ private struct ChatRootView: View {
                 )
                 .navigationSplitViewColumnWidth(min: 190, ideal: 230, max: 310)
             } detail: {
-                ChatWorkspaceView(model: model)
+                ChatWorkspaceView(
+                    model: model,
+                    presentsForumComposer: $presentsForumComposer
+                )
                     .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
                     .toolbar(id: "sakuracord-main-v2") {
                         ToolbarItem(id: "channel") {
@@ -161,6 +165,18 @@ private struct ChatRootView: View {
             .ignoresSafeArea()
             .allowsHitTesting(false)
         }
+        .overlay {
+            if presentsForumComposer,
+               let channel = model.selectedChannel,
+               channel.kind == .forum
+            {
+                ForumPostComposerOverlay(
+                    model: model,
+                    channel: channel,
+                    isPresented: $presentsForumComposer
+                )
+            }
+        }
         .onPreferenceChange(ThreadPaneFramePreferenceKey.self) { frame in
             supplementaryPaneFrame = frame
         }
@@ -168,6 +184,9 @@ private struct ChatRootView: View {
             if !isOpen {
                 supplementaryPaneFrame = .zero
             }
+        }
+        .onChange(of: model.selectedChannelID) {
+            presentsForumComposer = false
         }
         .sheet(isPresented: $showLogin) {
             DiscordLoginView(
@@ -198,8 +217,9 @@ private struct ChatRootView: View {
 
     private func channelToolbarSymbol(_ channel: Channel) -> String {
         ChannelIconPresentation.systemImage(
-            for: channel.kind,
-            isHidden: model.conversationAccess(for: channel) == .hidden
+            for: channel,
+            isHidden: model.conversationAccess(for: channel) == .hidden,
+            rulesChannelID: selectedGuild?.rulesChannelID
         )
     }
 

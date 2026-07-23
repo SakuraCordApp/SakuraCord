@@ -2,17 +2,23 @@ import SwiftUI
 
 struct ChatWorkspaceView: View {
     let model: AppModel
+    @Binding var presentsForumComposer: Bool
 
     var body: some View {
         let presentation = ChatWorkspacePresentation(
             isVoiceChannel: model.selectedChannel?.kind == .voice,
+            isForumChannel: model.selectedChannel?.kind == .forum,
             hasOpenThread: model.openThread != nil,
             hasOpenVoiceChat: model.isVoiceChatOpen,
             showsInspector: model.showInspector
         )
 
         HStack(spacing: 0) {
-            ChatWorkspacePrimaryContent(model: model, content: presentation.primaryContent)
+            ChatWorkspacePrimaryContent(
+                model: model,
+                content: presentation.primaryContent,
+                presentsForumComposer: $presentsForumComposer
+            )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             if let supplementaryContent = presentation.supplementaryContent {
@@ -39,6 +45,7 @@ struct ChatWorkspaceView: View {
 struct ChatWorkspacePresentation: Equatable {
     enum PrimaryContent: Equatable {
         case chat
+        case forum
         case voice
     }
 
@@ -53,11 +60,12 @@ struct ChatWorkspacePresentation: Equatable {
 
     init(
         isVoiceChannel: Bool,
+        isForumChannel: Bool = false,
         hasOpenThread: Bool,
         hasOpenVoiceChat: Bool,
         showsInspector: Bool
     ) {
-        primaryContent = isVoiceChannel ? .voice : .chat
+        primaryContent = isVoiceChannel ? .voice : (isForumChannel ? .forum : .chat)
 
         if hasOpenThread, !isVoiceChannel || hasOpenVoiceChat {
             supplementaryContent = .thread
@@ -72,11 +80,14 @@ struct ChatWorkspacePresentation: Equatable {
 private struct ChatWorkspacePrimaryContent: View {
     let model: AppModel
     let content: ChatWorkspacePresentation.PrimaryContent
+    @Binding var presentsForumComposer: Bool
 
     var body: some View {
         switch content {
         case .chat:
             ChatDetailView(model: model)
+        case .forum:
+            ForumChannelView(model: model, presentsComposer: $presentsForumComposer)
         case .voice:
             VoiceChannelView(model: model)
         }

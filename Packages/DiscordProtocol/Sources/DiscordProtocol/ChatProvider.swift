@@ -14,6 +14,14 @@ public protocol ChatProvider: Sendable {
     func currentStatus() async -> PresenceStatus
     func updateStatus(_ status: PresenceStatus) async throws
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws -> MessagePage
+    func forumPosts(in channelID: ChannelID, query: ForumPostQuery) async throws -> ForumPostPage
+    func forumPost(threadID: ChannelID) async throws -> ForumPost
+    func createForumPost(
+        _ draft: CreateForumPostDraft,
+        progress: @escaping @Sendable (MessageSendProgress) -> Void
+    ) async throws -> ForumPost
+    func updateForumPost(_ post: ForumPost, mutation: ForumPostMutation) async throws -> ForumPost
+    func deleteForumPost(_ post: ForumPost) async throws
     func sendTyping(in channelID: ChannelID) async throws
     func send(_ draft: SendMessageDraft) async throws -> Message
     func send(_ draft: SendMessageDraft, progress: @escaping @Sendable (MessageSendProgress) -> Void)
@@ -154,6 +162,29 @@ public extension ChatProvider {
 
     func sendTyping(in channelID: ChannelID) async throws {}
 
+    func forumPosts(in channelID: ChannelID, query: ForumPostQuery) async throws -> ForumPostPage {
+        throw ChatProviderError.capabilityDisabled(.forums)
+    }
+
+    func forumPost(threadID: ChannelID) async throws -> ForumPost {
+        throw ChatProviderError.capabilityDisabled(.forums)
+    }
+
+    func createForumPost(
+        _ draft: CreateForumPostDraft,
+        progress: @escaping @Sendable (MessageSendProgress) -> Void
+    ) async throws -> ForumPost {
+        throw ChatProviderError.capabilityDisabled(.forums)
+    }
+
+    func updateForumPost(_ post: ForumPost, mutation: ForumPostMutation) async throws -> ForumPost {
+        throw ChatProviderError.capabilityDisabled(.forums)
+    }
+
+    func deleteForumPost(_ post: ForumPost) async throws {
+        throw ChatProviderError.capabilityDisabled(.forums)
+    }
+
     func reactionReactors(
         for emoji: String,
         messageID: MessageID,
@@ -222,6 +253,7 @@ public enum ChatProviderError: LocalizedError, Equatable, Sendable {
 }
 
 public enum ChatCapability: String, Codable, CaseIterable, Hashable, Sendable {
+    case forums
     case slashCommands
     case components
     case modals
@@ -232,6 +264,7 @@ public enum ChatCapability: String, Codable, CaseIterable, Hashable, Sendable {
 
     public var displayName: String {
         switch self {
+        case .forums: "Forum channels"
         case .slashCommands: "Application commands"
         case .components: "Message interactions"
         case .modals: "Interaction forms"

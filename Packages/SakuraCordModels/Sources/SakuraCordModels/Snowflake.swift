@@ -51,6 +51,7 @@ public enum ChannelKind: Sendable {}
 public enum MessageKind: Sendable {}
 public enum RoleKind: Sendable {}
 public enum ApplicationKind: Sendable {}
+public enum ForumTagKind: Sendable {}
 
 public typealias AccountID = Snowflake<AccountKind>
 public typealias UserID = Snowflake<UserKind>
@@ -59,3 +60,4 @@ public typealias ChannelID = Snowflake<ChannelKind>
 public typealias MessageID = Snowflake<MessageKind>
 public typealias RoleID = Snowflake<RoleKind>
 public typealias ApplicationID = Snowflake<ApplicationKind>
+public typealias ForumTagID = Snowflake<ForumTagKind>

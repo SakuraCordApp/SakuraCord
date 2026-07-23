@@ -2,16 +2,22 @@
 
 This file applies to the entire repository.
 
-## Parallel worktree isolation
+## Parallel Codex worktree isolation
 
-- Give every concurrently writing agent its own worktree. Never build or edit
-  through another agent's checkout.
+- Give every concurrently writing agent its own Codex-created worktree. Never
+  build or edit through another agent's checkout.
+- Isolated app identity is only for an actual Codex worktree checkout. A normal
+  checkout, including the primary checkout used by an ordinary Codex task, must
+  always build and launch the canonical `dist/SakuraCord.app` with display name
+  `SakuraCord` and bundle identifier `dev.sakuracord.SakuraCord`. Do not set
+  `SAKURACORD_WORKTREE_ID` or otherwise manufacture a variant identity outside
+  an actual Codex worktree.
 - Use the repository environment actions or `script/build_and_run.sh`; they
   assign a unique app name, bundle identifier, bundle path, and process scope to
   each linked worktree. Do not use `pkill`, `killall`, or a hard-coded
   `dist/SakuraCord.app` path in worktree automation.
 - Use `--offline` or `--offline-long-server-list` for agent visual testing.
-  Linked-worktree live-account launches are intentionally blocked by default.
+  Codex-worktree live-account launches are intentionally blocked by default.
 - Run tests through `script/worktree_test.sh` when another operation may be
   active in the same checkout. Builds and tests in separate worktrees remain
   independent.
@@ -20,6 +26,24 @@ This file applies to the entire repository.
   overlaps semantically, run `git diff --check`, search for conflict markers,
   and verify the combined result. The full procedure is in
   `docs/PARALLEL_WORKTREES.md`.
+
+## Computer Use app targeting
+
+- Never target SakuraCord in Computer Use by the generic display name
+  `SakuraCord`. A read-only state request can launch an app when the target is
+  not already running, and the display name is ambiguous across installed,
+  authenticated, offline, and worktree builds.
+- Before any Computer Use inspection or action, execute (do not source)
+  `script/worktree_runtime.sh` from the checkout being tested and use the exact
+  app bundle path printed on its `App:` line as the Computer Use `app` target.
+  The full bundle path is preferred over the bundle identifier because separate
+  copies can share the canonical main-checkout identifier.
+- Confirm that the printed executable is the scoped running process before
+  interacting. If it is not running, launch that exact bundle explicitly with
+  the intended offline arguments first; do not let a generic Computer Use
+  lookup choose or launch another copy.
+- After every Computer Use action, fetch fresh state from that same exact app
+  path. Never switch to a display-name target mid-session.
 
 SakuraCord is an interactive, native macOS Discord client written in Swift and SwiftUI. It is not intended to be a self-bot, spam tool, or unattended account-automation system: user-visible actions in the app initiate account actions. Its purpose is to provide a fast, resource-efficient, Liquid Glass client experience without Discord's Electron runtime.
 

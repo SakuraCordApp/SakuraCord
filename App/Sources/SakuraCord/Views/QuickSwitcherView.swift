@@ -17,7 +17,7 @@ struct QuickSwitcherView: View {
                     model.selectedChannelID = channel.id
                     dismiss()
                 } label: {
-                    Label(channel.name, systemImage: channel.guildID == nil ? "person.fill" : "number")
+                    Label(channel.name, systemImage: systemImage(for: channel))
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.plain)
@@ -29,5 +29,16 @@ struct QuickSwitcherView: View {
     private var filteredChannels: [Channel] {
         let channels = model.snapshot?.channels ?? []
         return query.isEmpty ? channels : channels.filter { $0.name.localizedCaseInsensitiveContains(query) }
+    }
+
+    private func systemImage(for channel: Channel) -> String {
+        let rulesChannelID = model.snapshot?.guilds.first {
+            $0.id == channel.guildID
+        }?.rulesChannelID
+        return ChannelIconPresentation.systemImage(
+            for: channel,
+            isHidden: model.conversationAccess(for: channel) == .hidden,
+            rulesChannelID: rulesChannelID
+        )
     }
 }

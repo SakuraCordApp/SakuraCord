@@ -37,10 +37,10 @@ public struct RenderedMention: Codable, Hashable, Sendable {
     )
 
     public enum Kind: String, Codable, Hashable, Sendable {
-        case user, role, channel, message
+        case user, role, channel, channelLink, message
     }
 
-    public static let tokenPattern = #"<@!?[0-9]+>|<@&[0-9]+>|<#[0-9]+>|https?://(?:(?:canary|ptb|www)\.)?discord(?:app)?\.com/channels/(?:@me|[0-9]+)/[0-9]+/[0-9]+"#
+    public static let tokenPattern = #"<@!?[0-9]+>|<@&[0-9]+>|<#[0-9]+>|https?://(?:(?:canary|ptb|www)\.)?discord(?:app)?\.com/channels/(?:@me|[0-9]+)/[0-9]+(?:/[0-9]+)?"#
 
     public var id: String
     public var kind: Kind
@@ -72,14 +72,14 @@ public struct RenderedMention: Codable, Hashable, Sendable {
               Self.messageLinkHosts.contains(host)
         else { return nil }
         let components = url.pathComponents.filter { $0 != "/" }
-        guard components.count == 4,
+        guard (3 ... 4).contains(components.count),
               components[0] == "channels",
               components[1] == "@me" || UInt64(components[1]) != nil,
               UInt64(components[2]) != nil,
-              UInt64(components[3]) != nil
+              components.count == 3 || UInt64(components[3]) != nil
         else { return nil }
-        id = components[3]
-        kind = .message
+        id = components.count == 4 ? components[3] : components[2]
+        kind = components.count == 4 ? .message : .channelLink
         self.rawToken = rawToken
         messageGuildID = components[1] == "@me" ? nil : components[1]
         messageChannelID = components[2]

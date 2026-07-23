@@ -26,7 +26,8 @@ struct DiscordMessageContentView: View {
                     content: presentation.visibleText,
                     emojiSize: document.isEmojiOnly ? Self.jumboEmojiSize : 22,
                     mentionPresentation: resolver.presentation,
-                    onMentionClick: openMention
+                    onMentionClick: openMention,
+                    onURLClick: openURL
                 )
             }
             if !presentation.images.isEmpty {
@@ -59,6 +60,8 @@ struct DiscordMessageContentView: View {
         anchor: StablePopoverAnchor
     ) {
         switch mention.target {
+        case .unresolved:
+            return
         case let .user(id):
             guard let user = resolver.user(id) else { return }
             model.showProfile(for: user)
@@ -74,9 +77,17 @@ struct DiscordMessageContentView: View {
             )
         case let .channel(id):
             model.navigate(to: id)
+        case let .linkedChannel(guildID, channelID):
+            model.navigate(to: guildID, linkedChannelID: channelID)
         case let .message(guildID, channelID, messageID):
             model.navigate(to: guildID, channelID: channelID, messageID: messageID)
         }
+    }
+
+    private func openURL(_ url: URL) -> Bool {
+        guard let link = DiscordChannelLink(url) else { return false }
+        model.navigate(to: link.guildID, linkedChannelID: link.channelID)
+        return true
     }
 }
 
@@ -101,7 +112,9 @@ struct MessageMentionResolver {
     func presentation(_ mention: RenderedMention) -> MentionPresentation {
         switch mention.kind {
         case .user:
-            let userID = UserID(mention.id)!
+            guard let userID = UserID(mention.id) else {
+                return MentionPresentation.fallback(for: mention)
+            }
             let member = model.membersByID[userID]
                 ?? model.knownMentionMembers[userID]
             let value = user(userID)
@@ -116,7 +129,9 @@ struct MessageMentionResolver {
                 colorHex: topColor
             )
         case .role:
-            let roleID = RoleID(mention.id)!
+            guard let roleID = RoleID(mention.id) else {
+                return MentionPresentation.fallback(for: mention)
+            }
             let role = model.guildRoles.first { $0.id == roleID }
                 ?? model.members.lazy.flatMap(\.roles).first { $0.id == roleID }
             return MentionPresentation(
@@ -126,23 +141,63 @@ struct MessageMentionResolver {
                 colorHex: role?.colorHex
             )
         case .channel:
-            let channelID = ChannelID(mention.id)!
+            guard let channelID = ChannelID(mention.id) else {
+                return MentionPresentation.fallback(for: mention)
+            }
             let channel = channel(channelID)
             let crossesGuild = crossesGuild(targetGuildID: channel?.guildID)
             let guildName = channel?.guildID.flatMap { model.serverRailGuildsByID[$0]?.name }
             let label = if crossesGuild, let guildName, let channel {
-                "#\(guildName) / \(channel.name)"
+                "\(guildName) / \(channel.name)"
             } else {
-                "#\(channel?.name ?? "unknown-channel")"
+                channel?.name ?? "unknown-channel"
             }
             return MentionPresentation(
                 rawToken: mention.rawToken,
                 label: label,
-                target: .channel(channelID)
+                target: .channel(channelID),
+                systemImage: ChannelIconPresentation.systemImage(
+                    for: channel?.kind ?? .unknown,
+                    isHidden: false
+                )
+            )
+        case .channelLink:
+            guard let channelID = ChannelID(mention.id) else {
+                return MentionPresentation.fallback(for: mention)
+            }
+            let guildID = mention.messageGuildID.flatMap(GuildID.init)
+            if let channel = channel(channelID) {
+                let guildName = channel.guildID.flatMap { model.serverRailGuildsByID[$0]?.name }
+                let label = if crossesGuild(targetGuildID: channel.guildID), let guildName {
+                    "\(guildName) / \(channel.name)"
+                } else {
+                    channel.name
+                }
+                return MentionPresentation(
+                    rawToken: mention.rawToken,
+                    label: label,
+                    target: .channel(channelID),
+                    systemImage: ChannelIconPresentation.systemImage(
+                        for: channel.kind,
+                        isHidden: false
+                    )
+                )
+            }
+            let post = model.forumCataloguePosts.first { $0.id == channelID }
+                ?? model.forumPosts.first { $0.id == channelID }
+            return MentionPresentation(
+                rawToken: mention.rawToken,
+                label: post?.thread.name ?? "unknown-post",
+                target: .linkedChannel(guildID: guildID, channelID: channelID),
+                systemImage: ChannelIconPresentation.forumPostSystemImage
             )
         case .message:
-            let channelID = ChannelID(mention.messageChannelID!)!
-            let messageID = MessageID(mention.id)!
+            guard let rawChannelID = mention.messageChannelID,
+                  let channelID = ChannelID(rawChannelID),
+                  let messageID = MessageID(mention.id)
+            else {
+                return MentionPresentation.fallback(for: mention)
+            }
             let guildID = mention.messageGuildID.flatMap(GuildID.init)
             let channel = channel(channelID)
             let guildName = guildID.flatMap { model.serverRailGuildsByID[$0]?.name }
@@ -150,9 +205,9 @@ struct MessageMentionResolver {
                                   let guildName,
                                   let channel
             {
-                "# \(guildName) / \(channel.name) ›"
+                "\(guildName) / \(channel.name) ›"
             } else {
-                "# \(channel?.name ?? "unknown-channel") ›"
+                "\(channel?.name ?? "unknown-channel") ›"
             }
             return MentionPresentation(
                 rawToken: mention.rawToken,
@@ -161,7 +216,8 @@ struct MessageMentionResolver {
                     guildID: guildID,
                     channelID: channelID,
                     messageID: messageID
-                )
+                ),
+                systemImage: "bubble.left.fill"
             )
         }
     }
@@ -193,6 +249,7 @@ struct CustomEmojiRichText: View {
     let emojiSize: CGFloat
     let mentionPresentation: (RenderedMention) -> MentionPresentation
     let onMentionClick: (MentionPresentation, StablePopoverAnchor) -> Void
+    let onURLClick: (URL) -> Bool
     @State private var presentedMention: AnchoredMentionPresentation?
 
     init(
@@ -202,13 +259,15 @@ struct CustomEmojiRichText: View {
         mentionPresentation: @escaping (RenderedMention) -> MentionPresentation = {
             MentionPresentation.fallback(for: $0)
         },
-        onMentionClick: @escaping (MentionPresentation, StablePopoverAnchor) -> Void = { _, _ in }
+        onMentionClick: @escaping (MentionPresentation, StablePopoverAnchor) -> Void = { _, _ in },
+        onURLClick: @escaping (URL) -> Bool = { _ in false }
     ) {
         self.model = model
         self.content = content
         self.emojiSize = emojiSize
         self.mentionPresentation = mentionPresentation
         self.onMentionClick = onMentionClick
+        self.onURLClick = onURLClick
     }
 
     var body: some View {
@@ -216,7 +275,8 @@ struct CustomEmojiRichText: View {
             source: content,
             emojiSize: emojiSize,
             mentionPresentations: mentionPresentations,
-            onMentionClick: handleMentionClick
+            onMentionClick: handleMentionClick,
+            onURLClick: onURLClick
         )
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay {
@@ -249,6 +309,8 @@ struct CustomEmojiRichText: View {
         onMentionClick(mention, anchor)
         guard let model else { return }
         switch mention.target {
+        case .unresolved:
+            return
         case let .user(id):
             let user = model.membersByID[id]?.user
                 ?? model.knownMentionMembers[id]?.user
@@ -269,6 +331,8 @@ struct CustomEmojiRichText: View {
             )
         case let .channel(id):
             model.navigate(to: id)
+        case let .linkedChannel(guildID, channelID):
+            model.navigate(to: guildID, linkedChannelID: channelID)
         case let .message(guildID, channelID, messageID):
             model.navigate(to: guildID, channelID: channelID, messageID: messageID)
         }
@@ -299,7 +363,7 @@ private struct AnchoredMentionPopoverLayer: View {
                     MessageProfilePopoverContent(model: model, userID: id)
                 case let .role(id):
                     RoleMembersPopover(model: model, roleID: id)
-                case .channel, .message:
+                case .unresolved, .channel, .linkedChannel, .message:
                     EmptyView()
                 }
             }
@@ -343,7 +407,7 @@ struct ParsedCustomEmoji {
 
     var name: String {
         value.name
-        }
+    }
 
     var id: String {
         value.id
@@ -368,9 +432,9 @@ private struct LinkedMessageImage: View {
                 isLooping: true,
                 fallbackSystemImage: image.isEmoji ? "face.smiling" : "photo"
             )
-                .frame(width: image.displaySize.width, height: image.displaySize.height)
-                .background(image.isEmoji ? Color.clear : Color.secondary.opacity(0.08))
-                .clipShape(RoundedRectangle(cornerRadius: image.isEmoji ? 7 : 10, style: .continuous))
+            .frame(width: image.displaySize.width, height: image.displaySize.height)
+            .background(image.isEmoji ? Color.clear : Color.secondary.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: image.isEmoji ? 7 : 10, style: .continuous))
         }
         .buttonStyle(.plain)
         .help(image.label)

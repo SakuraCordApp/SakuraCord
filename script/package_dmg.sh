@@ -23,7 +23,7 @@ if [[ ! -x "$DMGBUILD" ]] && ! command -v "$DMGBUILD" >/dev/null 2>&1; then
   exit 1
 fi
 
-"$ROOT_DIR/script/build_and_run.sh" package
+"$ROOT_DIR/script/build_and_run.sh" package-release
 codesign --verify --deep --strict --verbose=2 "$SAKURACORD_APP_BUNDLE"
 
 mkdir -p "$(dirname "$OUTPUT_PATH")"

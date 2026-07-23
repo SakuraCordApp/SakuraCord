@@ -2,8 +2,8 @@ import CoreAudio
 import DiscordProtocol
 import Foundation
 import MediaPipeline
-import Observation
 import OSLog
+import Observation
 import SakuraCordModels
 import SakuraCordPersistence
 
@@ -16,6 +16,144 @@ nonisolated struct MessageNavigationRequest: Equatable, Sendable {
     let requestID: UInt64
     let channelID: ChannelID
     let messageID: MessageID
+}
+
+nonisolated struct ForumPostPresentation: Sendable {
+    var posts: [ForumPost]
+    var recentCount: Int
+
+    static func make(
+        catalogue: [ForumPost],
+        searchText: String,
+        selectedTagIDs: Set<ForumTagID>,
+        tagMatch: ForumTagMatch,
+        sortOrder: ForumSortOrder
+    ) -> Self {
+        let search = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        var recent: [ForumPost] = []
+        var older: [ForumPost] = []
+        recent.reserveCapacity(catalogue.count)
+        older.reserveCapacity(min(catalogue.count, 64))
+
+        for post in catalogue {
+            guard matches(
+                post,
+                search: search,
+                selectedTagIDs: selectedTagIDs,
+                tagMatch: tagMatch
+            ) else { continue }
+            if post.thread.isArchived {
+                older.append(post)
+            } else {
+                recent.append(post)
+            }
+        }
+
+        recent.sort { areInDisplayOrder($0, $1, sortOrder: sortOrder) }
+        older.sort { areInDisplayOrder($0, $1, sortOrder: sortOrder) }
+        let recentCount = recent.count
+        recent.append(contentsOf: older)
+        return Self(posts: recent, recentCount: recentCount)
+    }
+
+    func updating(
+        _ post: ForumPost,
+        searchText: String,
+        selectedTagIDs: Set<ForumTagID>,
+        tagMatch: ForumTagMatch,
+        sortOrder: ForumSortOrder
+    ) -> Self {
+        var result = self
+        if let oldIndex = result.posts.firstIndex(where: { $0.id == post.id }) {
+            result.posts.remove(at: oldIndex)
+            if oldIndex < result.recentCount { result.recentCount -= 1 }
+        }
+
+        let search = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard Self.matches(
+            post,
+            search: search,
+            selectedTagIDs: selectedTagIDs,
+            tagMatch: tagMatch
+        ) else { return result }
+
+        let range = post.thread.isArchived
+            ? result.recentCount ..< result.posts.endIndex
+            : result.posts.startIndex ..< result.recentCount
+        let insertionIndex = Self.insertionIndex(
+            of: post,
+            in: result.posts,
+            range: range,
+            sortOrder: sortOrder
+        )
+        result.posts.insert(post, at: insertionIndex)
+        if !post.thread.isArchived { result.recentCount += 1 }
+        return result
+    }
+
+    func filtering(
+        searchText: String,
+        selectedTagIDs: Set<ForumTagID>,
+        tagMatch: ForumTagMatch
+    ) -> Self {
+        let search = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        var filtered: [ForumPost] = []
+        filtered.reserveCapacity(posts.count)
+        var filteredRecentCount = 0
+        for (index, post) in posts.enumerated() where Self.matches(
+            post,
+            search: search,
+            selectedTagIDs: selectedTagIDs,
+            tagMatch: tagMatch
+        ) {
+            filtered.append(post)
+            if index < recentCount { filteredRecentCount += 1 }
+        }
+        return Self(posts: filtered, recentCount: filteredRecentCount)
+    }
+
+    private static func matches(
+        _ post: ForumPost,
+        search: String,
+        selectedTagIDs: Set<ForumTagID>,
+        tagMatch: ForumTagMatch
+    ) -> Bool {
+        if !selectedTagIDs.isEmpty {
+            guard ForumPostQueryPolicy.matchesTags(
+                post,
+                selectedTagIDs: selectedTagIDs,
+                tagMatch: tagMatch
+            ) else { return false }
+        }
+        return search.isEmpty || post.thread.name.localizedCaseInsensitiveContains(search)
+    }
+
+    private static func areInDisplayOrder(
+        _ lhs: ForumPost,
+        _ rhs: ForumPost,
+        sortOrder: ForumSortOrder
+    ) -> Bool {
+        ForumPostQueryPolicy.areInDisplayOrder(lhs, rhs, sortOrder: sortOrder)
+    }
+
+    private static func insertionIndex(
+        of post: ForumPost,
+        in posts: [ForumPost],
+        range: Range<Int>,
+        sortOrder: ForumSortOrder
+    ) -> Int {
+        var lower = range.lowerBound
+        var upper = range.upperBound
+        while lower < upper {
+            let middle = lower + (upper - lower) / 2
+            if areInDisplayOrder(post, posts[middle], sortOrder: sortOrder) {
+                upper = middle
+            } else {
+                lower = middle + 1
+            }
+        }
+        return lower
+    }
 }
 
 actor ReactionReactorLoadLimiter {
@@ -111,7 +249,7 @@ nonisolated enum DiscordEmojiPermissionPolicy {
         switch useCase {
         case .message:
             true
-        case let .reaction(guildID):
+        case .reaction(let guildID):
             hasNitro(premiumType: premiumType)
                 || (!emoji.isAnimated && emoji.guildID == guildID)
         }
@@ -125,7 +263,7 @@ nonisolated enum DiscordEmojiPermissionPolicy {
         switch useCase {
         case .message:
             true
-        case let .reaction(currentGuildID):
+        case .reaction(let currentGuildID):
             hasNitro(premiumType: premiumType) || guildID == currentGuildID
         }
     }
@@ -177,6 +315,10 @@ final class AppModel {
     private static let messageSendLogger = Logger(
         subsystem: "dev.sakuracord.SakuraCord",
         category: "MessageSend"
+    )
+    private static let forumPerformanceSignposter = OSSignposter(
+        subsystem: "dev.sakuracord.SakuraCord",
+        category: "PointsOfInterest"
     )
     nonisolated static let maximumConcurrentReactionReactorLoads = 4
 
@@ -247,6 +389,27 @@ final class AppModel {
     private(set) var isLoadingEarlier = false
     private(set) var hasMoreMessages = false
     private(set) var messageLoadError: String?
+    private(set) var forumPosts: [ForumPost] = []
+    private(set) var forumCataloguePosts: [ForumPost] = []
+    private var forumCatalogueIndexByID: [ChannelID: Int] = [:]
+    private(set) var forumRecentPostCount = 0
+    var forumRecentPosts: ArraySlice<ForumPost> { forumPosts.prefix(forumRecentPostCount) }
+    var forumOlderPosts: ArraySlice<ForumPost> { forumPosts.dropFirst(forumRecentPostCount) }
+    private(set) var isLoadingForumPosts = false
+    private(set) var isSearchingForumPosts = false
+    private(set) var hasLoadedForumPosts = false
+    private(set) var isLoadingMoreForumPosts = false
+    private(set) var hasMoreForumPosts = false
+    private(set) var forumPostError: String?
+    private(set) var forumActionError: String?
+    private(set) var forumPaginationError: String?
+    private(set) var forumCreateProgress: MessageSendProgress?
+    private var forumCreateGeneration: UInt64 = 0
+    private(set) var forumSearchText = ""
+    var forumSelectedTagIDs: Set<ForumTagID> = []
+    var forumSortOrder: ForumSortOrder = .latestActivity
+    var forumLayout: ForumLayout = .list
+    var forumTagMatch: ForumTagMatch = .matchSome
     private(set) var replyingTo: Message?
     private(set) var presentedInteractionModal: InteractionModal?
     private(set) var interactionModalNonce: String?
@@ -311,8 +474,8 @@ final class AppModel {
     private func updateOrderedCustomEmojis() {
         let guildOrder = serverRailItems.flatMap { item -> [GuildID] in
             switch item {
-            case let .guild(id): [id]
-            case let .folder(folder): folder.guildIDs
+            case .guild(let id): [id]
+            case .folder(let folder): folder.guildIDs
             }
         }
         let value = DiscordCustomEmojiCatalog.ordered(
@@ -330,7 +493,8 @@ final class AppModel {
     var isVoiceMuted = UserDefaults.standard.bool(forKey: "voiceMuted")
     var isVoiceDeafened = UserDefaults.standard.bool(forKey: "voiceDeafened")
     var isCameraEnabled = false
-    var inputVolume = Float(UserDefaults.standard.object(forKey: "voiceInputVolume") as? Double ?? 1)
+    var inputVolume = Float(
+        UserDefaults.standard.object(forKey: "voiceInputVolume") as? Double ?? 1)
     var outputVolume = Float(
         UserDefaults.standard.object(forKey: "voiceOutputVolume") as? Double ?? 1
     )
@@ -340,9 +504,80 @@ final class AppModel {
         return conversationAccess(for: channel)
     }
 
+    var canCreateForumPosts: Bool {
+        selectedConversationAccess.canSend && supportedCapabilities.contains(.forums)
+    }
+
+    var canManageForumPosts: Bool {
+        guard let permissions = selectedEffectivePermissions else { return false }
+        return permissions & DiscordPermissionBits.manageThreads != 0
+    }
+
+    func canDeleteForumPost(_ post: ForumPost) -> Bool {
+        Self.canDeleteForumPost(
+            ownerID: post.thread.ownerID ?? post.owner?.id,
+            currentUserID: snapshot?.currentUser.id,
+            canManage: canManageForumPosts
+        )
+    }
+
+    func canArchiveForumPost(_ post: ForumPost) -> Bool {
+        if canManageForumPosts { return true }
+        guard !post.thread.isLocked else { return false }
+        let ownerID = post.thread.ownerID ?? post.owner?.id
+        return ownerID != nil && ownerID == snapshot?.currentUser.id
+    }
+
+    func canEditForumPostTags(_ post: ForumPost) -> Bool {
+        if canManageForumPosts { return true }
+        guard !post.thread.isLocked else { return false }
+        let ownerID = post.thread.ownerID ?? post.owner?.id
+        return ownerID != nil && ownerID == snapshot?.currentUser.id
+    }
+
+    func canToggleForumTag(_ tag: ForumTag, on post: ForumPost) -> Bool {
+        guard canEditForumPostTags(post), canManageForumPosts || !tag.isModerated else {
+            return false
+        }
+        if selectedChannel?.requiresForumTag == true,
+           post.thread.appliedTagIDs.count == 1,
+           post.thread.appliedTagIDs.contains(tag.id)
+        {
+            return false
+        }
+        return true
+    }
+
+    nonisolated static func canDeleteForumPost(
+        ownerID: UserID?,
+        currentUserID: UserID?,
+        canManage: Bool
+    ) -> Bool {
+        canManage || (ownerID != nil && ownerID == currentUserID)
+    }
+
+    private var selectedEffectivePermissions: UInt64? {
+        guard let channel = selectedChannel else { return nil }
+        guard let guildID = channel.guildID else { return .max }
+        guard let guild = serverRailGuildsByID[guildID],
+              let currentUserID = snapshot?.currentUser.id
+        else {
+            return nil
+        }
+        return ConversationPermissionResolver.effectivePermissions(
+            guild: guild,
+            channel: channel,
+            currentUserID: currentUserID,
+            currentMember: membersByID[currentUserID],
+            roles: guildRoles
+        )
+    }
+
     func conversationAccess(for channel: Channel) -> ConversationAccess {
         guard let guildID = channel.guildID else { return .readable(canSend: true) }
-        guard let guild = serverRailGuildsByID[guildID], let currentUserID = snapshot?.currentUser.id else {
+        guard let guild = serverRailGuildsByID[guildID],
+              let currentUserID = snapshot?.currentUser.id
+        else {
             return .checking
         }
         let member = membersByID[currentUserID]
@@ -364,7 +599,9 @@ final class AppModel {
     var openThreadAccess: ConversationAccess {
         guard let thread = openThread, let channel = selectedChannel else { return .checking }
         guard let guildID = channel.guildID else { return .readable(canSend: true) }
-        guard let guild = serverRailGuildsByID[guildID], let currentUserID = snapshot?.currentUser.id else {
+        guard let guild = serverRailGuildsByID[guildID],
+              let currentUserID = snapshot?.currentUser.id
+        else {
             return .checking
         }
         let member = membersByID[currentUserID]
@@ -388,7 +625,7 @@ final class AppModel {
             }
             selectedChannel =
                 snapshot?.channels.first { $0.id == selectedChannelID }
-                ?? visibleChannels.first { $0.id == selectedChannelID }
+                    ?? visibleChannels.first { $0.id == selectedChannelID }
             commandLoadTask?.cancel()
             commandAutocompleteTask?.cancel()
             cancelApplicationCommandMemberSearch()
@@ -396,7 +633,11 @@ final class AppModel {
             commandComposer.resetForChannelChange()
             isVoiceChatOpen = selectedChannel?.kind == .voice
             closeThread()
-            beginSelectedChannelLoad()
+            if selectedChannel?.kind == .forum {
+                beginForumLoad()
+            } else {
+                beginSelectedChannelLoad()
+            }
         }
     }
 
@@ -416,6 +657,9 @@ final class AppModel {
     @ObservationIgnored private let localTypingTiming: LocalTypingTiming
     @ObservationIgnored private var profileTask: Task<Void, Never>?
     @ObservationIgnored private var channelLoadTask: Task<Void, Never>?
+    @ObservationIgnored private var forumLoadTask: Task<Void, Never>?
+    @ObservationIgnored private var forumNextOffset: Int?
+    @ObservationIgnored private var forumLoadGeneration: UInt64 = 0
     @ObservationIgnored private var threadLoadTask: Task<Void, Never>?
     @ObservationIgnored private var gifSearchTask: Task<Void, Never>?
     @ObservationIgnored private var commandLoadTask: Task<Void, Never>?
@@ -425,9 +669,8 @@ final class AppModel {
     @ObservationIgnored private var commandMemberSearchCache: [CommandMemberQuery: [Member]] = [:]
     @ObservationIgnored private var mentionMemberSearchTask: Task<Void, Never>?
     @ObservationIgnored private var mentionMemberSearchQuery: CommandMemberQuery?
-    @ObservationIgnored private var mentionMemberSearchCache: [
-        CommandMemberQuery: MentionMemberSearchCacheEntry
-    ] = [:]
+    @ObservationIgnored private var mentionMemberSearchCache:
+        [CommandMemberQuery: MentionMemberSearchCacheEntry] = [:]
     @ObservationIgnored private var roleMemberTask: Task<Void, Never>?
     @ObservationIgnored private var commandExecutionTask: Task<Void, Never>?
     @ObservationIgnored private var stickerLoadTasks: [GuildID: Task<Void, Never>] = [:]
@@ -469,43 +712,45 @@ final class AppModel {
     ) {
         self.launchMode = launchMode
         self.provider =
-            provider ?? (launchMode == .offlineTesting ? MockChatProvider() : SignedOutChatProvider())
+            provider
+                ?? (launchMode == .offlineTesting ? MockChatProvider() : SignedOutChatProvider())
         sessionState = launchMode == .offlineTesting ? .connecting : .restoring
         typingState = TypingStateModel(expiry: typingExpiry)
         self.localTypingTiming = localTypingTiming
         discordNetworkDisabled =
             discordNetworkDisabledOverride
-            ?? (launchMode == .offlineTesting
-                || ProcessInfo.processInfo.environment["SAKURACORD_DISABLE_DISCORD_NETWORK"] == "1")
+                ?? (launchMode == .offlineTesting
+                    || ProcessInfo.processInfo.environment["SAKURACORD_DISABLE_DISCORD_NETWORK"] == "1")
         self.restoresStoredSession = restoresStoredSession
         let resolvedCredentialStore: any CredentialStore =
             credentialStore
-            ?? (launchMode == .offlineTesting
-                ? OfflineCredentialStore()
-                : KeychainCredentialStore())
+                ?? (launchMode == .offlineTesting
+                    ? OfflineCredentialStore()
+                    : KeychainCredentialStore())
         self.credentialStore = resolvedCredentialStore
         self.authenticatedProviderFactory =
             authenticatedProviderFactory ?? { handle, fingerprint in
-            DiscordRESTProvider(
-                credentials: resolvedCredentialStore,
-                handle: handle,
-                fingerprint: fingerprint
-            )
-        }
+                DiscordRESTProvider(
+                    credentials: resolvedCredentialStore,
+                    handle: handle,
+                    fingerprint: fingerprint
+                )
+            }
         persistsEmojiPreferences = launchMode == .normal
         favoriteEmojiKeys =
             launchMode == .normal
-            ? Set(UserDefaults.standard.stringArray(forKey: "dev.sakuracord.favorite-emojis") ?? [])
-            : []
+                ? Set(UserDefaults.standard.stringArray(forKey: "dev.sakuracord.favorite-emojis") ?? [])
+                : []
         emojiUsageCounts =
             launchMode == .normal
-                ? UserDefaults.standard.dictionary(forKey: "dev.sakuracord.emoji-usage") as? [String: Int]
+                ? UserDefaults.standard.dictionary(forKey: "dev.sakuracord.emoji-usage")
+                as? [String: Int]
                 ?? [:]
-            : [:]
+                : [:]
         database =
             launchMode == .normal
-            ? try? SakuraCordDatabase(accountID: AccountID(rawValue: 1))
-            : try? SakuraCordDatabase(inMemory: true)
+                ? try? SakuraCordDatabase(accountID: AccountID(rawValue: 1))
+                : try? SakuraCordDatabase(inMemory: true)
         commandComposer.configureFrecencyScope(
             launchMode == .offlineTesting ? "offline" : "signed-out"
         )
@@ -597,8 +842,8 @@ final class AppModel {
         componentKeyByNonce = [:]
         database =
             launchMode == .offlineTesting
-            ? try? SakuraCordDatabase(inMemory: true)
-            : try? SakuraCordDatabase(accountID: AccountID(rawValue: 1))
+                ? try? SakuraCordDatabase(inMemory: true)
+                : try? SakuraCordDatabase(accountID: AccountID(rawValue: 1))
         snapshot = nil
         serverRailGuildsByID = [:]
         serverRailItems = []
@@ -707,7 +952,8 @@ final class AppModel {
     }
 
     func navigate(to channelID: ChannelID) {
-        guard let channel = snapshot?.channels.first(where: { $0.id == channelID })
+        guard
+            let channel = snapshot?.channels.first(where: { $0.id == channelID })
             ?? visibleChannels.first(where: { $0.id == channelID })
         else {
             errorMessage = "That mentioned channel has not been discovered yet."
@@ -724,6 +970,73 @@ final class AppModel {
         }
     }
 
+    func navigate(to guildID: GuildID?, linkedChannelID channelID: ChannelID) {
+        if snapshot?.channels.contains(where: { $0.id == channelID }) == true
+            || visibleChannels.contains(where: { $0.id == channelID })
+        {
+            navigate(to: channelID)
+            return
+        }
+
+        guildActivationTask?.cancel()
+        guildActivationTask = Task { [weak self] in
+            guard let self else { return }
+            let knownPost =
+                forumCataloguePosts.first(where: { $0.id == channelID })
+                    ?? forumPosts.first(where: { $0.id == channelID })
+            if selectedGuildID != guildID {
+                await activateGuild(guildID)
+            }
+            guard !Task.isCancelled else { return }
+            if let channel =
+                snapshot?.channels.first(where: { $0.id == channelID })
+                    ?? visibleChannels.first(where: { $0.id == channelID })
+            {
+                selectedChannelID = channel.id
+                return
+            }
+
+            let post: ForumPost
+            do {
+                post = if let knownPost {
+                    knownPost
+                } else {
+                    try await provider.forumPost(threadID: channelID)
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled else { return }
+                errorMessage = error.localizedDescription
+                return
+            }
+
+            let targetGuildID = post.thread.guildID ?? guildID
+            if selectedGuildID != targetGuildID {
+                await activateGuild(targetGuildID)
+            }
+            guard !Task.isCancelled else { return }
+            guard let parentID = post.thread.parentID,
+                  let parent =
+                  snapshot?.channels.first(where: { $0.id == parentID })
+                      ?? visibleChannels.first(where: { $0.id == parentID })
+            else {
+                errorMessage = "That thread's parent channel has not been discovered yet."
+                return
+            }
+            if selectedChannelID != parent.id {
+                selectedChannelID = parent.id
+            }
+            await channelLoadTask?.value
+            guard !Task.isCancelled, selectedChannelID == parent.id else { return }
+            if parent.kind == .forum {
+                mergeForumCatalogue([post])
+                applyForumPresentation()
+            }
+            open(post)
+        }
+    }
+
     func navigate(to guildID: GuildID?, channelID: ChannelID, messageID: MessageID) {
         guildActivationTask?.cancel()
         guildActivationTask = Task { [weak self] in
@@ -732,7 +1045,8 @@ final class AppModel {
                 await activateGuild(guildID)
             }
             guard !Task.isCancelled else { return }
-            guard let channel = snapshot?.channels.first(where: { $0.id == channelID })
+            guard
+                let channel = snapshot?.channels.first(where: { $0.id == channelID })
                 ?? visibleChannels.first(where: { $0.id == channelID })
             else {
                 errorMessage = "That message's channel has not been discovered yet."
@@ -746,9 +1060,10 @@ final class AppModel {
 
             if !messages.contains(where: { $0.id == messageID }) {
                 do {
-                    let beforeID = messageID.rawValue == UInt64.max
-                        ? nil
-                        : MessageID(rawValue: messageID.rawValue + 1)
+                    let beforeID =
+                        messageID.rawValue == UInt64.max
+                            ? nil
+                            : MessageID(rawValue: messageID.rawValue + 1)
                     let page = try await provider.messages(
                         in: channel.id,
                         before: beforeID,
@@ -791,8 +1106,8 @@ final class AppModel {
         mentionAutocompleteMembers = []
         var channels =
             snapshot?.channels.filter { channel in
-            guildID == nil ? channel.guildID == nil : channel.guildID == guildID
-        } ?? []
+                guildID == nil ? channel.guildID == nil : channel.guildID == guildID
+            } ?? []
         visibleChannels = channels
         if channels.isEmpty {
             do {
@@ -813,7 +1128,8 @@ final class AppModel {
         }
         if !visibleChannels.contains(where: { $0.id == selectedChannelID }) {
             selectedChannelID =
-                visibleChannels.first(where: { $0.name == "general" })?.id ?? visibleChannels.first?.id
+                visibleChannels.first(where: { $0.name == "general" })?.id
+                    ?? visibleChannels.first?.id
         }
         beginMemberLoad(for: guildID)
     }
@@ -896,7 +1212,8 @@ final class AppModel {
             favoriteEmojiKeys.insert(key)
         }
         if persistsEmojiPreferences {
-            UserDefaults.standard.set(Array(favoriteEmojiKeys), forKey: "dev.sakuracord.favorite-emojis")
+            UserDefaults.standard.set(
+                Array(favoriteEmojiKeys), forKey: "dev.sakuracord.favorite-emojis")
         }
     }
 
@@ -929,11 +1246,408 @@ final class AppModel {
             } catch {
                 guard !Task.isCancelled, selectedGuildID == guildID else { return }
                 members =
-                    snapshot.map { [Member(user: $0.currentUser, roleName: "You", status: currentStatus)] }
-                        ?? []
+                    snapshot.map {
+                        [Member(user: $0.currentUser, roleName: "You", status: currentStatus)]
+                    }
+                    ?? []
                 guildRoles = []
             }
         }
+    }
+
+    private func beginForumLoad() {
+        channelLoadTask?.cancel()
+        forumLoadTask?.cancel()
+        messages = []
+        draft = ""
+        messageLoadError = nil
+        isLoadingMessages = false
+        forumPosts = []
+        forumCataloguePosts = []
+        forumCatalogueIndexByID = [:]
+        forumRecentPostCount = 0
+        forumNextOffset = nil
+        forumPostError = nil
+        forumActionError = nil
+        forumPaginationError = nil
+        isLoadingForumPosts = false
+        isSearchingForumPosts = false
+        isLoadingMoreForumPosts = false
+        hasLoadedForumPosts = false
+        hasMoreForumPosts = false
+        forumSearchText = ""
+        forumSelectedTagIDs = []
+        if let channel = selectedChannel {
+            forumSortOrder = channel.defaultSortOrder ?? .latestActivity
+            forumLayout =
+                channel.defaultForumLayout == .defaultLayout ? .list : channel.defaultForumLayout
+            forumTagMatch = channel.defaultTagMatch
+        }
+        forumLoadTask = Task { [weak self] in
+            await self?.loadForumPosts(reset: true)
+        }
+    }
+
+    func reloadForumPosts() {
+        guard selectedChannel?.kind == .forum else { return }
+        forumLoadTask?.cancel()
+        forumLoadTask = Task { [weak self] in
+            await self?.loadForumPosts(reset: true)
+        }
+    }
+
+    func loadMoreForumPosts() async {
+        guard hasMoreForumPosts, !isLoadingMoreForumPosts else { return }
+        await loadForumPosts(reset: false)
+    }
+
+    func updateForumSearch(_ text: String) {
+        let previousSearch = forumSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let nextSearch = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        forumSearchText = text
+        forumPostError = nil
+        forumPaginationError = nil
+        forumLoadGeneration &+= 1
+        if nextSearch.lowercased().hasPrefix(previousSearch.lowercased()) {
+            let presentation = ForumPostPresentation(
+                posts: forumPosts,
+                recentCount: forumRecentPostCount
+            ).filtering(
+                searchText: nextSearch,
+                selectedTagIDs: forumSelectedTagIDs,
+                tagMatch: forumTagMatch
+            )
+            forumPosts = presentation.posts
+            forumRecentPostCount = presentation.recentCount
+        } else {
+            applyForumPresentation()
+        }
+        forumLoadTask?.cancel()
+        guard !nextSearch.isEmpty else {
+            isSearchingForumPosts = false
+            hasMoreForumPosts = forumNextOffset != nil
+            return
+        }
+        hasMoreForumPosts = false
+        isSearchingForumPosts = true
+        forumLoadTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(300))
+            } catch {
+                return
+            }
+            guard let self, !Task.isCancelled,
+                  forumSearchText.trimmingCharacters(in: .whitespacesAndNewlines) == nextSearch
+            else { return }
+            await loadForumPosts(reset: true)
+        }
+    }
+
+    private func loadForumPosts(reset: Bool) async {
+        guard let channelID = selectedChannelID, selectedChannel?.kind == .forum else { return }
+        let loadSignpost = Self.forumPerformanceSignposter.beginInterval("ForumPostsLoad")
+        defer {
+            Self.forumPerformanceSignposter.endInterval("ForumPostsLoad", loadSignpost)
+        }
+        let trimmedSearch = forumSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isSearch = !trimmedSearch.isEmpty
+        if isSearch { isSearchingForumPosts = true }
+        if reset {
+            forumLoadGeneration &+= 1
+            forumPaginationError = nil
+            if !isSearch { forumNextOffset = nil }
+        } else {
+            isLoadingMoreForumPosts = true
+            forumPaginationError = nil
+        }
+        let requestGeneration = forumLoadGeneration
+        let loadingIndicatorTask: Task<Void, Never>? =
+            reset && !hasLoadedForumPosts
+                ? Task { [weak self] in
+                    try? await Task.sleep(for: .milliseconds(150))
+                    guard let self, !Task.isCancelled,
+                          selectedChannelID == channelID,
+                          forumLoadGeneration == requestGeneration,
+                          !hasLoadedForumPosts
+                    else { return }
+                    isLoadingForumPosts = true
+                }
+                : nil
+        defer {
+            loadingIndicatorTask?.cancel()
+            if selectedChannelID == channelID, forumLoadGeneration == requestGeneration {
+                isLoadingForumPosts = false
+                isLoadingMoreForumPosts = false
+                if isSearch { isSearchingForumPosts = false }
+            }
+        }
+        let scope: ForumPostScope =
+            !trimmedSearch.isEmpty
+                ? .search(trimmedSearch)
+                : .active
+        do {
+            let providerSignpost = Self.forumPerformanceSignposter.beginInterval("ForumProviderLoad")
+            let page: ForumPostPage
+            do {
+                defer {
+                    Self.forumPerformanceSignposter.endInterval(
+                        "ForumProviderLoad",
+                        providerSignpost
+                    )
+                }
+                page = try await provider.forumPosts(
+                    in: channelID,
+                    query: ForumPostQuery(
+                        scope: scope,
+                        sortOrder: forumSortOrder,
+                        selectedTagIDs: forumSelectedTagIDs,
+                        tagMatch: forumTagMatch,
+                        offset: reset ? 0 : (forumNextOffset ?? 0),
+                        limit: 25
+                    )
+                )
+            }
+            guard !Task.isCancelled, selectedChannelID == channelID,
+                  forumLoadGeneration == requestGeneration
+            else { return }
+            let catalogueSignpost = Self.forumPerformanceSignposter.beginInterval(
+                "ForumCatalogueUpdate"
+            )
+            if isSearch {
+                mergeForumCatalogue(page.posts)
+            } else if reset {
+                replaceForumCatalogue(with: page.posts)
+            } else {
+                mergeForumCatalogue(page.posts)
+            }
+            Self.forumPerformanceSignposter.endInterval(
+                "ForumCatalogueUpdate",
+                catalogueSignpost
+            )
+            let presentationSignpost = Self.forumPerformanceSignposter.beginInterval(
+                "ForumPresentation"
+            )
+            applyForumPresentation()
+            Self.forumPerformanceSignposter.endInterval(
+                "ForumPresentation",
+                presentationSignpost
+            )
+            if !isSearch {
+                forumNextOffset = page.nextOffset
+                hasMoreForumPosts = page.hasMore
+            } else {
+                hasMoreForumPosts = false
+            }
+            forumPostError = nil
+            forumPaginationError = nil
+            hasLoadedForumPosts = true
+        } catch {
+            guard !Self.isForumLoadCancellation(error) else { return }
+            guard selectedChannelID == channelID, forumLoadGeneration == requestGeneration else {
+                return
+            }
+            if reset {
+                forumPostError =
+                    isSearch && !forumCataloguePosts.isEmpty
+                        ? nil
+                        : error.localizedDescription
+            } else {
+                forumPaginationError = error.localizedDescription
+            }
+            hasLoadedForumPosts = true
+        }
+    }
+
+    private func mergeForumCatalogue(_ posts: [ForumPost]) {
+        for post in posts {
+            if let index = forumCatalogueIndexByID[post.id] {
+                forumCataloguePosts[index] = post
+            } else {
+                forumCatalogueIndexByID[post.id] = forumCataloguePosts.endIndex
+                forumCataloguePosts.append(post)
+            }
+        }
+    }
+
+    private func replaceForumCatalogue(with posts: [ForumPost]) {
+        forumCataloguePosts = posts
+        forumCatalogueIndexByID = Dictionary(
+            uniqueKeysWithValues: posts.indices.map { (posts[$0].id, $0) }
+        )
+    }
+
+    private func reconcileForumMessage(_ message: Message) {
+        guard let index = forumCatalogueIndexByID[message.channelID] else { return }
+        var updated = forumCataloguePosts[index]
+        if message.id.rawValue == updated.id.rawValue || updated.firstMessage?.id == message.id {
+            updated.firstMessage = message
+        }
+        if updated.mostRecentMessage == nil || message.timestamp >= updated.lastActivityAt {
+            updated.mostRecentMessage = message
+            updated.thread.lastMessageID = message.id
+        }
+        guard updated != forumCataloguePosts[index] else { return }
+        forumCataloguePosts[index] = updated
+        updateForumPresentation(with: updated)
+    }
+
+    private func applyForumPresentation() {
+        let presentation = ForumPostPresentation.make(
+            catalogue: forumCataloguePosts,
+            searchText: forumSearchText,
+            selectedTagIDs: forumSelectedTagIDs,
+            tagMatch: forumTagMatch,
+            sortOrder: forumSortOrder
+        )
+        forumPosts = presentation.posts
+        forumRecentPostCount = presentation.recentCount
+    }
+
+    private func updateForumPresentation(with post: ForumPost) {
+        let presentation = ForumPostPresentation(
+            posts: forumPosts,
+            recentCount: forumRecentPostCount
+        ).updating(
+            post,
+            searchText: forumSearchText,
+            selectedTagIDs: forumSelectedTagIDs,
+            tagMatch: forumTagMatch,
+            sortOrder: forumSortOrder
+        )
+        forumPosts = presentation.posts
+        forumRecentPostCount = presentation.recentCount
+    }
+
+    nonisolated static func isForumLoadCancellation(_ error: any Error) -> Bool {
+        if error is CancellationError { return true }
+        let value = error as NSError
+        return value.domain == NSURLErrorDomain && value.code == NSURLErrorCancelled
+    }
+
+    @discardableResult
+    func createForumPost(_ draft: CreateForumPostDraft) async -> Bool {
+        guard canCreateForumPosts else {
+            forumActionError = "You do not have permission to create posts in this forum."
+            return false
+        }
+        forumActionError = nil
+        forumCreateGeneration &+= 1
+        let generation = forumCreateGeneration
+        defer {
+            if forumCreateGeneration == generation {
+                forumCreateProgress = nil
+                forumCreateGeneration &+= 1
+            }
+        }
+        do {
+            let post = try await provider.createForumPost(draft) { [weak self] progress in
+                Task { @MainActor in
+                    guard let self, self.forumCreateGeneration == generation else { return }
+                    self.forumCreateProgress = progress
+                }
+            }
+            mergeForumCatalogue([post])
+            applyForumPresentation()
+            open(post)
+            return true
+        } catch {
+            if Self.isForumLoadCancellation(error) {
+                return false
+            }
+            forumActionError = error.localizedDescription
+            return false
+        }
+    }
+
+    func updateForumPost(_ post: ForumPost, mutation: ForumPostMutation) async {
+        switch mutation {
+        case .tags(let tagIDs):
+            guard canEditForumPostTags(post) else {
+                forumActionError = "You do not have permission to edit this post’s tags."
+                return
+            }
+            let uniqueTagIDs = Set(tagIDs)
+            guard uniqueTagIDs.count <= 5,
+                  let channel = selectedChannel,
+                  channel.id == post.thread.parentID
+            else {
+                forumActionError = "The selected tags are invalid for this forum."
+                return
+            }
+            let availableTagsByID = Dictionary(
+                uniqueKeysWithValues: channel.availableTags.map { ($0.id, $0) }
+            )
+            guard uniqueTagIDs.allSatisfy({ availableTagsByID[$0] != nil }) else {
+                forumActionError = "One or more selected tags are no longer available."
+                return
+            }
+            guard !channel.requiresForumTag || !uniqueTagIDs.isEmpty else {
+                forumActionError = "This forum requires every post to have at least one tag."
+                return
+            }
+            if !canManageForumPosts {
+                let changedTagIDs = uniqueTagIDs.symmetricDifference(post.thread.appliedTagIDs)
+                guard changedTagIDs.allSatisfy({
+                    availableTagsByID[$0]?.isModerated == false
+                }) else {
+                    forumActionError = "Only moderators can change moderated tags."
+                    return
+                }
+            }
+        case .archived:
+            guard canArchiveForumPost(post) else {
+                forumActionError = "You do not have permission to close or reopen this post."
+                return
+            }
+        case .locked, .pinned:
+            guard canManageForumPosts else {
+                forumActionError = "Only moderators can change this post."
+                return
+            }
+        }
+
+        forumActionError = nil
+        do {
+            let updated = try await provider.updateForumPost(post, mutation: mutation)
+            mergeForumCatalogue([updated])
+            applyForumPresentation()
+            if openThread?.id == updated.id { openThread = updated.thread }
+        } catch {
+            forumActionError = error.localizedDescription
+        }
+    }
+
+    func deleteForumPost(_ post: ForumPost) async {
+        guard canDeleteForumPost(post) else {
+            forumActionError = "You do not have permission to delete this post."
+            return
+        }
+        forumActionError = nil
+        do {
+            try await provider.deleteForumPost(post)
+            removeForumPost(post.id)
+            if openThread?.id == post.id {
+                closeThread()
+            }
+            forumActionError = nil
+        } catch {
+            forumActionError = error.localizedDescription
+        }
+    }
+
+    func dismissForumActionError() {
+        forumActionError = nil
+    }
+
+    private func removeForumPost(_ postID: ChannelID) {
+        guard let index = forumCatalogueIndexByID.removeValue(forKey: postID) else { return }
+        forumCataloguePosts.remove(at: index)
+        if index < forumCataloguePosts.endIndex {
+            for updatedIndex in index ..< forumCataloguePosts.endIndex {
+                forumCatalogueIndexByID[forumCataloguePosts[updatedIndex].id] = updatedIndex
+            }
+        }
+        applyForumPresentation()
     }
 
     private func beginSelectedChannelLoad() {
@@ -1052,12 +1766,36 @@ final class AppModel {
 
     func open(_ thread: MessageThreadSummary) {
         guard openThread?.id != thread.id else { return }
-        threadLoadTask?.cancel()
         let starter = messages.first { $0.thread?.id == thread.id }
+        openThreadConversation(
+            thread,
+            starter: starter?.author,
+            startedAt: starter?.timestamp,
+            initialMessages: []
+        )
+    }
+
+    func open(_ post: ForumPost) {
+        guard openThread?.id != post.id else { return }
+        openThreadConversation(
+            post.thread,
+            starter: post.owner ?? post.firstMessage?.author,
+            startedAt: post.firstMessage?.timestamp ?? post.createdAt,
+            initialMessages: post.firstMessage.map { [$0] } ?? []
+        )
+    }
+
+    private func openThreadConversation(
+        _ thread: MessageThreadSummary,
+        starter: User?,
+        startedAt: Date?,
+        initialMessages: [Message]
+    ) {
+        threadLoadTask?.cancel()
         openThread = thread
-        openThreadStarter = starter?.author
-        openThreadStartedAt = starter?.timestamp
-        threadMessages = []
+        openThreadStarter = starter
+        openThreadStartedAt = startedAt
+        threadMessages = initialMessages
         threadDraft = ""
         isLoadingThread = true
         hasMoreThreadMessages = false
@@ -1192,21 +1930,24 @@ final class AppModel {
             )
             return
         }
-        let contextTarget: ApplicationCommandIndexTarget = channel.guildID.map {
-            .guild($0)
-        } ?? .channel(channel.id)
+        let contextTarget: ApplicationCommandIndexTarget =
+            channel.guildID.map {
+                .guild($0)
+            } ?? .channel(channel.id)
         let targets: Set<ApplicationCommandIndexTarget> = [contextTarget, .user]
         commandComposer.beginLoading(targets: targets)
         commandLoadTask?.cancel()
         commandLoadTask = Task { [weak self] in
             guard let self else { return }
             do {
-                async let context: ApplicationCommandCatalog? = try? provider.applicationCommandCatalog(
-                    for: contextTarget
-                )
-                async let user: ApplicationCommandCatalog? = try? provider.applicationCommandCatalog(
-                    for: .user
-                )
+                async let context: ApplicationCommandCatalog? =
+                    try? provider.applicationCommandCatalog(
+                        for: contextTarget
+                    )
+                async let user: ApplicationCommandCatalog? =
+                    try? provider.applicationCommandCatalog(
+                        for: .user
+                    )
                 let catalogs = await [context, user].compactMap(\.self)
                 guard !catalogs.isEmpty else {
                     throw ChatProviderError.invalidRequest(
@@ -1239,7 +1980,7 @@ final class AppModel {
         guard option.usesAutocomplete, option.type.supportsAutocomplete,
               let channelID = selectedChannelID,
               let invocation = commandComposer.invocation(
-                channelID: channelID, guildID: selectedGuildID
+                  channelID: channelID, guildID: selectedGuildID
               )
         else { return }
         let request = ApplicationCommandAutocompleteRequest(
@@ -1365,7 +2106,8 @@ final class AppModel {
                 )
                 let roles = try? await provider.roles(in: guildID)
                 guard !Task.isCancelled, mentionMemberSearchQuery == key,
-                      selectedGuildID == guildID else { return }
+                      selectedGuildID == guildID
+                else { return }
                 if let roles { guildRoles = roles }
                 mentionMemberSearchCache[key] = MentionMemberSearchCacheEntry(
                     members: results,
@@ -1435,7 +2177,7 @@ final class AppModel {
         guard commandExecutionTask == nil,
               let channelID = selectedChannelID,
               let invocation = commandComposer.invocation(
-                channelID: channelID, guildID: selectedGuildID
+                  channelID: channelID, guildID: selectedGuildID
               )
         else { return }
         commandAutocompleteTask?.cancel()
@@ -1560,7 +2302,8 @@ final class AppModel {
     }
 
     func isComponentPending(messageID: MessageID, customID: String) -> Bool {
-        pendingComponentControls.contains(ComponentControlKey(messageID: messageID, customID: customID))
+        pendingComponentControls.contains(
+            ComponentControlKey(messageID: messageID, customID: customID))
     }
 
     func componentError(for messageID: MessageID) -> String? {
@@ -1581,7 +2324,8 @@ final class AppModel {
         }
         do {
             try await provider.submitModal(
-                ModalSubmission(customID: modal.customID, values: values, fileURLs: fileURLs), nonce: nonce
+                ModalSubmission(customID: modal.customID, values: values, fileURLs: fileURLs),
+                nonce: nonce
             )
             dismissInteractionModal()
             return true
@@ -1611,7 +2355,8 @@ final class AppModel {
         let debounce = Self.seconds(localTypingTiming.debounce)
         let remainingThrottle =
             lastTypingRequestAt[channel.id]
-            .map { max(0, Self.seconds(localTypingTiming.throttle) - now.timeIntervalSince($0)) } ?? 0
+                .map { max(0, Self.seconds(localTypingTiming.throttle) - now.timeIntervalSince($0)) }
+                ?? 0
         let delay = max(debounce, remainingThrottle)
         localTypingTask = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(delay)) } catch { return }
@@ -1672,7 +2417,9 @@ final class AppModel {
 
     @discardableResult
     func send(attachments: [URL] = []) async -> Bool {
-        guard let channelID = selectedChannelID, selectedConversationAccess.canSend else { return false }
+        guard let channelID = selectedChannelID, selectedConversationAccess.canSend else {
+            return false
+        }
         let content = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !content.isEmpty || !attachments.isEmpty else { return false }
         let replyTo = replyingTo?.id
@@ -1690,7 +2437,8 @@ final class AppModel {
             content: content, replyTo: replyTo, replyPreview: replyPreview,
             attachments: attachments.enumerated().map {
                 Attachment(
-                    id: "pending-\($0.offset)", filename: $0.element.lastPathComponent, url: $0.element
+                    id: "pending-\($0.offset)", filename: $0.element.lastPathComponent,
+                    url: $0.element
                 )
             }, nonce: outgoing.nonce, outboxState: .sending
         )
@@ -1707,14 +2455,16 @@ final class AppModel {
               let nonce = message.nonce,
               outgoingState(nonce: nonce, channelID: message.channelID) == .failed
         else { return false }
-        let outgoing = outgoingDraftsByNonce[nonce] ?? SendMessageDraft(
-            channelID: message.channelID,
-            content: message.content,
-            replyTo: message.replyTo,
-            attachmentURLs: message.attachments.map(\.url),
-            nonce: nonce,
-            stickerIDs: message.stickers.map(\.id)
-        )
+        let outgoing =
+            outgoingDraftsByNonce[nonce]
+                ?? SendMessageDraft(
+                    channelID: message.channelID,
+                    content: message.content,
+                    replyTo: message.replyTo,
+                    attachmentURLs: message.attachments.map(\.url),
+                    nonce: nonce,
+                    stickerIDs: message.stickers.map(\.id)
+                )
         outgoingDraftsByNonce[nonce] = outgoing
         updateOutgoingState(.sending, nonce: nonce, channelID: message.channelID)
         return await performOutgoingSend(outgoing, isRetry: true)
@@ -1726,7 +2476,9 @@ final class AppModel {
         )
         do {
             let confirmed = try await provider.send(outgoing) { [weak self] progress in
-                Task { @MainActor [weak self] in self?.sendProgressByNonce[outgoing.nonce] = progress }
+                Task { @MainActor [weak self] in
+                    self?.sendProgressByNonce[outgoing.nonce] = progress
+                }
             }
             reconcileVisibleOrCached(confirmed)
             sendProgressByNonce[outgoing.nonce] = nil
@@ -1792,17 +2544,20 @@ final class AppModel {
     func toggleReaction(_ emoji: String, on message: Message) async {
         let guildID = message.guildID ?? selectedGuildID
         let currentGuildEmojis = guildID.flatMap { emojisByGuild[$0] } ?? []
-        guard DiscordEmojiPermissionPolicy.canToggleReaction(
-            emoji,
-            existingReactions: message.reactions,
-            currentGuildEmojis: currentGuildEmojis,
-            premiumType: snapshot?.currentUser.premiumType ?? 0
-        ) else {
+        guard
+            DiscordEmojiPermissionPolicy.canToggleReaction(
+                emoji,
+                existingReactions: message.reactions,
+                currentGuildEmojis: currentGuildEmojis,
+                premiumType: snapshot?.currentUser.premiumType ?? 0
+            )
+        else {
             errorMessage = "Nitro is required for animated and other-server emoji reactions."
             return
         }
         do {
-            try await provider.toggleReaction(emoji, messageID: message.id, channelID: message.channelID)
+            try await provider.toggleReaction(
+                emoji, messageID: message.id, channelID: message.channelID)
         } catch { errorMessage = error.localizedDescription }
     }
 
@@ -1859,12 +2614,18 @@ final class AppModel {
                 return values
             }
             var result = values
-            guard let reactionIndex = result[messageIndex].reactions.firstIndex(where: {
-                $0.id == key.reactionID && $0.count == key.reactionCount && $0.reactors.isEmpty
-            }) else {
-                return values
-            }
-            result[messageIndex].reactions[reactionIndex].reactors = Array(
+            result[messageIndex] = updating(result[messageIndex])
+            return result
+        }
+
+        func updating(_ message: Message) -> Message {
+            guard
+                let reactionIndex = message.reactions.firstIndex(where: {
+                    $0.id == key.reactionID && $0.count == key.reactionCount && $0.reactors.isEmpty
+                })
+            else { return message }
+            var result = message
+            result.reactions[reactionIndex].reactors = Array(
                 normalized.prefix(max(0, key.reactionCount))
             )
             return result
@@ -1879,15 +2640,28 @@ final class AppModel {
         if key.channelID == openThread?.id {
             threadMessages = updating(threadMessages)
         }
+
+        guard let forumIndex = forumCatalogueIndexByID[key.channelID] else { return }
+        var forumPost = forumCataloguePosts[forumIndex]
+        if let firstMessage = forumPost.firstMessage {
+            forumPost.firstMessage = updating(firstMessage)
+        }
+        if let mostRecentMessage = forumPost.mostRecentMessage {
+            forumPost.mostRecentMessage = updating(mostRecentMessage)
+        }
+        guard forumPost != forumCataloguePosts[forumIndex] else { return }
+        forumCataloguePosts[forumIndex] = forumPost
+        updateForumPresentation(with: forumPost)
     }
 
     private func clearReactionReactorLoadState(
         channelID: ChannelID,
         messageID: MessageID
     ) {
-        loadingReactionReactors = Set(loadingReactionReactors.filter {
-            $0.channelID != channelID || $0.messageID != messageID
-        })
+        loadingReactionReactors = Set(
+            loadingReactionReactors.filter {
+                $0.channelID != channelID || $0.messageID != messageID
+            })
         failedReactionReactorLoads = failedReactionReactorLoads.filter {
             $0.key.channelID != channelID || $0.key.messageID != messageID
         }
@@ -2186,11 +2960,11 @@ final class AppModel {
 
     private func consumeVoiceEvent(_ event: VoiceSessionEvent) {
         switch event {
-        case let .stateChanged(state):
+        case .stateChanged(let state):
             voiceSessionState = state
-        case let .latencyUpdated(milliseconds):
+        case .latencyUpdated(let milliseconds):
             voiceLatencyMilliseconds = milliseconds
-        case let .participantChanged(participant):
+        case .participantChanged(let participant):
             if let index = voiceParticipants.firstIndex(where: { $0.userID == participant.userID }) {
                 voiceParticipants[index] = participant
             } else {
@@ -2201,18 +2975,18 @@ final class AppModel {
                 state.isVideoEnabled = participant.isCameraEnabled
                 voiceStates[userID] = state
             }
-        case let .participantLeft(userID):
+        case .participantLeft(let userID):
             voiceParticipants.removeAll { $0.userID == userID }
             voiceVideoFrames[userID] = nil
-        case let .localSpeakingChanged(speaking):
+        case .localSpeakingChanged(let speaking):
             isLocallySpeaking = speaking
-        case let .encryptionReady(version):
+        case .encryptionReady(let version):
             voiceEncryptionVersion = version
-        case let .videoFrame(userID, frame):
+        case .videoFrame(let userID, let frame):
             voiceVideoFrames[userID] = frame
-        case let .videoStopped(userID):
+        case .videoStopped(let userID):
             voiceVideoFrames[userID] = nil
-        case let .error(message):
+        case .error(let message):
             voiceErrorMessage = message
         }
     }
@@ -2233,7 +3007,7 @@ final class AppModel {
         isInspectorProfilePresented = false
         let member =
             membersByID[user.id]
-            ?? Member(user: user, roleName: "Member", status: .offline)
+                ?? Member(user: user, roleName: "Member", status: .offline)
         presentProfile(for: member)
     }
 
@@ -2256,7 +3030,8 @@ final class AppModel {
             guard let self else { return }
             do {
                 var value = try await provider.profile(for: member.id, in: guildID)
-                guard !Task.isCancelled, selectedMember?.id == member.id, selectedGuildID == guildID else {
+                guard !Task.isCancelled, selectedMember?.id == member.id, selectedGuildID == guildID
+                else {
                     return
                 }
                 value.status = member.status
@@ -2334,17 +3109,17 @@ final class AppModel {
 
     private func consume(_ event: ClientEvent) {
         switch event {
-        case let .connectionChanged(state):
+        case .connectionChanged(let state):
             connectionState = state
             if state != .ready {
                 stopLocalTyping(clearThrottle: true)
                 typingState.clearAll()
             }
-        case let .emojisChanged(guildID, emojis):
+        case .emojisChanged(let guildID, let emojis):
             applyEmojis(emojis, to: guildID)
-        case let .emojisUpdated(guildID, upserted, deletedIDs):
+        case .emojisUpdated(let guildID, let upserted, let deletedIDs):
             applyEmojiUpdate(upserted: upserted, deletedIDs: deletedIDs, to: guildID)
-        case var .messageCreated(message):
+        case .messageCreated(var message):
             typingState.clear(userID: message.author.id, in: message.channelID)
             if let nonce = message.nonce {
                 commandComposer.enrichInteractionResponse(
@@ -2361,7 +3136,8 @@ final class AppModel {
             } else {
                 cache(message)
             }
-        case let .messageUpdated(message):
+            reconcileForumMessage(message)
+        case .messageUpdated(let message):
             clearReactionReactorLoadState(
                 channelID: message.channelID,
                 messageID: message.id
@@ -2375,7 +3151,8 @@ final class AppModel {
             } else {
                 cache(message)
             }
-        case let .messageDeleted(channelID, messageID):
+            reconcileForumMessage(message)
+        case .messageDeleted(let channelID, let messageID):
             clearReactionReactorLoadState(channelID: channelID, messageID: messageID)
             Task { try? await database?.deleteMessage(messageID) }
             if replyingTo?.id == messageID {
@@ -2389,20 +3166,51 @@ final class AppModel {
             } else {
                 messageCache[channelID]?.removeAll { $0.id == messageID }
             }
-        case let .typing(channelID, user):
+        case .typing(let channelID, let user):
             typingState.receive(
                 channelID: channelID,
                 user: user,
                 currentUserID: snapshot?.currentUser.id
             )
-        case let .channelsChanged(guildID, channels):
+        case .channelsChanged(let guildID, let channels):
             if var value = snapshot {
                 value.channels.removeAll { $0.guildID == guildID }
                 value.channels.append(contentsOf: channels)
                 snapshot = value
             }
             if guildID == selectedGuildID { visibleChannels = channels }
-        case let .membersChanged(guildID, value):
+        case .forumPostsChanged(let channelID, let posts):
+            guard channelID == selectedChannelID, selectedChannel?.kind == .forum else { return }
+            replaceForumCatalogue(with: posts)
+            applyForumPresentation()
+            if let openThread, openThread.parentID == channelID,
+               !posts.contains(where: { $0.id == openThread.id })
+            {
+                closeThread()
+            }
+        case .forumPostPreviewsChanged(let channelID, let posts):
+            guard channelID == selectedChannelID, selectedChannel?.kind == .forum else { return }
+            mergeForumCatalogue(posts)
+            applyForumPresentation()
+        case .forumPageLoaded(let channelID, let query, let page):
+            guard channelID == selectedChannelID,
+                  selectedChannel?.kind == .forum,
+                  forumSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  query
+                  == ForumPostQuery(
+                      scope: .active,
+                      sortOrder: forumSortOrder,
+                      selectedTagIDs: forumSelectedTagIDs,
+                      tagMatch: forumTagMatch,
+                      offset: 0,
+                      limit: 25
+                  )
+            else { return }
+            replaceForumCatalogue(with: page.posts)
+            applyForumPresentation()
+            forumNextOffset = page.nextOffset
+            hasMoreForumPosts = page.hasMore
+        case .membersChanged(let guildID, let value):
             guard guildID == selectedGuildID else { return }
             members = value
             if mentionAutocompleteMembers.isEmpty {
@@ -2426,7 +3234,7 @@ final class AppModel {
             if let selectedMember, let updated = value.first(where: { $0.id == selectedMember.id }) {
                 self.selectedMember = updated
             }
-        case let .voiceStateChanged(state):
+        case .voiceStateChanged(let state):
             if state.channelID == nil {
                 voiceStates[state.userID] = nil
             } else {
@@ -2435,38 +3243,44 @@ final class AppModel {
             if !state.isVideoEnabled {
                 voiceVideoFrames[String(state.userID.rawValue)] = nil
             }
-        case let .voiceServerChanged(info):
+        case .voiceServerChanged(let info):
             scheduleVoiceServerMigration(to: info)
-        case let .snapshotChanged(value):
+        case .snapshotChanged(let value):
             snapshot = value
             updateServerRail(from: value)
             selectGuild(selectedGuildID)
-        case let .guildLayoutChanged(guilds, railItems):
+        case .guildChanged(let guild):
+            guard var value = snapshot,
+                  let index = value.guilds.firstIndex(where: { $0.id == guild.id })
+            else { return }
+            value.guilds[index] = guild
+            snapshot = value
+        case .guildLayoutChanged(let guilds, let railItems):
             guard var value = snapshot else { return }
             value.guilds = guilds
             value.guildRailItems = railItems
             snapshot = value
             updateServerRail(from: value)
-        case let .applicationCommandIndexInvalidated(target):
+        case .applicationCommandIndexInvalidated(let target):
             if commandComposer.invalidated(target) {
                 loadApplicationCommands()
             }
-        case let .applicationCommandAutocomplete(result):
+        case .applicationCommandAutocomplete(let result):
             commandComposer.receiveAutocomplete(result)
-        case let .interaction(event):
+        case .interaction(let event):
             switch event {
-            case let .created(nonce, interactionID):
+            case .created(let nonce, let interactionID):
                 commandComposer.interactionCreated(
                     nonce: nonce, interactionID: interactionID
                 )
-            case let .succeeded(nonce):
+            case .succeeded(let nonce):
                 commandComposer.interactionSucceeded(nonce: nonce)
                 if let key = componentKeyByNonce.removeValue(forKey: nonce) {
                     pendingComponentControls.remove(key)
                     componentErrors[key] = nil
                 }
                 interactionErrorMessage = nil
-            case let .failed(nonce, message):
+            case .failed(let nonce, let message):
                 let commandHandled = commandComposer.interactionFailed(
                     nonce: nonce, message: message
                 )
@@ -2476,7 +3290,7 @@ final class AppModel {
                 } else if !commandHandled {
                     interactionErrorMessage = message
                 }
-            case let .presentModal(nonce, modal):
+            case .presentModal(let nonce, let modal):
                 interactionModalNonce = nonce
                 if let key = componentKeyByNonce.removeValue(forKey: nonce) {
                     pendingComponentControls.remove(key)
@@ -2495,9 +3309,10 @@ final class AppModel {
     private func reconcile(_ message: Message) {
         var updated = messages
         var resolved = message
-        let replacementIndex = message.nonce.flatMap { nonce in
-            updated.firstIndex(where: { $0.nonce == nonce })
-        } ?? updated.firstIndex(where: { $0.id == message.id })
+        let replacementIndex =
+            message.nonce.flatMap { nonce in
+                updated.firstIndex(where: { $0.nonce == nonce })
+            } ?? updated.firstIndex(where: { $0.id == message.id })
         if let index = replacementIndex {
             resolved.replyTo = resolved.replyTo ?? updated[index].replyTo
             resolved.replyPreview = resolved.replyPreview ?? updated[index].replyPreview
@@ -2600,11 +3415,13 @@ final class AppModel {
 
 private actor OfflineCredentialStore: CredentialStore {
     func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
-        throw ChatProviderError.invalidRequest("Credential storage is unavailable in offline testing mode.")
+        throw ChatProviderError.invalidRequest(
+            "Credential storage is unavailable in offline testing mode.")
     }
 
     func credential(for handle: CredentialHandle) async throws -> Data {
-        throw ChatProviderError.invalidRequest("Credentials are unavailable in offline testing mode.")
+        throw ChatProviderError.invalidRequest(
+            "Credentials are unavailable in offline testing mode.")
     }
 
     func remove(_ handle: CredentialHandle) async throws {}
@@ -2644,7 +3461,8 @@ enum MessageGrouping {
             let replyPreview = message.replyTo.flatMap { messageID -> MessageReplyPreview? in
                 if let referenced = messagesByID[messageID] {
                     return MessageReplyPreview(
-                        messageID: referenced.id, author: referenced.author, content: referenced.content
+                        messageID: referenced.id, author: referenced.author,
+                        content: referenced.content
                     )
                 }
                 return message.replyPreview
@@ -2655,7 +3473,8 @@ enum MessageGrouping {
                     startsGroup: true,
                     startsDay: true,
                     replyPreview: replyPreview,
-                    isReplyAvailable: replyPreview.map { messagesByID[$0.messageID] != nil } ?? false
+                    isReplyAvailable: replyPreview.map { messagesByID[$0.messageID] != nil }
+                        ?? false
                 )
             }
             let continues = continuesGroup(
@@ -2703,9 +3522,10 @@ enum MessageGrouping {
         {
             var result = existing
             let appended = newMessages[oldMessages.count...]
-            let byID = appended.contains(where: { $0.replyTo != nil })
-                ? Dictionary(uniqueKeysWithValues: newMessages.map { ($0.id, $0) })
-                : [:]
+            let byID =
+                appended.contains(where: { $0.replyTo != nil })
+                    ? Dictionary(uniqueKeysWithValues: newMessages.map { ($0.id, $0) })
+                    : [:]
             for index in oldMessages.count ..< newMessages.count {
                 result.append(
                     presentation(at: index, in: newMessages, messagesByID: byID, calendar: calendar)
@@ -2719,14 +3539,14 @@ enum MessageGrouping {
             if newMessages.suffix(oldMessages.count).elementsEqual(oldMessages) {
                 let byID = Dictionary(uniqueKeysWithValues: newMessages.map { ($0.id, $0) })
                 var result =
-                    rows(for: Array(newMessages.prefix(insertedCount)), calendar: calendar) + existing
+                    rows(for: Array(newMessages.prefix(insertedCount)), calendar: calendar)
+                        + existing
                 var affected = Set([insertedCount])
                 let insertedIDs = Set(newMessages.prefix(insertedCount).map(\.id))
                 for (index, message) in newMessages.enumerated()
-                    where message.replyTo.map(insertedIDs.contains) == true
-                {
+                    where message.replyTo.map(insertedIDs.contains) == true {
                     affected.insert(index)
-        }
+                }
                 for index in affected where newMessages.indices.contains(index) {
                     result[index] = presentation(
                         at: index, in: newMessages, messagesByID: byID, calendar: calendar
@@ -2755,8 +3575,7 @@ enum MessageGrouping {
                 }
             }
             for (index, message) in newMessages.enumerated()
-                where message.replyTo.map(changedIDs.contains) == true
-            {
+                where message.replyTo.map(changedIDs.contains) == true {
                 affected.insert(index)
             }
             for index in affected {
@@ -2770,7 +3589,8 @@ enum MessageGrouping {
     }
 
     private static func presentation(
-        at index: Int, in messages: [Message], messagesByID: [MessageID: Message], calendar: Calendar
+        at index: Int, in messages: [Message], messagesByID: [MessageID: Message],
+        calendar: Calendar
     ) -> MessageRowPresentation {
         let message = messages[index]
         let replyPreview = message.replyTo.flatMap { id in

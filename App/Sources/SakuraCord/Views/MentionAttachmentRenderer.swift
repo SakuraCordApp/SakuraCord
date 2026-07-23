@@ -83,17 +83,17 @@ enum MentionAttachmentRenderer {
         let attributes: [NSAttributedString.Key: Any] = [.font: labelFont]
         let labelSize = label.size(withAttributes: attributes)
         let showsAvatar = if case .user = presentation.target { true } else { false }
-        let showsMessageIcon = if case .message = presentation.target { true } else { false }
+        let showsLeadingIcon = presentation.systemImage != nil
         let height = max(21, ceil(font.pointSize + 6))
         let avatarSize = height - 6
-        let messageIconSize = height - 7
+        let iconSize = height - 7
         let horizontalPadding: CGFloat = 6
         let avatarGap: CGFloat = showsAvatar ? 4 : 0
-        let messageIconGap: CGFloat = showsMessageIcon ? 5 : 0
+        let iconGap: CGFloat = showsLeadingIcon ? 4 : 0
         let width = ceil(
             horizontalPadding * 2 + labelSize.width
                 + (showsAvatar ? avatarSize + avatarGap : 0)
-                + (showsMessageIcon ? messageIconSize + messageIconGap : 0)
+                + (showsLeadingIcon ? iconSize + iconGap : 0)
         )
         let size = NSSize(width: width, height: height)
         let color = mentionColor(hex: presentation.colorHex)
@@ -107,7 +107,30 @@ enum MentionAttachmentRenderer {
             ).fill()
 
             var textX = horizontalPadding
-            if showsAvatar {
+            if let systemImage = presentation.systemImage {
+                let iconConfiguration = NSImage.SymbolConfiguration(
+                    pointSize: iconSize,
+                    weight: .semibold
+                ).applying(NSImage.SymbolConfiguration(paletteColors: [color]))
+                if let icon = NSImage(
+                    systemSymbolName: systemImage,
+                    accessibilityDescription: nil
+                )?.withSymbolConfiguration(iconConfiguration) {
+                    let iconRect = NSRect(
+                        x: horizontalPadding,
+                        y: (height - iconSize) / 2,
+                        width: iconSize,
+                        height: iconSize
+                    )
+                    icon.draw(
+                        in: iconRect,
+                        from: .zero,
+                        operation: .sourceOver,
+                        fraction: 1
+                    )
+                    textX = iconRect.maxX + iconGap
+                }
+            } else if showsAvatar {
                 let avatarRect = NSRect(
                     x: horizontalPadding,
                     y: (height - avatarSize) / 2,
@@ -139,31 +162,6 @@ enum MentionAttachmentRenderer {
             ]
             let textY = floor((height - labelSize.height) / 2)
             label.draw(at: NSPoint(x: textX, y: textY), withAttributes: textAttributes)
-            let messageIconConfiguration = NSImage.SymbolConfiguration(
-                pointSize: messageIconSize,
-                weight: .semibold
-            ).applying(NSImage.SymbolConfiguration(paletteColors: [color]))
-            if showsMessageIcon,
-               let icon = NSImage(
-                   systemSymbolName: "bubble.left.fill",
-                   accessibilityDescription: "Message"
-               )?.withSymbolConfiguration(
-                   messageIconConfiguration
-               )
-            {
-                let iconRect = NSRect(
-                    x: textX + labelSize.width + messageIconGap,
-                    y: (height - messageIconSize) / 2,
-                    width: messageIconSize,
-                    height: messageIconSize
-                )
-                icon.draw(
-                    in: iconRect,
-                    from: .zero,
-                    operation: .sourceOver,
-                    fraction: 1
-                )
-            }
             return true
         }
         image.accessibilityDescription = presentation.label

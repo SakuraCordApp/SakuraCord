@@ -21,6 +21,30 @@ import Testing
     #expect(baseline.defaultCapabilities == 1_734_653)
 }
 
+@Test func `ready guild decodes the designated community rules channel`() throws {
+    let payload = Data(
+        """
+        {
+          "guilds": [
+            {
+              "id": "100",
+              "rules_channel_id": "101",
+              "channels": [
+                {"id": "101", "name": "read-me-first", "type": 0},
+                {"id": "102", "name": "rules", "type": 0}
+              ]
+            }
+          ]
+        }
+        """.utf8
+    )
+
+    let ready = try JSONDecoder().decode(GatewayReadyGuildsDTO.self, from: payload)
+    let guild = try #require(ready.guilds.first)
+    #expect(guild.rulesChannelID == "101")
+    #expect(guild.channels.map(\.id) == ["101", "102"])
+}
+
 @Test func `settings proto preserves discord guild folder order`() {
     func fixed64(_ value: UInt64) -> [UInt8] {
         (0 ..< 8).map { UInt8(truncatingIfNeeded: value >> UInt64($0 * 8)) }

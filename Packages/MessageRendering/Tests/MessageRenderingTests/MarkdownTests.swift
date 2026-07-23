@@ -72,6 +72,21 @@ import Testing
     #expect(!document.isEmojiOnly)
 }
 
+@Test func `message document recognizes discord channel and forum post links as structured mentions`() throws {
+    let link = "https://discord.com/channels/1523442314092089394/1529700953366859816"
+    let document = MessageDocument(source: "See \(link) now")
+    let mention = try #require(document.segments.compactMap { segment -> RenderedMention? in
+        guard case let .mention(value) = segment else { return nil }
+        return value
+    }.first)
+
+    #expect(mention.kind == .channelLink)
+    #expect(mention.messageGuildID == "1523442314092089394")
+    #expect(mention.messageChannelID == "1529700953366859816")
+    #expect(mention.id == "1529700953366859816")
+    #expect(mention.rawToken == link)
+}
+
 @Test func `discord markdown preserves compact line breaks and styles headings`() {
     let value = DiscordMarkdown.attributed("*markdown*\n**bold**\n`code`\n# heading")
     #expect(String(value.characters) == "markdown\nbold\ncode\nheading")

@@ -22,7 +22,12 @@ struct MessageTimelineView: View {
                                hasError: model.messageLoadError != nil
                            )
                         {
-                            ChannelBeginningView(channel: channel)
+                            ChannelBeginningView(
+                                channel: channel,
+                                rulesChannelID: model.snapshot?.guilds.first {
+                                    $0.id == channel.guildID
+                                }?.rulesChannelID
+                            )
                         }
                         if model.hasMoreMessages {
                             EarlierMessageLoader(
@@ -347,6 +352,7 @@ struct MessageTimelineLoadingSkeleton: View {
 
 private struct ChannelBeginningView: View {
     let channel: Channel
+    let rulesChannelID: ChannelID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -373,7 +379,7 @@ private struct ChannelBeginningView: View {
     }
 
     private var title: String {
-        switch channel.kind {
+        return switch channel.kind {
         case .directMessage, .groupDirectMessage:
             "Beginning of your conversation with \(channel.name)"
         case .voice:
@@ -398,7 +404,10 @@ private struct ChannelBeginningView: View {
     }
 
     private var symbol: String {
-        switch channel.kind {
+        if rulesChannelID == channel.id {
+            return "newspaper.fill"
+        }
+        return switch channel.kind {
         case .directMessage: "person.fill"
         case .groupDirectMessage: "person.2.fill"
         case .announcement: "megaphone.fill"

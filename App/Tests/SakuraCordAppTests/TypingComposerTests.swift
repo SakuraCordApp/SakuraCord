@@ -558,6 +558,34 @@ import Testing
 }
 
 @MainActor
+@Test func `pasted discord forum post link becomes an atomic post mention`() throws {
+    let link = "https://discord.com/channels/100/200"
+    let mention = try #require(RenderedMention(rawToken: link))
+    let presentation = MentionPresentation(
+        rawToken: link,
+        label: "A forum post",
+        target: .linkedChannel(
+            guildID: GuildID(rawValue: 100),
+            channelID: ChannelID(rawValue: 200)
+        ),
+        systemImage: ChannelIconPresentation.forumPostSystemImage
+    )
+    let attributed = ComposerEmojiAttributedText.make(
+        "Open \(link)",
+        mentionPresentations: [link: presentation]
+    )
+    let attachment = try #require(attributed.attribute(
+        .attachment,
+        at: attributed.length - 1,
+        effectiveRange: nil
+    ) as? MentionTextAttachment)
+
+    #expect(mention.kind == .channelLink)
+    #expect(attachment.presentation.systemImage == "bubble.left.fill")
+    #expect(ComposerEmojiAttributedText.serialize(attributed) == "Open \(link)")
+}
+
+@MainActor
 @Test func `pasted message link refreshes its fallback attachment when channel data resolves`() {
     let link = "https://discord.com/channels/100/200/300"
     let fallback = ComposerEmojiAttributedText.make(link)
@@ -610,10 +638,14 @@ import Testing
     let crossGuildID = try #require(crossGuildChannel.guildID)
     let crossGuildName = try #require(model.serverRailGuildsByID[crossGuildID]).name
 
-    #expect(resolver.presentation(sameMention).label == "#\(sameGuildChannel.name)")
+    #expect(resolver.presentation(sameMention).label == sameGuildChannel.name)
+    #expect(
+        resolver.presentation(sameMention).systemImage
+            == ChannelIconPresentation.systemImage(for: sameGuildChannel.kind, isHidden: false)
+    )
     #expect(
         resolver.presentation(crossMention).label
-            == "#\(crossGuildName) / \(crossGuildChannel.name)"
+            == "\(crossGuildName) / \(crossGuildChannel.name)"
     )
 }
 
@@ -940,6 +972,13 @@ import Testing
     ])
     #expect(suggestions.map(\.detail) == ["INFO", "INFO", "INFO", "INFO", "MAIN"])
     #expect(suggestions.allSatisfy { !$0.title.hasPrefix("#") })
+    #expect(
+        suggestions.map(\.systemImage)
+            == Array(
+                repeating: ChannelIconPresentation.systemImage(for: .text, isHidden: false),
+                count: 5
+            )
+    )
     #expect(MentionAutocompleteSuggestionFactory.canMentionNonMentionableRoles(
         in: channels.first { $0.name == "general" },
         currentUserID: currentUser.id,

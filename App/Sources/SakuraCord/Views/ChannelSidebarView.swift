@@ -22,6 +22,7 @@ struct ChannelSidebarView: View {
                 ForEach(ChannelGroup.make(from: channels)) { group in
                     ChannelGroupRows(
                         group: group,
+                        rulesChannelID: guild?.rulesChannelID,
                         activeVoiceChannelID: activeVoiceChannelID,
                         hiddenChannelIDs: hiddenChannelIDs,
                         voiceParticipantsByChannel: voiceSidebarParticipantsByChannel
@@ -182,6 +183,7 @@ struct ChannelGroup: Identifiable {
 
 private struct ChannelGroupRows: View {
     let group: ChannelGroup
+    let rulesChannelID: ChannelID?
     let activeVoiceChannelID: ChannelID?
     let hiddenChannelIDs: Set<ChannelID>
     let voiceParticipantsByChannel: [ChannelID: [VoiceSidebarParticipant]]
@@ -189,11 +191,13 @@ private struct ChannelGroupRows: View {
 
     init(
         group: ChannelGroup,
+        rulesChannelID: ChannelID?,
         activeVoiceChannelID: ChannelID?,
         hiddenChannelIDs: Set<ChannelID>,
         voiceParticipantsByChannel: [ChannelID: [VoiceSidebarParticipant]]
     ) {
         self.group = group
+        self.rulesChannelID = rulesChannelID
         self.activeVoiceChannelID = activeVoiceChannelID
         self.hiddenChannelIDs = hiddenChannelIDs
         self.voiceParticipantsByChannel = voiceParticipantsByChannel
@@ -207,6 +211,7 @@ private struct ChannelGroupRows: View {
                     if channel.kind == .voice {
                         ChannelRow(
                             channel: channel,
+                            rulesChannelID: rulesChannelID,
                             isVoiceConnected: activeVoiceChannelID == channel.id,
                             isHidden: hiddenChannelIDs.contains(channel.id)
                         )
@@ -217,6 +222,7 @@ private struct ChannelGroupRows: View {
                     } else {
                         ChannelRow(
                             channel: channel,
+                            rulesChannelID: rulesChannelID,
                             isHidden: hiddenChannelIDs.contains(channel.id)
                         )
                         .tag(channel.id)
@@ -442,6 +448,7 @@ private extension PresenceStatus {
 
 private struct ChannelRow: View {
     let channel: Channel
+    var rulesChannelID: ChannelID?
     var isVoiceConnected = false
     var isHidden = false
 
@@ -465,6 +472,10 @@ private struct ChannelRow: View {
     }
 
     private var systemImage: String {
-        ChannelIconPresentation.systemImage(for: channel.kind, isHidden: isHidden)
+        ChannelIconPresentation.systemImage(
+            for: channel,
+            isHidden: isHidden,
+            rulesChannelID: rulesChannelID
+        )
     }
 }

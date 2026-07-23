@@ -1,14 +1,15 @@
 import AppKit
 import DiscordProtocol
 import Foundation
-@testable import SakuraCord
 import SakuraCordModels
 import Testing
+@testable import SakuraCord
 
 @MainActor
 @Test func `native emoji catalog loads every fully qualified unicode 17 emoji`() {
     #expect(NativeEmojiCatalogDiagnostics.sourceEntryCount == 3944)
-    #expect(NativeEmojiCatalogDiagnostics.itemCount < NativeEmojiCatalogDiagnostics.sourceEntryCount)
+    #expect(
+        NativeEmojiCatalogDiagnostics.itemCount < NativeEmojiCatalogDiagnostics.sourceEntryCount)
     #expect(NativeEmojiCatalogDiagnostics.skinToneCapableItemCount > 100)
     #expect(NativeEmojiCatalogDiagnostics.wavingHandValues == ["👋", "👋🏻", "👋🏼", "👋🏽", "👋🏾", "👋🏿"])
     #expect(NativeEmojiCatalogDiagnostics.mediumToneVariationSelectorValues == ["✌🏽", "☝🏽", "✍🏽"])
@@ -32,66 +33,80 @@ import Testing
     #expect(EmojiPickerPerformanceDiagnostics.itemsPerRecycledRow == 9)
     #expect(EmojiPickerPerformanceDiagnostics.nativeSectionIDs.count == 9)
     #expect(Set(EmojiPickerPerformanceDiagnostics.nativeSectionIDs).count == 9)
-    #expect(EmojiPickerPerformanceDiagnostics.nativeDocumentRowCount
-        < EmojiPickerPerformanceDiagnostics.nativeItemCount / 4)
+    #expect(
+        EmojiPickerPerformanceDiagnostics.nativeDocumentRowCount
+            < EmojiPickerPerformanceDiagnostics.nativeItemCount / 4)
     #expect(NativeEmojiCatalogDiagnostics.categoryItemCounts["people", default: 0] > 300)
-    #expect(!EmojiPickerPerformanceDiagnostics.nativeSidebarIsVisible(
-        bounds: nil,
-        viewportHeight: 300
-    ))
-    #expect(!EmojiPickerPerformanceDiagnostics.nativeSidebarIsVisible(
-        bounds: CGRect(x: 0, y: 320, width: 46, height: 300),
-        viewportHeight: 300
-    ))
-    #expect(EmojiPickerPerformanceDiagnostics.nativeSidebarIsVisible(
-        bounds: CGRect(x: 0, y: 280, width: 46, height: 300),
-        viewportHeight: 300
-    ))
+    #expect(
+        !EmojiPickerPerformanceDiagnostics.nativeSidebarIsVisible(
+            bounds: nil,
+            viewportHeight: 300
+        ))
+    #expect(
+        !EmojiPickerPerformanceDiagnostics.nativeSidebarIsVisible(
+            bounds: CGRect(x: 0, y: 320, width: 46, height: 300),
+            viewportHeight: 300
+        ))
+    #expect(
+        EmojiPickerPerformanceDiagnostics.nativeSidebarIsVisible(
+            bounds: CGRect(x: 0, y: 280, width: 46, height: 300),
+            viewportHeight: 300
+        ))
 }
 
 @Test func `emoji picker keyboard navigation wraps rows and clamps columns`() {
     let rows = [
         ["a", "b", "c"],
         ["d", "e", "f"],
-        ["g"]
+        ["g"],
     ]
 
-    #expect(EmojiPickerGridNavigation.destinationID(
-        rows: rows, currentID: nil, direction: .right
-    ) == "a")
-    #expect(EmojiPickerGridNavigation.destinationID(
-        rows: rows, currentID: "a", direction: .left
-    ) == "a")
-    #expect(EmojiPickerGridNavigation.destinationID(
-        rows: rows, currentID: "c", direction: .right
-    ) == "d")
-    #expect(EmojiPickerGridNavigation.destinationID(
-        rows: rows, currentID: "d", direction: .left
-    ) == "c")
-    #expect(EmojiPickerGridNavigation.destinationID(
-        rows: rows, currentID: "c", direction: .down
-    ) == "f")
-    #expect(EmojiPickerGridNavigation.destinationID(
-        rows: rows, currentID: "f", direction: .down
-    ) == "g")
-    #expect(EmojiPickerGridNavigation.destinationID(
-        rows: rows, currentID: "g", direction: .up
-    ) == "d")
+    #expect(
+        EmojiPickerGridNavigation.destinationID(
+            rows: rows, currentID: nil, direction: .right
+        ) == "a")
+    #expect(
+        EmojiPickerGridNavigation.destinationID(
+            rows: rows, currentID: "a", direction: .left
+        ) == "a")
+    #expect(
+        EmojiPickerGridNavigation.destinationID(
+            rows: rows, currentID: "c", direction: .right
+        ) == "d")
+    #expect(
+        EmojiPickerGridNavigation.destinationID(
+            rows: rows, currentID: "d", direction: .left
+        ) == "c")
+    #expect(
+        EmojiPickerGridNavigation.destinationID(
+            rows: rows, currentID: "c", direction: .down
+        ) == "f")
+    #expect(
+        EmojiPickerGridNavigation.destinationID(
+            rows: rows, currentID: "f", direction: .down
+        ) == "g")
+    #expect(
+        EmojiPickerGridNavigation.destinationID(
+            rows: rows, currentID: "g", direction: .up
+        ) == "d")
 }
 
 @Test func `emoji picker only stays open for explicit persistent shift selection`() {
-    #expect(EmojiPickerActivationPolicy.keepsPickerPresented(
-        allowsPersistentSelection: true,
-        shiftPressed: true
-    ))
-    #expect(!EmojiPickerActivationPolicy.keepsPickerPresented(
-        allowsPersistentSelection: true,
-        shiftPressed: false
-    ))
-    #expect(!EmojiPickerActivationPolicy.keepsPickerPresented(
-        allowsPersistentSelection: false,
-        shiftPressed: true
-    ))
+    #expect(
+        EmojiPickerActivationPolicy.keepsPickerPresented(
+            allowsPersistentSelection: true,
+            shiftPressed: true
+        ))
+    #expect(
+        !EmojiPickerActivationPolicy.keepsPickerPresented(
+            allowsPersistentSelection: true,
+            shiftPressed: false
+        ))
+    #expect(
+        !EmojiPickerActivationPolicy.keepsPickerPresented(
+            allowsPersistentSelection: false,
+            shiftPressed: true
+        ))
 }
 
 @MainActor
@@ -105,41 +120,48 @@ import Testing
 }
 
 @Test func `message actions remain visible while their reaction picker is presented`() {
-    #expect(MessageActionVisibilityPolicy.isVisible(
-        isRowHovered: true,
-        isReactionPickerPresented: false,
-        isEditing: false
-    ))
-    #expect(MessageActionVisibilityPolicy.isVisible(
-        isRowHovered: false,
-        isReactionPickerPresented: true,
-        isEditing: false
-    ))
-    #expect(!MessageActionVisibilityPolicy.isVisible(
-        isRowHovered: false,
-        isReactionPickerPresented: false,
-        isEditing: false
-    ))
-    #expect(!MessageActionVisibilityPolicy.isVisible(
-        isRowHovered: true,
-        isReactionPickerPresented: true,
-        isEditing: true
-    ))
+    #expect(
+        MessageActionVisibilityPolicy.isVisible(
+            isRowHovered: true,
+            isReactionPickerPresented: false,
+            isEditing: false
+        ))
+    #expect(
+        MessageActionVisibilityPolicy.isVisible(
+            isRowHovered: false,
+            isReactionPickerPresented: true,
+            isEditing: false
+        ))
+    #expect(
+        !MessageActionVisibilityPolicy.isVisible(
+            isRowHovered: false,
+            isReactionPickerPresented: false,
+            isEditing: false
+        ))
+    #expect(
+        !MessageActionVisibilityPolicy.isVisible(
+            isRowHovered: true,
+            isReactionPickerPresented: true,
+            isEditing: true
+        ))
 }
 
 @Test func `emoji picker only asks the scroll view to reveal changed rows`() {
-    #expect(!EmojiPickerScrollPolicy.shouldReveal(
-        previousRowID: "row:4",
-        destinationRowID: "row:4"
-    ))
-    #expect(EmojiPickerScrollPolicy.shouldReveal(
-        previousRowID: "row:4",
-        destinationRowID: "row:5"
-    ))
-    #expect(EmojiPickerScrollPolicy.shouldReveal(
-        previousRowID: nil,
-        destinationRowID: "row:1"
-    ))
+    #expect(
+        !EmojiPickerScrollPolicy.shouldReveal(
+            previousRowID: "row:4",
+            destinationRowID: "row:4"
+        ))
+    #expect(
+        EmojiPickerScrollPolicy.shouldReveal(
+            previousRowID: "row:4",
+            destinationRowID: "row:5"
+        ))
+    #expect(
+        EmojiPickerScrollPolicy.shouldReveal(
+            previousRowID: nil,
+            destinationRowID: "row:1"
+        ))
 }
 
 @MainActor
@@ -154,6 +176,451 @@ import Testing
     await model.send()
     #expect(model.messages.count == before + 1)
     #expect(model.messages.last?.content == "hello from test")
+}
+
+@MainActor
+@Test func `fast forum loads do not flash a transient loading surface`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let forum = try #require(model.snapshot?.channels.first(where: { $0.kind == .forum }))
+
+    model.selectedChannelID = forum.id
+    #expect(!model.isLoadingForumPosts)
+    #expect(await eventuallyOnMain { model.hasLoadedForumPosts && !model.forumPosts.isEmpty })
+    #expect(model.forumPosts.contains { $0.thread.isLocked })
+    #expect(!model.forumRecentPosts.isEmpty)
+    #expect(!model.forumOlderPosts.isEmpty)
+
+    let reactionPost = try #require(
+        model.forumPosts.first(where: { $0.firstMessage?.reactions.isEmpty == false })
+    )
+    let reactionMessage = try #require(reactionPost.firstMessage)
+    let reaction = try #require(reactionMessage.reactions.first)
+    let wasReacted = reaction.didCurrentUserReact
+    await model.toggleReaction(reaction.emoji, on: reactionMessage)
+    #expect(
+        await eventuallyOnMain {
+            model.forumPosts.first(where: { $0.id == reactionPost.id })?
+                .firstMessage?.reactions.first?.didCurrentUserReact == !wasReacted
+        }
+    )
+
+    model.open(reactionPost)
+    #expect(model.openThread?.id == reactionPost.id)
+    #expect(model.threadMessages.first == reactionPost.firstMessage)
+    #expect(await eventuallyOnMain { !model.isLoadingThread })
+    model.closeThread()
+
+    let matchingTitle = try #require(model.forumPosts.first?.thread.name)
+    model.updateForumSearch(String(matchingTitle.prefix(3)))
+    #expect(!model.forumPosts.isEmpty)
+    #expect(
+        model.forumPosts.allSatisfy {
+            $0.thread.name.localizedCaseInsensitiveContains(String(matchingTitle.prefix(3)))
+        })
+    #expect(model.isSearchingForumPosts)
+    try await Task.sleep(for: .milliseconds(350))
+    #expect(await eventuallyOnMain { !model.isSearchingForumPosts })
+    let searchQueries = await provider.forumQueries(in: forum.id)
+    #expect(
+        searchQueries.contains {
+            if case let .search(text) = $0.scope {
+                return text == String(matchingTitle.prefix(3))
+            }
+            return false
+        }
+    )
+
+    model.updateForumSearch("")
+    #expect(!model.forumPosts.isEmpty)
+
+    model.updateForumSearch("no-post-can-match-this-query")
+    #expect(!model.isLoadingForumPosts)
+    #expect(await eventuallyOnMain { model.forumPosts.isEmpty })
+
+    model.updateForumSearch("")
+    #expect(!model.isLoadingForumPosts)
+    #expect(await eventuallyOnMain { !model.forumPosts.isEmpty })
+    #expect(!model.isLoadingForumPosts)
+}
+
+@MainActor
+@Test func `forum pagination failures preserve posts and can be retried`() async throws {
+    let provider = ForumPaginationTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+
+    #expect(
+        await eventuallyOnMain {
+            model.hasLoadedForumPosts
+                && model.forumPosts.count == 1
+                && model.hasMoreForumPosts
+        }
+    )
+    let initialPostIDs = model.forumPosts.map(\.id)
+
+    model.updateForumSearch("Recent")
+    #expect(!model.hasMoreForumPosts)
+    await model.loadMoreForumPosts()
+    #expect(await provider.paginationRequestCount() == 0)
+    model.updateForumSearch("")
+    #expect(model.hasMoreForumPosts)
+
+    await model.loadMoreForumPosts()
+
+    #expect(model.forumPosts.map(\.id) == initialPostIDs)
+    #expect(model.forumPostError == nil)
+    #expect(model.forumPaginationError != nil)
+    #expect(model.hasMoreForumPosts)
+
+    await model.loadMoreForumPosts()
+
+    #expect(model.forumPosts.count == 2)
+    #expect(model.forumPaginationError == nil)
+    #expect(!model.hasMoreForumPosts)
+    #expect(await provider.paginationRequestCount() == 2)
+}
+
+@MainActor
+@Test func `forum thread links select their parent and open the post`() async throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    await model.start()
+    let forum = try #require(model.snapshot?.channels.first(where: { $0.kind == .forum }))
+    model.selectedChannelID = forum.id
+    #expect(await eventuallyOnMain { model.hasLoadedForumPosts && !model.forumPosts.isEmpty })
+    let post = try #require(model.forumPosts.first)
+    let otherChannel = try #require(
+        model.snapshot?.channels.first(where: { $0.guildID == forum.guildID && $0.id != forum.id })
+    )
+
+    model.selectedChannelID = otherChannel.id
+    model.navigate(to: post.thread.guildID, linkedChannelID: post.id)
+
+    #expect(
+        await eventuallyOnMain {
+            model.selectedChannelID == forum.id && model.openThread?.id == post.id
+        }
+    )
+}
+
+@MainActor
+@Test func `returning to a forum clears the previous forum query state`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let forum = try #require(model.snapshot?.channels.first(where: { $0.kind == .forum }))
+    let otherChannel = try #require(
+        model.snapshot?.channels.first {
+            $0.guildID == forum.guildID && $0.id != forum.id && $0.kind != .forum
+        }
+    )
+    let tagID = try #require(forum.availableTags.first?.id)
+
+    model.selectedChannelID = forum.id
+    #expect(await eventuallyOnMain { model.hasLoadedForumPosts })
+    model.forumSelectedTagIDs = [tagID]
+    model.updateForumSearch("visual")
+    #expect(model.forumSearchText == "visual")
+    #expect(model.forumSelectedTagIDs == [tagID])
+
+    model.selectedChannelID = otherChannel.id
+    model.selectedChannelID = forum.id
+
+    #expect(model.forumSearchText.isEmpty)
+    #expect(model.forumSelectedTagIDs.isEmpty)
+    #expect(!model.hasMoreForumPosts)
+    #expect(
+        await eventuallyOnMain {
+            model.hasLoadedForumPosts
+                && model.forumSearchText.isEmpty
+                && model.forumSelectedTagIDs.isEmpty
+        }
+    )
+}
+
+@MainActor
+@Test func `ordinary linked channels load their guild before forum resolution`() async {
+    let provider = LinkedChannelNavigationTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let target = provider.targetChannel
+
+    model.navigate(to: target.guildID, linkedChannelID: target.id)
+
+    #expect(
+        await eventuallyOnMain {
+            model.selectedGuildID == target.guildID
+                && model.selectedChannelID == target.id
+        }
+    )
+    #expect(await provider.forumPostRequestCount() == 0)
+}
+
+@MainActor
+@Test func `remote forum deletion closes the open post`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let forum = try #require(model.snapshot?.channels.first(where: { $0.kind == .forum }))
+
+    model.selectedChannelID = forum.id
+    #expect(await eventuallyOnMain { model.hasLoadedForumPosts && !model.forumPosts.isEmpty })
+    let post = try #require(model.forumPosts.first)
+    model.open(post)
+    #expect(model.openThread?.id == post.id)
+
+    await provider.emit(
+        .forumPostsChanged(
+            channelID: forum.id,
+            posts: model.forumPosts.filter { $0.id != post.id }
+        )
+    )
+
+    #expect(await eventuallyOnMain { model.openThread == nil })
+}
+
+@MainActor
+@Test func `forum cache events cannot close an ordinary text thread`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let channel = try #require(model.snapshot?.channels.first(where: { $0.kind == .text }))
+    model.selectedChannelID = channel.id
+    let thread = MessageThreadSummary(
+        id: ChannelID(rawValue: 999_001),
+        guildID: channel.guildID,
+        parentID: channel.id,
+        name: "Ordinary thread"
+    )
+    model.open(thread)
+
+    await provider.emit(.forumPostsChanged(channelID: channel.id, posts: []))
+    await Task.yield()
+
+    #expect(model.openThread?.id == thread.id)
+}
+
+@MainActor
+@Test func `Discord channel links accept forum thread URLs without accepting lookalike hosts`() throws {
+    let forumURL = try #require(URL(string: "https://discord.com/channels/100/220"))
+    let lookalikeURL = try #require(URL(string: "https://discord.example/channels/100/220"))
+    let link = DiscordChannelLink(forumURL)
+    #expect(link?.guildID == GuildID(rawValue: 100))
+    #expect(link?.channelID == ChannelID(rawValue: 220))
+    #expect(DiscordChannelLink(lookalikeURL) == nil)
+}
+
+@Test func `cancelled forum searches never become user visible errors`() {
+    #expect(AppModel.isForumLoadCancellation(CancellationError()))
+    #expect(AppModel.isForumLoadCancellation(URLError(.cancelled)))
+    #expect(!AppModel.isForumLoadCancellation(URLError(.timedOut)))
+}
+
+@Test func `forum post deletion is limited to its owner or a thread moderator`() {
+    let ownerID = UserID(rawValue: 10)
+    let otherID = UserID(rawValue: 11)
+
+    #expect(
+        AppModel.canDeleteForumPost(
+            ownerID: ownerID,
+            currentUserID: ownerID,
+            canManage: false
+        )
+    )
+    #expect(
+        !AppModel.canDeleteForumPost(
+            ownerID: ownerID,
+            currentUserID: otherID,
+            canManage: false
+        )
+    )
+    #expect(
+        AppModel.canDeleteForumPost(
+            ownerID: ownerID,
+            currentUserID: otherID,
+            canManage: true
+        )
+    )
+}
+
+@MainActor
+@Test func `forum creation clears queued upload progress after completion`() async throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    await model.start()
+    let forum = try #require(model.snapshot?.channels.first(where: { $0.kind == .forum }))
+    let tag = try #require(forum.availableTags.first(where: { !$0.isModerated }))
+    model.selectedChannelID = forum.id
+    #expect(await eventuallyOnMain { model.hasLoadedForumPosts })
+
+    let didCreate = await model.createForumPost(
+        CreateForumPostDraft(
+            channelID: forum.id,
+            title: "Progress lifecycle",
+            content: "The completion state must not be overwritten by a queued callback.",
+            appliedTagIDs: [tag.id]
+        )
+    )
+    await Task.yield()
+
+    #expect(didCreate)
+    #expect(model.forumCreateProgress == nil)
+}
+
+@MainActor
+@Test func `deleting an offline forum post removes its card and closes its thread`() async throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    await model.start()
+    let forum = try #require(model.snapshot?.channels.first(where: { $0.kind == .forum }))
+    let currentUserID = try #require(model.snapshot?.currentUser.id)
+
+    model.selectedChannelID = forum.id
+    #expect(await eventuallyOnMain { model.hasLoadedForumPosts && !model.forumPosts.isEmpty })
+    let post = try #require(
+        model.forumPosts.first {
+            ($0.thread.ownerID ?? $0.owner?.id) == currentUserID
+        }
+    )
+    model.open(post)
+    #expect(model.openThread?.id == post.id)
+
+    await model.deleteForumPost(post)
+
+    #expect(!model.forumPosts.contains { $0.id == post.id })
+    #expect(model.openThread == nil)
+    #expect(model.forumActionError == nil)
+}
+
+@Test func `forum presentation preserves section ordering while filtering without duplicates`() {
+    let now = Date(timeIntervalSince1970: 10_000)
+    let tagA = ForumTagID(rawValue: 1)
+    let tagB = ForumTagID(rawValue: 2)
+    let posts = [
+        forumPresentationPost(id: 1, name: "Pinned alpha", date: now, tags: [tagA], pinned: true),
+        forumPresentationPost(
+            id: 2, name: "Newest alpha beta", date: now.addingTimeInterval(30), tags: [tagA, tagB]
+        ),
+        forumPresentationPost(
+            id: 3, name: "Older alpha beta", date: now.addingTimeInterval(20), tags: [tagA, tagB],
+            archived: true
+        ),
+        forumPresentationPost(
+            id: 4, name: "Newest archived alpha beta", date: now.addingTimeInterval(40),
+            tags: [tagA, tagB], archived: true
+        ),
+        forumPresentationPost(id: 5, name: "Unrelated", date: now, tags: [tagB]),
+    ]
+
+    let presentation = ForumPostPresentation.make(
+        catalogue: posts,
+        searchText: " ALPHA ",
+        selectedTagIDs: [tagA, tagB],
+        tagMatch: .matchAll,
+        sortOrder: .latestActivity
+    )
+
+    #expect(presentation.recentCount == 1)
+    #expect(presentation.posts.map(\.id.rawValue) == [2, 4, 3])
+    #expect(Set(presentation.posts.map(\.id)).count == presentation.posts.count)
+
+    var updated = posts[3]
+    updated.thread.isArchived = false
+    updated.thread.flags = 1 << 1
+    let incremental = presentation.updating(
+        updated,
+        searchText: " ALPHA ",
+        selectedTagIDs: [tagA, tagB],
+        tagMatch: .matchAll,
+        sortOrder: .latestActivity
+    )
+    let rebuilt = ForumPostPresentation.make(
+        catalogue: posts.enumerated().map { $0.offset == 3 ? updated : $0.element },
+        searchText: " ALPHA ",
+        selectedTagIDs: [tagA, tagB],
+        tagMatch: .matchAll,
+        sortOrder: .latestActivity
+    )
+    #expect(incremental.posts == rebuilt.posts)
+    #expect(incremental.recentCount == rebuilt.recentCount)
+
+    let narrowed = ForumPostPresentation.make(
+        catalogue: posts,
+        searchText: "",
+        selectedTagIDs: [],
+        tagMatch: .matchSome,
+        sortOrder: .latestActivity
+    ).filtering(
+        searchText: "newest alpha beta",
+        selectedTagIDs: [],
+        tagMatch: .matchSome
+    )
+    let rebuiltNarrowed = ForumPostPresentation.make(
+        catalogue: posts,
+        searchText: "newest alpha beta",
+        selectedTagIDs: [],
+        tagMatch: .matchSome,
+        sortOrder: .latestActivity
+    )
+    #expect(narrowed.posts == rebuiltNarrowed.posts)
+    #expect(narrowed.recentCount == rebuiltNarrowed.recentCount)
+}
+
+private func forumPresentationPost(
+    id: UInt64,
+    name: String,
+    date: Date,
+    tags: [ForumTagID],
+    pinned: Bool = false,
+    archived: Bool = false
+) -> ForumPost {
+    ForumPost(
+        thread: MessageThreadSummary(
+            id: ChannelID(rawValue: id),
+            name: name,
+            isArchived: archived,
+            appliedTagIDs: tags,
+            flags: pinned ? 1 << 1 : 0,
+            archiveTimestamp: archived ? date : nil,
+            createdAt: date
+        )
+    )
+}
+
+@Test func `ten thousand forum posts keep stable identities through an incremental update`() throws {
+    let posts = (0 ..< 10_000).map { index in
+        forumPresentationPost(
+            id: UInt64(index + 1),
+            name: "Forum post \(index)",
+            date: Date(timeIntervalSince1970: TimeInterval(index)),
+            tags: [],
+            pinned: index.isMultiple(of: 1_000),
+            archived: index >= 5_000
+        )
+    }
+    let presentation = ForumPostPresentation.make(
+        catalogue: posts,
+        searchText: "",
+        selectedTagIDs: [],
+        tagMatch: .matchSome,
+        sortOrder: .latestActivity
+    )
+    #expect(presentation.posts.count == 10_000)
+    #expect(presentation.recentCount == 5_000)
+    #expect(Set(presentation.posts.map(\.id)).count == 10_000)
+
+    var updated = try #require(posts.last)
+    updated.thread.isArchived = false
+    updated.thread.flags = 1 << 1
+    let result = presentation.updating(
+        updated,
+        searchText: "",
+        selectedTagIDs: [],
+        tagMatch: .matchSome,
+        sortOrder: .latestActivity
+    )
+    #expect(result.posts.count == 10_000)
+    #expect(result.recentCount == 5_001)
+    #expect(Set(result.posts.map(\.id)).count == 10_000)
 }
 
 @Test func `component control identity is scoped to its message`() {
@@ -244,18 +711,20 @@ import Testing
 
     let tracker = StablePopoverAnchorTracker()
     let firstSourceRect = try #require(anchor.sourceRect())
-    let firstFrame = try #require(tracker.attach(
-        to: textView,
-        sourceRect: firstSourceRect
-    ))
+    let firstFrame = try #require(
+        tracker.attach(
+            to: textView,
+            sourceRect: firstSourceRect
+        ))
     #expect(firstFrame != contentView.bounds)
 
     textView.frame.origin.x += 48
     let movedSourceRect = try #require(anchor.sourceRect())
-    let movedFrame = try #require(tracker.attach(
-        to: textView,
-        sourceRect: movedSourceRect
-    ))
+    let movedFrame = try #require(
+        tracker.attach(
+            to: textView,
+            sourceRect: movedSourceRect
+        ))
     #expect(abs(movedFrame.minX - firstFrame.minX - 48) <= 0.5)
     #expect(abs(movedFrame.width - glyphRect.width) <= 0.5)
 }
@@ -294,6 +763,11 @@ import Testing
     let longList = AppLaunchConfiguration(arguments: ["SakuraCord", "--offline-long-server-list"])
     #expect(longList.mode == .offlineTesting)
     #expect(longList.includesLongServerList)
+    let forumPerformance = AppLaunchConfiguration(
+        arguments: ["SakuraCord", "--offline-forum-performance"]
+    )
+    #expect(forumPerformance.mode == .offlineTesting)
+    #expect(forumPerformance.includesForumPerformanceFixture)
 }
 
 @MainActor
@@ -423,11 +897,21 @@ private actor CredentialAccessProbeStore: CredentialStore {
     let channel = ChannelID(rawValue: 10)
     let base = Date(timeIntervalSince1970: 1_700_000_000)
     let messages = [
-        Message(id: MessageID(rawValue: 1), channelID: channel, author: author, content: "first", timestamp: base),
-        Message(id: MessageID(rawValue: 2), channelID: channel, author: author, content: "six minutes", timestamp: base.addingTimeInterval(6 * 60)),
-        Message(id: MessageID(rawValue: 3), channelID: channel, author: author, content: "seven minutes", timestamp: base.addingTimeInterval(13 * 60)),
-        Message(id: MessageID(rawValue: 4), channelID: channel, author: other, content: "other author", timestamp: base.addingTimeInterval(13 * 60 + 1)),
-        Message(id: MessageID(rawValue: 5), channelID: channel, author: other, content: "reply", timestamp: base.addingTimeInterval(13 * 60 + 2), replyTo: MessageID(rawValue: 1))
+        Message(
+            id: MessageID(rawValue: 1), channelID: channel, author: author, content: "first",
+            timestamp: base),
+        Message(
+            id: MessageID(rawValue: 2), channelID: channel, author: author, content: "six minutes",
+            timestamp: base.addingTimeInterval(6 * 60)),
+        Message(
+            id: MessageID(rawValue: 3), channelID: channel, author: author,
+            content: "seven minutes", timestamp: base.addingTimeInterval(13 * 60)),
+        Message(
+            id: MessageID(rawValue: 4), channelID: channel, author: other, content: "other author",
+            timestamp: base.addingTimeInterval(13 * 60 + 1)),
+        Message(
+            id: MessageID(rawValue: 5), channelID: channel, author: other, content: "reply",
+            timestamp: base.addingTimeInterval(13 * 60 + 2), replyTo: MessageID(rawValue: 1)),
     ]
 
     let rows = MessageGrouping.rows(for: messages)
@@ -450,7 +934,7 @@ private actor CredentialAccessProbeStore: CredentialStore {
         Message(
             id: MessageID(rawValue: 3), channelID: ChannelID(rawValue: 1), author: author,
             content: "after", timestamp: start.addingTimeInterval(20)
-        )
+        ),
     ]
 
     #expect(MessageGrouping.rows(for: messages).map(\.startsGroup) == [true, true, true])
@@ -475,7 +959,7 @@ private actor CredentialAccessProbeStore: CredentialStore {
         Message(
             id: MessageID(rawValue: 3), channelID: channel, author: app,
             content: "after", timestamp: start.addingTimeInterval(2)
-        )
+        ),
     ]
 
     #expect(MessageGrouping.rows(for: messages).map(\.startsGroup) == [true, true, true])
@@ -509,7 +993,7 @@ private actor CredentialAccessProbeStore: CredentialStore {
             status: .offline,
             rolePosition: 10,
             isRoleCategory: true
-        )
+        ),
     ]
 
     let sections = MemberSection.make(from: members)
@@ -523,14 +1007,25 @@ private actor CredentialAccessProbeStore: CredentialStore {
     let guildID = GuildID(rawValue: 20)
     let categoryID = ChannelID(rawValue: 21)
     let channels = [
-        Channel(id: ChannelID(rawValue: 22), guildID: guildID, name: "Voice first by position", kind: .voice, category: "Chat", categoryID: categoryID, position: 0),
-        Channel(id: ChannelID(rawValue: 23), guildID: guildID, name: "general", category: "Chat", categoryID: categoryID, position: 2),
-        Channel(id: ChannelID(rawValue: 24), guildID: guildID, name: "announcements", kind: .announcement, category: "Chat", categoryID: categoryID, position: 3),
-        Channel(id: ChannelID(rawValue: 25), guildID: guildID, name: "Voice second", kind: .voice, category: "Chat", categoryID: categoryID, position: 1)
+        Channel(
+            id: ChannelID(rawValue: 22), guildID: guildID, name: "Voice first by position",
+            kind: .voice, category: "Chat", categoryID: categoryID, position: 0),
+        Channel(
+            id: ChannelID(rawValue: 23), guildID: guildID, name: "general", category: "Chat",
+            categoryID: categoryID, position: 2),
+        Channel(
+            id: ChannelID(rawValue: 24), guildID: guildID, name: "announcements",
+            kind: .announcement, category: "Chat", categoryID: categoryID, position: 3),
+        Channel(
+            id: ChannelID(rawValue: 25), guildID: guildID, name: "Voice second", kind: .voice,
+            category: "Chat", categoryID: categoryID, position: 1),
     ]
 
     let group = ChannelGroup.make(from: channels)[0]
-    #expect(group.channels.map(\.name) == ["general", "announcements", "Voice first by position", "Voice second"])
+    #expect(
+        group.channels.map(\.name) == [
+            "general", "announcements", "Voice first by position", "Voice second",
+        ])
 }
 
 @MainActor
@@ -657,9 +1152,10 @@ private func eventuallyOnMain(_ condition: @escaping @MainActor () -> Bool) asyn
     #expect(emojis.count == 3)
     #expect(emojis.allSatisfy { $0.imageURL?.isFileURL == true })
     #expect(emojis.allSatisfy { $0.imageURL?.host != "cdn.discordapp.com" })
-    #expect(emojis.allSatisfy { emoji in
-        emoji.imageURL.map { FileManager.default.fileExists(atPath: $0.path) } == true
-    })
+    #expect(
+        emojis.allSatisfy { emoji in
+            emoji.imageURL.map { FileManager.default.fileExists(atPath: $0.path) } == true
+        })
     for emoji in emojis {
         ComposerEmojiImageStore.shared.register(emoji)
         #expect(ComposerEmojiImageStore.shared.cachedImage(for: emoji.messageToken) != nil)
@@ -678,14 +1174,17 @@ private func eventuallyOnMain(_ condition: @escaping @MainActor () -> Bool) asyn
     }
     #expect(renderedAttachmentCount == emojis.count)
     let settings = try await provider.emojiUserSettings()
-    #expect(settings.favoriteKeys.prefix(3) == [
-        "custom:900000000000000201", "white_check_mark", "x"
-    ])
+    #expect(
+        settings.favoriteKeys.prefix(3) == [
+            "custom:900000000000000201", "white_check_mark", "x",
+        ])
     #expect(settings.frequentlyUsedKeys.count == 18)
 }
 
 @MainActor
-@Test func `channel loads are single flight cached and protected from stale responses`() async throws {
+@Test func `channel loads are single flight cached and protected from stale responses`()
+    async throws
+{
     let provider = ChannelLoadTestProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
 
@@ -793,7 +1292,7 @@ private actor ChannelLoadTestProvider: ChatProvider {
             guildID: nil,
             name: "Voice Room",
             kind: .voice
-        )
+        ),
     ]
     private var messageRequests: [ChannelID: Int] = [:]
     private var reactorRequests = 0
@@ -822,10 +1321,13 @@ private actor ChannelLoadTestProvider: ChatProvider {
 
     func updateStatus(_ status: PresenceStatus) async throws {}
 
-    func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws -> MessagePage {
+    func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
+        -> MessagePage
+    {
         messageRequests[channelID, default: 0] += 1
         // Intentionally ignore cancellation to prove the model's generation guard works.
-        let delay: Duration = channelID == testChannels[1].id ? .milliseconds(100) : .milliseconds(20)
+        let delay: Duration =
+            channelID == testChannels[1].id ? .milliseconds(100) : .milliseconds(20)
         try? await Task.sleep(for: delay)
         let message = Message(
             id: MessageID(rawValue: channelID.rawValue),
@@ -887,6 +1389,214 @@ private actor ChannelLoadTestProvider: ChatProvider {
     }
 }
 
+private actor ForumPaginationTestProvider: ChatProvider {
+    private let guild = Guild(id: GuildID(rawValue: 95_000), name: "Forum Test")
+    private let user = User(
+        id: UserID(rawValue: 95_001),
+        username: "forum-tester",
+        displayName: "Forum Tester"
+    )
+    private let channel = Channel(
+        id: ChannelID(rawValue: 95_002),
+        guildID: GuildID(rawValue: 95_000),
+        name: "forum",
+        kind: .forum
+    )
+    private var paginationRequests = 0
+
+    func bootstrap() async throws -> BootstrapSnapshot {
+        BootstrapSnapshot(
+            currentUser: user,
+            guilds: [guild],
+            channels: [channel],
+            members: []
+        )
+    }
+
+    func channels(in guildID: GuildID?) async throws -> [Channel] {
+        guildID == guild.id ? [channel] : []
+    }
+
+    func members(in guildID: GuildID?) async throws -> [Member] {
+        []
+    }
+
+    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
+        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
+    }
+
+    func currentStatus() async -> PresenceStatus {
+        .online
+    }
+
+    func updateStatus(_ status: PresenceStatus) async throws {}
+
+    func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
+        -> MessagePage
+    {
+        MessagePage(messages: [], hasMoreBefore: false)
+    }
+
+    func forumPosts(in channelID: ChannelID, query: ForumPostQuery) async throws
+        -> ForumPostPage
+    {
+        guard channelID == channel.id else { throw ChatProviderError.channelNotFound }
+        if query.offset == 0 {
+            return ForumPostPage(
+                posts: [
+                    ForumPost(
+                        thread: MessageThreadSummary(
+                            id: ChannelID(rawValue: 95_010),
+                            guildID: guild.id,
+                            parentID: channel.id,
+                            name: "Recent post",
+                            createdAt: Date(timeIntervalSince1970: 200)
+                        )
+                    )
+                ],
+                hasMore: true,
+                nextOffset: 1
+            )
+        }
+
+        paginationRequests += 1
+        if paginationRequests == 1 {
+            throw ChatProviderError.invalidRequest("Older posts are temporarily unavailable.")
+        }
+        return ForumPostPage(
+            posts: [
+                ForumPost(
+                    thread: MessageThreadSummary(
+                        id: ChannelID(rawValue: 95_011),
+                        guildID: guild.id,
+                        parentID: channel.id,
+                        name: "Older post",
+                        isArchived: true,
+                        archiveTimestamp: Date(timeIntervalSince1970: 100),
+                        createdAt: Date(timeIntervalSince1970: 100)
+                    )
+                )
+            ],
+            hasMore: false,
+            nextOffset: nil
+        )
+    }
+
+    func send(_ draft: SendMessageDraft) async throws -> Message {
+        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
+    }
+
+    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message {
+        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
+    }
+
+    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
+
+    func toggleReaction(
+        _ emoji: String,
+        messageID: MessageID,
+        channelID: ChannelID
+    ) async throws {}
+
+    func eventStream() async -> AsyncStream<ClientEvent> {
+        AsyncStream { $0.finish() }
+    }
+
+    func disconnect() async {}
+
+    func paginationRequestCount() -> Int {
+        paginationRequests
+    }
+}
+
+private actor LinkedChannelNavigationTestProvider: ChatProvider {
+    private let firstGuild = Guild(id: GuildID(rawValue: 94_000), name: "First")
+    private let secondGuild = Guild(id: GuildID(rawValue: 94_100), name: "Second")
+    private let user = User(
+        id: UserID(rawValue: 94_200),
+        username: "navigator",
+        displayName: "Navigator"
+    )
+    private let firstChannel = Channel(
+        id: ChannelID(rawValue: 94_001),
+        guildID: GuildID(rawValue: 94_000),
+        name: "general"
+    )
+    let targetChannel = Channel(
+        id: ChannelID(rawValue: 94_101),
+        guildID: GuildID(rawValue: 94_100),
+        name: "linked-channel"
+    )
+    private var forumPostRequests = 0
+
+    func bootstrap() async throws -> BootstrapSnapshot {
+        BootstrapSnapshot(
+            currentUser: user,
+            guilds: [firstGuild, secondGuild],
+            channels: [],
+            members: []
+        )
+    }
+
+    func channels(in guildID: GuildID?) async throws -> [Channel] {
+        switch guildID {
+        case firstGuild.id: [firstChannel]
+        case secondGuild.id: [targetChannel]
+        default: []
+        }
+    }
+
+    func members(in guildID: GuildID?) async throws -> [Member] {
+        []
+    }
+
+    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
+        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
+    }
+
+    func currentStatus() async -> PresenceStatus {
+        .online
+    }
+
+    func updateStatus(_ status: PresenceStatus) async throws {}
+
+    func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
+        -> MessagePage
+    {
+        MessagePage(messages: [], hasMoreBefore: false)
+    }
+
+    func forumPost(threadID: ChannelID) async throws -> ForumPost {
+        forumPostRequests += 1
+        throw ChatProviderError.invalidRequest("Ordinary channels are not forum posts.")
+    }
+
+    func send(_ draft: SendMessageDraft) async throws -> Message {
+        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
+    }
+
+    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message {
+        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
+    }
+
+    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
+    func toggleReaction(
+        _ emoji: String,
+        messageID: MessageID,
+        channelID: ChannelID
+    ) async throws {}
+
+    func eventStream() async -> AsyncStream<ClientEvent> {
+        AsyncStream { $0.finish() }
+    }
+
+    func disconnect() async {}
+
+    func forumPostRequestCount() -> Int {
+        forumPostRequests
+    }
+}
+
 private actor SuspendedBootstrapTestProvider: ChatProvider {
     private let user = User(id: UserID(rawValue: 93000), username: "tester", displayName: "Tester")
     private let channel = Channel(id: ChannelID(rawValue: 93001), guildID: nil, name: "general")
@@ -939,7 +1649,9 @@ private actor SuspendedBootstrapTestProvider: ChatProvider {
     }
 
     func updateStatus(_ status: PresenceStatus) async throws {}
-    func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws -> MessagePage {
+    func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
+        -> MessagePage
+    {
         MessagePage(messages: [], hasMoreBefore: false)
     }
 
@@ -992,7 +1704,9 @@ private actor VoiceMigrationTestProvider: ChatProvider {
     }
 
     func updateStatus(_ status: PresenceStatus) async throws {}
-    func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws -> MessagePage {
+    func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
+        -> MessagePage
+    {
         MessagePage(messages: [], hasMoreBefore: false)
     }
 

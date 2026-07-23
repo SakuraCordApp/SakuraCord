@@ -94,7 +94,8 @@ public struct User: Identifiable, Codable, Hashable, Sendable {
         isBot = try container.decodeIfPresent(Bool.self, forKey: .isBot) ?? false
         avatarDecorationURL = try container.decodeIfPresent(URL.self, forKey: .avatarDecorationURL)
         nameplate = try container.decodeIfPresent(Nameplate.self, forKey: .nameplate)
-        primaryGuild = try container.decodeIfPresent(PrimaryGuildIdentity.self, forKey: .primaryGuild)
+        primaryGuild = try container.decodeIfPresent(
+            PrimaryGuildIdentity.self, forKey: .primaryGuild)
         displayNameStyle = try container.decodeIfPresent(
             DisplayNameStyle.self, forKey: .displayNameStyle
         )
@@ -111,11 +112,12 @@ public struct Guild: Identifiable, Codable, Hashable, Sendable {
     public var unreadCount: Int
     public var isOwnedByCurrentUser: Bool?
     public var currentUserPermissions: UInt64?
+    public var rulesChannelID: ChannelID?
 
     public init(
         id: GuildID, name: String, iconURL: URL? = nil, accentHex: UInt32 = 0x5865F2,
         unreadCount: Int = 0, isOwnedByCurrentUser: Bool? = nil,
-        currentUserPermissions: UInt64? = nil
+        currentUserPermissions: UInt64? = nil, rulesChannelID: ChannelID? = nil
     ) {
         self.id = id
         self.name = name
@@ -124,6 +126,7 @@ public struct Guild: Identifiable, Codable, Hashable, Sendable {
         self.unreadCount = unreadCount
         self.isOwnedByCurrentUser = isOwnedByCurrentUser
         self.currentUserPermissions = currentUserPermissions
+        self.rulesChannelID = rulesChannelID
     }
 }
 
@@ -197,6 +200,54 @@ public enum ChannelKindValue: String, Codable, Hashable, Sendable {
     case text, announcement, forum, voice, directMessage, groupDirectMessage, unknown
 }
 
+public struct ForumTag: Identifiable, Codable, Hashable, Sendable {
+    public let id: ForumTagID
+    public var name: String
+    public var isModerated: Bool
+    public var emojiID: String?
+    public var emojiName: String?
+
+    public init(
+        id: ForumTagID,
+        name: String,
+        isModerated: Bool = false,
+        emojiID: String? = nil,
+        emojiName: String? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.isModerated = isModerated
+        self.emojiID = emojiID
+        self.emojiName = emojiName
+    }
+}
+
+public struct ForumDefaultReaction: Codable, Hashable, Sendable {
+    public var emojiID: String?
+    public var emojiName: String?
+
+    public init(emojiID: String? = nil, emojiName: String? = nil) {
+        self.emojiID = emojiID
+        self.emojiName = emojiName
+    }
+}
+
+public enum ForumSortOrder: Int, Codable, CaseIterable, Hashable, Sendable {
+    case latestActivity = 0
+    case creationDate = 1
+}
+
+public enum ForumLayout: Int, Codable, CaseIterable, Hashable, Sendable {
+    case defaultLayout = 0
+    case list = 1
+    case gallery = 2
+}
+
+public enum ForumTagMatch: String, Codable, CaseIterable, Hashable, Sendable {
+    case matchSome = "match_some"
+    case matchAll = "match_all"
+}
+
 public struct ChannelPermissionOverwrite: Codable, Hashable, Sendable {
     public var id: String
     public var type: Int
@@ -227,6 +278,15 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
     public var permissionOverwrites: [ChannelPermissionOverwrite]?
     public var lastMessageID: MessageID?
     public var lastPinTimestamp: Date?
+    public var flags: UInt64
+    public var availableTags: [ForumTag]
+    public var defaultReaction: ForumDefaultReaction?
+    public var defaultSortOrder: ForumSortOrder?
+    public var defaultForumLayout: ForumLayout
+    public var defaultTagMatch: ForumTagMatch
+    public var defaultAutoArchiveDuration: Int?
+    public var defaultThreadRateLimitPerUser: Int?
+    public var rateLimitPerUser: Int
 
     public init(
         id: ChannelID,
@@ -243,7 +303,16 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         recipients: [User] = [],
         permissionOverwrites: [ChannelPermissionOverwrite]? = nil,
         lastMessageID: MessageID? = nil,
-        lastPinTimestamp: Date? = nil
+        lastPinTimestamp: Date? = nil,
+        flags: UInt64 = 0,
+        availableTags: [ForumTag] = [],
+        defaultReaction: ForumDefaultReaction? = nil,
+        defaultSortOrder: ForumSortOrder? = nil,
+        defaultForumLayout: ForumLayout = .defaultLayout,
+        defaultTagMatch: ForumTagMatch = .matchSome,
+        defaultAutoArchiveDuration: Int? = nil,
+        defaultThreadRateLimitPerUser: Int? = nil,
+        rateLimitPerUser: Int = 0
     ) {
         self.id = id
         self.guildID = guildID
@@ -260,7 +329,258 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         self.permissionOverwrites = permissionOverwrites
         self.lastMessageID = lastMessageID
         self.lastPinTimestamp = lastPinTimestamp
+        self.flags = flags
+        self.availableTags = availableTags
+        self.defaultReaction = defaultReaction
+        self.defaultSortOrder = defaultSortOrder
+        self.defaultForumLayout = defaultForumLayout
+        self.defaultTagMatch = defaultTagMatch
+        self.defaultAutoArchiveDuration = defaultAutoArchiveDuration
+        self.defaultThreadRateLimitPerUser = defaultThreadRateLimitPerUser
+        self.rateLimitPerUser = rateLimitPerUser
     }
+
+    public var requiresForumTag: Bool {
+        flags & (1 << 4) != 0
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, guildID, name, topic, kind, category, categoryID, position, categoryPosition
+        case unreadCount, isMuted, recipients, permissionOverwrites, lastMessageID, lastPinTimestamp
+        case flags, availableTags, defaultReaction, defaultSortOrder, defaultForumLayout
+        case defaultTagMatch, defaultAutoArchiveDuration, defaultThreadRateLimitPerUser
+        case rateLimitPerUser
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(ChannelID.self, forKey: .id)
+        guildID = try values.decodeIfPresent(GuildID.self, forKey: .guildID)
+        name = try values.decode(String.self, forKey: .name)
+        topic = try values.decodeIfPresent(String.self, forKey: .topic)
+        kind = try values.decodeIfPresent(ChannelKindValue.self, forKey: .kind) ?? .text
+        category = try values.decodeIfPresent(String.self, forKey: .category)
+        categoryID = try values.decodeIfPresent(ChannelID.self, forKey: .categoryID)
+        position = try values.decodeIfPresent(Int.self, forKey: .position) ?? 0
+        categoryPosition = try values.decodeIfPresent(Int.self, forKey: .categoryPosition) ?? 0
+        unreadCount = try values.decodeIfPresent(Int.self, forKey: .unreadCount) ?? 0
+        isMuted = try values.decodeIfPresent(Bool.self, forKey: .isMuted) ?? false
+        recipients = try values.decodeIfPresent([User].self, forKey: .recipients) ?? []
+        permissionOverwrites = try values.decodeIfPresent(
+            [ChannelPermissionOverwrite].self, forKey: .permissionOverwrites
+        )
+        lastMessageID = try values.decodeIfPresent(MessageID.self, forKey: .lastMessageID)
+        lastPinTimestamp = try values.decodeIfPresent(Date.self, forKey: .lastPinTimestamp)
+        flags = try values.decodeIfPresent(UInt64.self, forKey: .flags) ?? 0
+        availableTags = try values.decodeIfPresent([ForumTag].self, forKey: .availableTags) ?? []
+        defaultReaction = try values.decodeIfPresent(
+            ForumDefaultReaction.self, forKey: .defaultReaction
+        )
+        defaultSortOrder = try values.decodeIfPresent(
+            ForumSortOrder.self, forKey: .defaultSortOrder)
+        defaultForumLayout =
+            try values.decodeIfPresent(
+                ForumLayout.self, forKey: .defaultForumLayout
+            ) ?? .defaultLayout
+        defaultTagMatch =
+            try values.decodeIfPresent(
+                ForumTagMatch.self, forKey: .defaultTagMatch
+            ) ?? .matchSome
+        defaultAutoArchiveDuration = try values.decodeIfPresent(
+            Int.self, forKey: .defaultAutoArchiveDuration
+        )
+        defaultThreadRateLimitPerUser = try values.decodeIfPresent(
+            Int.self, forKey: .defaultThreadRateLimitPerUser
+        )
+        rateLimitPerUser = try values.decodeIfPresent(Int.self, forKey: .rateLimitPerUser) ?? 0
+    }
+}
+
+public struct ForumPost: Identifiable, Codable, Hashable, Sendable {
+    public var id: ChannelID { thread.id }
+    public var thread: MessageThreadSummary
+    public var owner: User?
+    public var firstMessage: Message?
+    public var mostRecentMessage: Message?
+    public var isUnread: Bool
+
+    public init(
+        thread: MessageThreadSummary,
+        owner: User? = nil,
+        firstMessage: Message? = nil,
+        mostRecentMessage: Message? = nil,
+        isUnread: Bool = false
+    ) {
+        self.thread = thread
+        self.owner = owner
+        self.firstMessage = firstMessage
+        self.mostRecentMessage = mostRecentMessage
+        self.isUnread = isUnread
+    }
+
+    public var replyCount: Int {
+        max(0, thread.messageCount - 1)
+    }
+
+    public var reactionCount: Int {
+        firstMessage?.reactions.reduce(0) { $0 + $1.count } ?? 0
+    }
+
+    public var createdAt: Date {
+        thread.createdAt ?? thread.id.createdAt
+    }
+
+    public var lastActivityAt: Date {
+        mostRecentMessage?.timestamp
+            ?? thread.lastMessageID?.createdAt
+            ?? thread.archiveTimestamp
+            ?? createdAt
+    }
+}
+
+public enum ForumPostScope: Hashable, Sendable {
+    case active
+    case search(String)
+}
+
+public struct ForumPostQuery: Hashable, Sendable {
+    public var scope: ForumPostScope
+    public var sortOrder: ForumSortOrder
+    public var selectedTagIDs: Set<ForumTagID>
+    public var tagMatch: ForumTagMatch
+    public var offset: Int
+    public var limit: Int
+
+    public init(
+        scope: ForumPostScope = .active,
+        sortOrder: ForumSortOrder = .latestActivity,
+        selectedTagIDs: Set<ForumTagID> = [],
+        tagMatch: ForumTagMatch = .matchSome,
+        offset: Int = 0,
+        limit: Int = 10
+    ) {
+        self.scope = scope
+        self.sortOrder = sortOrder
+        self.selectedTagIDs = selectedTagIDs
+        self.tagMatch = tagMatch
+        self.offset = max(0, offset)
+        self.limit = max(1, limit)
+    }
+}
+
+public enum ForumPostQueryPolicy {
+    public static func matchesTags(
+        _ post: ForumPost,
+        selectedTagIDs: Set<ForumTagID>,
+        tagMatch: ForumTagMatch
+    ) -> Bool {
+        guard !selectedTagIDs.isEmpty else { return true }
+        let appliedTagIDs = Set(post.thread.appliedTagIDs)
+        return switch tagMatch {
+        case .matchSome:
+            !appliedTagIDs.isDisjoint(with: selectedTagIDs)
+        case .matchAll:
+            appliedTagIDs.isSuperset(of: selectedTagIDs)
+        }
+    }
+
+    public static func areInDisplayOrder(
+        _ lhs: ForumPost,
+        _ rhs: ForumPost,
+        sortOrder: ForumSortOrder
+    ) -> Bool {
+        if lhs.thread.isPinned != rhs.thread.isPinned {
+            return lhs.thread.isPinned
+        }
+        let lhsDate = sortOrder == .latestActivity ? lhs.lastActivityAt : lhs.createdAt
+        let rhsDate = sortOrder == .latestActivity ? rhs.lastActivityAt : rhs.createdAt
+        if lhsDate != rhsDate {
+            return lhsDate > rhsDate
+        }
+        return lhs.id > rhs.id
+    }
+
+    public static func filteredAndSorted(
+        _ posts: [ForumPost],
+        selectedTagIDs: Set<ForumTagID>,
+        tagMatch: ForumTagMatch,
+        sortOrder: ForumSortOrder
+    ) -> [ForumPost] {
+        posts
+            .filter {
+                matchesTags(
+                    $0,
+                    selectedTagIDs: selectedTagIDs,
+                    tagMatch: tagMatch
+                )
+            }
+            .sorted {
+                areInDisplayOrder($0, $1, sortOrder: sortOrder)
+            }
+    }
+}
+
+public struct ForumPostPage: Equatable, Sendable {
+    public var posts: [ForumPost]
+    public var hasMore: Bool
+    public var nextOffset: Int?
+
+    public init(posts: [ForumPost], hasMore: Bool, nextOffset: Int?) {
+        self.posts = posts
+        self.hasMore = hasMore
+        self.nextOffset = nextOffset
+    }
+}
+
+public struct ForumPostAttachment: Equatable, Sendable {
+    public var url: URL
+    public var filename: String
+    public var description: String
+    public var isSpoiler: Bool
+
+    public init(
+        url: URL,
+        filename: String? = nil,
+        description: String = "",
+        isSpoiler: Bool = false
+    ) {
+        self.url = url
+        self.filename = filename ?? url.lastPathComponent
+        self.description = description
+        self.isSpoiler = isSpoiler
+    }
+}
+
+public struct CreateForumPostDraft: Equatable, Sendable {
+    public var channelID: ChannelID
+    public var title: String
+    public var content: String
+    public var attachments: [ForumPostAttachment]
+    public var appliedTagIDs: [ForumTagID]
+    public var autoArchiveDuration: Int
+
+    public init(
+        channelID: ChannelID,
+        title: String,
+        content: String,
+        attachments: [ForumPostAttachment] = [],
+        appliedTagIDs: [ForumTagID] = [],
+        autoArchiveDuration: Int = 4_320
+    ) {
+        self.channelID = channelID
+        self.title = title
+        self.content = content
+        self.attachments = attachments
+        self.appliedTagIDs = appliedTagIDs
+        self.autoArchiveDuration = autoArchiveDuration
+    }
+}
+
+public enum ForumPostMutation: Equatable, Sendable {
+    case tags([ForumTagID])
+    case archived(Bool)
+    case locked(Bool)
+    case pinned(Bool)
 }
 
 public enum PresenceStatus: String, Codable, CaseIterable, Hashable, Sendable {
@@ -374,12 +694,14 @@ public struct Attachment: Identifiable, Codable, Hashable, Sendable {
         self.waveform = waveform
         self.flags = flags
         self.isSpoiler = isSpoiler ?? (filename.hasPrefix("SPOILER_") || flags.contains(.spoiler))
-        self.isAnimated = isAnimated ?? (mediaType?.lowercased() == "image/gif" || flags.contains(.animated))
+        self.isAnimated =
+            isAnimated ?? (mediaType?.lowercased() == "image/gif" || flags.contains(.animated))
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, filename, url, proxyURL, mediaType, width, height, size, description, title
-        case placeholder, placeholderVersion, durationSeconds, waveform, flags, isSpoiler, isAnimated
+        case placeholder, placeholderVersion, durationSeconds, waveform, flags, isSpoiler,
+             isAnimated
     }
 
     public init(from decoder: Decoder) throws {
@@ -572,7 +894,8 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, channelID, author, guildMember, content, timestamp, editedTimestamp, replyTo, replyPreview
+        case id, channelID, author, guildMember, content, timestamp, editedTimestamp, replyTo,
+             replyPreview
         case attachments, reactions, nonce, outboxState, type, flags, applicationID, application
         case interactionMetadata, guildID
         case embeds, components, stickers, thread, mentionedUsers
@@ -592,7 +915,8 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
         attachments = try values.decodeIfPresent([Attachment].self, forKey: .attachments) ?? []
         reactions = try values.decodeIfPresent([Reaction].self, forKey: .reactions) ?? []
         nonce = try values.decodeIfPresent(String.self, forKey: .nonce)
-        outboxState = try values.decodeIfPresent(OutboxState.self, forKey: .outboxState) ?? .confirmed
+        outboxState =
+            try values.decodeIfPresent(OutboxState.self, forKey: .outboxState) ?? .confirmed
         type = try values.decodeIfPresent(DiscordMessageType.self, forKey: .type) ?? .default
         flags = try values.decodeIfPresent(MessageFlags.self, forKey: .flags) ?? []
         applicationID = try values.decodeIfPresent(ApplicationID.self, forKey: .applicationID)
@@ -822,7 +1146,8 @@ public struct ConnectedAccount: Identifiable, Codable, Hashable, Sendable {
     public var profileURL: URL?
 
     public init(
-        accountID: String, type: String, name: String, isVerified: Bool = false, profileURL: URL? = nil
+        accountID: String, type: String, name: String, isVerified: Bool = false,
+        profileURL: URL? = nil
     ) {
         self.accountID = accountID
         self.type = type
@@ -928,8 +1253,8 @@ public enum GuildRailItem: Codable, Equatable, Hashable, Sendable, Identifiable 
 
     public var id: ID {
         switch self {
-        case let .guild(id): .guild(id)
-        case let .folder(folder): .folder(folder.id)
+        case .guild(let id): .guild(id)
+        case .folder(let folder): .folder(folder.id)
         }
     }
 }
@@ -965,7 +1290,7 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
         guilds = try container.decode([Guild].self, forKey: .guilds)
         guildRailItems =
             try container.decodeIfPresent([GuildRailItem].self, forKey: .guildRailItems)
-            ?? guilds.map { .guild($0.id) }
+                ?? guilds.map { .guild($0.id) }
         channels = try container.decode([Channel].self, forKey: .channels)
         members = try container.decode([Member].self, forKey: .members)
     }
@@ -999,7 +1324,8 @@ public struct SendMessageDraft: Equatable, Sendable {
     public var stickerIDs: [String]
 
     public init(
-        channelID: ChannelID, content: String, replyTo: MessageID? = nil, attachmentURLs: [URL] = [],
+        channelID: ChannelID, content: String, replyTo: MessageID? = nil,
+        attachmentURLs: [URL] = [],
         nonce: String = ClientNonce.make(), stickerIDs: [String] = []
     ) {
         self.channelID = channelID
@@ -1114,6 +1440,9 @@ public enum ClientEvent: Equatable, Sendable {
     case messageDeleted(channelID: ChannelID, messageID: MessageID)
     case typing(channelID: ChannelID, user: User)
     case channelsChanged(guildID: GuildID, channels: [Channel])
+    case forumPostsChanged(channelID: ChannelID, posts: [ForumPost])
+    case forumPostPreviewsChanged(channelID: ChannelID, posts: [ForumPost])
+    case forumPageLoaded(channelID: ChannelID, query: ForumPostQuery, page: ForumPostPage)
     case membersChanged(guildID: GuildID, members: [Member])
     case emojisChanged(guildID: GuildID, emojis: [DiscordEmoji])
     case emojisUpdated(
@@ -1126,6 +1455,7 @@ public enum ClientEvent: Equatable, Sendable {
     /// client must wait for a replacement allocation before reconnecting.
     case voiceServerChanged(VoiceConnectionInfo?)
     case snapshotChanged(BootstrapSnapshot)
+    case guildChanged(Guild)
     case guildLayoutChanged(guilds: [Guild], railItems: [GuildRailItem])
     case applicationCommandIndexInvalidated(ApplicationCommandIndexTarget)
     case applicationCommandAutocomplete(ApplicationCommandAutocompleteResult)

@@ -23,16 +23,37 @@ nonisolated enum DiscordPermissionBits {
 }
 
 nonisolated enum ChannelIconPresentation {
-    static func systemImage(for kind: ChannelKindValue, isHidden: Bool) -> String {
+    static func systemImage(
+        for channel: Channel,
+        isHidden: Bool,
+        rulesChannelID: ChannelID?
+    ) -> String {
+        systemImage(
+            for: channel.kind,
+            isHidden: isHidden,
+            isRulesChannel: rulesChannelID == channel.id
+        )
+    }
+
+    static func systemImage(
+        for kind: ChannelKindValue,
+        isHidden: Bool,
+        isRulesChannel: Bool = false
+    ) -> String {
         if isHidden { return "lock.fill" }
+        if isRulesChannel { return "newspaper.fill" }
         return switch kind {
-        case .voice: "speaker.wave.2.fill"
-        case .directMessage, .groupDirectMessage: "person.fill"
+        case .text: "number"
         case .announcement: "megaphone.fill"
         case .forum: "bubble.left.and.bubble.right.fill"
-        default: "number"
+        case .voice: "speaker.wave.2.fill"
+        case .directMessage: "person.fill"
+        case .groupDirectMessage: "person.2.fill"
+        case .unknown: "questionmark"
         }
     }
+
+    static let forumPostSystemImage = "bubble.left.fill"
 }
 
 nonisolated struct HiddenChannelAccessPrincipal: Identifiable, Equatable {

@@ -294,11 +294,21 @@ public struct MessageThreadSummary: Codable, Hashable, Sendable {
     public var lastMessageID: MessageID?
     public var isArchived: Bool
     public var isLocked: Bool
+    public var ownerID: UserID?
+    public var appliedTagIDs: [ForumTagID]
+    public var flags: UInt64
+    public var archiveTimestamp: Date?
+    public var createdAt: Date?
+    public var autoArchiveDuration: Int?
+    public var totalMessageSent: Int
 
     public init(
         id: ChannelID, guildID: GuildID? = nil, parentID: ChannelID? = nil, name: String,
         messageCount: Int = 0, memberCount: Int = 0, lastMessageID: MessageID? = nil,
-        isArchived: Bool = false, isLocked: Bool = false
+        isArchived: Bool = false, isLocked: Bool = false,
+        ownerID: UserID? = nil, appliedTagIDs: [ForumTagID] = [], flags: UInt64 = 0,
+        archiveTimestamp: Date? = nil, createdAt: Date? = nil,
+        autoArchiveDuration: Int? = nil, totalMessageSent: Int = 0
     ) {
         self.id = id
         self.guildID = guildID
@@ -309,6 +319,41 @@ public struct MessageThreadSummary: Codable, Hashable, Sendable {
         self.lastMessageID = lastMessageID
         self.isArchived = isArchived
         self.isLocked = isLocked
+        self.ownerID = ownerID
+        self.appliedTagIDs = appliedTagIDs
+        self.flags = flags
+        self.archiveTimestamp = archiveTimestamp
+        self.createdAt = createdAt
+        self.autoArchiveDuration = autoArchiveDuration
+        self.totalMessageSent = totalMessageSent
+    }
+
+    public var isPinned: Bool { flags & (1 << 1) != 0 }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, guildID, parentID, name, messageCount, memberCount, lastMessageID
+        case isArchived, isLocked, ownerID, appliedTagIDs, flags, archiveTimestamp
+        case createdAt, autoArchiveDuration, totalMessageSent
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(ChannelID.self, forKey: .id)
+        guildID = try values.decodeIfPresent(GuildID.self, forKey: .guildID)
+        parentID = try values.decodeIfPresent(ChannelID.self, forKey: .parentID)
+        name = try values.decode(String.self, forKey: .name)
+        messageCount = try values.decodeIfPresent(Int.self, forKey: .messageCount) ?? 0
+        memberCount = try values.decodeIfPresent(Int.self, forKey: .memberCount) ?? 0
+        lastMessageID = try values.decodeIfPresent(MessageID.self, forKey: .lastMessageID)
+        isArchived = try values.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
+        isLocked = try values.decodeIfPresent(Bool.self, forKey: .isLocked) ?? false
+        ownerID = try values.decodeIfPresent(UserID.self, forKey: .ownerID)
+        appliedTagIDs = try values.decodeIfPresent([ForumTagID].self, forKey: .appliedTagIDs) ?? []
+        flags = try values.decodeIfPresent(UInt64.self, forKey: .flags) ?? 0
+        archiveTimestamp = try values.decodeIfPresent(Date.self, forKey: .archiveTimestamp)
+        createdAt = try values.decodeIfPresent(Date.self, forKey: .createdAt)
+        autoArchiveDuration = try values.decodeIfPresent(Int.self, forKey: .autoArchiveDuration)
+        totalMessageSent = try values.decodeIfPresent(Int.self, forKey: .totalMessageSent) ?? 0
     }
 }
 

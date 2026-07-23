@@ -518,77 +518,40 @@ private struct MessageActionCapsule: View {
     let delete: () -> Void
 
     var body: some View {
-        GlassEffectContainer(spacing: 0) {
-            HStack(spacing: 1) {
-                if let retry {
-                    MessageActionButton(
+        HoverActionPill {
+            if let retry {
+                HoverActionButton(
                         systemImage: "arrow.clockwise",
                         help: "Retry sending",
                         action: retry
-                    )
-                }
-                ReactionActionMenu(
-                    model: model,
-                    guildID: message.guildID,
-                    isPickerPresented: $isReactionPickerPresented,
-                    react: react
                 )
-                .id("reaction-picker-\(message.id)-toolbar")
-                if let reply {
-                    MessageActionButton(systemImage: "arrowshape.turn.up.left", help: "Reply", action: reply)
-                }
-                if canEdit {
-                    MessageActionButton(systemImage: "pencil", help: "Edit message", action: edit)
-                }
-                MessageActionButton(systemImage: "doc.on.doc", help: "Copy text", action: copy)
-                MessageActionButton(systemImage: "link", help: "Copy message link", action: copyLink)
-                if let openThread {
-                    MessageActionButton(
-                        systemImage: "bubble.left.and.bubble.right", help: "Open thread", action: openThread
-                    )
-                }
-                if canEdit {
-                    MessageActionButton(
-                        systemImage: "trash", help: "Delete message", role: .destructive, action: delete
-                    )
-                }
             }
-            .padding(4)
-            .glassEffect(.regular, in: Capsule())
+            ReactionActionMenu(
+                model: model,
+                guildID: message.guildID,
+                isPickerPresented: $isReactionPickerPresented,
+                react: react
+            )
+            .id("reaction-picker-\(message.id)-toolbar")
+            if let reply {
+                HoverActionButton(systemImage: "arrowshape.turn.up.left", help: "Reply", action: reply)
+            }
+            if canEdit {
+                HoverActionButton(systemImage: "pencil", help: "Edit message", action: edit)
+            }
+            HoverActionButton(systemImage: "doc.on.doc", help: "Copy text", action: copy)
+            HoverActionButton(systemImage: "link", help: "Copy message link", action: copyLink)
+            if let openThread {
+                HoverActionButton(
+                    systemImage: "bubble.left.and.bubble.right", help: "Open thread", action: openThread
+                )
+            }
+            if canEdit {
+                HoverActionButton(
+                    systemImage: "trash", help: "Delete message", role: .destructive, action: delete
+                )
+            }
         }
-    }
-}
-
-private struct MessageActionButton: View {
-    let systemImage: String
-    let help: String
-    var role: ButtonRole?
-    let action: () -> Void
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(role: role, action: action) {
-            Image(systemName: systemImage)
-                .symbolVariant(.none)
-                .font(.callout.weight(.medium))
-                .foregroundStyle(iconColor)
-                .frame(width: 28, height: 28)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .background(hoverColor, in: Circle())
-        .contentShape(Circle())
-        .onHover { isHovering = $0 }
-        .help(help)
-    }
-
-    private var iconColor: Color {
-        role == .destructive && isHovering ? .red : .primary
-    }
-
-    private var hoverColor: Color {
-        guard isHovering else { return .clear }
-        return role == .destructive ? .red.opacity(0.18) : .primary.opacity(0.14)
     }
 }
 
@@ -786,6 +749,7 @@ enum MessageReplySummary {
             case .user: "@unknown-user"
             case .role: "@unknown-role"
             case .channel: "#unknown-channel"
+            case .channelLink: "Channel link"
             case .message: "Message link"
             }
         }

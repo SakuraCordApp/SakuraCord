@@ -3,6 +3,30 @@ import Testing
 
 @MainActor
 @Test
+func forumUsesDedicatedBrowserAndExistingThreadPane() {
+    let browsing = ChatWorkspacePresentation(
+        isVoiceChannel: false,
+        isForumChannel: true,
+        hasOpenThread: false,
+        hasOpenVoiceChat: false,
+        showsInspector: true
+    )
+    #expect(browsing.primaryContent == .forum)
+    #expect(browsing.supplementaryContent == .memberInspector)
+
+    let opened = ChatWorkspacePresentation(
+        isVoiceChannel: false,
+        isForumChannel: true,
+        hasOpenThread: true,
+        hasOpenVoiceChat: false,
+        showsInspector: true
+    )
+    #expect(opened.primaryContent == .forum)
+    #expect(opened.supplementaryContent == .thread)
+}
+
+@MainActor
+@Test
 func closedVoiceChatKeepsTheVoiceSurfaceFullWidth() {
     let presentation = ChatWorkspacePresentation(
         isVoiceChannel: true,

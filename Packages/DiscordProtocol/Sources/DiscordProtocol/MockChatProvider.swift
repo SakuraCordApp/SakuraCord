@@ -8,12 +8,14 @@ public actor MockChatProvider: ChatProvider {
     private var membersByGuild: [GuildID: [Member]]
     private var emojisByGuild: [GuildID: [DiscordEmoji]]
     private var messagesByChannel: [ChannelID: [Message]]
+    private var forumPostsByChannel: [ChannelID: [ForumPost]]
     private var profilesByUser: [UserID: UserProfile]
     private var continuation: AsyncStream<ClientEvent>.Continuation?
     private var nextMessageID: UInt64
     public private(set) var typingRequests: [ChannelID] = []
+    private var forumQueriesByChannel: [ChannelID: [ForumPostQuery]] = [:]
 
-    public init(includesLongServerList: Bool = false) {
+    public init(includesLongServerList: Bool = false, forumPostCount: Int? = nil) {
         let fixture = MockChatFixture.make(includesLongServerList: includesLongServerList)
         currentUser = fixture.currentUser
         nextMessageID = UInt64(ClientNonce.make()) ?? 9000
@@ -21,6 +23,28 @@ public actor MockChatProvider: ChatProvider {
         membersByGuild = fixture.membersByGuild
         emojisByGuild = fixture.emojisByGuild
         messagesByChannel = fixture.messagesByChannel
+        let forumFixture = Self.makeForumPosts(
+            channelID: ChannelID(rawValue: 220),
+            authors: fixture.membersByGuild[GuildID(rawValue: 100)]?.map(\.user) ?? [
+                fixture.currentUser
+            ],
+            count: forumPostCount ?? 6
+        )
+        let bugForumFixture = Self.makeForumPosts(
+            channelID: ChannelID(rawValue: 221),
+            authors: fixture.membersByGuild[GuildID(rawValue: 100)]?.map(\.user) ?? [
+                fixture.currentUser
+            ]
+        )
+        forumPostsByChannel = [
+            ChannelID(rawValue: 220): forumFixture,
+            ChannelID(rawValue: 221): bugForumFixture,
+        ]
+        for post in forumFixture + bugForumFixture {
+            if let message = post.firstMessage {
+                messagesByChannel[post.id] = [message]
+            }
+        }
         profilesByUser = fixture.profilesByUser
     }
 
@@ -36,7 +60,9 @@ public actor MockChatProvider: ChatProvider {
     }
 
     public func members(in guildID: GuildID?) async throws -> [Member] {
-        guard let guildID else { return [Member(user: currentUser, roleName: "You", status: .online)] }
+        guard let guildID else {
+            return [Member(user: currentUser, roleName: "You", status: .online)]
+        }
         return membersByGuild[guildID] ?? []
     }
 
@@ -49,13 +75,13 @@ public actor MockChatProvider: ChatProvider {
             favoriteKeys: [
                 "custom:900000000000000201", "white_check_mark", "x", "neutral_face",
                 "broken_heart", "hot_face",
-                "smiling_face_with_3_hearts", "cry", "fire", "thumbsup", "sob"
+                "smiling_face_with_3_hearts", "cry", "fire", "thumbsup", "sob",
             ],
             frequentlyUsedKeys: [
                 "custom:900000000000000202", "broken_heart", "white_check_mark", "neutral_face",
                 "sob", "pray", "fire",
                 "cry", "wilted_flower", "person_shrugging", "white_heart", "thumbsup", "x",
-                "unamused", "hot_face", "pleading_face", "smiley_cat", "eyes"
+                "unamused", "hot_face", "pleading_face", "smiley_cat", "eyes",
             ],
             usageScores: [:]
         )
@@ -93,7 +119,8 @@ public actor MockChatProvider: ChatProvider {
     public func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
         -> MessagePage
     {
-        guard snapshot.channels.contains(where: { $0.id == channelID })
+        guard
+            snapshot.channels.contains(where: { $0.id == channelID })
             || messagesByChannel[channelID] != nil
         else {
             throw ChatProviderError.channelNotFound
@@ -104,6 +131,188 @@ public actor MockChatProvider: ChatProvider {
         }
         let page = Array(messages.suffix(max(1, limit)))
         return MessagePage(messages: page, hasMoreBefore: messages.count > page.count)
+    }
+
+    public func forumPosts(in channelID: ChannelID, query: ForumPostQuery) async throws
+        -> ForumPostPage
+    {
+        forumQueriesByChannel[channelID, default: []].append(query)
+        guard snapshot.channels.contains(where: { $0.id == channelID && $0.kind == .forum }) else {
+            throw ChatProviderError.channelNotFound
+        }
+        var posts = forumPostsByChannel[channelID] ?? []
+        switch query.scope {
+        case .active:
+            let active = query.offset == 0 ? posts.filter { !$0.thread.isArchived } : []
+            var older = posts.filter(\.thread.isArchived)
+            older.sort {
+                ($0.thread.archiveTimestamp ?? .distantPast)
+                    > ($1.thread.archiveTimestamp ?? .distantPast)
+            }
+            let pageStart = min(query.offset, older.count)
+            let pageEnd = min(pageStart + query.limit, older.count)
+            let olderPage = Array(older[pageStart ..< pageEnd])
+            posts = active + olderPage
+            posts = filterAndSortForumPosts(posts, query: query)
+            return ForumPostPage(
+                posts: posts,
+                hasMore: pageEnd < older.count,
+                nextOffset: pageEnd < older.count ? pageEnd : nil
+            )
+        case .search(let text):
+            posts.removeAll {
+                !$0.thread.name.localizedCaseInsensitiveContains(text)
+            }
+        }
+        posts = ForumPostQueryPolicy.filteredAndSorted(
+            posts,
+            selectedTagIDs: query.selectedTagIDs,
+            tagMatch: query.tagMatch,
+            sortOrder: query.sortOrder
+        )
+        return ForumPostPage(posts: posts, hasMore: false, nextOffset: nil)
+    }
+
+    public func forumQueries(in channelID: ChannelID) -> [ForumPostQuery] {
+        forumQueriesByChannel[channelID] ?? []
+    }
+
+    public func emit(_ event: ClientEvent) {
+        continuation?.yield(event)
+    }
+
+    public func forumPost(threadID: ChannelID) async throws -> ForumPost {
+        guard let post = forumPostsByChannel.values.lazy.flatMap(\.self).first(where: {
+            $0.id == threadID
+        }) else {
+            throw ChatProviderError.channelNotFound
+        }
+        return post
+    }
+
+    private func filterAndSortForumPosts(
+        _ incomingPosts: [ForumPost], query: ForumPostQuery
+    ) -> [ForumPost] {
+        ForumPostQueryPolicy.filteredAndSorted(
+            incomingPosts,
+            selectedTagIDs: query.selectedTagIDs,
+            tagMatch: query.tagMatch,
+            sortOrder: query.sortOrder
+        )
+    }
+
+    public func createForumPost(
+        _ draft: CreateForumPostDraft,
+        progress: @escaping @Sendable (MessageSendProgress) -> Void
+    ) async throws -> ForumPost {
+        guard
+            let channel = snapshot.channels.first(where: {
+                $0.id == draft.channelID && $0.kind == .forum
+            })
+        else { throw ChatProviderError.channelNotFound }
+        let title = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let selectedTags = DiscordRESTProvider.orderedUniqueForumTagIDs(
+            draft.appliedTagIDs,
+            availableTags: channel.availableTags
+        )
+        guard (1 ... 100).contains(title.count), draft.content.count <= 2_000,
+              !draft.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+              || !draft.attachments.isEmpty,
+              !channel.requiresForumTag || !selectedTags.isEmpty,
+              selectedTags.count <= 5,
+              Set(selectedTags) == Set(draft.appliedTagIDs),
+              draft.attachments.count <= 10,
+              DiscordRESTProvider.validForumAutoArchiveDurations.contains(
+                  draft.autoArchiveDuration
+              )
+        else {
+            throw ChatProviderError.invalidRequest(
+                "The forum post does not meet this channel's requirements.")
+        }
+        progress(.preparing)
+        nextMessageID += 1
+        let threadID = ChannelID(rawValue: nextMessageID)
+        let attachments = try draft.attachments.enumerated().map { index, item in
+            var value = try Self.stageAttachment(item.url, messageID: nextMessageID, index: index)
+            value.filename = item.filename
+            value.description = item.description.isEmpty ? nil : item.description
+            value.isSpoiler = item.isSpoiler
+            if item.isSpoiler, !value.filename.hasPrefix("SPOILER_") {
+                value.filename = "SPOILER_\(value.filename)"
+            }
+            return value
+        }
+        progress(.submitting)
+        let message = Message(
+            id: MessageID(rawValue: nextMessageID), channelID: threadID, author: currentUser,
+            content: draft.content, timestamp: .now, attachments: attachments
+        )
+        let post = ForumPost(
+            thread: MessageThreadSummary(
+                id: threadID, guildID: channel.guildID, parentID: channel.id, name: title,
+                messageCount: 1, memberCount: 1, lastMessageID: message.id,
+                ownerID: currentUser.id, appliedTagIDs: selectedTags,
+                createdAt: message.timestamp, autoArchiveDuration: draft.autoArchiveDuration,
+                totalMessageSent: 1
+            ),
+            owner: currentUser, firstMessage: message, mostRecentMessage: message
+        )
+        forumPostsByChannel[channel.id, default: []].insert(post, at: 0)
+        messagesByChannel[threadID] = [message]
+        continuation?.yield(
+            .forumPostsChanged(channelID: channel.id, posts: forumPostsByChannel[channel.id] ?? []))
+        progress(.completed(messageID: message.id))
+        return post
+    }
+
+    public func updateForumPost(_ post: ForumPost, mutation: ForumPostMutation) async throws
+        -> ForumPost
+    {
+        guard let parentID = post.thread.parentID,
+              var posts = forumPostsByChannel[parentID],
+              let index = posts.firstIndex(where: { $0.id == post.id })
+        else { throw ChatProviderError.channelNotFound }
+        var updated = posts[index]
+        switch mutation {
+        case .tags(let tags):
+            guard let channel = snapshot.channels.first(where: { $0.id == parentID }) else {
+                throw ChatProviderError.channelNotFound
+            }
+            let selectedTags = DiscordRESTProvider.orderedUniqueForumTagIDs(
+                tags,
+                availableTags: channel.availableTags
+            )
+            guard selectedTags.count <= 5, Set(selectedTags) == Set(tags) else {
+                throw ChatProviderError.invalidRequest("One or more selected tags are unavailable.")
+            }
+            guard !channel.requiresForumTag || !selectedTags.isEmpty else {
+                throw ChatProviderError.invalidRequest(
+                    "This forum requires every post to have at least one tag."
+                )
+            }
+            updated.thread.appliedTagIDs = selectedTags
+        case .archived(let value): updated.thread.isArchived = value
+        case .locked(let value): updated.thread.isLocked = value
+        case .pinned(let value):
+            if value { updated.thread.flags |= 1 << 1 } else { updated.thread.flags &= ~(1 << 1) }
+        }
+        posts[index] = updated
+        forumPostsByChannel[parentID] = posts
+        continuation?.yield(
+            .forumPostsChanged(channelID: parentID, posts: forumPostsByChannel[parentID] ?? []))
+        return updated
+    }
+
+    public func deleteForumPost(_ post: ForumPost) async throws {
+        guard let parentID = post.thread.parentID,
+              var posts = forumPostsByChannel[parentID],
+              let index = posts.firstIndex(where: { $0.id == post.id })
+        else { throw ChatProviderError.channelNotFound }
+        posts.remove(at: index)
+        forumPostsByChannel[parentID] = posts
+        messagesByChannel[post.id] = nil
+        continuation?.yield(
+            .forumPostsChanged(channelID: parentID, posts: forumPostsByChannel[parentID] ?? []))
     }
 
     public func sendTyping(in channelID: ChannelID) async throws {
@@ -137,7 +346,9 @@ public actor MockChatProvider: ChatProvider {
             content: draft.content, replyTo: draft.replyTo, replyPreview: replyPreview,
             attachments: attachments,
             nonce: draft.nonce,
-            stickers: draft.stickerIDs.map { MessageSticker(id: $0, name: "Demo sticker", format: .png) }
+            stickers: draft.stickerIDs.map {
+                MessageSticker(id: $0, name: "Demo sticker", format: .png)
+            }
         )
         messagesByChannel[draft.channelID, default: []].append(message)
         continuation?.yield(.messageCreated(message))
@@ -145,8 +356,96 @@ public actor MockChatProvider: ChatProvider {
     }
 
     public func supports(_ capability: ChatCapability) async -> Bool {
-        capability == .gifs || capability == .stickers || capability == .stickerSending
+        capability == .forums || capability == .gifs || capability == .stickers
+            || capability == .stickerSending
             || capability == .components || capability == .modals || capability == .slashCommands
+    }
+
+    private static func makeForumPosts(
+        channelID: ChannelID,
+        authors: [User],
+        count: Int = 6
+    ) -> [ForumPost] {
+        let authors =
+            authors.isEmpty
+                ? [User(id: UserID(rawValue: 1), username: "offline", displayName: "Offline User")]
+                : authors
+        let titles = [
+            "Media viewer should use a native presentation",
+            "Reaction state should update without reloading",
+            "Channel links should open inside SakuraCord",
+            "Markdown custom emoji are not rendered",
+            "Forum channels need a dedicated browser",
+            "Keyboard navigation for long post lists",
+        ]
+        let bodies = [
+            "Replace the temporary viewer with Quick Look or a polished native gallery.",
+            "Gateway reaction events should reconcile the visible post card immediately.",
+            "Keep the user in context and reveal the target channel and message.",
+            "Custom emoji tokens in markdown should resolve through the guild catalog.",
+            "The normal text timeline is not the right information hierarchy for posts.",
+            "Arrow keys and VoiceOver should move through stable post identities.",
+        ]
+        let tagSets: [[ForumTagID]] = [
+            [.init(rawValue: 8_001), .init(rawValue: 8_005)],
+            [.init(rawValue: 8_002), .init(rawValue: 8_003)],
+            [.init(rawValue: 8_002)],
+            [.init(rawValue: 8_001)],
+            [.init(rawValue: 8_001), .init(rawValue: 8_004)],
+            [.init(rawValue: 8_002), .init(rawValue: 8_005)],
+        ]
+        let now = Date.now
+        return (0 ..< max(0, count)).map { index in
+            let rawID = channelID.rawValue * 100 + UInt64(index + 1)
+            let threadID = ChannelID(rawValue: rawID)
+            let timestamp = now.addingTimeInterval(Double(-index * 7_200 - 900))
+            let author = authors[index % authors.count]
+            let templateIndex = index % titles.count
+            let title = index < titles.count
+                ? titles[templateIndex]
+                : "\(titles[templateIndex]) \(index + 1)"
+            let attachments: [Attachment]
+            if count > titles.count, index.isMultiple(of: 5), let imageURL = author.avatarURL {
+                attachments = [
+                    Attachment(
+                        id: "\(rawID)-preview",
+                        filename: "forum-preview.png",
+                        url: imageURL,
+                        mediaType: "image/png",
+                        width: 256,
+                        height: 256
+                    )
+                ]
+            } else {
+                attachments = []
+            }
+            let message = Message(
+                id: MessageID(rawValue: rawID), channelID: threadID, author: author,
+                content: bodies[templateIndex], timestamp: timestamp,
+                attachments: attachments,
+                reactions: [
+                    Reaction(
+                        emoji: "👍",
+                        count: max(1, 6 - index),
+                        reactors: [ReactionReactor(user: author)]
+                    )
+                ]
+            )
+            return ForumPost(
+                thread: MessageThreadSummary(
+                    id: threadID, guildID: GuildID(rawValue: 100), parentID: channelID,
+                    name: title, messageCount: index + 2, memberCount: index + 1,
+                    lastMessageID: message.id, isArchived: index >= count / 2,
+                    isLocked: index.isMultiple(of: 17),
+                    ownerID: author.id, appliedTagIDs: tagSets[templateIndex],
+                    flags: index == 0 ? 1 << 1 : 0,
+                    archiveTimestamp: index >= count / 2 ? timestamp : nil,
+                    createdAt: timestamp.addingTimeInterval(-1_800), totalMessageSent: index + 2
+                ),
+                owner: author, firstMessage: message, mostRecentMessage: message,
+                isUnread: index % 7 == 1 || index % 7 == 3
+            )
+        }
     }
 
     public func applicationCommandCatalog(for target: ApplicationCommandIndexTarget) async throws
@@ -155,7 +454,7 @@ public actor MockChatProvider: ChatProvider {
         MockApplicationCommands.catalog(
             target: target,
             guildID: {
-                if case let .guild(id) = target { return id }
+                if case .guild(let id) = target { return id }
                 return nil
             }(),
             currentUser: currentUser
@@ -186,8 +485,10 @@ public actor MockChatProvider: ChatProvider {
         if !payload.attachmentURLs.isEmpty {
             progress(.reserving(files: payload.attachmentURLs.count))
             for url in payload.attachmentURLs {
-                let size = ((try? FileManager.default.attributesOfItem(atPath: url.path)[.size]) as? NSNumber)?
-                    .int64Value ?? 0
+                let size =
+                    ((try? FileManager.default.attributesOfItem(atPath: url.path)[.size])
+                            as? NSNumber)?
+                        .int64Value ?? 0
                 progress(.uploading(fileName: url.lastPathComponent, completed: size, total: size))
             }
         }
@@ -200,9 +501,10 @@ public actor MockChatProvider: ChatProvider {
             )
         )
         progress(.awaitingResponse(nonce: invocation.nonce))
-        let responseMode = invocation.command.name == "response"
-            ? invocation.command.subcommandPath.last?.name
-            : nil
+        let responseMode =
+            invocation.command.name == "response"
+                ? invocation.command.subcommandPath.last?.name
+                : nil
         if responseMode == "failure" {
             continuation?.yield(
                 .interaction(
@@ -215,10 +517,12 @@ public actor MockChatProvider: ChatProvider {
             return
         }
         let application = invocation.command.application
-        let author = application.bot ?? User(
-            id: UserID("900000000000000101")!, username: "verified",
-            displayName: application.name, isBot: true
-        )
+        let author =
+            application.bot
+                ?? User(
+                    id: UserID(rawValue: 900_000_000_000_000_101), username: "verified",
+                    displayName: application.name, isBot: true
+                )
         var message = Message(
             id: MessageID(rawValue: nextMessageID),
             channelID: invocation.channelID,
@@ -246,13 +550,14 @@ public actor MockChatProvider: ChatProvider {
                     children: [
                         .textDisplay(
                             id: "offline-command-text",
-                            content: "### Verified\nThis response is a deterministic Components V2 fixture."
+                            content:
+                            "### Verified\nThis response is a deterministic Components V2 fixture."
                         ),
                         .separator(id: "offline-command-separator", divider: true, spacing: 1),
                         .textDisplay(
                             id: "offline-command-state",
                             content: "No Discord request was made."
-                        )
+                        ),
                     ]
                 )
             ],
@@ -288,7 +593,9 @@ public actor MockChatProvider: ChatProvider {
         }
     }
 
-    public func submitComponentInteraction(_ submission: ComponentInteractionSubmission) async throws {
+    public func submitComponentInteraction(_ submission: ComponentInteractionSubmission)
+        async throws
+    {
         if submission.customID == "offline-modal" {
             let modal = InteractionModal(
                 customID: "offline-feedback", title: "Offline feedback",
@@ -298,13 +605,14 @@ public actor MockChatProvider: ChatProvider {
                         description: "This synthetic modal never contacts Discord.",
                         child: .textInput(
                             id: "text", customID: "feedback", style: 2, label: nil, value: nil,
-                            placeholder: "What should improve?", required: true, minLength: 3, maxLength: 500
+                            placeholder: "What should improve?", required: true, minLength: 3,
+                            maxLength: 500
                         )
                     ),
                     .checkbox(
                         id: "checkbox", customID: "follow-up", label: "Allow a fictional follow-up",
                         value: false
-                    )
+                    ),
                 ]
             )
             continuation?.yield(.interaction(.presentModal(nonce: submission.nonce, modal: modal)))
@@ -328,7 +636,8 @@ public actor MockChatProvider: ChatProvider {
     public func stickers(in guildID: GuildID) async throws -> [MessageSticker] {
         try [
             MessageSticker(
-                id: "demo-wave", name: "Wave", description: "Offline demo sticker", tags: "wave,hello",
+                id: "demo-wave", name: "Wave", description: "Offline demo sticker",
+                tags: "wave,hello",
                 format: .png, guildID: guildID, assetURL: Self.demoGIFs(query: "Sticker").first?.url
             )
         ]
@@ -348,7 +657,8 @@ public actor MockChatProvider: ChatProvider {
         }
         return [
             GIFSearchResult(
-                id: "demo-gif", title: "\(query) demo", url: url, previewURL: url, width: 1, height: 1
+                id: "demo-gif", title: "\(query) demo", url: url, previewURL: url, width: 1,
+                height: 1
             )
         ]
     }
@@ -367,7 +677,8 @@ public actor MockChatProvider: ChatProvider {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let fileExtension = sourceURL.pathExtension
         let filename =
-            sourceURL.lastPathComponent.isEmpty ? "attachment-\(index)" : sourceURL.lastPathComponent
+            sourceURL.lastPathComponent.isEmpty
+                ? "attachment-\(index)" : sourceURL.lastPathComponent
         let destination = directory.appending(
             path: "\(messageID)-\(index)\(fileExtension.isEmpty ? "" : ".\(fileExtension)")"
         )
@@ -389,37 +700,47 @@ public actor MockChatProvider: ChatProvider {
     public func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws
         -> Message
     {
-        guard let index = messagesByChannel[channelID]?.firstIndex(where: { $0.id == messageID }) else {
+        guard var messages = messagesByChannel[channelID],
+              let index = messages.firstIndex(where: { $0.id == messageID })
+        else {
             throw ChatProviderError.messageNotFound
         }
-        messagesByChannel[channelID]![index].content = content
-        messagesByChannel[channelID]![index].editedTimestamp = .now
-        let message = messagesByChannel[channelID]![index]
+        messages[index].content = content
+        messages[index].editedTimestamp = .now
+        let message = messages[index]
+        messagesByChannel[channelID] = messages
         continuation?.yield(.messageUpdated(message))
         return message
     }
 
     public func delete(messageID: MessageID, channelID: ChannelID) async throws {
-        guard let index = messagesByChannel[channelID]?.firstIndex(where: { $0.id == messageID }) else {
+        guard var messages = messagesByChannel[channelID],
+              let index = messages.firstIndex(where: { $0.id == messageID })
+        else {
             throw ChatProviderError.messageNotFound
         }
-        messagesByChannel[channelID]!.remove(at: index)
+        messages.remove(at: index)
+        messagesByChannel[channelID] = messages
         continuation?.yield(.messageDeleted(channelID: channelID, messageID: messageID))
     }
 
     public func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID)
         async throws
     {
-        guard let index = messagesByChannel[channelID]?.firstIndex(where: { $0.id == messageID }) else {
+        guard var messages = messagesByChannel[channelID],
+              let index = messages.firstIndex(where: { $0.id == messageID })
+        else {
             throw ChatProviderError.messageNotFound
         }
-        var message = messagesByChannel[channelID]![index]
+        var message = messages[index]
         if let reactionIndex = message.reactions.firstIndex(where: { $0.emoji == emoji }) {
             let active = message.reactions[reactionIndex].didCurrentUserReact
             message.reactions[reactionIndex].didCurrentUserReact.toggle()
             message.reactions[reactionIndex].count += active ? -1 : 1
             if active {
-                message.reactions[reactionIndex].reactors.removeAll { $0.id == snapshot.currentUser.id }
+                message.reactions[reactionIndex].reactors.removeAll {
+                    $0.id == snapshot.currentUser.id
+                }
             } else if !message.reactions[reactionIndex].reactors.contains(where: {
                 $0.id == snapshot.currentUser.id
             }) {
@@ -440,7 +761,8 @@ public actor MockChatProvider: ChatProvider {
                 )
             )
         }
-        messagesByChannel[channelID]![index] = message
+        messages[index] = message
+        messagesByChannel[channelID] = messages
         continuation?.yield(.messageUpdated(message))
     }
 
@@ -451,10 +773,13 @@ public actor MockChatProvider: ChatProvider {
         reactionCount: Int
     ) async throws -> [ReactionReactor] {
         guard let message = messagesByChannel[channelID]?.first(where: { $0.id == messageID }),
-              let reaction = message.reactions.first(where: { $0.id == Reaction(
-                  emoji: emoji,
-                  count: reactionCount
-              ).id })
+              let reaction = message.reactions.first(where: {
+                  $0.id
+                      == Reaction(
+                          emoji: emoji,
+                          count: reactionCount
+                      ).id
+              })
         else {
             throw ChatProviderError.messageNotFound
         }
@@ -500,13 +825,13 @@ public actor MockChatProvider: ChatProvider {
         continuation?.yield(
             .voiceStateChanged(
                 VoiceParticipantState(
-            userID: currentUser.id,
-            channelID: channelID,
-            guildID: guildID,
-            sessionID: "demo-session",
-            isSelfMuted: selfMute,
-            isSelfDeafened: selfDeaf,
-            isVideoEnabled: selfVideo
+                    userID: currentUser.id,
+                    channelID: channelID,
+                    guildID: guildID,
+                    sessionID: "demo-session",
+                    isSelfMuted: selfMute,
+                    isSelfDeafened: selfDeaf,
+                    isVideoEnabled: selfVideo
                 )
             )
         )

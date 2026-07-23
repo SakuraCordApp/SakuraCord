@@ -32,20 +32,21 @@ sakuracord_sanitize_identifier() {
 SAKURACORD_GIT_DIR="$(sakuracord_absolute_git_path "$(git -C "$SAKURACORD_ROOT_DIR" rev-parse --git-dir)")"
 SAKURACORD_GIT_COMMON_DIR="$(sakuracord_absolute_git_path "$(git -C "$SAKURACORD_ROOT_DIR" rev-parse --git-common-dir)")"
 
-if [[ -n "${SAKURACORD_WORKTREE_ID:-}" ]]; then
-  SAKURACORD_IS_MAIN_WORKTREE=0
-  SAKURACORD_VARIANT_ID="$(sakuracord_sanitize_identifier "$SAKURACORD_WORKTREE_ID")"
-elif [[ "$SAKURACORD_GIT_DIR" == "$SAKURACORD_GIT_COMMON_DIR" ]]; then
+if [[ "$SAKURACORD_GIT_DIR" == "$SAKURACORD_GIT_COMMON_DIR" ]]; then
   SAKURACORD_IS_MAIN_WORKTREE=1
   SAKURACORD_VARIANT_ID="main"
 else
   SAKURACORD_IS_MAIN_WORKTREE=0
-  worktree_label="$(sakuracord_sanitize_identifier "$(basename "$(dirname "$SAKURACORD_ROOT_DIR")")")"
-  worktree_hash="$(printf '%s' "$SAKURACORD_ROOT_DIR" | shasum -a 256 | cut -c1-6)"
-  if [[ -z "$worktree_label" ]]; then
-    worktree_label="worktree"
+  if [[ -n "${SAKURACORD_WORKTREE_ID:-}" ]]; then
+    SAKURACORD_VARIANT_ID="$(sakuracord_sanitize_identifier "$SAKURACORD_WORKTREE_ID")"
+  else
+    worktree_label="$(sakuracord_sanitize_identifier "$(basename "$(dirname "$SAKURACORD_ROOT_DIR")")")"
+    worktree_hash="$(printf '%s' "$SAKURACORD_ROOT_DIR" | shasum -a 256 | cut -c1-6)"
+    if [[ -z "$worktree_label" ]]; then
+      worktree_label="worktree"
+    fi
+    SAKURACORD_VARIANT_ID="$worktree_label-$worktree_hash"
   fi
-  SAKURACORD_VARIANT_ID="$worktree_label-$worktree_hash"
 fi
 
 if [[ -z "$SAKURACORD_VARIANT_ID" ]]; then

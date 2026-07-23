@@ -6,11 +6,17 @@ import WebKit
 
 /// Displays remote GIF/APNG/WebP assets without flattening them to their first frame.
 struct AnimatedRemoteImage: View {
+    private struct LoadID: Hashable {
+        let url: URL
+        let maximumPixelDimension: Int?
+    }
+
     let url: URL
     var animates = true
     var isLooping = true
     var fallbackSystemImage: String?
     var fallbackInset: CGFloat = 2
+    var maximumPixelDimension: Int?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("reduceAnimatedMedia") private var reduceAnimatedMedia = false
@@ -35,11 +41,14 @@ struct AnimatedRemoteImage: View {
                 Color.clear
             }
         }
-        .task(id: url) {
+        .task(id: LoadID(url: url, maximumPixelDimension: maximumPixelDimension)) {
             decodedImage = nil
             didFail = false
             do {
-                let image = try await SharedAnimatedImageLoader.shared.image(for: url)
+                let image = try await SharedAnimatedImageLoader.shared.image(
+                    for: url,
+                    maximumPixelDimension: maximumPixelDimension
+                )
                 guard !Task.isCancelled else { return }
                 decodedImage = image
             } catch {
@@ -50,12 +59,12 @@ struct AnimatedRemoteImage: View {
     }
 }
 
-private final class DecodedAnimatedImage: @unchecked Sendable {
+nonisolated final class DecodedAnimatedImage: @unchecked Sendable {
     let frames: [CGImage]
     let frameDurations: [TimeInterval]
     let estimatedByteCount: Int
 
-    nonisolated init(data: Data) throws {
+    nonisolated init(data: Data, maximumPixelDimension: Int?) throws {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
             throw CocoaError(.fileReadCorruptFile)
         }
@@ -67,11 +76,23 @@ private final class DecodedAnimatedImage: @unchecked Sendable {
         var estimatedByteCount = 0
         frames.reserveCapacity(frameCount)
         frameDurations.reserveCapacity(frameCount)
+        let thumbnailOptions: CFDictionary? = maximumPixelDimension.map { maximumPixelDimension in
+            [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceThumbnailMaxPixelSize: max(1, maximumPixelDimension),
+            ] as CFDictionary
+        }
         for index in 0 ..< frameCount {
-            guard let image = CGImageSourceCreateImageAtIndex(source, index, nil) else { continue }
-            frames.append(AnimatedImageFramePreparation.prepare(image))
+            let image = thumbnailOptions.flatMap {
+                CGImageSourceCreateThumbnailAtIndex(source, index, $0)
+            } ?? CGImageSourceCreateImageAtIndex(source, index, nil)
+            guard let image else { continue }
+            let prepared = AnimatedImageFramePreparation.prepare(image)
+            frames.append(prepared)
             frameDurations.append(AnimatedImageFrameTiming.duration(source: source, index: index))
-            estimatedByteCount += image.bytesPerRow * image.height
+            estimatedByteCount += prepared.bytesPerRow * prepared.height
         }
         guard !frames.isEmpty else { throw CocoaError(.fileReadCorruptFile) }
         self.frames = frames
@@ -113,30 +134,46 @@ enum AnimatedImageFramePreparation {
 private actor SharedAnimatedImageLoader {
     static let shared = SharedAnimatedImageLoader()
 
-    private let cache = NSCache<NSURL, DecodedAnimatedImage>()
-    private var inFlight: [URL: Task<DecodedAnimatedImage, any Error>] = [:]
+    private struct RequestKey: Hashable, Sendable {
+        let url: URL
+        let maximumPixelDimension: Int?
+
+        var cacheKey: NSString {
+            "\(url.absoluteString)#pixel-max=\(maximumPixelDimension ?? 0)" as NSString
+        }
+    }
+
+    private let cache = NSCache<NSString, DecodedAnimatedImage>()
+    private var inFlight: [RequestKey: Task<DecodedAnimatedImage, any Error>] = [:]
 
     init() {
         cache.totalCostLimit = 96 * 1024 * 1024
         cache.countLimit = 256
     }
 
-    func image(for url: URL) async throws -> DecodedAnimatedImage {
-        if let cached = cache.object(forKey: url as NSURL) { return cached }
-        if let task = inFlight[url] { return try await task.value }
+    func image(for url: URL, maximumPixelDimension: Int?) async throws -> DecodedAnimatedImage {
+        let key = RequestKey(
+            url: url,
+            maximumPixelDimension: maximumPixelDimension.map { max(1, $0) }
+        )
+        if let cached = cache.object(forKey: key.cacheKey) { return cached }
+        if let task = inFlight[key] { return try await task.value }
 
         let data = try await SharedMediaDataLoader.shared.data(for: url)
         let task = Task.detached(priority: .userInitiated) {
-            try DecodedAnimatedImage(data: data)
+            try DecodedAnimatedImage(
+                data: data,
+                maximumPixelDimension: key.maximumPixelDimension
+            )
         }
-        inFlight[url] = task
+        inFlight[key] = task
         do {
             let image = try await task.value
-            inFlight[url] = nil
-            cache.setObject(image, forKey: url as NSURL, cost: image.estimatedByteCount)
+            inFlight[key] = nil
+            cache.setObject(image, forKey: key.cacheKey, cost: image.estimatedByteCount)
             return image
         } catch {
-            inFlight[url] = nil
+            inFlight[key] = nil
             throw error
         }
     }
@@ -144,15 +181,17 @@ private actor SharedAnimatedImageLoader {
 
 actor SharedMediaDataLoader {
     static let shared = SharedMediaDataLoader()
-    private var cached: [URL: Data] = [:]
-    private var order: [URL] = []
+    private let localFileCache = NSCache<NSURL, NSData>()
     private var inFlight: [URL: Task<Data, any Error>] = [:]
-    private var cachedBytes = 0
-    private let byteLimit = 96 * 1024 * 1024
+
+    init() {
+        localFileCache.totalCostLimit = 32 * 1024 * 1024
+        localFileCache.countLimit = 256
+    }
 
     func data(for url: URL) async throws -> Data {
-        if let value = cached[url] {
-            return value
+        if url.isFileURL, let value = localFileCache.object(forKey: url as NSURL) {
+            return value as Data
         }
         if let task = inFlight[url] {
             return try await task.value
@@ -176,7 +215,13 @@ actor SharedMediaDataLoader {
         do {
             let value = try await task.value
             inFlight[url] = nil
-            insert(value, for: url)
+            if url.isFileURL {
+                localFileCache.setObject(
+                    value as NSData,
+                    forKey: url as NSURL,
+                    cost: value.count
+                )
+            }
             return value
         } catch {
             inFlight[url] = nil
@@ -184,18 +229,6 @@ actor SharedMediaDataLoader {
         }
     }
 
-    private func insert(_ value: Data, for url: URL) {
-        cached[url] = value
-        order.removeAll { $0 == url }
-        order.append(url)
-        cachedBytes += value.count
-        while cachedBytes > byteLimit, let oldest = order.first {
-            order.removeFirst()
-            if let removed = cached.removeValue(forKey: oldest) {
-                cachedBytes -= removed.count
-            }
-        }
-    }
 }
 
 private struct AnimatedImageRepresentable: NSViewRepresentable {

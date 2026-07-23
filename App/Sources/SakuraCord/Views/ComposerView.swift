@@ -146,6 +146,8 @@ struct ComposerView: View {
                                     Text("Message #\(channelName)")
                                         .foregroundStyle(.tertiary)
                                         .font(.system(size: 15))
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
                                         .allowsHitTesting(false)
                                         .accessibilityHidden(true)
                                 }
@@ -315,8 +317,8 @@ struct ComposerView: View {
             if (model.commandComposer.focusedOption == nil || isFocused),
                !isCommandSuggestionsDismissed,
                (!suggestions.isEmpty
-                || model.commandComposer.isAutocompleteLoading
-                || model.commandComposer.autocompleteError != nil)
+                   || model.commandComposer.isAutocompleteLoading
+                   || model.commandComposer.autocompleteError != nil)
             {
                 ApplicationCommandSuggestionPanel(
                     heading: commandSuggestionHeading,
@@ -359,7 +361,7 @@ struct ComposerView: View {
         ) { activation in
             let replacementSelection =
                 selectionBeforeEmojiPicker
-                ?? NSRange(location: draft.utf16.count, length: 0)
+                    ?? NSRange(location: draft.utf16.count, length: 0)
             let restoredSelection: NSRange
             switch activation.selection {
             case let .native(value):
@@ -403,7 +405,7 @@ struct ComposerView: View {
 
         selectionBeforeEmojiPicker =
             draftSelection
-            ?? NSRange(location: draft.utf16.count, length: 0)
+                ?? NSRange(location: draft.utf16.count, length: 0)
         showEmojiPicker = true
     }
 
@@ -466,15 +468,15 @@ struct ComposerView: View {
                 remoteMembers: model.mentionMemberResults,
                 roles: model.guildRoles,
                 canMentionNonMentionableRoles:
-                    MentionAutocompleteSuggestionFactory.canMentionNonMentionableRoles(
-                        in: model.selectedChannel,
-                        guild: model.selectedGuildID.flatMap { model.serverRailGuildsByID[$0] },
-                        currentUserID: model.snapshot?.currentUser.id,
-                        currentMember: (model.snapshot?.currentUser.id).flatMap {
-                            model.membersByID[$0]
-                        },
-                        roles: model.guildRoles
-                    )
+                MentionAutocompleteSuggestionFactory.canMentionNonMentionableRoles(
+                    in: model.selectedChannel,
+                    guild: model.selectedGuildID.flatMap { model.serverRailGuildsByID[$0] },
+                    currentUserID: model.snapshot?.currentUser.id,
+                    currentMember: (model.snapshot?.currentUser.id).flatMap {
+                        model.membersByID[$0]
+                    },
+                    roles: model.guildRoles
+                )
             )
         case .channel:
             return MentionAutocompleteSuggestionFactory.channelSuggestions(
@@ -974,7 +976,7 @@ struct MentionAutocompleteContext {
             in: prefix,
             range: NSRange(location: 0, length: (prefix as NSString).length)
         ), match.range(at: 1).location != NSNotFound,
-           match.range(at: 2).location != NSNotFound
+        match.range(at: 2).location != NSNotFound
         else { return nil }
         range = match.range(at: 1)
         let token = (prefix as NSString).substring(with: range)
@@ -992,6 +994,7 @@ struct MentionAutocompleteSuggestion: Identifiable {
     var avatarURL: URL?
     var colorHex: UInt32?
     var member: Member?
+    var systemImage: String?
 }
 
 enum MentionAutocompleteSuggestionFactory {
@@ -1193,7 +1196,11 @@ enum MentionAutocompleteSuggestionFactory {
                     ?? channel.guildID.flatMap { guilds[$0]?.name }
                     ?? "Channel",
                 value: "<#\(channel.id)>",
-                target: .channel(channel.id)
+                target: .channel(channel.id),
+                systemImage: ChannelIconPresentation.systemImage(
+                    for: channel.kind,
+                    isHidden: false
+                )
             )
         }
     }
@@ -1413,7 +1420,7 @@ enum MentionAutocompleteSuggestionFactory {
             guard let everyone = roles.first(where: {
                 $0.id.description == guildID.description
             }), let everyonePermissions = everyone.permissions,
-                currentMember?.id == currentUserID
+            currentMember?.id == currentUserID
             else { return nil }
             permissions = everyonePermissions
             for role in roles where memberRoleIDs.contains(role.id.description) {
@@ -1434,7 +1441,7 @@ enum MentionAutocompleteSuggestionFactory {
         var roleAllow: UInt64 = 0
         var roleDeny: UInt64 = 0
         for overwrite in overwrites
-        where overwrite.type == 0 && memberRoleIDs.contains(overwrite.id) {
+            where overwrite.type == 0 && memberRoleIDs.contains(overwrite.id) {
             roleAllow |= overwrite.allow
             roleDeny |= overwrite.deny
         }
@@ -1663,14 +1670,14 @@ struct EmojiAutocompleteList: View {
     var body: some View {
         ComposerAutocompletePanel(heading: "EMOJIS", count: suggestions.count) {
             LazyVStack(spacing: 2) {
-                    ForEach(suggestions.enumerated(), id: \.element.id) { index, suggestion in
-                        EmojiAutocompleteRow(
-                            suggestion: suggestion,
-                            isSelected: index == selectedIndex,
-                            select: { select(suggestion) },
-                            highlight: { highlight(index) }
-                        )
-                    }
+                ForEach(suggestions.enumerated(), id: \.element.id) { index, suggestion in
+                    EmojiAutocompleteRow(
+                        suggestion: suggestion,
+                        isSelected: index == selectedIndex,
+                        select: { select(suggestion) },
+                        highlight: { highlight(index) }
+                    )
+                }
             }
         }
     }
@@ -1786,6 +1793,8 @@ private struct MentionAutocompleteRow: View {
     @ViewBuilder
     private var leadingVisual: some View {
         switch suggestion.target {
+        case .unresolved:
+            EmptyView()
         case .user:
             AvatarView(name: suggestion.title, url: suggestion.avatarURL, size: 28)
         case .role:
@@ -1794,7 +1803,12 @@ private struct MentionAutocompleteRow: View {
                 .frame(width: 16, height: 16)
                 .frame(width: 28, height: 28)
         case .channel:
-            Image(systemName: "number")
+            Image(systemName: suggestion.systemImage ?? "questionmark")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 28, height: 28)
+        case .linkedChannel:
+            Image(systemName: ChannelIconPresentation.forumPostSystemImage)
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .frame(width: 28, height: 28)
@@ -1861,7 +1875,7 @@ private struct EmojiAutocompleteRow: View {
     }
 }
 
-private struct UploadProgressView: View {
+struct UploadProgressView: View {
     let progress: MessageSendProgress
     var body: some View {
         HStack(spacing: 8) {

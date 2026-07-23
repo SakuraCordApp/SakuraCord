@@ -11,6 +11,37 @@ import Testing
     #expect(!AnimatedImageFramePreparation.shouldEagerlyDecode(width: .max, height: .max))
 }
 
+@Test func `animated image decoding respects the requested display pixel budget`() throws {
+    let width = 1_200
+    let height = 800
+    let colorSpace = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+    let context = try #require(
+        CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )
+    )
+    context.setFillColor(CGColor(red: 0.2, green: 0.4, blue: 0.8, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+    let image = try #require(context.makeImage())
+    let data = NSMutableData()
+    let destination = try #require(
+        CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil)
+    )
+    CGImageDestinationAddImage(destination, image, nil)
+    #expect(CGImageDestinationFinalize(destination))
+
+    let decoded = try DecodedAnimatedImage(data: data as Data, maximumPixelDimension: 184)
+    let frame = try #require(decoded.frames.first)
+    #expect(max(frame.width, frame.height) <= 184)
+    #expect(decoded.estimatedByteCount <= frame.bytesPerRow * frame.height)
+}
+
 @MainActor @Test func `animated webp uses its real frame delay`() {
     let properties: [CFString: Any] = [
         kCGImagePropertyWebPDictionary: [

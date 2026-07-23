@@ -1,8 +1,26 @@
 import CoreGraphics
 import Foundation
+import MessageRendering
 import SakuraCordModels
 @testable import SakuraCord
 import Testing
+
+@MainActor
+@Test func `malformed decoded mentions remain noninteractive`() throws {
+    let data = try #require(
+        """
+        {
+          "id": "not-a-snowflake",
+          "kind": "channelLink",
+          "rawToken": "https://discord.com/channels/1/not-a-snowflake"
+        }
+        """.data(using: .utf8)
+    )
+    let mention = try JSONDecoder().decode(RenderedMention.self, from: data)
+    let presentation = MentionPresentation.fallback(for: mention)
+
+    #expect(presentation.target == .unresolved)
+}
 
 @Test func `permission resolver applies role overwrites together then member overwrite last`() throws {
     let guildID = GuildID(rawValue: 100)
@@ -87,6 +105,55 @@ import Testing
     #expect(
         ChannelIconPresentation.systemImage(for: .announcement, isHidden: false)
             == "megaphone.fill"
+    )
+    #expect(ChannelIconPresentation.systemImage(for: .forum, isHidden: false)
+        == "bubble.left.and.bubble.right.fill")
+    #expect(ChannelIconPresentation.systemImage(for: .voice, isHidden: false)
+        == "speaker.wave.2.fill")
+    #expect(ChannelIconPresentation.systemImage(for: .directMessage, isHidden: false)
+        == "person.fill")
+    #expect(ChannelIconPresentation.systemImage(for: .groupDirectMessage, isHidden: false)
+        == "person.2.fill")
+    #expect(ChannelIconPresentation.systemImage(for: .unknown, isHidden: false)
+        == "questionmark")
+    #expect(ChannelIconPresentation.forumPostSystemImage == "bubble.left.fill")
+}
+
+@Test func `rules channel icon uses only the guild designation`() {
+    let guildID = GuildID(rawValue: 100)
+    let designatedRulesID = ChannelID(rawValue: 101)
+    let namedRulesID = ChannelID(rawValue: 102)
+    let designated = Channel(
+        id: designatedRulesID,
+        guildID: guildID,
+        name: "read-me-first"
+    )
+    let merelyNamedRules = Channel(
+        id: namedRulesID,
+        guildID: guildID,
+        name: "rules"
+    )
+
+    #expect(
+        ChannelIconPresentation.systemImage(
+            for: designated,
+            isHidden: false,
+            rulesChannelID: designatedRulesID
+        ) == "newspaper.fill"
+    )
+    #expect(
+        ChannelIconPresentation.systemImage(
+            for: merelyNamedRules,
+            isHidden: false,
+            rulesChannelID: designatedRulesID
+        ) == "number"
+    )
+    #expect(
+        ChannelIconPresentation.systemImage(
+            for: designated,
+            isHidden: true,
+            rulesChannelID: designatedRulesID
+        ) == "lock.fill"
     )
 }
 

@@ -1,16 +1,22 @@
 import AppKit
 import DiscordProtocol
+import SakuraCordModels
 import SwiftUI
 
 @main
 struct SakuraCordApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model: AppModel
+    private let opensForumPerformanceFixture: Bool
 
     init() {
         let configuration = AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments)
+        opensForumPerformanceFixture = configuration.includesForumPerformanceFixture
         let provider: (any ChatProvider)? = configuration.mode == .offlineTesting
-            ? MockChatProvider(includesLongServerList: configuration.includesLongServerList)
+            ? MockChatProvider(
+                includesLongServerList: configuration.includesLongServerList,
+                forumPostCount: configuration.includesForumPerformanceFixture ? 5_000 : nil
+            )
             : nil
         _model = State(initialValue: AppModel(
             launchMode: configuration.mode,
@@ -24,6 +30,9 @@ struct SakuraCordApp: App {
                 .frame(minWidth: 860, minHeight: 560)
                 .task {
                     await model.start()
+                    if opensForumPerformanceFixture {
+                        model.selectedChannelID = ChannelID(rawValue: 220)
+                    }
                 }
         }
         .defaultSize(width: 1280, height: 780)

@@ -7,7 +7,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 source "$ROOT_DIR/script/worktree_runtime.sh"
 
 case "$MODE" in
-  package|--offline|--offline-long-server-list|--verify) ;;
+  package|package-release|--offline|--offline-long-server-list|--offline-forum-performance|--verify) ;;
   run|--debug|--logs|--telemetry)
     if [[ "$SAKURACORD_IS_MAIN_WORKTREE" -ne 1 && "${SAKURACORD_ALLOW_LIVE_WORKTREE:-0}" != "1" ]]; then
       echo "Live-account launch is disabled in linked worktrees. Use --offline, or set SAKURACORD_ALLOW_LIVE_WORKTREE=1 deliberately." >&2
@@ -15,7 +15,7 @@ case "$MODE" in
     fi
     ;;
   *)
-    echo "usage: $0 [package|run|--offline|--offline-long-server-list|--verify|--debug|--logs|--telemetry]" >&2
+    echo "usage: $0 [package|package-release|run|--offline|--offline-long-server-list|--offline-forum-performance|--verify|--debug|--logs|--telemetry]" >&2
     exit 2
     ;;
 esac
@@ -42,7 +42,7 @@ if [[ ! "$BUNDLE_BUILD_VERSION" =~ ^[0-9]+$ ]]; then
   exit 2
 fi
 BUILD_FLAGS=()
-if [[ "$MODE" == "package" ]]; then
+if [[ "$MODE" == "package-release" ]]; then
   BUILD_FLAGS=(-c release)
 fi
 APP_ICON_NAME="$SAKURACORD_PRODUCT_NAME"
@@ -63,7 +63,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if [[ "$MODE" != "package" ]]; then
+if [[ "$MODE" != "package" && "$MODE" != "package-release" ]]; then
   sakuracord_stop_scoped_app
 fi
 
@@ -71,13 +71,13 @@ swift build \
   --package-path "$PACKAGE_DIR" \
   --cache-path "$SAKURACORD_SWIFTPM_CACHE_DIR" \
   --scratch-path "$SAKURACORD_SCRATCH_DIR" \
-  "${BUILD_FLAGS[@]}" \
+  ${BUILD_FLAGS[@]+"${BUILD_FLAGS[@]}"} \
   --product "$PRODUCT_NAME"
 BIN_DIR="$(swift build \
   --package-path "$PACKAGE_DIR" \
   --cache-path "$SAKURACORD_SWIFTPM_CACHE_DIR" \
   --scratch-path "$SAKURACORD_SCRATCH_DIR" \
-  "${BUILD_FLAGS[@]}" \
+  ${BUILD_FLAGS[@]+"${BUILD_FLAGS[@]}"} \
   --show-bin-path)"
 
 rm -rf "$APP_BUNDLE"
@@ -144,9 +144,10 @@ open_app() {
 }
 open_offline_app() { open_app --args --offline; }
 open_offline_long_server_list() { open_app --args --offline-long-server-list; }
+open_offline_forum_performance() { open_app --args --offline-forum-performance; }
 
 case "$MODE" in
-  package) ;;
+  package|package-release) ;;
   run) open_app ;;
   --debug) lldb -- "$MACOS/$APP_NAME" ;;
   --logs)
@@ -165,4 +166,5 @@ case "$MODE" in
     ;;
   --offline) open_offline_app ;;
   --offline-long-server-list) open_offline_long_server_list ;;
+  --offline-forum-performance) open_offline_forum_performance ;;
 esac

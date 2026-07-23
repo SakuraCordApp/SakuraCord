@@ -4,10 +4,37 @@ import SakuraCordModels
 import SwiftUI
 
 enum MentionTarget: Hashable {
+    case unresolved
     case user(UserID)
     case role(RoleID)
     case channel(ChannelID)
+    case linkedChannel(guildID: GuildID?, channelID: ChannelID)
     case message(guildID: GuildID?, channelID: ChannelID, messageID: MessageID)
+}
+
+struct DiscordChannelLink: Hashable {
+    let guildID: GuildID?
+    let channelID: ChannelID
+
+    init?(_ url: URL) {
+        guard url.scheme?.lowercased() == "https",
+              let host = url.host?.lowercased(),
+              Self.hosts.contains(host)
+        else { return nil }
+        let components = url.pathComponents.filter { $0 != "/" }
+        guard components.count == 3,
+              components[0] == "channels",
+              components[1] == "@me" || UInt64(components[1]) != nil,
+              let channelID = ChannelID(components[2])
+        else { return nil }
+        guildID = components[1] == "@me" ? nil : GuildID(components[1])
+        self.channelID = channelID
+    }
+
+    private static let hosts: Set<String> = [
+        "discord.com", "www.discord.com", "canary.discord.com", "ptb.discord.com",
+        "discordapp.com", "www.discordapp.com", "canary.discordapp.com", "ptb.discordapp.com"
+    ]
 }
 
 struct MentionPresentation: Hashable, Identifiable {
@@ -16,40 +43,95 @@ struct MentionPresentation: Hashable, Identifiable {
     let target: MentionTarget
     var avatarURL: URL?
     var colorHex: UInt32?
+    var systemImage: String?
 
     var id: String { rawToken }
 
     static func fallback(for mention: RenderedMention) -> MentionPresentation {
         switch mention.kind {
         case .user:
-            MentionPresentation(
+            guard let id = UserID(mention.id) else {
+                return unresolved(mention, label: "@unknown-user")
+            }
+            return MentionPresentation(
                 rawToken: mention.rawToken,
                 label: "@unknown-user",
-                target: .user(UserID(mention.id)!)
+                target: .user(id)
             )
         case .role:
-            MentionPresentation(
+            guard let id = RoleID(mention.id) else {
+                return unresolved(mention, label: "@unknown-role")
+            }
+            return MentionPresentation(
                 rawToken: mention.rawToken,
                 label: "@unknown-role",
-                target: .role(RoleID(mention.id)!)
+                target: .role(id)
             )
         case .channel:
-            MentionPresentation(
+            guard let id = ChannelID(mention.id) else {
+                return unresolved(
+                    mention,
+                    label: "unknown-channel",
+                    systemImage: ChannelIconPresentation.systemImage(for: .unknown, isHidden: false)
+                )
+            }
+            return MentionPresentation(
                 rawToken: mention.rawToken,
-                label: "#unknown-channel",
-                target: .channel(ChannelID(mention.id)!)
+                label: "unknown-channel",
+                target: .channel(id),
+                systemImage: ChannelIconPresentation.systemImage(for: .unknown, isHidden: false)
+            )
+        case .channelLink:
+            guard let id = ChannelID(mention.id) else {
+                return unresolved(
+                    mention,
+                    label: "unknown-post",
+                    systemImage: ChannelIconPresentation.forumPostSystemImage
+                )
+            }
+            return MentionPresentation(
+                rawToken: mention.rawToken,
+                label: "unknown-post",
+                target: .linkedChannel(
+                    guildID: mention.messageGuildID.flatMap(GuildID.init),
+                    channelID: id
+                ),
+                systemImage: ChannelIconPresentation.forumPostSystemImage
             )
         case .message:
-            MentionPresentation(
+            guard let channelID = mention.messageChannelID.flatMap(ChannelID.init),
+                  let messageID = MessageID(mention.id)
+            else {
+                return unresolved(
+                    mention,
+                    label: "unknown-channel ›",
+                    systemImage: "bubble.left.fill"
+                )
+            }
+            return MentionPresentation(
                 rawToken: mention.rawToken,
-                label: "# unknown-channel ›",
+                label: "unknown-channel ›",
                 target: .message(
                     guildID: mention.messageGuildID.flatMap(GuildID.init),
-                    channelID: ChannelID(mention.messageChannelID!)!,
-                    messageID: MessageID(mention.id)!
-                )
+                    channelID: channelID,
+                    messageID: messageID
+                ),
+                systemImage: "bubble.left.fill"
             )
         }
+    }
+
+    private static func unresolved(
+        _ mention: RenderedMention,
+        label: String,
+        systemImage: String? = nil
+    ) -> MentionPresentation {
+        MentionPresentation(
+            rawToken: mention.rawToken,
+            label: label,
+            target: .unresolved,
+            systemImage: systemImage
+        )
     }
 }
 
@@ -58,6 +140,7 @@ struct SelectableMessageTextView: NSViewRepresentable {
     let emojiSize: CGFloat
     let mentionPresentations: [String: MentionPresentation]
     var onMentionClick: (MentionPresentation, StablePopoverAnchor) -> Void = { _, _ in }
+    var onURLClick: (URL) -> Bool = { _ in false }
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -87,11 +170,13 @@ struct SelectableMessageTextView: NSViewRepresentable {
         ]
         textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         textView.onMentionClick = onMentionClick
+        textView.onURLClick = onURLClick
         return textView
     }
 
     func updateNSView(_ textView: RichMessageNSTextView, context: Context) {
         textView.onMentionClick = onMentionClick
+        textView.onURLClick = onURLClick
         let signature = RichMessageRenderSignature(
             source: source,
             emojiSize: emojiSize,
@@ -149,6 +234,9 @@ struct SelectableMessageTextView: NSViewRepresentable {
 
         func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
             guard let url = link as? URL else { return false }
+            if (textView as? RichMessageNSTextView)?.onURLClick(url) == true {
+                return true
+            }
             NSWorkspace.shared.open(url)
             return true
         }
@@ -303,6 +391,7 @@ enum RichMessageCopySerializer {
 final class RichMessageNSTextView: NSTextView {
     fileprivate var renderSignature: RichMessageRenderSignature?
     var onMentionClick: (MentionPresentation, StablePopoverAnchor) -> Void = { _, _ in }
+    var onURLClick: (URL) -> Bool = { _ in false }
     private var hoveredMentionLocation: Int?
     private var mentionTrackingArea: NSTrackingArea?
     private var unconstrainedMeasurement: CGSize?
@@ -424,7 +513,7 @@ final class RichMessageNSTextView: NSTextView {
         let index = layoutManager.characterIndexForGlyph(at: glyph)
         guard index < attributedString().length,
               let attachment = attributedString().attribute(.attachment, at: index, effectiveRange: nil)
-                as? MentionTextAttachment
+              as? MentionTextAttachment
         else { return nil }
         return (index, attachment)
     }

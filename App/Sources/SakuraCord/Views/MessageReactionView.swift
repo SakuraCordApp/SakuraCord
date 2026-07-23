@@ -84,19 +84,22 @@ nonisolated enum MessageReactionPresentation {
     }
 
     static func previewLoadKey(for reactions: [Reaction]) -> MessageReactionPreviewLoadKey {
-        MessageReactionPreviewLoadKey(entries: items(from: reactions).map {
-            MessageReactionPreviewLoadKey.Entry(reactionID: $0.id, count: $0.count)
-        })
+        MessageReactionPreviewLoadKey(
+            entries: items(from: reactions).map {
+                MessageReactionPreviewLoadKey.Entry(reactionID: $0.id, count: $0.count)
+            })
     }
 
     static func previewLoadCandidates(from reactions: [Reaction]) -> [Reaction] {
         items(from: reactions).filter { $0.reactors.isEmpty }
     }
 
-    static func previewLoadKey(forPresented reactions: [Reaction]) -> MessageReactionPreviewLoadKey {
-        MessageReactionPreviewLoadKey(entries: reactions.map {
-            MessageReactionPreviewLoadKey.Entry(reactionID: $0.id, count: $0.count)
-        })
+    static func previewLoadKey(forPresented reactions: [Reaction]) -> MessageReactionPreviewLoadKey
+    {
+        MessageReactionPreviewLoadKey(
+            entries: reactions.map {
+                MessageReactionPreviewLoadKey.Entry(reactionID: $0.id, count: $0.count)
+            })
     }
 
     static func previewLoadCandidates(fromPresented reactions: [Reaction]) -> [Reaction] {
@@ -133,9 +136,9 @@ nonisolated enum MessageReactionPresentation {
 
     static func tooltipDescription(for reaction: Reaction) -> String {
         switch tooltipSummary(for: reaction) {
-        case let .countOnly(count):
+        case .countOnly(let count):
             return "\(count) reactions"
-        case let .knownReactors(names, remainingCount):
+        case .knownReactors(let names, let remainingCount):
             let knownNames = names.formatted(.list(type: .and))
             if remainingCount > 0 {
                 return "Reacted by \(knownNames), and \(remainingCount) others"
@@ -147,9 +150,9 @@ nonisolated enum MessageReactionPresentation {
     static func accessibilityLabel(for reaction: Reaction) -> String {
         let emoji = emojiLabel(for: reaction)
         switch tooltipSummary(for: reaction) {
-        case let .countOnly(count):
+        case .countOnly(let count):
             return "\(emoji), \(count) reactions"
-        case let .knownReactors(names, remainingCount):
+        case .knownReactors(let names, let remainingCount):
             let knownNames = names.formatted(.list(type: .and))
             if remainingCount > 0 {
                 return "\(emoji), reacted by \(knownNames) and \(remainingCount) others"
@@ -228,7 +231,7 @@ struct MessageReactionStrip<AddReactionControl: View>: View {
     }
 }
 
-private struct MessageReactionPill: View {
+struct MessageReactionPill: View {
     let reaction: Reaction
     let emojiURL: URL?
     let react: () -> Void
@@ -268,7 +271,7 @@ private struct MessageReactionPill: View {
         .buttonStyle(.plain)
         .onContinuousHover(coordinateSpace: .local) { phase in
             switch phase {
-            case let .active(location):
+            case .active(let location):
                 let beganHovering = !isHovered
                 isHovered = true
                 hoverAnchorSnapshot = ReactionHoverAnchorSnapshot(

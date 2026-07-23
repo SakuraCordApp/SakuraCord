@@ -9,7 +9,10 @@ struct AvatarView: View {
         ZStack {
             Circle().fill(Color.accentColor.gradient)
             if let url {
-                AnimatedRemoteImage(url: url)
+                AnimatedRemoteImage(
+                    url: url,
+                    maximumPixelDimension: max(1, Int((size * 2).rounded(.up)))
+                )
             } else {
                 fallback
             }

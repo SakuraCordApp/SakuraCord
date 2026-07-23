@@ -1,12 +1,12 @@
-# Parallel worktree workflow
+# Parallel Codex worktree workflow
 
 SakuraCord's Codex environment is designed so each task can build and visually
 test its own checkout without terminating or opening another task's app.
 
 ## What is isolated
 
-Every linked worktree gets a deterministic variant identity derived from its
-checkout path. The scripts use that identity for:
+Every Codex-created linked worktree gets a deterministic variant identity
+derived from its checkout path. The scripts use that identity for:
 
 - a distinct app executable and display name;
 - a distinct bundle identifier and app bundle under that worktree's `dist/`;
@@ -15,21 +15,45 @@ checkout path. The scripts use that identity for:
 - a worktree-local operation lock that prevents a build and test in the same
   checkout from corrupting one another.
 
-The main checkout remains `SakuraCord.app` with bundle identifier
-`dev.sakuracord.SakuraCord`. A linked worktree produces an app such as
+Any normal, non-worktree checkout remains `SakuraCord.app` with bundle
+identifier `dev.sakuracord.SakuraCord`. A Codex worktree produces an app such as
 `SakuraCord-a365-12ab34.app` with its own matching bundle identifier. The
 visible display name includes the same variant so Computer Use can target the
-correct build.
+correct build. Variant naming is strictly limited to actual Codex worktree
+checkouts: setting `SAKURACORD_WORKTREE_ID` in a normal checkout does not change
+its canonical app identity.
+
+## Targeting an app with Computer Use
+
+Do not pass the generic display name `SakuraCord` to Computer Use. Computer Use
+can launch a target while obtaining its state, so an ambiguous name can open a
+different installed copy—including an authenticated app—on top of an offline
+build that is already running.
+
+Resolve the identity from the checkout being tested by executing the helper
+directly (do not source it into zsh):
+
+```sh
+./script/worktree_runtime.sh
+```
+
+Use the complete path from the `App:` line as the Computer Use `app` target.
+Before interacting, verify that the process executable belongs to that exact
+bundle. If it is not running, launch the printed bundle explicitly through the
+repository's offline action or `./script/build_and_run.sh --offline`; do not use
+a generic Computer Use state lookup as the launcher. Continue using the same
+absolute bundle path for every state read and action. A bundle identifier is
+less precise because multiple copies of the canonical main app can share it.
 
 The Codex **Run Offline** and **Run Long Server Fixture** actions are the safe
 defaults for agent visual testing. They never restore a stored Discord session,
 use an in-memory database, and can remain open beside builds from other
-worktrees. Live-account launches from linked worktrees are rejected unless a
-person deliberately sets `SAKURACORD_ALLOW_LIVE_WORKTREE=1`.
+Codex worktrees. Live-account launches from Codex worktrees are rejected unless
+a person deliberately sets `SAKURACORD_ALLOW_LIVE_WORKTREE=1`.
 
 ## Starting parallel tasks
 
-Create each Codex task in its own worktree from the same intended starting
+Create each Codex task in its own Codex worktree from the same intended starting
 state. If the main checkout contains the large unfinished change that all tasks
 must extend, choose that working-tree state when creating each task. Do not
 reuse one worktree for two writing tasks.
@@ -75,7 +99,12 @@ The same behavior is available outside the Codex header:
 ./script/worktree_setup.sh
 ./script/build_and_run.sh --offline
 ./script/build_and_run.sh package
+./script/build_and_run.sh package-release
 ./script/worktree_test.sh app
 ./script/worktree_test.sh all
 ./script/worktree_cleanup.sh
 ```
+
+`package` stages the cached debug build for fast local iteration.
+`package-release` enables Swift release optimization and is reserved for shipping;
+`script/package_dmg.sh` selects it automatically.

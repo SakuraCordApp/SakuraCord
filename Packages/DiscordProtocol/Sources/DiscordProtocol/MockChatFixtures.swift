@@ -12,7 +12,8 @@ struct MockChatFixture {
     static func make(now: Date = .now, includesLongServerList: Bool = false) -> Self {
         let auroraID = GuildID(rawValue: 100)
         let nativeLabID = GuildID(rawValue: 101)
-        let textPermissions: UInt64 = (1 << 10) | (1 << 11) | (1 << 16) | (1 << 20) | (1 << 38)
+        let textPermissions: UInt64 = (1 << 10) | (1 << 11) | (1 << 16) | (1 << 20)
+            | (1 << 34) | (1 << 38)
         let auroraIcon = demoAsset("guild-aurora")
         let nativeLabIcon = demoAsset("guild-native-lab")
 
@@ -58,7 +59,8 @@ struct MockChatFixture {
             iconURL: auroraIcon,
             accentHex: 0x8B5CF6,
             unreadCount: 3,
-            currentUserPermissions: textPermissions
+            currentUserPermissions: textPermissions,
+            rulesChannelID: ChannelID(rawValue: 202)
         )
         let nativeLab = Guild(
             id: nativeLabID,
@@ -122,6 +124,13 @@ struct MockChatFixture {
             )
         } : []
 
+        let forumTags = [
+            ForumTag(id: ForumTagID(rawValue: 8_001), name: "Visual", emojiName: "🖌️"),
+            ForumTag(id: ForumTagID(rawValue: 8_002), name: "Behaviour", emojiName: "🔧"),
+            ForumTag(id: ForumTagID(rawValue: 8_003), name: "Critical", isModerated: true, emojiName: "❗"),
+            ForumTag(id: ForumTagID(rawValue: 8_004), name: "Complete", isModerated: true, emojiName: "✅"),
+            ForumTag(id: ForumTagID(rawValue: 8_005), name: "Open", emojiName: "🤔")
+        ]
         var channels = [
             Channel(
                 id: ChannelID(rawValue: 200), guildID: auroraID, name: "welcome", kind: .announcement,
@@ -191,12 +200,29 @@ struct MockChatFixture {
                 lastPinTimestamp: now.addingTimeInterval(-8 * 24 * 60 * 60 - 2_400)
             ),
             Channel(
-                id: ChannelID(rawValue: 220), guildID: auroraID, name: "feedback", kind: .forum,
-                category: "PROJECTS", position: 0
+                id: ChannelID(rawValue: 220), guildID: auroraID, name: "feedback",
+                topic: "Share one focused idea per post. Search for duplicates, choose the most relevant tags, and keep critique constructive.",
+                kind: .forum,
+                category: "PROJECTS", position: 0,
+                flags: 1 << 4,
+                availableTags: forumTags,
+                defaultReaction: ForumDefaultReaction(emojiName: "👍"),
+                defaultSortOrder: .latestActivity,
+                defaultForumLayout: .list,
+                defaultTagMatch: .matchSome,
+                defaultAutoArchiveDuration: 4_320
             ),
             Channel(
-                id: ChannelID(rawValue: 221), guildID: auroraID, name: "bug-reports", kind: .forum,
-                category: "PROJECTS", position: 1
+                id: ChannelID(rawValue: 221), guildID: auroraID, name: "bug-reports",
+                topic: "Describe the problem, expected result, and reproduction steps. Add screenshots when they help.",
+                kind: .forum, category: "PROJECTS", position: 1,
+                flags: 1 << 4,
+                availableTags: forumTags,
+                defaultReaction: ForumDefaultReaction(emojiName: "👍"),
+                defaultSortOrder: .latestActivity,
+                defaultForumLayout: .list,
+                defaultTagMatch: .matchSome,
+                defaultAutoArchiveDuration: 4_320
             ),
             Channel(
                 id: ChannelID(rawValue: 230), guildID: auroraID, name: "Studio Lounge",
