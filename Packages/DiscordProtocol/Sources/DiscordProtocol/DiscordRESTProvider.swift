@@ -2255,18 +2255,12 @@ public actor DiscordRESTProvider: ChatProvider {
                     ready.users.map { ($0.id, $0) },
                     uniquingKeysWith: { _, newer in newer }
                 )
-                forumReadStates = Dictionary(
-                    uniqueKeysWithValues: ready.readState.entries.compactMap { entry in
-                        guard let id = ChannelID(entry.id) else { return nil }
-                        return (
-                            id,
-                            ForumReadState(
-                                lastReadMessageID: entry.lastMessageID.flatMap(MessageID.init),
-                                mentionCount: entry.mentionCount ?? 0
-                            )
-                        )
-                    }
-                )
+                forumReadStates = ready.readState.channelEntriesByID.mapValues { entry in
+                    ForumReadState(
+                        lastReadMessageID: entry.lastMessageID.flatMap(MessageID.init),
+                        mentionCount: entry.mentionCount ?? 0
+                    )
+                }
                 let readyGuilds = ready.hydratedGuilds(using: cachedGatewayUsersByID)
                 gatewayGuildIDs = readyGuilds.compactMap { GuildID($0.id) }
                 var voiceStateCount = 0
@@ -5036,17 +5030,36 @@ struct GatewayReadyGuildsDTO: Decodable {
 struct GatewayReadStateDTO: Decodable {
     struct Entry: Decodable {
         var id: String
+        var readStateType: Int
         var lastMessageID: String?
         var mentionCount: Int?
 
         enum CodingKeys: String, CodingKey {
             case id
+            case readStateType = "read_state_type"
             case lastMessageID = "last_message_id"
             case mentionCount = "mention_count"
+        }
+
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(String.self, forKey: .id)
+            readStateType = try container.decodeIfPresent(Int.self, forKey: .readStateType) ?? 0
+            lastMessageID = try container.decodeIfPresent(String.self, forKey: .lastMessageID)
+            mentionCount = try container.decodeIfPresent(Int.self, forKey: .mentionCount)
         }
     }
 
     var entries: [Entry]
+    var channelEntriesByID: [ChannelID: Entry] {
+        Dictionary(
+            entries.compactMap { entry in
+                guard entry.readStateType == 0, let id = ChannelID(entry.id) else { return nil }
+                return (id, entry)
+            },
+            uniquingKeysWith: { _, newer in newer }
+        )
+    }
 
     init(entries: [Entry]) { self.entries = entries }
 

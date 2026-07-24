@@ -476,6 +476,45 @@ import Testing
     #expect(guild.members.map(\.user.username) == ["first", "second"])
 }
 
+@Test func `ready read states ignore non-channel ID collisions and tolerate duplicate channels`() throws {
+    let data = Data(#"""
+    {
+        "read_state":{
+            "entries":[
+                {
+                    "id":"100",
+                    "last_message_id":"200",
+                    "mention_count":1
+                },
+                {
+                    "id":"522681957373575168",
+                    "read_state_type":2,
+                    "badge_count":3
+                },
+                {
+                    "id":"522681957373575168",
+                    "read_state_type":5,
+                    "badge_count":1
+                },
+                {
+                    "id":"100",
+                    "read_state_type":0,
+                    "last_message_id":"201",
+                    "mention_count":2
+                }
+            ]
+        }
+    }
+    """#.utf8)
+    let ready = try JSONDecoder().decode(GatewayReadyGuildsDTO.self, from: data)
+    let entries = ready.readState.channelEntriesByID
+    let channel = try #require(entries[ChannelID(rawValue: 100)])
+
+    #expect(entries.count == 1)
+    #expect(channel.lastMessageID == "201")
+    #expect(channel.mentionCount == 2)
+}
+
 @Test func `guild member store updates values without moving existing members`() {
     func member(_ id: UInt64, _ name: String) -> Member {
         Member(
