@@ -4,7 +4,10 @@ nonisolated enum ChatChromeMetrics {
     static let controlHeight: CGFloat = 48
     static let controlCornerRadius: CGFloat = 16
     static let serverRailWidth: CGFloat = 68
-    static let sidebarIdentityLeadingOffset: CGFloat = serverRailWidth + 24
+    static let sidebarTitleLeadingOffset: CGFloat = serverRailWidth + 24
+    static let sidebarTitleTopOffset: CGFloat = 11
+    static let sidebarContentCornerRadius: CGFloat = 20
+    static let channelListTopPadding: CGFloat = 12
     static let memberListWidth: CGFloat = 280
     static let emojiPickerWidth: CGFloat = 520
 }

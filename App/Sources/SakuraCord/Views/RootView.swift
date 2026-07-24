@@ -46,16 +46,15 @@ private struct ChatRootView: View {
 
     var body: some View {
         @Bindable var model = model
-        HStack(spacing: 0) {
-            ServerRailView(
-                guildsByID: model.serverRailGuildsByID,
-                items: model.serverRailItems,
-                selectedGuildID: model.selectedGuildID,
-                selectHome: { model.selectGuild(nil) }, selectGuild: model.selectGuild
-            )
-            .zIndex(200)
-            Divider()
-            NavigationSplitView(columnVisibility: $columnVisibility) {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            HStack(spacing: 0) {
+                ServerRailView(
+                    guildsByID: model.serverRailGuildsByID,
+                    items: model.serverRailItems,
+                    selectedGuildID: model.selectedGuildID,
+                    selectHome: { model.selectGuild(nil) }, selectGuild: model.selectGuild
+                )
+                .zIndex(200)
                 ChannelSidebarView(
                     voiceModel: model,
                     guild: selectedGuild,
@@ -75,91 +74,96 @@ private struct ChatRootView: View {
                     logout: { await model.logout() },
                     updateStatus: { await model.updateStatus($0) }
                 )
-                .navigationSplitViewColumnWidth(min: 190, ideal: 230, max: 310)
-            } detail: {
-                ChatWorkspaceView(
-                    model: model,
-                    presentsForumComposer: $presentsForumComposer
-                )
-                    .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
-                    .toolbar(id: "sakuracord-main-v2") {
-                        ToolbarItem(id: "channel") {
-                            if let channel = model.selectedChannel {
-                                Button { model.showQuickSwitcher = true } label: {
-                                    ConversationToolbarLabel(
-                                        title: channel.name,
-                                        systemImage: channelToolbarSymbol(channel)
-                                    )
-                                }
-                            }
-                        }
-                        .visibilityPriority(.high)
-                        ToolbarSpacer(.flexible)
-                        ToolbarItem(id: "thread") {
-                            if let presentation = supplementaryToolbarPresentation {
-                                HStack(spacing: 0) {
-                                    Button { model.showQuickSwitcher = true } label: {
-                                        ConversationToolbarLabel(
-                                            title: presentation.title,
-                                            systemImage: presentation.systemImage,
-                                            subtitle: presentation.subtitle
-                                        )
-                                    }
-                                    Spacer(minLength: 0)
-                                }
-                                .frame(
-                                    width: max(supplementaryPaneFrame.width - 64, 120),
-                                    alignment: .leading
+            }
+            .navigationSplitViewColumnWidth(
+                min: ChatChromeMetrics.serverRailWidth + 190,
+                ideal: ChatChromeMetrics.serverRailWidth + 230,
+                max: ChatChromeMetrics.serverRailWidth + 310
+            )
+        } detail: {
+            ChatWorkspaceView(
+                model: model,
+                presentsForumComposer: $presentsForumComposer
+            )
+                .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
+                .toolbar(id: "sakuracord-main-v2") {
+                    ToolbarItem(id: "channel") {
+                        if let channel = model.selectedChannel {
+                            Button { model.showQuickSwitcher = true } label: {
+                                ConversationToolbarLabel(
+                                    title: channel.name,
+                                    systemImage: channelToolbarSymbol(channel)
                                 )
                             }
                         }
-                        .visibilityPriority(.high)
-                        ToolbarItem(id: "close-thread") {
-                            if hasOpenSupplementaryConversation {
-                                Button(action: closeSupplementaryConversation) {
-                                    Label("Close conversation", systemImage: "xmark")
-                                        .labelStyle(.iconOnly)
-                                }
-                                .help(model.openThread == nil ? "Close voice channel chat" : "Close thread")
-                            }
-                        }
-                        .visibilityPriority(.high)
-                        ToolbarSpacer(.fixed)
-                        ToolbarItem(id: "voice-chat") {
-                            if let channel = selectedVoiceChannel, !model.isVoiceChatOpen {
-                                Button { model.openVoiceChat(for: channel) } label: {
-                                    Label("Open Chat", systemImage: "bubble.left.fill")
-                                }
-                                .help("Open voice channel chat")
-                            }
-                        }
-                        .visibilityPriority(.high)
-                        ToolbarItem(id: "quick-switcher") {
-                            if !hasOpenSupplementaryConversation, selectedVoiceChannel == nil {
-                                Button { model.showQuickSwitcher = true } label: { Label("Quick Switcher", systemImage: "magnifyingglass") }
-                            }
-                        }
-                        .visibilityPriority(.high)
-                        ToolbarItem(id: "members") {
-                            if !hasOpenSupplementaryConversation, selectedVoiceChannel == nil {
-                                Button { model.showInspector.toggle() } label: { Label("Members", systemImage: "person.2") }
-                            }
-                        }
-                        .visibilityPriority(.high)
                     }
-            }
+                    .visibilityPriority(.high)
+                    ToolbarSpacer(.flexible)
+                    ToolbarItem(id: "thread") {
+                        if let presentation = supplementaryToolbarPresentation {
+                            HStack(spacing: 0) {
+                                Button { model.showQuickSwitcher = true } label: {
+                                    ConversationToolbarLabel(
+                                        title: presentation.title,
+                                        systemImage: presentation.systemImage,
+                                        subtitle: presentation.subtitle
+                                    )
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .frame(
+                                width: max(supplementaryPaneFrame.width - 64, 120),
+                                alignment: .leading
+                            )
+                        }
+                    }
+                    .visibilityPriority(.high)
+                    ToolbarItem(id: "close-thread") {
+                        if hasOpenSupplementaryConversation {
+                            Button(action: closeSupplementaryConversation) {
+                                Label("Close conversation", systemImage: "xmark")
+                                    .labelStyle(.iconOnly)
+                            }
+                            .help(model.openThread == nil ? "Close voice channel chat" : "Close thread")
+                        }
+                    }
+                    .visibilityPriority(.high)
+                    ToolbarSpacer(.fixed)
+                    ToolbarItem(id: "voice-chat") {
+                        if let channel = selectedVoiceChannel, !model.isVoiceChatOpen {
+                            Button { model.openVoiceChat(for: channel) } label: {
+                                Label("Open Chat", systemImage: "bubble.left.fill")
+                            }
+                            .help("Open voice channel chat")
+                        }
+                    }
+                    .visibilityPriority(.high)
+                    ToolbarItem(id: "quick-switcher") {
+                        if !hasOpenSupplementaryConversation, selectedVoiceChannel == nil {
+                            Button { model.showQuickSwitcher = true } label: { Label("Quick Switcher", systemImage: "magnifyingglass") }
+                        }
+                    }
+                    .visibilityPriority(.high)
+                    ToolbarItem(id: "members") {
+                        if !hasOpenSupplementaryConversation, selectedVoiceChannel == nil {
+                            Button { model.showInspector.toggle() } label: { Label("Members", systemImage: "person.2") }
+                        }
+                    }
+                    .visibilityPriority(.high)
+                }
         }
         .overlay(alignment: .topLeading) {
             ZStack(alignment: .topLeading) {
-                TrafficLightGlassCapsule()
-                    .frame(width: 80, height: 28)
-                    .offset(x: 9, y: 12)
-                    .accessibilityHidden(true)
-
                 if columnVisibility != .detailOnly {
-                    SidebarServerIdentity(guild: selectedGuild)
+                    Text(sidebarDisplayName)
+                        .font(.title3.weight(.semibold))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                         .frame(width: 150, height: 28, alignment: .leading)
-                        .offset(x: ChatChromeMetrics.sidebarIdentityLeadingOffset, y: 12)
+                        .offset(
+                            x: ChatChromeMetrics.sidebarTitleLeadingOffset,
+                            y: ChatChromeMetrics.sidebarTitleTopOffset
+                        )
                 }
             }
             .ignoresSafeArea()
@@ -213,6 +217,11 @@ private struct ChatRootView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .sakuracordQuickSwitcher)) { _ in model.showQuickSwitcher = true }
         .onReceive(NotificationCenter.default.publisher(for: .sakuracordToggleInspector)) { _ in model.showInspector.toggle() }
+    }
+
+    private var sidebarDisplayName: String {
+        guard let guild = selectedGuild else { return "Messages" }
+        return guild.name.isEmpty ? "Unnamed Server" : guild.name
     }
 
     private func channelToolbarSymbol(_ channel: Channel) -> String {

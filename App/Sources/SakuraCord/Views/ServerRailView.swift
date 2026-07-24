@@ -28,12 +28,11 @@ struct ServerRailView: View {
                     )
                 }
             }
-            .padding(.vertical, 12)
+            .padding(.bottom, 12)
             .animation(ServerRailAnimations.folderExpansion, value: folderLayoutRevision)
         }
         .scrollIndicators(.hidden)
         .frame(width: ChatChromeMetrics.serverRailWidth)
-        .background(.ultraThinMaterial)
         .overlayPreferenceValue(ServerRailHoverPreferenceKey.self) { hoverItem in
             GeometryReader { proxy in
                 if let hoverItem {
@@ -105,7 +104,7 @@ struct GuildRailButton: View {
             .accessibilityLabel(displayName)
             .help(displayName)
         }
-        .frame(width: ChatChromeMetrics.serverRailWidth, height: 46, alignment: .leading)
+        .frame(width: ChatChromeMetrics.serverRailWidth, height: 46, alignment: .topLeading)
         .contentShape(Rectangle())
         .anchorPreference(key: ServerRailHoverPreferenceKey.self, value: .bounds) { bounds in
             isHovering ? ServerRailHoverItem(name: displayName, bounds: bounds) : nil

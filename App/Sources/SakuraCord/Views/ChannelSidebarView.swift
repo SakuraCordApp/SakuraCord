@@ -1,3 +1,4 @@
+import AppKit
 import SakuraCordModels
 import SwiftUI
 
@@ -15,13 +16,16 @@ struct ChannelSidebarView: View {
     let connectAccount: () -> Void
     let logout: () async -> Void
     let updateStatus: (PresenceStatus) async -> Void
+    @Environment(\.displayScale) private var displayScale
 
     var body: some View {
         VStack(spacing: 0) {
             List(selection: $selection) {
-                ForEach(ChannelGroup.make(from: channels)) { group in
+                let groups = ChannelGroup.make(from: channels)
+                ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
                     ChannelGroupRows(
                         group: group,
+                        addsTopSpacing: index == groups.startIndex,
                         rulesChannelID: guild?.rulesChannelID,
                         activeVoiceChannelID: activeVoiceChannelID,
                         hiddenChannelIDs: hiddenChannelIDs,
@@ -30,6 +34,8 @@ struct ChannelSidebarView: View {
                 }
             }
             .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
+            .clipped()
 
             AccountControlView(
                 voiceModel: voiceModel,
@@ -44,6 +50,18 @@ struct ChannelSidebarView: View {
             )
         }
         .navigationTitle("")
+        .overlay {
+            SidebarChromeSeparator(
+                cornerRadius: ChatChromeMetrics.sidebarContentCornerRadius,
+                strokeInset: separatorLineWidth / 2
+            )
+            .stroke(Color(nsColor: .separatorColor), lineWidth: separatorLineWidth)
+            .allowsHitTesting(false)
+        }
+    }
+
+    private var separatorLineWidth: CGFloat {
+        1 / max(displayScale, 1)
     }
 
     private var hiddenChannelIDs: Set<ChannelID> {
@@ -94,31 +112,6 @@ struct ChannelSidebarView: View {
             }
             return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }}
-    }
-}
-
-struct SidebarServerIdentity: View {
-    let guild: Guild?
-
-    var body: some View {
-        HStack(spacing: 7) {
-            if let guild {
-                let displayName = guild.name.isEmpty ? "Unnamed Server" : guild.name
-                GuildIconView(name: displayName, iconURL: guild.iconURL, size: 22, cornerRadius: 7)
-                Text(displayName)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            } else {
-                Image(systemName: "message.fill")
-                    .frame(width: 22, height: 22)
-                Text("Messages")
-                    .lineLimit(1)
-            }
-        }
-        .font(.callout.weight(.semibold))
-        .frame(maxWidth: 150, alignment: .leading)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
     }
 }
 
@@ -181,8 +174,27 @@ struct ChannelGroup: Identifiable {
     }
 }
 
+private struct SidebarChromeSeparator: Shape {
+    let cornerRadius: CGFloat
+    let strokeInset: CGFloat
+
+    nonisolated func path(in rect: CGRect) -> Path {
+        let radius = min(cornerRadius, rect.width, rect.height)
+        var path = Path()
+        path.move(to: CGPoint(x: strokeInset, y: rect.maxY))
+        path.addLine(to: CGPoint(x: strokeInset, y: radius + strokeInset))
+        path.addQuadCurve(
+            to: CGPoint(x: radius + strokeInset, y: strokeInset),
+            control: CGPoint(x: strokeInset, y: strokeInset)
+        )
+        path.addLine(to: CGPoint(x: rect.maxX, y: strokeInset))
+        return path
+    }
+}
+
 private struct ChannelGroupRows: View {
     let group: ChannelGroup
+    let addsTopSpacing: Bool
     let rulesChannelID: ChannelID?
     let activeVoiceChannelID: ChannelID?
     let hiddenChannelIDs: Set<ChannelID>
@@ -191,12 +203,14 @@ private struct ChannelGroupRows: View {
 
     init(
         group: ChannelGroup,
+        addsTopSpacing: Bool,
         rulesChannelID: ChannelID?,
         activeVoiceChannelID: ChannelID?,
         hiddenChannelIDs: Set<ChannelID>,
         voiceParticipantsByChannel: [ChannelID: [VoiceSidebarParticipant]]
     ) {
         self.group = group
+        self.addsTopSpacing = addsTopSpacing
         self.rulesChannelID = rulesChannelID
         self.activeVoiceChannelID = activeVoiceChannelID
         self.hiddenChannelIDs = hiddenChannelIDs
@@ -230,21 +244,29 @@ private struct ChannelGroupRows: View {
                 }
             }
         } header: {
-            if let name = group.name {
-                Button {
-                    withAnimation(.snappy(duration: 0.18)) { isExpanded.toggle() }
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                            .font(.caption2.weight(.semibold))
-                            .frame(width: 8)
-                        Text(name)
-                        Spacer(minLength: 0)
-                    }
-                    .contentShape(Rectangle())
+            VStack(spacing: 0) {
+                if addsTopSpacing {
+                    Color.clear
+                        .frame(height: ChatChromeMetrics.channelListTopPadding)
+                        .accessibilityHidden(true)
                 }
-                .buttonStyle(.plain)
-                .help(isExpanded ? "Collapse \(name)" : "Expand \(name)")
+
+                if let name = group.name {
+                    Button {
+                        withAnimation(.snappy(duration: 0.18)) { isExpanded.toggle() }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                                .font(.caption2.weight(.semibold))
+                                .frame(width: 8)
+                            Text(name)
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(isExpanded ? "Collapse \(name)" : "Expand \(name)")
+                }
             }
         }
     }
