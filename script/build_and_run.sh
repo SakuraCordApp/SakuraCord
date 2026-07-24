@@ -63,6 +63,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
+sakuracord_print_identity
+
 if [[ "$MODE" != "package" && "$MODE" != "package-release" ]]; then
   sakuracord_stop_scoped_app
 fi

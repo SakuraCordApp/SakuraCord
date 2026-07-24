@@ -2,164 +2,282 @@
 
 This file applies to the entire repository.
 
-## Parallel Codex worktree isolation
+SakuraCord is an interactive native macOS Discord client. It is not a self-bot,
+spam tool, scraper, or unattended account-automation system. User-visible
+actions initiate account actions. Do not add hidden automation, bulk messaging,
+mass-DM behavior, token sharing, challenge bypasses, or claims that the client
+is affiliated with Discord or safe from account action.
+
+## Start with the right source of truth
+
+- Read [docs/README.md](docs/README.md) and the canonical document relevant to
+  the task. Do not load every historical implementation detail into context.
+- Inspect the current code, tests, configuration, and working-tree state before
+  relying on a dated document or roadmap description.
+- Preserve unrelated and dirty work. Make the smallest coherent change and
+  distinguish direct evidence from inference.
+
+## Decide the current checkout mode
+
+Worktree rules are conditional. Do not assume they apply because this file
+mentions worktrees or because `git worktree list` contains other checkouts.
+
+When checkout identity matters for building, testing, cleanup, concurrent work,
+or Computer Use, execute:
+
+```sh
+./script/worktree_runtime.sh
+```
+
+- `Checkout: main` means this is the ordinary canonical checkout. Work normally
+  here with `dist/SakuraCord.app` and `dev.sakuracord.SakuraCord`. Do not create
+  a worktree, set `SAKURACORD_WORKTREE_ID`, or apply linked-only setup/cleanup
+  guidance unless the user actually requested concurrent writers.
+- `Checkout: linked worktree` means isolated variant behavior is active. Follow
+  [docs/PARALLEL_WORKTREES.md](docs/PARALLEL_WORKTREES.md).
+
+`script/worktree_test.sh` only serializes tests in the current checkout. It does
+not create, select, or switch to a worktree.
+
+## Roadmap workflow
+
+The deployed roadmap service is the only source of truth for planned work,
+priority, lifecycle state, acceptance criteria, research, verification, and
+linked Discord discussions. Use the
+[@roadmap-management](plugin://roadmap-management@personal) plugin and its
+roadmap tools. Do not create or maintain a repository `ROADMAP.md`.
+
+For roadmap work:
+
+1. Search or list items to resolve the stable item ID.
+2. Read the complete current item and revision before any mutation.
+3. Use that exact revision as `expectedRevision`; on conflict, read again and
+   reapply only the intended change.
+4. Do not infer progress from code presence or intuition. Cite acceptance
+   criteria, tests, commits, pull requests, benchmarks, or an explicit manual
+   assessment with rationale.
+5. Record actual verification through the roadmap verification tool. A normal
+   transition to done requires acceptance criteria, every criterion satisfied,
+   and at least one passing verification result.
+6. Use roadmap history for “what changed” questions. Use sync status before
+   reconciliation when diagnosing Discord projection drift.
+
+Community submissions remain in the review inbox until a maintainer accepts or
+links them. Reactions and duplicate counts are signals, not automatic priority.
+Roadmap data and per-item state never belong in Git commits. Repository
+inspection is evidence to review, not proof that an item is complete.
+
+## Linked-worktree isolation
+
+This section applies only to an actual linked checkout or to a coordinating task
+that is deliberately creating separate linked worktrees for concurrent writers.
+A single writer in the main checkout should not enter the parallel-worktree
+workflow.
 
 - Give every concurrently writing agent its own Codex-created worktree. Never
   build or edit through another agent's checkout.
-- Isolated app identity is only for an actual Codex worktree checkout. A normal
-  checkout, including the primary checkout used by an ordinary Codex task, must
-  always build and launch the canonical `dist/SakuraCord.app` with display name
-  `SakuraCord` and bundle identifier `dev.sakuracord.SakuraCord`. Do not set
-  `SAKURACORD_WORKTREE_ID` or otherwise manufacture a variant identity outside
-  an actual Codex worktree.
-- Use the repository environment actions or `script/build_and_run.sh`; they
-  assign a unique app name, bundle identifier, bundle path, and process scope to
-  each linked worktree. Do not use `pkill`, `killall`, or a hard-coded
-  `dist/SakuraCord.app` path in worktree automation.
-- Use `--offline` or `--offline-long-server-list` for agent visual testing.
-  Codex-worktree live-account launches are intentionally blocked by default.
-- Run tests through `script/worktree_test.sh` when another operation may be
-  active in the same checkout. Builds and tests in separate worktrees remain
-  independent.
-- Integrate parallel results patch-by-patch into the current target worktree.
-  Never replace a shared file wholesale with a source worktree's copy. Resolve
-  overlaps semantically, run `git diff --check`, search for conflict markers,
-  and verify the combined result. The full procedure is in
-  `docs/PARALLEL_WORKTREES.md`.
+- Variant app identities are only for actual Codex linked worktrees. A normal
+  checkout must build `dist/SakuraCord.app` with display name `SakuraCord` and
+  bundle identifier `dev.sakuracord.SakuraCord`. Do not set
+  `SAKURACORD_WORKTREE_ID` to manufacture a variant identity.
+- Use repository environment actions or `script/build_and_run.sh`; they assign
+  each worktree a unique app name, bundle, process scope, and build cache. Do
+  not use `pkill`, `killall`, or a hard-coded `dist/SakuraCord.app` path in
+  worktree automation.
+- Use `--offline`, `--offline-long-server-list`, or
+  `--offline-forum-performance` for agent visual testing. Linked-worktree
+  live-account launches are blocked by default. Agents must not set the
+  live-worktree override.
+- Use `script/worktree_test.sh` to serialize tests within one checkout. Builds
+  and tests in separate worktrees remain independent.
+- Integrate results patch-by-patch. Never replace a shared file wholesale from
+  another worktree. Resolve overlaps semantically, run `git diff --check`,
+  search for conflict markers, and verify the combined result.
+
+The full procedure is in
+[docs/PARALLEL_WORKTREES.md](docs/PARALLEL_WORKTREES.md).
 
 ## Computer Use app targeting
 
-- Never target SakuraCord in Computer Use by the generic display name
-  `SakuraCord`. A read-only state request can launch an app when the target is
-  not already running, and the display name is ambiguous across installed,
-  authenticated, offline, and worktree builds.
-- Before any Computer Use inspection or action, execute (do not source)
-  `script/worktree_runtime.sh` from the checkout being tested and use the exact
-  app bundle path printed on its `App:` line as the Computer Use `app` target.
-  The full bundle path is preferred over the bundle identifier because separate
-  copies can share the canonical main-checkout identifier.
-- Confirm that the printed executable is the scoped running process before
-  interacting. If it is not running, launch that exact bundle explicitly with
-  the intended offline arguments first; do not let a generic Computer Use
-  lookup choose or launch another copy.
-- After every Computer Use action, fetch fresh state from that same exact app
-  path. Never switch to a display-name target mid-session.
+- Never target SakuraCord by the generic display name. A read-only state lookup
+  can launch an ambiguous installed, authenticated, offline, or worktree build.
+- Execute, do not source, `script/worktree_runtime.sh` from the checkout being
+  tested. First confirm whether it reports `Checkout: main` or
+  `Checkout: linked worktree`, then use the complete bundle path from its `App:`
+  line as the Computer Use target.
+- Confirm the printed executable is the scoped running process. If it is not
+  running, launch that exact bundle with the intended offline arguments.
+- After every action, fetch fresh state from the same absolute bundle path.
+  Never switch to a display-name target mid-session.
 
-SakuraCord is an interactive, native macOS Discord client written in Swift and SwiftUI. It is not intended to be a self-bot, spam tool, or unattended account-automation system: user-visible actions in the app initiate account actions. Its purpose is to provide a fast, resource-efficient, Liquid Glass client experience without Discord's Electron runtime.
+## Protocol research proportional to risk
 
-SakuraCord is nevertheless unofficial and uses a normal Discord account session through protocol surfaces that Discord does not document or support as a third-party-client API. Treat protocol accuracy and Paicord parity as important account-safety considerations. Paicord is the default compatibility reference for behavior it implements, especially request construction, challenge handling, and bounded retries. Deliberate differences are acceptable when current official-client evidence, public documentation, or SakuraCord's architecture supports a better fit; record the reason when the difference changes network behavior. No degree of parity can guarantee that Discord will accept the client or refrain from account action.
+UI-only work, local persistence, mock fixtures, tests, accessibility, styling,
+and mechanical refactors do not require fresh Discord protocol research when
+they leave the established network contract unchanged.
 
-## Protocol research proportional to the change
+New, high-risk, undocumented, uncertain, or materially changed production
+network behavior requires a complete comparison of:
 
-Use research effort proportional to the risk and novelty of the change. New or changed production network behavior—including REST routes, Gateway or voice/video signaling, authentication, messages, DMs, reactions, emoji, attachments, presence, profiles, member lists, or remote settings—requires comparison with the relevant references below:
+1. the corresponding Paicord path;
+2. the corresponding Swiftcord v1 path;
+3. the exact behavior of a current clean, unmodified official Discord client;
+   and
+4. Discord's current public API, status-code, and rate-limit documentation
+   wherever those documents cover the behavior.
 
-1. The corresponding behavior in Paicord.
-2. The corresponding behavior in Swiftcord v1.
-3. The exact behavior of a current, clean, unmodified official Discord client.
+Trace the complete feature path: UI trigger, cache/state lookup, Gateway
+dependency, route or opcode, headers, request body, sequencing, request count,
+response decoding, errors, rate limits, retries, cancellation, invalidation,
+and reconciliation. Swiftcord v1 is a historical design reference; Paicord is
+the operational reference when current official evidence and SakuraCord's
+architecture do not support a deliberate difference.
 
-Also consult Discord's current public API documentation, status/error-code documentation, and rate-limit documentation wherever applicable. Public documentation is authoritative for the behavior it covers, but it does not cover every normal-client route or payload.
+Capture only sanitized protocol shape. Never store or share credentials,
+authorization headers, cookies, message bodies, personal data, fingerprints,
+installation identifiers, or unsanitized traffic. Never replay captured
+credentials or synthesize server-issued values.
 
-UI-only work, local persistence, mock fixtures, tests, accessibility, styling, and mechanical refactors do not require fresh protocol research when they leave the established network contract unchanged. Existing recent repository baselines may be reused for small changes to an already documented call flow. For new, high-risk, or materially changed production calls, complete the comparison before implementation. If one reference is unavailable or does not implement the feature, note that briefly and use the remaining evidence rather than blocking the work.
+Record narrow, time-bound evidence in the roadmap item, pull request, or commit
+description. Update [docs/PROTOCOL_BASELINE.md](docs/PROTOCOL_BASELINE.md) only
+when a change establishes or supersedes a durable repository-wide contract. Do
+not create a feature-specific Markdown implementation journal.
 
-## Paicord and Swiftcord v1 review
+## REST and account safety
 
-- For protocol-changing work, trace the complete feature path rather than only the endpoint string: UI trigger, state/cache lookup, Gateway dependency, request construction, headers, body, response decoding, error handling, retries, and invalidation.
-- Swiftcord v1 is currently non-functional and old. Its code is still a useful design and protocol reference, but details reused from it should be checked against newer evidence.
-- Paicord is SakuraCord's primary operational reference. Prefer its established behavior when the current official client and SakuraCord architecture do not provide a reason to differ, and document meaningful protocol differences without treating parity as a goal by itself.
-- Swiftcord v1 remains a historical design reference rather than the operational baseline.
+- Route every authenticated request through `DiscordRESTProvider`'s central
+  transport, rate-limit coordinator, metadata source, logging, and safety
+  circuit. Do not create a one-off authenticated `URLSession`.
+- Preserve the current retry contract unless the protocol comparison and tests
+  justify changing it: ordinary GETs have at most two attempts and retry only
+  after a server `429`; mutations have one attempt. The application-command
+  index has its separately tested three-request `202`/`429` readiness bound.
+- Use server-provided bucket and cooldown data. Never hard-code a rate limit,
+  retry early, spin, or add speculative “just in case” probes.
+- Preserve nonces/idempotency and Gateway reconciliation. An ambiguous mutation
+  result must not become an automatic second user action.
+- Native login may follow its separately documented, bounded Paicord-style
+  status retry and one user-completed CAPTCHA replay. Cancelling or failing a
+  challenge never replays it. Never synthesize, borrow, or bypass a challenge.
+- Validate channel type, permissions when known, required fields, limits, and
+  attachment metadata before transmission.
+- Coalesce identical reads, deduplicate in-flight work, paginate deliberately,
+  cancel superseded work, and cap fan-out.
+- Log only sanitized route templates, status/error codes, bucket identifiers,
+  request counts, and timing. Never log credentials or message content.
 
-## Official-client protocol examination
+### Direct-message guardrail
 
-For high-risk, undocumented, or uncertain behavior, use a clean, unmodified official Discord web or desktop client and an account/session the user is authorized to inspect. For a small change to an established flow, current public documentation, public client assets, and a recent repository baseline may be sufficient. When fresh examination is warranted, compare the network and Gateway behavior needed for the feature:
+DM behavior needs extra review because a SakuraCord DM send has previously
+triggered an account restriction.
 
-- HTTP method, API version, route, path parameters, query parameters, and content type.
-- Request body shape, field presence versus omission, nullability, types, nonce/idempotency fields, attachment metadata, reply/message references, and context fields.
-- Header names, values, and provenance: distinguish stable client metadata, values derived from the real local environment, values issued by Discord, and per-session/per-request values.
-- Number of calls caused by one UI action, call ordering, concurrency, debouncing, cancellation, batching, pagination, lazy loading, prefetching, and cache reuse.
-- Gateway opcode and payload shape, capabilities, client state, subscriptions, sequence handling, heartbeat/ACK behavior, resume, reconnect, and invalid-session behavior.
-- Success status, error status and Discord error code, response headers, rate-limit bucket/scope, response-body shape, and cache invalidation caused by the operation.
-
-Capture only what is needed to understand protocol semantics. Never commit or share account tokens, authorization headers, cookies, message bodies, personal data, server-issued fingerprints/installation identifiers, or unsanitized captures. Do not replay captured credentials. Values issued by Discord must come from the legitimate flow that issues them; never hard-code or borrow them from another account/session.
-
-Protocol parity is for compatibility, correctness, predictable performance, and avoiding malformed or anomalous request behavior. Paicord-style interactive challenge completion is allowed; bypassing a challenge is not. Do not add hidden unattended actions, spam behavior, or unbounded retry loops.
-
-## Protocol implementation record
-
-Changes that add or materially alter production routes, payloads, headers, Gateway behavior, retries, authentication, or account actions should include a proportionate implementation note in the PR/commit description or associated repository documentation. UI-only and local-only changes do not need one. A short note is enough for a narrow change to an established flow; significant or high-risk work should cover the applicable items below:
-
-- Official Discord documentation consulted.
-- Paicord repository revision and relevant findings.
-- Swiftcord v1 repository revision and relevant findings.
-- Official-client version/build, observation date, and a sanitized call-flow description.
-- For substantial changes, a comparison table listing route/payload/header/sequencing differences between the available references and SakuraCord.
-- The chosen behavior and why it matches the current official client or deliberately differs.
-- Expected request count for cold cache, warm cache, repeated UI action, and failure/retry cases.
-- Rate-limit, account-restriction, rollback, and testing considerations.
-
-Update `docs/PROTOCOL_BASELINE.md` when a change establishes or supersedes a repository-wide protocol baseline. Date observations clearly and avoid presenting an older observation as current.
-
-## REST request safety and parity
-
-- Route authenticated requests through the shared transport and rate-limit coordinator. Do not create one-off authenticated `URLSession` paths that bypass common scheduling, logging, or shutdown behavior.
-- Use Paicord's endpoint, payload, header, sequencing, challenge, and retry semantics as the default for the same user action, while allowing documented differences based on newer official behavior or SakuraCord's architecture. Avoid extra “just in case” requests or speculative probes.
-- Do not hard-code rate limits. Track the server's `X-RateLimit-Bucket`, major parameters, scope, remaining count, reset time, and `Retry-After`/`retry_after` values.
-- A fixed global delay can be a temporary safety ceiling, but it is not a replacement for Discord's bucket model. Scheduling must prevent bursts without making the client unnecessarily slow.
-- Prefer Paicord's current default retry policy unless route-specific evidence supports another bounded policy: retry `429`, `500`, `502`, and `504` at most three times; use its header-based backoff ceiling and fallback exponential backoff; never retry early or spin. Record the pinned revision and any meaningful deviation for protocol-changing work.
-- After the user successfully completes a CAPTCHA or MFA challenge, replay the challenged request with the Paicord-equivalent challenge headers and retry counter. Paicord's standard bounded status-code retries may still apply after that replay. Cancelling or failing a challenge does not replay the request. Never synthesize, borrow, or bypass a challenge solution.
-- Handle `401`, `403`, repeated `404`, malformed responses, verification requirements, and restriction codes the way the pinned Paicord revision handles the equivalent route. Always bound retries and surface the result; open the session-wide circuit only where Paicord does so or where continuing would cross the scope boundary.
-- Mutations may use Paicord's bounded status-code retry behavior. Preserve Paicord's nonce/idempotency fields and Gateway/REST reconciliation so a retry does not become an extra user action.
-- Coalesce identical reads, deduplicate in-flight loads, cache stable data, paginate deliberately, cancel superseded work, and cap concurrency.
-- Validate payloads before transmission: channel type, permissions when known, required fields, size/count limits, and attachment metadata.
-- Log sanitized route templates, methods, status/error codes, request counts, bucket identifiers, and timing. Never log credentials or message content.
+- Treat opening/creating a DM, loading an existing DM, and sending as distinct
+  actions. Do not create or reopen a DM on every send.
+- Before materially changing DM creation or sending, recheck the current
+  official client, Paicord, Swiftcord v1, request ordering, body, nonce,
+  context, challenge handling, and Gateway reconciliation.
+- Serialize duplicate open/create attempts and deduplicate sends. Never invent
+  a second send after an ambiguous timeout.
+- Handle `40003`, `40004`, verification/challenge responses, and connection
+  revocation at the same bounded scope as the reviewed reference path.
+- Keep incomplete DM mutation behavior experimental and gated until contract
+  and request-budget tests pass.
 
 ## Gateway requirements
 
-- Maintain an explicit, testable state machine for connect, hello, identify/resume, heartbeat, ACK tracking, ready, reconnect, invalid session, backoff, and shutdown.
-- Match current official-client identify, capabilities, client-state, compression/encoding, and subscription semantics only after comparing them with Paicord and Swiftcord v1.
-- Metadata in identify/request properties must be understood and sourced correctly. Do not blindly paste a captured blob or claim values that belong to a different account/session/device.
-- Track heartbeat ACKs; do not merely send periodic heartbeats. A missing ACK must close/reconnect according to observed protocol behavior.
-- Prefer resume over a fresh identify when the session is resumable. Bound reconnect attempts and never reconnect in a tight loop.
-- Add deterministic fixtures for every opcode and transition used by a new feature.
-
-## Direct-message guardrail
-
-DM behavior requires extra review because a SakuraCord DM send has already triggered an account disablement.
-
-- Distinguish opening/creating a DM channel, loading an existing DM, and sending into it. Do not create/open a DM as part of every send.
-- Before materially changing or broadly enabling DM creation/sending, compare an equivalent current official-client action and inspect the relevant Paicord and Swiftcord v1 paths. Pure UI, cache, or fixture work can reuse the existing DM baseline.
-- Match the official request body, nonce, context fields, call ordering, and Gateway reconciliation. Small omissions can change how Discord classifies the operation.
-- Serialize duplicate open/create attempts and deduplicate sends. Apply only the bounded retry and challenge behavior present in the pinned Paicord path; never invent a second send after an ambiguous timeout.
-- Handle Discord error `40003` (opening DMs too quickly), `40004` (sending temporarily disabled), verification/challenge responses, and connection revocation with the same request/session scope and user-visible behavior as the pinned Paicord path.
-- Keep incomplete DM creation/sending behavior visibly experimental and disabled by default until fixture tests and the implementation record are complete.
+- Keep an explicit testable state machine for connect, Hello, Identify/Resume,
+  heartbeat, ACK, Ready, reconnect, invalid session, backoff, and shutdown.
+- Track heartbeat ACKs, prefer Resume when valid, bound reconnect attempts, and
+  prevent stale socket generations from affecting a newer connection.
+- Understand and source Identify metadata correctly. Do not paste captured
+  blobs or claim official-client identity.
+- Add deterministic fixtures for each new opcode and transition.
 
 ## Testing and live-account rules
 
-- Default to mocked transports, sanitized fixtures, deterministic clocks, and synthetic accounts/guilds. All core behavior must be testable with Discord networking disabled.
-- Add or update request-contract tests when a change affects method, route, query, headers, body, status/error handling, rate-limit scheduling, retry count, or mutation nonce behavior.
-- Add request-budget tests for any feature that can fan out. Fail tests when a UI action unexpectedly produces extra requests.
-- Do not make real Discord calls merely because a build or unit test runs. Live tests require an explicit manual action and a stated expected call sequence.
-- Keep live tests narrow: one feature, one manual action, and one inspected result at a time. Do not use an account whose loss would be unacceptable.
-- In a live test, allow Paicord-equivalent interactive CAPTCHA/MFA completion and its bounded status-code retries. Never solve a challenge without the user, retry beyond Paicord's policy, or continue an unattended test loop.
-- When Paicord stops, preserve sanitized diagnostics and stop SakuraCord at the same scope. Investigate unexpected results with the relevant references before another live test.
+- Default to mocked transports, sanitized fixtures, deterministic clocks, and
+  synthetic accounts/guilds. Automated tests must run with Discord networking
+  disabled. Offline coverage remains required for every behavior that can be
+  represented faithfully without authenticated server state.
+- Add request-contract tests for method, route, query, headers, body,
+  status/error handling, rate-limit behavior, retries, and mutation nonce when
+  any of those change.
+- Add request-budget tests for fan-out, caching, pagination, cancellation, and
+  deduplication.
+- Use `./script/worktree_test.sh protocol`, `app`, or `all`. For packaged-app
+  claims, run `./script/build_and_run.sh package` and strict deep `codesign`
+  verification. A successful compile is not shipped-app or visual proof.
 
-## Scope boundary
+An authenticated test is an exception for a defect that genuinely depends on
+authenticated or server-issued state and cannot be reproduced faithfully in
+offline mode—for example account-specific Ready data, permissions, remote
+settings, Gateway sequencing, or a server response. Do not request a live test
+merely because creating a fixture is inconvenient.
 
-- Do not add self-bot features, unattended account actions, bulk messaging, spam, scraping, mass-DM behavior, or token sharing. These are outside SakuraCord's purpose.
-- Do not bypass CAPTCHAs, verification challenges, rate limits, permission checks, account restrictions, or other safety controls. Presenting a Paicord-equivalent challenge for the user to complete and replaying it with Discord-issued solution data under Paicord's bounded retry counter is permitted.
-- Do not claim affiliation with Discord or claim that SakuraCord is ban-safe.
-- Do not weaken Keychain storage, secret redaction, the offline network switch, or the REST safety circuit for convenience.
+Before asking permission for that exception:
+
+1. Establish from the issue and code path that the trigger is inherently
+   authenticated or server-side. Do not require an offline reproduction,
+   offline attempt, or fixture when offline data cannot exercise that trigger.
+2. Re-audit the exact production path end to end: UI trigger, cached state,
+   REST route or Gateway opcode, API version, headers and their provenance,
+   payload omission/null semantics, nonce/idempotency, request count and order,
+   rate-limit bucket behavior, retries, challenge/restriction handling,
+   response decoding, and Gateway reconciliation.
+3. Compare the applicable current Discord documentation, pinned Paicord and
+   Swiftcord paths, and a current clean official-client baseline proportionally
+   to the risk. Resolve any unexplained mismatch before live testing.
+4. Add or update mocked request-contract and request-budget tests when they can
+   meaningfully exercise the relevant API contract. Do not add irrelevant
+   offline fixture coverage merely to satisfy a testing ritual.
+5. Present the user with the exact manual action, expected request/event
+   sequence, maximum request count, account risk, sanitized evidence to collect,
+   and immediate stop conditions; then ask for fresh permission for that
+   specific authenticated test.
+
+After permission:
+
+- Run only the approved action, once, from the canonical main checkout and exact
+  packaged app path. Never set the linked-worktree live override for an agent
+  test.
+- Use an account whose loss is acceptable. Keep the interaction user-visible;
+  do not automate account actions or continue an unattended loop.
+- Do not expand the test beyond the approved feature or reuse permission for a
+  follow-up attempt.
+- Stop immediately on an unexpected request, request count, status, payload,
+  challenge, restriction, malformed response, or Gateway event. A challenge may
+  be completed only by the user within the reviewed flow.
+- Preserve only sanitized diagnostics and report live, packaged-app, offline,
+  and automated-test evidence separately.
+
+## Documentation rules
+
+- Keep the root README accurate for public setup, safety, tests, and releases.
+- Keep the docs set small and canonical; follow
+  [docs/README.md](docs/README.md).
+- Planning and progress belong in the roadmap service. Durable architecture,
+  protocol, workflow, and legal facts belong in the existing canonical docs.
+- Verify commands, paths, versions, capability gates, and release claims
+  against current source before documenting them.
+- Date observations and state what was not verified. Do not present a build,
+  benchmark, live check, or memory-derived fact as current without evidence.
 
 ## Completion checklist
 
-For production protocol changes, use the applicable parts of this checklist; UI-only and local-only work can skip protocol-specific items:
+Before finishing, apply the parts relevant to the change:
 
-- Were the relevant Paicord, Swiftcord v1, official-client, and public-documentation references reviewed or covered by a recent baseline?
-- Are reference revisions/builds and sanitized findings recorded when the change warrants an implementation note?
-- Does the call flow match the official client's current semantics, or is every deliberate difference justified?
-- Are request count, ordering, concurrency, caching, pagination, cancellation, and deduplication explicit?
-- Are Discord's bucket headers and server-provided retry intervals handled centrally?
-- Do mutation retries match Paicord's bounded policy and preserve its nonce/idempotency behavior?
-- Do authentication, permission, malformed-response, challenge, and restriction paths match the pinned Paicord behavior without bypasses or unbounded retries?
-- Are tests runnable without a live Discord account and free of secrets/personal data?
-- Are DM and high-fan-out features gated until their contract tests and request budgets pass?
-- Does SakuraCord stop, retry, or replay at the same scope and bound as the pinned Paicord path?
+- Did the implementation stay within the interactive-client scope?
+- Did protocol-changing work compare the required references and record any
+  deliberate difference?
+- Are request counts, ordering, caching, cancellation, retries, and
+  reconciliation explicit and tested?
+- Are authentication, permission, restriction, malformed-response, and
+  challenge paths bounded without bypasses?
+- Do automated tests run offline without secrets or personal data?
+- If an authenticated-only exception was necessary, was its inherently
+  authenticated trigger identified, the exact API path re-audited, and fresh
+  action-specific user permission obtained before the test?
+- Were the actual relevant tests run, and were package, signature, live, and
+  visual checks reported separately?
+- Was durable documentation updated without creating duplicate roadmap or
+  feature-journal state?

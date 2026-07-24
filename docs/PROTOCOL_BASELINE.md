@@ -1,83 +1,267 @@
 # Discord production protocol baseline
 
-Updated on 22 July 2026 from Discord's public production bootstrap, public production assets, a signed/notarized stable desktop host, and a narrow user-authorized authenticated comparison. No account token, cookie, authorization header, message body, personal payload, or unsanitized response was written to the repository, logs, or captures. The detailed comparisons are in `GATEWAY_TYPING_IMPLEMENTATION.md`, `NATIVE_AUTH_IMPLEMENTATION.md`, `SERVER_FOLDERS_IMPLEMENTATION.md`, and `FORUM_CHANNELS_IMPLEMENTATION.md`.
+Last repository audit: 25 July 2026 at SakuraCord commit `32a6b8e`.
 
-## Observed environment
+This document describes SakuraCord's durable network contract and the dated
+evidence behind it. It is not a claim that Discord's undocumented
+normal-account protocol is stable, supported, or safe from account action.
 
-- Production web build: `580156`, version hash `af6069991f1b0f884f278271a1fe36a2432d056c`.
-- Production API version: `9`.
-- Signed/notarized stable desktop host: `0.0.401`, with Electron framework `37.6.0`. The observed renderer had Equicord plugins injected into the base Discord Electron client. The account owner confirmed that installation as the intended comparison target; findings below distinguish visible ordering from request semantics and do not attribute plugin-only behavior to Discord.
+Detailed feature-by-feature journals that existed before the documentation
+consolidation remain available in Git history through commit `32a6b8e`. New
+narrow implementation evidence belongs in the canonical roadmap item, pull
+request, or commit description rather than a new Markdown file.
 
-## Gateway
+## Evidence snapshot
 
-- Web bootstrap: `wss://gateway.discord.gg/?encoding=json&v=9&compress=zlib-stream`.
-- Desktop bootstrap when `DiscordNative` and the native codecs are present: ETF with `zstd-stream`.
-- Normal identify opcode is `2`; resume is `6`; heartbeat/ACK are `1`/`11`.
-- SakuraCord uses the current web JSON/`zlib-stream` path and the documented opcode-1 heartbeat. It deliberately does not copy the current client's undocumented QoS heartbeat envelope.
-- The observed identify payload includes token, capabilities (`1734653` without private-channel obfuscation), client properties, optional presence, a legacy-compression flag where applicable, and versioned `client_state`.
-- Desktop fast-connect may send an early identify with `is_fast_connect`, an installation identifier, and cached client state before the main renderer completes startup.
-- Normal-account server folders arrive in Ready's `user_settings_proto` and subsequent `USER_SETTINGS_PROTO_UPDATE` dispatches. SakuraCord decodes preloaded-settings field 14 and makes no folder-specific REST request.
-- Community rules-channel presentation was rechecked on 23 July 2026 against Discord's public Guild Resource. The designation is the nullable guild-level `rules_channel_id` snowflake, not a channel-name convention or channel flag. SakuraCord retains that field from its existing guild bootstrap and `READY`/`GUILD_CREATE`/`GUILD_UPDATE` payloads, and uses it only for local icon presentation; the cold- and warm-cache request budget remains zero additional requests. Paicord revision `694761c1938b73bb60bd58942674dfe73aab1135` models and merges the same field. Swiftcord v1 revision `14465d927ebe1ba34b3befa00f9365fad7b56eb9`, with DiscordKit revision `2d42c69cafe592300a1a9d3a307bf485294026c7`, compares the designated ID to each channel and uses `newspaper.fill`; SakuraCord follows that established native presentation while retaining its existing lock icon for hidden channels.
-- Custom emoji inventories come from each guild object embedded in `READY`/`GUILD_CREATE` and are replaced by `GUILD_EMOJIS_UPDATE`. The current public client wraps embedded guild emoji data as either `{op: "full_sync", items: [...]}` or `{op: "update", writes: [...], deletes: [...]}`; the dedicated update dispatch retains the documented plain array. This matches Paicord revision `694761c1938b73bb60bd58942674dfe73aab1135`, which seeds its cross-server emoji store from Ready and applies emoji-update dispatches. Swiftcord v1 revision `14465d927ebe1ba34b3befa00f9365fad7b56eb9` does not contain a comparable completion path. SakuraCord's existing cached, coalesced `GET /guilds/{guild.id}/emojis` loader remains a sequential fallback only when a Gateway catalog is absent: cold fallback is at most one request per missing guild, warm/Ready-backed lookup is zero requests, and repeated typing adds no requests.
-- Emoji autocomplete was rechecked on 21 July 2026 against the visible composer in public-client build `580156` inside the stable `0.0.401` desktop host, using the same account, guild, channel, and query as SakuraCord. The account's `2025-10-emoji-search-ranking-tweaks` assignment had its four experimental boosts disabled in the base search module, but the actual composer also merged cross-guild locked custom entries and account ranking state. The authenticated `:sc` list began `catscared`, `SClongcat1`, `SClongcat2`, `SClongcat3`, `scales`, `scarf`, `school`, `school_satchel`, `scientist`, `scissors`, `scooter`, `scorpion`, `scorpius`, `scotland`, `scream`, `scream_cat`, `screwdriver`, `scroll`, then account-specific custom entries. Because the renderer composition layer—not the isolated base search export—is the user-visible contract, SakuraCord preserves favorite/message-frecency boosts, hidden-alias matching, and stable flattened server-rail catalogue order to reproduce that observed list. Reaction frecency is not used. Duplicate custom names receive `~N` in catalogue order without changing their ID-backed send value. Repeated typing adds no settings request.
-- Emoji inventories continue to come from `READY`/`GUILD_CREATE`, with the existing coalesced sequential `/guilds/{guild.id}/emojis` fallback only for unresolved guilds; autocomplete itself adds no new route. The message-emoji settings source remains undocumented type `2`, protobuf field `6` (`emoji_frecency`). Paicord revision `694761c1938b73bb60bd58942674dfe73aab1135` decodes the same settings schema but does not implement composer autocomplete ranking; Swiftcord v1 revision `14465d927ebe1ba34b3befa00f9365fad7b56eb9` has neither a comparable completion path nor current settings-proto support.
-- Nitro emoji permissions use the current user's `premium_type`: `0` is non-Nitro, while the documented Classic, Nitro, and Basic values `1...3` have Nitro emoji access. For message composition, non-Nitro static emoji from another guild and every animated custom emoji are inserted as public CDN image links; same-guild static emoji and every Nitro-authorized custom emoji retain Discord's `<:name:id>`/`<a:name:id>` token. For adding a new reaction, a non-Nitro picker contains only Unicode emoji plus available, static emoji belonging to the message guild; animated and other-guild custom emoji are filtered from guild sections, favorites, frequent results, and search before presentation. This picker restriction does not apply to a reaction already present on the message: non-Nitro users may join or remove that existing reaction even when its emoji is animated or belongs to another guild. Discord's public User resource defines the four premium values, the Emoji resource supplies `animated`/`available`, and the Message resource retains the existing URL-encoded `name:id` reaction contract. Paicord revision `694761c1938b73bb60bd58942674dfe73aab1135` stores the same premium enum, but its custom-emoji picker is unfinished and does not provide a comparable entitlement baseline; Swiftcord v1 has no comparable current Nitro-aware picker baseline. This adds no route or probe: allowed reactions remain one existing `PUT`/`DELETE`, a filtered picker selection makes zero requests, and composer fallback changes only the locally prepared message content.
-- Mention autocomplete was rechecked on 21 July 2026 against the current official client using the same authenticated account, guild, channel, and query as SakuraCord. The official message-composer hook requests members with Gateway opcode `8` (`REQUEST_GUILD_MEMBERS`) after a 200 ms debounce, using `guild_id`, the lowercased query without `@`, `limit: 10`, and `presences: true`; query searches omit both `nonce` and `user_ids`. The client action layer suppresses an equivalent recent request for one minute, and an already-complete local guild cache can satisfy the picker without another request. This agrees with Discord's public Request Guild Members contract, which defines opcode `8`, prefix queries, limits, and `GUILD_MEMBERS_CHUNK` responses. SakuraCord uses the same debounce, one-minute query cache, payload, and ten-result request budget.
-- User ranking assigns the strong score to an exact snowflake or username/nickname/global-name prefix, a lower score to normalized or ordered-subsequence matches, and preserves `GuildMemberStore` insertion order for equal scores; guild ownership is not a ranking boost. Bare `@` instead uses unique recent channel authors in newest-first order and falls back to guild-member-store order when no message is cached. Roles fill the remaining slots in the shared ten-result limit after users. Role matching uses match-sorter's case-sensitive exact, case-insensitive exact, prefix, word-prefix, contains, acronym, and ordered-subsequence ladder, with alphabetical ties—not role position. The public client hydrates each guild's initial member store from the top-level `READY.merged_members` array, paired by guild index and expanded through `READY.users`, before `CONNECTION_OPEN`; `READY_SUPPLEMENTAL` applies the same parallel-array expansion using the existing user cache. SakuraCord now mirrors that hydration and preserves the resulting array order as later member updates refresh values. A live `@w` query returned an empty opcode-8 chunk, confirming that this cache order—not the response array—was the necessary fallback contract.
-- Channel autocomplete is local and adds no channel-list request. The official scorer ranks exact name, prefix, contains, all-term contains, then ordered-subsequence matches; remaining terms may match category or guild context at half weight. Empty queries begin at score 7. The composer then consults undocumented user-settings type `2`, top-level protobuf field `12` (`guild_and_channel_frecency`). In public build `580156`, an operator-precedence quirk makes every positive channel-frecency value add the same full three-point boost before the 10/7 cap, so equal boosted entries preserve the guild channel store's sidebar category/position order. This produced `welcome`, the current `exyron-hating` channel, then `logs` for the authorized comparison account despite different numeric usage values. SakuraCord decodes that existing settings payload together with emoji settings, applies the same observable boost, and searches the same already-discovered channel store rendered by its sidebar rather than re-running permission resolution against a potentially partial member snapshot. It performs no extra authenticated request beyond the already coalesced settings load. Accepting a user, role, or channel result only edits the local draft. Paicord revision `694761c1938b73bb60bd58942674dfe73aab1135` and Swiftcord v1 revision `14465d927ebe1ba34b3befa00f9365fad7b56eb9` contain no comparable message-composer autocomplete implementation.
-- The current public client opens a role by reading the undocumented `GET /guilds/{guild.id}/roles/{role.id}/member-ids` route, caches that ID list briefly, then resolves absent users with Gateway Request Guild Members opcode `8`, `presences: false`, and batches of at most 100 IDs. SakuraCord matches that flow through the shared REST scheduler and its existing Gateway session, uses one nonce per batch, waits for `GUILD_MEMBERS_CHUNK`, times each batch out after eight seconds, and displays at most 1,000 members to bound fan-out. A click therefore costs one REST read plus zero to ten Gateway requests on a cold cache; cached users remove the corresponding Gateway batches. Channel mention clicks use the local channel store and make no network request. Paicord revision `694761c1938b73bb60bd58942674dfe73aab1135` had no comparable role-view implementation in the existing SakuraCord baseline, and Swiftcord revision `55ccca5e056078e19799c2d10e0d020758989f14` contains no corresponding role-member or mention-autocomplete path.
+The most recent repository-wide comparison was performed on 22–23 July 2026
+using:
 
-## REST preparation
+- Discord's public production web build `580156`, version hash
+  `af6069991f1b0f884f278271a1fe36a2432d056c`, API version 9;
+- a signed and notarized stable desktop host `0.0.401`; authenticated
+  observations from a renderer with Equicord injection were limited to visible
+  behavior or separately sanitized request semantics;
+- Paicord revision `694761c1938b73bb60bd58942674dfe73aab1135`;
+- Swiftcord v1 revision `14465d927ebe1ba34b3befa00f9365fad7b56eb9`
+  and DiscordKit revision `2d42c69cafe592300a1a9d3a307bf485294026c7`;
+  and
+- Discord's public [Gateway](https://docs.discord.com/developers/events/gateway),
+  [channel](https://docs.discord.com/developers/resources/channel),
+  [message](https://docs.discord.com/developers/resources/message),
+  [application-command](https://docs.discord.com/developers/interactions/application-commands),
+  [permission and status-code](https://docs.discord.com/developers/topics/opcodes-and-status-codes),
+  and [rate-limit](https://docs.discord.com/developers/topics/rate-limits)
+  documentation where applicable.
 
-Discord's production request layer adds the account authorization token plus `X-Super-Properties`, `X-Fingerprint` when available, `X-Installation-ID` when available, `Accept-Language`, `X-Discord-Locale`, `X-Discord-Timezone`, and optional debug/routing headers.
+No token, cookie, authorization header, message body, personal payload,
+fingerprint, installation identifier, or unsanitized traffic is stored in this
+repository. Treat every build number and observed payload as a dated snapshot,
+not current official behavior.
 
-SakuraCord sends the observed API version and one consistent Paicord-shaped metadata envelope across session validation, REST, and Gateway Identify. It uses the current observed Discord desktop/web versions, Paicord's current Chromium/header shape, and real locale/timezone/kernel/architecture values. Native sign-in obtains and persists only the fingerprint issued by Discord's `/experiments` flow; SakuraCord does not synthesize an installation ID/fingerprint or copy cookies, analytics identifiers, or other server-issued values.
+## Current production capability gates
 
-Native authentication follows Paicord revision `694761c1938b73bb60bd58942674dfe73aab1135` for fingerprint, login, MFA, hCaptcha, and bounded transport retry behavior. SakuraCord pins Paicord's hCaptcha dependency at `29de12bd290c5cc9c61b3e3c15fe9a9d21449465`, preserves Discord's `should_serve_invisible` challenge metadata, and reveals the embedded verifier only when the SDK reports that interaction is required. Public Discord documentation does not document normal-account password-login routes; see the implementation record for the exact comparison and limitations.
+`DiscordRESTProvider.supports(_:)` is the authority:
 
-Native QR authentication follows the same Paicord revision's remote-auth v2 flow: one `wss://remote-auth-gateway.discord.gg/?v=2` session, an ephemeral RSA-2048 SPKI public key, OAEP-SHA256 nonce/user/token decryption, a `https://discord.com/ra/{server-issued fingerprint}` QR value, one ticket exchange at `POST /users/@me/remote-auth/login`, and one current-user validation before Keychain storage. Paicord routes a CAPTCHA from that ticket exchange through its shared interactive callback and permits exactly one user-completed replay; SakuraCord now does the same while retaining the one-use RSA key until the exchange is completed or cancelled. The current public client assets expose the same `/ra/:remoteAuthFingerprint` and remote-auth REST route family, while Discord's public API documentation does not document the remote-auth WebSocket. Swiftcord v1 had no native implementation and delegated QR login to its embedded web view.
-
-Current message creation uses a Discord-epoch snowflake nonce with a 12-bit local sequence, the `chat_input` context header, and `mobile_network_type: "unknown"`. The previous Unix-epoch nonce was malformed and decoded decades into the future; deterministic contract tests prevent its recurrence. Any safety-sensitive response stops both REST and Gateway activity for the provider session.
-
-## Hidden-channel metadata and message-link navigation
-
-Rechecked on 21 July 2026 against Discord's public Channel and Permission contracts. A channel object may contain `last_message_id`, nullable `last_pin_timestamp`, and explicit role/member `permission_overwrites`; `VIEW_CHANNEL` is bit 10. SakuraCord now retains the pin timestamp and presents the last-message snowflake time plus explicit role/member overwrites that allow `VIEW_CHANNEL`, resolving their names, avatars, and role colors only from the already-loaded guild stores. This presentation makes no additional request. Paicord revision `694761c1938b73bb60bd58942674dfe73aab1135` models the same channel fields and overwrite hierarchy. Swiftcord v1 revision `14465d927ebe1ba34b3befa00f9365fad7b56eb9` applies the same overwrite order, while its DiscordKit revision `2d42c69cafe592300a1a9d3a307bf485294026c7` models both `last_pin_timestamp` and channel permission overwrites.
-
-Discord message URLs are recognized and rendered locally as structured message targets; pasting or copying preserves the exact URL and sending it does not add a preflight. Clicking a link first uses the current message cache. When the target is absent, SakuraCord makes one existing, centrally scheduled `GET /channels/{channel.id}/messages?before={message.id + 1}&limit=50` read, which deterministically includes the target snowflake when it remains accessible, then scrolls to and highlights that row. Activating a guild whose channel catalogue is not cached may separately perform the existing single guild-channel-list read. There is no retry or speculative search, and permission failures remain scoped to the navigation action. Discord's public Get Channel Messages contract documents the mutually exclusive snowflake cursors and 1-100 limit; this reuses SakuraCord's existing route and decoder rather than adding a new authenticated endpoint.
-
-## Message mentions and REST safety scope
-
-Rechecked on 20 July 2026 after an ordinary text-plus-user-mention send appeared to fail and the session-wide safety alert opened. The AppKit composer keeps the raw draft authoritative: an attachment-backed visible mention serializes to one exact `<@user_id>`, `<@&role_id>`, or `<#channel_id>` token before `SendMessageDraft` is created. Deterministic tests now cover plain text on both sides of the attachment and reject any leaked U+FFFC object-replacement character. The message request remains exactly one `POST /channels/{channel.id}/messages` with `content`, `nonce`, `enforce_nonce`, `tts`, `flags`, and `mobile_network_type`; it does not add a speculative preflight or an `allowed_mentions` override.
-
-The current public asset and pinned Paicord path omit `enforce_nonce`; SakuraCord deliberately retains the documented `enforce_nonce: true` field so a visible manual retry using the preserved nonce cannot create a second message if the first result was ambiguous. Discord's public Create Message contract defines that behavior, and it adds no request or automatic retry.
-
-The ordinary-message contract was compared as follows:
-
-| Reference | Mention and request behavior | Failure scope |
+| Capability | Production provider | Offline provider |
 | --- | --- | --- |
-| Current public client asset `web.92a6242173ccb893.js` (20 July 2026 baseline) | Queues one message POST containing the raw content and leaves `allowed_mentions` absent for an ordinary send. It supplies that field only for specific reply/ping choices. | A failed send marks/cancels affected queued messages; the public client path does not shut down all REST and Gateway activity for an ordinary 403. |
-| Paicord `694761c1938b73bb60bd58942674dfe73aab1135` | `MessageDrainStore` creates one `Payloads.CreateMessage` from content and nonce. `allowed_mentions` is nil except when suppressing a reply ping. | Its rate limiter records 401/403 as invalid requests, but a 403 is returned to the send task without a global client shutdown or retry. |
-| Swiftcord v1 `14465d927ebe1ba34b3befa00f9365fad7b56eb9` | `MessagesView+.swift` sends one `createChannelMsg`; `allowed_mentions` is nil for a normal message and configured only for reply behavior. | The failed message is surfaced in the channel UI rather than disconnecting the entire client. |
-| SakuraCord | Same raw mention token, route, one-POST budget, and absent ordinary `allowed_mentions`. | HTTP 401, authentication/account restriction codes `40001`, `40002`, `40003`, `40004`, `40012`, and `50014`, metadata block `40333`, CAPTCHA responses, malformed client mutations, and repeated unexpected 404s remain session-fatal. An ordinary resource/permission-scoped 403 such as `50001` or `50013` fails only that request. |
+| Forum channels | Enabled | Enabled |
+| Slash commands | Enabled | Enabled |
+| Message components and returned modals | Disabled | Enabled with fixtures |
+| Remote component choices | Disabled | Disabled |
+| GIF search | Disabled | Enabled with fixtures |
+| Guild sticker catalog and sticker sending | Disabled | Enabled with fixtures |
 
-Discord's public [Message Resource documentation](https://docs.discord.com/developers/resources/message) makes `allowed_mentions` optional and defines the omitted value for a regular message as parsing users, roles, and everyone. Its [status-code reference](https://docs.discord.com/developers/topics/opcodes-and-status-codes) distinguishes `50001` (missing access) and `50013` (missing permission for one action) from account-wide conditions such as `40002`, `40004`, and `40012`. The [rate-limit documentation](https://docs.discord.com/developers/topics/rate-limits) counts 401, 403, and 429 responses toward the invalid-request limit and recommends avoiding them, but it does not imply that one resource/permission-scoped 403 invalidates authentication or the Gateway session.
+Rendering decoded embeds, Components V2, stickers, attachments, and interaction
+responses does not imply that the corresponding production mutation is enabled.
+UI controls must consult the provider capability instead of inferring support
+from a payload.
 
-The incident path was confirmed from SakuraCord's sanitized unified log: at 21:14-21:17 on 20 July, the former debounced `GET /guilds/{guild.id}/members/search` repeatedly returned HTTP 403/code `50001` (Missing Access), and the previous blanket `status == 403` rule opened the global circuit each time. The later message send was therefore rejected locally before its POST; malformed mention content, a wrong token, and an unintended message route/body were ruled out. SakuraCord now uses the official client's Gateway opcode-8 flow instead of making that REST request, while the transport separately keeps ordinary resource/permission 403s request-scoped and preserves all account-sensitive stops above. No credential, message content, personal identifier, or unsanitized response was stored for this correction.
+## Shared REST contract
 
-Request budgets are deterministic:
+Every authenticated request goes through `DiscordRESTProvider.perform`:
 
-- A bare `@`, a recent/local member suggestion, a channel mention, or a cached lookup adds no send-time read: accepting the suggestion is local and sending costs one POST.
-- A nonempty member query with the role catalogue already cached costs at most one debounced Gateway opcode-8 request per distinct guild/query each minute; the following user action costs one message POST (one Gateway send plus one REST mutation).
-- From a provider with no role catalogue, the existing roles GET can add one cold-cache read before the Gateway search. It is cached for subsequent queries.
-- Cancelling or superseding a query cancels its local continuation and sends no retry. A Gateway timeout fails only the lookup; it does not open the REST safety circuit or stop the Gateway.
-- Every repeated user send is one new POST with its own nonce. Message mutations have no automatic status retry, and a permission failure on the message route remains one failed POST rather than a session-wide circuit event.
+- API v9 under `https://discord.com/api/v9`;
+- one `DiscordClientMetadata` source for session validation, REST, and Gateway
+  Identify;
+- authorization and client metadata applied centrally;
+- conservative request-slot scheduling and server rate-limit state;
+- sanitized route/status/bucket logging; and
+- one provider-wide safety circuit shared with the Gateway session.
 
-## Release gate
+The default attempt budget is exact:
 
-Before enabling the experimental normal-account connector broadly:
+| Operation | Maximum attempts |
+| --- | ---: |
+| Ordinary authenticated GET | 2; the second attempt occurs only after a server `429` cooldown. |
+| Authenticated mutation | 1; no automatic replay after `429`, timeout, or ambiguous failure. |
+| Application-command index readiness | 3 created GETs for the separately tested `202`/`429` flow. |
+| Native authentication status retry | Original plus at most 3 Paicord-policy retries for `429`, `500`, `502`, or `504`, subject to its delay ceiling. |
+| User-completed login CAPTCHA | At most 1 replay of the challenged request. |
 
-1. Capture only sanitized opcode/header-name/payload-shape fixtures from a clean, unmodified production session.
-2. Re-evaluate whether ETF/`zstd-stream` provides a material benefit over the supported production JSON/`zlib-stream` path; do not treat native-only behavior as identity metadata to copy.
-3. Keep heartbeat, ACK timeout, resume, invalid-session, reconnect, capability, subscription, and client-state behavior covered by deterministic tests.
-4. Re-run the baseline whenever the production build number changes.
-5. Keep a visible experimental warning because protocol parity does not make a third-party normal-account client supported or ban-safe.
+Any `429` pauses authenticated traffic until the server-provided cooldown.
+Route and global bucket data come from response headers/body; SakuraCord does
+not hard-code Discord rate limits or probe early.
+
+Mutations preserve their nonce or idempotency fields and rely on REST/Gateway
+reconciliation. A definite failed message may expose one explicit user retry
+with the original nonce and `enforce_nonce`; an ambiguous timeout remains
+waiting for confirmation and cannot be retried automatically.
+
+Authentication failures, account restrictions, verification/challenge
+responses, invalid client metadata, malformed mutation responses, and repeated
+unexpected not-found responses can open the session-wide safety circuit.
+Ordinary resource-scoped permission failures remain scoped when the decoded
+Discord error does not indicate an account/session condition.
+
+## Gateway contract
+
+`GatewaySession` is the sole socket owner. The current baseline uses API v9
+JSON with `zlib-stream`, not the official desktop ETF/`zstd-stream` path.
+
+The state machine covers:
+
+```text
+disconnected -> connecting -> awaitingHello -> identifying -> ready
+                                             -> resuming   -> ready
+connecting/awaitingHello/identifying/resuming/ready -> backingOff -> connecting
+any state -> stopped
+```
+
+Durable requirements:
+
+- one Identify or Resume after each new Hello;
+- a randomized first heartbeat and documented opcode-1 heartbeats;
+- ACK tracking and reconnect after a missed ACK;
+- persisted session ID, resume URL, and sequence;
+- Resume before a fresh Identify when state is valid;
+- explicit invalid-session and close-code handling;
+- bounded, jittered reconnect backoff;
+- a connection generation that prevents stale tasks from affecting a new
+  socket; and
+- explicit stop/logout with no reconnect.
+
+SakuraCord deliberately does not copy the official client's undocumented QoS
+heartbeat envelope or native-codec identity. Metadata must be understood and
+sourced from the real local/session environment.
+
+## Authentication
+
+Native authentication is implemented without an embedded Discord login page:
+
+- a cold password login performs experiments/fingerprint, login, then
+  current-user validation;
+- a warm password login performs login and validation;
+- MFA adds one explicit verification request;
+- hCaptcha is completed by the user and permits one challenged-request replay;
+- QR login uses one remote-auth v2 WebSocket, an ephemeral RSA key, one ticket
+  exchange, and one current-user validation after approval; and
+- only a validated session credential enters `KeychainCredentialStore`.
+
+Passwords, challenge solutions, fingerprints, and credentials are never
+written to preferences, fixtures, GRDB, or logs. A cancelled or rejected
+challenge does not create another request.
+
+## Established feature contracts
+
+These summaries preserve the durable network behavior from the consolidated
+implementation records.
+
+### Messages, typing, mentions, and links
+
+- One user send creates one message POST with a Discord-epoch nonce,
+  `chat_input` context, and `mobile_network_type: "unknown"`.
+- Local typing waits 1.5 seconds, then sends at most one empty typing POST per
+  eight-second activity window. Draft restoration, send, empty draft, channel
+  change, and unsupported channel types cancel pending typing.
+- Remote typing is keyed by channel and user, expires independently after ten
+  seconds, ignores the current user, and clears when that author sends.
+- Nonempty member autocomplete uses Gateway opcode 8 after a 200 ms debounce,
+  with a ten-result limit and one-minute equivalent-query cache. Channel
+  autocomplete is local.
+- A loaded message link navigates locally. An absent target uses one existing
+  bounded channel-history GET; it does not probe multiple pages or routes.
+
+### Rich messages, reactions, and emoji
+
+- History and Gateway message events share one loss-tolerant decoder. Updates
+  merge only fields present in the event.
+- Rich rendering issues no authenticated request by itself. Link previews use
+  decoded embeds; SakuraCord does not scrape or preflight message URLs.
+- Reactor previews use the documented reaction-user GET with `type=0&limit=5`.
+  Loads are visible-row driven, coalesced, cached, limited to four concurrent
+  reads, and never paginate.
+- Guild emoji primarily comes from Ready/Guild Gateway payloads and
+  `GUILD_EMOJIS_UPDATE`. A coalesced sequential guild-emoji GET is only a cache
+  fallback; autocomplete itself performs no request.
+- Nitro eligibility comes from `premium_type`; disallowed custom emoji
+  composition falls back locally without an entitlement probe.
+
+### Forums and threads
+
+- The production forum browser is enabled and uses the dated official-client
+  `threads/search` catalogue contract, with `post-data` preview batches of at
+  most ten.
+- Catalogue publication does not wait for starter previews. Pagination advances
+  by server records, search is debounced and cancellation-aware, and malformed
+  siblings do not discard valid posts.
+- Creating a text-only post is one thread mutation. Attachments add one
+  reservation plus one storage PUT per file before the final mutation.
+- Tag, archive, lock, pin, and delete actions are explicit, permission-gated,
+  centrally scheduled mutations with no automatic retry.
+- Opening a known thread/post is local; an unknown thread URL uses one Get
+  Channel read before the ordinary thread-history load.
+
+### Slash commands
+
+- A cold picker loads one context index and one user index, coalesced per
+  target. Warm valid indexes add no request.
+- Search, option editing, validation, and cached entity resolution are local.
+- Remote autocomplete sends one type-4 interaction per settled distinct query,
+  keyed by nonce, with no automatic retry.
+- Execution sends one type-2 interaction. Attachments are reserved and uploaded
+  first; the final interaction still has one attempt.
+- The outer `guild_id` describes invocation context. Inner `data.guild_id` is
+  present only for a guild-scoped command record.
+- Gateway interaction events and response messages reconcile the pending nonce;
+  rendering does not automatically fetch interaction detail.
+
+### Server folders and voice-channel text
+
+- Server folders decode from Ready `user_settings_proto` and subsequent
+  settings updates. Folder rendering, ordering, and expansion add no REST
+  request.
+- Selecting voice-channel text chat uses the ordinary one-page message-history
+  read and does not join voice. Reopening an already open pane adds no request.
+
+### Guild metadata and member lookup
+
+- Community rules-channel presentation uses the guild's authoritative
+  `rules_channel_id`, not a channel name or UI heuristic, and adds no request.
+- Hidden-channel metadata and effective access are derived from cached guild,
+  role, member, and permission-overwrite data. Displaying the last-message
+  snowflake time or allowed overwrite identities does not load hidden content.
+- Opening a role reads one member-ID list, resolves missing users through
+  Gateway member requests in batches of at most 100, and displays at most 1,000
+  members. Cached members remove the corresponding Gateway batches.
+- Ready read state admits only `read_state_type == 0` channel entries. If the
+  payload repeats a channel entry, the newest payload-order entry wins instead
+  of crashing dictionary construction.
+
+## Direct-message safety boundary
+
+Opening or creating a DM, loading history, and sending are separate operations.
+Do not create/open a channel as part of every send. Duplicate creation and
+sending must be serialized and deduplicated, and an ambiguous send must never
+be repeated automatically.
+
+Before materially changing DM creation or sending, recheck the current official
+client, Paicord, Swiftcord v1, request body, nonce, context, ordering, challenge
+behavior, and Gateway reconciliation. Keep incomplete paths capability-gated
+until request-contract and request-budget tests pass.
+
+## Verification and update rule
+
+Every protocol contract that can be represented faithfully must be covered by
+mocked transports, sanitized fixtures, deterministic clocks, request-contract
+tests, and request-budget tests with Discord networking disabled.
+
+An authenticated check is a narrow exception only when the defect genuinely
+depends on authenticated or server-issued state that cannot be established in a
+fixture. Such an issue does not require a performative offline reproduction or
+offline attempt. Before an authenticated check is run, the exact API path must
+be re-audited, mocked contract coverage must be added when it can meaningfully
+exercise that path, and the user must grant fresh permission for the specific
+action and bounded request sequence described in `AGENTS.md`. Agent-run
+authenticated checks use the canonical main checkout, never a linked-worktree
+live override.
+
+When a production network contract changes:
+
+1. compare the current official client, Paicord, Swiftcord v1, and public
+   Discord documentation proportionally to risk;
+2. record route, headers, body, sequencing, request count, response/error
+   behavior, rate limits, retries, cache effects, and reconciliation;
+3. state reference revisions/builds and observation dates;
+4. record narrow evidence on the roadmap item, pull request, or commit; and
+5. update this file only when the new evidence changes a durable
+   repository-wide baseline.

@@ -3,6 +3,11 @@
 # Shared worktree identity and process helpers. This file is sourced by the
 # setup, build, test, and cleanup entrypoints.
 
+if [[ -z "${BASH_VERSION:-}" ]]; then
+  echo "worktree_runtime.sh must run under Bash. Execute it directly; do not source it from zsh." >&2
+  return 2 2>/dev/null || exit 2
+fi
+
 if [[ -n "${SAKURACORD_WORKTREE_RUNTIME_LOADED:-}" ]]; then
   return 0 2>/dev/null || exit 0
 fi
@@ -34,9 +39,11 @@ SAKURACORD_GIT_COMMON_DIR="$(sakuracord_absolute_git_path "$(git -C "$SAKURACORD
 
 if [[ "$SAKURACORD_GIT_DIR" == "$SAKURACORD_GIT_COMMON_DIR" ]]; then
   SAKURACORD_IS_MAIN_WORKTREE=1
+  SAKURACORD_CHECKOUT_KIND="main"
   SAKURACORD_VARIANT_ID="main"
 else
   SAKURACORD_IS_MAIN_WORKTREE=0
+  SAKURACORD_CHECKOUT_KIND="linked"
   if [[ -n "${SAKURACORD_WORKTREE_ID:-}" ]]; then
     SAKURACORD_VARIANT_ID="$(sakuracord_sanitize_identifier "$SAKURACORD_WORKTREE_ID")"
   else
@@ -73,7 +80,9 @@ SAKURACORD_OPERATION_LOCK="$SAKURACORD_RUNTIME_DIR/operation.lock"
 SAKURACORD_SWIFTPM_CACHE_DIR="$SAKURACORD_RUNTIME_DIR/swiftpm-cache"
 
 sakuracord_scoped_pids() {
-  ps -axo pid=,command= | while read -r pid command; do
+  # `-ww` is required for long Codex worktree paths. A truncated command would
+  # make exact-path discovery miss the scoped process.
+  ps -ww -axo pid=,command= | while read -r pid command; do
     if [[ "$command" == "$SAKURACORD_EXECUTABLE_PATH" || "$command" == "$SAKURACORD_EXECUTABLE_PATH "* ]]; then
       printf '%s\n' "$pid"
     fi
@@ -144,7 +153,12 @@ sakuracord_acquire_operation_lock() {
 }
 
 sakuracord_print_identity() {
-  printf 'Worktree: %s\n' "$SAKURACORD_ROOT_DIR"
+  if [[ "$SAKURACORD_IS_MAIN_WORKTREE" -eq 1 ]]; then
+    printf 'Checkout:  main (canonical identity; linked-worktree isolation inactive)\n'
+  else
+    printf 'Checkout:  linked worktree (isolated identity active)\n'
+  fi
+  printf 'Root:      %s\n' "$SAKURACORD_ROOT_DIR"
   printf 'Variant:  %s\n' "$SAKURACORD_VARIANT_ID"
   printf 'App:      %s\n' "$SAKURACORD_APP_BUNDLE"
   printf 'Bundle ID:%s\n' " $SAKURACORD_BUNDLE_ID"

@@ -1,110 +1,158 @@
-# Parallel Codex worktree workflow
+# Linked Codex worktree workflow
 
-SakuraCord's Codex environment is designed so each task can build and visually
-test its own checkout without terminating or opening another task's app.
+This document applies only when the current checkout is an actual linked Git
+worktree, or when one coordinating task is deliberately creating separate
+linked worktrees for concurrent writers. It is not the default workflow for an
+ordinary task in the primary SakuraCord checkout.
 
-## What is isolated
+## Decide which checkout you are in
 
-Every Codex-created linked worktree gets a deterministic variant identity
-derived from its checkout path. The scripts use that identity for:
-
-- a distinct app executable and display name;
-- a distinct bundle identifier and app bundle under that worktree's `dist/`;
-- worktree-local SwiftPM scratch and dependency-cache directories;
-- exact-path process discovery and termination; and
-- a worktree-local operation lock that prevents a build and test in the same
-  checkout from corrupting one another.
-
-Any normal, non-worktree checkout remains `SakuraCord.app` with bundle
-identifier `dev.sakuracord.SakuraCord`. A Codex worktree produces an app such as
-`SakuraCord-a365-12ab34.app` with its own matching bundle identifier. The
-visible display name includes the same variant so Computer Use can target the
-correct build. Variant naming is strictly limited to actual Codex worktree
-checkouts: setting `SAKURACORD_WORKTREE_ID` in a normal checkout does not change
-its canonical app identity.
-
-## Targeting an app with Computer Use
-
-Do not pass the generic display name `SakuraCord` to Computer Use. Computer Use
-can launch a target while obtaining its state, so an ambiguous name can open a
-different installed copy—including an authenticated app—on top of an offline
-build that is already running.
-
-Resolve the identity from the checkout being tested by executing the helper
-directly (do not source it into zsh):
+Run:
 
 ```sh
 ./script/worktree_runtime.sh
 ```
 
-Use the complete path from the `App:` line as the Computer Use `app` target.
-Before interacting, verify that the process executable belongs to that exact
-bundle. If it is not running, launch the printed bundle explicitly through the
-repository's offline action or `./script/build_and_run.sh --offline`; do not use
-a generic Computer Use state lookup as the launcher. Continue using the same
-absolute bundle path for every state read and action. A bundle identifier is
-less precise because multiple copies of the canonical main app can share it.
+Read the first line:
 
-The Codex **Run Offline** and **Run Long Server Fixture** actions are the safe
-defaults for agent visual testing. They never restore a stored Discord session,
-use an in-memory database, and can remain open beside builds from other
-Codex worktrees. Live-account launches from Codex worktrees are rejected unless
-a person deliberately sets `SAKURACORD_ALLOW_LIVE_WORKTREE=1`.
+- `Checkout: main` means the canonical checkout is active. Linked-worktree
+  isolation is inactive. Use the normal build and test commands in the root
+  README, keep the canonical `SakuraCord.app` identity, and do not apply the
+  linked-only setup, cleanup, naming, or live-launch rules below.
+- `Checkout: linked worktree` means this checkout has an isolated variant
+  identity. Follow the linked-worktree sections below.
 
-## Starting parallel tasks
+The existence of other paths in `git worktree list` does not change the mode of
+the current checkout. Do not create a worktree, set `SAKURACORD_WORKTREE_ID`, or
+invent a variant merely because this document or other registered worktrees
+exist.
 
-Create each Codex task in its own Codex worktree from the same intended starting
-state. If the main checkout contains the large unfinished change that all tasks
-must extend, choose that working-tree state when creating each task. Do not
-reuse one worktree for two writing tasks.
+| Current checkout | App identity | Normal action |
+| --- | --- | --- |
+| Main checkout | `dist/SakuraCord.app`, `dev.sakuracord.SakuraCord` | Work normally in the current checkout. |
+| Actual linked worktree | Variant app, bundle ID, output directory, and process path | Use offline fixtures and the linked-worktree wrappers. |
+| Coordinating concurrent writers | One actual linked worktree per writer | Integrate their patches semantically in the designated target checkout. |
 
-The environment setup script resolves the Swift package graph and prints the
-worktree's app identity. Useful header actions are:
+`script/worktree_test.sh` is a serialized test wrapper for whichever checkout
+invokes it. Its name does not create, select, or switch to a worktree.
 
-- **Run Offline** for ordinary visual testing;
-- **Run Long Server Fixture** for the larger offline server list;
-- **Package Isolated App** for a signed bundle without launching it;
-- **Show App Identity** for the exact app path and bundle identifier Computer
-  Use should target; and
-- **Test App**, **Test Protocol**, and **Test All** for serialized tests inside
-  that worktree.
+## What linked-worktree isolation covers
 
-The cleanup hook stops only the executable inside the worktree being removed.
-It never uses `pkill` or `killall`.
+For an actual linked worktree, `script/worktree_runtime.sh` derives a stable
+variant from the checkout path and assigns:
 
-## Integrating completed work
+- a distinct executable, display name, app bundle, and bundle identifier;
+- an app bundle under that checkout's `dist/worktrees/<variant>/`;
+- checkout-local SwiftPM scratch and dependency-cache directories;
+- exact executable-path process discovery and termination; and
+- a checkout-local operation lock that serializes setup, build, package, and
+  tests in that checkout.
 
-Use one integration task against the current main working tree:
+These guarantees do not isolate the shared macOS desktop. Focus, pointer input,
+menus, system dialogs, camera/microphone prompts, and other global UI operations
+must still be serialized.
+
+Normal-account state is not treated as safely isolated. Agent testing in linked
+worktrees must use `--offline`, `--offline-long-server-list`, or
+`--offline-forum-performance`. The live-worktree override is an explicit human
+escape hatch, not an agent default and not proof that every persistent
+application path is isolated. Even when the authenticated-test exception in
+`AGENTS.md` is approved, an agent must perform it from the canonical main
+checkout rather than enabling live access in a linked worktree.
+
+## Setup and actions
+
+Each concurrently writing agent gets its own Codex-created linked worktree from
+the intended starting state. Never share one checkout between writers and never
+edit or build through another task's checkout.
+
+The Codex setup action runs:
+
+```sh
+./script/worktree_setup.sh
+```
+
+It prints the checkout classification and exact identity before resolving the
+package graph. In a main checkout it only resolves dependencies and explicitly
+says that no linked variant was created.
+
+Repository environment actions operate on the current checkout:
+
+- **Run Offline** and **Run Long Server Fixture** launch safe fixtures.
+- **Package Isolated App** is isolated only when the first runtime line says
+  `Checkout: linked worktree`; in main it packages the canonical app.
+- **Show App Identity** prints the classification and exact bundle path.
+- **Test App**, **Test Protocol**, and **Test All** serialize tests within the
+  current checkout.
+
+The cleanup hook stops only the exact executable in an actual linked worktree.
+It is deliberately a no-op in the main checkout so cleanup cannot terminate the
+canonical app or an authenticated user session.
+
+## Computer Use targeting
+
+For both main and linked checkouts, execute `script/worktree_runtime.sh` and use
+the complete path from its `App:` line as the Computer Use `app` target. Never
+target the generic display name `SakuraCord`.
+
+Before interacting:
+
+1. Confirm the helper reports the checkout you intended.
+2. Confirm the printed executable path is the scoped running process.
+3. If it is not running, launch that exact bundle with the intended offline
+   fixture.
+4. Continue using the same absolute bundle path for every state read and
+   action.
+
+Do not let a generic Computer Use lookup choose or launch another installed
+copy. A bundle identifier is less precise because multiple canonical app copies
+can share it.
+
+## Integrating concurrent results
+
+Use one designated integration checkout:
 
 1. Record each source task's base revision and exact changed-file list.
-2. Review each patch independently; do not copy whole shared files from another
-   checkout over newer main versions.
-3. Apply non-overlapping changes first. For overlapping files, reproduce both
-   semantic changes against the current file and review the combined diff.
-4. After every source is integrated, search for conflict markers and run
+2. Review every patch independently.
+3. Apply non-overlapping changes first.
+4. Reproduce overlapping semantic changes against the current target file;
+   never overwrite a shared file wholesale from another worktree.
+5. Search specifically for `<<<<<<<` and `>>>>>>>`, then run
    `git diff --check`.
-5. Run the relevant narrow tests, then **Test All** and **Package Isolated App**.
-6. Ask the source tasks for read-only verification against the integrated diff
-   when the change is UI-sensitive or several tasks touched the same surface.
+6. Run relevant narrow tests, `./script/worktree_test.sh all`, package the
+   current checkout, and perform strict deep code-sign verification.
+7. Repeat read-only verification against the combined result for UI-sensitive
+   or heavily overlapping changes.
 
-Keep the integration in the existing unfinished commit/worktree unless the user
-explicitly requests separate commits. Worktrees share Git metadata, so never
-force-move or delete another task's branch while it is still in use.
+Worktrees share Git metadata. Never force-move or delete another task's branch
+while it is in use.
 
-## Shell entrypoints
+## Command reference
 
-The same behavior is available outside the Codex header:
+Main checkout:
+
+```sh
+./script/worktree_runtime.sh
+./script/build_and_run.sh --offline
+./script/worktree_test.sh app
+./script/worktree_test.sh all
+./script/build_and_run.sh package
+```
+
+Actual linked worktree:
 
 ```sh
 ./script/worktree_setup.sh
 ./script/build_and_run.sh --offline
-./script/build_and_run.sh package
-./script/build_and_run.sh package-release
+./script/build_and_run.sh --offline-long-server-list
+./script/build_and_run.sh --offline-forum-performance
 ./script/worktree_test.sh app
+./script/worktree_test.sh protocol
 ./script/worktree_test.sh all
+./script/build_and_run.sh package
 ./script/worktree_cleanup.sh
 ```
 
-`package` stages the cached debug build for fast local iteration.
-`package-release` enables Swift release optimization and is reserved for shipping;
-`script/package_dmg.sh` selects it automatically.
+`package` stages a signed debug build without launching it.
+`package-release` enables Swift release optimization and is reserved for
+shipping validation; `script/package_dmg.sh` only permits the main checkout.

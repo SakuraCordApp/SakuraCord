@@ -5,6 +5,11 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 # shellcheck source=worktree_runtime.sh
 source "$ROOT_DIR/script/worktree_runtime.sh"
 
+if [[ "$SAKURACORD_IS_MAIN_WORKTREE" -eq 1 ]]; then
+  echo "Main checkout detected: linked-worktree cleanup is not applicable; no process was stopped."
+  exit 0
+fi
+
 sakuracord_stop_scoped_app
 
 if [[ -f "$SAKURACORD_OPERATION_LOCK/pid" ]]; then
@@ -15,4 +20,4 @@ if [[ -f "$SAKURACORD_OPERATION_LOCK/pid" ]]; then
   fi
 fi
 
-echo "Stopped SakuraCord variant $SAKURACORD_VARIANT_ID."
+echo "Stopped linked-worktree SakuraCord variant $SAKURACORD_VARIANT_ID."

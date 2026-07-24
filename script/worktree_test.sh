@@ -9,6 +9,8 @@ TARGET="${1:-app}"
 sakuracord_acquire_operation_lock
 trap sakuracord_release_operation_lock EXIT
 
+sakuracord_print_identity
+
 run_tests() {
   swift test \
     --package-path "$1" \

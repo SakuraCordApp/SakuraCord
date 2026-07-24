@@ -1,25 +1,110 @@
-# Architecture
+# SakuraCord architecture
 
-The application is a SwiftPM-backed macOS executable collected in an Xcode workspace with six feature packages plus the local DaveKit voice dependency.
+SakuraCord is a SwiftPM-backed macOS application collected in
+`SakuraCord.xcworkspace`. SwiftPM remains the build source of truth; the
+workspace is a convenience entry point.
 
-- `SakuraCordModels` owns stable domain values and typed snowflakes.
-- `DiscordProtocol` owns provider, credential, REST/Gateway-facing boundaries and the mock provider.
-- `SakuraCordPersistence` owns account-scoped GRDB storage and migrations.
-- `MessageRendering` owns native markdown and message content rendering.
-- `MediaPipeline` owns public-media caching, GIF-provider interfaces, and native voice/video transport, codecs, capture, playback, and DAVE integration.
-- `SakuraCordPluginSDK` owns capability and permission contracts that can later be represented in WIT.
-- `DaveKit` wraps Discord's DAVE/MLS implementation for `MediaPipeline`; the app does not depend on it directly.
+## Package ownership
 
-`AppModel` is a Main Actor observable projection of `ChatProvider` and `SakuraCordDatabase`. Views receive narrow values or the model reference, and no view constructs Discord requests directly. Its launch state is explicit: normal launch starts restoring, signed out, connecting, or in a real workspace; offline testing starts only with `--offline` or `--offline-long-server-list` and is the only mode allowed to construct `MockChatProvider`.
+| Package | Responsibility |
+| --- | --- |
+| `App` | SwiftUI application, AppKit bridges, app state, authentication UI, settings, and the plugin-host executable. |
+| `SakuraCordModels` | Stable domain values, typed snowflakes, messages, commands, interactions, and provider events. |
+| `DiscordProtocol` | Provider contract, REST and Gateway implementation, Discord DTO decoding, credentials, request scheduling, and offline provider. |
+| `SakuraCordPersistence` | Account-scoped GRDB database, migrations, drafts, messages, and non-credential cache state. |
+| `MessageRendering` | Parsed message documents and native message-content rendering support. |
+| `MediaPipeline` | Media cache interfaces plus voice/video signaling, transport, capture, playback, Opus, H.264, and DAVE integration. |
+| `SakuraCordPluginSDK` | Plugin manifest, capability, and permission contracts. |
+| `DaveKit` | Swift wrapper over the vendored libdave/MLS implementation used by `MediaPipeline`. |
 
-Within `DiscordProtocol`, `GatewaySession` is the sole owner of Gateway sockets, receive/heartbeat loops, resumable session state, compression framing, and reconnect policy. `DiscordRESTProvider` remains the owner of authenticated REST scheduling, rate-limit buckets, the safety circuit, caches, and domain-event decoding; it consumes session events rather than managing WebSocket tasks itself. Production providers own a dedicated URL session, allowing a restriction or authentication stop to cancel REST/upload tasks and Gateway together without affecting unrelated app networking.
+Dependencies point inward toward models and explicit protocols. Views do not
+construct Discord requests or own network transports.
 
-`DiscordClientMetadata` is the single metadata source for session validation, REST, and Gateway Identify. Message nonces are Discord-epoch snowflake values owned by `SakuraCordModels`; message requests add the narrowly scoped chat-input context. The provider never stores or invents a fingerprint, installation ID, cookie, or analytics identity.
+## Application state
 
-Remote typing is held by a dedicated Main Actor observable keyed by channel and user, rather than by `AppModel`'s broad observation surface. Local typing requests originate from user edits in the composer, are scheduled by `AppModel`, and still pass through `ChatProvider` into the provider's shared REST coordinator. The AppKit-backed composer editor is an isolated SwiftUI bridge used only where marked-text and modifier-key handling require native text-system state.
+`AppModel` is a Main Actor observable projection over a `ChatProvider` and
+`SakuraCordDatabase`. It coordinates navigation, caches, drafts, message
+presentation, forum state, interactions, and voice state for the current app
+workspace. Views receive narrow values or the model reference.
 
-Authentication is a native SwiftUI flow. It obtains Discord's server-issued fingerprint, submits the password login request, presents native MFA choices, presents only Discord's hCaptcha challenge component when Discord requests one, validates `/users/@me`, and stores the resulting credential through `KeychainCredentialStore`. There is no embedded Discord login page and a normal signed-out launch has no mock guilds, channels, messages, or placeholder account. Plugins never receive the credential or its handle.
+Launch state is explicit:
 
-The default `.icon` source lives in `App/Packaging/SakuraCord.icon`, with `App/Packaging/SakuraCord Flower.icon` included as a self-build alternative selected through `SAKURACORD_APP_ICON`. The shell-first packaging script compiles the selected source directly with `actool` into the app bundle, so an Xcode project is not required and SwiftPM remains the clone/build source of truth.
+- `--offline`, `--offline-long-server-list`, and
+  `--offline-forum-performance` construct deterministic fixture providers and
+  an in-memory database with Discord networking disabled.
+- A normal launch restores a real account session, presents native sign-in, or
+  reports a connection failure. It never falls back to mock data.
 
-The `SakuraCordPluginHost` executable is intentionally inert. It establishes a separate signing/process target for the future WASI runtime without loading untrusted code in the app process.
+High-frequency presentation state such as remote typing is kept in narrower
+observable models so it does not invalidate the complete app tree.
+
+## Discord boundary
+
+`ChatProvider` is the application-facing boundary. `MockChatProvider` provides
+deterministic fixtures, while `DiscordRESTProvider` owns authenticated
+production behavior.
+
+Within the production provider:
+
+- `GatewaySession` alone owns the Gateway socket, compression stream, heartbeat
+  and ACK tracking, resume state, reconnect policy, and connection generation.
+- `DiscordRESTProvider` owns authenticated request preparation, rate-limit
+  scheduling, caches, capability gates, upload coordination, safety stops, and
+  domain-event decoding.
+- REST and Gateway share one `DiscordClientMetadata` source and one provider
+  lifetime. A session-wide safety stop cancels both without affecting unrelated
+  app networking.
+- Every authenticated REST route uses the central transport. Views and feature
+  helpers do not create one-off authenticated `URLSession` paths.
+
+The current production capability gates and request contracts are documented
+in [PROTOCOL_BASELINE.md](PROTOCOL_BASELINE.md).
+
+## Authentication and persistence
+
+Native authentication obtains only identifiers issued by Discord's legitimate
+flow, presents MFA or user-completed hCaptcha when requested, validates the
+current user, and stores the resulting credential through
+`KeychainCredentialStore`. Passwords, cookies, captured authorization headers,
+and analytics identifiers are not persisted.
+
+Account data is stored through `SakuraCordPersistence`. Credentials never enter
+GRDB, fixtures, logs, or plugin APIs. Normal and offline runs use separate
+storage behavior.
+
+## Message and media flow
+
+History responses and Gateway events decode into the same domain message
+model. Updates merge only fields present in the event. `MessageRendering`
+parses message content, while the app composes attachments, embeds, components,
+stickers, replies, reactions, and interaction metadata into native views.
+
+`MediaPipeline` owns public-media caching and the complete native voice/video
+stack. `DaveKit` is an implementation dependency of `MediaPipeline`; the app
+target does not import it directly.
+
+## Plugins
+
+`SakuraCordPluginSDK` defines future-facing capability and permission
+contracts. `SakuraCordPluginHost` is a separate executable and signing target,
+but it is intentionally inert and currently loads no plugins. No plugin
+receives a Discord credential or credential handle.
+
+The sandboxed runtime, installation workflow, and extension points are roadmap
+work, not an implemented architecture claim.
+
+## Packaging
+
+`script/build_and_run.sh` builds the SwiftPM product, assembles the `.app`,
+compiles the selected Icon Composer source with `actool`, embeds frameworks and
+resource bundles, and ad-hoc signs the result.
+
+The canonical icon sources are:
+
+- `App/Packaging/SakuraCord.icon`
+- `App/Packaging/SakuraCord Flower.icon`
+
+`script/package_dmg.sh` uses the release configuration, verifies the app
+signature, builds the DMG, verifies the image, and writes its SHA-256 digest.
+Developer ID signing and notarization are not currently part of the release
+workflow.

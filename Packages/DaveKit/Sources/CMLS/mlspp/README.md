@@ -3,7 +3,7 @@
 MLS++
 =====
 
-Implementation of the proposed [Messaging Layer Security](https://github.com/mlswg/mls-protocol/blob/master/draft-ietf-mls-protocol.md) protocol in C++.  Depends on C++17, STL for data structures, and OpenSSL or BoringSSL for crypto.
+Implementation of the [Messaging Layer Security protocol (RFC 9420)](https://datatracker.ietf.org/doc/rfc9420/) in C++.  Depends on C++17, STL for data structures, and OpenSSL or BoringSSL for crypto.
 
 Prerequisites
 -------------
