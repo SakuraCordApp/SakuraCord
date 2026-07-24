@@ -1,0 +1,19 @@
+{
+  "name": "SakuraCord",
+  "gradient": {
+    "type": "linear",
+    "direction": "top-to-bottom",
+    "top": "#F6D8F2",
+    "bottom": "#E2A7D8"
+  },
+  "iconSources": [
+    "App/Packaging/SakuraCord.icon",
+    "App/Packaging/SakuraCord Flower.icon"
+  ],
+  "exportedIconVariants": [
+    "apple-app-icon",
+    "circle",
+    "rounded-square",
+    "rounded-rectangle"
+  ]
+}

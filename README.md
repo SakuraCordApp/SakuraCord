@@ -64,6 +64,9 @@ agent and merge procedure.
 SAKURACORD_APP_ICON="SakuraCord Flower.icon" ./script/build_and_run.sh
 ```
 
+Repository-owned logo exports, gradient banners, and the brand palette live in
+[`Brand`](Brand/README.md).
+
 ## Tests
 
 ```sh
