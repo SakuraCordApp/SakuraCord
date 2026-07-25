@@ -21,7 +21,7 @@ struct ChannelSidebarView: View {
     var body: some View {
         VStack(spacing: 0) {
             List(selection: $selection) {
-                let groups = ChannelGroup.make(from: channels)
+                let groups = ChannelGroup.make(from: displayedChannels)
                 ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
                     ChannelGroupRows(
                         group: group,
@@ -65,12 +65,16 @@ struct ChannelSidebarView: View {
     }
 
     private var hiddenChannelIDs: Set<ChannelID> {
-        Set(channels.lazy.filter { voiceModel.conversationAccess(for: $0) == .hidden }.map(\.id))
+        []
+    }
+
+    private var displayedChannels: [Channel] {
+        channels.filter { voiceModel.conversationAccess(for: $0) != .hidden }
     }
 
     private var voiceSidebarParticipantsByChannel: [ChannelID: [VoiceSidebarParticipant]] {
         let currentUserID = currentUser?.id
-        let voiceChannelIDs = Set(channels.filter { $0.kind == .voice }.map(\.id))
+        let voiceChannelIDs = Set(displayedChannels.filter { $0.kind == .voice }.map(\.id))
         var statesByChannel: [ChannelID: [UserID: VoiceParticipantState]] = [:]
         for state in voiceModel.voiceStates.values {
             guard let channelID = state.channelID, voiceChannelIDs.contains(channelID) else { continue }
@@ -476,21 +480,39 @@ private struct ChannelRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
+            Capsule()
+                .fill(Color.white)
+                .frame(width: 4, height: 8)
+                .opacity(channel.unreadCount > 0 ? 1 : 0)
+                .frame(width: 8)
             Image(systemName: systemImage)
-                .foregroundStyle(isVoiceConnected ? Color.green : Color.secondary)
+                .fontWeight(channel.unreadCount > 0 ? .medium : .regular)
+                .foregroundStyle(
+                    isVoiceConnected ? Color.green
+                        : channelForegroundStyle
+                )
                 .frame(width: 16)
-            Text(channel.name).lineLimit(1)
+            Text(channel.name)
+                .fontWeight(channel.unreadCount > 0 ? .medium : .regular)
+                .foregroundStyle(channelForegroundStyle)
+                .lineLimit(1)
             Spacer()
             if isVoiceConnected {
                 Image(systemName: "waveform")
                     .font(.caption)
                     .foregroundStyle(.green)
             }
-            if channel.unreadCount > 0 {
-                Text(channel.unreadCount, format: .number)
-                    .font(.caption2.bold()).padding(.horizontal, 6).padding(.vertical, 2).background(.red, in: Capsule())
+            if channel.mentionCount > 0 {
+                Text(channel.mentionCount, format: .number)
+                    .font(.caption2.bold())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(.red, in: Capsule())
             }
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(accessibilityValue)
     }
 
     private var systemImage: String {
@@ -499,5 +521,24 @@ private struct ChannelRow: View {
             isHidden: isHidden,
             rulesChannelID: rulesChannelID
         )
+    }
+
+    private var channelForegroundStyle: Color {
+        channel.unreadCount > 0
+            ? .primary
+            : .secondary.opacity(0.78)
+    }
+
+    private var accessibilityValue: String {
+        var values: [String] = []
+        if channel.unreadCount > 0 { values.append("Unread") }
+        if channel.mentionCount > 0 {
+            values.append(
+                channel.mentionCount == 1
+                    ? "1 unread mention"
+                    : "\(channel.mentionCount) unread mentions"
+            )
+        }
+        return values.joined(separator: ", ")
     }
 }

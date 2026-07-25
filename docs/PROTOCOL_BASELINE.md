@@ -227,6 +227,79 @@ implementation records.
   payload repeats a channel entry, the newest payload-order entry wins instead
   of crashing dictionary construction.
 
+### Unread state, acknowledgements, and notifications
+
+The durable baseline was rechecked on 2026-07-25 against Paicord revision
+`694761c1938b73bb60bd58942674dfe73aab1135`, Swiftcord v1 revision
+`14465d927ebe1ba34b3befa00f9365fad7b56eb9`, current Discord desktop
+presentation and public web assets, and Discord's public message, guild, and
+notification-setting documentation. The desktop-host caveat in the evidence
+snapshot still applies; no authenticated traffic was intercepted for this
+recheck.
+
+- Account-scoped channel read state combines Ready `read_state` with each
+  channel's authoritative `last_message_id`. Message and acknowledgement
+  snowflakes are compared numerically, and live `MESSAGE_CREATE` and
+  `MESSAGE_ACK` events update the same monotonic model. Read states for channels
+  without effective `VIEW_CHANNEL` and `READ_MESSAGE_HISTORY` access are
+  excluded from channel, guild, folder, and Dock-badge presentation.
+  A channel, thread, or forum post omitted from Ready's channel read-state
+  entries begins at the supplied `last_message_id` as read; it does not become
+  unread merely because history or a thread catalogue was loaded. This
+  deliberately differs from Paicord's missing-entry fallback and matches
+  Swiftcord v1 plus the official desktop client's authenticated guild
+  indicators observed on 2026-07-25. A later accepted `MESSAGE_CREATE` still
+  makes that conversation unread immediately.
+- The authenticated workspace remains in its connecting presentation until the
+  initial Ready dispatch has been decoded. Its first bootstrap snapshot
+  atomically includes known DMs, guild channels, threads, channel read states,
+  and guild notification settings; these values must not race a later event
+  into the first sidebar render.
+- Current Ready payloads wrap `user_guild_settings` in an object containing
+  `entries` and `partial`; the legacy top-level array remains accepted. The
+  separate `notification_settings.flags` bit 4 (`USE_NEW_NOTIFICATIONS`) is
+  part of unread resolution and must not be inferred from guild settings.
+- A conversation becomes locally read only after its initial history is
+  loaded, the timeline has established its real initial position, its newest
+  message is visible/followed, and the main window is active. An unread
+  conversation initially presents its first loaded unread message, so selection
+  alone does not acknowledge it.
+- A read acknowledgement waits 1.5 seconds and sends one `POST
+  /channels/{channel_id}/messages/{message_id}/ack`. Its JSON body includes the
+  calculated guild/thread read-state `flags` and `last_viewed` day relative to
+  Discord's epoch, plus the latest server-issued `token` when present. Requests
+  are serialized across the account, coalesced per channel, and have one
+  attempt. A `429`, timeout, challenge, restriction, or ambiguous failure is
+  not retried automatically; a failed optimistic local transition is reverted
+  to its preceding authoritative boundary.
+- Marking a message and everything after it unread moves the boundary to the
+  preceding snowflake through the same route with `manual: true`, the
+  recalculated `mention_count`, and the latest acknowledgement `token` when
+  Discord supplied one. A remote `MESSAGE_ACK` carrying `manual: true` may
+  therefore move the boundary backward; ordinary acknowledgements remain
+  monotonic. A reconnecting Ready snapshot cannot regress a newer ordinary
+  `MESSAGE_ACK`; any unsent optimistic acknowledgement is rolled back before
+  that comparison.
+- Message mention decisions use decoded user IDs, role IDs, the
+  `mention_everyone` field, current-user guild roles, and authoritative reply
+  mention metadata. Message text is never parsed to invent a mention.
+- Effective notification policy resolves channel, parent/category, and guild
+  settings; guild defaults; active mute expiries; role/everyone suppression;
+  Discord's unread-notification flag overrides; and the account-level new
+  notifications mode. With new notifications disabled, ordinary guild unread
+  defaults to all messages. With it enabled, explicit channel/guild
+  `UNREADS_ALL_MESSAGES` and `UNREADS_ONLY_MENTIONS` flags take precedence,
+  then ordinary unread follows effective `message_notifications`. Ordinary
+  voice-channel traffic and channels carrying
+  `IS_GUILD_RESOURCE_CHANNEL` are excluded from guild unread; voice mentions
+  remain eligible. Guild channel-opt-in bit 14 excludes ordinary unread from a
+  channel or thread unless that conversation or its parent carries opt-in bit
+  12. Forum creation notifications additionally honor the parent forum's
+  `NEW_FORUM_THREADS_ON` bit 14 and `NEW_FORUM_THREADS_OFF` bit 13. Native
+  notifications use the same decision, support foreground presentation and
+  exact account/channel/message navigation, and do not add authenticated
+  requests.
+
 ## Direct-message safety boundary
 
 Opening or creating a DM, loading history, and sending are separate operations.

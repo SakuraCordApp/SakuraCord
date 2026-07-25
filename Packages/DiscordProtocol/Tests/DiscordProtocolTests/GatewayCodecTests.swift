@@ -476,6 +476,24 @@ import Testing
     #expect(guild.members.map(\.user.username) == ["first", "second"])
 }
 
+@Test func `ready payload hydrates current user roles from the top level user`() throws {
+    let data = Data(#"""
+    {
+        "user":{"id":"200","username":"current"},
+        "guilds":[{"id":"100"}],
+        "merged_members":[[
+            {"user_id":"200","roles":["300"]}
+        ]]
+    }
+    """#.utf8)
+    let ready = try JSONDecoder().decode(GatewayReadyGuildsDTO.self, from: data)
+    let guild = try #require(ready.hydratedGuilds(using: [:]).first)
+    let member = try #require(guild.members.first)
+
+    #expect(member.user.id == "200")
+    #expect(member.roles == ["300"])
+}
+
 @Test func `ready read states ignore non-channel ID collisions and tolerate duplicate channels`() throws {
     let data = Data(#"""
     {
@@ -500,7 +518,9 @@ import Testing
                     "id":"100",
                     "read_state_type":0,
                     "last_message_id":"201",
-                    "mention_count":2
+                    "mention_count":2,
+                    "flags":3,
+                    "last_viewed":4222
                 }
             ]
         }
@@ -513,6 +533,8 @@ import Testing
     #expect(entries.count == 1)
     #expect(channel.lastMessageID == "201")
     #expect(channel.mentionCount == 2)
+    #expect(channel.flags == 3)
+    #expect(channel.lastViewed == 4_222)
 }
 
 @Test func `guild member store updates values without moving existing members`() {

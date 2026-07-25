@@ -6,6 +6,7 @@ import OSLog
 import Observation
 import SakuraCordModels
 import SakuraCordPersistence
+import UserNotifications
 
 nonisolated struct ComponentControlKey: Hashable, Sendable {
     let messageID: MessageID
@@ -316,6 +317,10 @@ final class AppModel {
         subsystem: "dev.sakuracord.SakuraCord",
         category: "MessageSend"
     )
+    private static let unreadDiagnosticsLogger = Logger(
+        subsystem: "dev.sakuracord.SakuraCord",
+        category: "Unread"
+    )
     private static let forumPerformanceSignposter = OSSignposter(
         subsystem: "dev.sakuracord.SakuraCord",
         category: "PointsOfInterest"
@@ -332,6 +337,18 @@ final class AppModel {
     struct LocalTypingTiming: Sendable {
         var debounce: Duration = .seconds(1.5)
         var throttle: Duration = .seconds(8)
+    }
+
+    struct ReadAcknowledgementTiming: Sendable {
+        var debounce: Duration = .seconds(1.5)
+    }
+
+    private struct ReadStateMutation: Sendable {
+        var messageID: MessageID
+        var manual: Bool
+        var mentionCount: Int?
+        var flags: UInt64
+        var lastViewed: Int
     }
 
     private(set) var snapshot: BootstrapSnapshot?
@@ -364,12 +381,23 @@ final class AppModel {
             if membersByID != indexed {
                 membersByID = indexed
             }
+            if let guildID = selectedGuildID,
+               let currentUserID = snapshot?.currentUser.id,
+               let currentMember = indexed[currentUserID]
+            {
+                let roleIDs = Set(currentMember.roles.map(\.id))
+                currentUserRoleIDsByGuild[guildID] = roleIDs
+                readState.updateCurrentUserRoles(roleIDs, guildID: guildID)
+            }
+            refreshUnreadPresentation()
         }
     }
 
     private(set) var membersByID: [UserID: Member] = [:]
     private(set) var memberSections: [MemberSection] = []
-    private(set) var guildRoles: [GuildRole] = []
+    private(set) var guildRoles: [GuildRole] = [] {
+        didSet { refreshUnreadPresentation() }
+    }
     private(set) var commandMemberResults: [Member] = []
     private(set) var mentionMemberResults: [Member] = []
     private(set) var mentionAutocompleteMembers: [Member] = []
@@ -384,8 +412,12 @@ final class AppModel {
     let launchMode: AppLaunchMode
     let typingState: TypingStateModel
     let commandComposer = ApplicationCommandComposerModel()
+    let readState = AccountReadStateModel()
+    let notificationPreferences: NotificationPreferences
+    @ObservationIgnored private let notificationService: any NativeNotificationService
     private(set) var isLoading = false
     private(set) var isLoadingMessages = false
+    private(set) var hasCompletedInitialMessageLoad = false
     private(set) var isLoadingEarlier = false
     private(set) var hasMoreMessages = false
     private(set) var messageLoadError: String?
@@ -429,6 +461,7 @@ final class AppModel {
     }
     private(set) var threadMessageRows: [MessageRowPresentation] = []
     private(set) var isLoadingThread = false
+    private(set) var hasCompletedInitialThreadLoad = false
     private(set) var isLoadingEarlierThread = false
     private(set) var hasMoreThreadMessages = false
     private(set) var threadErrorMessage: String?
@@ -569,7 +602,8 @@ final class AppModel {
             channel: channel,
             currentUserID: currentUserID,
             currentMember: membersByID[currentUserID],
-            roles: guildRoles
+            roles: guildRoles,
+            currentRoleIDs: currentUserRoleIDsByGuild[guildID]
         )
     }
 
@@ -586,7 +620,8 @@ final class AppModel {
             channel: channel,
             currentUserID: currentUserID,
             currentMember: member,
-            roles: guildRoles
+            roles: guildID == selectedGuildID ? guildRoles : [],
+            currentRoleIDs: currentUserRoleIDsByGuild[guildID]
         )
         if channel.kind == .voice {
             return ConversationPermissionResolver.voiceChannelAccess(
@@ -610,7 +645,8 @@ final class AppModel {
             channel: channel,
             currentUserID: currentUserID,
             currentMember: member,
-            roles: guildRoles
+            roles: guildRoles,
+            currentRoleIDs: currentUserRoleIDsByGuild[guildID]
         )
         return ConversationPermissionResolver.threadAccess(
             effectivePermissions: permissions,
@@ -622,6 +658,7 @@ final class AppModel {
             guard selectedChannelID != oldValue else { return }
             if let oldValue {
                 lastTypingRequestAt[oldValue] = nil
+                _ = readState.updatePresentation(channelID: oldValue, isPresented: false)
             }
             selectedChannel =
                 snapshot?.channels.first { $0.id == selectedChannelID }
@@ -633,6 +670,17 @@ final class AppModel {
             commandComposer.resetForChannelChange()
             isVoiceChatOpen = selectedChannel?.kind == .voice
             closeThread()
+            if let selectedChannelID {
+                _ = readState.updatePresentation(
+                    channelID: selectedChannelID,
+                    isPresented: true,
+                    initialHistoryLoaded: false,
+                    initialPositionEstablished: false,
+                    windowIsActive: mainWindowIsActive,
+                    isAtNewest: false,
+                    blocksAutomaticAcknowledgement: false
+                )
+            }
             if selectedChannel?.kind == .forum {
                 beginForumLoad()
             } else {
@@ -699,6 +747,14 @@ final class AppModel {
     @ObservationIgnored private var didAttemptSessionRestore = false
     @ObservationIgnored private var credentialHandle: CredentialHandle?
     @ObservationIgnored private var didAttemptDiscordEmojiSettings = false
+    @ObservationIgnored private var acknowledgementTasks: [ChannelID: Task<Void, Never>] = [:]
+    @ObservationIgnored private var queuedAcknowledgements: [ChannelID: ReadStateMutation] = [:]
+    @ObservationIgnored private var acknowledgementQueueOrder: [ChannelID] = []
+    @ObservationIgnored private var acknowledgementProcessorTask: Task<Void, Never>?
+    @ObservationIgnored private var acknowledgementGeneration = 0
+    @ObservationIgnored private var mainWindowIsActive = false
+    @ObservationIgnored private var currentUserRoleIDsByGuild: [GuildID: Set<RoleID>] = [:]
+    @ObservationIgnored private let readAcknowledgementTiming: ReadAcknowledgementTiming
 
     init(
         launchMode: AppLaunchMode,
@@ -707,16 +763,23 @@ final class AppModel {
         restoresStoredSession: Bool = true,
         credentialStore: (any CredentialStore)? = nil,
         authenticatedProviderFactory: ((CredentialHandle, String?) -> any ChatProvider)? = nil,
+        notificationService: (any NativeNotificationService)? = nil,
+        notificationPreferences: NotificationPreferences? = nil,
         typingExpiry: Duration = .seconds(10),
-        localTypingTiming: LocalTypingTiming = LocalTypingTiming()
+        localTypingTiming: LocalTypingTiming = LocalTypingTiming(),
+        readAcknowledgementTiming: ReadAcknowledgementTiming = ReadAcknowledgementTiming()
     ) {
         self.launchMode = launchMode
+        self.notificationService =
+            notificationService ?? NoopNativeNotificationService()
+        self.notificationPreferences = notificationPreferences ?? NotificationPreferences()
         self.provider =
             provider
                 ?? (launchMode == .offlineTesting ? MockChatProvider() : SignedOutChatProvider())
         sessionState = launchMode == .offlineTesting ? .connecting : .restoring
         typingState = TypingStateModel(expiry: typingExpiry)
         self.localTypingTiming = localTypingTiming
+        self.readAcknowledgementTiming = readAcknowledgementTiming
         discordNetworkDisabled =
             discordNetworkDisabledOverride
                 ?? (launchMode == .offlineTesting
@@ -754,6 +817,7 @@ final class AppModel {
         commandComposer.configureFrecencyScope(
             launchMode == .offlineTesting ? "offline" : "signed-out"
         )
+        readState.reset(accountID: launchMode == .offlineTesting ? "offline" : nil)
     }
 
     var isOfflineTesting: Bool {
@@ -782,6 +846,9 @@ final class AppModel {
         }
         let fingerprint = await UserDefaultsDiscordFingerprintStore.shared.load()
         provider = authenticatedProviderFactory(handle, fingerprint)
+        resetAcknowledgementWork()
+        readState.reset(accountID: handle.accountID)
+        currentUserRoleIDsByGuild = [:]
         supportedCapabilities = []
         pendingComponentControls = []
         componentErrors = [:]
@@ -807,6 +874,8 @@ final class AppModel {
         selectedGuildID = nil
         selectedChannelID = nil
         messages = []
+        hasCompletedInitialMessageLoad = false
+        hasCompletedInitialThreadLoad = false
         messageCache = [:]
         hasMoreCache = [:]
         dismissProfile()
@@ -832,6 +901,9 @@ final class AppModel {
             }
         }
         credentialHandle = nil
+        resetAcknowledgementWork()
+        readState.reset(accountID: launchMode == .offlineTesting ? "offline" : nil)
+        currentUserRoleIDsByGuild = [:]
         commandComposer.configureFrecencyScope(
             launchMode == .offlineTesting ? "offline" : "signed-out"
         )
@@ -862,6 +934,8 @@ final class AppModel {
         selectedGuildID = nil
         selectedChannelID = nil
         messages = []
+        hasCompletedInitialMessageLoad = false
+        hasCompletedInitialThreadLoad = false
         messageCache = [:]
         hasMoreCache = [:]
         members = []
@@ -914,7 +988,56 @@ final class AppModel {
         do {
             let value = try await provider.bootstrap()
             snapshot = value
+            readState.configure(
+                accountID: credentialHandle?.accountID ?? (launchMode == .offlineTesting ? "offline" : nil),
+                guilds: value.guilds,
+                channels: value.channels,
+                readStates: value.readStates,
+                notificationSettings: value.notificationSettings,
+                usesNewNotifications: value.usesNewNotifications
+            )
+            for thread in value.threads {
+                readState.merge(thread: thread)
+            }
+            readState.setCurrentUserID(value.currentUser.id)
+            let derivedUnreadGuildCount = value.guilds.count {
+                readState.guildUnread($0.id)
+            }
+            let firstGuildHasNotificationSettings = value.guilds.first.map { guild in
+                value.notificationSettings.contains { $0.guildID == guild.id }
+            } ?? false
+            let firstGuildSettings = value.guilds.first.flatMap { guild in
+                value.notificationSettings.last { $0.guildID == guild.id }
+            }
+            let firstGuildMuteIsActive =
+                firstGuildSettings?.isMuted == true
+                && (firstGuildSettings?.muteConfiguration?.isActive() ?? true)
+            let firstGuildMutedOverrideCount =
+                firstGuildSettings?.channelOverrides.count { override in
+                    override.isMuted
+                        && (override.muteConfiguration?.isActive() ?? true)
+                } ?? 0
+            Self.unreadDiagnosticsLogger.info(
+                """
+                Bootstrap unread model configured; readStates=\(value.readStates.count), \
+                guildSettings=\(value.notificationSettings.count), \
+                newNotifications=\(value.usesNewNotifications), \
+                guilds=\(value.guilds.count), \
+                firstGuildHasSettings=\(firstGuildHasNotificationSettings), \
+                firstGuildMuted=\(firstGuildMuteIsActive), \
+                firstGuildMutedOverrides=\(firstGuildMutedOverrideCount), \
+                derivedUnreadGuilds=\(derivedUnreadGuildCount)
+                """
+            )
+            if let firstGuildID = value.guilds.first?.id,
+               let currentMember = value.members.first(where: { $0.id == value.currentUser.id })
+            {
+                let roleIDs = Set(currentMember.roles.map(\.id))
+                currentUserRoleIDsByGuild[firstGuildID] = roleIDs
+                readState.updateCurrentUserRoles(roleIDs, guildID: firstGuildID)
+            }
             updateServerRail(from: value)
+            refreshUnreadPresentation()
             if credentialHandle != nil {
                 isAuthenticated = true
             }
@@ -1094,6 +1217,22 @@ final class AppModel {
         }
     }
 
+    func navigate(from notification: NotificationDeepLink) async {
+        if readState.accountID != notification.accountID {
+            let handles = try? await credentialStore.handles()
+            guard let handle = handles?.first(where: { $0.accountID == notification.accountID }) else {
+                errorMessage = "The account for this notification is no longer available."
+                return
+            }
+            guard await connectAuthenticatedAccount(handle) else { return }
+        }
+        navigate(
+            to: notification.guildID,
+            channelID: notification.channelID,
+            messageID: notification.messageID
+        )
+    }
+
     func completeMessageNavigation(requestID: UInt64) {
         guard messageNavigationRequest?.requestID == requestID else { return }
         messageNavigationRequest = nil
@@ -1127,11 +1266,27 @@ final class AppModel {
             await loadEmojis(for: guildID)
         }
         if !visibleChannels.contains(where: { $0.id == selectedChannelID }) {
-            selectedChannelID =
-                visibleChannels.first(where: { $0.name == "general" })?.id
-                    ?? visibleChannels.first?.id
+            let selectableChannels = visibleChannels.filter {
+                conversationAccess(for: $0) != .hidden
+            }
+            selectedChannelID = Self.preferredInitialChannelID(in: selectableChannels)
         }
         beginMemberLoad(for: guildID)
+    }
+
+    nonisolated static func preferredInitialChannelID(in channels: [Channel]) -> ChannelID? {
+        let textChannels = channels.filter { channel in
+            switch channel.kind {
+            case .text, .announcement, .forum, .directMessage, .groupDirectMessage:
+                true
+            case .voice, .unknown:
+                false
+            }
+        }
+        return textChannels.first(where: { $0.name == "general" })?.id
+            ?? textChannels.first?.id
+            ?? channels.first(where: { $0.name == "general" })?.id
+            ?? channels.first?.id
     }
 
     func loadEmojis(for guildID: GuildID) async {
@@ -1656,6 +1811,7 @@ final class AppModel {
         let generation = channelLoadGeneration
         messageLoadError = nil
         isLoadingEarlier = false
+        hasCompletedInitialMessageLoad = false
         stopLocalTyping(clearThrottle: true)
         replyingTo = nil
 
@@ -1666,6 +1822,7 @@ final class AppModel {
             draft = ""
             hasMoreMessages = false
             isLoadingMessages = false
+            hasCompletedInitialMessageLoad = true
             return
         }
 
@@ -1708,6 +1865,8 @@ final class AppModel {
             hasMoreCache[channelID] = page.hasMoreBefore
             messageLoadError = nil
             isLoadingMessages = false
+            hasCompletedInitialMessageLoad = true
+            reportConversationHistoryLoaded(channelID: channelID)
             try await database?.save(messages: page.messages)
         } catch is CancellationError {
             return
@@ -1715,6 +1874,7 @@ final class AppModel {
             guard isCurrentLoad(channelID, generation: generation) else { return }
             messageLoadError = error.localizedDescription
             isLoadingMessages = false
+            hasCompletedInitialMessageLoad = true
         }
     }
 
@@ -1792,12 +1952,23 @@ final class AppModel {
         initialMessages: [Message]
     ) {
         threadLoadTask?.cancel()
+        readState.merge(thread: thread)
         openThread = thread
+        _ = readState.updatePresentation(
+            channelID: thread.id,
+            isPresented: true,
+            initialHistoryLoaded: false,
+            initialPositionEstablished: false,
+            windowIsActive: mainWindowIsActive,
+            isAtNewest: false,
+            blocksAutomaticAcknowledgement: false
+        )
         openThreadStarter = starter
         openThreadStartedAt = startedAt
         threadMessages = initialMessages
         threadDraft = ""
         isLoadingThread = true
+        hasCompletedInitialThreadLoad = false
         hasMoreThreadMessages = false
         threadErrorMessage = nil
         threadLoadTask = Task { [weak self] in
@@ -1808,6 +1979,8 @@ final class AppModel {
                 threadMessages = page.messages.sorted { $0.timestamp < $1.timestamp }
                 hasMoreThreadMessages = page.hasMoreBefore
                 isLoadingThread = false
+                hasCompletedInitialThreadLoad = true
+                reportConversationHistoryLoaded(channelID: thread.id)
                 try await database?.save(messages: page.messages)
             } catch is CancellationError {
                 return
@@ -1815,11 +1988,15 @@ final class AppModel {
                 guard openThread?.id == thread.id else { return }
                 threadErrorMessage = error.localizedDescription
                 isLoadingThread = false
+                hasCompletedInitialThreadLoad = true
             }
         }
     }
 
     func closeThread() {
+        if let threadID = openThread?.id {
+            _ = readState.updatePresentation(channelID: threadID, isPresented: false)
+        }
         threadLoadTask?.cancel()
         threadLoadTask = nil
         openThread = nil
@@ -1828,6 +2005,7 @@ final class AppModel {
         threadMessages = []
         threadDraft = ""
         isLoadingThread = false
+        hasCompletedInitialThreadLoad = false
         isLoadingEarlierThread = false
         hasMoreThreadMessages = false
         threadErrorMessage = nil
@@ -3107,6 +3285,392 @@ final class AppModel {
         }
     }
 
+    func isChannelUnread(_ channelID: ChannelID) -> Bool {
+        readState.unread(channelID: channelID)
+    }
+
+    func channelMentionCount(_ channelID: ChannelID) -> Int {
+        readState.mentions(channelID: channelID)
+    }
+
+    var directMessageUnread: Bool {
+        readState.directMessageUnread()
+    }
+
+    var directMessageMentionCount: Int {
+        readState.directMessageMentions
+    }
+
+    func reportMainWindowActive(_ isActive: Bool) {
+        mainWindowIsActive = isActive
+        if let selectedChannelID {
+            if let target = readState.updatePresentation(
+                channelID: selectedChannelID,
+                windowIsActive: isActive
+            ) {
+                scheduleAcknowledgement(channelID: selectedChannelID, messageID: target)
+            }
+        }
+        if let threadID = openThread?.id,
+           let target = readState.updatePresentation(
+               channelID: threadID,
+               windowIsActive: isActive
+           )
+        {
+            scheduleAcknowledgement(channelID: threadID, messageID: target)
+        }
+    }
+
+    func reportTimelinePosition(channelID: ChannelID, isAtNewest: Bool) {
+        guard channelID == selectedChannelID || channelID == openThread?.id else { return }
+        if let target = readState.updatePresentation(
+            channelID: channelID,
+            isPresented: true,
+            isAtNewest: isAtNewest
+        ) {
+            scheduleAcknowledgement(channelID: channelID, messageID: target)
+        }
+    }
+
+    func reportTimelineInitialPosition(channelID: ChannelID, isAtNewest: Bool) {
+        guard channelID == selectedChannelID || channelID == openThread?.id else { return }
+        if let target = readState.updatePresentation(
+            channelID: channelID,
+            isPresented: true,
+            initialPositionEstablished: true,
+            isAtNewest: isAtNewest
+        ) {
+            scheduleAcknowledgement(channelID: channelID, messageID: target)
+        }
+    }
+
+    func reportTimelineUserInteraction(channelID: ChannelID) {
+        guard channelID == selectedChannelID || channelID == openThread?.id else { return }
+        readState.unblockAutomaticAcknowledgement(channelID: channelID)
+    }
+
+    func reportConversationHistoryLoaded(channelID: ChannelID) {
+        guard channelID == selectedChannelID || channelID == openThread?.id else { return }
+        if let target = readState.updatePresentation(
+            channelID: channelID,
+            isPresented: true,
+            initialHistoryLoaded: true
+        ) {
+            scheduleAcknowledgement(channelID: channelID, messageID: target)
+        }
+    }
+
+    func timelineUnreadSummary(
+        channelID: ChannelID,
+        messages: [Message],
+        hasMoreBefore: Bool
+    ) -> AccountReadStateModel.TimelineUnreadSummary? {
+        readState.timelineUnreadSummary(
+            channelID: channelID,
+            messages: messages,
+            hasMoreBefore: hasMoreBefore
+        )
+    }
+
+    func markConversationRead(channelID: ChannelID) {
+        guard channelID == selectedChannelID || channelID == openThread?.id,
+              let target = readState.entries[channelID]?.latestKnownMessageID
+        else { return }
+        acknowledgementTasks[channelID]?.cancel()
+        acknowledgementTasks[channelID] = nil
+        queuedAcknowledgements[channelID] = nil
+        acknowledgementQueueOrder.removeAll { $0 == channelID }
+        readState.unblockAutomaticAcknowledgement(channelID: channelID)
+        readState.markAcknowledgementPending(channelID: channelID, messageID: target)
+        refreshUnreadPresentation()
+        cancelNativeNotifications(channelID: channelID)
+        enqueueAcknowledgement(
+            channelID: channelID,
+            mutation: readStateMutation(
+                channelID: channelID,
+                messageID: target,
+                manual: false,
+                mentionCount: nil
+            )
+        )
+    }
+
+    func markMessageAndFollowingUnread(_ message: Message) {
+        let channelID = message.channelID
+        guard channelID == selectedChannelID || channelID == openThread?.id,
+              message.id.rawValue > 0,
+              let currentUserID = snapshot?.currentUser.id
+        else { return }
+        let conversationMessages =
+            channelID == openThread?.id ? threadMessages : messages
+        let mentionCount = readState.mentionCountForManualUnread(
+            channelID: channelID,
+            messages: conversationMessages,
+            startingAt: message.id,
+            currentUserID: currentUserID
+        )
+        let target = MessageID(rawValue: message.id.rawValue - 1)
+        acknowledgementTasks[channelID]?.cancel()
+        acknowledgementTasks[channelID] = nil
+        queuedAcknowledgements[channelID] = nil
+        acknowledgementQueueOrder.removeAll { $0 == channelID }
+        readState.markUnread(
+            channelID: channelID,
+            after: target,
+            mentionCount: mentionCount
+        )
+        refreshUnreadPresentation()
+        enqueueAcknowledgement(
+            channelID: channelID,
+            mutation: readStateMutation(
+                channelID: channelID,
+                messageID: target,
+                manual: true,
+                mentionCount: mentionCount
+            )
+        )
+    }
+
+    func requestNotificationPermission() async -> Bool {
+        (try? await notificationService.requestAuthorization()) ?? false
+    }
+
+    func notificationAuthorizationStatus() async -> UNAuthorizationStatus {
+        await notificationService.authorizationStatus()
+    }
+
+    func refreshDockBadge() {
+        notificationService.setDockBadge(
+            readState.totalMentions,
+            enabled: notificationPreferences.showsDockBadge
+        )
+    }
+
+    private func acknowledgeIfEligible(channelID: ChannelID) {
+        guard let target = readState.updatePresentation(channelID: channelID) else { return }
+        scheduleAcknowledgement(channelID: channelID, messageID: target)
+    }
+
+    private func scheduleAcknowledgement(channelID: ChannelID, messageID: MessageID) {
+        if let pending = readState.entries[channelID]?.pendingAcknowledgementID,
+           pending >= messageID
+        {
+            return
+        }
+        acknowledgementTasks[channelID]?.cancel()
+        readState.markAcknowledgementPending(channelID: channelID, messageID: messageID)
+        refreshUnreadPresentation()
+        cancelNativeNotifications(channelID: channelID)
+        let debounce = readAcknowledgementTiming.debounce
+        acknowledgementTasks[channelID] = Task { [weak self] in
+            do {
+                try await Task.sleep(for: debounce)
+                guard let self, !Task.isCancelled else { return }
+                self.enqueueAcknowledgement(
+                    channelID: channelID,
+                    mutation: self.readStateMutation(
+                        channelID: channelID,
+                        messageID: messageID,
+                        manual: false,
+                        mentionCount: nil
+                    )
+                )
+                self.acknowledgementTasks[channelID] = nil
+            } catch is CancellationError {
+                return
+            } catch {
+                return
+            }
+        }
+    }
+
+    private func enqueueAcknowledgement(
+        channelID: ChannelID,
+        mutation: ReadStateMutation
+    ) {
+        if let queued = queuedAcknowledgements[channelID] {
+            if mutation.manual || !queued.manual {
+                queuedAcknowledgements[channelID] =
+                    mutation.manual
+                    ? mutation
+                    : ReadStateMutation(
+                        messageID: max(queued.messageID, mutation.messageID),
+                        manual: false,
+                        mentionCount: nil,
+                        flags: mutation.flags,
+                        lastViewed: mutation.lastViewed
+                    )
+            }
+        } else {
+            queuedAcknowledgements[channelID] = mutation
+            acknowledgementQueueOrder.append(channelID)
+        }
+        guard acknowledgementProcessorTask == nil else { return }
+        let generation = acknowledgementGeneration
+        acknowledgementProcessorTask = Task { [weak self] in
+            await self?.drainAcknowledgementQueue(generation: generation)
+        }
+    }
+
+    private func drainAcknowledgementQueue(generation: Int) async {
+        while !Task.isCancelled,
+              generation == acknowledgementGeneration,
+              let channelID = acknowledgementQueueOrder.first
+        {
+            acknowledgementQueueOrder.removeFirst()
+            guard let mutation = queuedAcknowledgements.removeValue(forKey: channelID) else {
+                continue
+            }
+            do {
+                let response = try await provider.acknowledge(
+                    channelID: channelID,
+                    messageID: mutation.messageID,
+                    token: readState.acknowledgementToken,
+                    manual: mutation.manual,
+                    mentionCount: mutation.mentionCount,
+                    flags: mutation.flags,
+                    lastViewed: mutation.lastViewed
+                )
+                guard !Task.isCancelled, generation == acknowledgementGeneration else { return }
+                readState.completeAcknowledgement(
+                    channelID: channelID,
+                    messageID: mutation.messageID,
+                    token: response.token
+                )
+            } catch is CancellationError {
+                return
+            } catch {
+                guard generation == acknowledgementGeneration else { return }
+                readState.failAcknowledgement(
+                    channelID: channelID,
+                    messageID: mutation.messageID
+                )
+                refreshUnreadPresentation()
+                if mutation.manual {
+                    errorMessage = "Discord did not accept the read-state update."
+                }
+            }
+        }
+        if generation == acknowledgementGeneration {
+            acknowledgementProcessorTask = nil
+        }
+    }
+
+    private func readStateMutation(
+        channelID: ChannelID,
+        messageID: MessageID,
+        manual: Bool,
+        mentionCount: Int?
+    ) -> ReadStateMutation {
+        let metadata = readState.acknowledgementMetadata(channelID: channelID)
+        return ReadStateMutation(
+            messageID: messageID,
+            manual: manual,
+            mentionCount: mentionCount,
+            flags: metadata.flags,
+            lastViewed: metadata.lastViewed
+        )
+    }
+
+    private func resetAcknowledgementWork() {
+        acknowledgementGeneration &+= 1
+        acknowledgementTasks.values.forEach { $0.cancel() }
+        acknowledgementTasks.removeAll()
+        acknowledgementProcessorTask?.cancel()
+        acknowledgementProcessorTask = nil
+        queuedAcknowledgements.removeAll()
+        acknowledgementQueueOrder.removeAll()
+    }
+
+    private func refreshUnreadPresentation() {
+        guard var value = snapshot else {
+            notificationService.setDockBadge(
+                readState.totalMentions,
+                enabled: notificationPreferences.showsDockBadge
+            )
+            return
+        }
+        reconcileChannelAccessibility(value.channels)
+        value.channels = value.channels.map { channel in
+            var channel = channel
+            channel.unreadCount = readState.unread(channelID: channel.id) ? 1 : 0
+            channel.mentionCount = readState.mentions(channelID: channel.id)
+            return channel
+        }
+        value.guilds = value.guilds.map { guild in
+            var guild = guild
+            guild.unreadCount = readState.guildUnread(guild.id) ? 1 : 0
+            guild.mentionCount = readState.guildMentions(guild.id)
+            return guild
+        }
+        snapshot = value
+        serverRailGuildsByID = Dictionary(uniqueKeysWithValues: value.guilds.map { ($0.id, $0) })
+        let selectedGuildChannels: [Channel]
+        if let selectedGuildID {
+            selectedGuildChannels = value.channels.filter {
+                $0.guildID == selectedGuildID && conversationAccess(for: $0) != .hidden
+            }
+        } else {
+            selectedGuildChannels = value.channels.filter {
+                $0.guildID == nil && conversationAccess(for: $0) != .hidden
+            }
+        }
+        visibleChannels = selectedGuildChannels
+        if let selectedChannelID,
+           !selectedGuildChannels.contains(where: { $0.id == selectedChannelID })
+        {
+            self.selectedChannelID = Self.preferredInitialChannelID(
+                in: selectedGuildChannels
+            )
+        }
+        selectedChannel =
+            selectedChannelID.flatMap { id in value.channels.first { $0.id == id } }
+                ?? selectedChannel
+        notificationService.setDockBadge(
+            readState.totalMentions,
+            enabled: notificationPreferences.showsDockBadge
+        )
+    }
+
+    private func reconcileChannelAccessibility(_ channels: [Channel]) {
+        for channel in channels {
+            switch conversationAccess(for: channel) {
+            case .hidden:
+                readState.setAccessible(false, channelID: channel.id)
+            case .readable:
+                readState.setAccessible(true, channelID: channel.id)
+            case .checking:
+                break
+            }
+        }
+    }
+
+    private func deliverNativeNotification(for message: Message) {
+        guard !readState.isActivelyPresentedAtNewest(message.channelID) else { return }
+        let channel =
+            snapshot?.channels.first { $0.id == message.channelID }
+                ?? visibleChannels.first { $0.id == message.channelID }
+        let guildID = message.guildID ?? channel?.guildID
+        let guild = guildID.flatMap { serverRailGuildsByID[$0] }
+        let accountID = readState.accountID ?? "offline"
+        Task {
+            await notificationService.deliver(
+                message: message,
+                channel: channel,
+                guild: guild,
+                accountID: accountID,
+                preferences: notificationPreferences
+            )
+        }
+    }
+
+    private func cancelNativeNotifications(channelID: ChannelID) {
+        let accountID = readState.accountID ?? "offline"
+        Task {
+            await notificationService.cancel(accountID: accountID, channelID: channelID)
+        }
+    }
+
     private func consume(_ event: ClientEvent) {
         switch event {
         case .connectionChanged(let state):
@@ -3114,6 +3678,7 @@ final class AppModel {
             if state != .ready {
                 stopLocalTyping(clearThrottle: true)
                 typingState.clearAll()
+                resetAcknowledgementWork()
             }
         case .emojisChanged(let guildID, let emojis):
             applyEmojis(emojis, to: guildID)
@@ -3137,6 +3702,16 @@ final class AppModel {
                 cache(message)
             }
             reconcileForumMessage(message)
+            if let currentUserID = snapshot?.currentUser.id {
+                let disposition = readState.receive(message, currentUserID: currentUserID)
+                if disposition.accepted {
+                    refreshUnreadPresentation()
+                    if disposition.shouldNotify {
+                        deliverNativeNotification(for: message)
+                    }
+                    acknowledgeIfEligible(channelID: message.channelID)
+                }
+            }
         case .messageUpdated(let message):
             clearReactionReactorLoadState(
                 channelID: message.channelID,
@@ -3166,6 +3741,47 @@ final class AppModel {
             } else {
                 messageCache[channelID]?.removeAll { $0.id == messageID }
             }
+        case .readStateSnapshot(let states):
+            resetAcknowledgementWork()
+            readState.replaceReadStates(states)
+            if let selectedChannelID {
+                _ = readState.updatePresentation(
+                    channelID: selectedChannelID,
+                    isPresented: true,
+                    initialHistoryLoaded: !isLoadingMessages && messageLoadError == nil,
+                    windowIsActive: mainWindowIsActive
+                )
+            }
+            if let threadID = openThread?.id {
+                _ = readState.updatePresentation(
+                    channelID: threadID,
+                    isPresented: true,
+                    initialHistoryLoaded: !isLoadingThread && threadErrorMessage == nil,
+                    windowIsActive: mainWindowIsActive
+                )
+            }
+            refreshUnreadPresentation()
+            if let selectedChannelID { acknowledgeIfEligible(channelID: selectedChannelID) }
+            if let threadID = openThread?.id { acknowledgeIfEligible(channelID: threadID) }
+        case .readStateChanged(let state):
+            if readState.applyRemote(state) {
+                refreshUnreadPresentation()
+                if !readState.unread(channelID: state.channelID) {
+                    cancelNativeNotifications(channelID: state.channelID)
+                }
+            }
+        case .notificationModeChanged(let usesNewNotifications):
+            readState.updateNotificationMode(
+                usesNewNotifications: usesNewNotifications
+            )
+            if var value = snapshot {
+                value.usesNewNotifications = usesNewNotifications
+                snapshot = value
+            }
+            refreshUnreadPresentation()
+        case .notificationSettingsChanged(let settings):
+            readState.apply(settings)
+            refreshUnreadPresentation()
         case .typing(let channelID, let user):
             typingState.receive(
                 channelID: channelID,
@@ -3179,7 +3795,11 @@ final class AppModel {
                 snapshot = value
             }
             if guildID == selectedGuildID { visibleChannels = channels }
+            readState.replaceChannels(in: guildID, with: channels)
+            refreshUnreadPresentation()
         case .forumPostsChanged(let channelID, let posts):
+            readState.replaceThreads(parentID: channelID, with: posts.map(\.thread))
+            refreshUnreadPresentation()
             guard channelID == selectedChannelID, selectedChannel?.kind == .forum else { return }
             replaceForumCatalogue(with: posts)
             applyForumPresentation()
@@ -3189,10 +3809,14 @@ final class AppModel {
                 closeThread()
             }
         case .forumPostPreviewsChanged(let channelID, let posts):
+            for post in posts { readState.merge(thread: post.thread) }
+            refreshUnreadPresentation()
             guard channelID == selectedChannelID, selectedChannel?.kind == .forum else { return }
             mergeForumCatalogue(posts)
             applyForumPresentation()
         case .forumPageLoaded(let channelID, let query, let page):
+            for post in page.posts { readState.merge(thread: post.thread) }
+            refreshUnreadPresentation()
             guard channelID == selectedChannelID,
                   selectedChannel?.kind == .forum,
                   forumSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -3211,6 +3835,14 @@ final class AppModel {
             forumNextOffset = page.nextOffset
             hasMoreForumPosts = page.hasMore
         case .membersChanged(let guildID, let value):
+            if let currentUserID = snapshot?.currentUser.id,
+               let currentMember = value.first(where: { $0.id == currentUserID })
+            {
+                let roleIDs = Set(currentMember.roles.map(\.id))
+                currentUserRoleIDsByGuild[guildID] = roleIDs
+                readState.updateCurrentUserRoles(roleIDs, guildID: guildID)
+                refreshUnreadPresentation()
+            }
             guard guildID == selectedGuildID else { return }
             members = value
             if mentionAutocompleteMembers.isEmpty {
@@ -3234,6 +3866,11 @@ final class AppModel {
             if let selectedMember, let updated = value.first(where: { $0.id == selectedMember.id }) {
                 self.selectedMember = updated
             }
+        case .currentUserRolesChanged(let guildID, let roleIDs):
+            let roleIDs = Set(roleIDs)
+            currentUserRoleIDsByGuild[guildID] = roleIDs
+            readState.updateCurrentUserRoles(roleIDs, guildID: guildID)
+            refreshUnreadPresentation()
         case .voiceStateChanged(let state):
             if state.channelID == nil {
                 voiceStates[state.userID] = nil
@@ -3247,6 +3884,17 @@ final class AppModel {
             scheduleVoiceServerMigration(to: info)
         case .snapshotChanged(let value):
             snapshot = value
+            readState.configure(
+                accountID: readState.accountID,
+                guilds: value.guilds,
+                channels: value.channels,
+                readStates: value.readStates,
+                notificationSettings: value.notificationSettings,
+                usesNewNotifications: value.usesNewNotifications
+            )
+            for thread in value.threads {
+                readState.merge(thread: thread)
+            }
             updateServerRail(from: value)
             selectGuild(selectedGuildID)
         case .guildChanged(let guild):
@@ -3255,11 +3903,14 @@ final class AppModel {
             else { return }
             value.guilds[index] = guild
             snapshot = value
+            readState.merge(guilds: [guild])
         case .guildLayoutChanged(let guilds, let railItems):
             guard var value = snapshot else { return }
             value.guilds = guilds
             value.guildRailItems = railItems
             snapshot = value
+            readState.retainGuilds(Set(guilds.map(\.id)))
+            readState.merge(guilds: guilds)
             updateServerRail(from: value)
         case .applicationCommandIndexInvalidated(let target):
             if commandComposer.invalidated(target) {

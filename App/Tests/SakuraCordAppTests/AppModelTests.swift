@@ -179,6 +179,143 @@ import Testing
 }
 
 @MainActor
+@Test func `inaccessible private channels are absent from presentation and unread state`() async {
+    let model = AppModel(launchMode: .offlineTesting)
+    await model.start()
+    let privateChannelID = ChannelID(rawValue: 215)
+
+    #expect(await eventuallyOnMain {
+        model.readState.entries[privateChannelID]?.isAccessible == false
+    })
+    #expect(!model.visibleChannels.contains(where: { $0.id == privateChannelID }))
+    #expect(!model.isChannelUnread(privateChannelID))
+    #expect(model.channelMentionCount(privateChannelID) == 0)
+}
+
+@MainActor
+@Test func `startup snapshot presents channel guild and folder unread without a later event`() async
+    throws
+{
+    let provider = StartupUnreadTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+
+    await model.start()
+
+    let channel = try #require(model.visibleChannels.first)
+    let guild = try #require(model.serverRailGuildsByID[GuildID(rawValue: 77_000)])
+    #expect(channel.unreadCount == 1)
+    #expect(channel.mentionCount == 2)
+    #expect(guild.unreadCount == 1)
+    #expect(guild.mentionCount == 2)
+    #expect(
+        model.serverRailItems
+            == [
+                .folder(
+                    GuildFolder(
+                        id: 77,
+                        name: "Startup",
+                        guildIDs: [GuildID(rawValue: 77_000)]
+                    )
+                )
+            ]
+    )
+}
+
+@MainActor
+@Test func `snapshot refresh preserves the account unread notification mode`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let currentUser = try #require(model.snapshot?.currentUser)
+    let guildID = GuildID(rawValue: 78_000)
+    let channelID = ChannelID(rawValue: 78_001)
+    let refreshed = BootstrapSnapshot(
+        currentUser: currentUser,
+        guilds: [
+            Guild(
+                id: guildID,
+                name: "Legacy unread policy",
+                defaultMessageNotifications: .onlyMentions
+            )
+        ],
+        channels: [
+            Channel(
+                id: channelID,
+                guildID: guildID,
+                name: "general",
+                lastMessageID: MessageID(rawValue: 11)
+            )
+        ],
+        members: [],
+        readStates: [
+            ChannelReadState(
+                channelID: channelID,
+                lastAcknowledgedMessageID: MessageID(rawValue: 10)
+            )
+        ],
+        usesNewNotifications: false
+    )
+
+    await provider.emit(.snapshotChanged(refreshed))
+
+    #expect(await eventuallyOnMain {
+        model.snapshot?.usesNewNotifications == false
+            && model.snapshot?.channels.contains(where: { $0.id == channelID }) == true
+    })
+    #expect(model.isChannelUnread(channelID))
+    #expect(model.serverRailGuildsByID[guildID]?.unreadCount == 1)
+}
+
+@MainActor
+@Test func `gateway ready refreshes the account unread notification mode`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let guildID = GuildID(rawValue: 79_000)
+    let channelID = ChannelID(rawValue: 79_001)
+    let currentUser = try #require(model.snapshot?.currentUser)
+    let refreshed = BootstrapSnapshot(
+        currentUser: currentUser,
+        guilds: [
+            Guild(
+                id: guildID,
+                name: "Reconnect policy",
+                defaultMessageNotifications: .onlyMentions
+            )
+        ],
+        channels: [
+            Channel(
+                id: channelID,
+                guildID: guildID,
+                name: "general",
+                lastMessageID: MessageID(rawValue: 11)
+            )
+        ],
+        members: [],
+        readStates: [
+            ChannelReadState(
+                channelID: channelID,
+                lastAcknowledgedMessageID: MessageID(rawValue: 10)
+            )
+        ],
+        usesNewNotifications: true
+    )
+    await provider.emit(.snapshotChanged(refreshed))
+    #expect(await eventuallyOnMain { model.snapshot == refreshed })
+    #expect(!model.isChannelUnread(channelID))
+
+    await provider.emit(
+        .notificationModeChanged(usesNewNotifications: false)
+    )
+
+    #expect(await eventuallyOnMain {
+        model.snapshot?.usesNewNotifications == false
+    })
+    #expect(model.isChannelUnread(channelID))
+    #expect(model.serverRailGuildsByID[guildID]?.unreadCount == 1)
+}
+
+@MainActor
 @Test func `fast forum loads do not flash a transient loading surface`() async throws {
     let provider = MockChatProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
@@ -1029,6 +1166,43 @@ private actor CredentialAccessProbeStore: CredentialStore {
 }
 
 @MainActor
+@Test func `automatic guild selection prefers a text conversation over general voice`() {
+    let guildID = GuildID(rawValue: 7)
+    let voiceGeneral = Channel(
+        id: ChannelID(rawValue: 70),
+        guildID: guildID,
+        name: "general",
+        kind: .voice
+    )
+    let welcome = Channel(
+        id: ChannelID(rawValue: 71),
+        guildID: guildID,
+        name: "welcome",
+        kind: .text
+    )
+    let textGeneral = Channel(
+        id: ChannelID(rawValue: 72),
+        guildID: guildID,
+        name: "general",
+        kind: .text
+    )
+
+    #expect(
+        AppModel.preferredInitialChannelID(
+            in: [voiceGeneral, welcome, textGeneral]
+        ) == textGeneral.id
+    )
+    #expect(
+        AppModel.preferredInitialChannelID(in: [voiceGeneral, welcome])
+            == welcome.id
+    )
+    #expect(
+        AppModel.preferredInitialChannelID(in: [voiceGeneral])
+            == voiceGeneral.id
+    )
+}
+
+@MainActor
 @Test func `selecting voice channel opens its text chat by default without joining`() async throws {
     let model = AppModel(launchMode: .offlineTesting)
     await model.start()
@@ -1387,6 +1561,88 @@ private actor ChannelLoadTestProvider: ChatProvider {
     func maximumConcurrentReactorRequestCount() -> Int {
         maximumActiveReactorRequests
     }
+}
+
+private actor StartupUnreadTestProvider: ChatProvider {
+    private let guild = Guild(id: GuildID(rawValue: 77_000), name: "Startup Guild")
+    private let user = User(
+        id: UserID(rawValue: 77_001),
+        username: "startup-tester",
+        displayName: "Startup Tester"
+    )
+    private let channel = Channel(
+        id: ChannelID(rawValue: 77_002),
+        guildID: GuildID(rawValue: 77_000),
+        name: "general",
+        lastMessageID: MessageID(rawValue: 77_200)
+    )
+
+    func bootstrap() async throws -> BootstrapSnapshot {
+        BootstrapSnapshot(
+            currentUser: user,
+            guilds: [guild],
+            guildRailItems: [
+                .folder(
+                    GuildFolder(id: 77, name: "Startup", guildIDs: [guild.id])
+                )
+            ],
+            channels: [channel],
+            members: [],
+            readStates: [
+                ChannelReadState(
+                    channelID: channel.id,
+                    lastAcknowledgedMessageID: MessageID(rawValue: 77_100),
+                    mentionCount: 2
+                )
+            ]
+        )
+    }
+
+    func channels(in guildID: GuildID?) async throws -> [Channel] {
+        guildID == guild.id ? [channel] : []
+    }
+
+    func members(in guildID: GuildID?) async throws -> [Member] {
+        []
+    }
+
+    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
+        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
+    }
+
+    func currentStatus() async -> PresenceStatus {
+        .online
+    }
+
+    func updateStatus(_ status: PresenceStatus) async throws {}
+
+    func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
+        -> MessagePage
+    {
+        MessagePage(messages: [], hasMoreBefore: false)
+    }
+
+    func send(_ draft: SendMessageDraft) async throws -> Message {
+        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
+    }
+
+    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message {
+        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
+    }
+
+    func delete(messageID: MessageID, channelID: ChannelID) async throws {
+        throw ChatProviderError.invalidRequest("Deleting is not part of this test.")
+    }
+
+    func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws {
+        throw ChatProviderError.invalidRequest("Reactions are not part of this test.")
+    }
+
+    func eventStream() async -> AsyncStream<ClientEvent> {
+        AsyncStream { $0.finish() }
+    }
+
+    func disconnect() async {}
 }
 
 private actor ForumPaginationTestProvider: ChatProvider {

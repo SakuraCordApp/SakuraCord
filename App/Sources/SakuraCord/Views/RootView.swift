@@ -52,6 +52,8 @@ private struct ChatRootView: View {
                     guildsByID: model.serverRailGuildsByID,
                     items: model.serverRailItems,
                     selectedGuildID: model.selectedGuildID,
+                    homeIsUnread: model.directMessageUnread,
+                    homeMentionCount: model.directMessageMentionCount,
                     selectHome: { model.selectGuild(nil) }, selectGuild: model.selectGuild
                 )
                 .zIndex(200)
@@ -169,6 +171,12 @@ private struct ChatRootView: View {
             .ignoresSafeArea()
             .allowsHitTesting(false)
         }
+        .background {
+            WindowActivityReader { isActive in
+                model.reportMainWindowActive(isActive)
+            }
+            .frame(width: 0, height: 0)
+        }
         .overlay {
             if presentsForumComposer,
                let channel = model.selectedChannel,
@@ -217,6 +225,11 @@ private struct ChatRootView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .sakuracordQuickSwitcher)) { _ in model.showQuickSwitcher = true }
         .onReceive(NotificationCenter.default.publisher(for: .sakuracordToggleInspector)) { _ in model.showInspector.toggle() }
+        .onReceive(NotificationCenter.default.publisher(for: .sakuracordNotificationDeepLink)) {
+            notification in
+            guard let link = notification.object as? NotificationDeepLink else { return }
+            Task { await model.navigate(from: link) }
+        }
     }
 
     private var sidebarDisplayName: String {

@@ -21,6 +21,11 @@ public actor DiscordRESTProvider: ChatProvider {
         var lastReadMessageID: MessageID?
         var mentionCount: Int
     }
+    private struct InitialGatewaySnapshot: Sendable {
+        var readStates: [ChannelReadState]
+        var notificationSettings: [GuildNotificationSettings]
+        var usesNewNotifications: Bool
+    }
     private struct ReactionReactorCacheKey: Hashable, Sendable {
         var channelID: ChannelID
         var messageID: MessageID
@@ -59,6 +64,9 @@ public actor DiscordRESTProvider: ChatProvider {
     private var gatewayEventTask: Task<Void, Never>?
     private var gatewayGuildIDs: [GuildID] = []
     private var gatewayReady = false
+    private var initialGatewaySnapshot: InitialGatewaySnapshot?
+    private var initialGatewaySnapshotContinuation:
+        CheckedContinuation<InitialGatewaySnapshot, any Error>?
     private var pendingMemberGuildID: GuildID?
     private var cachedMembers: [GuildID: [Member]] = [:]
     private var cachedMemberListItems: [GuildID: [GuildMemberListUpdateDTO.Item?]] = [:]
@@ -184,14 +192,61 @@ public actor DiscordRESTProvider: ChatProvider {
             ) ?? .invisible
         let members = [Member(user: user, roleName: "You", status: presenceStatus)]
         try await startGateway()
+        let ready = try await waitForInitialGatewaySnapshot()
         let currentGuilds = guildsInCurrentRailOrder()
+        var channelsByID = Dictionary(
+            (cachedChannels[nil] ?? channels).map { ($0.id, $0) },
+            uniquingKeysWith: { _, newer in newer }
+        )
+        for guild in currentGuilds {
+            for channel in cachedChannels[guild.id] ?? [] {
+                channelsByID[channel.id] = channel
+            }
+        }
+        let startupChannels =
+            (cachedChannels[nil] ?? channels).compactMap { channelsByID.removeValue(forKey: $0.id) }
+                + currentGuilds.flatMap { guild in
+                    (cachedChannels[guild.id] ?? []).compactMap {
+                        channelsByID.removeValue(forKey: $0.id)
+                    }
+                }
+                + channelsByID.values.sorted { $0.id < $1.id }
+        let startupThreads =
+            cachedForumPosts.values
+                .flatMap(\.values)
+                .map(\.thread)
+                .sorted { $0.id < $1.id }
         return BootstrapSnapshot(
             currentUser: user,
             guilds: currentGuilds,
             guildRailItems: cachedGuildRailItems,
-            channels: channels,
-            members: members
+            channels: startupChannels,
+            threads: startupThreads,
+            members: members,
+            readStates: ready.readStates,
+            notificationSettings: ready.notificationSettings,
+            usesNewNotifications: ready.usesNewNotifications
         )
+    }
+
+    private func waitForInitialGatewaySnapshot() async throws -> InitialGatewaySnapshot {
+        if let initialGatewaySnapshot {
+            return initialGatewaySnapshot
+        }
+        return try await withCheckedThrowingContinuation { continuation in
+            initialGatewaySnapshotContinuation = continuation
+        }
+    }
+
+    private func finishInitialGatewaySnapshot(_ snapshot: InitialGatewaySnapshot) {
+        initialGatewaySnapshot = snapshot
+        initialGatewaySnapshotContinuation?.resume(returning: snapshot)
+        initialGatewaySnapshotContinuation = nil
+    }
+
+    private func failInitialGatewaySnapshot(_ error: any Error) {
+        initialGatewaySnapshotContinuation?.resume(throwing: error)
+        initialGatewaySnapshotContinuation = nil
     }
 
     static func applyingGuildLayout(
@@ -1249,6 +1304,66 @@ public actor DiscordRESTProvider: ChatProvider {
         try await requestEmpty("/channels/\(channelID)/typing", method: "POST")
     }
 
+    public func acknowledge(
+        channelID: ChannelID,
+        messageID: MessageID,
+        token: String?
+    ) async throws -> ReadAcknowledgementResponse {
+        try await acknowledge(
+            channelID: channelID,
+            messageID: messageID,
+            token: token,
+            manual: false,
+            mentionCount: nil,
+            flags: nil,
+            lastViewed: nil
+        )
+    }
+
+    public func acknowledge(
+        channelID: ChannelID,
+        messageID: MessageID,
+        token: String?,
+        manual: Bool,
+        mentionCount: Int?,
+        flags: UInt64?,
+        lastViewed: Int?
+    ) async throws -> ReadAcknowledgementResponse {
+        var body: [String: JSONValue] = [:]
+        if let token {
+            body["token"] = .string(token)
+        }
+        if manual {
+            body["manual"] = .bool(true)
+            body["mention_count"] = .number(Double(max(0, mentionCount ?? 0)))
+        }
+        if let flags {
+            body["flags"] = .number(Double(flags))
+        }
+        if let lastViewed {
+            body["last_viewed"] = .number(Double(lastViewed))
+        }
+        let (data, response) = try await perform(
+            "/channels/\(channelID)/messages/\(messageID)/ack",
+            method: "POST",
+            query: [],
+            body: body,
+            maximumAttempts: 1
+        )
+        guard (200 ..< 300).contains(response.statusCode) else {
+            if response.statusCode == 401 {
+                authorizationValue = nil
+                throw ChatProviderError.unauthenticated
+            }
+            throw ChatProviderError.transport(
+                status: response.statusCode,
+                requestID: response.value(forHTTPHeaderField: "x-request-id")
+            )
+        }
+        guard !data.isEmpty else { return ReadAcknowledgementResponse(token: token) }
+        return try JSONDecoder().decode(ReadAcknowledgementResponse.self, from: data)
+    }
+
     public func supports(_ capability: ChatCapability) async -> Bool {
         capability == .slashCommands || capability == .forums
     }
@@ -1940,6 +2055,8 @@ public actor DiscordRESTProvider: ChatProvider {
 
     public func disconnect() async {
         requestSafetyCircuitIsOpen = true
+        failInitialGatewaySnapshot(CancellationError())
+        initialGatewaySnapshot = nil
         for task in forumCatalogueTasks.values {
             task.cancel()
         }
@@ -2080,6 +2197,7 @@ public actor DiscordRESTProvider: ChatProvider {
         case .stateChanged(let connectionState):
             gatewayReady = connectionState == .ready
             if connectionState == .authenticationFailed {
+                failInitialGatewaySnapshot(ChatProviderError.unauthenticated)
                 await openSafetyCircuit(
                     status: 401, discordCode: nil, route: "GATEWAY IDENTIFY/RESUME")
                 return
@@ -2261,6 +2379,63 @@ public actor DiscordRESTProvider: ChatProvider {
                         mentionCount: entry.mentionCount ?? 0
                     )
                 }
+                let readyReadStates: [ChannelReadState] =
+                    ready.readState.channelEntriesByID.map { channelID, entry in
+                        ChannelReadState(
+                            channelID: channelID,
+                            lastAcknowledgedMessageID: entry.lastMessageID.flatMap(MessageID.init),
+                            mentionCount: entry.mentionCount ?? 0,
+                            flags: entry.flags,
+                            lastViewed: entry.lastViewed
+                        )
+                    }
+                    .sorted { $0.channelID.rawValue < $1.channelID.rawValue }
+                let readyNotificationSettings = ready.userGuildSettings.map(\.domain)
+                let guildAllUnreadSettingCount = readyNotificationSettings.count {
+                    $0.flags & (1 << 11) != 0
+                }
+                let guildMentionOnlyUnreadSettingCount = readyNotificationSettings.count {
+                    $0.flags & (1 << 12) != 0
+                }
+                let guildOptInCount = readyNotificationSettings.count {
+                    $0.flags & (1 << 14) != 0
+                }
+                let channelOverrides = readyNotificationSettings.flatMap(\.channelOverrides)
+                let channelAllUnreadSettingCount = channelOverrides.count {
+                    $0.flags & (1 << 10) != 0
+                }
+                let channelMentionOnlyUnreadSettingCount = channelOverrides.count {
+                    $0.flags & (1 << 9) != 0
+                }
+                let channelOptInCount = channelOverrides.count {
+                    $0.flags & (1 << 12) != 0
+                }
+                gatewayLogger.info(
+                    """
+                    Ready unread metadata decoded; readStates=\(readyReadStates.count), \
+                    guildSettings=\(readyNotificationSettings.count), \
+                    guildSettingsPartial=\(ready.userGuildSettingsPartial), \
+                    newNotifications=\(ready.usesNewNotifications), \
+                    guildAll=\(guildAllUnreadSettingCount), \
+                    guildMentions=\(guildMentionOnlyUnreadSettingCount), \
+                    guildOptIn=\(guildOptInCount), \
+                    channelOverrides=\(channelOverrides.count), \
+                    channelAll=\(channelAllUnreadSettingCount), \
+                    channelMentions=\(channelMentionOnlyUnreadSettingCount), \
+                    channelOptIn=\(channelOptInCount)
+                    """
+                )
+                continuation?.yield(
+                    .notificationModeChanged(
+                        usesNewNotifications: ready.usesNewNotifications
+                    )
+                )
+                continuation?.yield(
+                    .readStateSnapshot(readyReadStates)
+                )
+                for settings in readyNotificationSettings {
+                    continuation?.yield(.notificationSettingsChanged(settings))
+                }
                 let readyGuilds = ready.hydratedGuilds(using: cachedGatewayUsersByID)
                 gatewayGuildIDs = readyGuilds.compactMap { GuildID($0.id) }
                 var voiceStateCount = 0
@@ -2293,6 +2468,16 @@ public actor DiscordRESTProvider: ChatProvider {
                         cachedMembers[guildID] = DiscordMemberStoreOrdering.merging(
                             existing: cachedMembers[guildID] ?? [], updates: members
                         )
+                        if let currentUserID = currentUser?.id,
+                           let currentMember = members.first(where: { $0.id == currentUserID })
+                        {
+                            continuation?.yield(
+                                .currentUserRolesChanged(
+                                    guildID: guildID,
+                                    roleIDs: currentMember.roles.map(\.id)
+                                )
+                            )
+                        }
                     }
                     if let guildID, let emojis = guild.emojis {
                         publishEmojiCollection(emojis, guildID: guildID)
@@ -2310,6 +2495,19 @@ public actor DiscordRESTProvider: ChatProvider {
                         "Ready voice-state snapshot received; count=\(voiceStateCount)")
                 }
                 applyGuildSettingsProto(ready.userSettingsProto)
+                finishInitialGatewaySnapshot(
+                    InitialGatewaySnapshot(
+                        readStates: readyReadStates,
+                        notificationSettings: readyNotificationSettings,
+                        usesNewNotifications: ready.usesNewNotifications
+                    )
+                )
+            } else if name == "READY" {
+                failInitialGatewaySnapshot(
+                    ChatProviderError.invalidRequest(
+                        "Discord's initial Gateway state could not be decoded."
+                    )
+                )
             }
         case "USER_SETTINGS_PROTO_UPDATE":
             guard
@@ -2322,6 +2520,11 @@ public actor DiscordRESTProvider: ChatProvider {
                 update.settings.proto,
                 replacesAllSettings: update.partial != true
             )
+        case "USER_GUILD_SETTINGS_UPDATE":
+            guard let update = try? JSONDecoder().decode(
+                GatewayUserGuildSettingsDTO.self, from: data
+            ) else { return }
+            continuation?.yield(.notificationSettingsChanged(update.domain))
         case "READY_SUPPLEMENTAL":
             if let supplemental = try? JSONDecoder().decode(
                 GatewayReadyGuildsDTO.self, from: data
@@ -2449,10 +2652,32 @@ public actor DiscordRESTProvider: ChatProvider {
                   let channelID = ChannelID(ack.channelID)
             else { return }
             forumReadStates[channelID] = ForumReadState(
-                lastReadMessageID: ack.messageID.flatMap(MessageID.init), mentionCount: 0
+                lastReadMessageID: ack.messageID.flatMap(MessageID.init),
+                mentionCount: ack.mentionCount ?? 0
+            )
+            continuation?.yield(
+                .readStateChanged(
+                    ChannelReadState(
+                        channelID: channelID,
+                        lastAcknowledgedMessageID: ack.messageID.flatMap(MessageID.init),
+                        mentionCount: ack.mentionCount ?? 0,
+                        isManual: ack.manual ?? false,
+                        flags: ack.flags,
+                        lastViewed: ack.lastViewed
+                    )
+                )
             )
             for (parentID, posts) in cachedForumPosts where posts[channelID] != nil {
-                cachedForumPosts[parentID]?[channelID]?.isUnread = false
+                if let lastMessageID = posts[channelID]?.thread.lastMessageID {
+                    cachedForumPosts[parentID]?[channelID]?.isUnread =
+                        (ack.mentionCount ?? 0) > 0
+                        || (ack.messageID.flatMap(MessageID.init).map {
+                            lastMessageID > $0
+                        } ?? true)
+                } else {
+                    cachedForumPosts[parentID]?[channelID]?.isUnread =
+                        (ack.mentionCount ?? 0) > 0
+                }
                 publishForumPosts(parentID: parentID)
                 break
             }
@@ -4190,10 +4415,12 @@ private struct GuildDTO: Decodable {
     var owner: Bool?
     var permissions: String?
     var rulesChannelID: String?
+    var defaultMessageNotifications: Int?
 
     enum CodingKeys: String, CodingKey {
         case id, name, icon, owner, permissions
         case rulesChannelID = "rules_channel_id"
+        case defaultMessageNotifications = "default_message_notifications"
     }
 
     func domain() throws -> Guild {
@@ -4212,7 +4439,10 @@ private struct GuildDTO: Decodable {
             iconURL: iconURL,
             isOwnedByCurrentUser: owner,
             currentUserPermissions: permissions.flatMap(UInt64.init),
-            rulesChannelID: rulesChannelID.flatMap(ChannelID.init)
+            rulesChannelID: rulesChannelID.flatMap(ChannelID.init),
+            defaultMessageNotifications:
+                defaultMessageNotifications.flatMap(MessageNotificationLevel.init(rawValue:))
+                ?? .onlyMentions
         )
     }
 }
@@ -4645,6 +4875,8 @@ private struct MessageUpdateDTO: Decodable {
     var stickers: LossyList<MessageStickerDTO>?
     var thread: MessageThreadDTO?
     var mentions: LossyList<MessageMentionDTO>?
+    var mentionRoles: [String]?
+    var mentionEveryone: Bool?
     var flags: UInt64?
     var type: Int?
     var application: MessageDTO.ApplicationDTO?
@@ -4657,6 +4889,8 @@ private struct MessageUpdateDTO: Decodable {
         case editedTimestamp = "edited_timestamp"
         case attachments
         case embeds, components, stickers, thread, flags, type, mentions, application, interaction
+        case mentionRoles = "mention_roles"
+        case mentionEveryone = "mention_everyone"
         case interactionMetadata = "interaction_metadata"
         case stickerItems = "sticker_items"
     }
@@ -4715,6 +4949,12 @@ private struct MessageUpdateDTO: Decodable {
             message.mentionedUsers = mentions.elements.compactMap {
                 try? $0.domain(guildID: message.guildID)
             }
+        }
+        if let mentionRoles {
+            message.mentionedRoleIDs = mentionRoles.compactMap(RoleID.init)
+        }
+        if let mentionEveryone {
+            message.mentionsEveryone = mentionEveryone
         }
     }
 }
@@ -4946,68 +5186,91 @@ struct GatewayReadyGuildsDTO: Decodable {
         init(from decoder: any Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             id = try container.decode(String.self, forKey: .id)
-            rulesChannelID = try container.decodeIfPresent(String.self, forKey: .rulesChannelID)
+            rulesChannelID = try? container.decode(String.self, forKey: .rulesChannelID)
             voiceStates =
-                try container.decodeIfPresent(
+                (try? container.decode(
                     LossyList<VoiceStateUpdateDTO>.self,
                     forKey: .voiceStates
-                )?.elements ?? []
-            emojis = try container.decodeIfPresent(
+                ))?.elements ?? []
+            emojis = try? container.decode(
                 GatewayGuildEmojiCollectionDTO.self,
                 forKey: .emojis
             )
             channels =
-                try container.decodeIfPresent(
+                (try? container.decode(
                     LossyList<ChannelDTO>.self, forKey: .channels
-                )?.elements ?? []
+                ))?.elements ?? []
             threads =
-                try container.decodeIfPresent(
+                (try? container.decode(
                     LossyList<ChannelDTO>.self, forKey: .threads
-                )?.elements ?? []
+                ))?.elements ?? []
             roles =
-                try container.decodeIfPresent(
+                (try? container.decode(
                     LossyList<GuildRoleDTO>.self, forKey: .roles
-                )?.elements ?? []
+                ))?.elements ?? []
             members =
-                try container.decodeIfPresent(
+                (try? container.decode(
                     LossyList<GuildMemberDTO>.self, forKey: .members
-                )?.elements ?? []
+                ))?.elements ?? []
         }
     }
 
     var guilds: [GuildReference]
+    var currentUser: UserDTO?
     var users: [UserDTO]
     var mergedMembers: [[ReadyMergedMemberDTO]]
     var userSettingsProto: String?
     var readState: GatewayReadStateDTO
+    fileprivate var userGuildSettings: [GatewayUserGuildSettingsDTO]
+    var userGuildSettingsPartial: Bool
+    var usesNewNotifications: Bool
 
     enum CodingKeys: String, CodingKey {
         case guilds
+        case currentUser = "user"
         case users
         case mergedMembers = "merged_members"
         case userSettingsProto = "user_settings_proto"
         case readState = "read_state"
+        case userGuildSettings = "user_guild_settings"
+        case notificationSettings = "notification_settings"
     }
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         guilds =
-            try container.decodeIfPresent(
+            (try? container.decode(
                 LossyList<GuildReference>.self, forKey: .guilds
-            )?.elements ?? []
+            ))?.elements ?? []
+        currentUser = try? container.decode(UserDTO.self, forKey: .currentUser)
         users =
-            try container.decodeIfPresent(
+            (try? container.decode(
                 LossyList<UserDTO>.self, forKey: .users
-            )?.elements ?? []
+            ))?.elements ?? []
+        if let currentUser, !users.contains(where: { $0.id == currentUser.id }) {
+            users.append(currentUser)
+        }
         mergedMembers =
-            try container.decodeIfPresent(
+            (try? container.decode(
                 LossyList<LossyList<ReadyMergedMemberDTO>>.self,
                 forKey: .mergedMembers
-            )?.elements.map(\.elements) ?? []
-        userSettingsProto = try container.decodeIfPresent(String.self, forKey: .userSettingsProto)
+            ))?.elements.map(\.elements) ?? []
+        userSettingsProto = try? container.decode(String.self, forKey: .userSettingsProto)
         readState =
-            try container.decodeIfPresent(GatewayReadStateDTO.self, forKey: .readState)
+            (try? container.decode(GatewayReadStateDTO.self, forKey: .readState))
                 ?? GatewayReadStateDTO(entries: [])
+        let userGuildSettingsCollection = try? container.decode(
+            GatewayUserGuildSettingsCollectionDTO.self,
+            forKey: .userGuildSettings
+        )
+        userGuildSettings = userGuildSettingsCollection?.entries ?? []
+        userGuildSettingsPartial = userGuildSettingsCollection?.partial ?? false
+        let accountNotificationSettings = try? container.decode(
+            GatewayAccountNotificationSettingsDTO.self,
+            forKey: .notificationSettings
+        )
+        usesNewNotifications =
+            accountNotificationSettings.map { $0.flags & (1 << 4) != 0 } ?? true
     }
 
     func hydratedGuilds(using knownUsersByID: [String: UserDTO]) -> [GuildReference] {
@@ -5027,26 +5290,154 @@ struct GatewayReadyGuildsDTO: Decodable {
     }
 }
 
+private struct GatewayAccountNotificationSettingsDTO: Decodable {
+    var flags: UInt64
+}
+
+private struct GatewayUserGuildSettingsCollectionDTO: Decodable {
+    var entries: [GatewayUserGuildSettingsDTO]
+    var partial: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case entries
+        case partial
+    }
+
+    init(from decoder: any Decoder) throws {
+        if let legacy = try? decoder.singleValueContainer().decode(
+            LossyList<GatewayUserGuildSettingsDTO>.self
+        ) {
+            entries = legacy.elements
+            partial = false
+            return
+        }
+
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        entries =
+            (try? container.decode(
+                LossyList<GatewayUserGuildSettingsDTO>.self,
+                forKey: .entries
+            ))?.elements ?? []
+        partial = (try? container.decode(Bool.self, forKey: .partial)) ?? false
+    }
+}
+
+private struct GatewayUserGuildSettingsDTO: Decodable {
+    struct MuteConfigDTO: Decodable {
+        var endTime: String?
+        enum CodingKeys: String, CodingKey { case endTime = "end_time" }
+
+        var domain: DiscordMuteConfiguration {
+            DiscordMuteConfiguration(endTime: endTime.flatMap(DiscordDate.parse))
+        }
+    }
+
+    struct OverrideDTO: Decodable {
+        var channelID: String
+        var messageNotifications: Int?
+        var muted: Bool?
+        var muteConfig: MuteConfigDTO?
+        var flags: UInt64?
+
+        enum CodingKeys: String, CodingKey {
+            case channelID = "channel_id"
+            case messageNotifications = "message_notifications"
+            case muted
+            case muteConfig = "mute_config"
+            case flags
+        }
+
+        var domain: ChannelNotificationOverride? {
+            guard let channelID = ChannelID(channelID) else { return nil }
+            return ChannelNotificationOverride(
+                channelID: channelID,
+                messageNotifications:
+                    messageNotifications.flatMap(MessageNotificationLevel.init(rawValue:))
+                    ?? .inherit,
+                isMuted: muted ?? false,
+                muteConfiguration: muteConfig?.domain,
+                flags: flags ?? 0
+            )
+        }
+    }
+
+    var guildID: String?
+    var messageNotifications: Int?
+    var muted: Bool?
+    var muteConfig: MuteConfigDTO?
+    var suppressEveryone: Bool?
+    var suppressRoles: Bool?
+    var flags: UInt64?
+    var channelOverrides: [OverrideDTO]
+
+    enum CodingKeys: String, CodingKey {
+        case guildID = "guild_id"
+        case messageNotifications = "message_notifications"
+        case muted
+        case muteConfig = "mute_config"
+        case suppressEveryone = "suppress_everyone"
+        case suppressRoles = "suppress_roles"
+        case flags
+        case channelOverrides = "channel_overrides"
+    }
+
+    init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        guildID = try? values.decode(String.self, forKey: .guildID)
+        messageNotifications = try? values.decode(Int.self, forKey: .messageNotifications)
+        muted = try? values.decode(Bool.self, forKey: .muted)
+        muteConfig = try? values.decode(MuteConfigDTO.self, forKey: .muteConfig)
+        suppressEveryone = try? values.decode(Bool.self, forKey: .suppressEveryone)
+        suppressRoles = try? values.decode(Bool.self, forKey: .suppressRoles)
+        flags = try? values.decode(UInt64.self, forKey: .flags)
+        channelOverrides =
+            (try? values.decode(
+                LossyList<OverrideDTO>.self, forKey: .channelOverrides
+            ))?.elements ?? []
+    }
+
+    var domain: GuildNotificationSettings {
+        GuildNotificationSettings(
+            guildID: guildID.flatMap(GuildID.init),
+            messageNotifications:
+                messageNotifications.flatMap(MessageNotificationLevel.init(rawValue:))
+                ?? .inherit,
+            isMuted: muted ?? false,
+            muteConfiguration: muteConfig?.domain,
+            suppressEveryone: suppressEveryone ?? false,
+            suppressRoles: suppressRoles ?? false,
+            flags: flags ?? 0,
+            channelOverrides: channelOverrides.compactMap(\.domain)
+        )
+    }
+}
+
 struct GatewayReadStateDTO: Decodable {
     struct Entry: Decodable {
         var id: String
         var readStateType: Int
         var lastMessageID: String?
         var mentionCount: Int?
+        var flags: UInt64?
+        var lastViewed: Int?
 
         enum CodingKeys: String, CodingKey {
             case id
             case readStateType = "read_state_type"
             case lastMessageID = "last_message_id"
             case mentionCount = "mention_count"
+            case flags
+            case lastViewed = "last_viewed"
         }
 
         init(from decoder: any Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             id = try container.decode(String.self, forKey: .id)
-            readStateType = try container.decodeIfPresent(Int.self, forKey: .readStateType) ?? 0
-            lastMessageID = try container.decodeIfPresent(String.self, forKey: .lastMessageID)
-            mentionCount = try container.decodeIfPresent(Int.self, forKey: .mentionCount)
+            readStateType = (try? container.decode(Int.self, forKey: .readStateType)) ?? 0
+            lastMessageID = try? container.decode(String.self, forKey: .lastMessageID)
+            mentionCount = try? container.decode(Int.self, forKey: .mentionCount)
+            flags = try? container.decode(UInt64.self, forKey: .flags)
+            lastViewed = try? container.decode(Int.self, forKey: .lastViewed)
         }
     }
 
@@ -5066,7 +5457,7 @@ struct GatewayReadStateDTO: Decodable {
     init(from decoder: any Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         entries =
-            try values.decodeIfPresent(LossyList<Entry>.self, forKey: .entries)?.elements ?? []
+            (try? values.decode(LossyList<Entry>.self, forKey: .entries))?.elements ?? []
     }
 
     private enum CodingKeys: String, CodingKey { case entries }
@@ -5159,10 +5550,18 @@ private struct GatewayThreadDeleteDTO: Decodable {
 private struct GatewayMessageAckDTO: Decodable {
     var channelID: String
     var messageID: String?
+    var mentionCount: Int?
+    var manual: Bool?
+    var flags: UInt64?
+    var lastViewed: Int?
 
     enum CodingKeys: String, CodingKey {
         case channelID = "channel_id"
         case messageID = "message_id"
+        case mentionCount = "mention_count"
+        case manual
+        case flags
+        case lastViewed = "last_viewed"
     }
 }
 
@@ -5617,6 +6016,8 @@ private struct MessageDTO: Decodable {
     var stickers: LossyList<MessageStickerDTO>?
     var thread: MessageThreadDTO?
     var mentions: LossyList<MessageMentionDTO>?
+    var mentionRoles: [String]?
+    var mentionEveryone: Bool?
     enum CodingKeys: String, CodingKey {
         case id
         case channelID = "channel_id"
@@ -5626,6 +6027,8 @@ private struct MessageDTO: Decodable {
         case messageReference = "message_reference"
         case referencedMessage = "referenced_message"
         case type, flags, application, interaction, embeds, components, stickers, thread, mentions
+        case mentionRoles = "mention_roles"
+        case mentionEveryone = "mention_everyone"
         case applicationID = "application_id"
         case interactionMetadata = "interaction_metadata"
         case guildID = "guild_id"
@@ -5685,7 +6088,9 @@ private struct MessageDTO: Decodable {
             thread: thread?.domain,
             mentionedUsers: mentions?.elements.compactMap {
                 try? $0.domain(guildID: resolvedGuildID)
-            } ?? []
+            } ?? [],
+            mentionedRoleIDs: (mentionRoles ?? []).compactMap(RoleID.init),
+            mentionsEveryone: mentionEveryone ?? false
         )
     }
 }

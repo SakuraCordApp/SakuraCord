@@ -99,6 +99,7 @@ struct MessageRowView: View, Equatable {
     let canEdit: Bool
     let saveEdit: (String) -> Void
     let reply: (() -> Void)?
+    let markUnread: () -> Void
     let openReply: (MessageID) -> Void
     let delete: () -> Void
     let react: (String) -> Void
@@ -224,6 +225,7 @@ struct MessageRowView: View, Equatable {
                 retry: { Task { await model.retrySending(message) } },
                 edit: beginEditing,
                 reply: reply,
+                markUnread: markUnread,
                 react: react,
                 copy: copyText,
                 delete: { isDeleteConfirmationPresented = true }
@@ -289,6 +291,7 @@ private struct MessageContextMenuBridge: NSViewRepresentable {
     let retry: () -> Void
     let edit: () -> Void
     let reply: (() -> Void)?
+    let markUnread: () -> Void
     let react: (String) -> Void
     let copy: () -> Void
     let delete: () -> Void
@@ -300,6 +303,7 @@ private struct MessageContextMenuBridge: NSViewRepresentable {
             retry: retry,
             edit: edit,
             reply: reply,
+            markUnread: markUnread,
             react: react,
             copy: copy,
             delete: delete
@@ -321,6 +325,7 @@ private struct MessageContextMenuBridge: NSViewRepresentable {
             retry: retry,
             edit: edit,
             reply: reply,
+            markUnread: markUnread,
             react: react,
             copy: copy,
             delete: delete
@@ -336,6 +341,7 @@ private struct MessageContextMenuBridge: NSViewRepresentable {
         private var retry: () -> Void
         private var edit: () -> Void
         private var reply: (() -> Void)?
+        private var markUnread: () -> Void
         private var react: (String) -> Void
         private var copy: () -> Void
         private var delete: () -> Void
@@ -346,6 +352,7 @@ private struct MessageContextMenuBridge: NSViewRepresentable {
             retry: @escaping () -> Void,
             edit: @escaping () -> Void,
             reply: (() -> Void)?,
+            markUnread: @escaping () -> Void,
             react: @escaping (String) -> Void,
             copy: @escaping () -> Void,
             delete: @escaping () -> Void
@@ -355,6 +362,7 @@ private struct MessageContextMenuBridge: NSViewRepresentable {
             self.retry = retry
             self.edit = edit
             self.reply = reply
+            self.markUnread = markUnread
             self.react = react
             self.copy = copy
             self.delete = delete
@@ -366,6 +374,7 @@ private struct MessageContextMenuBridge: NSViewRepresentable {
             retry: @escaping () -> Void,
             edit: @escaping () -> Void,
             reply: (() -> Void)?,
+            markUnread: @escaping () -> Void,
             react: @escaping (String) -> Void,
             copy: @escaping () -> Void,
             delete: @escaping () -> Void
@@ -375,6 +384,7 @@ private struct MessageContextMenuBridge: NSViewRepresentable {
             self.retry = retry
             self.edit = edit
             self.reply = reply
+            self.markUnread = markUnread
             self.react = react
             self.copy = copy
             self.delete = delete
@@ -405,6 +415,13 @@ private struct MessageContextMenuBridge: NSViewRepresentable {
                     )
                 )
             }
+            menu.addItem(
+                menuItem(
+                    "Mark Unread",
+                    systemImage: "envelope.badge",
+                    action: #selector(markMessageUnread)
+                )
+            )
             if canEdit {
                 menu.addItem(
                     menuItem("Edit Message", systemImage: "pencil", action: #selector(editMessage))
@@ -469,6 +486,10 @@ private struct MessageContextMenuBridge: NSViewRepresentable {
 
         @objc private func replyToMessage() {
             reply?()
+        }
+
+        @objc private func markMessageUnread() {
+            markUnread()
         }
 
         @objc private func editMessage() {

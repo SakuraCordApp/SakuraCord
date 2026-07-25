@@ -12,8 +12,10 @@ struct SettingsView: View {
     @AppStorage("voiceInputVolume") private var inputVolume = 1.0
     @AppStorage("voiceOutputVolume") private var outputVolume = 1.0
     @State private var mediaDevices: MediaDeviceSnapshot = .empty
+    @State private var notificationPermission = "Checking…"
 
     var body: some View {
+        @Bindable var notificationPreferences = model.notificationPreferences
         TabView {
             Form {
                 Toggle("Press Return to send messages", isOn: $sendWithReturn)
@@ -34,6 +36,49 @@ struct SettingsView: View {
             }
             .formStyle(.grouped)
             .tabItem { Label("Storage", systemImage: "internaldrive") }
+
+            Form {
+                LabeledContent("System permission") {
+                    Text(notificationPermission)
+                        .foregroundStyle(.secondary)
+                    Button("Request Permission") {
+                        Task {
+                            _ = await model.requestNotificationPermission()
+                            await updateNotificationPermission()
+                        }
+                    }
+                }
+                Toggle("Enable native notifications", isOn: $notificationPreferences.isEnabled)
+                Picker("Notification previews", selection: $notificationPreferences.previewStyle) {
+                    ForEach(NotificationPreviewStyle.allCases) { style in
+                        Text(style.title).tag(style)
+                    }
+                }
+                Toggle("Play sound", isOn: $notificationPreferences.playsSound)
+                Toggle("Show unread mentions in Dock", isOn: $notificationPreferences.showsDockBadge)
+                Toggle("Quiet hours", isOn: $notificationPreferences.quietHoursEnabled)
+                if notificationPreferences.quietHoursEnabled {
+                    Stepper(
+                        "Start: \(notificationPreferences.quietStartHour):00",
+                        value: $notificationPreferences.quietStartHour,
+                        in: 0 ... 23
+                    )
+                    Stepper(
+                        "End: \(notificationPreferences.quietEndHour):00",
+                        value: $notificationPreferences.quietEndHour,
+                        in: 0 ... 23
+                    )
+                }
+                Text("Discord’s server and channel notification settings remain authoritative. These controls only narrow local macOS presentation.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .formStyle(.grouped)
+            .tabItem { Label("Notifications", systemImage: "bell") }
+            .task { await updateNotificationPermission() }
+            .onChange(of: notificationPreferences.showsDockBadge) {
+                model.refreshDockBadge()
+            }
 
             Form {
                 Picker("Input device", selection: $inputDeviceUID) {
@@ -101,5 +146,15 @@ struct SettingsView: View {
             .tabItem { Label("Plugins", systemImage: "puzzlepiece.extension") }
         }
         .frame(width: 580, height: 410)
+    }
+
+    private func updateNotificationPermission() async {
+        notificationPermission =
+            switch await model.notificationAuthorizationStatus() {
+            case .authorized, .provisional, .ephemeral: "Allowed"
+            case .denied: "Denied in System Settings"
+            case .notDetermined: "Not requested"
+            @unknown default: "Unknown"
+            }
     }
 }

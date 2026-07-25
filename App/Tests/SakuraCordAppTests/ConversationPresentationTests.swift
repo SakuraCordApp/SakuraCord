@@ -70,6 +70,53 @@ import Testing
     #expect(ConversationPermissionResolver.channelAccess(effectivePermissions: effective) == .readable(canSend: true))
 }
 
+@Test func `permission resolver applies ready role ids before the full member store loads`() {
+    let guildID = GuildID(rawValue: 100)
+    let userID = UserID(rawValue: 1)
+    let allowedRoleID = RoleID(rawValue: 10)
+    let base = DiscordPermissionBits.readMessageHistory
+    let guild = Guild(
+        id: guildID,
+        name: "Guild",
+        currentUserPermissions: base
+    )
+    let channel = Channel(
+        id: ChannelID(rawValue: 200),
+        guildID: guildID,
+        name: "private",
+        permissionOverwrites: [
+            ChannelPermissionOverwrite(
+                id: allowedRoleID.description,
+                type: 0,
+                allow: DiscordPermissionBits.viewChannel
+            )
+        ]
+    )
+
+    let denied = ConversationPermissionResolver.effectivePermissions(
+        guild: guild,
+        channel: channel,
+        currentUserID: userID,
+        currentMember: nil,
+        roles: [],
+        currentRoleIDs: []
+    )
+    let allowed = ConversationPermissionResolver.effectivePermissions(
+        guild: guild,
+        channel: channel,
+        currentUserID: userID,
+        currentMember: nil,
+        roles: [],
+        currentRoleIDs: [allowedRoleID]
+    )
+
+    #expect(ConversationPermissionResolver.channelAccess(effectivePermissions: denied) == .hidden)
+    #expect(
+        ConversationPermissionResolver.channelAccess(effectivePermissions: allowed)
+            == .readable(canSend: false)
+    )
+}
+
 @Test func `channel access distinguishes read only and hidden channels`() {
     let readable = DiscordPermissionBits.viewChannel | DiscordPermissionBits.readMessageHistory
     #expect(

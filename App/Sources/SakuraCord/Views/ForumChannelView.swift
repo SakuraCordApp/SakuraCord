@@ -732,7 +732,11 @@ private struct ForumListPostCard: View {
 
                     VStack(alignment: .leading, spacing: 7) {
                         Text(post.thread.name)
-                            .font(.title3.weight(post.isUnread ? .bold : .semibold))
+                            .font(
+                                .title3.weight(
+                                    model.isChannelUnread(post.id) ? .bold : .semibold
+                                )
+                            )
                             .foregroundStyle(.primary)
                             .lineLimit(2)
                         if let previewMessage, !previewMessage.content.isEmpty {
@@ -800,7 +804,11 @@ private struct ForumGalleryPostCard: View {
                 ForumGalleryPostHeader(model: model, post: post)
 
                 Text(post.thread.name)
-                    .font(.title3.weight(post.isUnread ? .bold : .semibold))
+                    .font(
+                        .title3.weight(
+                            model.isChannelUnread(post.id) ? .bold : .semibold
+                        )
+                    )
                     .foregroundStyle(.primary)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, minHeight: 48, alignment: .topLeading)
@@ -903,7 +911,7 @@ private struct ForumPostStatusRow: View {
 
     var body: some View {
         HStack(spacing: 7) {
-            if post.isUnread {
+            if model.isChannelUnread(post.id) {
                 Circle().fill(Color.accentColor).frame(width: 8, height: 8)
             }
             if post.thread.isPinned {

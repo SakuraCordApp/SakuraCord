@@ -13,6 +13,17 @@ public actor MockChatProvider: ChatProvider {
     private var continuation: AsyncStream<ClientEvent>.Continuation?
     private var nextMessageID: UInt64
     public private(set) var typingRequests: [ChannelID] = []
+    public struct AcknowledgementRequest: Equatable, Sendable {
+        public var channelID: ChannelID
+        public var messageID: MessageID
+        public var token: String?
+        public var manual: Bool
+        public var mentionCount: Int?
+        public var flags: UInt64?
+        public var lastViewed: Int?
+    }
+
+    public private(set) var acknowledgementRequests: [AcknowledgementRequest] = []
     private var forumQueriesByChannel: [ChannelID: [ForumPostQuery]] = [:]
 
     public init(includesLongServerList: Bool = false, forumPostCount: Int? = nil) {
@@ -85,6 +96,45 @@ public actor MockChatProvider: ChatProvider {
             ],
             usageScores: [:]
         )
+    }
+
+    public func acknowledge(
+        channelID: ChannelID,
+        messageID: MessageID,
+        token: String?
+    ) async throws -> ReadAcknowledgementResponse {
+        try await acknowledge(
+            channelID: channelID,
+            messageID: messageID,
+            token: token,
+            manual: false,
+            mentionCount: nil,
+            flags: nil,
+            lastViewed: nil
+        )
+    }
+
+    public func acknowledge(
+        channelID: ChannelID,
+        messageID: MessageID,
+        token: String?,
+        manual: Bool,
+        mentionCount: Int?,
+        flags: UInt64?,
+        lastViewed: Int?
+    ) async throws -> ReadAcknowledgementResponse {
+        acknowledgementRequests.append(
+            AcknowledgementRequest(
+                channelID: channelID,
+                messageID: messageID,
+                token: token,
+                manual: manual,
+                mentionCount: mentionCount,
+                flags: flags,
+                lastViewed: lastViewed
+            )
+        )
+        return ReadAcknowledgementResponse(token: "mock-ack-token")
     }
 
     public func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {

@@ -867,14 +867,51 @@ struct MockChatFixture {
             ]
         }
 
+        let snapshotChannels = channels.map { channel in
+            var channel = channel
+            channel.lastMessageID = messages[channel.id]?.last?.id ?? channel.lastMessageID
+            return channel
+        }
+        let readStates = snapshotChannels.compactMap { channel -> ChannelReadState? in
+            guard let latest = channel.lastMessageID else { return nil }
+            switch channel.id.rawValue {
+            case 210:
+                return ChannelReadState(
+                    channelID: channel.id,
+                    lastAcknowledgedMessageID: MessageID(rawValue: latest.rawValue - 1),
+                    mentionCount: 3
+                )
+            case 211, 300:
+                return ChannelReadState(
+                    channelID: channel.id,
+                    lastAcknowledgedMessageID: MessageID(rawValue: latest.rawValue - 1)
+                )
+            default:
+                return ChannelReadState(
+                    channelID: channel.id,
+                    lastAcknowledgedMessageID: latest
+                )
+            }
+        }
         return Self(
             currentUser: nova,
             snapshot: BootstrapSnapshot(
                 currentUser: nova,
                 guilds: guilds,
                 guildRailItems: guildRailItems,
-                channels: channels,
-                members: auroraMembers
+                channels: snapshotChannels,
+                members: auroraMembers,
+                readStates: readStates,
+                notificationSettings: [
+                    GuildNotificationSettings(
+                        guildID: auroraID,
+                        messageNotifications: .onlyMentions
+                    ),
+                    GuildNotificationSettings(
+                        guildID: nativeLabID,
+                        messageNotifications: .allMessages
+                    ),
+                ]
             ),
             membersByGuild: membersByGuild,
             emojisByGuild: emojisByGuild,

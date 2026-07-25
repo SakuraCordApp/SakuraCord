@@ -79,10 +79,25 @@ struct ServerFolderRailView: View {
                 }
                 .background(folderColor.opacity(isExpanded ? 0.18 : 0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(alignment: .bottomTrailing) {
+                    if folderMentionCount > 0 {
+                        Text(folderMentionCount, format: .number)
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5)
+                            .frame(minWidth: 18, minHeight: 18)
+                            .background(.red, in: Capsule())
+                            .offset(x: 4, y: 4)
+                    }
+                }
             }
             .buttonStyle(.plain)
             .accessibilityLabel(displayName)
-            .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+            .accessibilityValue(
+                "\(isExpanded ? "Expanded" : "Collapsed")"
+                    + (folderMentionCount > 0 ? ", \(folderMentionCount) unread mentions" : "")
+                    + (folderMentionCount == 0 && hasUnreadGuild ? ", Unread" : "")
+            )
             .accessibilityHint("Toggles the server folder")
             .help(displayName)
         }
@@ -140,6 +155,10 @@ struct ServerFolderRailView: View {
 
     private var hasUnreadGuild: Bool {
         folder.guildIDs.contains { guildsByID[$0]?.unreadCount ?? 0 > 0 }
+    }
+
+    private var folderMentionCount: Int {
+        folder.guildIDs.reduce(0) { $0 + (guildsByID[$1]?.mentionCount ?? 0) }
     }
 }
 

@@ -5,6 +5,8 @@ struct ServerRailView: View {
     let guildsByID: [GuildID: Guild]
     let items: [GuildRailItem]
     let selectedGuildID: GuildID?
+    let homeIsUnread: Bool
+    let homeMentionCount: Int
     let selectHome: () -> Void
     let selectGuild: (GuildID?) -> Void
     @State private var folderLayoutRevision = 0
@@ -12,7 +14,12 @@ struct ServerRailView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 10) {
-                HomeRailButton(isSelected: selectedGuildID == nil, action: selectHome)
+                HomeRailButton(
+                    isSelected: selectedGuildID == nil,
+                    isUnread: homeIsUnread,
+                    mentionCount: homeMentionCount,
+                    action: selectHome
+                )
 
                 Divider().padding(.horizontal, 12)
 
@@ -99,9 +106,25 @@ struct GuildRailButton: View {
             )
             Button(action: action) {
                 GuildIconView(name: displayName, iconURL: guild.iconURL, size: 44, cornerRadius: 14)
+                    .overlay(alignment: .bottomTrailing) {
+                        if guild.mentionCount > 0 {
+                            Text(guild.mentionCount, format: .number)
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 5)
+                                .frame(minWidth: 18, minHeight: 18)
+                                .background(.red, in: Capsule())
+                                .offset(x: 4, y: 4)
+                        }
+                    }
             }
             .buttonStyle(.plain)
             .accessibilityLabel(displayName)
+            .accessibilityValue(
+                guild.mentionCount > 0
+                    ? "\(guild.mentionCount) unread mentions"
+                    : (guild.unreadCount > 0 ? "Unread" : "")
+            )
             .help(displayName)
         }
         .frame(width: ChatChromeMetrics.serverRailWidth, height: 46, alignment: .topLeading)
@@ -146,19 +169,42 @@ struct ServerRailHoverPreferenceKey: PreferenceKey {
 
 private struct HomeRailButton: View {
     let isSelected: Bool
+    let isUnread: Bool
+    let mentionCount: Int
     let action: () -> Void
     @State private var isHovering = false
 
     var body: some View {
         HStack(spacing: 5) {
-            ServerRailSelectionIndicator(isSelected: isSelected, isHovering: isHovering, hasNotification: false)
+            ServerRailSelectionIndicator(
+                isSelected: isSelected,
+                isHovering: isHovering,
+                hasNotification: isUnread
+            )
             Button(action: action) {
                 Image(systemName: "message.fill")
                     .font(.title2)
                     .frame(width: 44, height: 44)
                     .background(isSelected ? Color.accentColor : Color.secondary.opacity(0.16), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(alignment: .bottomTrailing) {
+                        if mentionCount > 0 {
+                            Text(mentionCount, format: .number)
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 5)
+                                .frame(minWidth: 18, minHeight: 18)
+                                .background(.red, in: Capsule())
+                                .offset(x: 4, y: 4)
+                        }
+                    }
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Direct Messages")
+            .accessibilityValue(
+                mentionCount > 0
+                    ? "\(mentionCount) unread mentions"
+                    : (isUnread ? "Unread" : "")
+            )
         }
         .frame(width: ChatChromeMetrics.serverRailWidth, height: 46, alignment: .leading)
         .contentShape(Rectangle())

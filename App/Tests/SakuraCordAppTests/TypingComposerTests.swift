@@ -665,6 +665,77 @@ import Testing
 }
 
 @MainActor
+@Test func `notification deep link navigates within its exact account channel and message`() async
+    throws
+{
+    let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+    await model.start()
+
+    let channel = try #require(model.snapshot?.channels.first { $0.id == ChannelID(rawValue: 200) })
+    let target = MessageID(rawValue: 1001)
+    await model.navigate(
+        from: NotificationDeepLink(
+            accountID: "offline",
+            guildID: channel.guildID,
+            channelID: channel.id,
+            messageID: target
+        )
+    )
+
+    #expect(await eventuallyOnMain {
+        model.readState.accountID == "offline"
+            && model.selectedGuildID == channel.guildID
+            && model.selectedChannelID == channel.id
+            && model.messageNavigationRequest?.channelID == channel.id
+            && model.messageNavigationRequest?.messageID == target
+    })
+}
+
+@MainActor
+@Test func `notification deep link switches accounts before navigating`() async throws {
+    let targetAccount = CredentialHandle(accountID: "target-account")
+    let credentials = NotificationCredentialStore(handles: [targetAccount])
+    let model = AppModel(
+        launchMode: .normal,
+        discordNetworkDisabledOverride: false,
+        restoresStoredSession: false,
+        credentialStore: credentials,
+        authenticatedProviderFactory: { _, _ in MockChatProvider() }
+    )
+    await model.start()
+    #expect(
+        await model.connectAuthenticatedAccount(
+            CredentialHandle(accountID: "other-account")
+        )
+    )
+    #expect(model.readState.accountID == "other-account")
+
+    let channel = try #require(
+        model.snapshot?.channels.first { $0.id == ChannelID(rawValue: 200) }
+    )
+    let expectedGuildID = channel.guildID
+    let expectedChannelID = channel.id
+    let target = MessageID(rawValue: 1001)
+    await model.navigate(
+        from: NotificationDeepLink(
+            accountID: targetAccount.accountID,
+            guildID: expectedGuildID,
+            channelID: expectedChannelID,
+            messageID: target
+        )
+    )
+
+    let didNavigate = await eventuallyOnMain {
+        model.readState.accountID == "target-account"
+            && model.selectedGuildID == expectedGuildID
+            && model.selectedChannelID == expectedChannelID
+            && model.messageNavigationRequest?.channelID == expectedChannelID
+            && model.messageNavigationRequest?.messageID == target
+    }
+    #expect(didNavigate)
+}
+
+@MainActor
 @Test func `mention autocomplete opens immediately and scopes the replacement`() throws {
     let members = try #require(MentionAutocompleteContext(text: "hello @", selection: nil))
     #expect(members.kind == .member)
@@ -1306,5 +1377,27 @@ private actor TypingTestProvider: ChatProvider {
 
     func emit(_ event: ClientEvent) {
         continuation?.yield(event)
+    }
+}
+
+private actor NotificationCredentialStore: CredentialStore {
+    let storedHandles: [CredentialHandle]
+
+    init(handles: [CredentialHandle]) {
+        storedHandles = handles
+    }
+
+    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
+        CredentialHandle(accountID: accountID)
+    }
+
+    func credential(for handle: CredentialHandle) async throws -> Data {
+        Data()
+    }
+
+    func remove(_ handle: CredentialHandle) async throws {}
+
+    func handles() async throws -> [CredentialHandle] {
+        storedHandles
     }
 }

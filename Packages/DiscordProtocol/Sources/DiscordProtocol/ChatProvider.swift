@@ -45,6 +45,20 @@ public protocol ChatProvider: Sendable {
     func stickers(in guildID: GuildID) async throws -> [MessageSticker]
     func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message
     func delete(messageID: MessageID, channelID: ChannelID) async throws
+    func acknowledge(
+        channelID: ChannelID,
+        messageID: MessageID,
+        token: String?
+    ) async throws -> ReadAcknowledgementResponse
+    func acknowledge(
+        channelID: ChannelID,
+        messageID: MessageID,
+        token: String?,
+        manual: Bool,
+        mentionCount: Int?,
+        flags: UInt64?,
+        lastViewed: Int?
+    ) async throws -> ReadAcknowledgementResponse
     func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws
     func reactionReactors(
         for emoji: String,
@@ -161,6 +175,26 @@ public extension ChatProvider {
     }
 
     func sendTyping(in channelID: ChannelID) async throws {}
+
+    func acknowledge(
+        channelID: ChannelID,
+        messageID: MessageID,
+        token: String?
+    ) async throws -> ReadAcknowledgementResponse {
+        ReadAcknowledgementResponse(token: token)
+    }
+
+    func acknowledge(
+        channelID: ChannelID,
+        messageID: MessageID,
+        token: String?,
+        manual: Bool,
+        mentionCount: Int?,
+        flags: UInt64?,
+        lastViewed: Int?
+    ) async throws -> ReadAcknowledgementResponse {
+        try await acknowledge(channelID: channelID, messageID: messageID, token: token)
+    }
 
     func forumPosts(in channelID: ChannelID, query: ForumPostQuery) async throws -> ForumPostPage {
         throw ChatProviderError.capabilityDisabled(.forums)

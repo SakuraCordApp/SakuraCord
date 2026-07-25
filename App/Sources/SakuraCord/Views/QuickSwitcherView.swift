@@ -27,8 +27,12 @@ struct QuickSwitcherView: View {
     }
 
     private var filteredChannels: [Channel] {
-        let channels = model.snapshot?.channels ?? []
-        return query.isEmpty ? channels : channels.filter { $0.name.localizedCaseInsensitiveContains(query) }
+        let channels = (model.snapshot?.channels ?? []).filter {
+            model.conversationAccess(for: $0) != .hidden
+        }
+        return query.isEmpty
+            ? channels
+            : channels.filter { $0.name.localizedCaseInsensitiveContains(query) }
     }
 
     private func systemImage(for channel: Channel) -> String {

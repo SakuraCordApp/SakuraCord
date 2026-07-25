@@ -2,6 +2,7 @@ import AppKit
 import DiscordProtocol
 import SakuraCordModels
 import SwiftUI
+import UserNotifications
 
 @main
 struct SakuraCordApp: App {
@@ -20,7 +21,8 @@ struct SakuraCordApp: App {
             : nil
         _model = State(initialValue: AppModel(
             launchMode: configuration.mode,
-            provider: provider
+            provider: provider,
+            notificationService: MacNativeNotificationService()
         ))
     }
 
@@ -47,8 +49,41 @@ struct SakuraCordApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let notificationCenterDelegate = SakuraCordNotificationCenterDelegate()
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        UNUserNotificationCenter.current().delegate = notificationCenterDelegate
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+    }
+}
+
+final class SakuraCordNotificationCenterDelegate: NSObject {}
+
+extension SakuraCordNotificationCenterDelegate: UNUserNotificationCenterDelegate {
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping @Sendable (Int) -> Void
+    ) {
+        // C++ interoperability currently imports this NS_OPTIONS callback as Int.
+        let options: UNNotificationPresentationOptions = [.banner, .list, .sound]
+        completionHandler(Int(options.rawValue))
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse
+    ) async {
+        guard let link = NotificationDeepLink(
+            userInfo: response.notification.request.content.userInfo
+        ) else { return }
+        await MainActor.run {
+            NSApp.activate(ignoringOtherApps: true)
+            NotificationCenter.default.post(
+                name: .sakuracordNotificationDeepLink,
+                object: link
+            )
+        }
     }
 }

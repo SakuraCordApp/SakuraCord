@@ -123,11 +123,13 @@ nonisolated enum ConversationPermissionResolver {
         channel: Channel,
         currentUserID: UserID,
         currentMember: Member?,
-        roles: [GuildRole]
+        roles: [GuildRole],
+        currentRoleIDs: Set<RoleID>? = nil
     ) -> UInt64? {
         if guild.isOwnedByCurrentUser == true { return .max }
 
-        let roleIDs = Set(currentMember?.roles.map(\.id) ?? [])
+        let roleIDs = currentRoleIDs ?? Set(currentMember?.roles.map(\.id) ?? [])
+        let hasCurrentRoleIdentity = currentRoleIDs != nil || currentMember != nil
         let basePermissions = guild.currentUserPermissions ?? basePermissions(
             guildID: guild.id,
             roleIDs: roleIDs,
@@ -145,7 +147,7 @@ nonisolated enum ConversationPermissionResolver {
         let roleOverwriteIDs = Set(
             overwrites.lazy.filter { $0.type == 0 && $0.id != guild.id.description }.map(\.id)
         )
-        if currentMember == nil, !roleOverwriteIDs.isEmpty { return nil }
+        if !hasCurrentRoleIdentity, !roleOverwriteIDs.isEmpty { return nil }
         let currentRoleIDs = Set(roleIDs.map(\.description))
         apply(
             overwrites.filter { $0.type == 0 && currentRoleIDs.contains($0.id) },

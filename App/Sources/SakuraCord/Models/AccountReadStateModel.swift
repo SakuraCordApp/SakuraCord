@@ -1,0 +1,813 @@
+import Foundation
+import Observation
+import SakuraCordModels
+
+@MainActor
+@Observable
+final class AccountReadStateModel {
+    struct TimelineUnreadSummary: Equatable, Sendable {
+        var firstUnreadMessageID: MessageID
+        var loadedUnreadCount: Int
+        var isLowerBound: Bool
+        var firstUnreadTimestamp: Date
+    }
+
+    struct Entry: Equatable, Sendable {
+        var channelID: ChannelID
+        var guildID: GuildID?
+        var parentID: ChannelID?
+        var kind: ChannelKindValue
+        var latestKnownMessageID: MessageID?
+        var latestUnreadMessageID: MessageID?
+        var lastAcknowledgedMessageID: MessageID?
+        var mentionCount: Int
+        var pendingAcknowledgementID: MessageID?
+        var flags: UInt64?
+        var lastViewed: Int?
+        var isAccessible: Bool
+        var hasAuthoritativeReadState: Bool
+
+        var isUnread: Bool {
+            guard let latestUnreadMessageID else { return false }
+            guard let lastAcknowledgedMessageID else { return true }
+            return latestUnreadMessageID > lastAcknowledgedMessageID
+        }
+    }
+
+    struct Presentation: Equatable, Sendable {
+        var isPresented = false
+        var initialHistoryLoaded = false
+        var initialPositionEstablished = false
+        var windowIsActive = false
+        var isAtNewest = false
+        var blocksAutomaticAcknowledgement = false
+
+        var canAcknowledge: Bool {
+            isPresented
+                && initialHistoryLoaded
+                && initialPositionEstablished
+                && windowIsActive
+                && isAtNewest
+                && !blocksAutomaticAcknowledgement
+        }
+    }
+
+    enum MentionKind: Equatable, Sendable {
+        case none
+        case direct
+        case role
+        case everyone
+        case directMessage
+    }
+
+    struct MessageDisposition: Equatable, Sendable {
+        var accepted: Bool
+        var mentionKind: MentionKind
+        var shouldNotify: Bool
+    }
+
+    struct AcknowledgementMetadata: Equatable, Sendable {
+        var flags: UInt64
+        var lastViewed: Int
+    }
+
+    private struct PendingRollback: Sendable {
+        var messageID: MessageID
+        var lastAcknowledgedMessageID: MessageID?
+        var mentionCount: Int
+    }
+
+    private(set) var accountID: String?
+    private(set) var entries: [ChannelID: Entry] = [:]
+    private(set) var settingsByGuild: [GuildID?: GuildNotificationSettings] = [:]
+    private(set) var presentations: [ChannelID: Presentation] = [:]
+    private(set) var acknowledgementToken: String?
+    private var channelByID: [ChannelID: Channel] = [:]
+    private var defaultNotificationLevelByGuild: [GuildID: MessageNotificationLevel] = [:]
+    private var currentUserRoleIDsByGuild: [GuildID: Set<RoleID>] = [:]
+    private var pendingRollbacks: [ChannelID: PendingRollback] = [:]
+    private var usesNewNotifications = true
+
+    func reset(accountID: String?) {
+        self.accountID = accountID
+        entries.removeAll()
+        settingsByGuild.removeAll()
+        presentations.removeAll()
+        acknowledgementToken = nil
+        channelByID.removeAll()
+        defaultNotificationLevelByGuild.removeAll()
+        currentUserRoleIDsByGuild.removeAll()
+        pendingRollbacks.removeAll()
+        usesNewNotifications = true
+    }
+
+    func configure(
+        accountID: String?,
+        guilds: [Guild],
+        channels: [Channel],
+        readStates: [ChannelReadState],
+        notificationSettings: [GuildNotificationSettings],
+        usesNewNotifications: Bool = true
+    ) {
+        if self.accountID != accountID {
+            reset(accountID: accountID)
+        }
+        merge(guilds: guilds)
+        merge(channels: channels)
+        self.usesNewNotifications = usesNewNotifications
+        for state in readStates {
+            applyRemote(state)
+        }
+        for settings in notificationSettings {
+            apply(settings)
+        }
+    }
+
+    func merge(guilds: [Guild]) {
+        for guild in guilds {
+            defaultNotificationLevelByGuild[guild.id] = guild.defaultMessageNotifications
+        }
+    }
+
+    func updateNotificationMode(usesNewNotifications: Bool) {
+        self.usesNewNotifications = usesNewNotifications
+    }
+
+    func merge(channels: [Channel]) {
+        for channel in channels {
+            channelByID[channel.id] = channel
+            var entry = entries[channel.id] ?? Entry(
+                channelID: channel.id,
+                guildID: channel.guildID,
+                parentID: channel.categoryID,
+                kind: channel.kind,
+                latestKnownMessageID: nil,
+                latestUnreadMessageID: nil,
+                lastAcknowledgedMessageID: nil,
+                mentionCount: 0,
+                pendingAcknowledgementID: nil,
+                flags: nil,
+                lastViewed: nil,
+                isAccessible: true,
+                hasAuthoritativeReadState: false
+            )
+            entry.guildID = channel.guildID
+            entry.parentID = channel.categoryID
+            entry.kind = channel.kind
+            entry.latestKnownMessageID = maximum(entry.latestKnownMessageID, channel.lastMessageID)
+            if entry.hasAuthoritativeReadState {
+                entry.latestUnreadMessageID = maximum(
+                    entry.latestUnreadMessageID, channel.lastMessageID
+                )
+            }
+            entries[channel.id] = entry
+        }
+    }
+
+    func replaceChannels(in guildID: GuildID?, with channels: [Channel]) {
+        let replacementIDs = Set(channels.map(\.id))
+        let removedIDs = channelByID.values.compactMap { channel -> ChannelID? in
+            channel.guildID == guildID && !replacementIDs.contains(channel.id)
+                ? channel.id
+                : nil
+        }
+        for channelID in removedIDs {
+            channelByID[channelID] = nil
+            entries[channelID] = nil
+            presentations[channelID] = nil
+            pendingRollbacks[channelID] = nil
+        }
+        merge(channels: channels)
+    }
+
+    func replaceThreads(parentID: ChannelID, with threads: [MessageThreadSummary]) {
+        let replacementIDs = Set(threads.map(\.id))
+        let removedIDs = entries.values.compactMap { entry -> ChannelID? in
+            entry.parentID == parentID
+                && channelByID[entry.channelID] == nil
+                && !replacementIDs.contains(entry.channelID)
+                ? entry.channelID
+                : nil
+        }
+        for channelID in removedIDs {
+            entries[channelID] = nil
+            presentations[channelID] = nil
+            pendingRollbacks[channelID] = nil
+        }
+        for thread in threads {
+            merge(thread: thread)
+        }
+    }
+
+    func retainGuilds(_ guildIDs: Set<GuildID>) {
+        let removedEntryIDs = entries.values.compactMap { entry -> ChannelID? in
+            guard let guildID = entry.guildID, !guildIDs.contains(guildID) else { return nil }
+            return entry.channelID
+        }
+        for channelID in removedEntryIDs {
+            entries[channelID] = nil
+            presentations[channelID] = nil
+            channelByID[channelID] = nil
+            pendingRollbacks[channelID] = nil
+        }
+        settingsByGuild = settingsByGuild.filter { guildID, _ in
+            guard let guildID else { return true }
+            return guildIDs.contains(guildID)
+        }
+        defaultNotificationLevelByGuild = defaultNotificationLevelByGuild.filter {
+            guildIDs.contains($0.key)
+        }
+        currentUserRoleIDsByGuild = currentUserRoleIDsByGuild.filter {
+            guildIDs.contains($0.key)
+        }
+    }
+
+    func apply(_ settings: GuildNotificationSettings) {
+        settingsByGuild[settings.guildID] = settings
+    }
+
+    func updateCurrentUserRoles(_ roleIDs: Set<RoleID>, guildID: GuildID) {
+        currentUserRoleIDsByGuild[guildID] = roleIDs
+    }
+
+    func setAccessible(_ isAccessible: Bool, channelID: ChannelID) {
+        var value = entry(for: channelID)
+        value.isAccessible = isAccessible
+        entries[channelID] = value
+        for childID in entries.values.lazy.filter({ $0.parentID == channelID }).map(\.channelID) {
+            var child = entry(for: childID)
+            child.isAccessible = isAccessible
+            entries[childID] = child
+        }
+    }
+
+    @discardableResult
+    func applyRemote(_ state: ChannelReadState) -> Bool {
+        var entry = entry(for: state.channelID)
+        if let existing = entry.lastAcknowledgedMessageID,
+           let incoming = state.lastAcknowledgedMessageID,
+           incoming < existing,
+           !state.isManual
+        {
+            return false
+        }
+        if state.isManual {
+            entry.lastAcknowledgedMessageID = state.lastAcknowledgedMessageID
+        } else {
+            entry.lastAcknowledgedMessageID = maximum(
+                entry.lastAcknowledgedMessageID, state.lastAcknowledgedMessageID
+            )
+        }
+        entry.mentionCount = max(0, state.mentionCount)
+        entry.flags = state.flags ?? entry.flags
+        entry.lastViewed = state.lastViewed ?? entry.lastViewed
+        entry.hasAuthoritativeReadState = true
+        entry.latestUnreadMessageID = maximum(
+            entry.latestUnreadMessageID, entry.latestKnownMessageID
+        )
+        if let pending = entry.pendingAcknowledgementID,
+           let acknowledged = entry.lastAcknowledgedMessageID,
+           acknowledged >= pending
+        {
+            entry.pendingAcknowledgementID = nil
+        }
+        entries[state.channelID] = entry
+        return true
+    }
+
+    func replaceReadStates(_ states: [ChannelReadState]) {
+        for (channelID, rollback) in pendingRollbacks {
+            var value = entry(for: channelID)
+            guard value.pendingAcknowledgementID == rollback.messageID else { continue }
+            value.lastAcknowledgedMessageID = rollback.lastAcknowledgedMessageID
+            value.mentionCount = rollback.mentionCount
+            value.pendingAcknowledgementID = nil
+            entries[channelID] = value
+        }
+        let previousEntries = entries
+        let latestStateByChannel = Dictionary(
+            states.map { ($0.channelID, $0) },
+            uniquingKeysWith: { _, latest in latest }
+        )
+        entries.removeAll(keepingCapacity: true)
+        acknowledgementToken = nil
+        pendingRollbacks.removeAll(keepingCapacity: true)
+        merge(channels: Array(channelByID.values))
+        for state in latestStateByChannel.values {
+            applyRemote(state)
+        }
+        for channelID in Array(entries.keys) {
+            guard let previous = previousEntries[channelID] else { continue }
+            var value = entry(for: channelID)
+            value.latestKnownMessageID = maximum(
+                value.latestKnownMessageID, previous.latestKnownMessageID
+            )
+            if value.hasAuthoritativeReadState {
+                value.latestUnreadMessageID = maximum(
+                    value.latestUnreadMessageID, previous.latestKnownMessageID
+                )
+            }
+            value.guildID = value.guildID ?? previous.guildID
+            value.parentID = value.parentID ?? previous.parentID
+            if channelByID[channelID] == nil {
+                value.kind = previous.kind
+            }
+            value.isAccessible = previous.isAccessible
+            if let state = latestStateByChannel[channelID],
+               !state.isManual,
+               let previousAcknowledged = previous.lastAcknowledgedMessageID,
+               state.lastAcknowledgedMessageID.map({ $0 < previousAcknowledged }) ?? true
+            {
+                value.lastAcknowledgedMessageID = previousAcknowledged
+                value.mentionCount = previous.mentionCount
+                value.flags = previous.flags
+                value.lastViewed = previous.lastViewed
+            }
+            entries[channelID] = value
+        }
+    }
+
+    func receive(
+        _ message: Message,
+        currentUserID: UserID,
+        now: Date = .now
+    ) -> MessageDisposition {
+        var entry = entry(for: message.channelID)
+        guard entry.isAccessible else {
+            return MessageDisposition(accepted: false, mentionKind: .none, shouldNotify: false)
+        }
+        if entry.guildID == nil { entry.guildID = message.guildID }
+        if let latest = entry.latestKnownMessageID, message.id <= latest {
+            return MessageDisposition(accepted: false, mentionKind: .none, shouldNotify: false)
+        }
+        entry.latestKnownMessageID = message.id
+
+        if message.author.id == currentUserID {
+            if !entry.isUnread {
+                entry.lastAcknowledgedMessageID = maximum(
+                    entry.lastAcknowledgedMessageID, message.id
+                )
+            }
+            entries[message.channelID] = entry
+            return MessageDisposition(accepted: true, mentionKind: .none, shouldNotify: false)
+        }
+
+        entry.latestUnreadMessageID = maximum(entry.latestUnreadMessageID, message.id)
+        let policy = effectivePolicy(for: entry, now: now)
+        let mentionKind = mentionKind(for: message, entry: entry, policy: policy)
+        if mentionKind != .none {
+            entry.mentionCount += 1
+        }
+        entries[message.channelID] = entry
+
+        let isMention = mentionKind != .none
+        let createsForumThread =
+            message.id.rawValue == message.channelID.rawValue
+            && entry.parentID.flatMap { channelByID[$0] }?.kind == .forum
+        let allowsOrdinaryNotification =
+            createsForumThread
+            ? policy.notifiesNewForumThreads
+            : policy.level == .allMessages
+        let shouldNotify =
+            !message.flags.contains(.suppressNotifications)
+            && ((isMention && allowsNativeNotification(for: mentionKind, policy: policy))
+                || (!isMention && allowsOrdinaryNotification
+                    && !policy.guildMuted && !policy.channelMuted))
+        return MessageDisposition(
+            accepted: true,
+            mentionKind: mentionKind,
+            shouldNotify: shouldNotify
+        )
+    }
+
+    func merge(thread: MessageThreadSummary) {
+        var entry = entry(for: thread.id)
+        entry.guildID = thread.guildID
+        entry.parentID = thread.parentID
+        entry.kind = .text
+        entry.latestKnownMessageID = maximum(entry.latestKnownMessageID, thread.lastMessageID)
+        if entry.hasAuthoritativeReadState {
+            entry.latestUnreadMessageID = maximum(
+                entry.latestUnreadMessageID, thread.lastMessageID
+            )
+        }
+        if let parentID = thread.parentID, let parent = entries[parentID] {
+            entry.isAccessible = parent.isAccessible
+        }
+        entries[thread.id] = entry
+    }
+
+    func updatePresentation(
+        channelID: ChannelID,
+        isPresented: Bool? = nil,
+        initialHistoryLoaded: Bool? = nil,
+        initialPositionEstablished: Bool? = nil,
+        windowIsActive: Bool? = nil,
+        isAtNewest: Bool? = nil,
+        blocksAutomaticAcknowledgement: Bool? = nil
+    ) -> MessageID? {
+        var value = presentations[channelID] ?? Presentation()
+        if let isPresented { value.isPresented = isPresented }
+        if let initialHistoryLoaded { value.initialHistoryLoaded = initialHistoryLoaded }
+        if let initialPositionEstablished {
+            value.initialPositionEstablished = initialPositionEstablished
+        }
+        if let windowIsActive { value.windowIsActive = windowIsActive }
+        if let isAtNewest { value.isAtNewest = isAtNewest }
+        if let blocksAutomaticAcknowledgement {
+            value.blocksAutomaticAcknowledgement = blocksAutomaticAcknowledgement
+        }
+        presentations[channelID] = value
+        return value.canAcknowledge ? newestUnacknowledgedMessage(in: channelID) : nil
+    }
+
+    func markAcknowledgementPending(channelID: ChannelID, messageID: MessageID) {
+        var entry = entry(for: channelID)
+        if let rollback = pendingRollbacks[channelID] {
+            pendingRollbacks[channelID] = PendingRollback(
+                messageID: max(rollback.messageID, messageID),
+                lastAcknowledgedMessageID: rollback.lastAcknowledgedMessageID,
+                mentionCount: rollback.mentionCount
+            )
+        } else {
+            pendingRollbacks[channelID] = PendingRollback(
+                messageID: messageID,
+                lastAcknowledgedMessageID: entry.lastAcknowledgedMessageID,
+                mentionCount: entry.mentionCount
+            )
+        }
+        entry.lastAcknowledgedMessageID = maximum(entry.lastAcknowledgedMessageID, messageID)
+        entry.pendingAcknowledgementID = maximum(entry.pendingAcknowledgementID, messageID)
+        if let newest = entry.latestKnownMessageID, messageID >= newest {
+            entry.mentionCount = 0
+        }
+        entries[channelID] = entry
+    }
+
+    func markUnread(
+        channelID: ChannelID,
+        after messageID: MessageID,
+        mentionCount: Int
+    ) {
+        var entry = entry(for: channelID)
+        pendingRollbacks[channelID] = PendingRollback(
+            messageID: messageID,
+            lastAcknowledgedMessageID: entry.lastAcknowledgedMessageID,
+            mentionCount: entry.mentionCount
+        )
+        entry.lastAcknowledgedMessageID = messageID
+        entry.pendingAcknowledgementID = messageID
+        entry.mentionCount = max(0, mentionCount)
+        entries[channelID] = entry
+        _ = updatePresentation(
+            channelID: channelID,
+            isAtNewest: false,
+            blocksAutomaticAcknowledgement: true
+        )
+    }
+
+    func unblockAutomaticAcknowledgement(channelID: ChannelID) {
+        _ = updatePresentation(
+            channelID: channelID,
+            blocksAutomaticAcknowledgement: false
+        )
+    }
+
+    func completeAcknowledgement(
+        channelID: ChannelID,
+        messageID: MessageID,
+        token: String?
+    ) {
+        if let token { acknowledgementToken = token }
+        var entry = entry(for: channelID)
+        if entry.pendingAcknowledgementID == messageID {
+            entry.pendingAcknowledgementID = nil
+            pendingRollbacks[channelID] = nil
+        }
+        entries[channelID] = entry
+    }
+
+    func failAcknowledgement(channelID: ChannelID, messageID: MessageID) {
+        var entry = entry(for: channelID)
+        if entry.pendingAcknowledgementID == messageID,
+           let rollback = pendingRollbacks[channelID],
+           rollback.messageID == messageID
+        {
+            entry.lastAcknowledgedMessageID = rollback.lastAcknowledgedMessageID
+            entry.mentionCount = rollback.mentionCount
+            entry.pendingAcknowledgementID = nil
+            pendingRollbacks[channelID] = nil
+        }
+        entries[channelID] = entry
+    }
+
+    func unread(channelID: ChannelID, now: Date = .now) -> Bool {
+        guard let entry = entries[channelID], entry.isAccessible, entry.isUnread else {
+            return false
+        }
+        guard !isGuildResourceChannel(entry) else { return false }
+        if entry.kind == .voice && entry.mentionCount == 0 {
+            return false
+        }
+        let policy = effectivePolicy(for: entry, now: now)
+        return entry.mentionCount > 0 || (!policy.guildMuted && !policy.channelMuted && policy.showsUnread)
+    }
+
+    func mentions(channelID: ChannelID) -> Int {
+        guard let entry = entries[channelID],
+              entry.isAccessible,
+              !isGuildResourceChannel(entry)
+        else { return 0 }
+        return entry.mentionCount
+    }
+
+    func guildUnread(_ guildID: GuildID, now: Date = .now) -> Bool {
+        entries.values.contains { $0.guildID == guildID && unread(channelID: $0.channelID, now: now) }
+    }
+
+    func guildMentions(_ guildID: GuildID) -> Int {
+        entries.values.lazy.filter { $0.guildID == guildID }.reduce(0) {
+            $0 + mentions(channelID: $1.channelID)
+        }
+    }
+
+    func folderUnread(_ guildIDs: [GuildID], now: Date = .now) -> Bool {
+        guildIDs.contains { guildUnread($0, now: now) }
+    }
+
+    func folderMentions(_ guildIDs: [GuildID]) -> Int {
+        guildIDs.reduce(0) { $0 + guildMentions($1) }
+    }
+
+    func directMessageUnread(now: Date = .now) -> Bool {
+        entries.values.contains { entry in
+            (entry.kind == .directMessage || entry.kind == .groupDirectMessage)
+                && unread(channelID: entry.channelID, now: now)
+        }
+    }
+
+    var directMessageMentions: Int {
+        entries.values.lazy.filter {
+            $0.kind == .directMessage || $0.kind == .groupDirectMessage
+        }.reduce(0) {
+            $0 + mentions(channelID: $1.channelID)
+        }
+    }
+
+    var totalMentions: Int {
+        entries.keys.reduce(0) { $0 + mentions(channelID: $1) }
+    }
+
+    func isVisibleAtNewest(_ channelID: ChannelID) -> Bool {
+        presentations[channelID]?.canAcknowledge == true
+    }
+
+    func isActivelyPresentedAtNewest(_ channelID: ChannelID) -> Bool {
+        guard let presentation = presentations[channelID] else { return false }
+        return presentation.isPresented
+            && presentation.windowIsActive
+            && presentation.isAtNewest
+    }
+
+    func timelineUnreadSummary(
+        channelID: ChannelID,
+        messages: [Message],
+        hasMoreBefore: Bool
+    ) -> TimelineUnreadSummary? {
+        guard let entry = entries[channelID], entry.isAccessible, entry.isUnread else {
+            return nil
+        }
+        let acknowledged = entry.lastAcknowledgedMessageID
+        let unread = messages.filter { message in
+            acknowledged.map { message.id > $0 } ?? true
+        }
+        guard let first = unread.first else { return nil }
+        let firstLoadedMessageID = messages.first?.id
+        let oldestLoadedIsNewerThanAcknowledgement =
+            acknowledged.map { acknowledged in
+                firstLoadedMessageID.map { $0 > acknowledged } ?? false
+            } ?? true
+        let isLowerBound = hasMoreBefore && oldestLoadedIsNewerThanAcknowledgement
+        return TimelineUnreadSummary(
+            firstUnreadMessageID: first.id,
+            loadedUnreadCount: unread.count,
+            isLowerBound: isLowerBound,
+            firstUnreadTimestamp: first.timestamp
+        )
+    }
+
+    func mentionCountForManualUnread(
+        channelID: ChannelID,
+        messages: [Message],
+        startingAt messageID: MessageID,
+        currentUserID: UserID
+    ) -> Int {
+        guard let entry = entries[channelID] else { return 0 }
+        let policy = effectivePolicy(for: entry, now: .now)
+        return messages.lazy.filter { message in
+            message.id >= messageID
+                && message.author.id != currentUserID
+                && self.mentionKind(for: message, entry: entry, policy: policy) != .none
+        }.count
+    }
+
+    private func newestUnacknowledgedMessage(in channelID: ChannelID) -> MessageID? {
+        guard let entry = entries[channelID], entry.isAccessible, entry.isUnread else {
+            return nil
+        }
+        return entry.latestKnownMessageID
+    }
+
+    func acknowledgementMetadata(
+        channelID: ChannelID,
+        now: Date = .now
+    ) -> AcknowledgementMetadata {
+        let entry = entry(for: channelID)
+        var flags: UInt64 = entry.guildID == nil ? 0 : 1 << 0
+        if channelByID[channelID] == nil, entry.parentID != nil {
+            flags |= 1 << 1
+        }
+        let discordEpoch = Date(timeIntervalSince1970: 1_420_070_400)
+        let lastViewed = max(0, Int(now.timeIntervalSince(discordEpoch) / 86_400))
+        return AcknowledgementMetadata(flags: flags, lastViewed: lastViewed)
+    }
+
+    private func entry(for channelID: ChannelID) -> Entry {
+        if let existing = entries[channelID] { return existing }
+        let channel = channelByID[channelID]
+        return Entry(
+            channelID: channelID,
+            guildID: channel?.guildID,
+            parentID: channel?.categoryID,
+            kind: channel?.kind ?? .unknown,
+            latestKnownMessageID: channel?.lastMessageID,
+            latestUnreadMessageID: channel?.lastMessageID,
+            lastAcknowledgedMessageID: nil,
+            mentionCount: 0,
+            pendingAcknowledgementID: nil,
+            flags: nil,
+            lastViewed: nil,
+            isAccessible: true,
+            hasAuthoritativeReadState: false
+        )
+    }
+
+    private func mentionKind(
+        for message: Message,
+        entry: Entry,
+        policy: EffectivePolicy
+    ) -> MentionKind {
+        guard let currentUserID else { return .none }
+        if message.mentionedUsers.contains(where: { $0.id == currentUserID }) {
+            return .direct
+        }
+        if entry.kind == .directMessage || entry.kind == .groupDirectMessage {
+            return policy.guildMuted || policy.channelMuted ? .none : .directMessage
+        }
+        let settings = settingsByGuild[entry.guildID]
+        if message.mentionsEveryone, settings?.suppressEveryone != true {
+            return .everyone
+        }
+        if settings?.suppressRoles != true,
+           !message.flags.contains(.failedToMentionRoles),
+           let guildID = entry.guildID
+        {
+            let roles = currentUserRoleIDsByGuild[guildID] ?? []
+            if !roles.isDisjoint(with: message.mentionedRoleIDs) {
+                return .role
+            }
+        }
+        return .none
+    }
+
+    private var currentUserID: UserID?
+
+    func setCurrentUserID(_ userID: UserID?) {
+        currentUserID = userID
+    }
+
+    private struct EffectivePolicy {
+        var level: MessageNotificationLevel
+        var guildMuted: Bool
+        var channelMuted: Bool
+        var showsUnread: Bool
+        var notifiesNewForumThreads: Bool
+    }
+
+    private func allowsNativeNotification(
+        for mentionKind: MentionKind,
+        policy: EffectivePolicy
+    ) -> Bool {
+        guard !policy.channelMuted else { return false }
+        switch mentionKind {
+        case .none:
+            return false
+        case .directMessage:
+            return !policy.guildMuted && policy.level != .nothing
+        case .direct, .role:
+            return !policy.guildMuted
+        case .everyone:
+            // Discord's server mute preserves @everyone/@here unless the
+            // dedicated suppress-everyone setting removes the mention first.
+            return true
+        }
+    }
+
+    private func effectivePolicy(for entry: Entry, now: Date) -> EffectivePolicy {
+        let isDirectMessage =
+            entry.kind == .directMessage || entry.kind == .groupDirectMessage
+        let guildSettings = settingsByGuild[entry.guildID]
+        let directOverride = guildSettings?.channelOverrides.first { $0.channelID == entry.channelID }
+        let parentOverride = entry.parentID.flatMap { parentID in
+            guildSettings?.channelOverrides.first { $0.channelID == parentID }
+        }
+        let ancestorOverride =
+            entry.parentID
+            .flatMap { channelByID[$0]?.categoryID }
+            .flatMap { ancestorID in
+                guildSettings?.channelOverrides.first { $0.channelID == ancestorID }
+            }
+        let override = directOverride ?? parentOverride ?? ancestorOverride
+        let guildMuted =
+            guildSettings?.isMuted == true
+            && (guildSettings?.muteConfiguration?.isActive(at: now) ?? true)
+        let channelMuted =
+            override?.isMuted == true
+            && (override?.muteConfiguration?.isActive(at: now) ?? true)
+        let guildDefault =
+            isDirectMessage
+            ? .allMessages
+            : (entry.guildID.flatMap { defaultNotificationLevelByGuild[$0] }
+                ?? .onlyMentions)
+        let configuredGuildLevel = guildSettings?.messageNotifications ?? .inherit
+        let inherited =
+            configuredGuildLevel == .inherit ? guildDefault : configuredGuildLevel
+        let level =
+            override?.messageNotifications == .inherit || override == nil
+            ? inherited
+            : override!.messageNotifications
+        let channelFlags = override?.flags ?? 0
+        let guildFlags = guildSettings?.flags ?? 0
+        let directFlags = directOverride?.flags ?? 0
+        let parentFlags = parentOverride?.flags ?? 0
+        let channelIsOptedIn =
+            directFlags & (1 << 12) != 0
+            || parentFlags & (1 << 12) != 0
+        let excludedByGuildOptIn =
+            !isDirectMessage
+            && guildFlags & (1 << 14) != 0
+            && !channelIsOptedIn
+        let showsUnread =
+            if excludedByGuildOptIn {
+                false
+            } else if !isDirectMessage, !usesNewNotifications {
+                true
+            } else if channelFlags & (1 << 9) != 0 {
+                false
+            } else if channelFlags & (1 << 10) != 0 {
+                true
+            } else if guildFlags & (1 << 12) != 0 {
+                false
+            } else if guildFlags & (1 << 11) != 0 {
+                true
+            } else {
+                level == .allMessages
+            }
+        let forumFlags = parentOverride?.flags ?? 0
+        let notifiesNewForumThreads =
+            if forumFlags & (1 << 14) != 0 {
+                true
+            } else if forumFlags & (1 << 13) != 0 {
+                false
+            } else {
+                level == .allMessages
+            }
+        return EffectivePolicy(
+            level: level,
+            guildMuted: guildMuted,
+            channelMuted: channelMuted,
+            showsUnread: showsUnread,
+            notifiesNewForumThreads: notifiesNewForumThreads
+        )
+    }
+
+    private func isGuildResourceChannel(_ entry: Entry) -> Bool {
+        let resourceFlag: UInt64 = 1 << 7
+        if let channel = channelByID[entry.channelID],
+           channel.flags & resourceFlag != 0
+        {
+            return true
+        }
+        let parentFlags = entry.parentID.flatMap { channelByID[$0] }?.flags ?? 0
+        return parentFlags & resourceFlag != 0
+    }
+}
+
+private func maximum<T: Comparable>(_ lhs: T?, _ rhs: T?) -> T? {
+    switch (lhs, rhs) {
+    case (.some(let lhs), .some(let rhs)): max(lhs, rhs)
+    case (.some(let lhs), .none): lhs
+    case (.none, .some(let rhs)): rhs
+    case (.none, .none): nil
+    }
+}

@@ -17,6 +17,65 @@ import Testing
 
 @Suite(.serialized)
 struct ProviderRequestContractTests {
+    @Test func `acknowledgement uses exact route token body response and one mutation attempt`() async throws {
+        RateLimitURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RateLimitURLProtocol.self]
+        let provider = DiscordRESTProvider(
+            credentials: TestCredentialStore(),
+            handle: CredentialHandle(accountID: "1"),
+            session: URLSession(configuration: configuration),
+            gatewayTransport: ReadyGatewayTransport(socket: ReadyGatewaySocket())
+        )
+
+        let response = try await provider.acknowledge(
+            channelID: ChannelID(rawValue: 200),
+            messageID: MessageID(rawValue: 333),
+            token: nil
+        )
+        #expect(RateLimitURLProtocol.ackRequestCount == 1)
+        #expect(RateLimitURLProtocol.ackMethod == "POST")
+        #expect(RateLimitURLProtocol.ackPath == "/api/v9/channels/200/messages/333/ack")
+        #expect(RateLimitURLProtocol.ackBody?.isEmpty == true)
+        #expect(response.token == "next-token")
+
+        _ = try await provider.acknowledge(
+            channelID: ChannelID(rawValue: 200),
+            messageID: MessageID(rawValue: 334),
+            token: response.token
+        )
+        #expect(RateLimitURLProtocol.ackRequestCount == 2)
+        #expect(RateLimitURLProtocol.ackBody?["token"] as? String == "next-token")
+
+        _ = try await provider.acknowledge(
+            channelID: ChannelID(rawValue: 200),
+            messageID: MessageID(rawValue: 332),
+            token: response.token,
+            manual: true,
+            mentionCount: 4,
+            flags: 3,
+            lastViewed: 4_222
+        )
+        #expect(RateLimitURLProtocol.ackRequestCount == 3)
+        #expect(RateLimitURLProtocol.ackMethod == "POST")
+        #expect(RateLimitURLProtocol.ackPath == "/api/v9/channels/200/messages/332/ack")
+        #expect(RateLimitURLProtocol.ackBody?["token"] as? String == "next-token")
+        #expect(RateLimitURLProtocol.ackBody?["manual"] as? Bool == true)
+        #expect((RateLimitURLProtocol.ackBody?["mention_count"] as? NSNumber)?.intValue == 4)
+        #expect((RateLimitURLProtocol.ackBody?["flags"] as? NSNumber)?.uint64Value == 3)
+        #expect((RateLimitURLProtocol.ackBody?["last_viewed"] as? NSNumber)?.intValue == 4_222)
+
+        RateLimitURLProtocol.ackStatus = 429
+        await #expect(throws: ChatProviderError.self) {
+            try await provider.acknowledge(
+                channelID: ChannelID(rawValue: 200),
+                messageID: MessageID(rawValue: 335),
+                token: response.token
+            )
+        }
+        #expect(RateLimitURLProtocol.ackRequestCount == 4)
+    }
+
     @Test func `application command indexes cache and each interaction uses one exact post`() async throws {
         RateLimitURLProtocol.reset()
         let configuration = URLSessionConfiguration.ephemeral
@@ -259,6 +318,69 @@ struct ProviderRequestContractTests {
         #expect(textInput["value"] as? String == "Looks good")
         let checkbox = try #require(modalComponents[1]["component"] as? [String: Any])
         #expect(checkbox["value"] as? Bool == true)
+
+        let acknowledgementEvent = Task { () -> ChannelReadState? in
+            for await event in events {
+                if case let .readStateChanged(state) = event { return state }
+            }
+            return nil
+        }
+        await socket.push(gatewayMessage(
+            op: 0,
+            data: .object([
+                "channel_id": .string("200"),
+                "message_id": .string("333"),
+                "mention_count": .number(2),
+                "manual": .bool(true),
+                "flags": .number(3),
+                "last_viewed": .number(4_222),
+            ]),
+            sequence: 7,
+            eventName: "MESSAGE_ACK"
+        ))
+        #expect(
+            await acknowledgementEvent.value
+                == ChannelReadState(
+                    channelID: ChannelID(rawValue: 200),
+                    lastAcknowledgedMessageID: MessageID(rawValue: 333),
+                    mentionCount: 2,
+                    isManual: true,
+                    flags: 3,
+                    lastViewed: 4_222
+                )
+        )
+
+        let notificationSettingsEvent = Task { () -> GuildNotificationSettings? in
+            for await event in events {
+                if case let .notificationSettingsChanged(settings) = event { return settings }
+            }
+            return nil
+        }
+        await socket.push(gatewayMessage(
+            op: 0,
+            data: .object([
+                "guild_id": .string("100"),
+                "message_notifications": .number(1),
+                "muted": .bool(false),
+                "suppress_everyone": .bool(true),
+                "suppress_roles": .bool(false),
+                "channel_overrides": .array([
+                    .object([
+                        "channel_id": .string("200"),
+                        "message_notifications": .number(0),
+                        "muted": .bool(true),
+                    ])
+                ]),
+            ]),
+            sequence: 8,
+            eventName: "USER_GUILD_SETTINGS_UPDATE"
+        ))
+        let decodedSettings = try #require(await notificationSettingsEvent.value)
+        #expect(decodedSettings.guildID == GuildID(rawValue: 100))
+        #expect(decodedSettings.messageNotifications == .onlyMentions)
+        #expect(decodedSettings.suppressEveryone)
+        #expect(decodedSettings.channelOverrides.first?.messageNotifications == .allMessages)
+        #expect(decodedSettings.channelOverrides.first?.isMuted == true)
         await provider.disconnect()
     }
 
@@ -436,6 +558,102 @@ struct ProviderRequestContractTests {
         await provider.disconnect()
     }
 
+    @Test func `bootstrap publishes ready unread state and guild channels atomically`() async throws {
+        RateLimitURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RateLimitURLProtocol.self]
+        let socket = ReadyGatewaySocket()
+        await socket.push(gatewayMessage(
+            op: 10, data: .object(["heartbeat_interval": .number(60_000)])
+        ))
+        await socket.push(gatewayMessage(
+            op: 0,
+            data: .object([
+                "session_id": .string("startup-unread-session"),
+                "resume_gateway_url": .string("wss://gateway.discord.gg"),
+                "user_settings_proto": .object(["future_shape": .bool(true)]),
+                "merged_members": .object(["future_shape": .bool(true)]),
+                "guilds": .array([
+                    .object([
+                        "id": .string("100"),
+                        "voice_states": .object(["future_shape": .bool(true)]),
+                        "channels": .array([
+                            .object([
+                                "id": .string("200"),
+                                "guild_id": .string("100"),
+                                "name": .string("general"),
+                                "type": .number(0),
+                                "position": .number(0),
+                                "last_message_id": .string("300"),
+                                "permission_overwrites": .array([]),
+                            ])
+                        ]),
+                    ])
+                ]),
+                "read_state": .object([
+                    "entries": .array([
+                        .object([
+                            "id": .string("200"),
+                            "read_state_type": .number(0),
+                            "last_message_id": .string("250"),
+                            "mention_count": .number(2),
+                        ])
+                    ])
+                ]),
+                "user_guild_settings": .object([
+                    "entries": .array([
+                        .object([
+                            "guild_id": .string("100"),
+                            "message_notifications": .number(1),
+                            "muted": .object(["future_shape": .bool(true)]),
+                            "flags": .number(2048),
+                            "channel_overrides": .array([
+                                .object([
+                                    "channel_id": .string("200"),
+                                    "message_notifications": .number(1),
+                                    "flags": .number(1024),
+                                ])
+                            ]),
+                        ])
+                    ]),
+                    "partial": .bool(false),
+                ]),
+                "notification_settings": .object([
+                    "flags": .number(0)
+                ]),
+            ]),
+            sequence: 1,
+            eventName: "READY"
+        ))
+        let provider = DiscordRESTProvider(
+            credentials: TestCredentialStore(),
+            handle: CredentialHandle(accountID: "1"),
+            session: URLSession(configuration: configuration),
+            gatewayTransport: ReadyGatewayTransport(socket: socket)
+        )
+
+        let snapshot = try await provider.bootstrap()
+        let channel = try #require(snapshot.channels.first { $0.id == ChannelID(rawValue: 200) })
+        let readState = try #require(
+            snapshot.readStates.first { $0.channelID == ChannelID(rawValue: 200) }
+        )
+        let settings = try #require(
+            snapshot.notificationSettings.first { $0.guildID == GuildID(rawValue: 100) }
+        )
+
+        #expect(channel.lastMessageID == MessageID(rawValue: 300))
+        #expect(readState.lastAcknowledgedMessageID == MessageID(rawValue: 250))
+        #expect(readState.mentionCount == 2)
+        #expect(settings.messageNotifications == .onlyMentions)
+        #expect(!settings.isMuted)
+        #expect(settings.flags == 2048)
+        #expect(settings.channelOverrides.first?.flags == 1024)
+        #expect(!snapshot.usesNewNotifications)
+        #expect(RateLimitURLProtocol.guildChannelRequests == 0)
+
+        await provider.disconnect()
+    }
+
     @Test func `restriction response stops every following authenticated request`() async throws {
         RateLimitURLProtocol.reset()
         RateLimitURLProtocol.restrictMessageSend = true
@@ -583,12 +801,30 @@ private struct RestrictionGatewayTransport: GatewayTransport {
 }
 
 private actor RestrictionGatewaySocket: GatewaySocket {
+    private var queued: [GatewaySocketMessage] = [
+        gatewayMessage(
+            op: 10, data: .object(["heartbeat_interval": .number(60_000)])
+        ),
+        gatewayMessage(
+            op: 0,
+            data: .object([
+                "session_id": .string("restriction-session"),
+                "resume_gateway_url": .string("wss://gateway.discord.gg"),
+                "guilds": .array([]),
+            ]),
+            sequence: 1,
+            eventName: "READY"
+        ),
+    ]
     private var receiver: CheckedContinuation<GatewaySocketMessage, any Error>?
     private(set) var receiveStarted = false
     private(set) var closeCodes: [Int] = []
 
     func receive() async throws -> GatewaySocketMessage {
         receiveStarted = true
+        if !queued.isEmpty {
+            return queued.removeFirst()
+        }
         return try await withCheckedThrowingContinuation { receiver = $0 }
     }
 
@@ -647,6 +883,11 @@ private final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var memberSearchRequestCount = 0
     nonisolated(unsafe) static var interactionRequestCount = 0
     nonisolated(unsafe) static var interactionBodies: [[String: Any]] = []
+    nonisolated(unsafe) static var ackRequestCount = 0
+    nonisolated(unsafe) static var ackMethod: String?
+    nonisolated(unsafe) static var ackPath: String?
+    nonisolated(unsafe) static var ackBody: [String: Any]?
+    nonisolated(unsafe) static var ackStatus = 200
 
     static func reset() {
         guildListAttempts = 0
@@ -680,6 +921,11 @@ private final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
         memberSearchQuery = nil
         memberSearchLimit = nil
         memberSearchRequestCount = 0
+        ackRequestCount = 0
+        ackMethod = nil
+        ackPath = nil
+        ackBody = nil
+        ackStatus = 200
     }
 
     override class func canInit(with request: URLRequest) -> Bool {
@@ -768,6 +1014,21 @@ private final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
             Self.typingSuperProperties = request.value(forHTTPHeaderField: "X-Super-Properties")
             status = 204
             json = ""
+        case "/api/v9/channels/200/messages/332/ack",
+             "/api/v9/channels/200/messages/333/ack",
+             "/api/v9/channels/200/messages/334/ack",
+             "/api/v9/channels/200/messages/335/ack":
+            Self.ackRequestCount += 1
+            Self.ackMethod = request.httpMethod
+            Self.ackPath = path
+            Self.ackBody = Self.requestBody(request).flatMap {
+                try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
+            }
+            status = Self.ackStatus
+            json =
+                status == 200
+                ? #"{"token":"next-token"}"#
+                : #"{"retry_after":0.01,"global":false}"#
         case "/test":
             Self.uploadHadAuthorization = request.value(forHTTPHeaderField: "Authorization") != nil
             status = 200

@@ -1,4 +1,5 @@
 @testable import SakuraCord
+import SakuraCordModels
 import Testing
 
 @MainActor
@@ -36,18 +37,44 @@ import Testing
 }
 
 @MainActor
-@Test func `channel changes and explicit bottom jumps resume following`() {
+@Test func `channel changes wait for an established position and explicit bottom jumps follow`() {
     var policy = MessageTimelineScrollPolicy()
-    policy.didNavigateAwayFromBottom()
+    policy.didBeginChannel()
     #expect(!policy.isNearBottom)
     #expect(!policy.followsNewMessages)
 
-    policy.didChangeChannel()
-    #expect(policy.isNearBottom)
-    #expect(policy.followsNewMessages)
-
-    policy.userScrollEnded(isNearBottom: false)
     policy.didRequestBottom()
     #expect(policy.isNearBottom)
     #expect(policy.followsNewMessages)
+}
+
+@MainActor
+@Test func `initial unread positioning resolves from actual viewport geometry`() {
+    let channelID = ChannelID(rawValue: 42)
+    var tracker = TimelineInitialPositionTracker()
+
+    tracker.begin(channelID: channelID)
+
+    #expect(
+        tracker.resolve(channelID: channelID, actualIsAtNewest: true) == true
+    )
+    #expect(
+        tracker.resolve(channelID: channelID, actualIsAtNewest: false) == nil
+    )
+}
+
+@MainActor
+@Test func `initial position tracker rejects stale channel geometry`() {
+    let channelID = ChannelID(rawValue: 42)
+    let staleChannelID = ChannelID(rawValue: 41)
+    var tracker = TimelineInitialPositionTracker()
+
+    tracker.begin(channelID: channelID)
+
+    #expect(
+        tracker.resolve(channelID: staleChannelID, actualIsAtNewest: true) == nil
+    )
+    #expect(
+        tracker.resolve(channelID: channelID, actualIsAtNewest: false) == false
+    )
 }
