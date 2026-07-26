@@ -158,8 +158,18 @@ struct SelectableMessageTextView: NSViewRepresentable {
         textView.textContainer?.heightTracksTextView = false
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.lineBreakMode = .byWordWrapping
+        // Lay out unbounded vertically. `widthTracksTextView` keeps the width in
+        // sync with the frame SwiftUI assigns; nothing else sets this now that
+        // sizing no longer reaches into the displayed view.
+        textView.textContainer?.size = NSSize(
+            width: textView.bounds.width,
+            height: CGFloat.greatestFiniteMagnitude
+        )
         textView.isHorizontallyResizable = false
-        textView.isVerticallyResizable = true
+        // SwiftUI owns this view's height. Letting the text view resize itself
+        // to fit re-wrapped text lets its rendered height drift from the height
+        // SwiftUI measured, which the scroll view then has to correct.
+        textView.isVerticallyResizable = false
         textView.linkTextAttributes = [
             .foregroundColor: NSColor.linkColor,
             .underlineStyle: 0
@@ -183,7 +193,6 @@ struct SelectableMessageTextView: NSViewRepresentable {
             mentionPresentations: mentionPresentations
         )
         guard textView.renderSignature != signature else { return }
-        textView.invalidateMeasurementCache()
         textView.renderSignature = signature
         textView.textStorage?.setAttributedString(
             RichMessageAttributedText.make(
@@ -202,9 +211,78 @@ struct SelectableMessageTextView: NSViewRepresentable {
         nsView textView: RichMessageNSTextView,
         context: Context
     ) -> CGSize? {
-        textView.measuredSize(
-            proposedWidth: proposal.width,
-            minimumHeight: MessageRowLayoutMetrics.compactContentHeight
+        let minimumHeight = MessageRowLayoutMetrics.compactContentHeight
+        let signature = RichMessageRenderSignature(
+            source: source,
+            emojiSize: emojiSize,
+            mentionPresentations: mentionPresentations
+        )
+
+        if let width = RichMessageTextMeasurement.constrainedWidth(proposal.width) {
+            return CGSize(
+                width: width,
+                height: height(
+                    for: signature,
+                    textView: textView,
+                    width: width,
+                    minimumHeight: minimumHeight
+                )
+            )
+        }
+
+        let value = attributedValue(for: signature, textView: textView)
+        let width = RichMessageTextMeasurer.idealWidth(of: value)
+        return CGSize(
+            width: width,
+            height: height(
+                for: signature,
+                textView: textView,
+                width: width,
+                minimumHeight: minimumHeight
+            )
+        )
+    }
+
+    private func height(
+        for signature: RichMessageRenderSignature,
+        textView: RichMessageNSTextView,
+        width: CGFloat,
+        minimumHeight: CGFloat
+    ) -> CGFloat {
+        if let cached = RichMessageHeightCache.height(
+            signature: signature,
+            width: width,
+            minimumHeight: minimumHeight
+        ) {
+            return cached
+        }
+        let value = RichMessageTextMeasurer.height(
+            of: attributedValue(for: signature, textView: textView),
+            width: width,
+            minimumHeight: minimumHeight
+        )
+        RichMessageHeightCache.insert(
+            value,
+            signature: signature,
+            width: width,
+            minimumHeight: minimumHeight
+        )
+        return value
+    }
+
+    /// Reuses the text view's own storage when it already matches, so a plain
+    /// re-measure does not rebuild attachments.
+    private func attributedValue(
+        for signature: RichMessageRenderSignature,
+        textView: RichMessageNSTextView
+    ) -> NSAttributedString {
+        if textView.renderSignature == signature, let storage = textView.textStorage {
+            return storage
+        }
+        return RichMessageAttributedText.make(
+            source: source,
+            emojiSize: emojiSize,
+            mentionPresentations: mentionPresentations
         )
     }
 
@@ -310,6 +388,63 @@ enum RichMessageHeightCache {
             values.removeValue(forKey: key)
         }
         insertionOrder.removeFirst(evictionCount)
+    }
+}
+
+/// Measures message text without touching any displayed view.
+///
+/// Sizing used to run against the live `NSTextView`, mutating its frame and
+/// text container mid-query. Combined with `widthTracksTextView`, the width the
+/// text actually wrapped at could differ from the width it was measured at, so
+/// a row's rendered height drifted from the height SwiftUI was told — which the
+/// scroll view then corrected, over and over, as rows were realized.
+@MainActor
+enum RichMessageTextMeasurer {
+    private static let storage = NSTextStorage()
+    private static let layoutManager = NSLayoutManager()
+    private static let container = NSTextContainer(
+        size: CGSize(width: 1, height: CGFloat.greatestFiniteMagnitude)
+    )
+    private static var isConfigured = false
+
+    private static func prepare(_ value: NSAttributedString, width: CGFloat) {
+        if !isConfigured {
+            isConfigured = true
+            container.lineFragmentPadding = 0
+            container.widthTracksTextView = false
+            container.heightTracksTextView = false
+            container.lineBreakMode = NSLineBreakMode.byWordWrapping
+            layoutManager.addTextContainer(container)
+            storage.addLayoutManager(layoutManager)
+        }
+        storage.setAttributedString(value)
+        container.size = CGSize(width: max(1, width), height: .greatestFiniteMagnitude)
+        layoutManager.ensureLayout(for: container)
+    }
+
+    static func height(
+        of value: NSAttributedString,
+        width: CGFloat,
+        minimumHeight: CGFloat
+    ) -> CGFloat {
+        prepare(value, width: width)
+        return max(minimumHeight, ceil(layoutManager.usedRect(for: container).height))
+    }
+
+    /// The width the text would occupy laid out on a single unbounded line,
+    /// used when SwiftUI proposes no width.
+    static func idealWidth(of value: NSAttributedString) -> CGFloat {
+        prepare(value, width: RichMessageTextMeasurement.maximumWidth)
+        let glyphRange = layoutManager.glyphRange(for: container)
+        var usedBounds = CGRect.null
+        layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) {
+            _, usedRect, _, lineGlyphRange, _ in
+            guard lineGlyphRange.length > 0 else { return }
+            usedBounds = usedBounds.union(usedRect)
+        }
+        return RichMessageTextMeasurement.constrainedWidth(
+            ceil(usedBounds.isNull ? 0 : usedBounds.maxX)
+        ) ?? 1
     }
 }
 
@@ -440,90 +575,6 @@ final class RichMessageNSTextView: NSTextView {
     var onURLClick: (URL) -> Bool = { _ in false }
     private var hoveredMentionLocation: Int?
     private var mentionTrackingArea: NSTrackingArea?
-    private var unconstrainedMeasurement: CGSize?
-    private var measuredHeights: [CGFloat: CGFloat] = [:]
-
-    fileprivate func invalidateMeasurementCache() {
-        unconstrainedMeasurement = nil
-        measuredHeights.removeAll(keepingCapacity: true)
-    }
-
-    fileprivate func measuredSize(proposedWidth: CGFloat?, minimumHeight: CGFloat) -> CGSize {
-        if let width = RichMessageTextMeasurement.constrainedWidth(proposedWidth) {
-            if let height = measuredHeights[width] {
-                configureTextContainer(width: width)
-                return CGSize(width: width, height: height)
-            }
-            if let height = RichMessageHeightCache.height(
-                signature: renderSignature,
-                width: width,
-                minimumHeight: minimumHeight
-            ) {
-                configureTextContainer(width: width)
-                measuredHeights[width] = height
-                return CGSize(width: width, height: height)
-            }
-            configureTextContainer(width: width)
-            let height = measuredHeight(minimumHeight: minimumHeight)
-            if measuredHeights.count >= 4 {
-                measuredHeights.removeAll(keepingCapacity: true)
-            }
-            measuredHeights[width] = height
-            RichMessageHeightCache.insert(
-                height,
-                signature: renderSignature,
-                width: width,
-                minimumHeight: minimumHeight
-            )
-            return CGSize(width: width, height: height)
-        }
-
-        if let unconstrainedMeasurement {
-            return unconstrainedMeasurement
-        }
-        configureTextContainer(width: RichMessageTextMeasurement.maximumWidth)
-        guard let layoutManager, let textContainer else {
-            let value = CGSize(width: 1, height: minimumHeight)
-            unconstrainedMeasurement = value
-            return value
-        }
-        let tracksTextViewWidth = textContainer.widthTracksTextView
-        textContainer.widthTracksTextView = false
-        textContainer.containerSize = NSSize(
-            width: RichMessageTextMeasurement.maximumWidth,
-            height: CGFloat.greatestFiniteMagnitude
-        )
-        layoutManager.ensureLayout(for: textContainer)
-        let glyphRange = layoutManager.glyphRange(for: textContainer)
-        var usedBounds = CGRect.null
-        layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) {
-            _, usedRect, _, lineGlyphRange, _ in
-            guard lineGlyphRange.length > 0 else { return }
-            usedBounds = usedBounds.union(usedRect)
-        }
-        let width = RichMessageTextMeasurement.constrainedWidth(
-            ceil(usedBounds.isNull ? 0 : usedBounds.maxX)
-        ) ?? 1
-        textContainer.widthTracksTextView = tracksTextViewWidth
-        configureTextContainer(width: width)
-        let value = CGSize(width: width, height: measuredHeight(minimumHeight: minimumHeight))
-        unconstrainedMeasurement = value
-        return value
-    }
-
-    private func configureTextContainer(width: CGFloat) {
-        frame.size.width = width
-        textContainer?.containerSize = NSSize(
-            width: width,
-            height: .greatestFiniteMagnitude
-        )
-    }
-
-    private func measuredHeight(minimumHeight: CGFloat) -> CGFloat {
-        guard let layoutManager, let textContainer else { return minimumHeight }
-        layoutManager.ensureLayout(for: textContainer)
-        return max(minimumHeight, ceil(layoutManager.usedRect(for: textContainer).height))
-    }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
