@@ -426,7 +426,23 @@ import Testing
         Reaction(emoji: "🔥", count: 8, reactors: [reactor(2, "Two")]),
         known
     ])
+    let countChangedKey = MessageReactionPresentation.previewLoadKey(for: [
+        Reaction(emoji: "🔥", count: 9),
+        known
+    ])
     #expect(initialKey == enrichedKey)
+    #expect(initialKey == countChangedKey)
+    #expect(
+        MessageReactionAutomaticLoadKey(reactionID: missing.id, needsLoad: true)
+            == MessageReactionAutomaticLoadKey(
+                reactionID: Reaction(emoji: "🔥", count: 9).id,
+                needsLoad: true
+            )
+    )
+    #expect(
+        MessageReactionAutomaticLoadKey(reactionID: missing.id, needsLoad: true)
+            != MessageReactionAutomaticLoadKey(reactionID: missing.id, needsLoad: false)
+    )
 }
 
 @Test func `reaction presentation removes empty artifacts and coalesces duplicate identities`() {
@@ -452,6 +468,62 @@ import Testing
     #expect(items[0].count == 4)
     #expect(items[0].didCurrentUserReact)
     #expect(items[0].reactors.map(\.id) == [UserID(rawValue: 1), UserID(rawValue: 2)])
+}
+
+@Test func `forum summary shows the highest count and preserves source order for ties`() {
+    let reactions = [
+        Reaction(emoji: "🐛", count: 2),
+        Reaction(emoji: "❤️", count: 3),
+        Reaction(emoji: "🎉", count: 3),
+    ]
+    let displayed = ForumPostReactionPresentation.displayedReaction(
+        reactions: reactions,
+        defaultReaction: ForumDefaultReaction(emojiName: "🐛")
+    )
+
+    #expect(displayed?.emoji == "❤️")
+    #expect(displayed?.count == 3)
+}
+
+@Test func `forum summary uses the default emoji without a count only when empty`() throws {
+    let unicodeDefault = ForumPostReactionPresentation.displayedReaction(
+        reactions: [],
+        defaultReaction: ForumDefaultReaction(emojiName: "🐛")
+    )
+    #expect(unicodeDefault == Reaction(emoji: "🐛", count: 0))
+    #expect(
+        MessageReactionPresentation.tooltipDescription(for: try #require(unicodeDefault))
+            == "No reactions yet"
+    )
+
+    let customDefault = ForumPostReactionPresentation.displayedReaction(
+        reactions: [],
+        defaultReaction: ForumDefaultReaction(emojiID: "123", emojiName: "bug_hunt")
+    )
+    #expect(customDefault?.id == "custom:123")
+    #expect(customDefault?.count == 0)
+    #expect(
+        ForumPostReactionPresentation.displayedReaction(
+            reactions: [],
+            defaultReaction: nil
+        ) == nil
+    )
+}
+
+@Test func `forum summary never assigns the aggregate count to the default emoji`() {
+    let nonDefault = Reaction(emoji: "❤️", count: 1)
+    let first = ForumPostReactionPresentation.displayedReaction(
+        reactions: [nonDefault],
+        defaultReaction: ForumDefaultReaction(emojiName: "🐛")
+    )
+    #expect(first == nonDefault)
+
+    let withDefault = ForumPostReactionPresentation.displayedReaction(
+        reactions: [nonDefault, Reaction(emoji: "🐛", count: 1)],
+        defaultReaction: ForumDefaultReaction(emojiName: "🐛")
+    )
+    #expect(withDefault == nonDefault)
+    #expect(withDefault?.count == 1)
 }
 
 @Test func `custom reaction identity survives emoji rename and animation changes`() {
@@ -549,6 +621,7 @@ import Testing
     #expect(reaction.emoji == "✅")
     #expect(reaction.count == 3)
     #expect(reaction.didCurrentUserReact)
+    #expect(!reaction.didCurrentUserBurstReact)
     #expect(reaction.reactors.isEmpty)
 }
 

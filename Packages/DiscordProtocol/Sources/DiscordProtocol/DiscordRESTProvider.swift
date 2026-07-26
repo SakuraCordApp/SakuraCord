@@ -1030,8 +1030,20 @@ public actor DiscordRESTProvider: ChatProvider {
         existing: ForumPost
     ) -> ForumPost {
         var merged = incoming
-        merged.firstMessage = incoming.firstMessage ?? existing.firstMessage
-        merged.mostRecentMessage = incoming.mostRecentMessage ?? existing.mostRecentMessage
+        if let firstMessage = incoming.firstMessage {
+            merged.firstMessage = firstMessage.preservingReactionReactors(
+                from: existing.firstMessage ?? firstMessage
+            )
+        } else {
+            merged.firstMessage = existing.firstMessage
+        }
+        if let mostRecentMessage = incoming.mostRecentMessage {
+            merged.mostRecentMessage = mostRecentMessage.preservingReactionReactors(
+                from: existing.mostRecentMessage ?? mostRecentMessage
+            )
+        } else {
+            merged.mostRecentMessage = existing.mostRecentMessage
+        }
         merged.owner = incoming.owner ?? existing.owner
         merged.isUnread = existing.isUnread
         return merged
@@ -1143,10 +1155,14 @@ public actor DiscordRESTProvider: ChatProvider {
                       var post = cachedForumPosts[parentID]?[channelID]
                 else { continue }
                 if let message = try? data.firstMessage?.domain() {
-                    post.firstMessage = message
+                    post.firstMessage = message.preservingReactionReactors(
+                        from: post.firstMessage ?? message
+                    )
                 }
                 if let message = try? data.mostRecentMessage?.domain() {
-                    post.mostRecentMessage = message
+                    post.mostRecentMessage = message.preservingReactionReactors(
+                        from: post.mostRecentMessage ?? message
+                    )
                 }
                 cachedForumPosts[parentID, default: [:]][channelID] = post
                 cacheForumPreviewMessages(post)
@@ -1202,8 +1218,10 @@ public actor DiscordRESTProvider: ChatProvider {
                 post.owner = try? ownerDTO.domain()
             }
             if let existing = cachedForumPosts[parentID]?[post.id] {
-                post.firstMessage = post.firstMessage ?? existing.firstMessage
-                post.mostRecentMessage = existing.mostRecentMessage
+                post = Self.mergingForumPostCatalogueMetadata(
+                    incoming: post,
+                    existing: existing
+                )
                 post.isUnread = existing.isUnread
             } else if let state = forumReadStates[post.id] {
                 post.isUnread =
@@ -1229,7 +1247,8 @@ public actor DiscordRESTProvider: ChatProvider {
 
     private func updateForumPostForMessage(
         _ message: Message,
-        marksUnread: Bool = false
+        marksUnread: Bool = false,
+        publishesChange: Bool = true
     ) {
         for (parentID, posts) in cachedForumPosts {
             guard var post = posts[message.channelID] else { continue }
@@ -1247,9 +1266,21 @@ public actor DiscordRESTProvider: ChatProvider {
                 post.isUnread = true
             }
             cachedForumPosts[parentID]?[post.id] = post
-            publishForumPosts(parentID: parentID)
+            if publishesChange {
+                publishForumPosts(parentID: parentID)
+            }
             return
         }
+    }
+
+    private func applyGatewayReactionUpdate(_ update: MessageReactionUpdate) {
+        if var message = cachedMessages[update.messageID],
+           message.applyReactionUpdate(update, currentUserID: currentUser?.id)
+        {
+            cachedMessages[message.id] = message
+            updateForumPostForMessage(message, publishesChange: false)
+        }
+        continuation?.yield(.messageReactionUpdated(update))
     }
 
     private func cacheForumPreviewMessages(_ post: ForumPost) {
@@ -1853,30 +1884,65 @@ public actor DiscordRESTProvider: ChatProvider {
     public func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID)
         async throws
     {
-        guard var message = cachedMessages[messageID] else {
+        guard let message = cachedMessages[messageID] else {
             throw ChatProviderError.messageNotFound
         }
         let apiEmoji = Self.reactionAPIValue(emoji)
-        let encoded =
-            apiEmoji.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? apiEmoji
         let existing = message.reactions.firstIndex { Self.reactionAPIValue($0.emoji) == apiEmoji }
         let reacted = existing.map { message.reactions[$0].didCurrentUserReact } ?? false
-        let method = reacted ? "DELETE" : "PUT"
+        try await setReaction(
+            emoji,
+            reacted: !reacted,
+            messageID: messageID,
+            channelID: channelID
+        )
+    }
+
+    public func setReaction(
+        _ emoji: String,
+        reacted: Bool,
+        messageID: MessageID,
+        channelID: ChannelID
+    ) async throws {
+        guard let message = cachedMessages[messageID] else {
+            throw ChatProviderError.messageNotFound
+        }
+        let apiEmoji = Self.reactionAPIValue(emoji)
+        let currentReaction = message.reactions.first {
+            Self.reactionAPIValue($0.emoji) == apiEmoji
+        }
+        guard currentReaction?.didCurrentUserReact != reacted else { return }
+        let encoded =
+            apiEmoji.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? apiEmoji
+        let method = reacted ? "PUT" : "DELETE"
         try await requestEmpty(
             "/channels/\(channelID)/messages/\(messageID)/reactions/\(encoded)/@me", method: method
         )
-        if let index = existing {
-            message.reactions[index].didCurrentUserReact.toggle()
-            message.reactions[index].count += reacted ? -1 : 1
-            if message.reactions[index].count <= 0 {
-                message.reactions.remove(at: index)
-            }
-        } else {
-            message.reactions.append(Reaction(emoji: emoji, count: 1, didCurrentUserReact: true))
+        guard let currentUserID = currentUser?.id,
+              var updated = cachedMessages[messageID]
+        else { return }
+        let reactionUpdate: MessageReactionUpdate =
+            reacted
+            ? .add(
+                channelID: channelID,
+                messageID: messageID,
+                userID: currentUserID,
+                emoji: emoji,
+                kind: .normal
+            )
+            : .remove(
+                channelID: channelID,
+                messageID: messageID,
+                userID: currentUserID,
+                emoji: emoji,
+                kind: .normal
+            )
+        guard updated.applyReactionUpdate(reactionUpdate, currentUserID: currentUserID) else {
+            return
         }
-        cachedMessages[messageID] = message
-        continuation?.yield(.messageUpdated(message))
-        updateForumPostForMessage(message)
+        cachedMessages[messageID] = updated
+        continuation?.yield(.messageUpdated(updated))
+        updateForumPostForMessage(updated)
     }
 
     public func reactionReactors(
@@ -2138,6 +2204,10 @@ public actor DiscordRESTProvider: ChatProvider {
 
         func receiveForumMessageForTesting(_ message: Message, marksUnread: Bool = true) {
             updateForumPostForMessage(message, marksUnread: marksUnread)
+        }
+
+        func receiveGatewayReactionForTesting(_ update: MessageReactionUpdate) {
+            applyGatewayReactionUpdate(update)
         }
 
         func cachedForumPostForTesting(threadID: ChannelID) -> ForumPost? {
@@ -2791,6 +2861,42 @@ public actor DiscordRESTProvider: ChatProvider {
                 return
             }
             continuation?.yield(.typing(channelID: channelID, user: user))
+        case "MESSAGE_REACTION_ADD":
+            guard
+                let value = try? JSONDecoder().decode(
+                    GatewayMessageReactionUserDTO.self,
+                    from: data
+                ),
+                let update = value.domainUpdate(isAddition: true)
+            else { return }
+            applyGatewayReactionUpdate(update)
+        case "MESSAGE_REACTION_REMOVE":
+            guard
+                let value = try? JSONDecoder().decode(
+                    GatewayMessageReactionUserDTO.self,
+                    from: data
+                ),
+                let update = value.domainUpdate(isAddition: false)
+            else { return }
+            applyGatewayReactionUpdate(update)
+        case "MESSAGE_REACTION_REMOVE_ALL":
+            guard
+                let value = try? JSONDecoder().decode(
+                    GatewayMessageReactionRemoveAllDTO.self,
+                    from: data
+                ),
+                let update = value.domainUpdate
+            else { return }
+            applyGatewayReactionUpdate(update)
+        case "MESSAGE_REACTION_REMOVE_EMOJI":
+            guard
+                let value = try? JSONDecoder().decode(
+                    GatewayMessageReactionRemoveEmojiDTO.self,
+                    from: data
+                ),
+                let update = value.domainUpdate
+            else { return }
+            applyGatewayReactionUpdate(update)
         case "MESSAGE_UPDATE":
             if let update = try? JSONDecoder().decode(MessageUpdateDTO.self, from: data),
                let messageID = MessageID(update.id), ChannelID(update.channelID) != nil,
@@ -4848,6 +4954,87 @@ private struct MessageDeleteDTO: Decodable {
     }
 }
 
+private struct GatewayMessageReactionUserDTO: Decodable {
+    var userID: String
+    var channelID: String
+    var messageID: String
+    var emoji: ReactionDTO.EmojiDTO
+    var type: Int?
+    var burst: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case userID = "user_id"
+        case channelID = "channel_id"
+        case messageID = "message_id"
+        case emoji, type, burst
+    }
+
+    func domainUpdate(isAddition: Bool) -> MessageReactionUpdate? {
+        guard
+            let channelID = ChannelID(channelID),
+            let messageID = MessageID(messageID),
+            let userID = UserID(userID),
+            let kind = MessageReactionKind(rawValue: type ?? (burst == true ? 1 : 0))
+        else { return nil }
+        if isAddition {
+            return .add(
+                channelID: channelID,
+                messageID: messageID,
+                userID: userID,
+                emoji: emoji.domainToken,
+                kind: kind
+            )
+        }
+        return .remove(
+            channelID: channelID,
+            messageID: messageID,
+            userID: userID,
+            emoji: emoji.domainToken,
+            kind: kind
+        )
+    }
+}
+
+private struct GatewayMessageReactionRemoveAllDTO: Decodable {
+    var channelID: String
+    var messageID: String
+
+    enum CodingKeys: String, CodingKey {
+        case channelID = "channel_id"
+        case messageID = "message_id"
+    }
+
+    var domainUpdate: MessageReactionUpdate? {
+        guard let channelID = ChannelID(channelID), let messageID = MessageID(messageID) else {
+            return nil
+        }
+        return .removeAll(channelID: channelID, messageID: messageID)
+    }
+}
+
+private struct GatewayMessageReactionRemoveEmojiDTO: Decodable {
+    var channelID: String
+    var messageID: String
+    var emoji: ReactionDTO.EmojiDTO
+
+    enum CodingKeys: String, CodingKey {
+        case channelID = "channel_id"
+        case messageID = "message_id"
+        case emoji
+    }
+
+    var domainUpdate: MessageReactionUpdate? {
+        guard let channelID = ChannelID(channelID), let messageID = MessageID(messageID) else {
+            return nil
+        }
+        return .removeEmoji(
+            channelID: channelID,
+            messageID: messageID,
+            emoji: emoji.domainToken
+        )
+    }
+}
+
 struct TypingStartDTO: Decodable {
     var channelID: String
     var guildID: String?
@@ -6263,19 +6450,31 @@ private struct ReactionDTO: Decodable {
         var id: String?
         var name: String?
         var animated: Bool?
+
+        var domainToken: String {
+            id.map {
+                "<\(animated == true ? "a" : ""):\(name ?? "emoji"):\($0)>"
+            } ?? (name ?? "?")
+        }
     }
 
     var count: Int?
     var me: Bool?
+    var meBurst: Bool?
     var emoji: EmojiDTO?
 
+    enum CodingKeys: String, CodingKey {
+        case count, me, emoji
+        case meBurst = "me_burst"
+    }
+
     var domain: Reaction {
-        let value =
-            emoji?.id.map {
-                "<\(emoji?.animated == true ? "a" : ""):\(emoji?.name ?? "emoji"):\($0)>"
-            }
-            ?? (emoji?.name ?? "?")
-        return Reaction(emoji: value, count: count ?? 0, didCurrentUserReact: me ?? false)
+        Reaction(
+            emoji: emoji?.domainToken ?? "?",
+            count: count ?? 0,
+            didCurrentUserReact: me ?? false,
+            didCurrentUserBurstReact: meBurst ?? false
+        )
     }
 }
 

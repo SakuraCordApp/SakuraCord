@@ -383,6 +383,249 @@ import Testing
 }
 
 @MainActor
+@Test func `reaction gateway updates reconcile forum previews and open threads without reload`() async
+    throws
+{
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let forum = try #require(model.snapshot?.channels.first(where: { $0.kind == .forum }))
+
+    model.selectedChannelID = forum.id
+    #expect(await eventuallyOnMain { model.hasLoadedForumPosts && !model.forumPosts.isEmpty })
+    let post = try #require(model.forumPosts.first)
+    let starter = try #require(post.firstMessage)
+    model.open(post)
+    #expect(await eventuallyOnMain { !model.isLoadingThread && !model.threadMessages.isEmpty })
+
+    await provider.emit(
+        .messageReactionUpdated(
+            .add(
+                channelID: post.id,
+                messageID: starter.id,
+                userID: UserID(rawValue: 55_555),
+                emoji: "<:gateway_blob:999>",
+                kind: .normal
+            )
+        )
+    )
+
+    #expect(
+        await eventuallyOnMain {
+            model.threadMessages.first(where: { $0.id == starter.id })?
+                .reactions.contains(where: { $0.id == "custom:999" }) == true
+                && model.forumPosts.first(where: { $0.id == post.id })?
+                    .firstMessage?.reactions.contains(where: { $0.id == "custom:999" }) == true
+        }
+    )
+
+    await provider.emit(
+        .messageReactionUpdated(
+            .removeEmoji(
+                channelID: post.id,
+                messageID: starter.id,
+                emoji: "<a:renamed_gateway_blob:999>"
+            )
+        )
+    )
+    #expect(
+        await eventuallyOnMain {
+            model.threadMessages.first(where: { $0.id == starter.id })?
+                .reactions.contains(where: { $0.id == "custom:999" }) == false
+                && model.forumPosts.first(where: { $0.id == post.id })?
+                    .firstMessage?.reactions.contains(where: { $0.id == "custom:999" }) == false
+        }
+    )
+}
+
+@MainActor
+@Test func `forum preview hydration preserves loaded reactor avatars`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let forum = try #require(model.snapshot?.channels.first(where: { $0.kind == .forum }))
+
+    model.selectedChannelID = forum.id
+    #expect(await eventuallyOnMain { model.hasLoadedForumPosts && !model.forumPosts.isEmpty })
+    let initialPost = try #require(
+        model.forumPosts.first(where: { $0.firstMessage?.reactions.isEmpty == false })
+    )
+    let initialMessage = try #require(initialPost.firstMessage)
+    let initialReaction = try #require(initialMessage.reactions.first)
+    await model.loadReactionReactors(initialReaction, on: initialMessage)
+    #expect(
+        await eventuallyOnMain {
+            model.forumPosts.first(where: { $0.id == initialPost.id })?
+                .firstMessage?.reactions.first(where: { $0.id == initialReaction.id })?
+                .reactors.isEmpty == false
+        }
+    )
+    let loadedReactors = try #require(
+        model.forumPosts.first(where: { $0.id == initialPost.id })?
+            .firstMessage?.reactions.first(where: { $0.id == initialReaction.id })?
+            .reactors
+    )
+
+    var replacement = try #require(
+        model.forumPosts.first(where: { $0.id == initialPost.id })
+    )
+    var replacementMessage = try #require(replacement.firstMessage)
+    let reactionIndex = try #require(
+        replacementMessage.reactions.firstIndex(where: {
+            $0.id == initialReaction.id
+        })
+    )
+    replacementMessage.reactions[reactionIndex].count += 1
+    replacementMessage.reactions[reactionIndex].reactors = []
+    replacement.firstMessage = replacementMessage
+    await provider.emit(
+        .forumPostPreviewsChanged(channelID: forum.id, posts: [replacement])
+    )
+
+    #expect(
+        await eventuallyOnMain {
+            guard
+                let reaction = model.forumPosts.first(where: { $0.id == initialPost.id })?
+                    .firstMessage?.reactions.first(where: { $0.id == initialReaction.id })
+            else {
+                return false
+            }
+            return reaction.count == initialReaction.count + 1
+                && reaction.reactors == loadedReactors
+        }
+    )
+}
+
+@MainActor
+@Test func `rapid reaction clicks publish only the latest state per message and emoji`() async throws {
+    let provider = ReactionMutationTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let message = try #require(model.messages.first)
+
+    await model.toggleReaction("🔥", on: message)
+    #expect(model.messages.first?.reactions.first?.didCurrentUserReact == true)
+    await model.toggleReaction("🔥", on: message)
+    #expect(model.messages.first?.reactions.isEmpty == true)
+    await model.toggleReaction("🔥", on: message)
+    #expect(model.messages.first?.reactions.first?.didCurrentUserReact == true)
+
+    try await Task.sleep(for: .milliseconds(260))
+    #expect(await provider.requests() == [.init(messageID: message.id, emoji: "🔥", reacted: true)])
+}
+
+@MainActor
+@Test func `reaction clicks that return to confirmed state issue no request`() async throws {
+    let provider = ReactionMutationTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let message = try #require(model.messages.first)
+
+    for _ in 0 ..< 20 {
+        await model.toggleReaction("🔥", on: message)
+    }
+
+    try await Task.sleep(for: .milliseconds(260))
+    #expect(await provider.requests().isEmpty)
+    #expect(model.messages.first?.reactions.isEmpty == true)
+}
+
+@MainActor
+@Test func `reaction mutations stay independent across message and emoji keys`() async throws {
+    let provider = ReactionMutationTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let first = try #require(model.messages.first)
+    let second = try #require(model.messages.dropFirst().first)
+
+    await model.toggleReaction("🔥", on: first)
+    await model.toggleReaction("✅", on: first)
+    await model.toggleReaction("🔥", on: second)
+
+    try await Task.sleep(for: .milliseconds(260))
+    let requests = await provider.requests()
+    #expect(requests.count == 3)
+    #expect(Set(requests.map(\.messageID)) == Set([first.id, second.id]))
+    #expect(Set(requests.map(\.emoji)) == Set(["🔥", "✅"]))
+}
+
+@MainActor
+@Test func `reaction failure reverts only the failed optimistic key`() async throws {
+    let provider = ReactionMutationTestProvider(failingEmoji: "🔥")
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let message = try #require(model.messages.first)
+
+    await model.toggleReaction("🔥", on: message)
+    await model.toggleReaction("✅", on: message)
+    #expect(model.messages.first?.reactions.count == 2)
+
+    try await Task.sleep(for: .milliseconds(280))
+    let reactions = try #require(model.messages.first?.reactions)
+    #expect(reactions.contains(where: { $0.id == "unicode:🔥" }) == false)
+    #expect(reactions.first(where: { $0.id == "unicode:✅" })?.didCurrentUserReact == true)
+}
+
+@MainActor
+@Test func `message updates preserve already loaded reactor avatars`() async throws {
+    let reactor = ReactionReactor(
+        id: UserID(rawValue: 98_200),
+        displayName: "Loaded Reactor",
+        avatarURL: URL(string: "https://cdn.example/reactor.png")
+    )
+    let provider = ReactionMutationTestProvider(
+        initialReaction: Reaction(emoji: "🔥", count: 2, reactors: [reactor])
+    )
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let original = try #require(model.messages.first(where: { !$0.reactions.isEmpty }))
+
+    await provider.emit(
+        .messageUpdated(
+            Message(
+                id: original.id,
+                channelID: original.channelID,
+                author: original.author,
+                content: original.content,
+                reactions: [Reaction(emoji: "🔥", count: 3)]
+            )
+        )
+    )
+
+    #expect(
+        await eventuallyOnMain {
+            let updated = model.messages.first(where: { $0.id == original.id })
+            return updated?.reactions.first?.count == 3
+                && updated?.reactions.first?.reactors == [reactor]
+        }
+    )
+}
+
+@MainActor
+@Test func `clicks during an in flight reaction collapse to one latest follow up`() async throws {
+    let provider = ReactionMutationTestProvider(requestDelay: .milliseconds(220))
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let message = try #require(model.messages.first)
+
+    await model.toggleReaction("🔥", on: message)
+    try await Task.sleep(for: .milliseconds(190))
+    for _ in 0 ..< 9 {
+        await model.toggleReaction("🔥", on: message)
+    }
+
+    try await Task.sleep(for: .milliseconds(700))
+    #expect(
+        await provider.requests()
+            == [
+                .init(messageID: message.id, emoji: "🔥", reacted: true),
+                .init(messageID: message.id, emoji: "🔥", reacted: false),
+            ]
+    )
+    #expect(model.messages.first?.reactions.isEmpty == true)
+}
+
+@MainActor
 @Test func `forum pagination failures preserve posts and can be retried`() async throws {
     let provider = ForumPaginationTestProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
@@ -1454,6 +1697,131 @@ private func eventuallyOnMain(_ condition: @escaping @MainActor () -> Bool) asyn
     try await Task.sleep(for: .milliseconds(20))
     #expect(model.activeVoiceChannel?.id == voiceChannel.id)
     #expect(model.voiceSessionState == .connected)
+}
+
+private struct ReactionMutationRequest: Equatable, Sendable {
+    var messageID: MessageID
+    var emoji: String
+    var reacted: Bool
+}
+
+private actor ReactionMutationTestProvider: ChatProvider {
+    private let user = User(
+        id: UserID(rawValue: 98_001),
+        username: "reaction-tester",
+        displayName: "Reaction Tester"
+    )
+    private let channel = Channel(
+        id: ChannelID(rawValue: 98_002),
+        guildID: nil,
+        name: "reaction-tests"
+    )
+    private let requestDelay: Duration
+    private let failingEmoji: String?
+    private let initialReaction: Reaction?
+    private var recordedRequests: [ReactionMutationRequest] = []
+    private var continuation: AsyncStream<ClientEvent>.Continuation?
+
+    init(
+        requestDelay: Duration = .zero,
+        failingEmoji: String? = nil,
+        initialReaction: Reaction? = nil
+    ) {
+        self.requestDelay = requestDelay
+        self.failingEmoji = failingEmoji
+        self.initialReaction = initialReaction
+    }
+
+    func bootstrap() async throws -> BootstrapSnapshot {
+        BootstrapSnapshot(currentUser: user, guilds: [], channels: [channel], members: [])
+    }
+
+    func channels(in guildID: GuildID?) async throws -> [Channel] {
+        [channel]
+    }
+
+    func members(in guildID: GuildID?) async throws -> [Member] {
+        []
+    }
+
+    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
+        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
+    }
+
+    func currentStatus() async -> PresenceStatus {
+        .online
+    }
+
+    func updateStatus(_ status: PresenceStatus) async throws {}
+
+    func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
+        -> MessagePage
+    {
+        MessagePage(
+            messages: [
+                Message(
+                    id: MessageID(rawValue: 98_100),
+                    channelID: channel.id,
+                    author: user,
+                    content: "First",
+                    reactions: initialReaction.map { [$0] } ?? []
+                ),
+                Message(
+                    id: MessageID(rawValue: 98_101),
+                    channelID: channel.id,
+                    author: user,
+                    content: "Second"
+                ),
+            ],
+            hasMoreBefore: false
+        )
+    }
+
+    func send(_ draft: SendMessageDraft) async throws -> Message {
+        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
+    }
+
+    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message {
+        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
+    }
+
+    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
+
+    func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws {}
+
+    func setReaction(
+        _ emoji: String,
+        reacted: Bool,
+        messageID: MessageID,
+        channelID: ChannelID
+    ) async throws {
+        recordedRequests.append(
+            ReactionMutationRequest(messageID: messageID, emoji: emoji, reacted: reacted)
+        )
+        if requestDelay > .zero {
+            try await Task.sleep(for: requestDelay)
+        }
+        if failingEmoji == emoji {
+            throw ChatProviderError.invalidRequest("Synthetic reaction failure.")
+        }
+    }
+
+    func eventStream() async -> AsyncStream<ClientEvent> {
+        AsyncStream { continuation = $0 }
+    }
+
+    func disconnect() async {
+        continuation?.finish()
+        continuation = nil
+    }
+
+    func requests() -> [ReactionMutationRequest] {
+        recordedRequests
+    }
+
+    func emit(_ event: ClientEvent) {
+        continuation?.yield(event)
+    }
 }
 
 private actor ChannelLoadTestProvider: ChatProvider {

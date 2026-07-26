@@ -310,7 +310,20 @@ final class AppModel {
         var channelID: ChannelID
         var messageID: MessageID
         var reactionID: String
-        var reactionCount: Int
+    }
+
+    private struct ReactionMutationKey: Hashable {
+        var channelID: ChannelID
+        var messageID: MessageID
+        var reactionID: String
+    }
+
+    private struct ReactionMutationState {
+        var emoji: String
+        var confirmedReacted: Bool
+        var desiredReacted: Bool
+        var generation: UInt64
+        var isSending: Bool
     }
 
     private static let messageSendLogger = Logger(
@@ -326,6 +339,7 @@ final class AppModel {
         category: "PointsOfInterest"
     )
     nonisolated static let maximumConcurrentReactionReactorLoads = 4
+    nonisolated static let reactionMutationDebounce: Duration = .milliseconds(160)
 
     enum SessionState: Equatable {
         case restoring
@@ -728,6 +742,10 @@ final class AppModel {
     @ObservationIgnored private let reactionReactorLoadLimiter = ReactionReactorLoadLimiter(
         maximumConcurrentLoads: maximumConcurrentReactionReactorLoads
     )
+    @ObservationIgnored private var reactionMutations:
+        [ReactionMutationKey: ReactionMutationState] = [:]
+    @ObservationIgnored private var reactionMutationTasks:
+        [ReactionMutationKey: Task<Void, Never>] = [:]
     @ObservationIgnored private var guildActivationTask: Task<Void, Never>?
     @ObservationIgnored private var memberLoadTask: Task<Void, Never>?
     @ObservationIgnored private var voiceEventTask: Task<Void, Never>?
@@ -839,6 +857,7 @@ final class AppModel {
         await leaveVoice()
         await provider.disconnect()
         eventTask?.cancel()
+        clearReactionMutationState()
         stopLocalTyping(clearThrottle: true)
         typingState.clearAll()
         if !preservesInteractivePresentation {
@@ -890,6 +909,7 @@ final class AppModel {
         await leaveVoice()
         await provider.disconnect()
         eventTask?.cancel()
+        clearReactionMutationState()
         stopLocalTyping(clearThrottle: true)
         typingState.clearAll()
         if let credentialHandle {
@@ -1614,7 +1634,16 @@ final class AppModel {
     }
 
     private func mergeForumCatalogue(_ posts: [ForumPost]) {
-        for post in posts {
+        for incoming in posts {
+            let post: ForumPost
+            if let index = forumCatalogueIndexByID[incoming.id] {
+                post = forumPostPreservingReactionPresentation(
+                    incoming,
+                    previous: forumCataloguePosts[index]
+                )
+            } else {
+                post = incoming
+            }
             if let index = forumCatalogueIndexByID[post.id] {
                 forumCataloguePosts[index] = post
             } else {
@@ -1625,10 +1654,41 @@ final class AppModel {
     }
 
     private func replaceForumCatalogue(with posts: [ForumPost]) {
-        forumCataloguePosts = posts
-        forumCatalogueIndexByID = Dictionary(
-            uniqueKeysWithValues: posts.indices.map { (posts[$0].id, $0) }
+        let previousByID = Dictionary(
+            uniqueKeysWithValues: forumCataloguePosts.map { ($0.id, $0) }
         )
+        forumCataloguePosts = posts.map { incoming in
+            guard let previous = previousByID[incoming.id] else { return incoming }
+            return forumPostPreservingReactionPresentation(incoming, previous: previous)
+        }
+        forumCatalogueIndexByID = Dictionary(
+            uniqueKeysWithValues: forumCataloguePosts.indices.map {
+                (forumCataloguePosts[$0].id, $0)
+            }
+        )
+    }
+
+    private func forumPostPreservingReactionPresentation(
+        _ incoming: ForumPost,
+        previous: ForumPost
+    ) -> ForumPost {
+        var result = incoming
+        if let firstMessage = incoming.firstMessage {
+            result.firstMessage = firstMessage.preservingReactionReactors(
+                from: previous.firstMessage ?? firstMessage
+            )
+        } else {
+            result.firstMessage = previous.firstMessage
+        }
+        if let mostRecentMessage = incoming.mostRecentMessage {
+            result.mostRecentMessage = mostRecentMessage.preservingReactionReactors(
+                from: previous.mostRecentMessage ?? mostRecentMessage
+            )
+        } else {
+            result.mostRecentMessage = previous.mostRecentMessage
+        }
+        result.owner = incoming.owner ?? previous.owner
+        return result
     }
 
     private func reconcileForumMessage(_ message: Message) {
@@ -2733,10 +2793,181 @@ final class AppModel {
             errorMessage = "Nitro is required for animated and other-server emoji reactions."
             return
         }
+        guard snapshot?.currentUser.id != nil else {
+            errorMessage = ChatProviderError.unauthenticated.localizedDescription
+            return
+        }
+
+        let key = ReactionMutationKey(
+            channelID: message.channelID,
+            messageID: message.id,
+            reactionID: Reaction(emoji: emoji, count: 0).id
+        )
+        let latestMessage = reactionMessage(for: key) ?? message
+        let latestReacted =
+            latestMessage.reactions.first(where: { $0.id == key.reactionID })?
+                .didCurrentUserReact ?? false
+        var state =
+            reactionMutations[key]
+            ?? ReactionMutationState(
+                emoji: emoji,
+                confirmedReacted: latestReacted,
+                desiredReacted: latestReacted,
+                generation: 0,
+                isSending: false
+            )
+        state.emoji = emoji
+        state.desiredReacted.toggle()
+        state.generation &+= 1
+        reactionMutations[key] = state
+        applyCurrentUserReactionState(state.desiredReacted, for: key, emoji: emoji)
+
+        if !state.isSending {
+            scheduleReactionMutation(for: key)
+        }
+    }
+
+    private func scheduleReactionMutation(for key: ReactionMutationKey) {
+        guard let state = reactionMutations[key], !state.isSending else { return }
+        let generation = state.generation
+        reactionMutationTasks[key]?.cancel()
+        reactionMutationTasks[key] = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: Self.reactionMutationDebounce)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            await self?.sendReactionMutation(for: key, generation: generation)
+        }
+    }
+
+    private func sendReactionMutation(
+        for key: ReactionMutationKey,
+        generation: UInt64
+    ) async {
+        guard var state = reactionMutations[key],
+              state.generation == generation,
+              !state.isSending
+        else { return }
+        reactionMutationTasks[key] = nil
+        guard state.desiredReacted != state.confirmedReacted else {
+            reactionMutations[key] = nil
+            return
+        }
+
+        let sentState = state.desiredReacted
+        state.isSending = true
+        reactionMutations[key] = state
         do {
-            try await provider.toggleReaction(
-                emoji, messageID: message.id, channelID: message.channelID)
-        } catch { errorMessage = error.localizedDescription }
+            try await provider.setReaction(
+                state.emoji,
+                reacted: sentState,
+                messageID: key.messageID,
+                channelID: key.channelID
+            )
+        } catch {
+            guard let latest = reactionMutations[key] else { return }
+            applyCurrentUserReactionState(
+                latest.confirmedReacted,
+                for: key,
+                emoji: latest.emoji
+            )
+            reactionMutations[key] = nil
+            reactionMutationTasks[key] = nil
+            if let message = reactionMessage(for: key) {
+                persist(message)
+            }
+            errorMessage = error.localizedDescription
+            return
+        }
+
+        guard var latest = reactionMutations[key] else { return }
+        latest.confirmedReacted = sentState
+        latest.isSending = false
+        applyCurrentUserReactionState(
+            latest.desiredReacted,
+            for: key,
+            emoji: latest.emoji
+        )
+        if latest.desiredReacted == latest.confirmedReacted {
+            reactionMutations[key] = nil
+            reactionMutationTasks[key] = nil
+            if let message = reactionMessage(for: key) {
+                persist(message)
+            }
+        } else {
+            reactionMutations[key] = latest
+            if let message = reactionMessage(for: key) {
+                persist(reactionConfirmedSnapshot(message))
+            }
+            scheduleReactionMutation(for: key)
+        }
+    }
+
+    private func reactionMessage(for key: ReactionMutationKey) -> Message? {
+        if key.channelID == selectedChannelID,
+           let message = messages.first(where: { $0.id == key.messageID })
+        {
+            return message
+        }
+        if key.channelID == openThread?.id,
+           let message = threadMessages.first(where: { $0.id == key.messageID })
+        {
+            return message
+        }
+        if let message = messageCache[key.channelID]?.first(where: { $0.id == key.messageID }) {
+            return message
+        }
+        if let forumIndex = forumCatalogueIndexByID[key.channelID] {
+            let post = forumCataloguePosts[forumIndex]
+            if post.firstMessage?.id == key.messageID {
+                return post.firstMessage
+            }
+            if post.mostRecentMessage?.id == key.messageID {
+                return post.mostRecentMessage
+            }
+        }
+        return nil
+    }
+
+    private func knownReactionReactor(for userID: UserID) -> ReactionReactor? {
+        if let member = membersByID[userID] {
+            return ReactionReactor(
+                id: userID,
+                displayName: member.user.displayName,
+                avatarURL: member.guildAvatarURL ?? member.user.avatarURL
+            )
+        }
+        guard snapshot?.currentUser.id == userID, let user = snapshot?.currentUser else {
+            return nil
+        }
+        return ReactionReactor(user: user)
+    }
+
+    private func applyCurrentUserReactionState(
+        _ reacted: Bool,
+        for key: ReactionMutationKey,
+        emoji: String
+    ) {
+        guard let currentUserID = snapshot?.currentUser.id else { return }
+        let update: MessageReactionUpdate =
+            reacted
+            ? .add(
+                channelID: key.channelID,
+                messageID: key.messageID,
+                userID: currentUserID,
+                emoji: emoji,
+                kind: .normal
+            )
+            : .remove(
+                channelID: key.channelID,
+                messageID: key.messageID,
+                userID: currentUserID,
+                emoji: emoji,
+                kind: .normal
+            )
+        applyReactionUpdate(update, persistsResult: false)
     }
 
     func loadReactionReactors(_ reaction: Reaction, on message: Message) async {
@@ -2744,8 +2975,7 @@ final class AppModel {
         let key = ReactionReactorLoadKey(
             channelID: message.channelID,
             messageID: message.id,
-            reactionID: reaction.id,
-            reactionCount: reaction.count
+            reactionID: reaction.id
         )
         if let failedAt = failedReactionReactorLoads[key],
            Date.now.timeIntervalSince(failedAt) < 30
@@ -2799,12 +3029,17 @@ final class AppModel {
         func updating(_ message: Message) -> Message {
             guard
                 let reactionIndex = message.reactions.firstIndex(where: {
-                    $0.id == key.reactionID && $0.count == key.reactionCount && $0.reactors.isEmpty
+                    $0.id == key.reactionID && $0.count > 0
                 })
             else { return message }
             var result = message
+            var seen = Set<UserID>()
+            let merged =
+                normalized + result.reactions[reactionIndex].reactors
             result.reactions[reactionIndex].reactors = Array(
-                normalized.prefix(max(0, key.reactionCount))
+                merged
+                    .filter { seen.insert($0.id).inserted }
+                    .prefix(min(5, max(0, result.reactions[reactionIndex].count)))
             )
             return result
         }
@@ -2842,6 +3077,117 @@ final class AppModel {
             })
         failedReactionReactorLoads = failedReactionReactorLoads.filter {
             $0.key.channelID != channelID || $0.key.messageID != messageID
+        }
+    }
+
+    private func clearReactionMutationState(
+        channelID: ChannelID? = nil,
+        messageID: MessageID? = nil
+    ) {
+        let keys = reactionMutations.keys.filter { key in
+            (channelID == nil || key.channelID == channelID)
+                && (messageID == nil || key.messageID == messageID)
+        }
+        for key in keys {
+            reactionMutationTasks[key]?.cancel()
+            reactionMutationTasks[key] = nil
+            reactionMutations[key] = nil
+        }
+    }
+
+    private func applyReactionUpdate(
+        _ update: MessageReactionUpdate,
+        persistsResult: Bool = true
+    ) {
+        let currentUserID = snapshot?.currentUser.id
+        let reactor: ReactionReactor? =
+            switch update {
+            case .add(_, _, let userID, _, _):
+                knownReactionReactor(for: userID)
+            case .remove, .removeAll, .removeEmoji:
+                nil
+            }
+        var messageToPersist: Message?
+
+        func applying(to values: inout [Message]) {
+            guard
+                let index = values.firstIndex(where: {
+                    $0.id == update.messageID && $0.channelID == update.channelID
+                })
+            else {
+                return
+            }
+            var message = values[index]
+            if message.applyReactionUpdate(
+                update,
+                currentUserID: currentUserID,
+                reactor: reactor
+            ) {
+                values[index] = message
+            }
+            messageToPersist = message
+        }
+
+        if update.channelID == selectedChannelID {
+            applying(to: &messages)
+        }
+        if var cached = messageCache[update.channelID] {
+            applying(to: &cached)
+            messageCache[update.channelID] = cached
+        }
+        if update.channelID == openThread?.id {
+            applying(to: &threadMessages)
+        }
+
+        if let forumIndex = forumCatalogueIndexByID[update.channelID] {
+            var post = forumCataloguePosts[forumIndex]
+            if var firstMessage = post.firstMessage, firstMessage.id == update.messageID {
+                if firstMessage.applyReactionUpdate(
+                    update,
+                    currentUserID: currentUserID,
+                    reactor: reactor
+                ) {
+                    post.firstMessage = firstMessage
+                }
+                messageToPersist = firstMessage
+            }
+            if var mostRecentMessage = post.mostRecentMessage,
+               mostRecentMessage.id == update.messageID
+            {
+                if mostRecentMessage.applyReactionUpdate(
+                    update,
+                    currentUserID: currentUserID,
+                    reactor: reactor
+                ) {
+                    post.mostRecentMessage = mostRecentMessage
+                }
+                messageToPersist = mostRecentMessage
+            }
+            if post != forumCataloguePosts[forumIndex] {
+                forumCataloguePosts[forumIndex] = post
+                updateForumPresentation(with: post)
+            }
+        }
+
+        if persistsResult {
+            for (key, mutation) in reactionMutations
+            where key.channelID == update.channelID && key.messageID == update.messageID {
+                applyCurrentUserReactionState(
+                    mutation.desiredReacted,
+                    for: key,
+                    emoji: mutation.emoji
+                )
+            }
+            let lookupKey = ReactionMutationKey(
+                channelID: update.channelID,
+                messageID: update.messageID,
+                reactionID: ""
+            )
+            messageToPersist = reactionMessage(for: lookupKey) ?? messageToPersist
+        }
+
+        if persistsResult, let messageToPersist {
+            persist(reactionConfirmedSnapshot(messageToPersist))
         }
     }
 
@@ -3712,12 +4058,9 @@ final class AppModel {
                     acknowledgeIfEligible(channelID: message.channelID)
                 }
             }
-        case .messageUpdated(let message):
-            clearReactionReactorLoadState(
-                channelID: message.channelID,
-                messageID: message.id
-            )
-            persist(message)
+        case .messageUpdated(let incoming):
+            let message = reactionPresentationPreserving(incoming)
+            persist(reactionConfirmedSnapshot(message))
             if message.channelID == openThread?.id {
                 reconcileThread(message)
             }
@@ -3727,8 +4070,11 @@ final class AppModel {
                 cache(message)
             }
             reconcileForumMessage(message)
+        case .messageReactionUpdated(let update):
+            applyReactionUpdate(update)
         case .messageDeleted(let channelID, let messageID):
             clearReactionReactorLoadState(channelID: channelID, messageID: messageID)
+            clearReactionMutationState(channelID: channelID, messageID: messageID)
             Task { try? await database?.deleteMessage(messageID) }
             if replyingTo?.id == messageID {
                 replyingTo = nil
@@ -3981,6 +4327,7 @@ final class AppModel {
     }
 
     private func reconcileVisibleOrCached(_ message: Message) {
+        let message = reactionPresentationPreserving(message)
         if message.channelID == openThread?.id {
             reconcileThread(message)
         }
@@ -3989,6 +4336,85 @@ final class AppModel {
         } else {
             cache(message)
         }
+    }
+
+    private func reactionPresentationPreserving(_ incoming: Message) -> Message {
+        var result = incoming
+        let lookupKey = ReactionMutationKey(
+            channelID: incoming.channelID,
+            messageID: incoming.id,
+            reactionID: ""
+        )
+        if let existing = reactionMessage(for: lookupKey) {
+            result = result.preservingReactionReactors(from: existing)
+        }
+
+        guard let currentUserID = snapshot?.currentUser.id else { return result }
+        let currentUserReactor = knownReactionReactor(for: currentUserID)
+        for (key, mutation) in reactionMutations
+        where key.channelID == result.channelID && key.messageID == result.id {
+            let currentlyReacted =
+                result.reactions.first(where: { $0.id == key.reactionID })?
+                    .didCurrentUserReact ?? false
+            guard currentlyReacted != mutation.desiredReacted else { continue }
+            let update: MessageReactionUpdate =
+                mutation.desiredReacted
+                ? .add(
+                    channelID: key.channelID,
+                    messageID: key.messageID,
+                    userID: currentUserID,
+                    emoji: mutation.emoji,
+                    kind: .normal
+                )
+                : .remove(
+                    channelID: key.channelID,
+                    messageID: key.messageID,
+                    userID: currentUserID,
+                    emoji: mutation.emoji,
+                    kind: .normal
+                )
+            _ = result.applyReactionUpdate(
+                update,
+                currentUserID: currentUserID,
+                reactor: currentUserReactor
+            )
+        }
+        return result
+    }
+
+    private func reactionConfirmedSnapshot(_ message: Message) -> Message {
+        guard let currentUserID = snapshot?.currentUser.id else { return message }
+        var result = message
+        let currentUserReactor = knownReactionReactor(for: currentUserID)
+        for (key, mutation) in reactionMutations
+        where key.channelID == result.channelID && key.messageID == result.id {
+            let currentlyReacted =
+                result.reactions.first(where: { $0.id == key.reactionID })?
+                    .didCurrentUserReact ?? false
+            guard currentlyReacted != mutation.confirmedReacted else { continue }
+            let update: MessageReactionUpdate =
+                mutation.confirmedReacted
+                ? .add(
+                    channelID: key.channelID,
+                    messageID: key.messageID,
+                    userID: currentUserID,
+                    emoji: mutation.emoji,
+                    kind: .normal
+                )
+                : .remove(
+                    channelID: key.channelID,
+                    messageID: key.messageID,
+                    userID: currentUserID,
+                    emoji: mutation.emoji,
+                    kind: .normal
+                )
+            _ = result.applyReactionUpdate(
+                update,
+                currentUserID: currentUserID,
+                reactor: currentUserReactor
+            )
+        }
+        return result
     }
 
     private func updateOutgoingState(_ state: OutboxState, nonce: String, channelID: ChannelID) {

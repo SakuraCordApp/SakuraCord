@@ -76,6 +76,375 @@ struct ProviderRequestContractTests {
         #expect(RateLimitURLProtocol.ackRequestCount == 4)
     }
 
+    @Test func `reaction gateway dispatches decode every documented mutation variant`() async throws {
+        RateLimitURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RateLimitURLProtocol.self]
+        let socket = ReadyGatewaySocket()
+        await socket.push(gatewayMessage(
+            op: 10, data: .object(["heartbeat_interval": .number(60_000)])
+        ))
+        await socket.push(gatewayMessage(
+            op: 0,
+            data: .object([
+                "session_id": .string("reaction-session"),
+                "resume_gateway_url": .string("wss://gateway.discord.gg"),
+                "guilds": .array([]),
+            ]),
+            sequence: 1,
+            eventName: "READY"
+        ))
+        let provider = DiscordRESTProvider(
+            credentials: TestCredentialStore(),
+            handle: CredentialHandle(accountID: "1"),
+            session: URLSession(configuration: configuration),
+            gatewayTransport: ReadyGatewayTransport(socket: socket)
+        )
+        let events = await provider.eventStream()
+        _ = try await provider.bootstrap()
+
+        let created = Task { () -> Message? in
+            for await event in events {
+                if case let .messageCreated(message) = event { return message }
+            }
+            return nil
+        }
+        await socket.push(gatewayMessage(
+            op: 0,
+            data: .object([
+                "id": .string("300"),
+                "channel_id": .string("200"),
+                "guild_id": .string("100"),
+                "author": .object([
+                    "id": .string("2"),
+                    "username": .string("maya"),
+                    "global_name": .string("Maya"),
+                    "avatar": .null,
+                ]),
+                "content": .string("react here"),
+                "timestamp": .string("2026-07-26T12:00:00.000Z"),
+                "attachments": .array([]),
+                "reactions": .array([]),
+            ]),
+            sequence: 2,
+            eventName: "MESSAGE_CREATE"
+        ))
+        #expect(await created.value?.id == MessageID(rawValue: 300))
+
+        let add = Task { () -> MessageReactionUpdate? in
+            for await event in events {
+                if case let .messageReactionUpdated(update) = event { return update }
+            }
+            return nil
+        }
+        await socket.push(gatewayMessage(
+            op: 0,
+            data: .object([
+                "user_id": .string("2"),
+                "channel_id": .string("200"),
+                "message_id": .string("300"),
+                "guild_id": .string("100"),
+                "emoji": .object(["id": .null, "name": .string("🔥")]),
+                "type": .number(0),
+                "burst": .bool(false),
+            ]),
+            sequence: 3,
+            eventName: "MESSAGE_REACTION_ADD"
+        ))
+        #expect(
+            await add.value
+                == .add(
+                    channelID: ChannelID(rawValue: 200),
+                    messageID: MessageID(rawValue: 300),
+                    userID: UserID(rawValue: 2),
+                    emoji: "🔥",
+                    kind: .normal
+                )
+        )
+
+        let currentUserAdd = Task { () -> MessageReactionUpdate? in
+            for await event in events {
+                if case let .messageReactionUpdated(update) = event { return update }
+            }
+            return nil
+        }
+        await socket.push(gatewayMessage(
+            op: 0,
+            data: .object([
+                "user_id": .string("1"),
+                "channel_id": .string("200"),
+                "message_id": .string("300"),
+                "emoji": .object(["id": .null, "name": .string("🔥")]),
+                "type": .number(0),
+                "burst": .bool(false),
+            ]),
+            sequence: 4,
+            eventName: "MESSAGE_REACTION_ADD"
+        ))
+        #expect(
+            await currentUserAdd.value
+                == .add(
+                    channelID: ChannelID(rawValue: 200),
+                    messageID: MessageID(rawValue: 300),
+                    userID: UserID(rawValue: 1),
+                    emoji: "🔥",
+                    kind: .normal
+                )
+        )
+
+        let optimisticRemove = Task { () -> Message? in
+            for await event in events {
+                if case let .messageUpdated(message) = event, message.id == MessageID(rawValue: 300)
+                {
+                    return message
+                }
+            }
+            return nil
+        }
+        try await provider.toggleReaction(
+            "🔥",
+            messageID: MessageID(rawValue: 300),
+            channelID: ChannelID(rawValue: 200)
+        )
+        let removed = try #require(await optimisticRemove.value)
+        #expect(removed.reactions.first?.count == 1)
+        #expect(removed.reactions.first?.didCurrentUserReact == false)
+        #expect(RateLimitURLProtocol.reactionMethods == ["DELETE"])
+
+        let removeEcho = Task { () -> MessageReactionUpdate? in
+            for await event in events {
+                if case let .messageReactionUpdated(update) = event { return update }
+            }
+            return nil
+        }
+        await socket.push(gatewayMessage(
+            op: 0,
+            data: .object([
+                "user_id": .string("1"),
+                "channel_id": .string("200"),
+                "message_id": .string("300"),
+                "emoji": .object(["id": .null, "name": .string("🔥")]),
+                "type": .number(0),
+                "burst": .bool(false),
+            ]),
+            sequence: 5,
+            eventName: "MESSAGE_REACTION_REMOVE"
+        ))
+        #expect(
+            await removeEcho.value
+                == .remove(
+                    channelID: ChannelID(rawValue: 200),
+                    messageID: MessageID(rawValue: 300),
+                    userID: UserID(rawValue: 1),
+                    emoji: "🔥",
+                    kind: .normal
+                )
+        )
+
+        let optimisticAdd = Task { () -> Message? in
+            for await event in events {
+                if case let .messageUpdated(message) = event, message.id == MessageID(rawValue: 300)
+                {
+                    return message
+                }
+            }
+            return nil
+        }
+        try await provider.toggleReaction(
+            "🔥",
+            messageID: MessageID(rawValue: 300),
+            channelID: ChannelID(rawValue: 200)
+        )
+        let readded = try #require(await optimisticAdd.value)
+        #expect(readded.reactions.first?.count == 2)
+        #expect(readded.reactions.first?.didCurrentUserReact == true)
+        #expect(RateLimitURLProtocol.reactionMethods == ["DELETE", "PUT"])
+        try await provider.setReaction(
+            "🔥",
+            reacted: true,
+            messageID: MessageID(rawValue: 300),
+            channelID: ChannelID(rawValue: 200)
+        )
+        #expect(RateLimitURLProtocol.reactionMethods == ["DELETE", "PUT"])
+
+        let remove = Task { () -> MessageReactionUpdate? in
+            for await event in events {
+                if case let .messageReactionUpdated(update) = event { return update }
+            }
+            return nil
+        }
+        await socket.push(gatewayMessage(
+            op: 0,
+            data: .object([
+                "user_id": .string("1"),
+                "channel_id": .string("200"),
+                "message_id": .string("300"),
+                "emoji": .object([
+                    "id": .string("999"),
+                    "name": .string("party_blob"),
+                    "animated": .bool(true),
+                ]),
+                "type": .number(1),
+                "burst": .bool(true),
+            ]),
+            sequence: 6,
+            eventName: "MESSAGE_REACTION_REMOVE"
+        ))
+        #expect(
+            await remove.value
+                == .remove(
+                    channelID: ChannelID(rawValue: 200),
+                    messageID: MessageID(rawValue: 300),
+                    userID: UserID(rawValue: 1),
+                    emoji: "<a:party_blob:999>",
+                    kind: .burst
+                )
+        )
+
+        let removeEmoji = Task { () -> MessageReactionUpdate? in
+            for await event in events {
+                if case let .messageReactionUpdated(update) = event { return update }
+            }
+            return nil
+        }
+        await socket.push(gatewayMessage(
+            op: 0,
+            data: .object([
+                "channel_id": .string("200"),
+                "message_id": .string("300"),
+                "emoji": .object([
+                    "id": .string("999"),
+                    "name": .string("renamed_blob"),
+                ]),
+            ]),
+            sequence: 7,
+            eventName: "MESSAGE_REACTION_REMOVE_EMOJI"
+        ))
+        #expect(
+            await removeEmoji.value
+                == .removeEmoji(
+                    channelID: ChannelID(rawValue: 200),
+                    messageID: MessageID(rawValue: 300),
+                    emoji: "<:renamed_blob:999>"
+                )
+        )
+
+        let removeAll = Task { () -> MessageReactionUpdate? in
+            for await event in events {
+                if case let .messageReactionUpdated(update) = event { return update }
+            }
+            return nil
+        }
+        await socket.push(gatewayMessage(
+            op: 0,
+            data: .object([
+                "channel_id": .string("200"),
+                "message_id": .string("300"),
+            ]),
+            sequence: 8,
+            eventName: "MESSAGE_REACTION_REMOVE_ALL"
+        ))
+        #expect(
+            await removeAll.value
+                == .removeAll(
+                    channelID: ChannelID(rawValue: 200),
+                    messageID: MessageID(rawValue: 300)
+                )
+        )
+
+        await provider.disconnect()
+    }
+
+    @Test func `external forum reaction deltas publish once and change the count once`() async
+        throws
+    {
+        let provider = DiscordRESTProvider(
+            credentials: TestCredentialStore(),
+            handle: CredentialHandle(accountID: "forum-reaction-once"),
+            session: .shared
+        )
+        let currentUser = User(
+            id: UserID(rawValue: 1),
+            username: "current",
+            displayName: "Current"
+        )
+        let author = User(
+            id: UserID(rawValue: 2),
+            username: "author",
+            displayName: "Author"
+        )
+        let parentID = ChannelID(rawValue: 100)
+        let threadID = ChannelID(rawValue: 200)
+        let messageID = MessageID(rawValue: 200)
+        let forum = Channel(
+            id: parentID,
+            guildID: GuildID(rawValue: 300),
+            name: "forum",
+            kind: .forum
+        )
+        let starter = Message(
+            id: messageID,
+            channelID: threadID,
+            author: author,
+            content: "Starter",
+            reactions: [Reaction(emoji: "❤️", count: 1)]
+        )
+        let post = ForumPost(
+            thread: MessageThreadSummary(
+                id: threadID,
+                guildID: forum.guildID,
+                parentID: parentID,
+                name: "Post"
+            ),
+            firstMessage: starter
+        )
+        await provider.seedForumChannelForTesting(
+            forum,
+            posts: [post],
+            currentUser: currentUser
+        )
+        let events = await provider.eventStream()
+        let recorder = ReactionProjectionEventRecorder()
+        let consumer = Task {
+            for await event in events {
+                await recorder.record(event)
+            }
+        }
+        await Task.yield()
+
+        let externalUserID = UserID(rawValue: 4)
+        await provider.receiveGatewayReactionForTesting(
+            .add(
+                channelID: threadID,
+                messageID: messageID,
+                userID: externalUserID,
+                emoji: "❤️",
+                kind: .normal
+            )
+        )
+        #expect(
+            await provider.cachedForumPostForTesting(threadID: threadID)?
+                .firstMessage?.reactions.first?.count == 2
+        )
+        await provider.receiveGatewayReactionForTesting(
+            .remove(
+                channelID: threadID,
+                messageID: messageID,
+                userID: externalUserID,
+                emoji: "❤️",
+                kind: .normal
+            )
+        )
+        #expect(
+            await provider.cachedForumPostForTesting(threadID: threadID)?
+                .firstMessage?.reactions.first?.count == 1
+        )
+        #expect(await eventually { await recorder.reactionUpdateCount == 2 })
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(await recorder.forumCataloguePublishCount == 0)
+        consumer.cancel()
+    }
+
     @Test func `application command indexes cache and each interaction uses one exact post`() async throws {
         RateLimitURLProtocol.reset()
         let configuration = URLSessionConfiguration.ephemeral
@@ -841,6 +1210,22 @@ private actor RestrictionGatewaySocket: GatewaySocket {
     }
 }
 
+private actor ReactionProjectionEventRecorder {
+    private(set) var reactionUpdateCount = 0
+    private(set) var forumCataloguePublishCount = 0
+
+    func record(_ event: ClientEvent) {
+        switch event {
+        case .messageReactionUpdated:
+            reactionUpdateCount += 1
+        case .forumPostsChanged:
+            forumCataloguePublishCount += 1
+        default:
+            break
+        }
+    }
+}
+
 private func eventually(_ condition: @escaping @Sendable () async -> Bool) async -> Bool {
     for _ in 0 ..< 500 {
         if await condition() {
@@ -888,6 +1273,7 @@ private final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var ackPath: String?
     nonisolated(unsafe) static var ackBody: [String: Any]?
     nonisolated(unsafe) static var ackStatus = 200
+    nonisolated(unsafe) static var reactionMethods: [String] = []
 
     static func reset() {
         guildListAttempts = 0
@@ -926,6 +1312,7 @@ private final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
         ackPath = nil
         ackBody = nil
         ackStatus = 200
+        reactionMethods = []
     }
 
     override class func canInit(with request: URLRequest) -> Bool {
@@ -1029,6 +1416,12 @@ private final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
                 status == 200
                 ? #"{"token":"next-token"}"#
                 : #"{"retry_after":0.01,"global":false}"#
+        case let path
+            where path.hasPrefix("/api/v9/channels/200/messages/300/reactions/")
+                && path.hasSuffix("/@me"):
+            Self.reactionMethods.append(request.httpMethod ?? "")
+            status = 204
+            json = ""
         case "/test":
             Self.uploadHadAuthorization = request.value(forHTTPHeaderField: "Authorization") != nil
             status = 200

@@ -889,6 +889,7 @@ public struct Reaction: Identifiable, Codable, Hashable, Sendable {
     public var emoji: String
     public var count: Int
     public var didCurrentUserReact: Bool
+    public var didCurrentUserBurstReact: Bool
     public var reactors: [ReactionReactor]
 
     public var emojiReference: EmojiReference {
@@ -900,16 +901,18 @@ public struct Reaction: Identifiable, Codable, Hashable, Sendable {
         emoji: String,
         count: Int,
         didCurrentUserReact: Bool = false,
+        didCurrentUserBurstReact: Bool = false,
         reactors: [ReactionReactor] = []
     ) {
         self.emoji = emoji
         self.count = count
         self.didCurrentUserReact = didCurrentUserReact
+        self.didCurrentUserBurstReact = didCurrentUserBurstReact
         self.reactors = reactors
     }
 
     private enum CodingKeys: String, CodingKey {
-        case emoji, count, didCurrentUserReact, reactors
+        case emoji, count, didCurrentUserReact, didCurrentUserBurstReact, reactors
     }
 
     public init(from decoder: Decoder) throws {
@@ -918,7 +921,53 @@ public struct Reaction: Identifiable, Codable, Hashable, Sendable {
         count = try values.decode(Int.self, forKey: .count)
         didCurrentUserReact =
             try values.decodeIfPresent(Bool.self, forKey: .didCurrentUserReact) ?? false
+        didCurrentUserBurstReact =
+            try values.decodeIfPresent(Bool.self, forKey: .didCurrentUserBurstReact) ?? false
         reactors = try values.decodeIfPresent([ReactionReactor].self, forKey: .reactors) ?? []
+    }
+}
+
+public enum MessageReactionKind: Int, Codable, Hashable, Sendable {
+    case normal = 0
+    case burst = 1
+}
+
+public enum MessageReactionUpdate: Equatable, Sendable {
+    case add(
+        channelID: ChannelID,
+        messageID: MessageID,
+        userID: UserID,
+        emoji: String,
+        kind: MessageReactionKind
+    )
+    case remove(
+        channelID: ChannelID,
+        messageID: MessageID,
+        userID: UserID,
+        emoji: String,
+        kind: MessageReactionKind
+    )
+    case removeAll(channelID: ChannelID, messageID: MessageID)
+    case removeEmoji(channelID: ChannelID, messageID: MessageID, emoji: String)
+
+    public var channelID: ChannelID {
+        switch self {
+        case .add(let channelID, _, _, _, _),
+             .remove(let channelID, _, _, _, _),
+             .removeAll(let channelID, _),
+             .removeEmoji(let channelID, _, _):
+            channelID
+        }
+    }
+
+    public var messageID: MessageID {
+        switch self {
+        case .add(_, let messageID, _, _, _),
+             .remove(_, let messageID, _, _, _),
+             .removeAll(_, let messageID),
+             .removeEmoji(_, let messageID, _):
+            messageID
+        }
     }
 }
 
@@ -1075,6 +1124,112 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
         mentionedUsers = try values.decodeIfPresent([User].self, forKey: .mentionedUsers) ?? []
         mentionedRoleIDs = try values.decodeIfPresent([RoleID].self, forKey: .mentionedRoleIDs) ?? []
         mentionsEveryone = try values.decodeIfPresent(Bool.self, forKey: .mentionsEveryone) ?? false
+    }
+}
+
+extension Message {
+    /// Carries already-resolved reactor identities across a replacement message
+    /// payload without changing the incoming reaction counts or selected state.
+    public func preservingReactionReactors(from previous: Message) -> Message {
+        guard id == previous.id, channelID == previous.channelID else { return self }
+        var result = self
+        for index in result.reactions.indices {
+            guard let previousReaction = previous.reactions.first(where: {
+                $0.id == result.reactions[index].id
+            }) else {
+                continue
+            }
+            var seen = Set<UserID>()
+            result.reactions[index].reactors = Array(
+                (result.reactions[index].reactors + previousReaction.reactors)
+                    .filter { seen.insert($0.id).inserted }
+                    .prefix(min(5, max(0, result.reactions[index].count)))
+            )
+        }
+        return result
+    }
+
+    /// Applies one Gateway reaction delta. Current-user add/remove echoes are
+    /// state assignments, so they remain idempotent when an optimistic REST
+    /// update has already reached the message.
+    @discardableResult
+    public mutating func applyReactionUpdate(
+        _ update: MessageReactionUpdate,
+        currentUserID: UserID?,
+        reactor: ReactionReactor? = nil
+    ) -> Bool {
+        guard update.channelID == channelID, update.messageID == id else { return false }
+
+        switch update {
+        case .add(_, _, let userID, let emoji, let kind):
+            let identity = Reaction(emoji: emoji, count: 0).id
+            if let index = reactions.firstIndex(where: { $0.id == identity }) {
+                let isCurrentUser = userID == currentUserID
+                if isCurrentUser {
+                    switch kind {
+                    case .normal:
+                        guard !reactions[index].didCurrentUserReact else { return false }
+                        reactions[index].didCurrentUserReact = true
+                    case .burst:
+                        guard !reactions[index].didCurrentUserBurstReact else { return false }
+                        reactions[index].didCurrentUserBurstReact = true
+                    }
+                }
+                reactions[index].emoji = emoji
+                reactions[index].count += 1
+                if let reactor,
+                   reactor.id == userID,
+                   !reactions[index].reactors.contains(where: { $0.id == reactor.id })
+                {
+                    reactions[index].reactors.append(reactor)
+                }
+            } else {
+                reactions.append(
+                    Reaction(
+                        emoji: emoji,
+                        count: 1,
+                        didCurrentUserReact: userID == currentUserID && kind == .normal,
+                        didCurrentUserBurstReact: userID == currentUserID && kind == .burst,
+                        reactors: reactor.map { [$0] } ?? []
+                    )
+                )
+            }
+        case .remove(_, _, let userID, let emoji, let kind):
+            let identity = Reaction(emoji: emoji, count: 0).id
+            guard let index = reactions.firstIndex(where: { $0.id == identity }) else {
+                return false
+            }
+            let isCurrentUser = userID == currentUserID
+            if isCurrentUser {
+                switch kind {
+                case .normal:
+                    guard reactions[index].didCurrentUserReact else { return false }
+                    reactions[index].didCurrentUserReact = false
+                case .burst:
+                    guard reactions[index].didCurrentUserBurstReact else { return false }
+                    reactions[index].didCurrentUserBurstReact = false
+                }
+            }
+            reactions[index].count = max(0, reactions[index].count - 1)
+            reactions[index].reactors.removeAll { $0.id == userID }
+            if reactions[index].reactors.count > reactions[index].count {
+                reactions[index].reactors = Array(
+                    reactions[index].reactors.prefix(reactions[index].count)
+                )
+            }
+            if reactions[index].count == 0 {
+                reactions.remove(at: index)
+            }
+        case .removeAll:
+            guard !reactions.isEmpty else { return false }
+            reactions.removeAll()
+        case .removeEmoji(_, _, let emoji):
+            let identity = Reaction(emoji: emoji, count: 0).id
+            let originalCount = reactions.count
+            reactions.removeAll { $0.id == identity }
+            guard reactions.count != originalCount else { return false }
+        }
+        return true
     }
 }
 
@@ -1604,6 +1759,7 @@ public enum ClientEvent: Equatable, Sendable {
     case connectionChanged(ConnectionState)
     case messageCreated(Message)
     case messageUpdated(Message)
+    case messageReactionUpdated(MessageReactionUpdate)
     case messageDeleted(channelID: ChannelID, messageID: MessageID)
     case readStateSnapshot([ChannelReadState])
     case readStateChanged(ChannelReadState)

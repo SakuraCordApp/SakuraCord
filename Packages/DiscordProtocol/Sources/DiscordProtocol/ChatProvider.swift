@@ -60,6 +60,12 @@ public protocol ChatProvider: Sendable {
         lastViewed: Int?
     ) async throws -> ReadAcknowledgementResponse
     func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws
+    func setReaction(
+        _ emoji: String,
+        reacted: Bool,
+        messageID: MessageID,
+        channelID: ChannelID
+    ) async throws
     func reactionReactors(
         for emoji: String,
         messageID: MessageID,
@@ -217,6 +223,15 @@ public extension ChatProvider {
 
     func deleteForumPost(_ post: ForumPost) async throws {
         throw ChatProviderError.capabilityDisabled(.forums)
+    }
+
+    func setReaction(
+        _ emoji: String,
+        reacted: Bool,
+        messageID: MessageID,
+        channelID: ChannelID
+    ) async throws {
+        try await toggleReaction(emoji, messageID: messageID, channelID: channelID)
     }
 
     func reactionReactors(

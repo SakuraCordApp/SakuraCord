@@ -976,7 +976,7 @@ private struct ForumPostListFooter: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ForumPostDefaultReactionPill(model: model, channel: channel, post: post)
+            ForumPostSummaryReactionPill(model: model, channel: channel, post: post)
             Label("\(post.replyCount)", systemImage: "bubble.left.fill")
                 .allowsHitTesting(false)
             ForumTimestampLabel(
@@ -1001,62 +1001,78 @@ private struct ForumPostGalleryFooter: View {
             Label("\(post.replyCount)", systemImage: "bubble.left.fill")
                 .allowsHitTesting(false)
             Spacer()
-            ForumPostDefaultReactionPill(model: model, channel: channel, post: post)
+            ForumPostSummaryReactionPill(model: model, channel: channel, post: post)
         }
         .font(.callout)
         .foregroundStyle(.secondary)
     }
 }
 
-private struct ForumPostDefaultReactionPill: View {
+nonisolated enum ForumPostReactionPresentation {
+    static func displayedReaction(
+        reactions: [Reaction],
+        defaultReaction: ForumDefaultReaction?
+    ) -> Reaction? {
+        var highestCountReaction: Reaction?
+        for reaction in MessageReactionPresentation.items(from: reactions) {
+            if highestCountReaction == nil
+                || reaction.count > (highestCountReaction?.count ?? 0)
+            {
+                highestCountReaction = reaction
+            }
+        }
+        if let highestCountReaction {
+            return highestCountReaction
+        }
+        guard let token = defaultReactionToken(defaultReaction) else { return nil }
+        return Reaction(emoji: token, count: 0)
+    }
+
+    static func defaultReactionToken(_ value: ForumDefaultReaction?) -> String? {
+        guard let value else { return nil }
+        if let id = value.emojiID {
+            return EmojiReference(id: id, name: value.emojiName ?? "emoji").rawToken
+        }
+        return value.emojiName
+    }
+}
+
+private struct ForumPostSummaryReactionPill: View {
     let model: AppModel
     let channel: Channel
     let post: ForumPost
 
     var body: some View {
-        if let reaction = displayedDefaultReaction {
+        if let reaction = displayedReaction {
             MessageReactionPill(
                 reaction: reaction,
                 emojiURL: MessageReactionPresentation.emojiURL(
                     for: reaction,
                     customEmojiURLsByID: model.customEmojiURLsByID
                 ),
-                react: toggleDefaultReaction,
-                loadReactors: loadDefaultReactionReactors
+                react: toggleDisplayedReaction,
+                loadReactors: loadDisplayedReactionReactors
             )
             .fixedSize()
         }
     }
 
-    private var displayedDefaultReaction: Reaction? {
-        guard let firstMessage = post.firstMessage, let token = defaultReactionToken else {
-            return nil
-        }
-        let reference = EmojiReference(rawToken: token)
-        return firstMessage.reactions.first { existing in
-            let existingReference = existing.emojiReference
-            if let id = reference.id { return existingReference.id == id }
-            return existingReference.id == nil && existingReference.name == reference.name
-        } ?? Reaction(emoji: token, count: 0)
+    private var displayedReaction: Reaction? {
+        ForumPostReactionPresentation.displayedReaction(
+            reactions: post.firstMessage?.reactions ?? [],
+            defaultReaction: channel.defaultReaction
+        )
     }
 
-    private var defaultReactionToken: String? {
-        guard let value = channel.defaultReaction else { return nil }
-        if let id = value.emojiID {
-            return EmojiReference(id: id, name: value.emojiName ?? "emoji").rawToken
-        }
-        return value.emojiName
-    }
-
-    private func toggleDefaultReaction() {
-        guard let message = post.firstMessage, let reaction = displayedDefaultReaction else {
+    private func toggleDisplayedReaction() {
+        guard let message = post.firstMessage, let reaction = displayedReaction else {
             return
         }
         Task { await model.toggleReaction(reaction.emoji, on: message) }
     }
 
-    private func loadDefaultReactionReactors() async {
-        guard let message = post.firstMessage, let reaction = displayedDefaultReaction else {
+    private func loadDisplayedReactionReactors() async {
+        guard let message = post.firstMessage, let reaction = displayedReaction else {
             return
         }
         await model.loadReactionReactors(reaction, on: message)

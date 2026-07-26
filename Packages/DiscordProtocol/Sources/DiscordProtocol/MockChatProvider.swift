@@ -777,17 +777,39 @@ public actor MockChatProvider: ChatProvider {
     public func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID)
         async throws
     {
+        guard let message = messagesByChannel[channelID]?.first(where: { $0.id == messageID }) else {
+            throw ChatProviderError.messageNotFound
+        }
+        let reactionID = Reaction(emoji: emoji, count: 0).id
+        let reacted =
+            message.reactions.first(where: { $0.id == reactionID })?.didCurrentUserReact ?? false
+        try await setReaction(
+            emoji,
+            reacted: !reacted,
+            messageID: messageID,
+            channelID: channelID
+        )
+    }
+
+    public func setReaction(
+        _ emoji: String,
+        reacted: Bool,
+        messageID: MessageID,
+        channelID: ChannelID
+    ) async throws {
         guard var messages = messagesByChannel[channelID],
               let index = messages.firstIndex(where: { $0.id == messageID })
         else {
             throw ChatProviderError.messageNotFound
         }
         var message = messages[index]
-        if let reactionIndex = message.reactions.firstIndex(where: { $0.emoji == emoji }) {
+        let reactionID = Reaction(emoji: emoji, count: 0).id
+        if let reactionIndex = message.reactions.firstIndex(where: { $0.id == reactionID }) {
             let active = message.reactions[reactionIndex].didCurrentUserReact
-            message.reactions[reactionIndex].didCurrentUserReact.toggle()
-            message.reactions[reactionIndex].count += active ? -1 : 1
-            if active {
+            guard active != reacted else { return }
+            message.reactions[reactionIndex].didCurrentUserReact = reacted
+            message.reactions[reactionIndex].count += reacted ? 1 : -1
+            if !reacted {
                 message.reactions[reactionIndex].reactors.removeAll {
                     $0.id == snapshot.currentUser.id
                 }
@@ -801,7 +823,7 @@ public actor MockChatProvider: ChatProvider {
             if message.reactions[reactionIndex].count == 0 {
                 message.reactions.remove(at: reactionIndex)
             }
-        } else {
+        } else if reacted {
             message.reactions.append(
                 Reaction(
                     emoji: emoji,
@@ -810,6 +832,8 @@ public actor MockChatProvider: ChatProvider {
                     reactors: [ReactionReactor(user: snapshot.currentUser)]
                 )
             )
+        } else {
+            return
         }
         messages[index] = message
         messagesByChannel[channelID] = messages

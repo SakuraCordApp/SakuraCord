@@ -25,10 +25,14 @@ nonisolated struct MessageReactionPreviewPlan: Equatable, Sendable {
 nonisolated struct MessageReactionPreviewLoadKey: Equatable, Hashable, Sendable {
     nonisolated struct Entry: Equatable, Hashable, Sendable {
         let reactionID: String
-        let count: Int
     }
 
     let entries: [Entry]
+}
+
+nonisolated struct MessageReactionAutomaticLoadKey: Equatable, Hashable, Sendable {
+    let reactionID: String
+    let needsLoad: Bool
 }
 
 nonisolated enum MessageReactionTooltipSummary: Equatable, Sendable {
@@ -86,7 +90,7 @@ nonisolated enum MessageReactionPresentation {
     static func previewLoadKey(for reactions: [Reaction]) -> MessageReactionPreviewLoadKey {
         MessageReactionPreviewLoadKey(
             entries: items(from: reactions).map {
-                MessageReactionPreviewLoadKey.Entry(reactionID: $0.id, count: $0.count)
+                MessageReactionPreviewLoadKey.Entry(reactionID: $0.id)
             })
     }
 
@@ -98,7 +102,7 @@ nonisolated enum MessageReactionPresentation {
     {
         MessageReactionPreviewLoadKey(
             entries: reactions.map {
-                MessageReactionPreviewLoadKey.Entry(reactionID: $0.id, count: $0.count)
+                MessageReactionPreviewLoadKey.Entry(reactionID: $0.id)
             })
     }
 
@@ -137,7 +141,7 @@ nonisolated enum MessageReactionPresentation {
     static func tooltipDescription(for reaction: Reaction) -> String {
         switch tooltipSummary(for: reaction) {
         case .countOnly(let count):
-            return "\(count) reactions"
+            return count == 0 ? "No reactions yet" : "\(count) reactions"
         case .knownReactors(let names, let remainingCount):
             let knownNames = names.formatted(.list(type: .and))
             if remainingCount > 0 {
@@ -151,7 +155,7 @@ nonisolated enum MessageReactionPresentation {
         let emoji = emojiLabel(for: reaction)
         switch tooltipSummary(for: reaction) {
         case .countOnly(let count):
-            return "\(emoji), \(count) reactions"
+            return count == 0 ? "\(emoji), no reactions yet" : "\(emoji), \(count) reactions"
         case .knownReactors(let names, let remainingCount):
             let knownNames = names.formatted(.list(type: .and))
             if remainingCount > 0 {
@@ -236,6 +240,7 @@ struct MessageReactionPill: View {
     let emojiURL: URL?
     let react: () -> Void
     let loadReactors: () async -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovered = false
     @State private var hoverAnchorSnapshot: ReactionHoverAnchorSnapshot?
 
@@ -247,10 +252,19 @@ struct MessageReactionPill: View {
                     url: emojiURL,
                     size: MessageReactionMetrics.emojiSize
                 )
-                Text(reaction.count, format: .number)
-                    .font(.caption.weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(reaction.didCurrentUserReact ? Color.accentColor : .primary)
+                if reaction.count > 0 {
+                    Text(reaction.count, format: .number)
+                        .font(.caption.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(
+                            reaction.didCurrentUserReact ? Color.accentColor : .primary
+                        )
+                        .contentTransition(.numericText(value: Double(reaction.count)))
+                        .animation(
+                            reduceMotion ? nil : .smooth(duration: 0.24),
+                            value: reaction.count
+                        )
+                }
                 let previewPlan = MessageReactionPresentation.previewPlan(for: reaction)
                 if !previewPlan.isEmpty {
                     MessageReactionAvatarStack(plan: previewPlan)
@@ -269,6 +283,15 @@ struct MessageReactionPill: View {
             .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
         .buttonStyle(.plain)
+        .task(
+            id: MessageReactionAutomaticLoadKey(
+                reactionID: reaction.id,
+                needsLoad: reaction.count > 0 && reaction.reactors.isEmpty
+            )
+        ) {
+            guard reaction.count > 0, reaction.reactors.isEmpty else { return }
+            await loadReactors()
+        }
         .onContinuousHover(coordinateSpace: .local) { phase in
             switch phase {
             case .active(let location):

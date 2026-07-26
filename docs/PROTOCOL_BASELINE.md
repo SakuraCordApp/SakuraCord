@@ -165,11 +165,41 @@ implementation records.
 
 - History and Gateway message events share one loss-tolerant decoder. Updates
   merge only fields present in the event.
+- `MESSAGE_REACTION_ADD`, `MESSAGE_REACTION_REMOVE`,
+  `MESSAGE_REACTION_REMOVE_ALL`, and `MESSAGE_REACTION_REMOVE_EMOJI` apply
+  typed deltas to loaded messages without a history reload. Current-user normal
+  and burst state are reconciled independently so the Gateway echo of one
+  optimistic REST toggle cannot change the aggregate count twice. Each delta
+  fans out to visible, cached, thread, forum-preview, and persisted message
+  state without issuing another authenticated request. The typed reaction
+  event is the sole presentation delta; updating the provider's forum cache
+  does not also publish a catalogue replacement for the same Gateway event.
+- A reaction click changes local presentation immediately. Intents are
+  coalesced independently by channel, message, and emoji; only the latest
+  desired reacted/unreacted state is sent after the short local debounce.
+  Each key permits one mutation in flight and at most one coalesced follow-up
+  when its desired state changes during that request. PUT and DELETE mutations
+  have one attempt, are never retried after an ambiguous failure, and roll back
+  only that key when Discord does not confirm the requested state.
 - Rich rendering issues no authenticated request by itself. Link previews use
   decoded embeds; SakuraCord does not scrape or preflight message URLs.
 - Reactor previews use the documented reaction-user GET with `type=0&limit=5`.
   Loads are visible-row driven, coalesced, cached, limited to four concurrent
-  reads, and never paginate.
+  reads, and never paginate. The preview identity is stable across count
+  changes, loaded reactor avatars remain visible while REST and Gateway
+  reaction state reconciles, and hover is only a tooltip trigger rather than a
+  data-loading prerequisite.
+- Forum cards summarize the starter message with its highest-count active
+  reaction, preserving Discord source order as the tie-breaker. With no active
+  reactions they show the configured default emoji without a numeric zero.
+  Partial catalogue and preview-hydration payloads preserve richer loaded
+  reactor identities instead of replacing them with an empty preview.
+- A 26 July 2026 read-only comparison with Equicord WhoReacted revision
+  `1e353f3bdea3545c198b32c7e2216fcd0b923dbf` confirmed the presentation
+  pattern: fetch once through a shared queue, retain reactor identities in a
+  message-and-emoji cache, and rerender from that cache independently of hover.
+  SakuraCord implements that behavior in its native model and bounded
+  five-reactor cache; no Equicord source was copied.
 - Guild emoji primarily comes from Ready/Guild Gateway payloads and
   `GUILD_EMOJIS_UPDATE`. A coalesced sequential guild-emoji GET is only a cache
   fallback; autocomplete itself performs no request.
