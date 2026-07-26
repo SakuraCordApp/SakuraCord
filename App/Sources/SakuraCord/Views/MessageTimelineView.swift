@@ -14,7 +14,15 @@ struct MessageTimelineView: View {
         ScrollViewReader { proxy in
             GeometryReader { geometry in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
+                    // Not lazy: rows outside a lazy realization window trade
+                    // their measured height for an estimate, so the content
+                    // size oscillates by hundreds of points while scrolling and
+                    // the visible messages shift under the reader. Realizing
+                    // every row keeps the content size fixed. History only
+                    // grows 50 rows per explicit "Load earlier", never while
+                    // scrolling, so the cost is user-paced rather than per
+                    // frame.
+                    VStack(alignment: .leading, spacing: 0) {
                         if let channel = model.selectedChannel,
                            ConversationBeginningPolicy.showsBeginning(
                                isLoading: model.isLoadingMessages,
