@@ -42,6 +42,41 @@ import Testing
     #expect(decoded.estimatedByteCount <= frame.bytesPerRow * frame.height)
 }
 
+@Test func `animated image decoding preserves transparent pixels`() throws {
+    let colorSpace = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+    let context = try #require(
+        CGContext(
+            data: nil,
+            width: 2,
+            height: 1,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )
+    )
+    context.clear(CGRect(x: 0, y: 0, width: 2, height: 1))
+    context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+    context.fill(CGRect(x: 1, y: 0, width: 1, height: 1))
+
+    let source = try #require(context.makeImage())
+    let data = NSMutableData()
+    let destination = try #require(
+        CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil)
+    )
+    CGImageDestinationAddImage(destination, source, nil)
+    #expect(CGImageDestinationFinalize(destination))
+
+    let decoded = try DecodedAnimatedImage(data: data as Data, maximumPixelDimension: 2)
+    let frame = try #require(decoded.frames.first)
+    let provider = try #require(frame.dataProvider)
+    let bytes = try #require(CFDataGetBytePtr(provider.data))
+
+    #expect(frame.alphaInfo == .premultipliedLast)
+    #expect(bytes[3] == 0)
+    #expect(bytes[7] == 255)
+}
+
 @MainActor @Test func `animated webp uses its real frame delay`() {
     let properties: [CFString: Any] = [
         kCGImagePropertyWebPDictionary: [
