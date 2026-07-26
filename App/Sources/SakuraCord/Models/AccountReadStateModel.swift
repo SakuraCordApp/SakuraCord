@@ -21,6 +21,7 @@ final class AccountReadStateModel {
         var latestUnreadMessageID: MessageID?
         var lastAcknowledgedMessageID: MessageID?
         var mentionCount: Int
+        var unreadMessageCount: Int
         var pendingAcknowledgementID: MessageID?
         var flags: UInt64?
         var lastViewed: Int?
@@ -75,6 +76,7 @@ final class AccountReadStateModel {
         var messageID: MessageID
         var lastAcknowledgedMessageID: MessageID?
         var mentionCount: Int
+        var unreadMessageCount: Int
     }
 
     private(set) var accountID: String?
@@ -86,6 +88,8 @@ final class AccountReadStateModel {
     private var defaultNotificationLevelByGuild: [GuildID: MessageNotificationLevel] = [:]
     private var currentUserRoleIDsByGuild: [GuildID: Set<RoleID>] = [:]
     private var pendingRollbacks: [ChannelID: PendingRollback] = [:]
+    private var forumSelectionAcknowledgementBoundary: [ChannelID: MessageID] = [:]
+    private var forumPostArchivedByID: [ChannelID: Bool] = [:]
     private var usesNewNotifications = true
 
     func reset(accountID: String?) {
@@ -98,6 +102,8 @@ final class AccountReadStateModel {
         defaultNotificationLevelByGuild.removeAll()
         currentUserRoleIDsByGuild.removeAll()
         pendingRollbacks.removeAll()
+        forumSelectionAcknowledgementBoundary.removeAll()
+        forumPostArchivedByID.removeAll()
         usesNewNotifications = true
     }
 
@@ -145,6 +151,7 @@ final class AccountReadStateModel {
                 latestUnreadMessageID: nil,
                 lastAcknowledgedMessageID: nil,
                 mentionCount: 0,
+                unreadMessageCount: 0,
                 pendingAcknowledgementID: nil,
                 flags: nil,
                 lastViewed: nil,
@@ -176,6 +183,7 @@ final class AccountReadStateModel {
             entries[channelID] = nil
             presentations[channelID] = nil
             pendingRollbacks[channelID] = nil
+            forumSelectionAcknowledgementBoundary[channelID] = nil
         }
         merge(channels: channels)
     }
@@ -193,6 +201,7 @@ final class AccountReadStateModel {
             entries[channelID] = nil
             presentations[channelID] = nil
             pendingRollbacks[channelID] = nil
+            forumPostArchivedByID[channelID] = nil
         }
         for thread in threads {
             merge(thread: thread)
@@ -209,6 +218,8 @@ final class AccountReadStateModel {
             presentations[channelID] = nil
             channelByID[channelID] = nil
             pendingRollbacks[channelID] = nil
+            forumSelectionAcknowledgementBoundary[channelID] = nil
+            forumPostArchivedByID[channelID] = nil
         }
         settingsByGuild = settingsByGuild.filter { guildID, _ in
             guard let guildID else { return true }
@@ -265,6 +276,9 @@ final class AccountReadStateModel {
         entry.latestUnreadMessageID = maximum(
             entry.latestUnreadMessageID, entry.latestKnownMessageID
         )
+        entry.unreadMessageCount = entry.isUnread
+            ? max(1, entry.unreadMessageCount)
+            : 0
         if let pending = entry.pendingAcknowledgementID,
            let acknowledged = entry.lastAcknowledgedMessageID,
            acknowledged >= pending
@@ -281,6 +295,7 @@ final class AccountReadStateModel {
             guard value.pendingAcknowledgementID == rollback.messageID else { continue }
             value.lastAcknowledgedMessageID = rollback.lastAcknowledgedMessageID
             value.mentionCount = rollback.mentionCount
+            value.unreadMessageCount = rollback.unreadMessageCount
             value.pendingAcknowledgementID = nil
             entries[channelID] = value
         }
@@ -320,8 +335,15 @@ final class AccountReadStateModel {
             {
                 value.lastAcknowledgedMessageID = previousAcknowledged
                 value.mentionCount = previous.mentionCount
+                value.unreadMessageCount = previous.unreadMessageCount
                 value.flags = previous.flags
                 value.lastViewed = previous.lastViewed
+            } else if value.isUnread {
+                value.unreadMessageCount = max(
+                    max(value.unreadMessageCount, previous.unreadMessageCount), 1
+                )
+            } else {
+                value.unreadMessageCount = 0
             }
             entries[channelID] = value
         }
@@ -353,6 +375,7 @@ final class AccountReadStateModel {
         }
 
         entry.latestUnreadMessageID = maximum(entry.latestUnreadMessageID, message.id)
+        entry.unreadMessageCount += 1
         let policy = effectivePolicy(for: entry, now: now)
         let mentionKind = mentionKind(for: message, entry: entry, policy: policy)
         if mentionKind != .none {
@@ -390,11 +413,98 @@ final class AccountReadStateModel {
             entry.latestUnreadMessageID = maximum(
                 entry.latestUnreadMessageID, thread.lastMessageID
             )
+            entry.unreadMessageCount = entry.isUnread
+                ? max(1, entry.unreadMessageCount)
+                : 0
         }
         if let parentID = thread.parentID, let parent = entries[parentID] {
             entry.isAccessible = parent.isAccessible
         }
         entries[thread.id] = entry
+        forumPostArchivedByID[thread.id] = thread.isArchived
+
+        guard let parentID = thread.parentID,
+              var parent = entries[parentID],
+              parent.kind == .forum
+        else { return }
+        let threadMessageID = MessageID(rawValue: thread.id.rawValue)
+        parent.latestKnownMessageID = maximum(parent.latestKnownMessageID, threadMessageID)
+        if parent.hasAuthoritativeReadState {
+            parent.latestUnreadMessageID = maximum(
+                parent.latestUnreadMessageID, threadMessageID
+            )
+            parent.unreadMessageCount = parent.isUnread
+                ? max(1, parent.unreadMessageCount)
+                : 0
+        }
+        entries[parentID] = parent
+    }
+
+    func merge(forumPost: ForumPost) {
+        merge(thread: forumPost.thread)
+        guard forumPost.isUnread else { return }
+        let latestMessageID =
+            forumPost.thread.lastMessageID
+            ?? forumPost.mostRecentMessage?.id
+            ?? forumPost.firstMessage?.id
+        guard let latestMessageID else { return }
+        var entry = entry(for: forumPost.id)
+        entry.latestKnownMessageID = maximum(entry.latestKnownMessageID, latestMessageID)
+        entry.latestUnreadMessageID = maximum(entry.latestUnreadMessageID, latestMessageID)
+        let allRepliesAreAfterAcknowledgement =
+            entry.lastAcknowledgedMessageID == nil
+            || entry.lastAcknowledgedMessageID == forumPost.firstMessage?.id
+        let catalogueUnreadCount =
+            allRepliesAreAfterAcknowledgement ? max(1, forumPost.replyCount) : 1
+        entry.unreadMessageCount = max(catalogueUnreadCount, entry.unreadMessageCount)
+        entries[forumPost.id] = entry
+    }
+
+    /// Captures Discord's forum-selection read boundary before the parent
+    /// acknowledgement advances. Post-level unread state remains independent.
+    func beginForumVisit(channelID: ChannelID) {
+        guard entries[channelID]?.kind == .forum else { return }
+        forumSelectionAcknowledgementBoundary[channelID] =
+            entries[channelID]?.lastAcknowledgedMessageID ?? MessageID(rawValue: 0)
+    }
+
+    func endForumVisit(channelID: ChannelID) {
+        forumSelectionAcknowledgementBoundary[channelID] = nil
+    }
+
+    func isUnopenedForumPost(_ post: ForumPost) -> Bool {
+        entries[post.id]?.hasAuthoritativeReadState != true
+            && presentations[post.id] == nil
+    }
+
+    func isNewForumPost(_ post: ForumPost) -> Bool {
+        guard !post.thread.isArchived,
+              post.thread.parentID.flatMap({ entries[$0]?.kind }) == .forum,
+              isUnopenedForumPost(post),
+              let parentID = post.thread.parentID,
+              let boundary = forumSelectionAcknowledgementBoundary[parentID]
+                ?? entries[parentID]?.lastAcknowledgedMessageID
+        else { return false }
+        return MessageID(rawValue: post.id.rawValue) > boundary
+    }
+
+    func forumNewPostCount(channelID: ChannelID) -> Int {
+        guard let parent = entries[channelID],
+              parent.kind == .forum,
+              parent.hasAuthoritativeReadState
+        else { return 0 }
+        let boundary = parent.lastAcknowledgedMessageID ?? MessageID(rawValue: 0)
+        return entries.values.lazy.filter { entry in
+            entry.parentID == channelID
+                && self.forumPostArchivedByID[entry.channelID] != true
+                && !entry.hasAuthoritativeReadState
+                && MessageID(rawValue: entry.channelID.rawValue) > boundary
+        }.count
+    }
+
+    func shouldAcknowledgeForumVisit(channelID: ChannelID) -> Bool {
+        guard let entry = entries[channelID], entry.kind == .forum else { return false }
+        return entry.isUnread || forumNewPostCount(channelID: channelID) > 0
     }
 
     func updatePresentation(
@@ -427,19 +537,22 @@ final class AccountReadStateModel {
             pendingRollbacks[channelID] = PendingRollback(
                 messageID: max(rollback.messageID, messageID),
                 lastAcknowledgedMessageID: rollback.lastAcknowledgedMessageID,
-                mentionCount: rollback.mentionCount
+                mentionCount: rollback.mentionCount,
+                unreadMessageCount: rollback.unreadMessageCount
             )
         } else {
             pendingRollbacks[channelID] = PendingRollback(
                 messageID: messageID,
                 lastAcknowledgedMessageID: entry.lastAcknowledgedMessageID,
-                mentionCount: entry.mentionCount
+                mentionCount: entry.mentionCount,
+                unreadMessageCount: entry.unreadMessageCount
             )
         }
         entry.lastAcknowledgedMessageID = maximum(entry.lastAcknowledgedMessageID, messageID)
         entry.pendingAcknowledgementID = maximum(entry.pendingAcknowledgementID, messageID)
         if let newest = entry.latestKnownMessageID, messageID >= newest {
             entry.mentionCount = 0
+            entry.unreadMessageCount = 0
         }
         entries[channelID] = entry
     }
@@ -453,11 +566,13 @@ final class AccountReadStateModel {
         pendingRollbacks[channelID] = PendingRollback(
             messageID: messageID,
             lastAcknowledgedMessageID: entry.lastAcknowledgedMessageID,
-            mentionCount: entry.mentionCount
+            mentionCount: entry.mentionCount,
+            unreadMessageCount: entry.unreadMessageCount
         )
         entry.lastAcknowledgedMessageID = messageID
         entry.pendingAcknowledgementID = messageID
         entry.mentionCount = max(0, mentionCount)
+        entry.unreadMessageCount = max(1, entry.unreadMessageCount)
         entries[channelID] = entry
         _ = updatePresentation(
             channelID: channelID,
@@ -495,6 +610,7 @@ final class AccountReadStateModel {
         {
             entry.lastAcknowledgedMessageID = rollback.lastAcknowledgedMessageID
             entry.mentionCount = rollback.mentionCount
+            entry.unreadMessageCount = rollback.unreadMessageCount
             entry.pendingAcknowledgementID = nil
             pendingRollbacks[channelID] = nil
         }
@@ -519,6 +635,13 @@ final class AccountReadStateModel {
               !isGuildResourceChannel(entry)
         else { return 0 }
         return entry.mentionCount
+    }
+
+    func unreadMessageCount(channelID: ChannelID) -> Int {
+        guard let entry = entries[channelID], entry.isAccessible, entry.isUnread else {
+            return 0
+        }
+        return max(1, entry.unreadMessageCount)
     }
 
     func guildUnread(_ guildID: GuildID, now: Date = .now) -> Bool {
@@ -644,6 +767,7 @@ final class AccountReadStateModel {
             latestUnreadMessageID: channel?.lastMessageID,
             lastAcknowledgedMessageID: nil,
             mentionCount: 0,
+            unreadMessageCount: 0,
             pendingAcknowledgementID: nil,
             flags: nil,
             lastViewed: nil,

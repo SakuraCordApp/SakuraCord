@@ -76,6 +76,90 @@ import Testing
     #expect(!ForumThreadResolutionURLProtocol.hadBody)
 }
 
+@Test func `thread create advances the forum parent last message boundary`() async throws {
+    let provider = DiscordRESTProvider(
+        credentials: ForumPostDeletionCredentialStore(),
+        handle: CredentialHandle(accountID: "forum-thread-create")
+    )
+    let forum = Channel(
+        id: ChannelID(rawValue: 7),
+        guildID: GuildID(rawValue: 1),
+        name: "forum",
+        kind: .forum,
+        lastMessageID: MessageID(rawValue: 100)
+    )
+    await provider.seedForumChannelForTesting(forum)
+
+    await provider.receiveGatewayDispatchForTesting(
+        name: "THREAD_CREATE",
+        data: .object([
+            "id": .string("200"),
+            "guild_id": .string("1"),
+            "parent_id": .string("7"),
+            "name": .string("New post"),
+            "type": .number(11),
+            "last_message_id": .string("200"),
+            "message_count": .number(1),
+            "member_count": .number(1),
+            "thread_metadata": .object([
+                "archived": .bool(false),
+                "locked": .bool(false),
+            ]),
+        ])
+    )
+
+    #expect(
+        await provider.cachedChannelForTesting(channelID: forum.id)?.lastMessageID
+            == MessageID(rawValue: 200)
+    )
+    await provider.disconnect()
+}
+
+@Test func `thread list sync advances the forum parent last message boundary`() async throws {
+    let provider = DiscordRESTProvider(
+        credentials: ForumPostDeletionCredentialStore(),
+        handle: CredentialHandle(accountID: "forum-thread-list-sync")
+    )
+    let forum = Channel(
+        id: ChannelID(rawValue: 7),
+        guildID: GuildID(rawValue: 1),
+        name: "forum",
+        kind: .forum,
+        lastMessageID: MessageID(rawValue: 100)
+    )
+    await provider.seedForumChannelForTesting(forum)
+
+    await provider.receiveGatewayDispatchForTesting(
+        name: "THREAD_LIST_SYNC",
+        data: .object([
+            "guild_id": .string("1"),
+            "channel_ids": .array([.string("7")]),
+            "threads": .array([
+                .object([
+                    "id": .string("250"),
+                    "guild_id": .string("1"),
+                    "parent_id": .string("7"),
+                    "name": .string("Synced post"),
+                    "type": .number(11),
+                    "last_message_id": .string("250"),
+                    "message_count": .number(1),
+                    "member_count": .number(1),
+                    "thread_metadata": .object([
+                        "archived": .bool(false),
+                        "locked": .bool(false),
+                    ]),
+                ])
+            ]),
+        ])
+    )
+
+    #expect(
+        await provider.cachedChannelForTesting(channelID: forum.id)?.lastMessageID
+            == MessageID(rawValue: 250)
+    )
+    await provider.disconnect()
+}
+
 @Test func `forum creation sends one nested thread payload with stable tag order`() async throws {
     ForumPostCreationURLProtocol.reset()
     let configuration = URLSessionConfiguration.ephemeral
@@ -745,6 +829,14 @@ import Testing
 
     #expect(await provider.cachedForumPostForTesting(threadID: incomingPost.id)?.isUnread == true)
     #expect(await provider.cachedForumPostForTesting(threadID: ownPost.id)?.isUnread == false)
+    #expect(
+        await provider.cachedForumPostForTesting(threadID: incomingPost.id)?
+            .thread.messageCount == incomingPost.thread.messageCount + 1
+    )
+    #expect(
+        await provider.cachedForumPostForTesting(threadID: ownPost.id)?
+            .thread.messageCount == ownPost.thread.messageCount + 1
+    )
     await provider.disconnect()
 }
 

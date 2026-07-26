@@ -220,6 +220,10 @@ implementation records.
   centrally scheduled mutations with no automatic retry.
 - Opening a known thread/post is local; an unknown thread URL uses one Get
   Channel read before the ordinary thread-history load.
+- A forum channel's `last_message_id` is its newest thread ID. Because Discord
+  does not send a parent `CHANNEL_UPDATE` for that change, `THREAD_CREATE` and
+  `THREAD_LIST_SYNC` advance the cached parent boundary before unread
+  presentation is recomputed.
 
 ### Slash commands
 
@@ -259,13 +263,14 @@ implementation records.
 
 ### Unread state, acknowledgements, and notifications
 
-The durable baseline was rechecked on 2026-07-25 against Paicord revision
+The durable baseline was rechecked on 2026-07-27 against Paicord revision
 `694761c1938b73bb60bd58942674dfe73aab1135`, Swiftcord v1 revision
 `14465d927ebe1ba34b3befa00f9365fad7b56eb9`, current Discord desktop
-presentation and public web assets, and Discord's public message, guild, and
-notification-setting documentation. The desktop-host caveat in the evidence
-snapshot still applies; no authenticated traffic was intercepted for this
-recheck.
+presentation, clean public web build 582977, and Discord's public message,
+guild, thread, and notification-setting documentation. The desktop-host caveat
+in the evidence snapshot still applies; no authenticated traffic was
+intercepted for this recheck. Paicord and Swiftcord v1 have no comparable forum
+new-post implementation.
 
 - Account-scoped channel read state combines Ready `read_state` with each
   channel's authoritative `last_message_id`. Message and acknowledgement
@@ -294,6 +299,16 @@ recheck.
   message is visible/followed, and the main window is active. An unread
   conversation initially presents its first loaded unread message, so selection
   alone does not acknowledge it.
+- Forum selection is the deliberate exception to ordinary timeline
+  acknowledgement. Once the active forum catalogue is available, a forum with
+  unseen thread IDs sends one immediate parent `POST
+  /channels/{forum_id}/messages/{current_time_snowflake}/ack`, matching the
+  official client's `ACK_FORUM_ACTIVE_THREADS` path. The selection first
+  snapshots the preceding parent acknowledgement so posts created after that
+  boundary retain their `NEW` badge for the visit. The parent mutation clears
+  the channel's `N New` state but never changes a child thread's independent
+  unread-reply boundary. The mutation has one attempt and is not repeated by
+  warm rerenders or pagination.
 - A read acknowledgement waits 1.5 seconds and sends one `POST
   /channels/{channel_id}/messages/{message_id}/ack`. Its JSON body includes the
   calculated guild/thread read-state `flags` and `last_viewed` day relative to

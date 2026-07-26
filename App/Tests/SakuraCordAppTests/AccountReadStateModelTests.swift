@@ -140,6 +140,202 @@ struct AccountReadStateModelTests {
         #expect(!model.guildUnread(guildID))
     }
 
+    @Test func `forum visit acknowledges new posts without clearing unread replies`() {
+        let newPostID = ChannelID(rawValue: 300)
+        let unreadPostID = ChannelID(rawValue: 240)
+        let model = AccountReadStateModel()
+        model.configure(
+            accountID: "account",
+            guilds: [
+                Guild(
+                    id: guildID,
+                    name: "Guild",
+                    defaultMessageNotifications: .allMessages
+                )
+            ],
+            channels: [
+                Channel(
+                    id: channelID,
+                    guildID: guildID,
+                    name: "forum",
+                    kind: .forum,
+                    lastMessageID: MessageID(rawValue: newPostID.rawValue)
+                )
+            ],
+            readStates: [
+                ChannelReadState(
+                    channelID: channelID,
+                    lastAcknowledgedMessageID: MessageID(rawValue: 250)
+                ),
+                ChannelReadState(
+                    channelID: unreadPostID,
+                    lastAcknowledgedMessageID: MessageID(rawValue: 450)
+                ),
+            ],
+            notificationSettings: []
+        )
+        model.merge(
+            thread: MessageThreadSummary(
+                id: unreadPostID,
+                guildID: guildID,
+                parentID: channelID,
+                name: "Unread replies",
+                lastMessageID: MessageID(rawValue: 500)
+            )
+        )
+        let newPost = ForumPost(
+            thread: MessageThreadSummary(
+                id: newPostID,
+                guildID: guildID,
+                parentID: channelID,
+                name: "New post",
+                lastMessageID: MessageID(rawValue: newPostID.rawValue)
+            )
+        )
+        model.merge(forumPost: newPost)
+
+        #expect(model.forumNewPostCount(channelID: channelID) == 1)
+        #expect(model.unread(channelID: unreadPostID))
+        #expect(model.unreadMessageCount(channelID: unreadPostID) == 1)
+
+        model.beginForumVisit(channelID: channelID)
+        #expect(model.isNewForumPost(newPost))
+        #expect(model.isUnopenedForumPost(newPost))
+        model.markAcknowledgementPending(
+            channelID: channelID,
+            messageID: MessageID(rawValue: 1_000)
+        )
+
+        #expect(model.forumNewPostCount(channelID: channelID) == 0)
+        #expect(model.isNewForumPost(newPost))
+        #expect(model.unread(channelID: unreadPostID))
+
+        _ = model.updatePresentation(channelID: newPost.id, isPresented: true)
+        #expect(!model.isUnopenedForumPost(newPost))
+        #expect(!model.isNewForumPost(newPost))
+
+        model.endForumVisit(channelID: channelID)
+        #expect(!model.isNewForumPost(newPost))
+    }
+
+    @Test func `forum visit preserves new badges when the prior parent boundary is null`() {
+        let newPostID = ChannelID(rawValue: 300)
+        let model = AccountReadStateModel()
+        model.configure(
+            accountID: "account",
+            guilds: [
+                Guild(
+                    id: guildID,
+                    name: "Guild",
+                    defaultMessageNotifications: .allMessages
+                )
+            ],
+            channels: [
+                Channel(
+                    id: channelID,
+                    guildID: guildID,
+                    name: "forum",
+                    kind: .forum,
+                    lastMessageID: MessageID(rawValue: newPostID.rawValue)
+                )
+            ],
+            readStates: [
+                ChannelReadState(
+                    channelID: channelID,
+                    lastAcknowledgedMessageID: nil
+                )
+            ],
+            notificationSettings: []
+        )
+        let newPost = ForumPost(
+            thread: MessageThreadSummary(
+                id: newPostID,
+                guildID: guildID,
+                parentID: channelID,
+                name: "First unread post",
+                lastMessageID: MessageID(rawValue: newPostID.rawValue)
+            )
+        )
+        model.merge(forumPost: newPost)
+
+        #expect(model.forumNewPostCount(channelID: channelID) == 1)
+        model.beginForumVisit(channelID: channelID)
+        model.markAcknowledgementPending(
+            channelID: channelID,
+            messageID: MessageID(rawValue: 1_000)
+        )
+
+        #expect(model.isNewForumPost(newPost))
+    }
+
+    @Test func `forum catalogue unread state seeds omitted thread read state`() {
+        let threadID = ChannelID(rawValue: 201)
+        let latestMessageID = MessageID(rawValue: 12)
+        let model = AccountReadStateModel()
+        model.reset(accountID: "account")
+        model.setCurrentUserID(currentUser.id)
+        model.configure(
+            accountID: "account",
+            guilds: [
+                Guild(
+                    id: guildID,
+                    name: "Guild",
+                    defaultMessageNotifications: .allMessages
+                )
+            ],
+            channels: [
+                Channel(
+                    id: channelID,
+                    guildID: guildID,
+                    name: "forum",
+                    kind: .forum
+                )
+            ],
+            readStates: [],
+            notificationSettings: []
+        )
+        model.merge(
+            forumPost: ForumPost(
+                thread: MessageThreadSummary(
+                    id: threadID,
+                    guildID: guildID,
+                    parentID: channelID,
+                    name: "Unread post",
+                    messageCount: 4,
+                    lastMessageID: latestMessageID
+                ),
+                isUnread: true
+            )
+        )
+
+        #expect(model.entries[threadID]?.latestKnownMessageID == latestMessageID)
+        #expect(model.unread(channelID: threadID))
+        #expect(model.unreadMessageCount(channelID: threadID) == 3)
+        #expect(model.guildUnread(guildID))
+
+        let reply = Message(
+            id: MessageID(rawValue: 13),
+            channelID: threadID,
+            author: sender,
+            content: "New reply",
+            guildID: guildID
+        )
+        #expect(model.receive(reply, currentUserID: currentUser.id).accepted)
+        #expect(model.unreadMessageCount(channelID: threadID) == 4)
+
+        model.markAcknowledgementPending(
+            channelID: threadID,
+            messageID: reply.id
+        )
+        #expect(!model.unread(channelID: threadID))
+        #expect(model.unreadMessageCount(channelID: threadID) == 0)
+        #expect(!model.guildUnread(guildID))
+
+        model.failAcknowledgement(channelID: threadID, messageID: reply.id)
+        #expect(model.unread(channelID: threadID))
+        #expect(model.unreadMessageCount(channelID: threadID) == 4)
+    }
+
     @Test func `live messages are monotonic and own duplicate and older messages preserve unread`() {
         let model = makeModel(latest: 10, acknowledged: 10)
         let first = model.receive(message(id: 12), currentUserID: currentUser.id)

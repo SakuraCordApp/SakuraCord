@@ -1,6 +1,28 @@
 import SakuraCordModels
 import SwiftUI
 
+nonisolated enum ThreadInitialScrollTarget: Equatable {
+    case firstUnread
+    case newest
+}
+
+nonisolated enum ThreadTimelinePresentationPolicy {
+    static func initialScrollTarget(
+        isForumPost: Bool,
+        hasUnreadReplies: Bool
+    ) -> ThreadInitialScrollTarget {
+        isForumPost || !hasUnreadReplies ? .newest : .firstUnread
+    }
+
+    static func showsNewRepliesButton(
+        isNearBottom: Bool,
+        hasUnreadReplies: Bool,
+        messageCount: Int
+    ) -> Bool {
+        !isNearBottom && hasUnreadReplies && messageCount > 0
+    }
+}
+
 struct ThreadPaneFramePreferenceKey: PreferenceKey {
     static let defaultValue = CGRect.zero
 
@@ -387,7 +409,11 @@ private struct ThreadMessageTimelineView: View {
                     }
                 }
                 .overlay(alignment: .bottom) {
-                    if !isNearBottom, !model.threadMessages.isEmpty {
+                    if ThreadTimelinePresentationPolicy.showsNewRepliesButton(
+                        isNearBottom: isNearBottom,
+                        hasUnreadReplies: unreadSummary != nil,
+                        messageCount: model.threadMessages.count
+                    ) {
                         Button {
                             if let threadID = model.openThread?.id {
                                 model.reportTimelineUserInteraction(channelID: threadID)
@@ -489,23 +515,33 @@ private struct ThreadMessageTimelineView: View {
               let threadID = model.openThread?.id
         else { return }
         didEstablishInitialPosition = true
-        if let summary = unreadSummary {
+        let initialTarget = ThreadTimelinePresentationPolicy.initialScrollTarget(
+            isForumPost: model.selectedChannel?.kind == .forum,
+            hasUnreadReplies: unreadSummary != nil
+        )
+        if initialTarget == .firstUnread, let summary = unreadSummary {
             proxy.scrollTo(summary.firstUnreadMessageID, anchor: .top)
         } else {
             isNearBottom = true
             proxy.scrollTo(bottomID, anchor: .bottom)
         }
         initialPositionTracker.begin(channelID: threadID)
-        resolveInitialPositionAfterLayout(threadID: threadID)
+        resolveInitialPositionAfterLayout(
+            threadID: threadID,
+            assumesNewestPosition: initialTarget == .newest
+        )
     }
 
-    private func resolveInitialPositionAfterLayout(threadID: ChannelID) {
+    private func resolveInitialPositionAfterLayout(
+        threadID: ChannelID,
+        assumesNewestPosition: Bool
+    ) {
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(100))
             guard model.openThread?.id == threadID,
                   let isAtNewest = initialPositionTracker.resolve(
                       channelID: threadID,
-                      actualIsAtNewest: isNearBottom
+                      actualIsAtNewest: assumesNewestPosition || isNearBottom
                   )
             else { return }
             model.reportTimelineInitialPosition(

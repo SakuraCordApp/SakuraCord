@@ -325,6 +325,9 @@ import Testing
     model.selectedChannelID = forum.id
     #expect(!model.isLoadingForumPosts)
     #expect(await eventuallyOnMain { model.hasLoadedForumPosts && !model.forumPosts.isEmpty })
+    let unreadPosts = model.forumPosts.filter(\.isUnread)
+    #expect(!unreadPosts.isEmpty)
+    #expect(unreadPosts.allSatisfy { model.isForumPostUnread($0) })
     #expect(model.forumPosts.contains { $0.thread.isLocked })
     #expect(!model.forumRecentPosts.isEmpty)
     #expect(!model.forumOlderPosts.isEmpty)
@@ -660,6 +663,41 @@ import Testing
     #expect(model.forumPaginationError == nil)
     #expect(!model.hasMoreForumPosts)
     #expect(await provider.paginationRequestCount() == 2)
+}
+
+@MainActor
+@Test func `opening a forum acknowledges only the parent new post boundary`() async throws {
+    let provider = ForumVisitAcknowledgementTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+
+    #expect(
+        await eventuallyOnMain {
+            model.hasLoadedForumPosts && model.forumPosts.count == 2
+        }
+    )
+    for _ in 0 ..< 40 where await provider.acknowledgements().isEmpty {
+        try await Task.sleep(for: .milliseconds(25))
+    }
+    let acknowledgement = try #require(await provider.acknowledgements().first)
+    #expect(acknowledgement.channelID == provider.forumID)
+    #expect(acknowledgement.messageID.rawValue > provider.newPostID.rawValue)
+    #expect(await provider.acknowledgements().count == 1)
+
+    let newPost = try #require(model.forumPosts.first(where: { $0.id == provider.newPostID }))
+    let unreadPost = try #require(
+        model.forumPosts.first(where: { $0.id == provider.unreadPostID })
+    )
+    #expect(model.isForumPostNew(newPost))
+    #expect(!model.isForumPostUnread(newPost))
+    #expect(model.shouldEmphasizeForumPost(newPost))
+    #expect(model.isForumPostUnread(unreadPost))
+    #expect(model.shouldEmphasizeForumPost(unreadPost))
+    #expect(!model.isChannelUnread(provider.forumID))
+
+    model.open(newPost)
+    #expect(!model.isForumPostNew(newPost))
+    #expect(!model.shouldEmphasizeForumPost(newPost))
 }
 
 @MainActor
@@ -2011,6 +2049,145 @@ private actor StartupUnreadTestProvider: ChatProvider {
     }
 
     func disconnect() async {}
+}
+
+private actor ForumVisitAcknowledgementTestProvider: ChatProvider {
+    struct Acknowledgement: Sendable {
+        var channelID: ChannelID
+        var messageID: MessageID
+    }
+
+    nonisolated let forumID = ChannelID(rawValue: 96_002)
+    nonisolated let newPostID = ChannelID(rawValue: 96_300)
+    nonisolated let unreadPostID = ChannelID(rawValue: 96_240)
+    private let guild = Guild(id: GuildID(rawValue: 96_000), name: "Forum Visits")
+    private let user = User(
+        id: UserID(rawValue: 96_001),
+        username: "forum-visitor",
+        displayName: "Forum Visitor"
+    )
+    private var recordedAcknowledgements: [Acknowledgement] = []
+
+    private var forum: Channel {
+        Channel(
+            id: forumID,
+            guildID: guild.id,
+            name: "forum",
+            kind: .forum,
+            lastMessageID: MessageID(rawValue: newPostID.rawValue)
+        )
+    }
+
+    private var posts: [ForumPost] {
+        [
+            ForumPost(
+                thread: MessageThreadSummary(
+                    id: newPostID,
+                    guildID: guild.id,
+                    parentID: forumID,
+                    name: "Brand new",
+                    lastMessageID: MessageID(rawValue: newPostID.rawValue)
+                )
+            ),
+            ForumPost(
+                thread: MessageThreadSummary(
+                    id: unreadPostID,
+                    guildID: guild.id,
+                    parentID: forumID,
+                    name: "Unread replies",
+                    lastMessageID: MessageID(rawValue: 96_500)
+                ),
+                isUnread: true
+            ),
+        ]
+    }
+
+    func bootstrap() async throws -> BootstrapSnapshot {
+        BootstrapSnapshot(
+            currentUser: user,
+            guilds: [guild],
+            channels: [forum],
+            members: [],
+            readStates: [
+                ChannelReadState(
+                    channelID: forumID,
+                    lastAcknowledgedMessageID: MessageID(rawValue: 96_250)
+                ),
+                ChannelReadState(
+                    channelID: unreadPostID,
+                    lastAcknowledgedMessageID: MessageID(rawValue: 96_450)
+                ),
+            ]
+        )
+    }
+
+    func channels(in guildID: GuildID?) async throws -> [Channel] {
+        guildID == guild.id ? [forum] : []
+    }
+
+    func members(in guildID: GuildID?) async throws -> [Member] {
+        []
+    }
+
+    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
+        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
+    }
+
+    func currentStatus() async -> PresenceStatus {
+        .online
+    }
+
+    func updateStatus(_ status: PresenceStatus) async throws {}
+
+    func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
+        -> MessagePage
+    {
+        MessagePage(messages: [], hasMoreBefore: false)
+    }
+
+    func forumPosts(in channelID: ChannelID, query: ForumPostQuery) async throws
+        -> ForumPostPage
+    {
+        guard channelID == forumID else { throw ChatProviderError.channelNotFound }
+        return ForumPostPage(posts: posts, hasMore: false, nextOffset: nil)
+    }
+
+    func acknowledge(
+        channelID: ChannelID,
+        messageID: MessageID,
+        token: String?
+    ) async throws -> ReadAcknowledgementResponse {
+        recordedAcknowledgements.append(
+            Acknowledgement(channelID: channelID, messageID: messageID)
+        )
+        return ReadAcknowledgementResponse(token: token)
+    }
+
+    func send(_ draft: SendMessageDraft) async throws -> Message {
+        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
+    }
+
+    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message {
+        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
+    }
+
+    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
+
+    func toggleReaction(
+        _ emoji: String,
+        messageID: MessageID,
+        channelID: ChannelID
+    ) async throws {}
+
+    func eventStream() async -> AsyncStream<ClientEvent> {
+        AsyncStream { $0.finish() }
+    }
+
+    func disconnect() async {}
+
+    func acknowledgements() -> [Acknowledgement] {
+        recordedAcknowledgements
+    }
 }
 
 private actor ForumPaginationTestProvider: ChatProvider {

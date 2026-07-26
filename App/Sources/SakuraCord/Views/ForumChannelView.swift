@@ -731,18 +731,23 @@ private struct ForumListPostCard: View {
                         .allowsHitTesting(false)
 
                     VStack(alignment: .leading, spacing: 7) {
-                        Text(post.thread.name)
-                            .font(
-                                .title3.weight(
-                                    model.isChannelUnread(post.id) ? .bold : .semibold
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(post.thread.name)
+                                .font(.title3.weight(.semibold))
+                                .foregroundStyle(
+                                    model.shouldEmphasizeForumPost(post) ? .primary : .secondary
                                 )
-                            )
-                            .foregroundStyle(.primary)
-                            .lineLimit(2)
-                        if let previewMessage, !previewMessage.content.isEmpty {
-                            Text(.init(previewMessage.content))
-                                .foregroundStyle(.secondary)
                                 .lineLimit(2)
+                            if model.isForumPostNew(post) {
+                                ForumPostNewBadge()
+                            }
+                        }
+                        if let starterMessage, !starterMessage.content.isEmpty {
+                            ForumPostStarterExcerpt(
+                                presentation: model.authorPresentation(for: starterMessage),
+                                content: starterMessage.content,
+                                isEmphasized: model.shouldEmphasizeForumPost(post)
+                            )
                         }
                     }
                     .padding(.trailing, attachmentTrailingInset)
@@ -761,8 +766,8 @@ private struct ForumListPostCard: View {
         }
     }
 
-    private var previewMessage: Message? {
-        post.mostRecentMessage ?? post.firstMessage
+    private var starterMessage: Message? {
+        post.firstMessage
     }
 
     private var attachmentTrailingInset: CGFloat {
@@ -776,10 +781,17 @@ private struct ForumPostListAttachment: View {
     let attachment: Attachment
 
     var body: some View {
-        ForumPostAttachmentPreview(
-            attachment: attachment,
-            maximumPixelDimension: Int(ForumPostCardMetrics.listAttachmentSize * 2)
-        )
+        ZStack {
+            Color.clear
+            ForumPostAttachmentPreview(
+                attachment: attachment,
+                maximumPixelDimension: Int(ForumPostCardMetrics.listAttachmentSize * 2)
+            )
+            .frame(
+                width: ForumPostCardMetrics.listAttachmentSize,
+                height: ForumPostCardMetrics.listAttachmentSize
+            )
+        }
         .frame(
             width: ForumPostCardMetrics.listAttachmentSize,
             height: ForumPostCardMetrics.listAttachmentSize
@@ -803,16 +815,19 @@ private struct ForumGalleryPostCard: View {
             VStack(alignment: .leading, spacing: 9) {
                 ForumGalleryPostHeader(model: model, post: post)
 
-                Text(post.thread.name)
-                    .font(
-                        .title3.weight(
-                            model.isChannelUnread(post.id) ? .bold : .semibold
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(post.thread.name)
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(
+                            model.shouldEmphasizeForumPost(post) ? .primary : .secondary
                         )
-                    )
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, minHeight: 48, alignment: .topLeading)
-                    .allowsHitTesting(false)
+                        .lineLimit(2)
+                    if model.isForumPostNew(post) {
+                        ForumPostNewBadge()
+                    }
+                }
+                .frame(maxWidth: .infinity, minHeight: 48, alignment: .topLeading)
+                .allowsHitTesting(false)
 
                 ForumPostGalleryHero(model: model, channel: channel, post: post)
                     .allowsHitTesting(false)
@@ -825,12 +840,38 @@ private struct ForumGalleryPostCard: View {
     }
 }
 
+private struct ForumPostNewBadge: View {
+    var body: some View {
+        Text("NEW")
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(Color(hex: 0x5865F2))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Color(hex: 0xC9D2FF), in: Capsule())
+            .fixedSize()
+            .accessibilityLabel("New post")
+    }
+}
+
 private struct ForumGalleryPostHeader: View {
     let model: AppModel
     let post: ForumPost
 
     var body: some View {
         HStack(spacing: 7) {
+            if let starterMessage = post.firstMessage {
+                ForumPostAuthorName(
+                    presentation: model.authorPresentation(for: starterMessage)
+                )
+                Text("•")
+                    .foregroundStyle(.tertiary)
+            } else if let owner = post.owner {
+                ForumPostAuthorName(
+                    presentation: MessageAuthorPresentation(user: owner, roleColorHex: nil)
+                )
+                Text("•")
+                    .foregroundStyle(.tertiary)
+            }
             ForumTimestampLabel(
                 date: post.createdAt,
                 exactPrefix: "Posted",
@@ -865,7 +906,9 @@ private struct ForumPostGalleryHero: View {
             } else if let previewMessage, !previewMessage.content.isEmpty {
                 Text(.init(previewMessage.content))
                     .font(.body)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(
+                        model.shouldEmphasizeForumPost(post) ? .primary : .secondary
+                    )
                     .lineLimit(8)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .padding(16)
@@ -875,13 +918,6 @@ private struct ForumPostGalleryHero: View {
                     .foregroundStyle(.tertiary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-
-            LinearGradient(
-                colors: [.clear, .black.opacity(0.72)],
-                startPoint: .center,
-                endPoint: .bottom
-            )
-            .frame(height: 72)
 
             ForumPostAppliedTags(
                 model: model,
@@ -911,9 +947,6 @@ private struct ForumPostStatusRow: View {
 
     var body: some View {
         HStack(spacing: 7) {
-            if model.isChannelUnread(post.id) {
-                Circle().fill(Color.accentColor).frame(width: 8, height: 8)
-            }
             if post.thread.isPinned {
                 Image(systemName: "pin.fill")
                     .foregroundStyle(.secondary)
@@ -927,6 +960,55 @@ private struct ForumPostStatusRow: View {
             ForumPostAppliedTags(model: model, channel: channel, post: post)
             Spacer(minLength: 6)
         }
+    }
+}
+
+private struct ForumPostAuthorName: View {
+    let presentation: MessageAuthorPresentation
+
+    var body: some View {
+        Text(presentation.user.displayName)
+            .fontWeight(.semibold)
+            .foregroundStyle(nameColor)
+            .lineLimit(1)
+            .accessibilityLabel("Posted by \(presentation.user.displayName)")
+    }
+
+    private var nameColor: Color {
+        if presentation.user.isBot { return .accentColor }
+        return presentation.roleColorHex.map(Color.init(hex:)) ?? .primary
+    }
+}
+
+private struct ForumPostStarterExcerpt: View {
+    let presentation: MessageAuthorPresentation
+    let content: String
+    let isEmphasized: Bool
+
+    var body: some View {
+        let messageColor: Color = isEmphasized ? .primary : .secondary
+        Text(
+            "\(Text(presentation.user.displayName).fontWeight(.semibold).foregroundColor(nameColor))\(Text(": ").foregroundColor(messageColor))\(Text(.init(content)).foregroundColor(messageColor))"
+        )
+        .lineLimit(2)
+        .accessibilityLabel("\(presentation.user.displayName): \(content)")
+    }
+
+    private var nameColor: Color {
+        if presentation.user.isBot { return .accentColor }
+        return presentation.roleColorHex.map(Color.init(hex:)) ?? .primary
+    }
+}
+
+nonisolated enum ForumPostCardEmphasis: Equatable {
+    case standard
+    case selected
+}
+
+nonisolated enum ForumPostCardPresentationPolicy {
+    static func emphasis(isSelected: Bool, isUnread _: Bool) -> ForumPostCardEmphasis {
+        if isSelected { return .selected }
+        return .standard
     }
 }
 
@@ -977,8 +1059,7 @@ private struct ForumPostListFooter: View {
     var body: some View {
         HStack(spacing: 12) {
             ForumPostSummaryReactionPill(model: model, channel: channel, post: post)
-            Label("\(post.replyCount)", systemImage: "bubble.left.fill")
-                .allowsHitTesting(false)
+            ForumPostReplyCount(model: model, post: post)
             ForumTimestampLabel(
                 date: post.lastActivityAt,
                 exactPrefix: "Last activity",
@@ -998,13 +1079,45 @@ private struct ForumPostGalleryFooter: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Label("\(post.replyCount)", systemImage: "bubble.left.fill")
-                .allowsHitTesting(false)
+            ForumPostReplyCount(model: model, post: post)
             Spacer()
             ForumPostSummaryReactionPill(model: model, channel: channel, post: post)
         }
         .font(.callout)
         .foregroundStyle(.secondary)
+    }
+}
+
+private struct ForumPostReplyCount: View {
+    let model: AppModel
+    let post: ForumPost
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "bubble.left.fill")
+            Text(post.replyCount.formatted())
+            if unreadCount > 0 {
+                Text("(\(unreadCount.formatted()) New)")
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color.accentColor)
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityText)
+    }
+
+    private var unreadCount: Int {
+        model.forumUnreadMessageCount(post)
+    }
+
+    private var accessibilityText: String {
+        let replies = post.replyCount == 1 ? "reply" : "replies"
+        guard unreadCount > 0 else {
+            return "\(post.replyCount) \(replies)"
+        }
+        let messages = unreadCount == 1 ? "new message" : "new messages"
+        return "\(post.replyCount) \(replies), \(unreadCount) \(messages)"
     }
 }
 
@@ -1099,6 +1212,10 @@ private struct ForumPostCardChrome<Content: View>: View {
     }
 
     var body: some View {
+        let emphasis = ForumPostCardPresentationPolicy.emphasis(
+            isSelected: model.openThread?.id == post.id,
+            isUnread: model.isForumPostUnread(post)
+        )
         content
             .frame(maxWidth: .infinity, alignment: .leading)
             .background {
@@ -1110,7 +1227,7 @@ private struct ForumPostCardChrome<Content: View>: View {
                         style: .continuous
                     )
                     .fill(
-                        model.openThread?.id == post.id
+                        emphasis == .selected
                             ? Color.primary.opacity(0.055)
                             : Color.clear
                     )
@@ -1123,6 +1240,7 @@ private struct ForumPostCardChrome<Content: View>: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(post.thread.name)
+                .accessibilityValue(model.shouldEmphasizeForumPost(post) ? "Unread" : "Read")
                 .accessibilityHint("Opens this post as a thread")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1132,7 +1250,7 @@ private struct ForumPostCardChrome<Content: View>: View {
                     style: .continuous
                 )
                 .stroke(
-                    model.openThread?.id == post.id
+                    emphasis == .selected
                         ? Color.primary.opacity(0.24)
                         : Color(nsColor: .separatorColor),
                     lineWidth: 1
@@ -2162,6 +2280,7 @@ private struct ForumPostAttachmentPreview: View {
                     fallbackSystemImage: "photo",
                     maximumPixelDimension: maximumPixelDimension
                 )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .video:
                 ForumPostFilePreview(systemImage: "play.rectangle.fill", filename: attachment.filename)
             case .audio:

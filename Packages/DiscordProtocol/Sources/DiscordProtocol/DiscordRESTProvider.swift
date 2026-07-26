@@ -1198,8 +1198,15 @@ public actor DiscordRESTProvider: ChatProvider {
 
     private func ingestForumThreads(
         _ threadDTOs: [ChannelDTO], fallbackGuildID: GuildID?,
-        replacingParents: Set<ChannelID>? = nil
+        replacingParents: Set<ChannelID>? = nil,
+        advancesParentLatestThreadID: Bool = false
     ) {
+        if advancesParentLatestThreadID {
+            advanceForumParentLatestThreadIDs(
+                threadDTOs,
+                fallbackGuildID: fallbackGuildID
+            )
+        }
         if let replacingParents {
             for parentID in replacingParents {
                 cachedForumPosts[parentID] = cachedForumPosts[parentID, default: [:]].filter {
@@ -1239,6 +1246,34 @@ public actor DiscordRESTProvider: ChatProvider {
         }
     }
 
+    private func advanceForumParentLatestThreadIDs(
+        _ threadDTOs: [ChannelDTO],
+        fallbackGuildID: GuildID?
+    ) {
+        var changedGuildIDs = Set<GuildID>()
+        for dto in threadDTOs {
+            guard let parentID = dto.parentID.flatMap(ChannelID.init),
+                  let threadID = MessageID(dto.id),
+                  let guildID = dto.guildID.flatMap(GuildID.init) ?? fallbackGuildID,
+                  var channels = cachedChannels[guildID],
+                  let index = channels.firstIndex(where: { $0.id == parentID }),
+                  channels[index].kind == .forum,
+                  channels[index].lastMessageID.map({ $0 < threadID }) ?? true
+            else { continue }
+            channels[index].lastMessageID = threadID
+            cachedChannels[guildID] = channels
+            changedGuildIDs.insert(guildID)
+        }
+        for guildID in changedGuildIDs {
+            continuation?.yield(
+                .channelsChanged(
+                    guildID: guildID,
+                    channels: cachedChannels[guildID] ?? []
+                )
+            )
+        }
+    }
+
     nonisolated static func shouldPreserveForumPostDuringThreadListReplacement(
         _ post: ForumPost
     ) -> Bool {
@@ -1252,12 +1287,20 @@ public actor DiscordRESTProvider: ChatProvider {
     ) {
         for (parentID, posts) in cachedForumPosts {
             guard var post = posts[message.channelID] else { continue }
+            let isNewerReply =
+                marksUnread
+                && message.id.rawValue != post.id.rawValue
+                && (post.thread.lastMessageID.map { message.id > $0 } ?? true)
             if message.id.rawValue == post.id.rawValue || post.firstMessage?.id == message.id {
                 post.firstMessage = message
             }
             if post.mostRecentMessage == nil || message.timestamp >= post.lastActivityAt {
                 post.mostRecentMessage = message
                 post.thread.lastMessageID = message.id
+            }
+            if isNewerReply {
+                post.thread.messageCount += 1
+                post.thread.totalMessageSent += 1
             }
             if marksUnread,
                message.author.id != currentUser?.id,
@@ -2210,6 +2253,17 @@ public actor DiscordRESTProvider: ChatProvider {
             applyGatewayReactionUpdate(update)
         }
 
+        func receiveGatewayDispatchForTesting(name: String, data: JSONValue) async {
+            guard let encoded = try? JSONEncoder().encode(data),
+                  let body = try? JSONSerialization.jsonObject(with: encoded)
+            else { return }
+            await handleGatewayDispatch(name: name, body: body)
+        }
+
+        func cachedChannelForTesting(channelID: ChannelID) -> Channel? {
+            cachedChannels.values.lazy.flatMap { $0 }.first { $0.id == channelID }
+        }
+
         func cachedForumPostForTesting(threadID: ChannelID) -> ForumPost? {
             cachedForumPosts.values.lazy.compactMap { $0[threadID] }.first
         }
@@ -2524,7 +2578,11 @@ public actor DiscordRESTProvider: ChatProvider {
                         cachedGuildRoles[guildID] = guild.roles
                     }
                     if !guild.threads.isEmpty {
-                        ingestForumThreads(guild.threads, fallbackGuildID: guildID)
+                        ingestForumThreads(
+                            guild.threads,
+                            fallbackGuildID: guildID,
+                            advancesParentLatestThreadID: true
+                        )
                     }
                     if let guildID, !guild.members.isEmpty {
                         let members = guild.members.compactMap {
@@ -2638,7 +2696,11 @@ public actor DiscordRESTProvider: ChatProvider {
                 }
                 if !catalog.roles.isEmpty { cachedGuildRoles[guildID] = catalog.roles }
                 if !catalog.threads.isEmpty {
-                    ingestForumThreads(catalog.threads, fallbackGuildID: guildID)
+                    ingestForumThreads(
+                        catalog.threads,
+                        fallbackGuildID: guildID,
+                        advancesParentLatestThreadID: true
+                    )
                 }
                 if !catalog.members.isEmpty {
                     let members = catalog.members.compactMap {
@@ -2698,7 +2760,14 @@ public actor DiscordRESTProvider: ChatProvider {
                 continuation?.yield(.messageCreated(message))
                 updateForumPostForMessage(message, marksUnread: true)
             }
-        case "THREAD_CREATE", "THREAD_UPDATE":
+        case "THREAD_CREATE":
+            guard let dto = try? JSONDecoder().decode(ChannelDTO.self, from: data) else { return }
+            ingestForumThreads(
+                [dto],
+                fallbackGuildID: dto.guildID.flatMap(GuildID.init),
+                advancesParentLatestThreadID: true
+            )
+        case "THREAD_UPDATE":
             guard let dto = try? JSONDecoder().decode(ChannelDTO.self, from: data) else { return }
             ingestForumThreads([dto], fallbackGuildID: dto.guildID.flatMap(GuildID.init))
         case "THREAD_DELETE":
@@ -2715,7 +2784,8 @@ public actor DiscordRESTProvider: ChatProvider {
             let parents = Set(sync.channelIDs.compactMap(ChannelID.init))
             ingestForumThreads(
                 sync.threads, fallbackGuildID: guildID,
-                replacingParents: parents.isEmpty ? nil : parents
+                replacingParents: parents.isEmpty ? nil : parents,
+                advancesParentLatestThreadID: true
             )
         case "MESSAGE_ACK":
             guard let ack = try? JSONDecoder().decode(GatewayMessageAckDTO.self, from: data),

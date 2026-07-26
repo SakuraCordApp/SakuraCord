@@ -502,6 +502,11 @@ private struct ChannelRow: View {
                     .font(.caption)
                     .foregroundStyle(.green)
             }
+            if channel.kind == .forum, channel.unreadCount > 0 {
+                Text("\(channel.unreadCount) New")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color(hex: 0x5865F2))
+            }
             if channel.mentionCount > 0 {
                 Text(channel.mentionCount, format: .number)
                     .font(.caption2.bold())
@@ -531,7 +536,15 @@ private struct ChannelRow: View {
 
     private var accessibilityValue: String {
         var values: [String] = []
-        if channel.unreadCount > 0 { values.append("Unread") }
+        if channel.kind == .forum, channel.unreadCount > 0 {
+            values.append(
+                channel.unreadCount == 1
+                    ? "1 new post"
+                    : "\(channel.unreadCount) new posts"
+            )
+        } else if channel.unreadCount > 0 {
+            values.append("Unread")
+        }
         if channel.mentionCount > 0 {
             values.append(
                 channel.mentionCount == 1

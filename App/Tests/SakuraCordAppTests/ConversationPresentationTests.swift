@@ -281,6 +281,66 @@ import Testing
     )
 }
 
+@Test func `forum posts begin at newest so opening them clears unread replies`() {
+    #expect(
+        ThreadTimelinePresentationPolicy.initialScrollTarget(
+            isForumPost: true,
+            hasUnreadReplies: true
+        ) == .newest
+    )
+    #expect(
+        ThreadTimelinePresentationPolicy.initialScrollTarget(
+            isForumPost: false,
+            hasUnreadReplies: true
+        ) == .firstUnread
+    )
+    #expect(
+        ThreadTimelinePresentationPolicy.initialScrollTarget(
+            isForumPost: false,
+            hasUnreadReplies: false
+        ) == .newest
+    )
+}
+
+@Test func `new replies button requires actual unread replies below the viewport`() {
+    #expect(
+        ThreadTimelinePresentationPolicy.showsNewRepliesButton(
+            isNearBottom: false,
+            hasUnreadReplies: true,
+            messageCount: 2
+        )
+    )
+    #expect(
+        !ThreadTimelinePresentationPolicy.showsNewRepliesButton(
+            isNearBottom: false,
+            hasUnreadReplies: false,
+            messageCount: 2
+        )
+    )
+    #expect(
+        !ThreadTimelinePresentationPolicy.showsNewRepliesButton(
+            isNearBottom: true,
+            hasUnreadReplies: true,
+            messageCount: 2
+        )
+    )
+}
+
+@Test func `forum cards reserve chrome emphasis for selection`() {
+    #expect(
+        ForumPostCardPresentationPolicy.emphasis(isSelected: false, isUnread: false)
+            == .standard
+    )
+    #expect(
+        ForumPostCardPresentationPolicy.emphasis(isSelected: false, isUnread: true)
+            == .standard
+    )
+    #expect(
+        ForumPostCardPresentationPolicy.emphasis(isSelected: true, isUnread: true)
+            == .selected
+    )
+}
+
 @Test func `message author presentation prefers member cache nickname and top colored role`() {
     let user = User(
         id: UserID(rawValue: 1),

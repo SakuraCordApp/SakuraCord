@@ -673,6 +673,7 @@ final class AppModel {
             if let oldValue {
                 lastTypingRequestAt[oldValue] = nil
                 _ = readState.updatePresentation(channelID: oldValue, isPresented: false)
+                readState.endForumVisit(channelID: oldValue)
             }
             selectedChannel =
                 snapshot?.channels.first { $0.id == selectedChannelID }
@@ -696,6 +697,9 @@ final class AppModel {
                 )
             }
             if selectedChannel?.kind == .forum {
+                if let selectedChannelID {
+                    readState.beginForumVisit(channelID: selectedChannelID)
+                }
                 beginForumLoad()
             } else {
                 beginSelectedChannelLoad()
@@ -1616,6 +1620,9 @@ final class AppModel {
             forumPostError = nil
             forumPaginationError = nil
             hasLoadedForumPosts = true
+            if !isSearch, reset {
+                acknowledgeForumVisitIfNeeded(channelID: channelID)
+            }
         } catch {
             guard !Self.isForumLoadCancellation(error) else { return }
             guard selectedChannelID == channelID, forumLoadGeneration == requestGeneration else {
@@ -1635,6 +1642,7 @@ final class AppModel {
 
     private func mergeForumCatalogue(_ posts: [ForumPost]) {
         for incoming in posts {
+            readState.merge(forumPost: incoming)
             let post: ForumPost
             if let index = forumCatalogueIndexByID[incoming.id] {
                 post = forumPostPreservingReactionPresentation(
@@ -1658,6 +1666,7 @@ final class AppModel {
             uniqueKeysWithValues: forumCataloguePosts.map { ($0.id, $0) }
         )
         forumCataloguePosts = posts.map { incoming in
+            readState.merge(forumPost: incoming)
             guard let previous = previousByID[incoming.id] else { return incoming }
             return forumPostPreservingReactionPresentation(incoming, previous: previous)
         }
@@ -1694,12 +1703,19 @@ final class AppModel {
     private func reconcileForumMessage(_ message: Message) {
         guard let index = forumCatalogueIndexByID[message.channelID] else { return }
         var updated = forumCataloguePosts[index]
+        let isNewerReply =
+            updated.thread.lastMessageID.map { message.id > $0 }
+            ?? (message.id.rawValue != updated.id.rawValue)
         if message.id.rawValue == updated.id.rawValue || updated.firstMessage?.id == message.id {
             updated.firstMessage = message
         }
         if updated.mostRecentMessage == nil || message.timestamp >= updated.lastActivityAt {
             updated.mostRecentMessage = message
             updated.thread.lastMessageID = message.id
+        }
+        if isNewerReply {
+            updated.thread.messageCount += 1
+            updated.thread.totalMessageSent += 1
         }
         guard updated != forumCataloguePosts[index] else { return }
         forumCataloguePosts[index] = updated
@@ -1997,6 +2013,7 @@ final class AppModel {
 
     func open(_ post: ForumPost) {
         guard openThread?.id != post.id else { return }
+        readState.merge(forumPost: post)
         openThreadConversation(
             post.thread,
             starter: post.owner ?? post.firstMessage?.author,
@@ -3635,6 +3652,23 @@ final class AppModel {
         readState.unread(channelID: channelID)
     }
 
+    func isForumPostUnread(_ post: ForumPost) -> Bool {
+        readState.entries[post.id]?.isUnread ?? post.isUnread
+    }
+
+    func isForumPostNew(_ post: ForumPost) -> Bool {
+        readState.isNewForumPost(post)
+    }
+
+    func shouldEmphasizeForumPost(_ post: ForumPost) -> Bool {
+        isForumPostUnread(post) || readState.isUnopenedForumPost(post)
+    }
+
+    func forumUnreadMessageCount(_ post: ForumPost) -> Int {
+        guard isForumPostUnread(post) else { return 0 }
+        return readState.unreadMessageCount(channelID: post.id)
+    }
+
     func channelMentionCount(_ channelID: ChannelID) -> Int {
         readState.mentions(channelID: channelID)
     }
@@ -3797,6 +3831,34 @@ final class AppModel {
         scheduleAcknowledgement(channelID: channelID, messageID: target)
     }
 
+    private func acknowledgeForumVisitIfNeeded(channelID: ChannelID, now: Date = .now) {
+        guard selectedChannelID == channelID,
+              selectedChannel?.kind == .forum,
+              readState.shouldAcknowledgeForumVisit(channelID: channelID),
+              let target = Self.forumAcknowledgementBoundary(at: now)
+        else { return }
+        readState.markAcknowledgementPending(channelID: channelID, messageID: target)
+        refreshUnreadPresentation()
+        cancelNativeNotifications(channelID: channelID)
+        enqueueAcknowledgement(
+            channelID: channelID,
+            mutation: readStateMutation(
+                channelID: channelID,
+                messageID: target,
+                manual: false,
+                mentionCount: nil
+            )
+        )
+    }
+
+    private nonisolated static func forumAcknowledgementBoundary(at date: Date) -> MessageID? {
+        let milliseconds = UInt64(max(0, date.timeIntervalSince1970 * 1_000))
+        guard milliseconds >= ClientNonce.discordEpochMilliseconds else { return nil }
+        return MessageID(
+            rawValue: (milliseconds - ClientNonce.discordEpochMilliseconds) << 22
+        )
+    }
+
     private func scheduleAcknowledgement(channelID: ChannelID, messageID: MessageID) {
         if let pending = readState.entries[channelID]?.pendingAcknowledgementID,
            pending >= messageID
@@ -3939,7 +4001,10 @@ final class AppModel {
         reconcileChannelAccessibility(value.channels)
         value.channels = value.channels.map { channel in
             var channel = channel
-            channel.unreadCount = readState.unread(channelID: channel.id) ? 1 : 0
+            channel.unreadCount =
+                channel.kind == .forum
+                ? readState.forumNewPostCount(channelID: channel.id)
+                : (readState.unread(channelID: channel.id) ? 1 : 0)
             channel.mentionCount = readState.mentions(channelID: channel.id)
             return channel
         }
