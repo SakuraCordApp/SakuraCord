@@ -21,3 +21,4 @@ xcuserdata/
 *.mobileprovision
 Package.resolved
 !App/Package.resolved
+*.trace
