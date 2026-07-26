@@ -124,64 +124,23 @@ struct MessageRowView: View, Equatable {
             hasReplyPreview: replyPreview != nil,
             isEditing: isEditing
         )
-        VStack(alignment: .leading, spacing: 0) {
-            if let replyPreview {
-                MessageReplyContext(
-                    model: model,
-                    preview: replyPreview,
-                    isAvailable: isReplyAvailable,
-                    open: { openReply(replyPreview.messageID) }
-                )
-            }
-            if message.type == .chatInputCommand {
-                ApplicationCommandInvocationLine(model: model, message: message)
-            }
-            if message.type.hasGeneratedContent {
-                MessageContent(
-                    model: model,
-                    message: message,
-                    isEditing: $isEditing,
-                    editText: $editText,
-                    save: commitEdit,
-                    cancel: cancelEdit,
-                    react: react,
-                    isReactionPickerPresented: $isInlineReactionPickerPresented
-                )
-                .padding(.leading, 36)
-            } else {
-                HStack(alignment: .top, spacing: 12) {
-                    MessageAvatarColumn(
-                        model: model,
-                        startsGroup: startsGroup,
-                        author: authorPresentation.user,
-                        timestamp: message.timestamp
-                    )
-                    VStack(alignment: .leading, spacing: 4) {
-                        if startsGroup {
-                            MessageAuthorLine(
-                                model: model,
-                                message: message,
-                                author: authorPresentation.user,
-                                roleColorHex: authorPresentation.roleColorHex
-                            )
-                        }
-                        MessageContent(
-                            model: model,
-                            message: message,
-                            isEditing: $isEditing,
-                            editText: $editText,
-                            save: commitEdit,
-                            cancel: cancelEdit,
-                            react: react,
-                            isReactionPickerPresented: $isInlineReactionPickerPresented
-                        )
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.top, highlightInsets.top)
-        .padding(.bottom, highlightInsets.bottom)
+        MessageRowContent(
+            model: model,
+            message: message,
+            authorPresentation: authorPresentation,
+            startsGroup: startsGroup,
+            replyPreview: replyPreview,
+            isReplyAvailable: isReplyAvailable,
+            highlightInsets: highlightInsets,
+            isEditing: $isEditing,
+            editText: $editText,
+            save: commitEdit,
+            cancel: cancelEdit,
+            react: react,
+            openReply: openReply,
+            isReactionPickerPresented: $isInlineReactionPickerPresented
+        )
+        .equatable()
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(isHovering ? Color.primary.opacity(0.055) : .clear)
         .contentShape(Rectangle())
@@ -270,6 +229,101 @@ struct MessageRowView: View, Equatable {
         let value = "https://discord.com/channels/\(guild)/\(message.channelID)/\(message.id)"
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
+    }
+}
+
+/// The expensive half of a message row, deliberately kept independent of hover.
+///
+/// `MessageRowView` re-evaluates its body on every pointer enter and exit,
+/// because the hover tint, action capsule, and `zIndex` all read that state.
+/// Wheel scrolling drags rows under a stationary pointer, so that fires
+/// continuously — and without this split it dragged the whole subtree with it,
+/// down to `SelectableMessageTextView.updateNSView`. Holding the content in a
+/// separate equatable view lets SwiftUI skip it when only hover changed.
+private struct MessageRowContent: View, Equatable {
+    let model: AppModel
+    let message: Message
+    let authorPresentation: MessageAuthorPresentation
+    let startsGroup: Bool
+    let replyPreview: MessageReplyPreview?
+    let isReplyAvailable: Bool
+    let highlightInsets: MessageRowHighlightInsets
+    @Binding var isEditing: Bool
+    @Binding var editText: String
+    let save: () -> Void
+    let cancel: () -> Void
+    let react: (String) -> Void
+    let openReply: (MessageID) -> Void
+    @Binding var isReactionPickerPresented: Bool
+
+    /// Compares the binding *values*, not the bindings, so an edit still
+    /// propagates while a hover change does not.
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.model === rhs.model
+            && lhs.message == rhs.message
+            && lhs.authorPresentation == rhs.authorPresentation
+            && lhs.startsGroup == rhs.startsGroup
+            && lhs.replyPreview == rhs.replyPreview
+            && lhs.isReplyAvailable == rhs.isReplyAvailable
+            && lhs.highlightInsets == rhs.highlightInsets
+            && lhs.isEditing == rhs.isEditing
+            && lhs.editText == rhs.editText
+            && lhs.isReactionPickerPresented == rhs.isReactionPickerPresented
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let replyPreview {
+                MessageReplyContext(
+                    model: model,
+                    preview: replyPreview,
+                    isAvailable: isReplyAvailable,
+                    open: { openReply(replyPreview.messageID) }
+                )
+            }
+            if message.type == .chatInputCommand {
+                ApplicationCommandInvocationLine(model: model, message: message)
+            }
+            if message.type.hasGeneratedContent {
+                content.padding(.leading, 36)
+            } else {
+                HStack(alignment: .top, spacing: 12) {
+                    MessageAvatarColumn(
+                        model: model,
+                        startsGroup: startsGroup,
+                        author: authorPresentation.user,
+                        timestamp: message.timestamp
+                    )
+                    VStack(alignment: .leading, spacing: 4) {
+                        if startsGroup {
+                            MessageAuthorLine(
+                                model: model,
+                                message: message,
+                                author: authorPresentation.user,
+                                roleColorHex: authorPresentation.roleColorHex
+                            )
+                        }
+                        content
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, highlightInsets.top)
+        .padding(.bottom, highlightInsets.bottom)
+    }
+
+    private var content: some View {
+        MessageContent(
+            model: model,
+            message: message,
+            isEditing: $isEditing,
+            editText: $editText,
+            save: save,
+            cancel: cancel,
+            react: react,
+            isReactionPickerPresented: $isReactionPickerPresented
+        )
     }
 }
 
