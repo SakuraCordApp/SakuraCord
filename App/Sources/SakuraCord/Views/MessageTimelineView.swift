@@ -105,13 +105,30 @@ struct MessageTimelineView: View {
                         loadEarlier(using: proxy)
                     }
                 }
+                .onScrollGeometryChange(for: ScrollDiagnosticsSample.self) { geometry in
+                    // Stays constant unless diagnostics are on, so the action
+                    // never fires in an ordinary run.
+                    ScrollDiagnostics.isEnabled
+                        ? ScrollDiagnosticsSample(
+                            contentHeight: geometry.contentSize.height,
+                            contentOffset: geometry.contentOffset.y
+                        )
+                        : ScrollDiagnosticsSample(contentHeight: 0, contentOffset: 0)
+                } action: { _, value in
+                    ScrollDiagnostics.recordGeometry(
+                        height: value.contentHeight,
+                        offset: value.contentOffset
+                    )
+                }
                 .onScrollPhaseChange { oldPhase, newPhase, context in
                     switch newPhase {
                     case .tracking, .interacting, .decelerating:
+                        ScrollDiagnostics.beginScroll(rowCount: model.messageRows.count)
                         scrollPolicy.userScrollBegan()
                     case .idle:
                         switch oldPhase {
                         case .tracking, .interacting, .decelerating:
+                            ScrollDiagnostics.endScroll()
                             let value = TimelineScrollState(geometry: context.geometry)
                             scrollPolicy.userScrollEnded(
                                 isNearBottom: value.isNearBottom

@@ -147,6 +147,7 @@ struct SelectableMessageTextView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> RichMessageNSTextView {
+        ScrollDiagnostics.recordTextViewCreated()
         let textView = RichMessageNSTextView()
         textView.delegate = context.coordinator
         textView.isEditable = false
@@ -254,8 +255,10 @@ struct SelectableMessageTextView: NSViewRepresentable {
             width: width,
             minimumHeight: minimumHeight
         ) {
+            ScrollDiagnostics.recordHeightCacheHit()
             return cached
         }
+        ScrollDiagnostics.recordHeightCacheMiss()
         let value = RichMessageTextMeasurer.height(
             of: attributedValue(for: signature, textView: textView),
             width: width,
@@ -287,6 +290,7 @@ struct SelectableMessageTextView: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ nsView: RichMessageNSTextView, coordinator: Coordinator) {
+        ScrollDiagnostics.recordTextViewDismantled()
         coordinator.cancelEmojiLoads()
         RichMessageSelectionOwnership.remove(nsView)
     }
@@ -460,6 +464,7 @@ private enum RichMessageAttributedText {
         emojiSize: CGFloat,
         mentionPresentations: [String: MentionPresentation]
     ) -> NSAttributedString {
+        ScrollDiagnostics.recordAttributedStringBuilt()
         let document = MessageDocumentCache.shared.document(for: source)
         var transformed = ""
         var tokens: [InlineToken] = []
