@@ -100,12 +100,17 @@ struct MessageMentionResolver {
         self.message = message
     }
 
+    /// Resolves entirely from indexed stores.
+    ///
+    /// This previously scanned `model.messages` and `model.threadMessages`,
+    /// which was an O(messages) walk per mention per render and an observation
+    /// dependency on the timeline, so every new message re-rendered every
+    /// mention-bearing row. `messageAuthorsByID` preserves that fallback.
     func user(_ userID: UserID) -> User? {
         model.membersByID[userID]?.user
             ?? model.knownMentionMembers[userID]?.user
             ?? message?.mentionedUsers.first { $0.id == userID }
-            ?? model.messages.first { $0.author.id == userID }?.author
-            ?? model.threadMessages.first { $0.author.id == userID }?.author
+            ?? model.messageAuthorsByID[userID]
             ?? (model.snapshot?.currentUser.id == userID ? model.snapshot?.currentUser : nil)
     }
 
@@ -132,7 +137,7 @@ struct MessageMentionResolver {
             guard let roleID = RoleID(mention.id) else {
                 return MentionPresentation.fallback(for: mention)
             }
-            let role = model.guildRoles.first { $0.id == roleID }
+            let role = model.guildRolesByID[roleID]
                 ?? model.members.lazy.flatMap(\.roles).first { $0.id == roleID }
             return MentionPresentation(
                 rawToken: mention.rawToken,
@@ -183,8 +188,7 @@ struct MessageMentionResolver {
                     )
                 )
             }
-            let post = model.forumCataloguePosts.first { $0.id == channelID }
-                ?? model.forumPosts.first { $0.id == channelID }
+            let post = model.forumPost(withID: channelID)
             return MentionPresentation(
                 rawToken: mention.rawToken,
                 label: post?.thread.name ?? "unknown-post",
@@ -223,7 +227,7 @@ struct MessageMentionResolver {
     }
 
     private func channel(_ channelID: ChannelID) -> Channel? {
-        model.snapshot?.channels.first { $0.id == channelID }
+        model.channelsByID[channelID]
             ?? model.visibleChannels.first { $0.id == channelID }
     }
 
@@ -314,8 +318,7 @@ struct CustomEmojiRichText: View {
         case let .user(id):
             let user = model.membersByID[id]?.user
                 ?? model.knownMentionMembers[id]?.user
-                ?? model.messages.first { $0.author.id == id }?.author
-                ?? model.threadMessages.first { $0.author.id == id }?.author
+                ?? model.messageAuthorsByID[id]
                 ?? (model.snapshot?.currentUser.id == id ? model.snapshot?.currentUser : nil)
             guard let user else { return }
             model.showProfile(for: user)

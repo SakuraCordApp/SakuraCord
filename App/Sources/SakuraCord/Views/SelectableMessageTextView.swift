@@ -261,10 +261,56 @@ nonisolated enum RichMessageTextMeasurement {
     }
 }
 
-private struct RichMessageRenderSignature: Equatable {
+struct RichMessageRenderSignature: Equatable, Hashable {
     let source: String
     let emojiSize: CGFloat
     let mentionPresentations: [String: MentionPresentation]
+}
+
+/// Text layout results shared across rows.
+///
+/// `NSTextView` measurement used to live on the view instance, so a row that
+/// scrolled out of the `LazyVStack` and back re-ran TextKit layout from
+/// scratch inside SwiftUI's layout pass. Keying by signature and width lets a
+/// recycled row reuse the height it already computed.
+@MainActor
+enum RichMessageHeightCache {
+    private struct Key: Hashable {
+        let signature: RichMessageRenderSignature
+        let width: CGFloat
+        let minimumHeight: CGFloat
+    }
+
+    private static var values: [Key: CGFloat] = [:]
+    private static var insertionOrder: [Key] = []
+    private static let limit = 4_000
+
+    static func height(
+        signature: RichMessageRenderSignature?,
+        width: CGFloat,
+        minimumHeight: CGFloat
+    ) -> CGFloat? {
+        guard let signature else { return nil }
+        return values[Key(signature: signature, width: width, minimumHeight: minimumHeight)]
+    }
+
+    static func insert(
+        _ height: CGFloat,
+        signature: RichMessageRenderSignature?,
+        width: CGFloat,
+        minimumHeight: CGFloat
+    ) {
+        guard let signature else { return }
+        let key = Key(signature: signature, width: width, minimumHeight: minimumHeight)
+        guard values.updateValue(height, forKey: key) == nil else { return }
+        insertionOrder.append(key)
+        guard insertionOrder.count > limit else { return }
+        let evictionCount = limit / 4
+        for key in insertionOrder.prefix(evictionCount) {
+            values.removeValue(forKey: key)
+        }
+        insertionOrder.removeFirst(evictionCount)
+    }
 }
 
 @MainActor
@@ -404,15 +450,31 @@ final class RichMessageNSTextView: NSTextView {
 
     fileprivate func measuredSize(proposedWidth: CGFloat?, minimumHeight: CGFloat) -> CGSize {
         if let width = RichMessageTextMeasurement.constrainedWidth(proposedWidth) {
-            configureTextContainer(width: width)
             if let height = measuredHeights[width] {
+                configureTextContainer(width: width)
                 return CGSize(width: width, height: height)
             }
+            if let height = RichMessageHeightCache.height(
+                signature: renderSignature,
+                width: width,
+                minimumHeight: minimumHeight
+            ) {
+                configureTextContainer(width: width)
+                measuredHeights[width] = height
+                return CGSize(width: width, height: height)
+            }
+            configureTextContainer(width: width)
             let height = measuredHeight(minimumHeight: minimumHeight)
             if measuredHeights.count >= 4 {
                 measuredHeights.removeAll(keepingCapacity: true)
             }
             measuredHeights[width] = height
+            RichMessageHeightCache.insert(
+                height,
+                signature: renderSignature,
+                width: width,
+                minimumHeight: minimumHeight
+            )
             return CGSize(width: width, height: height)
         }
 

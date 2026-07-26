@@ -321,6 +321,10 @@ final class AppModel {
         category: "PointsOfInterest"
     )
     nonisolated static let maximumConcurrentReactionReactorLoads = 4
+    /// Discord emits a full member list for every presence change in the active
+    /// guild. Applying each one separately re-derives member sections, indexes,
+    /// and every view that reads them, so bursts are collapsed into one update.
+    nonisolated static let memberUpdateCoalescingInterval: Duration = .milliseconds(100)
 
     enum SessionState: Equatable {
         case restoring
@@ -334,29 +338,61 @@ final class AppModel {
         var throttle: Duration = .seconds(8)
     }
 
-    private(set) var snapshot: BootstrapSnapshot?
+    private(set) var snapshot: BootstrapSnapshot? {
+        didSet {
+            guard snapshot?.channels != oldValue?.channels else { return }
+            channelsByID = Dictionary(
+                (snapshot?.channels ?? []).map { ($0.id, $0) },
+                uniquingKeysWith: { _, newer in newer }
+            )
+        }
+    }
+
+    /// Mention and navigation lookups resolve channels per render. Snapshots
+    /// carry every channel of every guild, so those must not be linear scans.
+    private(set) var channelsByID: [ChannelID: Channel] = [:]
     private(set) var serverRailGuildsByID: [GuildID: Guild] = [:]
     private(set) var serverRailItems: [GuildRailItem] = [] {
         didSet { updateOrderedCustomEmojis() }
     }
-    private(set) var visibleChannels: [Channel] = []
+    private(set) var visibleChannels: [Channel] = [] {
+        didSet {
+            guard visibleChannels != oldValue else { return }
+            updateHiddenChannelIDs()
+        }
+    }
+
+    /// Channels the current user cannot read.
+    ///
+    /// The sidebar previously derived this in its body, so every render
+    /// re-resolved permissions for every channel — and because that reads the
+    /// member store, presence traffic drove it.
+    private(set) var hiddenChannelIDs: Set<ChannelID> = []
+    @ObservationIgnored private var currentMemberRoleIDs: [RoleID] = []
     private(set) var selectedChannel: Channel?
     private(set) var messages: [Message] = [] {
         didSet {
             messageRows = MessageGrouping.updating(
                 existing: messageRows, oldMessages: oldValue, newMessages: messages
             )
+            indexMessageAuthors(in: messages, resettingWhenEmpty: true)
             if let selectedChannelID {
                 messageCache[selectedChannelID] = messages
             }
         }
     }
 
+    /// Authors seen in the loaded conversation, so mention resolution can fall
+    /// back to them without scanning the timeline on every render.
+    private(set) var messageAuthorsByID: [UserID: User] = [:]
+
     private(set) var messageRows: [MessageRowPresentation] = []
     private(set) var messageNavigationRequest: MessageNavigationRequest?
     private(set) var members: [Member] = [] {
         didSet {
-            memberSections = MemberSection.make(from: members)
+            // Sectioning is only read while the inspector is on screen, so it
+            // is derived on demand instead of on every Gateway member update.
+            memberSectionCache = nil
             let indexed = Dictionary(
                 members.map { ($0.id, $0) },
                 uniquingKeysWith: { _, newer in newer }
@@ -367,9 +403,48 @@ final class AppModel {
         }
     }
 
-    private(set) var membersByID: [UserID: Member] = [:]
-    private(set) var memberSections: [MemberSection] = []
-    private(set) var guildRoles: [GuildRole] = []
+    private(set) var membersByID: [UserID: Member] = [:] {
+        didSet {
+            updateAuthorPresentations()
+            // Channel visibility only moves when the current user's own roles
+            // move, not when some other member's presence changes.
+            let currentUserID = snapshot?.currentUser.id
+            let roleIDs = currentUserID.flatMap { membersByID[$0]?.roles.map(\.id) } ?? []
+            guard roleIDs != currentMemberRoleIDs else { return }
+            currentMemberRoleIDs = roleIDs
+            updateHiddenChannelIDs()
+        }
+    }
+
+    /// Author display values for everyone in the loaded conversation.
+    ///
+    /// A presence change mutates `membersByID` but cannot change any of these
+    /// values, so deriving them here — and assigning only on a real difference —
+    /// keeps presence traffic from invalidating the timeline.
+    private(set) var authorPresentationsByUserID: [UserID: MessageAuthorPresentation] = [:]
+    @ObservationIgnored private var memberSectionCache: [MemberSection]?
+
+    var memberSections: [MemberSection] {
+        if let memberSectionCache {
+            return memberSectionCache
+        }
+        let value = MemberSection.make(from: members)
+        memberSectionCache = value
+        return value
+    }
+    private(set) var guildRoles: [GuildRole] = [] {
+        didSet {
+            guard guildRoles != oldValue else { return }
+            guildRolesByID = Dictionary(
+                guildRoles.map { ($0.id, $0) },
+                uniquingKeysWith: { _, newer in newer }
+            )
+            updateAuthorPresentations()
+            updateHiddenChannelIDs()
+        }
+    }
+
+    private(set) var guildRolesByID: [RoleID: GuildRole] = [:]
     private(set) var commandMemberResults: [Member] = []
     private(set) var mentionMemberResults: [Member] = []
     private(set) var mentionAutocompleteMembers: [Member] = []
@@ -425,6 +500,7 @@ final class AppModel {
                 oldMessages: oldValue,
                 newMessages: threadMessages
             )
+            indexMessageAuthors(in: threadMessages, resettingWhenEmpty: false)
         }
     }
     private(set) var threadMessageRows: [MessageRowPresentation] = []
@@ -573,6 +649,15 @@ final class AppModel {
         )
     }
 
+    private func updateHiddenChannelIDs() {
+        var value: Set<ChannelID> = []
+        for channel in visibleChannels where conversationAccess(for: channel) == .hidden {
+            value.insert(channel.id)
+        }
+        guard hiddenChannelIDs != value else { return }
+        hiddenChannelIDs = value
+    }
+
     func conversationAccess(for channel: Channel) -> ConversationAccess {
         guard let guildID = channel.guildID else { return .readable(canSend: true) }
         guard let guild = serverRailGuildsByID[guildID],
@@ -672,6 +757,8 @@ final class AppModel {
     @ObservationIgnored private var mentionMemberSearchCache:
         [CommandMemberQuery: MentionMemberSearchCacheEntry] = [:]
     @ObservationIgnored private var roleMemberTask: Task<Void, Never>?
+    @ObservationIgnored private var pendingMemberUpdate: (guildID: GuildID, members: [Member])?
+    @ObservationIgnored private var memberUpdateTask: Task<Void, Never>?
     @ObservationIgnored private var commandExecutionTask: Task<Void, Never>?
     @ObservationIgnored private var stickerLoadTasks: [GuildID: Task<Void, Never>] = [:]
     @ObservationIgnored private var componentKeyByNonce: [String: ComponentControlKey] = [:]
@@ -864,6 +951,7 @@ final class AppModel {
         messages = []
         messageCache = [:]
         hasMoreCache = [:]
+        cancelPendingMemberUpdate()
         members = []
         dismissProfile()
         connectionState = .disconnected
@@ -1225,7 +1313,56 @@ final class AppModel {
         )
     }
 
+    /// Collapses a burst of Gateway member updates into a single applied value.
+    private func scheduleMemberUpdate(guildID: GuildID, members value: [Member]) {
+        pendingMemberUpdate = (guildID, value)
+        guard memberUpdateTask == nil else { return }
+        memberUpdateTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.memberUpdateCoalescingInterval)
+            guard let self else { return }
+            memberUpdateTask = nil
+            guard let pending = pendingMemberUpdate else { return }
+            pendingMemberUpdate = nil
+            guard pending.guildID == selectedGuildID else { return }
+            applyMemberUpdate(pending.members)
+        }
+    }
+
+    private func cancelPendingMemberUpdate() {
+        memberUpdateTask?.cancel()
+        memberUpdateTask = nil
+        pendingMemberUpdate = nil
+    }
+
+    private func applyMemberUpdate(_ value: [Member]) {
+        guard members != value else { return }
+        members = value
+        if mentionAutocompleteMembers.isEmpty {
+            // A guild activation can finish before Discord's lazy member
+            // list has delivered its first store snapshot. Seed the
+            // dedicated autocomplete store from that first Gateway update
+            // instead of leaving every nonempty @ query blank.
+            mentionAutocompleteMembers = value
+        } else {
+            // Refresh already-known values (nickname/avatar/roles) without
+            // letting later visual member-list sorting reorder or expand
+            // the autocomplete store.
+            let updatesByID = Dictionary(
+                value.map { ($0.id, $0) },
+                uniquingKeysWith: { _, newer in newer }
+            )
+            let refreshed = mentionAutocompleteMembers.map { updatesByID[$0.id] ?? $0 }
+            if refreshed != mentionAutocompleteMembers {
+                mentionAutocompleteMembers = refreshed
+            }
+        }
+        if let selectedMember, let updated = value.first(where: { $0.id == selectedMember.id }) {
+            self.selectedMember = updated
+        }
+    }
+
     private func beginMemberLoad(for guildID: GuildID?) {
+        cancelPendingMemberUpdate()
         memberLoadTask?.cancel()
         memberLoadTask = Task { [weak self] in
             guard let self else { return }
@@ -3011,10 +3148,62 @@ final class AppModel {
         presentProfile(for: member)
     }
 
+    /// Accumulates conversation authors. Writes only land when a new author
+    /// appears, so an ordinary incoming message does not invalidate readers.
+    private func indexMessageAuthors(in values: [Message], resettingWhenEmpty: Bool) {
+        if values.isEmpty, resettingWhenEmpty {
+            if !messageAuthorsByID.isEmpty {
+                messageAuthorsByID = [:]
+                updateAuthorPresentations()
+            }
+            return
+        }
+        var additions: [UserID: User] = [:]
+        for message in values where messageAuthorsByID[message.author.id] == nil {
+            additions[message.author.id] = message.author
+        }
+        guard !additions.isEmpty else { return }
+        messageAuthorsByID.merge(additions) { _, newer in newer }
+        updateAuthorPresentations()
+    }
+
+    func forumPost(withID channelID: ChannelID) -> ForumPost? {
+        if let index = forumCatalogueIndexByID[channelID],
+           forumCataloguePosts.indices.contains(index)
+        {
+            return forumCataloguePosts[index]
+        }
+        return forumPosts.first { $0.id == channelID }
+    }
+
+    /// Rebuilds presentations for authors present in the loaded conversation.
+    ///
+    /// Scoped to conversation authors rather than the whole guild so a large
+    /// member list does not make this proportional to guild size.
+    private func updateAuthorPresentations() {
+        var value: [UserID: MessageAuthorPresentation] = [:]
+        value.reserveCapacity(messageAuthorsByID.count)
+        for userID in messageAuthorsByID.keys {
+            guard let member = membersByID[userID] else { continue }
+            value[userID] = MessageAuthorPresentation(
+                user: member.user,
+                roleColorHex: MessageAuthorPresentation.topRoleColor(in: member.roles)
+            )
+        }
+        guard authorPresentationsByUserID != value else { return }
+        authorPresentationsByUserID = value
+    }
+
     func authorPresentation(for message: Message) -> MessageAuthorPresentation {
-        MessageAuthorPresentation.resolve(
+        if let value = authorPresentationsByUserID[message.author.id] {
+            return value
+        }
+        // Authors outside the member store (webhooks, apps, departed members)
+        // resolve from the message itself. `guildRoles` changes on guild switch
+        // rather than on presence traffic, so reading it here is not hot.
+        return MessageAuthorPresentation.resolve(
             message: message,
-            member: membersByID[message.author.id],
+            member: nil,
             roles: guildRoles
         )
     }
@@ -3212,28 +3401,7 @@ final class AppModel {
             hasMoreForumPosts = page.hasMore
         case .membersChanged(let guildID, let value):
             guard guildID == selectedGuildID else { return }
-            members = value
-            if mentionAutocompleteMembers.isEmpty {
-                // A guild activation can finish before Discord's lazy member
-                // list has delivered its first store snapshot. Seed the
-                // dedicated autocomplete store from that first Gateway update
-                // instead of leaving every nonempty @ query blank.
-                mentionAutocompleteMembers = value
-            } else {
-                // Refresh already-known values (nickname/avatar/roles) without
-                // letting later visual member-list sorting reorder or expand
-                // the autocomplete store.
-                let updatesByID = Dictionary(
-                    value.map { ($0.id, $0) },
-                    uniquingKeysWith: { _, newer in newer }
-                )
-                mentionAutocompleteMembers = mentionAutocompleteMembers.map {
-                    updatesByID[$0.id] ?? $0
-                }
-            }
-            if let selectedMember, let updated = value.first(where: { $0.id == selectedMember.id }) {
-                self.selectedMember = updated
-            }
+            scheduleMemberUpdate(guildID: guildID, members: value)
         case .voiceStateChanged(let state):
             if state.channelID == nil {
                 voiceStates[state.userID] = nil

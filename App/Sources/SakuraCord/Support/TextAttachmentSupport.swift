@@ -96,6 +96,7 @@ final class InlineAttachmentImageLoader {
     func loadMentionAvatars(in textView: NSTextView) {
         let attributed = textView.attributedString()
         var values: [String: URL] = [:]
+        var pending: [String: URL] = [:]
         attributed.enumerateAttribute(
             .attachment,
             in: NSRange(location: 0, length: attributed.length)
@@ -103,17 +104,32 @@ final class InlineAttachmentImageLoader {
             guard let attachment = value as? MentionTextAttachment,
                   let url = attachment.presentation.avatarURL
             else { return }
-            values[attachment.presentation.rawToken] = url
+            let token = attachment.presentation.rawToken
+            values[token] = url
+            // Applying an avatar re-rasterizes both pill images and invalidates
+            // display, so skip attachments that already carry this one.
+            if attachment.appliedAvatarURL != url {
+                pending[token] = url
+            }
         }
 
-        for (token, url) in values where mentionAvatarTasks[token] == nil {
+        for (token, url) in pending where mentionAvatarTasks[token] == nil {
+            if let image = MentionAvatarImageStore.shared.cachedImage(for: url) {
+                applyMentionAvatar(image, url: url, token: token, in: textView)
+                continue
+            }
             mentionAvatarTasks[token] = Task { @MainActor [weak self, weak textView] in
                 let image = await MentionAvatarImageStore.shared.image(for: url)
                 guard let self else { return }
                 defer { self.mentionAvatarTasks[token] = nil }
                 guard !Task.isCancelled, let textView, let image else { return }
-                self.applyMentionAvatar(image, token: token, in: textView)
+                self.applyMentionAvatar(image, url: url, token: token, in: textView)
             }
+        }
+
+        for token in Array(mentionAvatarTasks.keys) where values[token] == nil {
+            mentionAvatarTasks[token]?.cancel()
+            mentionAvatarTasks[token] = nil
         }
     }
 
@@ -149,15 +165,24 @@ final class InlineAttachmentImageLoader {
         textView.needsDisplay = true
     }
 
-    private func applyMentionAvatar(_ image: NSImage, token: String, in textView: NSTextView) {
+    private func applyMentionAvatar(
+        _ image: NSImage,
+        url: URL,
+        token: String,
+        in textView: NSTextView
+    ) {
         guard let storage = textView.textStorage else { return }
         let range = NSRange(location: 0, length: storage.length)
+        var didApply = false
         storage.enumerateAttribute(.attachment, in: range) { value, _, _ in
             guard let attachment = value as? MentionTextAttachment,
-                  attachment.presentation.rawToken == token
+                  attachment.presentation.rawToken == token,
+                  attachment.appliedAvatarURL != url
             else { return }
-            attachment.updateImages(avatar: image)
+            attachment.updateImages(avatar: image, url: url)
+            didApply = true
         }
+        guard didApply else { return }
         textView.layoutManager?.invalidateDisplay(forCharacterRange: range)
         textView.needsDisplay = true
     }

@@ -91,10 +91,44 @@ struct MemberSection: Identifiable, Equatable {
         return sections
     }
 
+    private struct MemberSortKey {
+        let key: String
+        let id: UInt64
+        let member: Member
+    }
+
+    /// Sorts by a folded key computed once per member.
+    ///
+    /// The previous implementation called `localizedStandardCompare` inside the
+    /// comparator, which runs a full locale-aware ICU collation on every one of
+    /// the O(n log n) comparisons. Discord re-sends the whole member list on
+    /// every presence change, so that dominated the main actor on large guilds.
+    /// Folding once per member trades exact locale collation for a case- and
+    /// diacritic-insensitive ordering, tie-broken by ID for stability.
     private static func sortedByName(_ members: [Member]) -> [Member] {
-        members.sorted {
-            $0.user.displayName.localizedStandardCompare($1.user.displayName) == .orderedAscending
+        var decorated: [MemberSortKey] = []
+        decorated.reserveCapacity(members.count)
+        for member in members {
+            decorated.append(
+                MemberSortKey(
+                    key: sortKey(for: member),
+                    id: member.id.rawValue,
+                    member: member
+                )
+            )
         }
+        decorated.sort { lhs, rhs in
+            if lhs.key != rhs.key { return lhs.key < rhs.key }
+            return lhs.id < rhs.id
+        }
+        return decorated.map(\.member)
+    }
+
+    private static func sortKey(for member: Member) -> String {
+        member.user.displayName.folding(
+            options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
+            locale: .current
+        )
     }
 }
 

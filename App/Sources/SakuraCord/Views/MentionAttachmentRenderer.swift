@@ -12,11 +12,15 @@ nonisolated final class MentionTextAttachment: NSTextAttachment {
     let font: NSFont
     private(set) var normalImage: NSImage
     private(set) var hoverImage: NSImage
+    /// The avatar already baked into `normalImage`/`hoverImage`, so a repeated
+    /// load does not re-rasterize and invalidate display for no visible change.
+    private(set) var appliedAvatarURL: URL?
 
     @MainActor
     init(presentation: MentionPresentation, font: NSFont, avatar: NSImage? = nil) {
         self.presentation = presentation
         self.font = font
+        appliedAvatarURL = avatar == nil ? nil : presentation.avatarURL
         normalImage = MentionAttachmentRenderer.image(
             presentation: presentation, font: font, avatar: avatar, hovered: false
         )
@@ -39,7 +43,7 @@ nonisolated final class MentionTextAttachment: NSTextAttachment {
     required init?(coder: NSCoder) { nil }
 
     @MainActor
-    func updateImages(avatar: NSImage?) {
+    func updateImages(avatar: NSImage?, url: URL? = nil) {
         normalImage = MentionAttachmentRenderer.image(
             presentation: presentation, font: font, avatar: avatar, hovered: false
         )
@@ -47,6 +51,7 @@ nonisolated final class MentionTextAttachment: NSTextAttachment {
             presentation: presentation, font: font, avatar: avatar, hovered: true
         )
         image = normalImage
+        appliedAvatarURL = url
     }
 }
 
@@ -72,7 +77,37 @@ enum MentionAttachmentRenderer {
         return value
     }
 
+    /// Rendered pills are cached because every rebuild of a message's
+    /// attributed string asks for two images per mention (normal and hover),
+    /// and each one is an off-screen rasterization.
+    private static let images = MentionPillImageCache()
+
     static func image(
+        presentation: MentionPresentation,
+        font: NSFont,
+        avatar: NSImage?,
+        hovered: Bool
+    ) -> NSImage {
+        let key = MentionPillImageCache.Key(
+            presentation: presentation,
+            fontSize: font.pointSize,
+            avatar: avatar,
+            hovered: hovered
+        )
+        if let cached = images.value(for: key) {
+            return cached
+        }
+        let value = render(
+            presentation: presentation,
+            font: font,
+            avatar: avatar,
+            hovered: hovered
+        )
+        images.insert(value, for: key)
+        return value
+    }
+
+    private static func render(
         presentation: MentionPresentation,
         font: NSFont,
         avatar: NSImage?,
@@ -176,6 +211,73 @@ enum MentionAttachmentRenderer {
             blue: CGFloat(hex & 0xff) / 255,
             alpha: 1
         )
+    }
+}
+
+@MainActor
+private final class MentionPillImageCache {
+    private let values = NSCache<Key, NSImage>()
+
+    init() {
+        values.countLimit = 2_000
+    }
+
+    typealias Key = MentionPillImageCacheKey
+
+    func value(for key: Key) -> NSImage? {
+        values.object(forKey: key)
+    }
+
+    func insert(_ value: NSImage, for key: Key) {
+        values.setObject(value, forKey: key)
+    }
+}
+
+nonisolated final class MentionPillImageCacheKey: NSObject {
+    private let label: String
+    private let colorHex: UInt32?
+    private let systemImage: String?
+    private let showsAvatar: Bool
+    private let avatar: ObjectIdentifier?
+    private let fontSize: CGFloat
+    private let hovered: Bool
+
+    init(
+        presentation: MentionPresentation,
+        fontSize: CGFloat,
+        avatar: NSImage?,
+        hovered: Bool
+    ) {
+        label = presentation.label
+        colorHex = presentation.colorHex
+        systemImage = presentation.systemImage
+        showsAvatar = if case .user = presentation.target { true } else { false }
+        self.avatar = avatar.map(ObjectIdentifier.init)
+        self.fontSize = fontSize
+        self.hovered = hovered
+    }
+
+    override var hash: Int {
+        var hasher = Hasher()
+        hasher.combine(label)
+        hasher.combine(colorHex)
+        hasher.combine(systemImage)
+        hasher.combine(showsAvatar)
+        hasher.combine(avatar)
+        hasher.combine(fontSize)
+        hasher.combine(hovered)
+        return hasher.finalize()
+    }
+
+    override func isEqual(_ object: Any?) -> Bool {
+        guard let other = object as? MentionPillImageCacheKey else { return false }
+        return label == other.label
+            && colorHex == other.colorHex
+            && systemImage == other.systemImage
+            && showsAvatar == other.showsAvatar
+            && avatar == other.avatar
+            && fontSize == other.fontSize
+            && hovered == other.hovered
     }
 }
 

@@ -28,7 +28,7 @@ struct ChannelSidebarView: View {
                         addsTopSpacing: index == groups.startIndex,
                         rulesChannelID: guild?.rulesChannelID,
                         activeVoiceChannelID: activeVoiceChannelID,
-                        hiddenChannelIDs: hiddenChannelIDs,
+                        hiddenChannelIDs: voiceModel.hiddenChannelIDs,
                         voiceParticipantsByChannel: voiceSidebarParticipantsByChannel
                     )
                 }
@@ -62,10 +62,6 @@ struct ChannelSidebarView: View {
 
     private var separatorLineWidth: CGFloat {
         1 / max(displayScale, 1)
-    }
-
-    private var hiddenChannelIDs: Set<ChannelID> {
-        Set(channels.lazy.filter { voiceModel.conversationAccess(for: $0) == .hidden }.map(\.id))
     }
 
     private var voiceSidebarParticipantsByChannel: [ChannelID: [VoiceSidebarParticipant]] {
