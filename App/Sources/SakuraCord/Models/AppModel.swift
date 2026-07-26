@@ -326,6 +326,9 @@ final class AppModel {
     /// and every view that reads them, so bursts are collapsed into one update.
     nonisolated static let memberUpdateCoalescingInterval: Duration = .milliseconds(100)
 
+    /// How many channels keep their loaded history in memory between visits.
+    nonisolated static let cachedChannelHistoryLimit = 12
+
     enum SessionState: Equatable {
         case restoring
         case signedOut
@@ -378,6 +381,7 @@ final class AppModel {
             indexMessageAuthors(in: messages, resettingWhenEmpty: true)
             if let selectedChannelID {
                 messageCache[selectedChannelID] = messages
+                retainMessageCache(for: selectedChannelID)
             }
         }
     }
@@ -777,6 +781,9 @@ final class AppModel {
     @ObservationIgnored private var messageNavigationRequestID: UInt64 = 0
     @ObservationIgnored private var messageCache: [ChannelID: [Message]] = [:]
     @ObservationIgnored private var hasMoreCache: [ChannelID: Bool] = [:]
+    /// Least-recently-selected first. Bounds `messageCache`, which otherwise
+    /// retains every channel visited for the whole session.
+    @ObservationIgnored private var messageCacheOrder: [ChannelID] = []
     @ObservationIgnored private let discordNetworkDisabled: Bool
     @ObservationIgnored private let restoresStoredSession: Bool
     @ObservationIgnored private let credentialStore: any CredentialStore
@@ -896,6 +903,7 @@ final class AppModel {
         messages = []
         messageCache = [:]
         hasMoreCache = [:]
+        messageCacheOrder = []
         dismissProfile()
         errorMessage = nil
         await start(publishesSessionState: !preservesInteractivePresentation)
@@ -951,6 +959,7 @@ final class AppModel {
         messages = []
         messageCache = [:]
         hasMoreCache = [:]
+        messageCacheOrder = []
         cancelPendingMemberUpdate()
         members = []
         dismissProfile()
@@ -3165,6 +3174,31 @@ final class AppModel {
         guard !additions.isEmpty else { return }
         messageAuthorsByID.merge(additions) { _, newer in newer }
         updateAuthorPresentations()
+    }
+
+    /// Marks a channel as most recently used and drops the oldest beyond the
+    /// limit. Eviction only costs a reload on revisit, which is the same path a
+    /// first visit already takes; `hasMoreCache` goes with it so the two can
+    /// never disagree about how much history is available.
+    private func retainMessageCache(for channelID: ChannelID) {
+        if let index = messageCacheOrder.firstIndex(of: channelID) {
+            messageCacheOrder.remove(at: index)
+        }
+        messageCacheOrder.append(channelID)
+
+        var excess = messageCacheOrder.count - Self.cachedChannelHistoryLimit
+        var index = 0
+        while excess > 0, index < messageCacheOrder.count {
+            let candidate = messageCacheOrder[index]
+            guard candidate != selectedChannelID else {
+                index += 1
+                continue
+            }
+            messageCache[candidate] = nil
+            hasMoreCache[candidate] = nil
+            messageCacheOrder.remove(at: index)
+            excess -= 1
+        }
     }
 
     func forumPost(withID channelID: ChannelID) -> ForumPost? {

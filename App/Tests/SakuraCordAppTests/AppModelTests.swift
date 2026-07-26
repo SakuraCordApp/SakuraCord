@@ -1209,6 +1209,43 @@ private func eventuallyOnMain(_ condition: @escaping @MainActor () -> Bool) asyn
     #expect(await provider.requestCount(for: secondChannel) == 1)
 }
 
+/// The timeline realizes every loaded row, and `messageCache` used to retain
+/// every channel visited for the whole session. Eviction is only sound if the
+/// evicted channel reloads cleanly rather than showing a stale or empty page.
+@MainActor
+@Test func `visiting many channels evicts the least recently used history`() async throws {
+    let spares = AppModel.cachedChannelHistoryLimit
+    let provider = ChannelLoadTestProvider(spareChannels: spares)
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+
+    let firstChannel = ChannelID(rawValue: 91001)
+    #expect(model.messages.map(\.channelID) == [firstChannel])
+
+    for index in 0 ..< spares {
+        model.selectedChannelID = provider.spareChannelID(index)
+        try await Task.sleep(for: .milliseconds(40))
+    }
+
+    // The most recent spare is still cached, so it restores synchronously.
+    let recent = provider.spareChannelID(spares - 1)
+    model.selectedChannelID = provider.spareChannelID(spares - 2)
+    try await Task.sleep(for: .milliseconds(40))
+    model.selectedChannelID = recent
+    #expect(model.messages.map(\.channelID) == [recent])
+    #expect(!model.isLoadingMessages)
+
+    // The first channel fell off the end and has to load again.
+    model.selectedChannelID = firstChannel
+    #expect(model.messages.isEmpty)
+    #expect(model.isLoadingMessages)
+
+    try await Task.sleep(for: .milliseconds(160))
+    #expect(model.messages.map(\.channelID) == [firstChannel])
+    #expect(!model.isLoadingMessages)
+    #expect(!model.hasMoreMessages)
+}
+
 @MainActor
 @Test func `app model reconciles lazy production reactors without repeated reads`() async throws {
     let provider = ChannelLoadTestProvider()
@@ -1284,16 +1321,28 @@ private func eventuallyOnMain(_ condition: @escaping @MainActor () -> Bool) asyn
 
 private actor ChannelLoadTestProvider: ChatProvider {
     private let user = User(id: UserID(rawValue: 91000), username: "tester", displayName: "Tester")
-    private let testChannels = [
-        Channel(id: ChannelID(rawValue: 91001), guildID: nil, name: "general"),
-        Channel(id: ChannelID(rawValue: 91002), guildID: nil, name: "other"),
-        Channel(
-            id: ChannelID(rawValue: 91003),
-            guildID: nil,
-            name: "Voice Room",
-            kind: .voice
-        ),
-    ]
+    private let testChannels: [Channel]
+
+    /// `spareChannels` are appended after the fixed three, so tests that depend
+    /// on the first channel being selected at startup are unaffected.
+    init(spareChannels: Int = 0) {
+        testChannels = [
+            Channel(id: ChannelID(rawValue: 91001), guildID: nil, name: "general"),
+            Channel(id: ChannelID(rawValue: 91002), guildID: nil, name: "other"),
+            Channel(
+                id: ChannelID(rawValue: 91003),
+                guildID: nil,
+                name: "Voice Room",
+                kind: .voice
+            ),
+        ] + (0 ..< spareChannels).map { index in
+            Channel(id: ChannelID(rawValue: 91100 + UInt64(index)), guildID: nil, name: "spare\(index)")
+        }
+    }
+
+    nonisolated func spareChannelID(_ index: Int) -> ChannelID {
+        ChannelID(rawValue: 91100 + UInt64(index))
+    }
     private var messageRequests: [ChannelID: Int] = [:]
     private var reactorRequests = 0
     private var activeReactorRequests = 0
