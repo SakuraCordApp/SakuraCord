@@ -104,6 +104,9 @@ enum ScrollDiagnostics {
     static func endScroll() {
         guard isEnabled, let startedAt = windowStartedAt else { return }
         windowStartedAt = nil
+        // The main-actor derivations are the other half of the picture, and a
+        // scroll that ends in silence would otherwise never report them.
+        MainActorWorkDiagnostics.flush()
         let duration = Date().timeIntervalSince(startedAt)
         logger.info(
             """

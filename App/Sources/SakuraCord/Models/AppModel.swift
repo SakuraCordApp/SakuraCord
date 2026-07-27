@@ -375,9 +375,11 @@ final class AppModel {
     private(set) var selectedChannel: Channel?
     private(set) var messages: [Message] = [] {
         didSet {
-            messageRows = MessageGrouping.updating(
-                existing: messageRows, oldMessages: oldValue, newMessages: messages
-            )
+            messageRows = MainActorWorkDiagnostics.measure(.messageRows) {
+                MessageGrouping.updating(
+                    existing: messageRows, oldMessages: oldValue, newMessages: messages
+                )
+            }
             indexMessageAuthors(in: messages, resettingWhenEmpty: true)
             if let selectedChannelID {
                 messageCache[selectedChannelID] = messages
@@ -432,7 +434,9 @@ final class AppModel {
         if let memberSectionCache {
             return memberSectionCache
         }
-        let value = MemberSection.make(from: members)
+        let value = MainActorWorkDiagnostics.measure(.memberSections) {
+            MemberSection.make(from: members)
+        }
         memberSectionCache = value
         return value
     }
@@ -654,9 +658,12 @@ final class AppModel {
     }
 
     private func updateHiddenChannelIDs() {
-        var value: Set<ChannelID> = []
-        for channel in visibleChannels where conversationAccess(for: channel) == .hidden {
-            value.insert(channel.id)
+        let value = MainActorWorkDiagnostics.measure(.hiddenChannels) {
+            var value: Set<ChannelID> = []
+            for channel in visibleChannels where conversationAccess(for: channel) == .hidden {
+                value.insert(channel.id)
+            }
+            return value
         }
         guard hiddenChannelIDs != value else { return }
         hiddenChannelIDs = value
@@ -1003,7 +1010,7 @@ final class AppModel {
         eventTask = Task { [weak self] in
             for await event in stream {
                 guard !Task.isCancelled else { break }
-                self?.consume(event)
+                MainActorWorkDiagnostics.measure(.gatewayEvent) { self?.consume(event) }
             }
         }
         isLoading = true
@@ -3215,14 +3222,17 @@ final class AppModel {
     /// Scoped to conversation authors rather than the whole guild so a large
     /// member list does not make this proportional to guild size.
     private func updateAuthorPresentations() {
-        var value: [UserID: MessageAuthorPresentation] = [:]
-        value.reserveCapacity(messageAuthorsByID.count)
-        for userID in messageAuthorsByID.keys {
-            guard let member = membersByID[userID] else { continue }
-            value[userID] = MessageAuthorPresentation(
-                user: member.user,
-                roleColorHex: MessageAuthorPresentation.topRoleColor(in: member.roles)
-            )
+        let value = MainActorWorkDiagnostics.measure(.authorPresentations) {
+            var value: [UserID: MessageAuthorPresentation] = [:]
+            value.reserveCapacity(messageAuthorsByID.count)
+            for userID in messageAuthorsByID.keys {
+                guard let member = membersByID[userID] else { continue }
+                value[userID] = MessageAuthorPresentation(
+                    user: member.user,
+                    roleColorHex: MessageAuthorPresentation.topRoleColor(in: member.roles)
+                )
+            }
+            return value
         }
         guard authorPresentationsByUserID != value else { return }
         authorPresentationsByUserID = value
