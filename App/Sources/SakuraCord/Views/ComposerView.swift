@@ -43,15 +43,11 @@ nonisolated enum ComposerDraftEditing {
 }
 
 struct ComposerView: View {
-    enum Conversation: Equatable {
-        case channel
-        case thread
-    }
+    typealias Conversation = MessageComposerDestination
 
     let model: AppModel
     let channelName: String
     var conversation: Conversation = .channel
-    @State private var attachments: [URL] = []
     @State private var showFileImporter = false
     @State private var showEmojiPicker = false
     @State private var isFocused = false
@@ -68,11 +64,23 @@ struct ComposerView: View {
     var body: some View {
         @Bindable var model = model
         GlassEffectContainer(spacing: 8) {
-            VStack(alignment: .leading, spacing: 7) {
+            VStack(alignment: .leading, spacing: 0) {
                 if !hasActiveCommand, !attachments.isEmpty {
-                    ComposerAttachmentStrip(attachments: $attachments)
+                    ComposerAttachmentTray(
+                        attachments: attachments,
+                        toggleSpoiler: {
+                            model.toggleComposerAttachmentSpoiler($0, in: conversation)
+                        },
+                        update: {
+                            model.updateComposerAttachment($0, in: conversation)
+                        },
+                        remove: {
+                            model.removeComposerAttachment($0, from: conversation)
+                        }
+                    )
+                    Divider()
+                        .padding(.horizontal, 11)
                 }
-                VStack(alignment: .leading, spacing: 0) {
                     if !hasActiveCommand, let reply = activeReply {
                         HStack(spacing: 7) {
                             Image(systemName: "arrowshape.turn.up.left")
@@ -184,7 +192,7 @@ struct ComposerView: View {
                     .padding(.horizontal, 11)
                     .padding(.vertical, 6)
                     .frame(minHeight: ChatChromeMetrics.controlHeight)
-                }
+            }
                 .background {
                     ComposerFocusSurface { isFocused = true }
                 }
@@ -201,7 +209,6 @@ struct ComposerView: View {
                         }
                         .zIndex(10)
                 }
-            }
         }
         .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, 12).padding(.bottom, 12)
@@ -220,23 +227,8 @@ struct ComposerView: View {
                 )
                 focusNextCommandField()
             } else if !hasActiveCommand {
-                attachments.append(contentsOf: urls)
+                model.addComposerAttachments(urls, to: conversation)
             }
-        }
-        .dropDestination(for: URL.self) { urls, _ in
-            if hasActiveCommand,
-               let option = model.commandComposer.focusedOption, option.type == .attachment,
-               let url = urls.first
-            {
-                model.commandComposer.setValue(
-                    .attachment(url), displayText: url.lastPathComponent, for: option
-                )
-                focusNextCommandField()
-                return true
-            }
-            guard !hasActiveCommand else { return false }
-            attachments.append(contentsOf: urls)
-            return !urls.isEmpty
         }
         .onReceive(NotificationCenter.default.publisher(for: .sakuracordFocusComposer)) { _ in
             isFocused = true
@@ -268,7 +260,6 @@ struct ComposerView: View {
             isFocused = hasActiveCommand
         }
         .task(id: composerPresentationID) {
-            attachments.removeAll()
             draftSelection = nil
             selectionBeforeEmojiPicker = nil
             showFileImporter = false
@@ -413,9 +404,11 @@ struct ComposerView: View {
         selectionBeforeEmojiPicker = nil
         let staged = attachments
         let conversationID = activeConversationID
-        attachments.removeAll()
+        model.clearComposerAttachments(for: conversation)
         Task {
-            let scopedURLs = staged.filter { $0.startAccessingSecurityScopedResource() }
+            let scopedURLs = staged.map(\.url).filter {
+                $0.startAccessingSecurityScopedResource()
+            }
             defer {
                 for url in scopedURLs {
                     url.stopAccessingSecurityScopedResource()
@@ -423,13 +416,12 @@ struct ComposerView: View {
             }
             let didSend = switch conversation {
             case .channel:
-                await model.send(attachments: staged)
+                await model.sendComposerMessage(attachments: staged)
             case .thread:
-                await model.sendThreadMessage(attachments: staged)
+                await model.sendThreadComposerMessage(attachments: staged)
             }
             if !didSend, activeConversationID == conversationID {
-                let currentAttachments = Set(attachments)
-                attachments = staged.filter { !currentAttachments.contains($0) } + attachments
+                model.restoreComposerAttachments(staged, to: conversation)
             }
             isSubmitting = false
             isFocused = true
@@ -627,7 +619,7 @@ struct ComposerView: View {
         model.commandComposer.activate(command)
         model.cancelReply()
         model.updateDraft("")
-        attachments.removeAll()
+        model.clearComposerAttachments(for: conversation)
         draftSelection = nil
         commandSuggestionIndex = 0
         isCommandSuggestionsDismissed = false
@@ -856,6 +848,10 @@ struct ComposerView: View {
         conversation == .channel ? model.replyingTo : nil
     }
 
+    private var attachments: [ForumPostAttachment] {
+        model.composerAttachments(for: conversation)
+    }
+
     private var draft: String {
         switch conversation {
         case .channel: model.draft
@@ -878,32 +874,146 @@ struct ComposerView: View {
     }
 }
 
-struct ComposerAttachmentStrip: View {
-    @Binding var attachments: [URL]
+private struct ComposerAttachmentTray: View {
+    let attachments: [ForumPostAttachment]
+    let toggleSpoiler: (URL) -> Void
+    let update: (ForumPostAttachment) -> Void
+    let remove: (URL) -> Void
+    @State private var hoveredURL: URL?
+    @State private var editingTarget: ForumAttachmentEditorTarget?
+
+    private let tileSize: CGFloat = 230
+    private let filenameRowHeight: CGFloat = 38
 
     var body: some View {
         ScrollView(.horizontal) {
-            HStack {
-                ForEach(attachments, id: \.self) { url in
-                    HStack(spacing: 7) {
-                        Image(systemName: "doc")
-                        Text(url.lastPathComponent).lineLimit(1)
-                        Button {
-                            attachments.removeAll { $0 == url }
-                        } label: {
-                            Image(systemName: "xmark.circle")
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(8)
-                    .glassEffect(
-                        .regular,
-                        in: RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    )
+            HStack(spacing: 12) {
+                ForEach(attachments, id: \.url) { attachment in
+                    attachmentTile(attachment)
+                        .id(attachment.url)
                 }
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 14)
         }
-        .frame(height: 42)
+        .scrollIndicators(.hidden)
+        .frame(height: tileSize + 28)
+        .accessibilityLabel("Message attachments")
+        .sheet(item: $editingTarget) { target in
+            if let attachment = attachments.first(where: { $0.url == target.id }) {
+                ForumAttachmentEditor(
+                    attachment: attachment,
+                    cancel: { editingTarget = nil },
+                    save: {
+                        update($0)
+                        editingTarget = nil
+                    }
+                )
+            }
+        }
+    }
+
+    private func attachmentTile(_ attachment: ForumPostAttachment) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ZStack {
+                LocalAttachmentThumbnail(
+                    url: attachment.url,
+                    maximumPixelDimension: 480,
+                    preservesImageAspectRatio: true,
+                    imageCornerRadius: 16
+                )
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+
+                if attachment.isSpoiler {
+                    Rectangle()
+                        .fill(.black.opacity(0.58))
+                    VStack(spacing: 5) {
+                        Image(systemName: "eye.slash")
+                        Text("SPOILER")
+                            .font(.caption2.weight(.bold))
+                    }
+                    .foregroundStyle(.white)
+                }
+            }
+            .frame(width: tileSize, height: tileSize - filenameRowHeight)
+            .overlay(alignment: .topTrailing) {
+                if hoveredURL == attachment.url {
+                    HoverActionPill(
+                        glass: .regular.interactive(),
+                        spacing: 1,
+                        padding: 3
+                    ) {
+                        HoverActionButton(
+                            systemImage: attachment.isSpoiler ? "eye.slash" : "eye",
+                            help: attachment.isSpoiler ? "Remove spoiler" : "Mark as spoiler",
+                            isSelected: attachment.isSpoiler,
+                            diameter: 22,
+                            iconFont: .caption2.weight(.semibold)
+                        ) {
+                            toggleSpoiler(attachment.url)
+                        }
+                        HoverActionButton(
+                            systemImage: "pencil",
+                            help: "Edit attachment",
+                            diameter: 22,
+                            iconFont: .caption2.weight(.semibold)
+                        ) {
+                            editingTarget = ForumAttachmentEditorTarget(id: attachment.url)
+                        }
+                        HoverActionButton(
+                            systemImage: "trash",
+                            help: "Delete attachment",
+                            role: .destructive,
+                            diameter: 22,
+                            iconFont: .caption2.weight(.semibold)
+                        ) {
+                            remove(attachment.url)
+                        }
+                    }
+                    .padding(7)
+                }
+            }
+
+            Text(attachment.filename)
+                .font(.callout.weight(.medium))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .padding(.horizontal, 14)
+                .frame(
+                    width: tileSize,
+                    height: filenameRowHeight,
+                    alignment: .leading
+                )
+        }
+            .frame(width: tileSize, height: tileSize, alignment: .topLeading)
+            .background(.primary.opacity(0.035))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(.separator, lineWidth: 1)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .onHover { hovering in
+                hoveredURL =
+                    hovering
+                        ? attachment.url
+                        : (hoveredURL == attachment.url ? nil : hoveredURL)
+            }
+            .help(attachment.filename)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(attachment.filename)
+            .accessibilityAction(
+                named: attachment.isSpoiler ? "Remove spoiler" : "Mark as spoiler"
+            ) {
+                toggleSpoiler(attachment.url)
+            }
+            .accessibilityAction(named: "Edit attachment") {
+                editingTarget = ForumAttachmentEditorTarget(id: attachment.url)
+            }
+            .accessibilityAction(named: "Delete attachment") {
+                remove(attachment.url)
+            }
     }
 }
 

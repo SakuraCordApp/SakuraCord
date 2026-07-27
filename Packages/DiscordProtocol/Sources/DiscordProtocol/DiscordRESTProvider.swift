@@ -1735,6 +1735,11 @@ public actor DiscordRESTProvider: ChatProvider {
     public func send(
         _ draft: SendMessageDraft, progress: @escaping @Sendable (MessageSendProgress) -> Void
     ) async throws -> Message {
+        guard draft.attachmentURLs.count <= SendMessageDraft.maximumAttachmentCount else {
+            throw ChatProviderError.invalidRequest(
+                "A message can include at most \(SendMessageDraft.maximumAttachmentCount) attachments."
+            )
+        }
         progress(.preparing)
         var body: [String: JSONValue] = [
             "content": .string(draft.content),
@@ -1752,8 +1757,8 @@ public actor DiscordRESTProvider: ChatProvider {
         }
         if !draft.attachmentURLs.isEmpty {
             body["attachments"] = try await .array(
-                uploadAttachments(
-                    draft.attachmentURLs, channelID: draft.channelID, progress: progress)
+                uploadForumAttachments(
+                    draft.attachments, channelID: draft.channelID, progress: progress)
             )
         }
         progress(.submitting)

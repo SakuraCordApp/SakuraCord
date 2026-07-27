@@ -376,6 +376,11 @@ public actor MockChatProvider: ChatProvider {
     }
 
     public func send(_ draft: SendMessageDraft) async throws -> Message {
+        guard draft.attachmentURLs.count <= SendMessageDraft.maximumAttachmentCount else {
+            throw ChatProviderError.invalidRequest(
+                "A message can include at most \(SendMessageDraft.maximumAttachmentCount) attachments."
+            )
+        }
         guard
             !draft.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !draft.attachmentURLs.isEmpty || !draft.stickerIDs.isEmpty
@@ -383,8 +388,18 @@ public actor MockChatProvider: ChatProvider {
             throw ChatProviderError.invalidRequest("A message needs text or an attachment.")
         }
         nextMessageID += 1
-        let attachments = try draft.attachmentURLs.enumerated().map { index, url in
-            try Self.stageAttachment(url, messageID: nextMessageID, index: index)
+        let attachments = try draft.attachments.enumerated().map { index, attachment in
+            var staged = try Self.stageAttachment(
+                attachment.url,
+                messageID: nextMessageID,
+                index: index
+            )
+            let filename = attachment.filename.trimmingCharacters(in: .whitespacesAndNewlines)
+            staged.filename =
+                attachment.isSpoiler && !filename.hasPrefix("SPOILER_")
+                    ? "SPOILER_\(filename)" : filename
+            staged.description = attachment.description
+            return staged
         }
         let replyPreview = draft.replyTo.flatMap { messageID in
             messagesByChannel[draft.channelID]?.first(where: { $0.id == messageID }).map {

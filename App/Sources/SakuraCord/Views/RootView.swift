@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SakuraCordModels
 import SwiftUI
 
@@ -42,7 +43,17 @@ private struct ChatRootView: View {
     @State private var showLogin = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var supplementaryPaneFrame = CGRect.zero
+    @State private var workspaceFrame = CGRect.zero
     @State private var presentsForumComposer = false
+    @State private var isFileDropTargeted = false
+    @State private var isInstantUpload = false
+    @State private var hoveredFileDropDestination: MessageComposerDestination?
+
+    private let modifierFlagTimer = Timer.publish(
+        every: 0.05,
+        on: .main,
+        in: .common
+    ).autoconnect()
 
     var body: some View {
         @Bindable var model = model
@@ -172,8 +183,13 @@ private struct ChatRootView: View {
             .allowsHitTesting(false)
         }
         .background {
-            WindowActivityReader { isActive in
-                model.reportMainWindowActive(isActive)
+            ZStack {
+                WindowActivityReader { isActive in
+                    model.reportMainWindowActive(isActive)
+                }
+                WindowChromeDimmingBridge(
+                    isDimmed: isFileDropTargeted && canAcceptWindowDrops
+                )
             }
             .frame(width: 0, height: 0)
         }
@@ -188,6 +204,48 @@ private struct ChatRootView: View {
                     isPresented: $presentsForumComposer
                 )
             }
+        }
+        .overlay {
+            if isFileDropTargeted, canAcceptWindowDrops {
+                ComposerFileDropOverlay(
+                    model: model,
+                    workspaceFrame: workspaceFrame,
+                    supplementaryPaneFrame: supplementaryPaneFrame,
+                    hoveredDestination: hoveredFileDropDestination,
+                    isInstantUpload: isInstantUpload
+                )
+                .allowsHitTesting(false)
+            }
+        }
+        .onGeometryChange(for: CGRect.self) { proxy in
+            proxy.frame(in: .global)
+        } action: { frame in
+            workspaceFrame = frame
+        }
+        .dropDestination(
+            for: URL.self,
+            action: { urls, location in
+                guard canAcceptWindowDrops,
+                      let destination = composerDestination(at: location)
+                else { return false }
+                hoveredFileDropDestination = destination
+                if NSEvent.modifierFlags.contains(.shift) {
+                    sendDroppedAttachmentsImmediately(urls, to: destination)
+                    return !urls.isEmpty
+                }
+                return model.addComposerAttachments(urls, to: destination)
+            },
+            isTargeted: { targeted in
+                isFileDropTargeted = targeted
+                isInstantUpload = targeted && NSEvent.modifierFlags.contains(.shift)
+                hoveredFileDropDestination =
+                    targeted ? composerDestinationForCurrentPointer() : nil
+            }
+        )
+        .onReceive(modifierFlagTimer) { _ in
+            guard isFileDropTargeted else { return }
+            isInstantUpload = NSEvent.modifierFlags.contains(.shift)
+            hoveredFileDropDestination = composerDestinationForCurrentPointer()
         }
         .onPreferenceChange(ThreadPaneFramePreferenceKey.self) { frame in
             supplementaryPaneFrame = frame
@@ -237,6 +295,58 @@ private struct ChatRootView: View {
         return guild.name.isEmpty ? "Unnamed Server" : guild.name
     }
 
+    private var canAcceptWindowDrops: Bool {
+        !presentsForumComposer
+            && !showLogin
+            && !model.showQuickSwitcher
+            && model.presentedInteractionModal == nil
+            && (model.isComposerDropEligible(.channel)
+                || model.isComposerDropEligible(.thread))
+    }
+
+    private func composerDestination(at location: CGPoint) -> MessageComposerDestination? {
+        let proposed = proposedComposerDestination(atX: location.x)
+        return model.isComposerDropEligible(proposed) ? proposed : nil
+    }
+
+    private func proposedComposerDestination(atX x: CGFloat) -> MessageComposerDestination {
+        if model.openThread != nil, supplementaryPaneFrame != .zero {
+            let localThreadLeadingEdge = supplementaryPaneFrame.minX - workspaceFrame.minX
+            return x >= localThreadLeadingEdge ? .thread : .channel
+        }
+        return .channel
+    }
+
+    private func composerDestinationForCurrentPointer() -> MessageComposerDestination? {
+        guard let window =
+            NSApp.keyWindow
+                ?? NSApp.mainWindow
+                ?? NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain })
+        else { return nil }
+        let windowPoint = window.convertPoint(fromScreen: NSEvent.mouseLocation)
+        let proposed = proposedComposerDestination(atX: windowPoint.x - workspaceFrame.minX)
+        return model.isComposerDropEligible(proposed) ? proposed : nil
+    }
+
+    private func sendDroppedAttachmentsImmediately(
+        _ urls: [URL],
+        to destination: MessageComposerDestination
+    ) {
+        guard !urls.isEmpty else { return }
+        Task {
+            let scopedURLs = urls.filter { $0.startAccessingSecurityScopedResource() }
+            defer {
+                for url in scopedURLs {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+            await model.sendAttachmentsImmediately(
+                urls.map { ForumPostAttachment(url: $0) },
+                to: destination
+            )
+        }
+    }
+
     private func channelToolbarSymbol(_ channel: Channel) -> String {
         ChannelIconPresentation.systemImage(
             for: channel,
@@ -282,6 +392,129 @@ private struct ChatRootView: View {
     private var selectedGuild: Guild? {
         guard let guildID = model.selectedGuildID else { return nil }
         return model.snapshot?.guilds.first(where: { $0.id == guildID })
+    }
+}
+
+private struct ComposerFileDropOverlay: View {
+    let model: AppModel
+    let workspaceFrame: CGRect
+    let supplementaryPaneFrame: CGRect
+    let hoveredDestination: MessageComposerDestination?
+    let isInstantUpload: Bool
+
+    var body: some View {
+        GeometryReader { proxy in
+            Group {
+                if model.openThread != nil, supplementaryPaneFrame != .zero {
+                    HStack(spacing: 0) {
+                        destinationZone(
+                            .channel,
+                            title: model.selectedChannel?.name ?? "Channel"
+                        )
+                        .frame(width: primaryWidth(in: proxy.size.width))
+
+                        destinationZone(
+                            .thread,
+                            title: model.openThread?.name ?? "Thread"
+                        )
+                    }
+                } else {
+                    destinationZone(
+                        .channel,
+                        title: model.selectedChannel?.name ?? "Channel"
+                    )
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            isInstantUpload
+                ? "Drop files to upload instantly"
+                : "Drop files anywhere to upload"
+        )
+    }
+
+    @ViewBuilder
+    private func destinationZone(
+        _ destination: MessageComposerDestination,
+        title: String
+    ) -> some View {
+        if hoveredDestination == destination, model.isComposerDropEligible(destination) {
+            ZStack {
+                Color.black.opacity(0.6)
+
+                GlassEffectContainer(spacing: 14) {
+                    VStack(spacing: 18) {
+                        Image(
+                            systemName: isInstantUpload
+                                ? "paperplane.fill" : "tray.and.arrow.down.fill"
+                        )
+                        .font(.system(size: 50, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .symbolEffect(.bounce, value: isInstantUpload)
+
+                        Text(isInstantUpload ? "Upload directly to" : "Upload to")
+                            .font(.title2.weight(.bold))
+
+                        Label(
+                            title,
+                            systemImage: destination == .thread
+                                ? "bubble.left.and.bubble.right.fill" : "number"
+                        )
+                        .font(.headline.weight(.semibold))
+                        .lineLimit(1)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
+                        .glassEffect(.regular, in: Capsule())
+
+                        VStack(spacing: 10) {
+                            Text(
+                                isInstantUpload
+                                    ? "Release to upload immediately."
+                                    : "You can add a message before uploading."
+                            )
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+
+                            if !isInstantUpload {
+                                HStack(spacing: 7) {
+                                    Text("⇧")
+                                        .font(.caption.weight(.bold))
+                                        .frame(width: 21, height: 19)
+                                        .glassEffect(
+                                            .regular,
+                                            in: RoundedRectangle(
+                                                cornerRadius: 6,
+                                                style: .continuous
+                                            )
+                                        )
+                                    Text("Hold Shift to upload directly")
+                                        .font(.caption.weight(.medium))
+                                }
+                                .foregroundStyle(.secondary)
+                            }
+                        }
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 48)
+                    .padding(.vertical, 38)
+                    .frame(maxWidth: 460)
+                    .glassEffect(
+                        .regular,
+                        in: RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    )
+                    .padding(24)
+                }
+            }
+        } else {
+            Color.clear
+        }
+    }
+
+    private func primaryWidth(in totalWidth: CGFloat) -> CGFloat {
+        guard workspaceFrame != .zero else { return totalWidth / 2 }
+        return max(0, min(totalWidth, supplementaryPaneFrame.minX - workspaceFrame.minX))
     }
 }
 

@@ -234,6 +234,47 @@ import Testing
     #expect(try Data(contentsOf: attachment.url) == contents)
 }
 
+@Test func `mock message send rejects more than ten attachments before staging`() async throws {
+    let provider = MockChatProvider()
+    _ = try await provider.bootstrap()
+    let urls = (0 ... SendMessageDraft.maximumAttachmentCount).map {
+        URL(fileURLWithPath: "/tmp/sakuracord-over-limit-\($0)")
+    }
+
+    await #expect(throws: ChatProviderError.self) {
+        try await provider.send(
+            SendMessageDraft(
+                channelID: ChannelID(rawValue: 210),
+                content: "",
+                attachmentURLs: urls
+            )
+        )
+    }
+}
+
+@Test func `message draft keeps attachment urls and metadata synchronized`() {
+    let original = URL(fileURLWithPath: "/tmp/sakuracord-original.png")
+    let replacement = URL(fileURLWithPath: "/tmp/sakuracord-replacement.png")
+    var draft = SendMessageDraft(
+        channelID: ChannelID(rawValue: 210),
+        content: "",
+        attachments: [
+            ForumPostAttachment(
+                url: original,
+                filename: "renamed.png",
+                description: "Alt text",
+                isSpoiler: true
+            )
+        ]
+    )
+
+    #expect(draft.attachmentURLs == [original])
+    draft.attachmentURLs = [replacement]
+    #expect(draft.attachments == [ForumPostAttachment(url: replacement)])
+    draft.attachments[0].filename = "replacement-name.png"
+    #expect(draft.attachmentURLs == [replacement])
+}
+
 @Test func `mock slash commands cover ephemeral deferred followup and failure lifecycles`()
     async throws
 {

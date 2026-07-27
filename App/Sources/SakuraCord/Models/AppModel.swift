@@ -29,6 +29,11 @@ nonisolated enum OptimisticAttachmentPresentation {
     }
 }
 
+nonisolated enum MessageComposerDestination: Hashable, Sendable {
+    case channel
+    case thread
+}
+
 nonisolated struct ComponentControlKey: Hashable, Sendable {
     let messageID: MessageID
     let customID: String
@@ -703,6 +708,7 @@ final class AppModel {
             cancelApplicationCommandMemberSearch()
             commandExecutionTask?.cancel()
             commandComposer.resetForChannelChange()
+            channelComposerAttachments = []
             isVoiceChatOpen = selectedChannel?.kind == .voice
             closeThread()
             if let selectedChannelID {
@@ -729,6 +735,8 @@ final class AppModel {
 
     var draft = ""
     var threadDraft = ""
+    private(set) var channelComposerAttachments: [ForumPostAttachment] = []
+    private(set) var threadComposerAttachments: [ForumPostAttachment] = []
     var showInspector = true
     var showQuickSwitcher = false
     var errorMessage: String?
@@ -2064,6 +2072,7 @@ final class AppModel {
         openThreadStartedAt = startedAt
         threadMessages = initialMessages
         threadDraft = ""
+        threadComposerAttachments = []
         isLoadingThread = true
         hasCompletedInitialThreadLoad = false
         hasMoreThreadMessages = false
@@ -2101,6 +2110,7 @@ final class AppModel {
         openThreadStartedAt = nil
         threadMessages = []
         threadDraft = ""
+        threadComposerAttachments = []
         isLoadingThread = false
         hasCompletedInitialThreadLoad = false
         isLoadingEarlierThread = false
@@ -2156,16 +2166,41 @@ final class AppModel {
 
     @discardableResult
     func sendThreadMessage(attachments: [URL] = []) async -> Bool {
+        await sendThreadComposerMessage(
+            attachments: attachments.map { ForumPostAttachment(url: $0) }
+        )
+    }
+
+    @discardableResult
+    func sendThreadComposerMessage(attachments: [ForumPostAttachment]) async -> Bool {
         guard let thread = openThread, openThreadAccess.canSend else { return false }
         let content = threadDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !content.isEmpty || !attachments.isEmpty else { return false }
+        guard validateAttachmentCount(attachments) else { return false }
+        return await sendThreadMessage(
+            content: content,
+            attachments: attachments,
+            thread: thread,
+            clearsComposer: true
+        )
+    }
+
+    @discardableResult
+    private func sendThreadMessage(
+        content: String,
+        attachments: [ForumPostAttachment],
+        thread: MessageThreadSummary,
+        clearsComposer: Bool
+    ) async -> Bool {
         let draft = SendMessageDraft(
             channelID: thread.id,
             content: content,
-            attachmentURLs: attachments
+            attachments: attachments
         )
         threadErrorMessage = nil
-        threadDraft = ""
+        if clearsComposer {
+            threadDraft = ""
+        }
         do {
             let message = try await provider.send(draft)
             guard openThread?.id == thread.id else { return true }
@@ -2178,7 +2213,9 @@ final class AppModel {
             return true
         } catch {
             guard openThread?.id == thread.id else { return false }
-            threadDraft = content
+            if clearsComposer, threadDraft.isEmpty {
+                threadDraft = content
+            }
             threadErrorMessage = error.localizedDescription
             return false
         }
@@ -2692,36 +2729,215 @@ final class AppModel {
 
     @discardableResult
     func send(attachments: [URL] = []) async -> Bool {
+        await sendComposerMessage(
+            attachments: attachments.map { ForumPostAttachment(url: $0) }
+        )
+    }
+
+    @discardableResult
+    func sendComposerMessage(attachments: [ForumPostAttachment]) async -> Bool {
         guard let channelID = selectedChannelID, selectedConversationAccess.canSend else {
             return false
         }
         let content = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !content.isEmpty || !attachments.isEmpty else { return false }
+        guard validateAttachmentCount(attachments) else { return false }
         let replyTo = replyingTo?.id
         let replyPreview = replyingTo.map {
             MessageReplyPreview(messageID: $0.id, author: $0.author, content: $0.content)
         }
-        let outgoing = SendMessageDraft(
-            channelID: channelID, content: content, replyTo: replyTo, attachmentURLs: attachments
+        return await sendChannelMessage(
+            channelID: channelID,
+            content: content,
+            replyTo: replyTo,
+            replyPreview: replyPreview,
+            attachments: attachments,
+            clearsComposer: true
         )
-        stopLocalTyping(clearThrottle: true)
+    }
+
+    @discardableResult
+    private func sendChannelMessage(
+        channelID: ChannelID,
+        content: String,
+        replyTo: MessageID?,
+        replyPreview: MessageReplyPreview?,
+        attachments: [ForumPostAttachment],
+        clearsComposer: Bool
+    ) async -> Bool {
+        let outgoing = SendMessageDraft(
+            channelID: channelID, content: content, replyTo: replyTo, attachments: attachments
+        )
+        if clearsComposer {
+            stopLocalTyping(clearThrottle: true)
+        }
         let optimistic = Message(
             id: MessageID(rawValue: UInt64.max - UInt64(messages.count)), channelID: channelID,
             author: snapshot?.currentUser
                 ?? User(id: UserID(rawValue: 1), username: "me", displayName: "Me"),
             content: content, replyTo: replyTo, replyPreview: replyPreview,
             attachments: attachments.enumerated().map {
-                OptimisticAttachmentPresentation.attachment(
-                    for: $0.element,
+                var presentation = OptimisticAttachmentPresentation.attachment(
+                    for: $0.element.url,
                     index: $0.offset
                 )
+                presentation.filename = $0.element.filename
+                presentation.description = $0.element.description
+                presentation.isSpoiler = $0.element.isSpoiler
+                return presentation
             }, nonce: outgoing.nonce, outboxState: .sending
         )
         messages.append(optimistic)
         outgoingDraftsByNonce[outgoing.nonce] = outgoing
-        replyingTo = nil
-        updateDraft("")
+        if clearsComposer {
+            replyingTo = nil
+            updateDraft("")
+        }
         return await performOutgoingSend(outgoing, isRetry: false)
+    }
+
+    func composerAttachments(
+        for destination: MessageComposerDestination
+    ) -> [ForumPostAttachment] {
+        switch destination {
+        case .channel: channelComposerAttachments
+        case .thread: threadComposerAttachments
+        }
+    }
+
+    func isComposerDropEligible(_ destination: MessageComposerDestination) -> Bool {
+        switch destination {
+        case .channel:
+            guard commandComposer.activeCommand == nil,
+                  selectedConversationAccess.canSend,
+                  let kind = selectedChannel?.kind
+            else { return false }
+            return Self.supportsTyping(kind)
+        case .thread:
+            return openThread != nil && openThreadAccess.canSend
+        }
+    }
+
+    @discardableResult
+    func addComposerAttachments(
+        _ urls: [URL],
+        to destination: MessageComposerDestination
+    ) -> Bool {
+        guard isComposerDropEligible(destination), !urls.isEmpty else { return false }
+        var attachments = composerAttachments(for: destination)
+        var seen = Set(attachments.map(\.url.standardizedFileURL))
+        let unique = urls.filter { seen.insert($0.standardizedFileURL).inserted }
+        let remaining = max(0, SendMessageDraft.maximumAttachmentCount - attachments.count)
+        attachments.append(
+            contentsOf: unique.prefix(remaining).map { ForumPostAttachment(url: $0) }
+        )
+        setComposerAttachments(attachments, for: destination)
+        if unique.count > remaining {
+            errorMessage =
+                "You can attach up to \(SendMessageDraft.maximumAttachmentCount) files to one message."
+        }
+        return remaining > 0 && !unique.isEmpty
+    }
+
+    func removeComposerAttachment(
+        _ url: URL,
+        from destination: MessageComposerDestination
+    ) {
+        var attachments = composerAttachments(for: destination)
+        attachments.removeAll { $0.url.standardizedFileURL == url.standardizedFileURL }
+        setComposerAttachments(attachments, for: destination)
+    }
+
+    func updateComposerAttachment(
+        _ attachment: ForumPostAttachment,
+        in destination: MessageComposerDestination
+    ) {
+        var attachments = composerAttachments(for: destination)
+        guard let index = attachments.firstIndex(where: { $0.url == attachment.url }) else {
+            return
+        }
+        attachments[index] = attachment
+        setComposerAttachments(attachments, for: destination)
+    }
+
+    func toggleComposerAttachmentSpoiler(
+        _ url: URL,
+        in destination: MessageComposerDestination
+    ) {
+        var attachments = composerAttachments(for: destination)
+        guard let index = attachments.firstIndex(where: { $0.url == url }) else { return }
+        attachments[index].isSpoiler.toggle()
+        setComposerAttachments(attachments, for: destination)
+    }
+
+    func clearComposerAttachments(for destination: MessageComposerDestination) {
+        setComposerAttachments([], for: destination)
+    }
+
+    func restoreComposerAttachments(
+        _ restoredAttachments: [ForumPostAttachment],
+        to destination: MessageComposerDestination
+    ) {
+        let current = composerAttachments(for: destination)
+        var seen = Set(current.map(\.url.standardizedFileURL))
+        let restored = restoredAttachments.filter {
+            seen.insert($0.url.standardizedFileURL).inserted
+        }
+        setComposerAttachments(
+            Array((restored + current).prefix(SendMessageDraft.maximumAttachmentCount)),
+            for: destination
+        )
+    }
+
+    @discardableResult
+    func sendAttachmentsImmediately(
+        _ attachments: [ForumPostAttachment],
+        to destination: MessageComposerDestination
+    ) async -> Bool {
+        guard isComposerDropEligible(destination), !attachments.isEmpty,
+              validateAttachmentCount(attachments)
+        else { return false }
+        switch destination {
+        case .channel:
+            guard let channelID = selectedChannelID else { return false }
+            return await sendChannelMessage(
+                channelID: channelID,
+                content: "",
+                replyTo: nil,
+                replyPreview: nil,
+                attachments: attachments,
+                clearsComposer: false
+            )
+        case .thread:
+            guard let thread = openThread else { return false }
+            return await sendThreadMessage(
+                content: "",
+                attachments: attachments,
+                thread: thread,
+                clearsComposer: false
+            )
+        }
+    }
+
+    private func setComposerAttachments(
+        _ attachments: [ForumPostAttachment],
+        for destination: MessageComposerDestination
+    ) {
+        switch destination {
+        case .channel:
+            channelComposerAttachments = attachments
+        case .thread:
+            threadComposerAttachments = attachments
+        }
+    }
+
+    private func validateAttachmentCount(_ attachments: [ForumPostAttachment]) -> Bool {
+        guard attachments.count <= SendMessageDraft.maximumAttachmentCount else {
+            errorMessage =
+                "You can attach up to \(SendMessageDraft.maximumAttachmentCount) files to one message."
+            return false
+        }
+        return true
     }
 
     @discardableResult

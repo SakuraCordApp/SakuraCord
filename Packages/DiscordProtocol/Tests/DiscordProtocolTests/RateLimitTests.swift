@@ -17,6 +17,31 @@ import Testing
 
 @Suite(.serialized)
 struct ProviderRequestContractTests {
+    @Test func `message send rejects more than ten attachments without a request`() async {
+        RateLimitURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RateLimitURLProtocol.self]
+        let provider = DiscordRESTProvider(
+            credentials: TestCredentialStore(),
+            handle: CredentialHandle(accountID: "1"),
+            session: URLSession(configuration: configuration)
+        )
+        let attachments = (0 ... SendMessageDraft.maximumAttachmentCount).map {
+            URL(fileURLWithPath: "/tmp/sakuracord-over-limit-\($0)")
+        }
+
+        await #expect(throws: ChatProviderError.self) {
+            try await provider.send(
+                SendMessageDraft(
+                    channelID: ChannelID(rawValue: 200),
+                    content: "",
+                    attachmentURLs: attachments
+                )
+            )
+        }
+        #expect(RateLimitURLProtocol.messageRequestCount == 0)
+    }
+
     @Test func `acknowledgement uses exact route token body response and one mutation attempt`() async throws {
         RateLimitURLProtocol.reset()
         let configuration = URLSessionConfiguration.ephemeral

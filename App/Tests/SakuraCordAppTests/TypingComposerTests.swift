@@ -204,6 +204,82 @@ import Testing
     #expect(await provider.sendCount == before + 1)
 }
 
+@MainActor
+@Test func `composer stages at most ten unique attachments and clears them on navigation`() async {
+    let provider = TypingTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let urls = (0 ..< 12).map {
+        URL(fileURLWithPath: "/tmp/sakuracord-composer-\($0)")
+    }
+
+    #expect(model.addComposerAttachments(urls + [urls[0]], to: .channel))
+    #expect(model.channelComposerAttachments.map(\.url) == Array(urls.prefix(10)))
+    #expect(model.errorMessage?.contains("10") == true)
+
+    model.selectedChannelID = ChannelID(rawValue: 12)
+    #expect(model.channelComposerAttachments.isEmpty)
+}
+
+@MainActor
+@Test func `instant attachment upload preserves the current draft and staged files`() async {
+    let provider = TypingTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let staged = URL(fileURLWithPath: "/tmp/sakuracord-staged")
+    let instant = URL(fileURLWithPath: "/tmp/sakuracord-instant")
+    model.updateDraft("keep editing this")
+    model.addComposerAttachments([staged], to: .channel)
+
+    #expect(
+        await model.sendAttachmentsImmediately(
+            [ForumPostAttachment(url: instant)],
+            to: .channel
+        )
+    )
+    #expect(model.draft == "keep editing this")
+    #expect(model.channelComposerAttachments.map(\.url) == [staged])
+    #expect(model.messages.last?.attachments.map(\.url) == [instant])
+    #expect(await provider.sendCount == 1)
+}
+
+@MainActor
+@Test func `composer attachment controls preserve edits and spoiler state`() async throws {
+    let model = AppModel(launchMode: .offlineTesting, provider: TypingTestProvider())
+    await model.start()
+    let url = URL(fileURLWithPath: "/tmp/sakuracord-editable-attachment.png")
+    model.addComposerAttachments([url], to: .channel)
+    var attachment = try #require(model.channelComposerAttachments.first)
+
+    model.toggleComposerAttachmentSpoiler(url, in: .channel)
+    #expect(model.channelComposerAttachments.first?.isSpoiler == true)
+
+    attachment.filename = "renamed.png"
+    attachment.description = "A useful description"
+    attachment.isSpoiler = true
+    model.updateComposerAttachment(attachment, in: .channel)
+    #expect(model.channelComposerAttachments.first?.filename == "renamed.png")
+    #expect(model.channelComposerAttachments.first?.description == "A useful description")
+    #expect(model.channelComposerAttachments.first?.isSpoiler == true)
+}
+
+@MainActor
+@Test func `window attachment drops reject non-message channel surfaces`() async {
+    let provider = TypingTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    #expect(model.isComposerDropEligible(.channel))
+
+    model.selectedChannelID = ChannelID(rawValue: 11)
+    #expect(!model.isComposerDropEligible(.channel))
+    #expect(
+        !model.addComposerAttachments(
+            [URL(fileURLWithPath: "/tmp/not-for-voice")],
+            to: .channel
+        )
+    )
+}
+
 @Test func `composer insertion repairs stale selections and inserts emoji without spaces`() {
     let inserted = ComposerDraftEditing.insert(
         "✨", into: "hello", replacing: NSRange(location: 99, length: 4)

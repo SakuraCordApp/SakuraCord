@@ -1638,22 +1638,30 @@ public struct MessagePage: Codable, Equatable, Sendable {
 }
 
 public struct SendMessageDraft: Equatable, Sendable {
+    public static let maximumAttachmentCount = 10
+
     public var channelID: ChannelID
     public var content: String
     public var replyTo: MessageID?
-    public var attachmentURLs: [URL]
+    public var attachments: [ForumPostAttachment]
+    public var attachmentURLs: [URL] {
+        get { attachments.map(\.url) }
+        set { attachments = newValue.map { ForumPostAttachment(url: $0) } }
+    }
     public var nonce: String
     public var stickerIDs: [String]
 
     public init(
         channelID: ChannelID, content: String, replyTo: MessageID? = nil,
         attachmentURLs: [URL] = [],
+        attachments: [ForumPostAttachment]? = nil,
         nonce: String = ClientNonce.make(), stickerIDs: [String] = []
     ) {
         self.channelID = channelID
         self.content = content
         self.replyTo = replyTo
-        self.attachmentURLs = attachmentURLs
+        self.attachments =
+            attachments ?? attachmentURLs.map { ForumPostAttachment(url: $0) }
         self.nonce = nonce
         self.stickerIDs = stickerIDs
     }

@@ -229,6 +229,9 @@ struct ComposerTextView: NSViewRepresentable {
         textView.isSelectable = true
         textView.isRichText = true
         textView.importsGraphics = false
+        // Let the workspace-level file destination own file drags. NSTextView's
+        // default destination otherwise inserts a dropped file path as text.
+        textView.unregisterDraggedTypes()
         textView.drawsBackground = false
         textView.isHorizontallyResizable = false
         textView.isVerticallyResizable = true

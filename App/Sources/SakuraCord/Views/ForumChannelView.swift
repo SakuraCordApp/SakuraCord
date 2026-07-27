@@ -2034,7 +2034,7 @@ private struct ForumComposerAttachmentTile: View {
 
     var body: some View {
         ZStack {
-            ForumLocalAttachmentThumbnail(
+            LocalAttachmentThumbnail(
                 url: attachment.url,
                 cachedImage: thumbnail,
                 onImageLoaded: thumbnailLoaded
@@ -2076,11 +2076,11 @@ private struct ForumComposerAttachmentTile: View {
     }
 }
 
-private struct ForumAttachmentEditorTarget: Identifiable {
+struct ForumAttachmentEditorTarget: Identifiable {
     let id: URL
 }
 
-private struct ForumAttachmentEditor: View {
+struct ForumAttachmentEditor: View {
     let attachment: ForumPostAttachment
     let cancel: () -> Void
     let save: (ForumPostAttachment) -> Void
@@ -2115,7 +2115,7 @@ private struct ForumAttachmentEditor: View {
             }
 
             HStack(alignment: .top, spacing: 24) {
-                ForumLocalAttachmentThumbnail(url: attachment.url, maximumPixelDimension: 480)
+                LocalAttachmentThumbnail(url: attachment.url, maximumPixelDimension: 480)
                     .frame(width: 220, height: 220)
                     .background(.quaternary)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -2186,74 +2186,6 @@ private struct ForumAttachmentEditor: View {
             idealHeight: 520,
             maxHeight: 640
         )
-    }
-}
-
-private struct ForumLocalAttachmentThumbnail: View {
-    let url: URL
-    var maximumPixelDimension = 256
-    var cachedImage: NSImage?
-    var onImageLoaded: ((NSImage) -> Void)?
-    @State private var image: NSImage?
-
-    var body: some View {
-        ZStack {
-            Color.clear
-            if let displayImage {
-                Image(nsImage: displayImage)
-                    .resizable()
-                    .scaledToFill()
-            } else if isImageFile {
-                Color.clear
-            } else {
-                Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
-                    .resizable()
-                    .scaledToFit()
-                    .padding(10)
-            }
-        }
-        .clipped()
-        .task(id: "\(url.absoluteString)#\(maximumPixelDimension)") {
-            if let cachedImage {
-                image = cachedImage
-                return
-            }
-            image = nil
-            guard isImageFile else { return }
-            let accessed = url.startAccessingSecurityScopedResource()
-            defer {
-                if accessed {
-                    url.stopAccessingSecurityScopedResource()
-                }
-            }
-            guard let data = try? await SharedMediaDataLoader.shared.data(for: url),
-                  !Task.isCancelled
-            else { return }
-            let decoded = await Task.detached(priority: .userInitiated) {
-                try? DecodedAnimatedImage(
-                    data: data,
-                    maximumPixelDimension: maximumPixelDimension
-                )
-            }.value
-            guard !Task.isCancelled else { return }
-            let loadedImage: NSImage
-            if let firstFrame = decoded?.frames.first {
-                loadedImage = NSImage(cgImage: firstFrame, size: .zero)
-            } else {
-                guard let fallbackImage = NSImage(data: data) else { return }
-                loadedImage = fallbackImage
-            }
-            image = loadedImage
-            onImageLoaded?(loadedImage)
-        }
-    }
-
-    private var displayImage: NSImage? {
-        cachedImage ?? image
-    }
-
-    private var isImageFile: Bool {
-        UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) == true
     }
 }
 
