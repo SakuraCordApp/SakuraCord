@@ -1197,27 +1197,110 @@ import Testing
 }
 
 @MainActor
-@Test func `failed message retries once with its original nonce`() async throws {
+@Test func `definite send failure removes the optimistic message`() async {
     let provider = TypingTestProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
     await provider.failNextSend()
 
-    model.updateDraft("retry me")
+    model.updateDraft("remove me")
     let didSend = await model.send()
     #expect(!didSend)
-    let failed = try #require(model.messages.last)
-    #expect(failed.outboxState == .failed)
+    #expect(!model.messages.contains { $0.content == "remove me" })
+    #expect(await provider.sendCount == 1)
+}
 
-    #expect(await model.retrySending(failed))
-    #expect(model.messages.last?.outboxState == .confirmed)
-    #expect(await provider.sendCount == 2)
-    let nonces = await provider.sentNonces
-    #expect(nonces.count == 2)
-    #expect(nonces[0] == nonces[1])
-    let repeatedRetry = await model.retrySending(failed)
-    #expect(!repeatedRetry)
-    #expect(await provider.sendCount == 2)
+@MainActor
+@Test func `optimistic message is pending until send confirmation`() async {
+    let provider = TypingTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+
+    await provider.suspendNextSend()
+    model.updateDraft("pending message")
+    let send = Task { await model.send() }
+    await provider.waitUntilSendStarts()
+
+    let pending = model.messages.last { $0.content == "pending message" }
+    #expect(pending?.outboxState == .sending)
+    #expect(
+        pending.map {
+            MessageOutboxPresentation.textOpacity(for: $0.outboxState)
+        } == 0.55
+    )
+
+    await provider.releaseSend()
+    #expect(await send.value)
+    let confirmed = model.messages.last { $0.content == "pending message" }
+    #expect(confirmed?.outboxState == .confirmed)
+    #expect(
+        confirmed.map {
+            MessageOutboxPresentation.textOpacity(for: $0.outboxState)
+        } == 1
+    )
+}
+
+@MainActor
+@Test func `optimistic image attachment renders as dimmed local media`() async throws {
+    let provider = TypingTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+
+    let imageURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "sakuracord-pending-image-\(UUID().uuidString).png"
+    )
+    let representation = try #require(NSBitmapImageRep(
+        bitmapDataPlanes: nil,
+        pixelsWide: 48,
+        pixelsHigh: 30,
+        bitsPerSample: 8,
+        samplesPerPixel: 4,
+        hasAlpha: true,
+        isPlanar: false,
+        colorSpaceName: .deviceRGB,
+        bytesPerRow: 0,
+        bitsPerPixel: 0
+    ))
+    let pngData = try #require(representation.representation(using: .png, properties: [:]))
+    try pngData.write(to: imageURL)
+    defer { try? FileManager.default.removeItem(at: imageURL) }
+
+    await provider.suspendNextSend()
+    let send = Task { await model.send(attachments: [imageURL]) }
+    await provider.waitUntilSendStarts()
+
+    let pending = try #require(model.messages.last { $0.attachments.first?.url == imageURL })
+    let attachment = try #require(pending.attachments.first)
+    #expect(attachment.mediaType == "image/png")
+    #expect(attachment.width == 48)
+    #expect(attachment.height == 30)
+    #expect(attachment.size == pngData.count)
+    #expect(RichMediaItem(attachment).kind == .image(animated: false))
+    #expect(MessageOutboxPresentation.mediaOpacity(for: pending.outboxState) == 0.55)
+
+    await provider.releaseSend()
+    #expect(await send.value)
+}
+
+@MainActor
+@Test func `ambiguous timeout keeps the optimistic message pending`() async {
+    let provider = TypingTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    await provider.timeOutNextSend()
+
+    model.updateDraft("await reconciliation")
+    let didSend = await model.send()
+    #expect(!didSend)
+
+    let pending = model.messages.last { $0.content == "await reconciliation" }
+    #expect(pending?.outboxState == .awaitingReconciliation)
+    #expect(
+        pending.map {
+            MessageOutboxPresentation.textOpacity(for: $0.outboxState)
+        } == 0.55
+    )
+    #expect(await provider.sendCount == 1)
 }
 
 @MainActor
@@ -1255,6 +1338,11 @@ private func eventuallyOnMain(_ condition: @escaping @MainActor () -> Bool) asyn
 }
 
 private actor TypingTestProvider: ChatProvider {
+    private enum SendFailure {
+        case definite
+        case timedOut
+    }
+
     let currentUser = User(id: UserID(rawValue: 1), username: "me", displayName: "Me")
     let otherUser = User(id: UserID(rawValue: 2), username: "other", displayName: "Other")
     private let channels = [
@@ -1267,7 +1355,7 @@ private actor TypingTestProvider: ChatProvider {
     private(set) var sendCount = 0
     private(set) var sentNonces: [String] = []
     private var nextMessageID: UInt64 = 100
-    private var failsNextSend = false
+    private var nextSendFailure: SendFailure?
     private var suspendsNextSend = false
     private var sendStartedWaiter: CheckedContinuation<Void, Never>?
     private var sendReleaseWaiter: CheckedContinuation<Void, Never>?
@@ -1310,9 +1398,14 @@ private actor TypingTestProvider: ChatProvider {
     func send(_ draft: SendMessageDraft) async throws -> Message {
         sendCount += 1
         sentNonces.append(draft.nonce)
-        if failsNextSend {
-            failsNextSend = false
-            throw ChatProviderError.invalidRequest("Synthetic send failure")
+        if let failure = nextSendFailure {
+            nextSendFailure = nil
+            switch failure {
+            case .definite:
+                throw ChatProviderError.invalidRequest("Synthetic send failure")
+            case .timedOut:
+                throw URLError(.timedOut)
+            }
         }
         if suspendsNextSend {
             suspendsNextSend = false
@@ -1344,7 +1437,11 @@ private actor TypingTestProvider: ChatProvider {
     }
 
     func failNextSend() {
-        failsNextSend = true
+        nextSendFailure = .definite
+    }
+
+    func timeOutNextSend() {
+        nextSendFailure = .timedOut
     }
 
     func waitUntilSendStarts() async {

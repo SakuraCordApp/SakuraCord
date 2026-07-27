@@ -1,12 +1,33 @@
 import CoreAudio
 import DiscordProtocol
 import Foundation
+import ImageIO
 import MediaPipeline
 import OSLog
 import Observation
 import SakuraCordModels
 import SakuraCordPersistence
+import UniformTypeIdentifiers
 import UserNotifications
+
+nonisolated enum OptimisticAttachmentPresentation {
+    static func attachment(for url: URL, index: Int) -> Attachment {
+        let source = CGImageSourceCreateWithURL(url as CFURL, nil)
+        let properties = source.flatMap {
+            CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any]
+        }
+        let resourceValues = try? url.resourceValues(forKeys: [.fileSizeKey])
+        return Attachment(
+            id: "pending-\(index)",
+            filename: url.lastPathComponent,
+            url: url,
+            mediaType: UTType(filenameExtension: url.pathExtension)?.preferredMIMEType,
+            width: (properties?[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
+            height: (properties?[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue,
+            size: resourceValues?.fileSize ?? 0
+        )
+    }
+}
 
 nonisolated struct ComponentControlKey: Hashable, Sendable {
     let messageID: MessageID
@@ -479,7 +500,6 @@ final class AppModel {
     private(set) var isLoadingEarlierThread = false
     private(set) var hasMoreThreadMessages = false
     private(set) var threadErrorMessage: String?
-    private(set) var sendProgressByNonce: [String: MessageSendProgress] = [:]
     private var outgoingDraftsByNonce: [String: SendMessageDraft] = [:]
     private(set) var gifResults: [GIFSearchResult] = []
     private(set) var isLoadingGIFs = false
@@ -2691,9 +2711,9 @@ final class AppModel {
                 ?? User(id: UserID(rawValue: 1), username: "me", displayName: "Me"),
             content: content, replyTo: replyTo, replyPreview: replyPreview,
             attachments: attachments.enumerated().map {
-                Attachment(
-                    id: "pending-\($0.offset)", filename: $0.element.lastPathComponent,
-                    url: $0.element
+                OptimisticAttachmentPresentation.attachment(
+                    for: $0.element,
+                    index: $0.offset
                 )
             }, nonce: outgoing.nonce, outboxState: .sending
         )
@@ -2730,13 +2750,8 @@ final class AppModel {
             "Message send started channel=\(outgoing.channelID.description, privacy: .public) nonce=\(outgoing.nonce, privacy: .public) attachments=\(outgoing.attachmentURLs.count) stickers=\(outgoing.stickerIDs.count) retry=\(isRetry)"
         )
         do {
-            let confirmed = try await provider.send(outgoing) { [weak self] progress in
-                Task { @MainActor [weak self] in
-                    self?.sendProgressByNonce[outgoing.nonce] = progress
-                }
-            }
+            let confirmed = try await provider.send(outgoing)
             reconcileVisibleOrCached(confirmed)
-            sendProgressByNonce[outgoing.nonce] = nil
             outgoingDraftsByNonce[outgoing.nonce] = nil
             do {
                 try await database?.save(messages: [confirmed])
@@ -2754,12 +2769,12 @@ final class AppModel {
             let state: OutboxState
             if (error as? URLError)?.code == .timedOut {
                 state = .awaitingReconciliation
-                sendProgressByNonce[outgoing.nonce] = .awaitingReconciliation(nonce: outgoing.nonce)
+                updateOutgoingState(state, nonce: outgoing.nonce, channelID: outgoing.channelID)
             } else {
                 state = .failed
-                sendProgressByNonce[outgoing.nonce] = nil
+                outgoingDraftsByNonce[outgoing.nonce] = nil
+                removeOutgoingMessage(nonce: outgoing.nonce, channelID: outgoing.channelID)
             }
-            updateOutgoingState(state, nonce: outgoing.nonce, channelID: outgoing.channelID)
             errorMessage = error.localizedDescription
             let nsError = error as NSError
             Self.messageSendLogger.error(
@@ -4493,6 +4508,16 @@ final class AppModel {
               let index = cached.firstIndex(where: { $0.nonce == nonce })
         else { return }
         cached[index].outboxState = state
+        messageCache[channelID] = cached
+    }
+
+    private func removeOutgoingMessage(nonce: String, channelID: ChannelID) {
+        if selectedChannelID == channelID {
+            messages.removeAll { $0.nonce == nonce }
+            return
+        }
+        guard var cached = messageCache[channelID] else { return }
+        cached.removeAll { $0.nonce == nonce }
         messageCache[channelID] = cached
     }
 

@@ -64,10 +64,20 @@ struct RichMessageContentView: View {
                 MessageComponentsView(model: model, message: message)
             } else {
                 if !message.type.hasGeneratedContent, !visibleContent.isEmpty {
-                    DiscordMessageContentView(model: model, message: message, content: visibleContent)
+                    DiscordMessageContentView(
+                        model: model,
+                        message: message,
+                        content: visibleContent,
+                        textOpacity: MessageOutboxPresentation.textOpacity(
+                            for: message.outboxState
+                        )
+                    )
                 }
                 if !message.attachments.isEmpty {
                     MediaGalleryView(items: message.attachments.map(RichMediaItem.init))
+                        .opacity(
+                            MessageOutboxPresentation.mediaOpacity(for: message.outboxState)
+                        )
                 }
                 ForEach(message.embeds.filter { MessageEmbedPresentation.kind(for: $0) != .hidden }) { embed in
                     MessageEmbedView(model: model, message: message, embed: embed, attachments: message.attachments)

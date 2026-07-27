@@ -89,6 +89,38 @@ struct MessageRowLayoutGeometry: Equatable {
     nonisolated var contentHeight: CGFloat { contentMaxY - contentMinY }
 }
 
+nonisolated enum MessageOutboxPresentation {
+    static func textOpacity(for state: OutboxState) -> Double {
+        contentOpacity(for: state)
+    }
+
+    static func mediaOpacity(for state: OutboxState) -> Double {
+        contentOpacity(for: state)
+    }
+
+    private static func contentOpacity(for state: OutboxState) -> Double {
+        switch state {
+        case .queued, .uploading, .sending, .awaitingReconciliation:
+            0.55
+        case .confirmed, .failed:
+            1
+        }
+    }
+
+    static func accessibilityStatus(for state: OutboxState) -> String {
+        switch state {
+        case .queued, .uploading, .sending:
+            "Sending"
+        case .awaitingReconciliation:
+            "Waiting for confirmation"
+        case .confirmed:
+            "Sent"
+        case .failed:
+            "Failed"
+        }
+    }
+}
+
 struct MessageRowView: View, Equatable {
     let model: AppModel
     let message: Message
@@ -893,26 +925,15 @@ private struct MessageContent: View {
                 .foregroundStyle(.secondary)
                 .accessibilityElement(children: .combine)
             }
-            if message.outboxState != .confirmed {
-                Label(
-                    outboxLabel,
-                    systemImage: message.outboxState == .failed ? "exclamationmark.circle" : "clock"
-                )
+            if message.outboxState == .failed {
+                Label("Failed", systemImage: "exclamationmark.circle")
                     .font(.caption2)
-                    .foregroundStyle(message.outboxState == .failed ? .red : .secondary)
+                    .foregroundStyle(.red)
             }
         }
-    }
-
-    private var outboxLabel: String {
-        switch message.outboxState {
-        case .confirmed: "Sent"
-        case .queued: "Queued"
-        case .uploading: "Uploading"
-        case .sending: "Sending"
-        case .awaitingReconciliation: "Waiting for confirmation — do not resend"
-        case .failed: "Failed"
-        }
+        .accessibilityValue(
+            MessageOutboxPresentation.accessibilityStatus(for: message.outboxState)
+        )
     }
 
 }

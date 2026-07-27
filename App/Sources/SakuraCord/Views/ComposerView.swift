@@ -69,11 +69,6 @@ struct ComposerView: View {
         @Bindable var model = model
         GlassEffectContainer(spacing: 8) {
             VStack(alignment: .leading, spacing: 7) {
-                if !hasActiveCommand,
-                   isSubmitting, let progress = activeSendProgress
-                {
-                    UploadProgressView(progress: progress)
-                }
                 if !hasActiveCommand, !attachments.isEmpty {
                     ComposerAttachmentStrip(attachments: $attachments)
                 }
@@ -515,15 +510,6 @@ struct ComposerView: View {
 
     private var autocompleteSettingsAreRequested: Bool {
         autocompleteContext != nil || mentionAutocompleteContext?.kind == .channel
-    }
-
-    private var activeSendProgress: MessageSendProgress? {
-        for message in activeMessages.reversed() where message.channelID == activeConversationID {
-            if let nonce = message.nonce, let progress = model.sendProgressByNonce[nonce] {
-                return progress
-            }
-        }
-        return nil
     }
 
     private var commandFieldText: String {

@@ -8,14 +8,21 @@ struct DiscordMessageContentView: View {
     let model: AppModel
     let message: Message
     let content: String
+    let textOpacity: Double
 
     private let presentation: LinkedImagePresentation
     @State private var presentedMention: AnchoredMentionPresentation?
 
-    init(model: AppModel, message: Message, content: String) {
+    init(
+        model: AppModel,
+        message: Message,
+        content: String,
+        textOpacity: Double = 1
+    ) {
         self.model = model
         self.message = message
         self.content = content
+        self.textOpacity = textOpacity
         presentation = LinkedImagePresentation(content: content)
     }
 
@@ -29,6 +36,7 @@ struct DiscordMessageContentView: View {
                     onMentionClick: openMention,
                     onURLClick: openURL
                 )
+                .opacity(textOpacity)
             }
             if !presentation.images.isEmpty {
                 EmojiWrappingLayout(horizontalSpacing: 4, verticalSpacing: 4) {
