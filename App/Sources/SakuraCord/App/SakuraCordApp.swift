@@ -9,20 +9,34 @@ struct SakuraCordApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model: AppModel
     private let opensForumPerformanceFixture: Bool
+    private let opensChatPerformanceFixture: Bool
+    private let runsChatLiveArrivalStress: Bool
+    private let performanceMockProvider: MockChatProvider?
 
     init() {
         let configuration = AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments)
         opensForumPerformanceFixture = configuration.includesForumPerformanceFixture
-        let provider: (any ChatProvider)? = configuration.mode == .offlineTesting
+        opensChatPerformanceFixture = configuration.includesChatPerformanceFixture
+        runsChatLiveArrivalStress = configuration.runsChatLiveArrivalStress
+        let mockProvider = configuration.mode == .offlineTesting
             ? MockChatProvider(
                 includesLongServerList: configuration.includesLongServerList,
-                forumPostCount: configuration.includesForumPerformanceFixture ? 5_000 : nil
+                forumPostCount: configuration.includesForumPerformanceFixture ? 5_000 : nil,
+                timelineMessageCount: configuration.includesChatPerformanceFixture ? 5_000 : nil,
+                timelineIncludesAnimatedMedia:
+                    configuration.includesChatMediaPerformanceFixture
             )
             : nil
+        performanceMockProvider = mockProvider
+        let provider: (any ChatProvider)? = mockProvider
+        let notificationService: any NativeNotificationService =
+            configuration.mode == .offlineTesting
+            ? NoopNativeNotificationService()
+            : MacNativeNotificationService()
         _model = State(initialValue: AppModel(
             launchMode: configuration.mode,
             provider: provider,
-            notificationService: MacNativeNotificationService()
+            notificationService: notificationService
         ))
     }
 
@@ -32,8 +46,55 @@ struct SakuraCordApp: App {
                 .frame(minWidth: 860, minHeight: 560)
                 .task {
                     await model.start()
+                    if opensChatPerformanceFixture {
+                        NSApp.activate(ignoringOtherApps: true)
+                    }
                     if opensForumPerformanceFixture {
                         model.selectedChannelID = ChannelID(rawValue: 220)
+                    } else if opensChatPerformanceFixture {
+                        model.selectedChannelID = ChannelID(rawValue: 210)
+                    }
+                    if runsChatLiveArrivalStress {
+                        await NativeTimelinePerformanceBenchmarkGate.shared
+                            .waitUntilStarted()
+                        guard !Task.isCancelled,
+                              let performanceMockProvider
+                        else { return }
+                        let arguments = ProcessInfo.processInfo.arguments
+                        let runsArrivals =
+                            !arguments.contains(
+                                "--offline-chat-performance-live-mutations-only"
+                            )
+                        let runsMutations =
+                            !arguments.contains(
+                                "--offline-chat-performance-live-arrivals-only"
+                            )
+                        await withTaskGroup(of: Void.self) { group in
+                            if runsArrivals {
+                                group.addTask {
+                                    await performanceMockProvider
+                                        .emitTimelineStressMessages(
+                                            in: ChannelID(rawValue: 210),
+                                            count: 2_400,
+                                            burstSize: 4,
+                                            burstInterval: .milliseconds(32)
+                                        )
+                                }
+                            }
+                            if runsMutations {
+                                group.addTask {
+                                    await performanceMockProvider
+                                        .emitTimelineMutationStress(
+                                            in: ChannelID(rawValue: 210),
+                                            operationCount: 1_200,
+                                            deleteEvery: 5,
+                                            lookback: 600,
+                                            initialDelay: .milliseconds(500),
+                                            operationInterval: .milliseconds(32)
+                                        )
+                                }
+                            }
+                        }
                     }
                 }
         }

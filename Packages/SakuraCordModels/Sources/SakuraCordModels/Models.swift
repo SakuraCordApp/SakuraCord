@@ -1127,10 +1127,10 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
-extension Message {
+public extension Message {
     /// Carries already-resolved reactor identities across a replacement message
     /// payload without changing the incoming reaction counts or selected state.
-    public func preservingReactionReactors(from previous: Message) -> Message {
+    func preservingReactionReactors(from previous: Message) -> Message {
         guard id == previous.id, channelID == previous.channelID else { return self }
         var result = self
         for index in result.reactions.indices {
@@ -1153,7 +1153,7 @@ extension Message {
     /// state assignments, so they remain idempotent when an optimistic REST
     /// update has already reached the message.
     @discardableResult
-    public mutating func applyReactionUpdate(
+    mutating func applyReactionUpdate(
         _ update: MessageReactionUpdate,
         currentUserID: UserID?,
         reactor: ReactionReactor? = nil

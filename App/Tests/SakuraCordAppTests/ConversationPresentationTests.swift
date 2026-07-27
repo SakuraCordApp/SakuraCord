@@ -414,11 +414,54 @@ import Testing
             hasError: false
         )
     )
+    #expect(
+        !ConversationBeginningPolicy.showsBeginning(
+            isLoading: true,
+            hasMoreBefore: false,
+            hasError: false
+        )
+    )
+    #expect(
+        !ConversationBeginningPolicy.showsBeginning(
+            isLoading: false,
+            hasMoreBefore: false,
+            hasError: true
+        )
+    )
 }
 
 @Test func `loading skeleton and short thread content fill their viewport`() {
-    #expect(MessageTimelineSkeletonLayout.rowCount(for: 1_000) >= 13)
+    let viewportHeight: CGFloat = 1_000
+    let rowCount = MessageTimelineSkeletonLayout.rowCount(for: viewportHeight)
+    let coveredHeight = MessageTimelineSkeletonLayout.coveredHeight(rowCount: rowCount)
+    #expect(coveredHeight >= viewportHeight)
+    #expect(
+        coveredHeight - viewportHeight
+            < MessageTimelineSkeletonLayout.rowHeight
+                + MessageTimelineSkeletonLayout.rowSpacing
+    )
     #expect(ThreadTimelineLayoutPolicy.minimumContentHeight(viewportHeight: 680) == 680)
+}
+
+@Test func `short initial timeline is eligible for acknowledgement`() {
+    #expect(
+        TimelineInitialReadPolicy.isAtNewest(
+            TimelineScrollState(
+                isNearTop: true,
+                isNearBottom: false,
+                contentFitsViewport: true
+            )
+        )
+    )
+    #expect(
+        !TimelineInitialReadPolicy.isAtNewest(
+            TimelineScrollState(
+                isNearTop: false,
+                isNearBottom: false,
+                contentFitsViewport: false
+            )
+        )
+    )
 }
 
 @Test func `thread beginning does not duplicate a same-day first reply separator`() {

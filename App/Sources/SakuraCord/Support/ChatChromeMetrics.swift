@@ -13,7 +13,13 @@ nonisolated enum ChatChromeMetrics {
 }
 
 nonisolated enum ChatDetailLayoutPolicy {
-    static let timelineVerticalPadding: CGFloat = 12
+    static let timelineTopPadding: CGFloat = 12
+    static let timelineBottomPadding: CGFloat = 12
+    /// The former SwiftUI scroll view retained its seven-point soft-edge
+    /// overlap in addition to the stack padding when a width reflow exposed
+    /// the first intersecting row.
+    static let timelineWidthReflowTopInset: CGFloat =
+        timelineTopPadding + 7
     static let newMessagesButtonSpacing: CGFloat = 10
     static let defaultFloatingFooterHeight: CGFloat =
         ChatChromeMetrics.controlHeight + 12 + 18

@@ -43,6 +43,20 @@ import Testing
     )
     #expect(embed.autoplaysInline)
     #expect(!attachment.autoplaysInline)
+    #expect(
+        !NativeTimelineInlineVideoPresentationPolicy
+            .canvasOwnsLoadingSurface(
+                mediaIsVideo: true,
+                autoplaysInline: true
+            )
+    )
+    #expect(
+        NativeTimelineInlineVideoPresentationPolicy
+            .canvasOwnsLoadingSurface(
+                mediaIsVideo: true,
+                autoplaysInline: false
+            )
+    )
 }
 
 @MainActor @Test func `linked Discord emoji and image markdown is extracted into inline media`() {
@@ -77,6 +91,40 @@ import Testing
 
     #expect(MessageEmbedPresentation.kind(for: MessageEmbed(type: "rich")) == .hidden)
     #expect(MessageEmbedPresentation.kind(for: MessageEmbed(title: "Preview", type: "rich")) == .card)
+}
+
+@MainActor @Test
+func `suppressed embeds retain their source link and expose no preview`() throws {
+    let sourceURL = try #require(URL(string: "https://example.com/cat"))
+    let videoURL = try #require(URL(string: "https://cdn.example/cat.mp4"))
+    let embed = MessageEmbed(
+        id: "suppressed-gifv",
+        type: "gifv",
+        url: sourceURL,
+        video: MessageEmbedMedia(
+            url: videoURL,
+            width: 320,
+            height: 480
+        )
+    )
+    let message = Message(
+        id: MessageID(rawValue: 90),
+        channelID: ChannelID(rawValue: 91),
+        author: User(
+            id: UserID(rawValue: 92),
+            username: "fixture",
+            displayName: "Fixture"
+        ),
+        content: sourceURL.absoluteString,
+        flags: [.suppressEmbeds],
+        embeds: [embed]
+    )
+
+    #expect(MessageEmbedPresentation.visibleEmbeds(for: message).isEmpty)
+    #expect(
+        MessageEmbedPresentation.visibleMessageContent(for: message)
+            == sourceURL.absoluteString
+    )
 }
 
 @Test func `single portrait media keeps its aspect ratio without letterbox space`() {

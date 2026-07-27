@@ -7,7 +7,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 source "$ROOT_DIR/script/worktree_runtime.sh"
 
 case "$MODE" in
-  package|package-release|--offline|--offline-long-server-list|--offline-forum-performance|--verify) ;;
+  package|package-release|--offline|--offline-long-server-list|--offline-forum-performance|--offline-chat-performance|--offline-chat-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-media-performance-autoscroll|--verify) ;;
   run|--debug|--logs|--telemetry)
     if [[ "$SAKURACORD_IS_MAIN_WORKTREE" -ne 1 && "${SAKURACORD_ALLOW_LIVE_WORKTREE:-0}" != "1" ]]; then
       echo "Live-account launch is disabled in linked worktrees. Use --offline, or set SAKURACORD_ALLOW_LIVE_WORKTREE=1 deliberately." >&2
@@ -15,7 +15,7 @@ case "$MODE" in
     fi
     ;;
   *)
-    echo "usage: $0 [package|package-release|run|--offline|--offline-long-server-list|--offline-forum-performance|--verify|--debug|--logs|--telemetry]" >&2
+    echo "usage: $0 [package|package-release|run|--offline|--offline-long-server-list|--offline-forum-performance|--offline-chat-performance|--offline-chat-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-media-performance-autoscroll|--verify|--debug|--logs|--telemetry]" >&2
     exit 2
     ;;
 esac
@@ -147,6 +147,16 @@ open_app() {
 open_offline_app() { open_app --args --offline; }
 open_offline_long_server_list() { open_app --args --offline-long-server-list; }
 open_offline_forum_performance() { open_app --args --offline-forum-performance; }
+open_offline_chat_performance() { open_app --args --offline-chat-performance; }
+open_offline_chat_performance_autoscroll() {
+  open_app --args --offline-chat-performance-autoscroll
+}
+open_offline_chat_performance_live_autoscroll() {
+  open_app --args --offline-chat-performance-live-autoscroll
+}
+open_offline_chat_media_performance_autoscroll() {
+  open_app --args --offline-chat-media-performance-autoscroll
+}
 
 case "$MODE" in
   package|package-release) ;;
@@ -169,4 +179,8 @@ case "$MODE" in
   --offline) open_offline_app ;;
   --offline-long-server-list) open_offline_long_server_list ;;
   --offline-forum-performance) open_offline_forum_performance ;;
+  --offline-chat-performance) open_offline_chat_performance ;;
+  --offline-chat-performance-autoscroll) open_offline_chat_performance_autoscroll ;;
+  --offline-chat-performance-live-autoscroll) open_offline_chat_performance_live_autoscroll ;;
+  --offline-chat-media-performance-autoscroll) open_offline_chat_media_performance_autoscroll ;;
 esac

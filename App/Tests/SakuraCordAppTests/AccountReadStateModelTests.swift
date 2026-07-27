@@ -1552,7 +1552,6 @@ struct AccountReadStateModelTests {
     model.selectedChannelID = channelID
     #expect(await eventually { !model.isLoadingMessages && model.selectedChannelID == channelID })
     model.reportMainWindowActive(true)
-    model.reportTimelineInitialPosition(channelID: channelID, isAtNewest: true)
 
     let author = User(id: UserID(rawValue: 2), username: "sender", displayName: "Sender")
     let first = Message(
@@ -1574,6 +1573,11 @@ struct AccountReadStateModelTests {
     #expect(await eventually {
         model.readState.entries[channelID]?.latestKnownMessageID == newest.id
     })
+    // Establish the viewport only after the synthetic arrivals have reached
+    // read state. This tests the intended newest-boundary coalescing without
+    // racing the test's 10 ms debounce against event-stream scheduling under
+    // a parallel suite.
+    model.reportTimelineInitialPosition(channelID: channelID, isAtNewest: true)
     try? await Task.sleep(for: .milliseconds(40))
 
     let requests = await provider.acknowledgementRequests

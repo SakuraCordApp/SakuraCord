@@ -169,7 +169,7 @@ struct ComponentEmojiGlyph: View {
 }
 
 @MainActor
-private enum ComponentUnicodeEmojiRenderer {
+enum ComponentUnicodeEmojiRenderer {
     private static var cache: [String: NSImage] = [:]
     private static let sourceFontSize: CGFloat = 64
     private static let canvasPadding = 16

@@ -131,7 +131,7 @@ enum AnimatedImageFramePreparation {
     }
 }
 
-private actor SharedAnimatedImageLoader {
+actor SharedAnimatedImageLoader {
     static let shared = SharedAnimatedImageLoader()
 
     private struct RequestKey: Hashable, Sendable {
@@ -245,7 +245,7 @@ private struct AnimatedImageRepresentable: NSViewRepresentable {
     }
 }
 
-private final class AnimatedImageCanvas: NSView {
+final class AnimatedImageCanvas: NSView {
     private var displayedImage: DecodedAnimatedImage?
     private var displayedAnimationPreference: (animates: Bool, isLooping: Bool)?
 
@@ -278,15 +278,14 @@ private final class AnimatedImageCanvas: NSView {
         layer?.contents = firstFrame
 
         guard animates, frames.count > 1 else { return }
-        let totalDuration = max(frameDurations.reduce(0, +), 0.05)
-        var elapsed: TimeInterval = 0
-        let keyTimes = frameDurations.map { duration -> NSNumber in
-            defer { elapsed += duration }
-            return NSNumber(value: elapsed / totalDuration)
-        }
+        let totalDuration = AnimatedImageKeyframeSchedule.duration(
+            for: frameDurations
+        )
         let animation = CAKeyframeAnimation(keyPath: "contents")
         animation.values = frames
-        animation.keyTimes = keyTimes
+        animation.keyTimes = AnimatedImageKeyframeSchedule.keyTimes(
+            for: frameDurations
+        )
         animation.duration = totalDuration
         animation.calculationMode = .discrete
         animation.repeatCount = isLooping ? .infinity : 1
@@ -295,6 +294,25 @@ private final class AnimatedImageCanvas: NSView {
         layer?.add(animation, forKey: "remoteAnimatedImage")
     }
 
+}
+
+nonisolated enum AnimatedImageKeyframeSchedule {
+    static func duration(
+        for frameDurations: [TimeInterval]
+    ) -> TimeInterval {
+        max(frameDurations.reduce(0, +), 0.05)
+    }
+
+    static func keyTimes(
+        for frameDurations: [TimeInterval]
+    ) -> [NSNumber] {
+        let totalDuration = duration(for: frameDurations)
+        var elapsed: TimeInterval = 0
+        return frameDurations.map { duration -> NSNumber in
+            defer { elapsed += duration }
+            return NSNumber(value: elapsed / totalDuration)
+        }
+    }
 }
 
 enum AnimatedImageFrameTiming {

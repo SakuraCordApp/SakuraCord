@@ -9,13 +9,19 @@ struct MockChatFixture {
     let messagesByChannel: [ChannelID: [Message]]
     let profilesByUser: [UserID: UserProfile]
 
-    static func make(now: Date = .now, includesLongServerList: Bool = false) -> Self {
+    static func make(
+        now: Date = .now,
+        includesLongServerList: Bool = false,
+        timelineMessageCount: Int? = nil,
+        timelineIncludesAnimatedMedia: Bool = false
+    ) -> Self {
         let auroraID = GuildID(rawValue: 100)
         let nativeLabID = GuildID(rawValue: 101)
         let textPermissions: UInt64 = (1 << 10) | (1 << 11) | (1 << 16) | (1 << 20)
             | (1 << 34) | (1 << 38)
         let auroraIcon = demoAsset("guild-aurora")
         let nativeLabIcon = demoAsset("guild-native-lab")
+        let animatedFixture = animatedDemoAsset()
 
         let nova = User(
             id: UserID(rawValue: 1),
@@ -51,6 +57,12 @@ struct MockChatFixture {
             username: "rowan.community",
             displayName: "Rowan Vale",
             avatarURL: demoAsset("avatar-rowan")
+        )
+        let verifiedApp = User(
+            id: UserID(rawValue: 900_000_000_000_000_101),
+            username: "verified",
+            displayName: "Verified",
+            isBot: true
         )
 
         let aurora = Guild(
@@ -108,7 +120,7 @@ struct MockChatFixture {
                     name: "animated_fixture",
                     isAnimated: true,
                     guildID: nativeLabID,
-                    assetURL: demoAsset("avatar-rowan")
+                    assetURL: animatedFixture
                 )
             ]
         ]
@@ -249,6 +261,11 @@ struct MockChatFixture {
             Channel(
                 id: ChannelID(rawValue: 400), guildID: nil, name: "Maya Ortiz", kind: .directMessage,
                 recipients: [maya]
+            ),
+            Channel(
+                id: ChannelID(rawValue: 401), guildID: nil, name: "Design crew",
+                kind: .groupDirectMessage,
+                recipients: [maya, theo, juniper]
             )
         ]
         channels.append(
@@ -396,6 +413,57 @@ struct MockChatFixture {
                     )
                 }
             } ?? []
+        let spoilerAttachment = layoutAttachment.map {
+            Attachment(
+                id: "demo-spoiler",
+                filename: "SPOILER-layout-study.png",
+                url: $0.url,
+                mediaType: "image/png",
+                width: 720,
+                height: 420,
+                size: $0.size,
+                description: "A bundled spoiler preview for offline parity testing.",
+                isSpoiler: true
+            )
+        }
+        let spoilerAnimatedAttachment = animatedDemoAsset().map {
+            Attachment(
+                id: "demo-spoiler-gif",
+                filename: "SPOILER-animation.gif",
+                url: $0,
+                mediaType: "image/gif",
+                width: 32,
+                height: 32,
+                size: 1_024,
+                description: "A concealed animated offline fixture.",
+                isSpoiler: true,
+                isAnimated: true
+            )
+        }
+        let spoilerVideoAttachment = layoutAttachment.map {
+            Attachment(
+                id: "demo-spoiler-video",
+                filename: "SPOILER-preview.mp4",
+                url: $0.url,
+                mediaType: "video/mp4",
+                width: 1_280,
+                height: 720,
+                size: 4_096,
+                description: "A concealed video geometry fixture.",
+                isSpoiler: true
+            )
+        }
+        let spoilerFileAttachment = layoutAttachment.map {
+            Attachment(
+                id: "demo-spoiler-file",
+                filename: "SPOILER-notes.txt",
+                url: $0.url,
+                mediaType: "text/plain",
+                size: 512,
+                description: "A concealed file interaction fixture.",
+                isSpoiler: true
+            )
+        }
         let demoSticker = layoutAttachment.map {
             MessageSticker(
                 id: "demo-sticker", name: "Native sparkle", description: "A bundled offline sticker",
@@ -673,7 +741,7 @@ struct MockChatFixture {
                         MessageEmbed(
                             title: "Server-provided link preview", type: "rich",
                             description:
-                            "This preview uses decoded embed data and performs no speculative unfurl request.",
+                            "This preview uses ||decoded embed data|| and performs no speculative unfurl request.",
                             url: URL(string: "https://example.com"), color: 0x7C3AED,
                             footer: MessageEmbedFooter(
                                 text: "Offline fixture",
@@ -773,7 +841,8 @@ struct MockChatFixture {
                             children: [
                                 .textDisplay(
                                     id: "fixture-response-text",
-                                    content: "❓ You selected **Other**. <@&10> will be there shortly to assist you!"
+                                    content:
+                                        "❓ You selected **Other**. ||<@&10> will be there shortly to assist you!||"
                                 ),
                                 .separator(id: "fixture-response-divider", divider: true, spacing: 1),
                                 .actionRow(
@@ -789,6 +858,348 @@ struct MockChatFixture {
                             ]
                         )
                     ]
+                ),
+                Message(
+                    id: MessageID(rawValue: 3105),
+                    channelID: ChannelID(rawValue: 301),
+                    author: juniper,
+                    content: "",
+                    timestamp: base.addingTimeInterval(860),
+                    attachments: spoilerAttachment.map { [$0] } ?? [],
+                    flags: [.isComponentsV2],
+                    components: [
+                        .container(
+                            id: "fixture-spoiler-container",
+                            accentColor: 0x7C3AED,
+                            spoiler: true,
+                            children: [
+                                .textDisplay(
+                                    id: "fixture-spoiler-text",
+                                    content: "## Hidden component details"
+                                ),
+                                .thumbnail(
+                                    id: "fixture-spoiler-thumbnail",
+                                    media: ComponentMedia(
+                                        url: layoutAttachment?.url,
+                                        width: 720,
+                                        height: 420,
+                                        contentType: "image/png",
+                                        description:
+                                            "Nested spoiler thumbnail",
+                                        isSpoiler: true
+                                    )
+                                ),
+                                .mediaGallery(
+                                    id: "fixture-spoiler-gallery",
+                                    items: [
+                                        ComponentGalleryItem(
+                                            id: "fixture-spoiler-gallery-image",
+                                            media: ComponentMedia(
+                                                url: layoutAttachment?.url,
+                                                width: 720,
+                                                height: 420,
+                                                contentType: "image/png",
+                                                description:
+                                                    "Nested concealed gallery image",
+                                                isSpoiler: true
+                                            )
+                                        ),
+                                        ComponentGalleryItem(
+                                            id: "fixture-spoiler-gallery-animation",
+                                            media: ComponentMedia(
+                                                url: animatedDemoAsset(),
+                                                width: 32,
+                                                height: 32,
+                                                contentType: "image/gif",
+                                                description:
+                                                    "Nested concealed gallery animation",
+                                                isSpoiler: true
+                                            )
+                                        ),
+                                    ]
+                                ),
+                            ]
+                        ),
+                    ]
+                ),
+                Message(
+                    id: MessageID(rawValue: 3106),
+                    channelID: ChannelID(rawValue: 301),
+                    author: nova,
+                    content:
+                        "Independent image, GIF, video, file, and component gallery spoilers.",
+                    timestamp: base.addingTimeInterval(920),
+                    attachments:
+                        [
+                            spoilerAttachment,
+                            spoilerAnimatedAttachment,
+                            spoilerVideoAttachment,
+                            spoilerFileAttachment,
+                        ].compactMap { $0 },
+                    flags: [.isComponentsV2],
+                    components: [
+                        .mediaGallery(
+                            id: "fixture-independent-spoiler-gallery",
+                            items: [
+                                ComponentGalleryItem(
+                                    id: "fixture-independent-spoiler-image",
+                                    media: ComponentMedia(
+                                        url: layoutAttachment?.url,
+                                        width: 720,
+                                        height: 420,
+                                        contentType: "image/png",
+                                        description:
+                                            "Independent concealed gallery image",
+                                        isSpoiler: true
+                                    )
+                                ),
+                                ComponentGalleryItem(
+                                    id: "fixture-independent-spoiler-gif",
+                                    media: ComponentMedia(
+                                        url: animatedDemoAsset(),
+                                        width: 32,
+                                        height: 32,
+                                        contentType: "image/gif",
+                                        description:
+                                            "Independent concealed gallery animation",
+                                        isSpoiler: true
+                                    )
+                                ),
+                            ]
+                        ),
+                        .file(
+                            id: "fixture-independent-spoiler-file",
+                            media: ComponentMedia(
+                                url: layoutAttachment?.url,
+                                attachmentName: "SPOILER-notes.txt",
+                                contentType: "text/plain",
+                                description:
+                                    "Independent concealed component file",
+                                isSpoiler: true
+                            )
+                        ),
+                    ]
+                ),
+                Message(
+                    id: MessageID(rawValue: 3107),
+                    channelID: ChannelID(rawValue: 301),
+                    author: rowan,
+                    content:
+                        "Animated custom emoji <a:animated_fixture:900000000000000203> stays on the Core Text baseline.",
+                    timestamp: base.addingTimeInterval(980),
+                    reactions: [
+                        Reaction(
+                            emoji:
+                                "<a:animated_fixture:900000000000000203>",
+                            count: 2
+                        )
+                    ]
+                ),
+                Message(
+                    id: MessageID(rawValue: 3108),
+                    channelID: ChannelID(rawValue: 301),
+                    author: verifiedApp,
+                    content: "Only the invoking user can see this response.",
+                    timestamp: base.addingTimeInterval(1_040),
+                    type: .chatInputCommand,
+                    flags: [.ephemeral],
+                    applicationID: ApplicationID(
+                        rawValue: 900_000_000_000_000_101
+                    ),
+                    interactionMetadata: MessageInteractionMetadata(
+                        id: "offline-showcase-command",
+                        type: 2,
+                        name: "inspect",
+                        user: nova,
+                        applicationID: "900000000000000101"
+                    ),
+                    guildID: nativeLabID
+                ),
+                Message(
+                    id: MessageID(rawValue: 3109),
+                    channelID: ChannelID(rawValue: 301),
+                    author: nova,
+                    content: "",
+                    timestamp: base.addingTimeInterval(1_100),
+                    type: .channelPinnedMessage,
+                    guildID: nativeLabID
+                ),
+                Message(
+                    id: MessageID(rawValue: 3110),
+                    channelID: ChannelID(rawValue: 301),
+                    author: verifiedApp,
+                    content: "Preparing the detailed timeline comparison…",
+                    timestamp: base.addingTimeInterval(1_160),
+                    type: .chatInputCommand,
+                    flags: [.loading],
+                    applicationID: ApplicationID(
+                        rawValue: 900_000_000_000_000_101
+                    ),
+                    interactionMetadata: MessageInteractionMetadata(
+                        id: "offline-showcase-deferred-command",
+                        type: 2,
+                        name: "compare",
+                        user: nova,
+                        applicationID: "900000000000000101"
+                    ),
+                    guildID: nativeLabID
+                ),
+                Message(
+                    id: MessageID(rawValue: 3111),
+                    channelID: ChannelID(rawValue: 301),
+                    author: nova,
+                    content: "This local fixture demonstrates the failed-send state.",
+                    timestamp: base.addingTimeInterval(1_220),
+                    outboxState: .failed,
+                    guildID: nativeLabID
+                ),
+                Message(
+                    id: MessageID(rawValue: 3112),
+                    channelID: ChannelID(rawValue: 301),
+                    author: nova,
+                    content: """
+                    Bold:
+                    **Hello World**
+
+                    Italic (Asterisks):
+                    *Hello World*
+
+                    Italic (Underscores):
+                    _Hello World_
+
+                    Underline:
+                    __Hello World__
+
+                    Strikethrough:
+                    ~~Hello World~~
+
+                    Spoiler:
+                    ||Hello World||
+
+                    Bold Italic Asterisks:
+                    ***Hello World***
+
+                    Bold Italic Underscores:
+                    ___Hello World___
+
+                    Bold Underline:
+                    __**Hello World**__
+
+                    Italic Underline:
+                    __*Hello World*__
+
+                    Bold Italic Underline:
+                    __***Hello World***__
+
+                    Strikethrough Underline:
+                    ~~__Hello World__~~
+
+                    Bold Strikethrough Underline:
+                    ~~__**Hello World**__~~
+
+                    Spoiler Bold Italic Underline:
+                    ||__***Hello World***__||
+
+                    Large Header (H1):
+                    # Hello World
+
+                    Medium Header (H2):
+                    ## Hello World
+
+                    Small Header (H3):
+                    ### Hello World
+
+                    Subtext:
+                    -# Hello World
+
+                    Single-line Block Quote:
+                    > Hello World
+
+                    Multi-line Block Quote:
+                    > Line 1
+                    Line 2
+                    Line 3
+
+                    Unordered List (Dash):
+                    - Item 1
+                    - Item 2
+
+                    Unordered List (Asterisk):
+                    * Item 1
+                    * Item 2
+
+                    Ordered List:
+                    1. Item 1
+                    2. Item 2
+
+                    Inline Code:
+                    `Hello World`
+
+                    Multi-line Code Block:
+                    ```
+                    Hello World
+                    Line 2
+                    ```
+
+                    Multi-line Code Block with Syntax Highlighting (JSON):
+                    ```json
+                    {
+                      "user_id": 1365151121735290932,
+                      "server_id": 1528177363563581662
+                    }
+                    ```
+
+                    Multi-line Code Block with ANSI Colors:
+                    ```
+                    \u{001B}[31mRed Text\u{001B}[0m
+                    \u{001B}[32mGreen Text\u{001B}[0m
+                    \u{001B}[33mYellow Text\u{001B}[0m
+                    \u{001B}[34mBlue Text\u{001B}[0m
+                    \u{001B}[35mMagenta Text\u{001B}[0m
+                    \u{001B}[36mCyan Text\u{001B}[0m
+                    \u{001B}[1;31mBold Red Text\u{001B}[0m
+                    ```
+                    """,
+                    timestamp: base.addingTimeInterval(1_280),
+                    guildID: nativeLabID
+                ),
+                Message(
+                    id: MessageID(rawValue: 3113),
+                    channelID: ChannelID(rawValue: 301),
+                    author: rowan,
+                    content: "This reply intentionally mentions <@1>.",
+                    timestamp: base.addingTimeInterval(1_340),
+                    replyTo: MessageID(rawValue: 3112),
+                    replyPreview: MessageReplyPreview(
+                        messageID: MessageID(rawValue: 3112),
+                        author: nova,
+                        content: "Markdown parity fixture"
+                    ),
+                    guildID: nativeLabID,
+                    mentionedUsers: [nova]
+                ),
+                Message(
+                    id: MessageID(rawValue: 3114),
+                    channelID: ChannelID(rawValue: 301),
+                    author: theo,
+                    content: "https://example.com/suppressed-preview",
+                    timestamp: base.addingTimeInterval(1_400),
+                    flags: [.suppressEmbeds],
+                    guildID: nativeLabID,
+                    embeds: [
+                        MessageEmbed(
+                            id: "suppressed-preview",
+                            title: "This preview must remain hidden",
+                            type: "rich",
+                            description:
+                                "Only the original source link should render.",
+                            url: URL(
+                                string:
+                                    "https://example.com/suppressed-preview"
+                            ),
+                            color: 0x5865F2
+                        )
+                    ]
                 )
             ],
             ChannelID(rawValue: 901): [
@@ -797,7 +1208,8 @@ struct MockChatFixture {
                     base.addingTimeInterval(700)
                 ),
                 message(
-                    9012, 901, juniper, "And closing it restores the member inspector.",
+                    9012, 901, juniper,
+                    "And closing it restores ||the member inspector||.",
                     base.addingTimeInterval(730)
                 )
             ],
@@ -852,8 +1264,37 @@ struct MockChatFixture {
                     "Perfect. No rush; this entire conversation is made of demo pixels anyway 🙂",
                     base.addingTimeInterval(1140)
                 )
+            ],
+            ChannelID(rawValue: 401): [
+                message(
+                    4011, 401, maya,
+                    "The group DM should use the same **native timeline** as every other conversation.",
+                    base.addingTimeInterval(1160)
+                ),
+                message(
+                    4012, 401, theo,
+                    "I’m checking compact spacing, selection, and the shared media path here.",
+                    base.addingTimeInterval(1190)
+                ),
+                message(
+                    4013, 401, nova,
+                    "Confirmed — only the surface header and recipient state are different.",
+                    base.addingTimeInterval(1220)
+                )
             ]
         ]
+        if let timelineMessageCount {
+            messages[ChannelID(rawValue: 210)] = makeTimelinePerformanceMessages(
+                count: timelineMessageCount,
+                now: now,
+                channelID: ChannelID(rawValue: 210),
+                guildID: auroraID,
+                users: [nova, maya, theo, juniper, rowan],
+                mediaURL: layoutAttachment?.url,
+                animatedMediaURL: animatedFixture,
+                includesAnimatedMedia: timelineIncludesAnimatedMedia
+            )
+        }
         for (index, guild) in longListGuilds.enumerated() {
             let channelID = ChannelID(rawValue: UInt64(2000 + index))
             messages[channelID] = [
@@ -923,6 +1364,221 @@ struct MockChatFixture {
     private static func demoAsset(_ name: String) -> URL? {
         Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "DemoAssets")
             ?? Bundle.module.url(forResource: name, withExtension: "png")
+    }
+
+    private static let animatedDemoAssetURL: URL? = {
+        let encoded =
+            "R0lGODlhIAAgAPIHAAAAAFhl8lhl8lhl8lhl8lhl8lhl8v///"
+            + "yH/C05FVFNDQVBFMi4wAwEAAAAh+QQJAAAAACwAAAAAIAAgAA"
+            + "ADVwi63P4wykmrvTjrzbv/WyAMxiAEH1EYbGsUBEeQrjvE2lr"
+            + "XhRbsQBRGANwJMrRia5BR7pDOZYYYNRwxv6oQo1P2NDPlTdZ1"
+            + "wT4ikmkLarvf8Lh8Tt8kAAAh+QQJAAAAACwAAAAAIAAgAIIAAA"
+            + "DtQkXtQkXtQkXtQkXtQkXtQkX///8DVwi63P4wykmrvTjrzbv"
+            + "/4BMIgzEIwUcURusaBcER5fsOssbadqEFvGAKIwjyBJma0TXIL"
+            + "HnJJzNTlBqQGKB1iNktfRraEjfzvmKfUenEDbnf8Lh8Tp8nAA"
+            + "A7"
+        guard let data = Data(base64Encoded: encoded) else { return nil }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "sakuracord-animated-custom-emoji-fixture-v1.gif"
+            )
+        do {
+            try data.write(to: url, options: .atomic)
+            return url
+        } catch {
+            return nil
+        }
+    }()
+
+    private static func animatedDemoAsset() -> URL? {
+        animatedDemoAssetURL
+    }
+
+    private static func makeTimelinePerformanceMessages(
+        count: Int,
+        now: Date,
+        channelID: ChannelID,
+        guildID: GuildID,
+        users: [User],
+        mediaURL: URL?,
+        animatedMediaURL: URL?,
+        includesAnimatedMedia: Bool
+    ) -> [Message] {
+        guard count > 0, !users.isEmpty else { return [] }
+        let firstID: UInt64 = 5_000_000
+        let start = now.addingTimeInterval(-Double(count) * 35)
+        return (0 ..< count).map { index in
+            let id = MessageID(rawValue: firstID + UInt64(index))
+            let author = users[index % users.count]
+            let animatedMediaKind =
+                includesAnimatedMedia ? index % 12 : -1
+            let content =
+                if animatedMediaKind == 2 {
+                    animatedMediaURL.map {
+                        "[Animated raster benchmark](\($0.absoluteString))"
+                    } ?? "Animated raster benchmark"
+                } else {
+                    switch index % 8 {
+                    case 0:
+                        "A compact timeline message \(index) keeps the common path representative."
+                    case 1:
+                        "Inline custom emoji <:aurora_glow:900000000000000101> and native emoji ✨ remain aligned with text."
+                    case 2:
+                        "**Markdown \(index)** includes [a link](https://example.com), `inline code`, and ~~strikethrough~~."
+                    case 3:
+                        "A deliberately longer message wraps across multiple lines so the benchmark exercises dynamic row heights without synthetic fixed-size cells. Pass \(index)."
+                    case 4:
+                        "Mention fixture <@2> and channel fixture <#211> keep attachment-backed tokens in the hot path."
+                    case 5:
+                        "First line for message \(index).\nSecond line exercises TextKit layout.\nThird line finishes the sample."
+                    case 6:
+                        "# Heading \(index)\nBody copy follows beneath the heading."
+                    default:
+                        "Reaction-heavy fixture \(index) 👍"
+                    }
+                }
+            let reactions =
+                index.isMultiple(of: 13)
+                    ? [
+                        Reaction(
+                            emoji: "✨",
+                            count: 4,
+                            reactors: users.prefix(4).map(ReactionReactor.init(user:))
+                        ),
+                        Reaction(emoji: "🔥", count: 2),
+                    ]
+                    : []
+            let attachments: [Attachment] =
+                if index.isMultiple(of: 97), let mediaURL {
+                    [
+                        Attachment(
+                            id: "timeline-\(index)",
+                            filename: "timeline-\(index).png",
+                            url: mediaURL,
+                            mediaType: "image/png",
+                            width: 720,
+                            height: 420,
+                            size: 120_000,
+                            description: "Offline timeline benchmark image \(index)",
+                            isSpoiler: index.isMultiple(of: 194)
+                        )
+                    ]
+                } else {
+                    []
+                }
+            var embeds: [MessageEmbed] =
+                index.isMultiple(of: 89)
+                    ? [
+                        MessageEmbed(
+                            title: "Benchmark embed \(index)",
+                            type: "rich",
+                            description: "A fixture-backed embed preserves card layout while scrolling.",
+                            color: 0x7C3AED,
+                            fields: [
+                                MessageEmbedField(
+                                    id: 1,
+                                    name: "Rows",
+                                    value: count.formatted(),
+                                    isInline: true
+                                ),
+                                MessageEmbedField(
+                                    id: 2,
+                                    name: "Mode",
+                                    value: "Offline",
+                                    isInline: true
+                                ),
+                            ]
+                        )
+                    ]
+                    : []
+            if animatedMediaKind == 0 {
+                embeds.append(
+                    MessageEmbed(
+                        title: "Animated video benchmark \(index)",
+                        type: "gifv",
+                        video: MessageEmbedMedia(
+                            url: URL(
+                                string:
+                                    "https://www.w3schools.com/html/mov_bbb.mp4?sakuracord-benchmark=\(index)"
+                            ),
+                            width: 1280,
+                            height: 720,
+                            description: "A looping benchmark video.",
+                            contentType: "video/mp4"
+                        ),
+                        provider: MessageEmbedProvider(
+                            name: "Offline media performance fixture"
+                        )
+                    )
+                )
+            }
+            let stickers: [MessageSticker] =
+                animatedMediaKind == 1
+                    ? [
+                        MessageSticker(
+                            id: "749054660769218631",
+                            name: "Wave",
+                            description: "Discord standard sticker benchmark",
+                            tags: "wave,benchmark",
+                            format: .lottie
+                        ),
+                    ]
+                    : []
+            let components: [MessageComponent] =
+                index.isMultiple(of: 131)
+                    ? [
+                        .container(
+                            id: "timeline-component-\(index)",
+                            accentColor: 0x5865F2,
+                            spoiler: index.isMultiple(of: 262),
+                            children: [
+                                .textDisplay(
+                                    id: "timeline-text-\(index)",
+                                    content: "## Components V2 fixture \(index)"
+                                ),
+                                .separator(
+                                    id: "timeline-separator-\(index)",
+                                    divider: true,
+                                    spacing: 1
+                                ),
+                                .actionRow(
+                                    id: "timeline-actions-\(index)",
+                                    children: [
+                                        .button(
+                                            id: "timeline-button-\(index)",
+                                            style: .primary,
+                                            label: "Benchmark control",
+                                            emoji: EmojiReference(name: "⚡️"),
+                                            customID: "offline-timeline-\(index)",
+                                            url: nil,
+                                            skuID: nil,
+                                            disabled: false
+                                        )
+                                    ]
+                                ),
+                            ]
+                        )
+                    ]
+                    : []
+            return Message(
+                id: id,
+                channelID: channelID,
+                author: author,
+                content: content,
+                timestamp: start.addingTimeInterval(Double(index) * 35),
+                replyTo: index > 0 && index.isMultiple(of: 43)
+                    ? MessageID(rawValue: id.rawValue - 1)
+                    : nil,
+                attachments: attachments,
+                reactions: reactions,
+                flags: components.isEmpty ? [] : [.isComponentsV2],
+                guildID: guildID,
+                embeds: embeds,
+                components: components,
+                stickers: stickers,
+                mentionedUsers: index % 8 == 4 ? [users[1]] : []
+            )
+        }
     }
 
     private static func message(

@@ -1,5 +1,6 @@
 import AppKit
 @testable import SakuraCord
+import SakuraCordModels
 import SwiftUI
 import Testing
 
@@ -46,6 +47,43 @@ func `row variants have the same final visible highlight spacing`(_ row: Represe
     #expect(geometry.highlightTopInset == geometry.highlightBottomInset)
     #expect(geometry.highlightMinY == 0)
     #expect(geometry.rowHeight == geometry.contentHeight + 6)
+}
+
+@MainActor
+@Test func `timeline separators absorb the ordinary author group separation`() {
+    let geometry = MessageRowLayoutMetrics.geometry(
+        contentHeight: 38,
+        startsGroup: true,
+        followsTimelineSeparator: true
+    )
+
+    #expect(
+        MessageRowLayoutMetrics.separation(
+            startsGroup: true,
+            followsTimelineSeparator: true,
+            highlightTopInset: 3
+        ) == 0
+    )
+    #expect(geometry.externalTopSeparation == 0)
+    #expect(geometry.highlightMinY == 0)
+    #expect(geometry.contentMinY == 3)
+    #expect(geometry.rowHeight == 44)
+}
+
+@MainActor
+@Test func `command response nesting uses the same three point optical inset`() {
+    #expect(MessageRowLayoutMetrics.commandInvocationHeight == 20)
+    #expect(MessageRowLayoutMetrics.commandInvocationContentInset == 3)
+    #expect(
+        MessageRowLayoutMetrics.authorToContentSpacing(
+            isCommandResponse: false
+        ) == 4
+    )
+    #expect(
+        MessageRowLayoutMetrics.authorToContentSpacing(
+            isCommandResponse: true
+        ) == 2
+    )
 }
 
 @MainActor
@@ -112,6 +150,101 @@ func `intrinsic reply and edit padding is not doubled`(_ row: CompensatedMessage
         RichMessageTextMeasurement.constrainedWidth(20_000)
             == RichMessageTextMeasurement.maximumWidth
     )
+}
+
+@Test func `ephemeral and current user mentions select Discord row tints`() {
+    let currentUser = User(
+        id: UserID(rawValue: 1),
+        username: "current",
+        displayName: "Current"
+    )
+    let author = User(
+        id: UserID(rawValue: 2),
+        username: "author",
+        displayName: "Author"
+    )
+    let channelID = ChannelID(rawValue: 3)
+    let base = Message(
+        id: MessageID(rawValue: 4),
+        channelID: channelID,
+        author: author,
+        content: "Fixture"
+    )
+
+    var ephemeral = base
+    ephemeral.flags.insert(.ephemeral)
+    ephemeral.mentionedUsers = [currentUser]
+    #expect(
+        MessageRowPersistentHighlight.resolve(
+            message: ephemeral,
+            currentUserID: currentUser.id
+        ) == .ephemeral
+    )
+
+    var replyPing = base
+    replyPing.replyTo = MessageID(rawValue: 5)
+    replyPing.mentionedUsers = [currentUser]
+    #expect(
+        MessageRowPersistentHighlight.resolve(
+            message: replyPing,
+            currentUserID: currentUser.id
+        ) == .mention
+    )
+
+    var everyone = base
+    everyone.mentionsEveryone = true
+    #expect(
+        MessageRowPersistentHighlight.resolve(
+            message: everyone,
+            currentUserID: currentUser.id
+        ) == .mention
+    )
+
+    let currentRole = RoleID(rawValue: 6)
+    var roleMention = base
+    roleMention.mentionedRoleIDs = [currentRole]
+    #expect(
+        MessageRowPersistentHighlight.resolve(
+            message: roleMention,
+            currentUserID: currentUser.id,
+            currentUserRoleIDs: [currentRole]
+        ) == .mention
+    )
+    roleMention.flags.insert(.failedToMentionRoles)
+    #expect(
+        MessageRowPersistentHighlight.resolve(
+            message: roleMention,
+            currentUserID: currentUser.id,
+            currentUserRoleIDs: [currentRole]
+        ) == .none
+    )
+
+    var ownMessage = base
+    ownMessage.author = currentUser
+    ownMessage.mentionsEveryone = true
+    #expect(
+        MessageRowPersistentHighlight.resolve(
+            message: ownMessage,
+            currentUserID: currentUser.id
+        ) == .none
+    )
+}
+
+@Test func `legacy outbox paint opacity keeps failures legible and pending media dimmed`() {
+    let pendingStates: [OutboxState] = [
+        .queued,
+        .uploading,
+        .sending,
+        .awaitingReconciliation,
+    ]
+    for state in pendingStates {
+        #expect(MessageOutboxPresentation.textOpacity(for: state) == 0.55)
+        #expect(MessageOutboxPresentation.mediaOpacity(for: state) == 0.55)
+    }
+    for state in [OutboxState.confirmed, .failed] {
+        #expect(MessageOutboxPresentation.textOpacity(for: state) == 1)
+        #expect(MessageOutboxPresentation.mediaOpacity(for: state) == 1)
+    }
 }
 
 @MainActor

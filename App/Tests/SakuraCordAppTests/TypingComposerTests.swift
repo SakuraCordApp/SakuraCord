@@ -1273,6 +1273,12 @@ import Testing
 }
 
 @MainActor
+@Test func `composer text accepts the activation click`() {
+    let textView = ComposerNSTextView()
+    #expect(textView.acceptsFirstMouse(for: nil))
+}
+
+@MainActor
 @Test func `definite send failure removes the optimistic message`() async {
     let provider = TypingTestProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)

@@ -13,6 +13,19 @@ import Testing
 }
 
 @MainActor
+@Test func `cooperative history grouping matches the synchronous result`() async {
+    let fixture = replyGroupingFixture()
+    let messages = [fixture.target, fixture.reply, fixture.followUp]
+
+    let cooperative = await MessageGrouping.rowsCooperatively(
+        for: messages,
+        batchSize: 1
+    )
+
+    #expect(cooperative == MessageGrouping.rows(for: messages))
+}
+
+@MainActor
 @Test func `appending after a reply matches full message regrouping`() {
     let fixture = replyGroupingFixture()
     let oldMessages = [fixture.target, fixture.reply]

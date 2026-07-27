@@ -26,8 +26,17 @@ public actor MockChatProvider: ChatProvider {
     public private(set) var acknowledgementRequests: [AcknowledgementRequest] = []
     private var forumQueriesByChannel: [ChannelID: [ForumPostQuery]] = [:]
 
-    public init(includesLongServerList: Bool = false, forumPostCount: Int? = nil) {
-        let fixture = MockChatFixture.make(includesLongServerList: includesLongServerList)
+    public init(
+        includesLongServerList: Bool = false,
+        forumPostCount: Int? = nil,
+        timelineMessageCount: Int? = nil,
+        timelineIncludesAnimatedMedia: Bool = false
+    ) {
+        let fixture = MockChatFixture.make(
+            includesLongServerList: includesLongServerList,
+            timelineMessageCount: timelineMessageCount,
+            timelineIncludesAnimatedMedia: timelineIncludesAnimatedMedia
+        )
         currentUser = fixture.currentUser
         nextMessageID = UInt64(ClientNonce.make()) ?? 9000
         snapshot = fixture.snapshot
@@ -175,12 +184,29 @@ public actor MockChatProvider: ChatProvider {
         else {
             throw ChatProviderError.channelNotFound
         }
-        var messages = messagesByChannel[channelID] ?? []
+        let messages = messagesByChannel[channelID] ?? []
+        let pageEnd: Int
         if let before {
-            messages = messages.filter { $0.id < before }
+            var lowerBound = messages.startIndex
+            var upperBound = messages.endIndex
+            while lowerBound < upperBound {
+                let middle = lowerBound + (upperBound - lowerBound) / 2
+                if messages[middle].id < before {
+                    lowerBound = middle + 1
+                } else {
+                    upperBound = middle
+                }
+            }
+            pageEnd = lowerBound
+        } else {
+            pageEnd = messages.endIndex
         }
-        let page = Array(messages.suffix(max(1, limit)))
-        return MessagePage(messages: page, hasMoreBefore: messages.count > page.count)
+        let pageStart = max(messages.startIndex, pageEnd - max(1, limit))
+        let page = Array(messages[pageStart ..< pageEnd])
+        return MessagePage(
+            messages: page,
+            hasMoreBefore: pageStart > messages.startIndex
+        )
     }
 
     public func forumPosts(in channelID: ChannelID, query: ForumPostQuery) async throws
@@ -229,6 +255,143 @@ public actor MockChatProvider: ChatProvider {
 
     public func emit(_ event: ClientEvent) {
         continuation?.yield(event)
+    }
+
+    /// Feeds the normal Gateway-event path with deterministic high-volume
+    /// arrivals. This is offline-only test infrastructure; it never performs
+    /// a network request or user-visible account action.
+    public func emitTimelineStressMessages(
+        in channelID: ChannelID,
+        count: Int,
+        burstSize: Int = 4,
+        burstInterval: Duration = .milliseconds(32)
+    ) async {
+        guard count > 0,
+              burstSize > 0,
+              let channel = snapshot.channels.first(where: { $0.id == channelID })
+        else { return }
+        let authors =
+            channel.guildID.flatMap { membersByGuild[$0]?.map(\.user) }
+            ?? [currentUser]
+        guard !authors.isEmpty else { return }
+        let latestTimestamp =
+            messagesByChannel[channelID]?.last?.timestamp
+            ?? Date(timeIntervalSince1970: 1_700_000_000)
+        var emitted = 0
+        while emitted < count, !Task.isCancelled {
+            let batchCount = min(burstSize, count - emitted)
+            for offset in 0 ..< batchCount {
+                nextMessageID &+= 1
+                let index = emitted + offset
+                let author = authors[index % authors.count]
+                let content =
+                    switch index % 5 {
+                    case 0:
+                        "Live arrival \(index) exercises the compact append path."
+                    case 1:
+                        "A new message is landing while the timeline keeps scrolling smoothly."
+                    case 2:
+                        "Live arrival \(index) wraps onto a second line to vary row height without blocking the viewport renderer."
+                    case 3:
+                        "**Incoming \(index)** includes `inline code`, a link, and emoji ✨."
+                    default:
+                        "Burst message \(index)\nSecond line arrives in the same offline batch."
+                    }
+                let message = Message(
+                    id: MessageID(rawValue: nextMessageID),
+                    channelID: channelID,
+                    author: author,
+                    content: content,
+                    timestamp: latestTimestamp.addingTimeInterval(Double(index + 1)),
+                    reactions: index.isMultiple(of: 11)
+                        ? [Reaction(emoji: "⚡️", count: 3)]
+                        : [],
+                    guildID: channel.guildID
+                )
+                messagesByChannel[channelID, default: []].append(message)
+                continuation?.yield(.messageCreated(message))
+            }
+            emitted += batchCount
+            guard emitted < count else { return }
+            do {
+                try await Task.sleep(for: burstInterval)
+            } catch {
+                return
+            }
+        }
+    }
+
+    /// Interleaves deterministic update and deletion Gateway events with the
+    /// offline timeline benchmark. This never performs a network request and
+    /// is reachable only through explicit test infrastructure.
+    public func emitTimelineMutationStress(
+        in channelID: ChannelID,
+        operationCount: Int,
+        deleteEvery: Int = 5,
+        lookback: Int = 600,
+        initialDelay: Duration = .milliseconds(500),
+        operationInterval: Duration = .milliseconds(32)
+    ) async {
+        guard operationCount > 0,
+              deleteEvery > 0,
+              lookback > 0
+        else { return }
+        do {
+            try await Task.sleep(for: initialDelay)
+        } catch {
+            return
+        }
+        for operation in 0 ..< operationCount {
+            guard !Task.isCancelled,
+                  let messageCount = messagesByChannel[channelID]?.count,
+                  messageCount > 0
+            else { return }
+            let availableLookback = min(lookback, messageCount)
+            let offset = (operation * 17) % availableLookback
+            let index = messageCount - 1 - offset
+            guard let messageID = messagesByChannel[channelID]?[index].id else {
+                return
+            }
+            if (operation + 1).isMultiple(of: deleteEvery),
+               messageCount > 1
+            {
+                messagesByChannel[channelID]?.remove(at: index)
+                continuation?.yield(.messageDeleted(
+                    channelID: channelID,
+                    messageID: messageID
+                ))
+            } else {
+                let content =
+                    switch operation % 4 {
+                    case 0:
+                        "Edited during offline timeline stress \(operation)."
+                    case 1:
+                        "Edited stress message \(operation) wraps onto a second line to change row height while scrolling remains anchored."
+                    case 2:
+                        "Edited stress message \(operation).\nA deterministic second line exercises regrouping."
+                    default:
+                        "**Edited \(operation)** keeps `inline code`, a link, and emoji ✨ in the mutation path."
+                    }
+                guard let timestamp =
+                    messagesByChannel[channelID]?[index].timestamp
+                else { return }
+                messagesByChannel[channelID]?[index].content = content
+                messagesByChannel[channelID]?[index].editedTimestamp =
+                    timestamp.addingTimeInterval(
+                        Double(operation + 1)
+                    )
+                guard let message = messagesByChannel[channelID]?[index] else {
+                    return
+                }
+                continuation?.yield(.messageUpdated(message))
+            }
+            guard operation + 1 < operationCount else { return }
+            do {
+                try await Task.sleep(for: operationInterval)
+            } catch {
+                return
+            }
+        }
     }
 
     public func forumPost(threadID: ChannelID) async throws -> ForumPost {

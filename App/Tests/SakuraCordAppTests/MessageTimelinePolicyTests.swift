@@ -1,5 +1,7 @@
+import AppKit
 @testable import SakuraCord
 import SakuraCordModels
+import SwiftUI
 import Testing
 
 @MainActor
@@ -7,6 +9,47 @@ import Testing
     #expect(MessageTimelineLoadingPolicy.showsInitialPlaceholder(isLoading: true, messageCount: 0))
     #expect(!MessageTimelineLoadingPolicy.showsInitialPlaceholder(isLoading: true, messageCount: 1))
     #expect(!MessageTimelineLoadingPolicy.showsInitialPlaceholder(isLoading: false, messageCount: 0))
+}
+
+@MainActor
+@Test func `shared conversation skeleton covers the top scroll edge safe area`() throws {
+    let host = MessageTimelineSkeletonSafeAreaHost(
+        rootView: MessageTimelineLoadingSkeleton()
+    )
+    host.frame = CGRect(x: 0, y: 0, width: 480, height: 360)
+    host.layoutSubtreeIfNeeded()
+    let bitmap = try #require(
+        host.bitmapImageRepForCachingDisplay(in: host.bounds)
+    )
+    host.cacheDisplay(in: host.bounds, to: bitmap)
+
+    #expect(bitmap.colorAt(x: 240, y: 1)?.alphaComponent == 1)
+    #expect(bitmap.colorAt(x: 240, y: 358)?.alphaComponent == 1)
+}
+
+@MainActor
+@Test func `cached refreshes and earlier pages expose the leading loading indicator`() {
+    #expect(
+        MessageTimelineLoadingPolicy.showsEarlierIndicator(
+            isLoadingInitialPage: true,
+            messageCount: 100,
+            isLoadingEarlierPage: false
+        )
+    )
+    #expect(
+        MessageTimelineLoadingPolicy.showsEarlierIndicator(
+            isLoadingInitialPage: false,
+            messageCount: 100,
+            isLoadingEarlierPage: true
+        )
+    )
+    #expect(
+        !MessageTimelineLoadingPolicy.showsEarlierIndicator(
+            isLoadingInitialPage: true,
+            messageCount: 0,
+            isLoadingEarlierPage: false
+        )
+    )
 }
 
 @MainActor
@@ -49,32 +92,89 @@ import Testing
 }
 
 @MainActor
-@Test func `initial unread positioning resolves from actual viewport geometry`() {
-    let channelID = ChannelID(rawValue: 42)
-    var tracker = TimelineInitialPositionTracker()
-
-    tracker.begin(channelID: channelID)
+@Test func `initial conversation position uses exact unread boundary with context`() {
+    let unreadID = MessageID(rawValue: 42)
 
     #expect(
-        tracker.resolve(channelID: channelID, actualIsAtNewest: true) == true
+        TimelineInitialPositionPolicy.target(
+            firstUnreadMessageID: unreadID,
+            hasExactUnreadBoundary: true,
+            prefersNewest: false
+        )
+        == .message(
+            unreadID,
+            anchor: TimelineInitialPositionPolicy.unreadViewportAnchor
+        )
+    )
+    #expect(TimelineInitialPositionPolicy.unreadViewportAnchor.y == 0.28)
+}
+
+@MainActor
+private final class MessageTimelineSkeletonSafeAreaHost<Content: View>:
+    NSHostingView<Content>
+{
+    override var safeAreaInsets: NSEdgeInsets {
+        NSEdgeInsets(top: 40, left: 0, bottom: 0, right: 0)
+    }
+}
+
+@MainActor
+@Test func `initial conversation position falls back to true newest deterministically`() {
+    #expect(
+        TimelineInitialPositionPolicy.target(
+            firstUnreadMessageID: nil,
+            hasExactUnreadBoundary: false,
+            prefersNewest: false
+        ) == .bottom
     )
     #expect(
-        tracker.resolve(channelID: channelID, actualIsAtNewest: false) == nil
+        TimelineInitialPositionPolicy.target(
+            firstUnreadMessageID: MessageID(rawValue: 42),
+            hasExactUnreadBoundary: false,
+            prefersNewest: false
+        ) == .bottom
+    )
+    #expect(
+        TimelineInitialPositionPolicy.target(
+            firstUnreadMessageID: MessageID(rawValue: 42),
+            hasExactUnreadBoundary: true,
+            prefersNewest: true
+        ) == .bottom
     )
 }
 
 @MainActor
-@Test func `initial position tracker rejects stale channel geometry`() {
-    let channelID = ChannelID(rawValue: 42)
-    let staleChannelID = ChannelID(rawValue: 41)
-    var tracker = TimelineInitialPositionTracker()
-
-    tracker.begin(channelID: channelID)
-
+@Test func `initial conversation position waits for a completed initial load`() {
     #expect(
-        tracker.resolve(channelID: staleChannelID, actualIsAtNewest: true) == nil
+        TimelineInitialPositionPolicy.targetWhenReady(
+            hasCompletedInitialLoad: false,
+            firstUnreadMessageID: MessageID(rawValue: 42),
+            hasExactUnreadBoundary: true,
+            prefersNewest: false
+        ) == nil
     )
     #expect(
-        tracker.resolve(channelID: channelID, actualIsAtNewest: false) == false
+        TimelineInitialPositionPolicy.targetWhenReady(
+            hasCompletedInitialLoad: true,
+            firstUnreadMessageID: nil,
+            hasExactUnreadBoundary: false,
+            prefersNewest: false
+        ) == .bottom
+    )
+}
+
+@Test func `unresolved unread boundaries do not draw a misleading divider`() {
+    let unreadID = MessageID(rawValue: 42)
+    #expect(
+        TimelineUnreadBoundaryPolicy.displayedMessageID(
+            firstUnreadMessageID: unreadID,
+            isLowerBound: false
+        ) == unreadID
+    )
+    #expect(
+        TimelineUnreadBoundaryPolicy.displayedMessageID(
+            firstUnreadMessageID: unreadID,
+            isLowerBound: true
+        ) == nil
     )
 }

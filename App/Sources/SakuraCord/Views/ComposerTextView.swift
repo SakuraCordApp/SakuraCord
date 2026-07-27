@@ -590,6 +590,10 @@ final class ComposerNSTextView: NSTextView {
     }
     private lazy var unfocusedTypingMonitor = ComposerUnfocusedTypingMonitor()
 
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         unfocusedTypingMonitor.synchronize(

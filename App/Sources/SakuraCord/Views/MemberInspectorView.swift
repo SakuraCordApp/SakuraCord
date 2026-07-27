@@ -4,11 +4,8 @@ import SwiftUI
 
 struct MemberInspectorView: View {
     let sections: [MemberSection]
-    let selectedMemberID: UserID?
+    let profilePresentation: ProfilePresentationState?
     let isProfilePresented: Bool
-    let profile: UserProfile?
-    let isLoadingProfile: Bool
-    let profileErrorMessage: String?
     let selectMember: (Member) -> Void
     let dismissProfile: () -> Void
 
@@ -22,11 +19,17 @@ struct MemberInspectorView: View {
                     case let .member(member):
                         MemberRow(
                             member: member,
-                            isSelected: selectedMemberID == member.id,
-                            isProfilePresented: isProfilePresented && selectedMemberID == member.id,
-                            profile: selectedMemberID == member.id ? profile : nil,
-                            isLoadingProfile: selectedMemberID == member.id && isLoadingProfile,
-                            profileErrorMessage: selectedMemberID == member.id ? profileErrorMessage : nil,
+                            isSelected:
+                                profilePresentation?.member.id
+                                    == member.id,
+                            isProfilePresented:
+                                isProfilePresented
+                                && profilePresentation?.member.id
+                                    == member.id,
+                            profilePresentation:
+                                profilePresentation?.member.id == member.id
+                                    ? profilePresentation
+                                    : nil,
                             select: { selectMember(member) },
                             dismissProfile: dismissProfile
                         )
@@ -133,9 +136,7 @@ private struct MemberRow: View {
     let member: Member
     let isSelected: Bool
     let isProfilePresented: Bool
-    let profile: UserProfile?
-    let isLoadingProfile: Bool
-    let profileErrorMessage: String?
+    let profilePresentation: ProfilePresentationState?
     let select: () -> Void
     let dismissProfile: () -> Void
     @State private var isHovered = false
@@ -204,12 +205,11 @@ private struct MemberRow: View {
             attachmentAnchor: .rect(.bounds),
             arrowEdge: .trailing
         ) {
-            MemberProfilePopover(
-                member: member,
-                profile: profile,
-                isLoading: isLoadingProfile,
-                errorMessage: profileErrorMessage
-            )
+            if let profilePresentation {
+                ProfilePresentationContent(
+                    presentation: profilePresentation
+                )
+            }
         }
         .help(member.user.username)
     }

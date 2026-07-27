@@ -1,6 +1,7 @@
 @testable import SakuraCord
 import Foundation
 import ImageIO
+import QuartzCore
 import Testing
 
 @Test func `small animated frames are prepared before display`() {
@@ -105,6 +106,51 @@ import Testing
     ]
 
     #expect(AnimatedImageFrameTiming.duration(properties: properties) == 0.1)
+}
+
+@MainActor @Test
+func `animated image canvas installs discrete compositor frames and resets to its first frame`()
+    throws
+{
+    let encoded =
+        "R0lGODlhIAAgAPIHAAAAAFhl8lhl8lhl8lhl8lhl8lhl8v///"
+        + "yH/C05FVFNDQVBFMi4wAwEAAAAh+QQJAAAAACwAAAAAIAAgAA"
+        + "ADVwi63P4wykmrvTjrzbv/WyAMxiAEH1EYbGsUBEeQrjvE2lr"
+        + "XhRbsQBRGANwJMrRia5BR7pDOZYYYNRwxv6oQo1P2NDPlTdZ1"
+        + "wT4ikmkLarvf8Lh8Tt8kAAAh+QQJAAAAACwAAAAAIAAgAIIAAA"
+        + "DtQkXtQkXtQkXtQkXtQkXtQkX///8DVwi63P4wykmrvTjrzbv"
+        + "/4BMIgzEIwUcURusaBcER5fsOssbadqEFvGAKIwjyBJma0TXIL"
+        + "HnJJzNTlBqQGKB1iNktfRraEjfzvmKfUenEDbnf8Lh8Tp8nAA"
+        + "A7"
+    let data = try #require(Data(base64Encoded: encoded))
+    let decoded = try DecodedAnimatedImage(
+        data: data,
+        maximumPixelDimension: 64
+    )
+    #expect(decoded.frames.count == 2)
+
+    let canvas = AnimatedImageCanvas(
+        frame: CGRect(x: 0, y: 0, width: 18, height: 18)
+    )
+    canvas.display(decoded, animates: true, isLooping: true)
+    let animation = try #require(
+        canvas.layer?.animation(
+            forKey: "remoteAnimatedImage"
+        ) as? CAKeyframeAnimation
+    )
+    #expect(animation.values?.count == 2)
+    #expect(animation.calculationMode == .discrete)
+    #expect(animation.repeatCount == .infinity)
+    #expect(animation.duration == 0.2)
+
+    canvas.display(decoded, animates: false, isLooping: true)
+    #expect(
+        canvas.layer?.animation(forKey: "remoteAnimatedImage") == nil
+    )
+    #expect(
+        (canvas.layer?.contents as AnyObject?)
+            === decoded.frames.first
+    )
 }
 
 @Test func `animated media only plays while visible and motion is enabled`() {

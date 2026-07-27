@@ -121,17 +121,123 @@ import Testing
         #expect(!profile.roles.isEmpty)
     }
 
-    for rawChannelID: UInt64 in [200, 210, 211, 212, 300, 301, 302, 400] {
+    for rawChannelID: UInt64 in [200, 210, 211, 212, 300, 301, 302, 400, 401] {
         let channelID = ChannelID(rawValue: rawChannelID)
         let page = try await provider.messages(in: channelID, before: nil, limit: 50)
         #expect(!page.messages.isEmpty)
     }
+
+    let groupDM = try #require(snapshot.channels.first {
+        $0.id == ChannelID(rawValue: 401)
+    })
+    #expect(groupDM.kind == .groupDirectMessage)
+    #expect(groupDM.recipients.map(\.id) == [
+        UserID(rawValue: 2),
+        UserID(rawValue: 3),
+        UserID(rawValue: 4),
+    ])
 
     let threadID = ChannelID(rawValue: 901)
     let threadPage = try await provider.messages(in: threadID, before: nil, limit: 50)
     #expect(
         threadPage.messages.map(\.id) == [MessageID(rawValue: 9011), MessageID(rawValue: 9012)])
     #expect(threadPage.messages.allSatisfy { $0.channelID == threadID })
+
+    let showcase = try await provider.messages(
+        in: ChannelID(rawValue: 301),
+        before: nil,
+        limit: 50
+    )
+    let spoilerFixture = try #require(showcase.messages.first {
+        $0.id == MessageID(rawValue: 3105)
+    })
+    #expect(spoilerFixture.attachments.first?.isSpoiler == true)
+    #expect(spoilerFixture.components.contains {
+        guard case let .container(_, _, spoiler, _) = $0 else {
+            return false
+        }
+        return spoiler
+    })
+    let independentSpoilers = try #require(showcase.messages.first {
+        $0.id == MessageID(rawValue: 3106)
+    })
+    #expect(independentSpoilers.attachments.count == 4)
+    #expect(independentSpoilers.attachments.allSatisfy { $0.isSpoiler })
+    #expect(
+        Set(independentSpoilers.attachments.map(\.mediaKind))
+            == [.image, .animatedImage, .video, .file]
+    )
+    #expect(independentSpoilers.components.contains {
+        guard case let .mediaGallery(_, items) = $0 else {
+            return false
+        }
+        return items.count == 2
+            && items.allSatisfy { $0.media.isSpoiler }
+    })
+    #expect(independentSpoilers.components.contains {
+        guard case let .file(_, media) = $0 else {
+            return false
+        }
+        return media.isSpoiler
+    })
+    let animatedFixture = try #require(showcase.messages.first {
+        $0.id == MessageID(rawValue: 3107)
+    })
+    #expect(
+        animatedFixture.content.contains(
+            "<a:animated_fixture:900000000000000203>"
+        )
+    )
+    #expect(
+        animatedFixture.reactions.first?.emojiReference.isAnimated == true
+    )
+    let commandFixture = try #require(showcase.messages.first {
+        $0.id == MessageID(rawValue: 3108)
+    })
+    #expect(commandFixture.type == .chatInputCommand)
+    #expect(commandFixture.flags.contains(.ephemeral))
+    #expect(commandFixture.interactionMetadata?.displayName == "inspect")
+    #expect(commandFixture.interactionMetadata?.user?.id == snapshot.currentUser.id)
+    let systemFixture = try #require(showcase.messages.first {
+        $0.id == MessageID(rawValue: 3109)
+    })
+    #expect(systemFixture.type == .channelPinnedMessage)
+    #expect(systemFixture.type.hasGeneratedContent)
+    let loadingFixture = try #require(showcase.messages.first {
+        $0.id == MessageID(rawValue: 3110)
+    })
+    #expect(loadingFixture.type == .chatInputCommand)
+    #expect(loadingFixture.flags.contains(.loading))
+    #expect(loadingFixture.interactionMetadata?.displayName == "compare")
+    let replyMentionFixture = try #require(showcase.messages.first {
+        $0.id == MessageID(rawValue: 3113)
+    })
+    #expect(replyMentionFixture.replyTo == MessageID(rawValue: 3112))
+    #expect(
+        replyMentionFixture.mentionedUsers.contains {
+            $0.id == snapshot.currentUser.id
+        }
+    )
+    let suppressedEmbedFixture = try #require(showcase.messages.first {
+        $0.id == MessageID(rawValue: 3114)
+    })
+    #expect(suppressedEmbedFixture.flags.contains(.suppressEmbeds))
+    #expect(suppressedEmbedFixture.embeds.count == 1)
+    #expect(
+        suppressedEmbedFixture.content
+            == "https://example.com/suppressed-preview"
+    )
+    let failedFixture = try #require(showcase.messages.first {
+        $0.id == MessageID(rawValue: 3111)
+    })
+    #expect(failedFixture.outboxState == .failed)
+    let animatedEmoji = try #require(
+        try await provider.emojis(in: GuildID(rawValue: 101)).first {
+            $0.id == "900000000000000203"
+        }
+    )
+    #expect(animatedEmoji.assetURL?.isFileURL == true)
+    #expect(animatedEmoji.assetURL?.pathExtension == "gif")
 }
 
 @Test func `mock long server list fixture provides scrollable guild and emoji rails`() async throws
@@ -155,6 +261,150 @@ import Testing
     #expect(channel.name == "general")
     #expect(try await !(provider.messages(in: channel.id, before: nil, limit: 50)).messages.isEmpty)
     #expect(try await (provider.members(in: lastGuild.id)).count == 2)
+}
+
+@Test func `mock timeline stress emits deterministic live message bursts`() async throws {
+    let provider = MockChatProvider(timelineMessageCount: 120)
+    _ = try await provider.bootstrap()
+    let channelID = ChannelID(rawValue: 210)
+    let stream = await provider.eventStream()
+    let collector = Task { () -> [Message] in
+        var messages: [Message] = []
+        for await event in stream {
+            guard case let .messageCreated(message) = event,
+                  message.channelID == channelID
+            else { continue }
+            messages.append(message)
+            if messages.count == 12 {
+                return messages
+            }
+        }
+        return messages
+    }
+
+    await provider.emitTimelineStressMessages(
+        in: channelID,
+        count: 12,
+        burstSize: 4,
+        burstInterval: .milliseconds(1)
+    )
+    let emitted = await collector.value
+    let page = try await provider.messages(in: channelID, before: nil, limit: 20)
+    await provider.disconnect()
+
+    #expect(emitted.count == 12)
+    #expect(emitted.map(\.id) == emitted.map(\.id).sorted())
+    #expect(Set(emitted.map(\.id)).count == 12)
+    #expect(Array(page.messages.suffix(12)).map(\.id) == emitted.map(\.id))
+    #expect(emitted.allSatisfy { !$0.content.isEmpty && $0.channelID == channelID })
+}
+
+@Test func `mock timeline mutation stress emits deterministic updates and deletes`() async throws {
+    enum MutationEvent: Equatable {
+        case updated(MessageID, String)
+        case deleted(MessageID)
+    }
+
+    let provider = MockChatProvider(timelineMessageCount: 120)
+    _ = try await provider.bootstrap()
+    let channelID = ChannelID(rawValue: 210)
+    let stream = await provider.eventStream()
+    let collector = Task { () -> [MutationEvent] in
+        var events: [MutationEvent] = []
+        for await event in stream {
+            switch event {
+            case let .messageUpdated(message)
+            where message.channelID == channelID:
+                events.append(.updated(message.id, message.content))
+            case let .messageDeleted(eventChannelID, messageID)
+            where eventChannelID == channelID:
+                events.append(.deleted(messageID))
+            default:
+                continue
+            }
+            if events.count == 12 {
+                return events
+            }
+        }
+        return events
+    }
+
+    await provider.emitTimelineMutationStress(
+        in: channelID,
+        operationCount: 12,
+        deleteEvery: 4,
+        lookback: 24,
+        initialDelay: .zero,
+        operationInterval: .milliseconds(1)
+    )
+    let events = await collector.value
+    let page = try await provider.messages(
+        in: channelID,
+        before: nil,
+        limit: 200
+    )
+    await provider.disconnect()
+
+    #expect(events.count == 12)
+    #expect(events.filter {
+        if case .deleted = $0 { true } else { false }
+    }.count == 3)
+    #expect(events.filter {
+        if case .updated = $0 { true } else { false }
+    }.count == 9)
+    let deletedIDs = Set(events.compactMap { event -> MessageID? in
+        guard case let .deleted(messageID) = event else { return nil }
+        return messageID
+    })
+    let finalUpdatedContent = Dictionary(
+        events.compactMap { event -> (MessageID, String)? in
+            guard case let .updated(messageID, content) = event else {
+                return nil
+            }
+            return (messageID, content)
+        },
+        uniquingKeysWith: { _, newer in newer }
+    )
+    for event in events {
+        switch event {
+        case let .updated(messageID, content):
+            #expect(content.contains("stress"))
+            if !deletedIDs.contains(messageID),
+               finalUpdatedContent[messageID] == content
+            {
+                #expect(page.messages.contains {
+                    $0.id == messageID && $0.content == content
+                })
+            }
+        case let .deleted(messageID):
+            #expect(!page.messages.contains { $0.id == messageID })
+        }
+    }
+}
+
+@Test func `media timeline fixture mixes video lottie and animated raster rows`() async throws {
+    let provider = MockChatProvider(
+        timelineMessageCount: 120,
+        timelineIncludesAnimatedMedia: true
+    )
+    _ = try await provider.bootstrap()
+    let page = try await provider.messages(
+        in: ChannelID(rawValue: 210),
+        before: nil,
+        limit: 120
+    )
+
+    #expect(page.messages.contains { message in
+        message.embeds.contains {
+            $0.type == "gifv" && $0.video?.contentType == "video/mp4"
+        }
+    })
+    #expect(page.messages.contains { message in
+        message.stickers.contains { $0.format == .lottie }
+    })
+    #expect(page.messages.contains {
+        $0.content.contains("file://") && $0.content.contains(".gif")
+    })
 }
 
 @Test func `mock reactions provide local avatar fixtures and reconcile the current reactor`()

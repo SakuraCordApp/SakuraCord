@@ -2,103 +2,6 @@ import MessageRendering
 import SakuraCordModels
 import SwiftUI
 
-struct DiscordMessageContentView: View {
-    private static let jumboEmojiSize: CGFloat = 48
-
-    let model: AppModel
-    let message: Message
-    let content: String
-    let textOpacity: Double
-
-    private let presentation: LinkedImagePresentation
-    @State private var presentedMention: AnchoredMentionPresentation?
-
-    init(
-        model: AppModel,
-        message: Message,
-        content: String,
-        textOpacity: Double = 1
-    ) {
-        self.model = model
-        self.message = message
-        self.content = content
-        self.textOpacity = textOpacity
-        presentation = LinkedImagePresentation(content: content)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if !presentation.visibleText.isEmpty {
-                CustomEmojiRichText(
-                    content: presentation.visibleText,
-                    emojiSize: document.isEmojiOnly ? Self.jumboEmojiSize : 22,
-                    mentionPresentation: resolver.presentation,
-                    onMentionClick: openMention,
-                    onURLClick: openURL
-                )
-                .opacity(textOpacity)
-            }
-            if !presentation.images.isEmpty {
-                EmojiWrappingLayout(horizontalSpacing: 4, verticalSpacing: 4) {
-                    ForEach(presentation.images) { image in
-                        LinkedMessageImage(image: image)
-                    }
-                }
-            }
-        }
-        .overlay {
-            AnchoredMentionPopoverLayer(
-                request: presentedMention,
-                model: model,
-                onDismiss: { presentedMention = nil }
-            )
-        }
-    }
-
-    private var document: MessageDocument {
-        MessageDocumentCache.shared.document(for: presentation.visibleText)
-    }
-
-    private var resolver: MessageMentionResolver {
-        MessageMentionResolver(model: model, message: message)
-    }
-
-    private func openMention(
-        _ mention: MentionPresentation,
-        anchor: StablePopoverAnchor
-    ) {
-        switch mention.target {
-        case .unresolved:
-            return
-        case let .user(id):
-            guard let user = resolver.user(id) else { return }
-            model.showProfile(for: user)
-            presentedMention = AnchoredMentionPresentation(
-                mention: mention,
-                anchor: anchor
-            )
-        case let .role(id):
-            model.showMembers(withRole: id)
-            presentedMention = AnchoredMentionPresentation(
-                mention: mention,
-                anchor: anchor
-            )
-        case let .channel(id):
-            model.navigate(to: id)
-        case let .linkedChannel(guildID, channelID):
-            model.navigate(to: guildID, linkedChannelID: channelID)
-        case let .message(guildID, channelID, messageID):
-            model.navigate(to: guildID, channelID: channelID, messageID: messageID)
-        }
-    }
-
-    private func openURL(_ url: URL) -> Bool {
-        guard let link = DiscordChannelLink(url) else { return false }
-        model.navigate(to: link.guildID, linkedChannelID: link.channelID)
-        return true
-    }
-}
-
 struct MessageMentionResolver {
     let model: AppModel
     let message: Message?
@@ -380,77 +283,7 @@ private struct AnchoredMentionPopoverLayer: View {
     }
 }
 
-struct CustomEmojiGlyph: View {
-    let emoji: RenderedEmoji
-    let size: CGFloat
-
-    init(emoji: RenderedEmoji, size: CGFloat) {
-        self.emoji = emoji
-        self.size = size
-    }
-
-    init?(token: String, size: CGFloat) {
-        guard let emoji = RenderedEmoji(rawToken: token) else { return nil }
-        self.init(emoji: emoji, size: size)
-    }
-
-    var body: some View {
-        if let url = emoji.imageURL {
-            AnimatedRemoteImage(url: url, fallbackSystemImage: "face.smiling")
-                .frame(width: size, height: size)
-                .help(":\(emoji.name):")
-                .accessibilityLabel(emoji.name)
-        } else {
-            Text(emoji.rawToken)
-        }
-    }
-}
-
-struct ParsedCustomEmoji {
-    let value: RenderedEmoji
-    init?(token: String) {
-        guard let value = RenderedEmoji(rawToken: token) else { return nil }
-        self.value = value
-    }
-
-    var name: String {
-        value.name
-    }
-
-    var id: String {
-        value.id
-    }
-
-    var isAnimated: Bool {
-        value.isAnimated
-    }
-
-    var imageURL: URL? {
-        value.imageURL
-    }
-}
-
-private struct LinkedMessageImage: View {
-    let image: LinkedImageReference
-
-    var body: some View {
-        Link(destination: image.url) {
-            AnimatedRemoteImage(
-                url: image.url,
-                isLooping: true,
-                fallbackSystemImage: image.isEmoji ? "face.smiling" : "photo"
-            )
-            .frame(width: image.displaySize.width, height: image.displaySize.height)
-            .background(image.isEmoji ? Color.clear : Color.secondary.opacity(0.08))
-            .clipShape(RoundedRectangle(cornerRadius: image.isEmoji ? 7 : 10, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .help(image.label)
-        .accessibilityLabel(image.label)
-    }
-}
-
-struct LinkedImagePresentation {
+nonisolated struct LinkedImagePresentation: Sendable {
     private static let expression = try! NSRegularExpression(
         pattern: #"\[([^\]]+)\]\((https://[^\s)]+)\)"#
     )
@@ -485,7 +318,7 @@ struct LinkedImagePresentation {
     }
 }
 
-struct LinkedImageReference: Identifiable {
+nonisolated struct LinkedImageReference: Identifiable, Hashable, Sendable {
     let id: String
     let label: String
     let url: URL

@@ -1,14 +1,80 @@
 import CoreAudio
+import CoreText
 import DiscordProtocol
 import Foundation
 import ImageIO
 import MediaPipeline
+import MessageRendering
 import OSLog
 import Observation
 import SakuraCordModels
 import SakuraCordPersistence
 import UniformTypeIdentifiers
 import UserNotifications
+
+private final class MessagePersistenceSink: @unchecked Sendable {
+    private static let batchInterval: Duration = .milliseconds(100)
+
+    private enum Event: Sendable {
+        case save(SakuraCordDatabase, Message)
+        case flush
+    }
+
+    private struct PendingBatch {
+        let database: SakuraCordDatabase
+        var messages: [Message] = []
+    }
+
+    private let continuation: AsyncStream<Event>.Continuation
+    private let worker: Task<Void, Never>
+
+    init() {
+        let (stream, continuation) = AsyncStream.makeStream(of: Event.self)
+        self.continuation = continuation
+        worker = Task.detached(priority: .background) {
+            var batches: [ObjectIdentifier: PendingBatch] = [:]
+            var flushScheduled = false
+            for await event in stream {
+                switch event {
+                case let .save(database, message):
+                    let key = ObjectIdentifier(database)
+                    if batches[key] == nil {
+                        batches[key] = PendingBatch(database: database)
+                    }
+                    batches[key]?.messages.append(message)
+                    guard !flushScheduled else { continue }
+                    flushScheduled = true
+                    Task.detached(priority: .background) {
+                        try? await Task.sleep(for: Self.batchInterval)
+                        continuation.yield(.flush)
+                    }
+                case .flush:
+                    let pending = Array(batches.values)
+                    batches.removeAll(keepingCapacity: true)
+                    flushScheduled = false
+                    for batch in pending {
+                        try? await batch.database.save(messages: batch.messages)
+                    }
+                }
+            }
+        }
+    }
+
+    deinit {
+        continuation.finish()
+        worker.cancel()
+    }
+
+    func enqueue(_ message: Message, database: SakuraCordDatabase?) {
+        guard let database else { return }
+        continuation.yield(.save(database, message))
+    }
+}
+
+private struct PreparedCreatedMessage: Sendable {
+    let message: Message
+    let textPlan: NativeTimelineTextPlan?
+}
 
 nonisolated enum OptimisticAttachmentPresentation {
     static func attachment(for url: URL, index: Int) -> Attachment {
@@ -43,6 +109,34 @@ nonisolated struct MessageNavigationRequest: Equatable, Sendable {
     let requestID: UInt64
     let channelID: ChannelID
     let messageID: MessageID
+}
+
+struct ProfilePresentationState {
+    fileprivate let requestID: UUID
+    var member: Member
+    var profile: UserProfile?
+    var isLoading: Bool
+    var errorMessage: String?
+}
+
+private struct ProfileCacheKey: Hashable {
+    let userID: UserID
+    let guildID: GuildID?
+}
+
+private enum ProfilePresentationDestination {
+    case inspector
+    case contextual
+}
+
+nonisolated enum UnreadPresentationPublicationPolicy {
+    static func shouldPublish(
+        snapshot: BootstrapSnapshot,
+        channels: [Channel],
+        guilds: [Guild]
+    ) -> Bool {
+        snapshot.channels != channels || snapshot.guilds != guilds
+    }
 }
 
 nonisolated struct ForumPostPresentation: Sendable {
@@ -320,8 +414,195 @@ nonisolated enum DiscordEmojiPermissionPolicy {
 }
 
 @MainActor
+struct MessageRowsUpdateHint: Equatable {
+    enum Change: Equatable {
+        case insert(IndexSet)
+        case replace(IndexSet)
+        case remove(removedIndexes: IndexSet, changedIndexes: IndexSet)
+    }
+
+    let revision: UInt64
+    let change: Change
+}
+
+struct MessageRowsUpdateRecord: Equatable {
+    let revision: UInt64
+    let change: MessageRowsUpdateHint.Change?
+    let insertedMessageIDs: [MessageID]
+    let changedMessageIDs: Set<MessageID>
+    let removedMessageIDs: Set<MessageID>
+    let invalidatesAllRows: Bool
+}
+
+@MainActor
+final class MessageRowsUpdateJournal {
+    private var storage: [MessageRowsUpdateRecord] = []
+
+    var latestRevision: UInt64? {
+        storage.last?.revision
+    }
+
+    func append(_ record: MessageRowsUpdateRecord) {
+        storage.append(record)
+        if storage.count > 4_608 {
+            storage.removeFirst(512)
+        }
+    }
+
+    func records(
+        after oldRevision: UInt64,
+        through newRevision: UInt64
+    ) -> ArraySlice<MessageRowsUpdateRecord>? {
+        guard newRevision > oldRevision,
+              let firstRevision = storage.first?.revision,
+              let lastRevision = storage.last?.revision,
+              oldRevision &+ 1 >= firstRevision,
+              newRevision <= lastRevision
+        else {
+            return nil
+        }
+
+        let lowerBound = Int(oldRevision &+ 1 - firstRevision)
+        let upperBound = Int(newRevision - firstRevision) + 1
+        guard storage.indices.contains(lowerBound),
+              upperBound <= storage.endIndex
+        else {
+            return nil
+        }
+        return storage[lowerBound ..< upperBound]
+    }
+}
+
+enum MessageRowsUpdateRecordBuilder {
+    static func make(
+        oldRows: [MessageRowPresentation],
+        newRows: [MessageRowPresentation],
+        revision: UInt64
+    ) -> MessageRowsUpdateRecord {
+        let oldIDs = oldRows.map(\.id)
+        let newIDs = newRows.map(\.id)
+        let oldRowsByID = Dictionary(
+            uniqueKeysWithValues: oldRows.map { ($0.id, $0) }
+        )
+        let changedMessageIDs = Set<MessageID>(
+            newRows.lazy.compactMap { row in
+                guard let oldRow = oldRowsByID[row.id],
+                      oldRow != row
+                else { return nil }
+                return row.id
+            }
+        )
+
+        if oldIDs == newIDs {
+            return MessageRowsUpdateRecord(
+                revision: revision,
+                change: .replace(
+                    IndexSet(
+                        newRows.indices.filter {
+                            oldRows[$0] != newRows[$0]
+                        }
+                    )
+                ),
+                insertedMessageIDs: [],
+                changedMessageIDs: changedMessageIDs,
+                removedMessageIDs: [],
+                invalidatesAllRows: false
+            )
+        }
+
+        if let insertedIndexes = insertedIndexes(
+            preserving: oldIDs,
+            in: newIDs
+        ) {
+            return MessageRowsUpdateRecord(
+                revision: revision,
+                change: .insert(insertedIndexes),
+                insertedMessageIDs: insertedIndexes.map { newIDs[$0] },
+                changedMessageIDs: changedMessageIDs,
+                removedMessageIDs: [],
+                invalidatesAllRows: false
+            )
+        }
+
+        if let removedIndexes = removedIndexes(
+            preserving: newIDs,
+            in: oldIDs
+        ) {
+            let changedIndexes = IndexSet(
+                newRows.indices.filter {
+                    changedMessageIDs.contains(newRows[$0].id)
+                }
+            )
+            return MessageRowsUpdateRecord(
+                revision: revision,
+                change: .remove(
+                    removedIndexes: removedIndexes,
+                    changedIndexes: changedIndexes
+                ),
+                insertedMessageIDs: [],
+                changedMessageIDs: changedMessageIDs,
+                removedMessageIDs: Set(removedIndexes.map { oldIDs[$0] }),
+                invalidatesAllRows: false
+            )
+        }
+
+        return MessageRowsUpdateRecord(
+            revision: revision,
+            change: nil,
+            insertedMessageIDs: [],
+            changedMessageIDs: changedMessageIDs,
+            removedMessageIDs: [],
+            invalidatesAllRows: true
+        )
+    }
+
+    private static func insertedIndexes(
+        preserving oldIDs: [MessageID],
+        in newIDs: [MessageID]
+    ) -> IndexSet? {
+        guard newIDs.count >= oldIDs.count else { return nil }
+        var oldIndex = oldIDs.startIndex
+        var inserted = IndexSet()
+        for newIndex in newIDs.indices {
+            if oldIndex < oldIDs.endIndex,
+               newIDs[newIndex] == oldIDs[oldIndex]
+            {
+                oldIndex += 1
+            } else {
+                inserted.insert(newIndex)
+            }
+        }
+        return oldIndex == oldIDs.endIndex ? inserted : nil
+    }
+
+    private static func removedIndexes(
+        preserving newIDs: [MessageID],
+        in oldIDs: [MessageID]
+    ) -> IndexSet? {
+        guard oldIDs.count >= newIDs.count else { return nil }
+        var newIndex = newIDs.startIndex
+        var removed = IndexSet()
+        for oldIndex in oldIDs.indices {
+            if newIndex < newIDs.endIndex,
+               oldIDs[oldIndex] == newIDs[newIndex]
+            {
+                newIndex += 1
+            } else {
+                removed.insert(oldIndex)
+            }
+        }
+        return newIndex == newIDs.endIndex ? removed : nil
+    }
+}
+
 @Observable
 final class AppModel {
+    private enum ThreadErrorScope {
+        case initialPage
+        case earlierPage
+        case action
+    }
+
     private struct CommandMemberQuery: Hashable {
         var guildID: GuildID
         var query: String
@@ -398,18 +679,26 @@ final class AppModel {
     }
     private(set) var visibleChannels: [Channel] = []
     private(set) var selectedChannel: Channel?
-    private(set) var messages: [Message] = [] {
-        didSet {
-            messageRows = MessageGrouping.updating(
-                existing: messageRows, oldMessages: oldValue, newMessages: messages
-            )
-            if let selectedChannelID {
-                messageCache[selectedChannelID] = messages
-            }
-        }
-    }
-
-    private(set) var messageRows: [MessageRowPresentation] = []
+    @ObservationIgnored private(set) var messages: [Message] = []
+    @ObservationIgnored private(set) var messageRows: [MessageRowPresentation] = []
+    @ObservationIgnored private(set) var messageRowsRevision: UInt64 = 0
+    @ObservationIgnored private(set) var messageRowsUpdateHint:
+        MessageRowsUpdateHint?
+    @ObservationIgnored let messageRowsUpdateJournal =
+        MessageRowsUpdateJournal()
+    @ObservationIgnored let timelineSpoilerRevealStore =
+        NativeTimelineSpoilerRevealStore()
+    @ObservationIgnored private var latestMessageRowsRevision: UInt64 = 0
+    @ObservationIgnored private var messageRowsNonAppendRevision: UInt64 = 0
+    @ObservationIgnored private var selectedMessageIDs: Set<MessageID> = []
+    @ObservationIgnored private var selectedMessageStoredIndexByID:
+        [MessageID: Int] = [:]
+    /// Stored indexes use a movable origin so prepending a history page does
+    /// not rewrite every existing message's dictionary value. A logical array
+    /// index is `stored - selectedMessageIndexOrigin`.
+    @ObservationIgnored private var selectedMessageIndexOrigin = 0
+    @ObservationIgnored private var selectedReplyMessageIDsByTarget:
+        [MessageID: Set<MessageID>] = [:]
     private(set) var messageNavigationRequest: MessageNavigationRequest?
     private(set) var members: [Member] = [] {
         didSet {
@@ -461,6 +750,7 @@ final class AppModel {
     private(set) var isLoadingEarlier = false
     private(set) var hasMoreMessages = false
     private(set) var messageLoadError: String?
+    @ObservationIgnored private var messageLoadErrorIsEarlierPage = false
     private(set) var forumPosts: [ForumPost] = []
     private(set) var forumCataloguePosts: [ForumPost] = []
     private var forumCatalogueIndexByID: [ChannelID: Int] = [:]
@@ -492,19 +782,50 @@ final class AppModel {
     private(set) var openThreadStartedAt: Date?
     private(set) var threadMessages: [Message] = [] {
         didSet {
-            threadMessageRows = MessageGrouping.updating(
+            let oldRows = threadMessageRows
+            let newRows = MessageGrouping.updating(
                 existing: threadMessageRows,
                 oldMessages: oldValue,
                 newMessages: threadMessages
             )
+            let nextRevision = threadMessageRowsRevision &+ 1
+            let record = MessageRowsUpdateRecordBuilder.make(
+                oldRows: oldRows,
+                newRows: newRows,
+                revision: nextRevision
+            )
+            threadMessageRows = newRows
+            threadMessageRowsUpdateHint = record.change.map {
+                MessageRowsUpdateHint(
+                    revision: nextRevision,
+                    change: $0
+                )
+            }
+            threadMessageRowsUpdateJournal.append(record)
+            threadMessageRowsRevision = nextRevision
+            NotificationCenter.default.post(
+                name: .sakuracordMessageRowsDidChange,
+                object: self
+            )
         }
     }
-    private(set) var threadMessageRows: [MessageRowPresentation] = []
+    @ObservationIgnored private(set) var threadMessageRows:
+        [MessageRowPresentation] = []
+    @ObservationIgnored private(set) var threadMessageRowsUpdateHint:
+        MessageRowsUpdateHint?
+    @ObservationIgnored let threadMessageRowsUpdateJournal =
+        MessageRowsUpdateJournal()
+    @ObservationIgnored private(set) var threadMessageRowsRevision: UInt64 = 0
     private(set) var isLoadingThread = false
     private(set) var hasCompletedInitialThreadLoad = false
     private(set) var isLoadingEarlierThread = false
     private(set) var hasMoreThreadMessages = false
     private(set) var threadErrorMessage: String?
+    @ObservationIgnored private var threadErrorScope: ThreadErrorScope?
+    var canRetryThreadLoad: Bool {
+        threadErrorScope == .initialPage
+            || threadErrorScope == .earlierPage
+    }
     private var outgoingDraftsByNonce: [String: SendMessageDraft] = [:]
     private(set) var gifResults: [GIFSearchResult] = []
     private(set) var isLoadingGIFs = false
@@ -513,11 +834,23 @@ final class AppModel {
     private(set) var supportedCapabilities: Set<ChatCapability> = []
     private(set) var pendingComponentControls: Set<ComponentControlKey> = []
     private(set) var componentErrors: [ComponentControlKey: String] = [:]
-    private(set) var selectedMember: Member?
-    private(set) var selectedProfile: UserProfile?
-    private(set) var isLoadingProfile = false
-    private(set) var profileErrorMessage: String?
+    private(set) var inspectorProfilePresentation:
+        ProfilePresentationState?
+    private(set) var contextualProfilePresentation:
+        ProfilePresentationState?
     private(set) var isInspectorProfilePresented = false
+    var selectedMember: Member? {
+        inspectorProfilePresentation?.member
+    }
+    var selectedProfile: UserProfile? {
+        inspectorProfilePresentation?.profile
+    }
+    var isLoadingProfile: Bool {
+        inspectorProfilePresentation?.isLoading ?? false
+    }
+    var profileErrorMessage: String? {
+        inspectorProfilePresentation?.errorMessage
+    }
     private(set) var activeVoiceChannel: Channel?
     private(set) var voiceSessionState: VoiceSessionState = .idle
     private(set) var voiceParticipants: [VoiceRemoteParticipant] = []
@@ -628,6 +961,11 @@ final class AppModel {
         canManage || (ownerID != nil && ownerID == currentUserID)
     }
 
+    func currentUserRoleIDs(for guildID: GuildID?) -> Set<RoleID> {
+        guard let guildID else { return [] }
+        return currentUserRoleIDsByGuild[guildID] ?? []
+    }
+
     private var selectedEffectivePermissions: UInt64? {
         guard let channel = selectedChannel else { return nil }
         guard let guildID = channel.guildID else { return .max }
@@ -696,6 +1034,7 @@ final class AppModel {
         didSet {
             guard selectedChannelID != oldValue else { return }
             if let oldValue {
+                messageCache[oldValue] = messages
                 lastTypingRequestAt[oldValue] = nil
                 _ = readState.updatePresentation(channelID: oldValue, isPresented: false)
                 readState.endForumVisit(channelID: oldValue)
@@ -743,13 +1082,36 @@ final class AppModel {
 
     @ObservationIgnored private var provider: any ChatProvider
     @ObservationIgnored private var database: SakuraCordDatabase?
+    @ObservationIgnored private let messagePersistenceSink = MessagePersistenceSink()
+    @ObservationIgnored private let runsChatPerformanceBenchmark =
+        AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments)
+        .runsChatPerformanceAutoScroll
     @ObservationIgnored private var eventTask: Task<Void, Never>?
+    @ObservationIgnored private var pendingCreatedMessages:
+        [PreparedCreatedMessage] = []
+    @ObservationIgnored private var createdMessageFlushTask: Task<Void, Never>?
+    @ObservationIgnored private var isFlushingCreatedMessageBatch = false
+    @ObservationIgnored private var batchedSelectedMessages: [Message] = []
+    @ObservationIgnored private var batchedSelectedTextPlansByID:
+        [MessageID: NativeTimelineTextPlan] = [:]
+    @ObservationIgnored private var batchedUnreadPresentationNeedsRefresh =
+        false
+    @ObservationIgnored private var unreadPresentationRefreshTask:
+        Task<Void, Never>?
+    @ObservationIgnored private var batchedAcknowledgementChannelIDs:
+        Set<ChannelID> = []
+    @ObservationIgnored private let maximumCreatedMessagesPerFlush = 4
     @ObservationIgnored private var localTypingTask: Task<Void, Never>?
     @ObservationIgnored private var localTypingChannelID: ChannelID?
     @ObservationIgnored private var lastTypingRequestAt: [ChannelID: Date] = [:]
     @ObservationIgnored private var localTypingGeneration: UInt64 = 0
     @ObservationIgnored private let localTypingTiming: LocalTypingTiming
-    @ObservationIgnored private var profileTask: Task<Void, Never>?
+    @ObservationIgnored private var inspectorProfileTask:
+        Task<Void, Never>?
+    @ObservationIgnored private var contextualProfileTask:
+        Task<Void, Never>?
+    @ObservationIgnored private var profileCache:
+        [ProfileCacheKey: UserProfile] = [:]
     @ObservationIgnored private var channelLoadTask: Task<Void, Never>?
     @ObservationIgnored private var forumLoadTask: Task<Void, Never>?
     @ObservationIgnored private var forumNextOffset: Int?
@@ -771,6 +1133,8 @@ final class AppModel {
     @ObservationIgnored private var componentKeyByNonce: [String: ComponentControlKey] = [:]
     @ObservationIgnored private var loadingReactionReactors: Set<ReactionReactorLoadKey> = []
     @ObservationIgnored private var failedReactionReactorLoads: [ReactionReactorLoadKey: Date] = [:]
+    @ObservationIgnored private var liveScrollingConversationIDs:
+        Set<ChannelID> = []
     @ObservationIgnored private let reactionReactorLoadLimiter = ReactionReactorLoadLimiter(
         maximumConcurrentLoads: maximumConcurrentReactionReactorLoads
     )
@@ -889,6 +1253,8 @@ final class AppModel {
         await leaveVoice()
         await provider.disconnect()
         eventTask?.cancel()
+        resetPendingCreatedMessages()
+        resetTimelineLiveScrolling()
         clearReactionMutationState()
         stopLocalTyping(clearThrottle: true)
         typingState.clearAll()
@@ -924,12 +1290,12 @@ final class AppModel {
         selectedChannel = nil
         selectedGuildID = nil
         selectedChannelID = nil
-        messages = []
+        replaceSelectedMessages(with: [])
         hasCompletedInitialMessageLoad = false
         hasCompletedInitialThreadLoad = false
         messageCache = [:]
         hasMoreCache = [:]
-        dismissProfile()
+        dismissAllProfiles(clearsCache: true)
         errorMessage = nil
         await start(publishesSessionState: !preservesInteractivePresentation)
         isAuthenticated = snapshot != nil
@@ -941,6 +1307,8 @@ final class AppModel {
         await leaveVoice()
         await provider.disconnect()
         eventTask?.cancel()
+        resetPendingCreatedMessages()
+        resetTimelineLiveScrolling()
         clearReactionMutationState()
         stopLocalTyping(clearThrottle: true)
         typingState.clearAll()
@@ -985,13 +1353,13 @@ final class AppModel {
         selectedChannel = nil
         selectedGuildID = nil
         selectedChannelID = nil
-        messages = []
+        replaceSelectedMessages(with: [])
         hasCompletedInitialMessageLoad = false
         hasCompletedInitialThreadLoad = false
         messageCache = [:]
         hasMoreCache = [:]
         members = []
-        dismissProfile()
+        dismissAllProfiles(clearsCache: true)
         connectionState = .disconnected
         isAuthenticated = false
         didAttemptSessionRestore = true
@@ -1032,7 +1400,7 @@ final class AppModel {
         eventTask = Task { [weak self] in
             for await event in stream {
                 guard !Task.isCancelled else { break }
-                self?.consume(event)
+                await self?.consume(event)
             }
         }
         isLoading = true
@@ -1245,7 +1613,9 @@ final class AppModel {
                         limit: 50
                     )
                     guard !Task.isCancelled, selectedChannelID == channel.id else { return }
-                    messages = Self.merging(current: messages, fresh: page.messages)
+                    replaceSelectedMessages(
+                        with: Self.merging(current: messages, fresh: page.messages)
+                    )
                     try await database?.save(messages: page.messages)
                 } catch is CancellationError {
                     return
@@ -1291,7 +1661,7 @@ final class AppModel {
     }
 
     private func activateGuild(_ guildID: GuildID?) async {
-        dismissProfile()
+        dismissAllProfiles()
         selectedGuildID = guildID
         guildRoles = []
         mentionAutocompleteMembers = []
@@ -1465,7 +1835,7 @@ final class AppModel {
     private func beginForumLoad() {
         channelLoadTask?.cancel()
         forumLoadTask?.cancel()
-        messages = []
+        replaceSelectedMessages(with: [])
         draft = ""
         messageLoadError = nil
         isLoadingMessages = false
@@ -1914,6 +2284,7 @@ final class AppModel {
         channelLoadGeneration &+= 1
         let generation = channelLoadGeneration
         messageLoadError = nil
+        messageLoadErrorIsEarlierPage = false
         isLoadingEarlier = false
         hasCompletedInitialMessageLoad = false
         stopLocalTyping(clearThrottle: true)
@@ -1922,7 +2293,7 @@ final class AppModel {
         guard let channelID = selectedChannelID,
               selectedChannel?.kind != .voice || isVoiceChatOpen
         else {
-            messages = []
+            replaceSelectedMessages(with: [])
             draft = ""
             hasMoreMessages = false
             isLoadingMessages = false
@@ -1930,11 +2301,15 @@ final class AppModel {
             return
         }
 
-        let cachedMessages = messageCache[channelID] ?? []
-        messages = cachedMessages
+        let cachedMessages = messageCache.removeValue(forKey: channelID) ?? []
+        replaceSelectedMessages(with: cachedMessages)
         hasMoreMessages = hasMoreCache[channelID] ?? false
         draft = ""
-        isLoadingMessages = cachedMessages.isEmpty
+        // Cached rows are immediately presentable, but the newest-page
+        // request is still in flight and the older-history boundary is
+        // unknown until it answers. Keeping this true suppresses a false
+        // channel beginning and exposes compact progress above cached rows.
+        isLoadingMessages = true
         channelLoadTask = Task { [weak self] in
             await self?.loadSelectedChannel(channelID, generation: generation)
         }
@@ -1948,8 +2323,7 @@ final class AppModel {
         let cached = await cachedMessages
         guard isCurrentLoad(channelID, generation: generation) else { return }
         if messages.isEmpty, !cached.isEmpty {
-            messages = cached
-            isLoadingMessages = false
+            replaceSelectedMessages(with: cached)
         }
 
         let savedDraft = await storedDraft
@@ -1963,11 +2337,12 @@ final class AppModel {
             guard isCurrentLoad(channelID, generation: generation) else { return }
             let merged = Self.merging(current: messages, fresh: page.messages)
             if merged != messages {
-                messages = merged
+                replaceSelectedMessages(with: merged)
             }
             hasMoreMessages = page.hasMoreBefore
             hasMoreCache[channelID] = page.hasMoreBefore
             messageLoadError = nil
+            messageLoadErrorIsEarlierPage = false
             isLoadingMessages = false
             hasCompletedInitialMessageLoad = true
             reportConversationHistoryLoaded(channelID: channelID)
@@ -1977,6 +2352,7 @@ final class AppModel {
         } catch {
             guard isCurrentLoad(channelID, generation: generation) else { return }
             messageLoadError = error.localizedDescription
+            messageLoadErrorIsEarlierPage = false
             isLoadingMessages = false
             hasCompletedInitialMessageLoad = true
         }
@@ -1986,6 +2362,8 @@ final class AppModel {
         guard let channelID = selectedChannelID, let first = messages.first, hasMoreMessages,
               !isLoadingEarlier
         else { return }
+        messageLoadError = nil
+        messageLoadErrorIsEarlierPage = false
         isLoadingEarlier = true
         defer {
             if selectedChannelID == channelID {
@@ -1995,25 +2373,55 @@ final class AppModel {
         do {
             let page = try await provider.messages(in: channelID, before: first.id, limit: 50)
             guard !Task.isCancelled, selectedChannelID == channelID else { return }
-            let existingIDs = Set(messages.lazy.map(\.id))
-            let earlier = page.messages.filter { !existingIDs.contains($0.id) }
-            if !earlier.isEmpty {
-                messages.insert(contentsOf: earlier, at: 0)
+            let reconcileStart = ProcessInfo.processInfo.systemUptime
+            let earlier = page.messages.filter {
+                !selectedMessageIDs.contains($0.id)
             }
+            let filterEnd = ProcessInfo.processInfo.systemUptime
+            if !earlier.isEmpty {
+                guard await prependSelectedMessages(
+                    earlier,
+                    channelID: channelID
+                ) else { return }
+            }
+            let prependEnd = ProcessInfo.processInfo.systemUptime
             hasMoreMessages = page.hasMoreBefore
             hasMoreCache[channelID] = page.hasMoreBefore
             messageLoadError = nil
+            messageLoadErrorIsEarlierPage = false
+            let stateEnd = ProcessInfo.processInfo.systemUptime
+            if runsChatPerformanceBenchmark {
+                let milliseconds = (stateEnd - reconcileStart) * 1_000
+                if milliseconds >= 4 {
+                    NSLog(
+                        "SakuraCord history phases: filter %.2f ms; prepend %.2f ms; state %.2f ms (%d rows)",
+                        (filterEnd - reconcileStart) * 1_000,
+                        (prependEnd - filterEnd) * 1_000,
+                        (stateEnd - prependEnd) * 1_000,
+                        messages.count
+                    )
+                }
+            }
             try await database?.save(messages: page.messages)
         } catch is CancellationError {
             return
         } catch {
             guard selectedChannelID == channelID else { return }
             messageLoadError = error.localizedDescription
+            messageLoadErrorIsEarlierPage = true
         }
     }
 
     func retryMessageLoad() {
         guard selectedChannelID != nil else { return }
+        if messageLoadErrorIsEarlierPage {
+            messageLoadError = nil
+            messageLoadErrorIsEarlierPage = false
+            Task { [weak self] in
+                await self?.loadEarlier()
+            }
+            return
+        }
         beginSelectedChannelLoad()
     }
 
@@ -2073,17 +2481,31 @@ final class AppModel {
         threadMessages = initialMessages
         threadDraft = ""
         threadComposerAttachments = []
+        hasMoreThreadMessages = false
+        beginInitialThreadLoad(thread)
+    }
+
+    private func beginInitialThreadLoad(
+        _ thread: MessageThreadSummary
+    ) {
+        threadLoadTask?.cancel()
+        threadErrorMessage = nil
+        threadErrorScope = nil
         isLoadingThread = true
         hasCompletedInitialThreadLoad = false
-        hasMoreThreadMessages = false
-        threadErrorMessage = nil
         threadLoadTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let page = try await provider.messages(in: thread.id, before: nil, limit: 100)
+                let page = try await provider.messages(
+                    in: thread.id,
+                    before: nil,
+                    limit: 100
+                )
                 guard !Task.isCancelled, openThread?.id == thread.id else { return }
                 threadMessages = page.messages.sorted { $0.timestamp < $1.timestamp }
                 hasMoreThreadMessages = page.hasMoreBefore
+                threadErrorMessage = nil
+                threadErrorScope = nil
                 isLoadingThread = false
                 hasCompletedInitialThreadLoad = true
                 reportConversationHistoryLoaded(channelID: thread.id)
@@ -2093,6 +2515,7 @@ final class AppModel {
             } catch {
                 guard openThread?.id == thread.id else { return }
                 threadErrorMessage = error.localizedDescription
+                threadErrorScope = .initialPage
                 isLoadingThread = false
                 hasCompletedInitialThreadLoad = true
             }
@@ -2116,6 +2539,7 @@ final class AppModel {
         isLoadingEarlierThread = false
         hasMoreThreadMessages = false
         threadErrorMessage = nil
+        threadErrorScope = nil
     }
 
     func openVoiceChat(for channel: Channel) {
@@ -2143,6 +2567,8 @@ final class AppModel {
         guard let thread = openThread, let first = threadMessages.first, hasMoreThreadMessages,
               !isLoadingEarlierThread
         else { return }
+        threadErrorMessage = nil
+        threadErrorScope = nil
         isLoadingEarlierThread = true
         defer {
             if openThread?.id == thread.id {
@@ -2155,12 +2581,31 @@ final class AppModel {
             let ids = Set(threadMessages.map(\.id))
             threadMessages.insert(contentsOf: page.messages.filter { !ids.contains($0.id) }, at: 0)
             hasMoreThreadMessages = page.hasMoreBefore
+            threadErrorMessage = nil
+            threadErrorScope = nil
             try await database?.save(messages: page.messages)
         } catch is CancellationError {
             return
         } catch {
             guard openThread?.id == thread.id else { return }
             threadErrorMessage = error.localizedDescription
+            threadErrorScope = .earlierPage
+        }
+    }
+
+    func retryThreadLoad() {
+        guard let thread = openThread else { return }
+        switch threadErrorScope {
+        case .initialPage:
+            beginInitialThreadLoad(thread)
+        case .earlierPage:
+            threadErrorMessage = nil
+            threadErrorScope = nil
+            Task { [weak self] in
+                await self?.loadEarlierThread()
+            }
+        case .action, nil:
+            return
         }
     }
 
@@ -2198,17 +2643,21 @@ final class AppModel {
             attachments: attachments
         )
         threadErrorMessage = nil
+        threadErrorScope = nil
         if clearsComposer {
             threadDraft = ""
         }
         do {
             let message = try await provider.send(draft)
             guard openThread?.id == thread.id else { return true }
-            threadMessages.removeAll {
+            var updated = threadMessages
+            updated.removeAll {
                 $0.id == message.id || ($0.nonce != nil && $0.nonce == message.nonce)
             }
-            threadMessages.append(message)
-            threadMessages.sort { $0.timestamp < $1.timestamp }
+            Self.insert(message, intoSorted: &updated)
+            if updated != threadMessages {
+                threadMessages = updated
+            }
             try await database?.save(messages: [message])
             return true
         } catch {
@@ -2217,6 +2666,7 @@ final class AppModel {
                 threadDraft = content
             }
             threadErrorMessage = error.localizedDescription
+            threadErrorScope = .action
             return false
         }
     }
@@ -2787,7 +3237,7 @@ final class AppModel {
                 return presentation
             }, nonce: outgoing.nonce, outboxState: .sending
         )
-        messages.append(optimistic)
+        appendSelectedMessage(optimistic)
         outgoingDraftsByNonce[outgoing.nonce] = outgoing
         if clearsComposer {
             replyingTo = nil
@@ -3021,7 +3471,9 @@ final class AppModel {
     func dismissEphemeralMessage(_ message: Message) {
         guard message.flags.contains(.ephemeral) else { return }
         if message.channelID == selectedChannelID {
-            messages.removeAll { $0.id == message.id }
+            mutateSelectedMessages {
+                $0.removeAll { $0.id == message.id }
+            }
         }
         messageCache[message.channelID]?.removeAll { $0.id == message.id }
         Task { try? await database?.deleteMessage(message.id) }
@@ -3155,9 +3607,10 @@ final class AppModel {
 
     private func reactionMessage(for key: ReactionMutationKey) -> Message? {
         if key.channelID == selectedChannelID,
-           let message = messages.first(where: { $0.id == key.messageID })
+           let index = selectedMessageIndex(for: key.messageID),
+           messages.indices.contains(index)
         {
-            return message
+            return messages[index]
         }
         if key.channelID == openThread?.id,
            let message = threadMessages.first(where: { $0.id == key.messageID })
@@ -3220,6 +3673,7 @@ final class AppModel {
 
     func loadReactionReactors(_ reaction: Reaction, on message: Message) async {
         guard reaction.count > 0, reaction.reactors.isEmpty else { return }
+        guard await waitForTimelineScrollingToEnd() else { return }
         let key = ReactionReactorLoadKey(
             channelID: message.channelID,
             messageID: message.id,
@@ -3243,7 +3697,7 @@ final class AppModel {
                     reactionCount: reaction.count
                 )
             }
-            guard !Task.isCancelled else { return }
+            guard await waitForTimelineScrollingToEnd() else { return }
             failedReactionReactorLoads[key] = nil
             applyReactionReactors(reactors, for: key)
         } catch is CancellationError {
@@ -3256,6 +3710,39 @@ final class AppModel {
             }
             failedReactionReactorLoads[key] = .now
         }
+    }
+
+    func reportTimelineLiveScrolling(
+        _ isScrolling: Bool,
+        conversationID: ChannelID
+    ) {
+        let wasScrolling = !liveScrollingConversationIDs.isEmpty
+        if isScrolling {
+            liveScrollingConversationIDs.insert(conversationID)
+        } else {
+            liveScrollingConversationIDs.remove(conversationID)
+        }
+        let isScrollingNow = !liveScrollingConversationIDs.isEmpty
+        guard wasScrolling != isScrollingNow else { return }
+        if !isScrollingNow {
+            flushUnreadPresentationRefresh()
+        }
+    }
+
+    private func waitForTimelineScrollingToEnd() async -> Bool {
+        while !liveScrollingConversationIDs.isEmpty {
+            do {
+                try await Task.sleep(for: .milliseconds(40))
+            } catch {
+                return false
+            }
+        }
+        return !Task.isCancelled
+    }
+
+    private func resetTimelineLiveScrolling() {
+        liveScrollingConversationIDs.removeAll(keepingCapacity: true)
+        flushUnreadPresentationRefresh()
     }
 
     private func applyReactionReactors(
@@ -3293,7 +3780,7 @@ final class AppModel {
         }
 
         if key.channelID == selectedChannelID {
-            messages = updating(messages)
+            replaceSelectedMessages(with: updating(messages))
         } else if var cached = messageCache[key.channelID] {
             cached = updating(cached)
             messageCache[key.channelID] = cached
@@ -3377,7 +3864,11 @@ final class AppModel {
         }
 
         if update.channelID == selectedChannelID {
-            applying(to: &messages)
+            var updated = messages
+            applying(to: &updated)
+            if updated != messages {
+                replaceSelectedMessages(with: updated)
+            }
         }
         if var cached = messageCache[update.channelID] {
             applying(to: &cached)
@@ -3765,22 +4256,21 @@ final class AppModel {
 
     func selectMember(_ member: Member) {
         if selectedMember?.id == member.id, isInspectorProfilePresented {
-            dismissProfile()
+            dismissInspectorProfile()
             return
         }
         isInspectorProfilePresented = true
         if selectedMember?.id == member.id {
             return
         }
-        presentProfile(for: member)
+        presentProfile(for: member, destination: .inspector)
     }
 
     func showProfile(for user: User) {
-        isInspectorProfilePresented = false
         let member =
             membersByID[user.id]
                 ?? Member(user: user, roleName: "Member", status: .offline)
-        presentProfile(for: member)
+        presentProfile(for: member, destination: .contextual)
     }
 
     func authorPresentation(for message: Message) -> MessageAuthorPresentation {
@@ -3791,44 +4281,140 @@ final class AppModel {
         )
     }
 
-    private func presentProfile(for member: Member) {
-        profileTask?.cancel()
-        selectedMember = member
-        selectedProfile = nil
-        profileErrorMessage = nil
-        isLoadingProfile = true
+    private func presentProfile(
+        for member: Member,
+        destination: ProfilePresentationDestination
+    ) {
+        let requestID = UUID()
         let guildID = selectedGuildID
-        profileTask = Task { [weak self] in
+        let cacheKey = ProfileCacheKey(
+            userID: member.id,
+            guildID: guildID
+        )
+        let cachedProfile = profileCache[cacheKey].map {
+            profile($0, applyingPresenceFrom: member)
+        }
+        let presentation = ProfilePresentationState(
+            requestID: requestID,
+            member: member,
+            profile: cachedProfile,
+            isLoading: cachedProfile == nil,
+            errorMessage: nil
+        )
+        switch destination {
+        case .inspector:
+            inspectorProfileTask?.cancel()
+            inspectorProfilePresentation = presentation
+        case .contextual:
+            contextualProfileTask?.cancel()
+            contextualProfilePresentation = presentation
+        }
+        guard cachedProfile == nil else { return }
+
+        let task = Task { [weak self] in
             guard let self else { return }
             do {
-                var value = try await provider.profile(for: member.id, in: guildID)
-                guard !Task.isCancelled, selectedMember?.id == member.id, selectedGuildID == guildID
+                let loaded = try await provider.profile(
+                    for: member.id,
+                    in: guildID
+                )
+                guard !Task.isCancelled,
+                      selectedGuildID == guildID,
+                      profilePresentation(
+                          for: destination
+                      )?.requestID == requestID
                 else {
                     return
                 }
-                value.status = member.status
-                value.customStatus = member.customStatus
-                selectedProfile = value
+                profileCache[cacheKey] = loaded
+                var value = profilePresentation(for: destination)
+                value?.member = member
+                value?.profile = profile(
+                    loaded,
+                    applyingPresenceFrom: member
+                )
+                value?.isLoading = false
+                value?.errorMessage = nil
+                setProfilePresentation(value, for: destination)
             } catch is CancellationError {
                 return
             } catch {
-                guard !Task.isCancelled, selectedMember?.id == member.id else { return }
-                profileErrorMessage = error.localizedDescription
+                guard !Task.isCancelled,
+                      profilePresentation(
+                          for: destination
+                      )?.requestID == requestID
+                else { return }
+                var value = profilePresentation(for: destination)
+                value?.isLoading = false
+                value?.errorMessage = error.localizedDescription
+                setProfilePresentation(value, for: destination)
             }
-            if selectedMember?.id == member.id {
-                isLoadingProfile = false
-            }
+        }
+        switch destination {
+        case .inspector:
+            inspectorProfileTask = task
+        case .contextual:
+            contextualProfileTask = task
         }
     }
 
-    func dismissProfile() {
-        profileTask?.cancel()
-        profileTask = nil
-        selectedMember = nil
-        selectedProfile = nil
-        isLoadingProfile = false
-        profileErrorMessage = nil
+    func dismissInspectorProfile() {
+        inspectorProfileTask?.cancel()
+        inspectorProfileTask = nil
+        inspectorProfilePresentation = nil
         isInspectorProfilePresented = false
+    }
+
+    func dismissContextualProfile(for userID: UserID? = nil) {
+        if let userID,
+           contextualProfilePresentation?.member.id != userID
+        {
+            return
+        }
+        contextualProfileTask?.cancel()
+        contextualProfileTask = nil
+        contextualProfilePresentation = nil
+    }
+
+    private func dismissAllProfiles(clearsCache: Bool = false) {
+        dismissInspectorProfile()
+        dismissContextualProfile()
+        if clearsCache {
+            profileCache.removeAll(keepingCapacity: false)
+        }
+    }
+
+    private func profilePresentation(
+        for destination: ProfilePresentationDestination
+    ) -> ProfilePresentationState? {
+        switch destination {
+        case .inspector:
+            inspectorProfilePresentation
+        case .contextual:
+            contextualProfilePresentation
+        }
+    }
+
+    private func setProfilePresentation(
+        _ value: ProfilePresentationState?,
+        for destination: ProfilePresentationDestination
+    ) {
+        switch destination {
+        case .inspector:
+            inspectorProfilePresentation = value
+        case .contextual:
+            contextualProfilePresentation = value
+        }
+    }
+
+    private func profile(
+        _ value: UserProfile,
+        applyingPresenceFrom member: Member
+    ) -> UserProfile {
+        var result = value
+        result.status = member.status
+        result.customStatus = member.customStatus
+        return result
     }
 
     func dismissError() {
@@ -4230,7 +4816,7 @@ final class AppModel {
             return
         }
         reconcileChannelAccessibility(value.channels)
-        value.channels = value.channels.map { channel in
+        let projectedChannels = value.channels.map { channel in
             var channel = channel
             channel.unreadCount =
                 channel.kind == .forum
@@ -4239,25 +4825,40 @@ final class AppModel {
             channel.mentionCount = readState.mentions(channelID: channel.id)
             return channel
         }
-        value.guilds = value.guilds.map { guild in
+        let projectedGuilds = value.guilds.map { guild in
             var guild = guild
             guild.unreadCount = readState.guildUnread(guild.id) ? 1 : 0
             guild.mentionCount = readState.guildMentions(guild.id)
             return guild
         }
-        snapshot = value
-        serverRailGuildsByID = Dictionary(uniqueKeysWithValues: value.guilds.map { ($0.id, $0) })
+        if UnreadPresentationPublicationPolicy.shouldPublish(
+            snapshot: value,
+            channels: projectedChannels,
+            guilds: projectedGuilds
+        ) {
+            value.channels = projectedChannels
+            value.guilds = projectedGuilds
+            snapshot = value
+        }
+        let projectedGuildsByID = Dictionary(
+            uniqueKeysWithValues: projectedGuilds.map { ($0.id, $0) }
+        )
+        if projectedGuildsByID != serverRailGuildsByID {
+            serverRailGuildsByID = projectedGuildsByID
+        }
         let selectedGuildChannels: [Channel]
         if let selectedGuildID {
-            selectedGuildChannels = value.channels.filter {
+            selectedGuildChannels = projectedChannels.filter {
                 $0.guildID == selectedGuildID && conversationAccess(for: $0) != .hidden
             }
         } else {
-            selectedGuildChannels = value.channels.filter {
+            selectedGuildChannels = projectedChannels.filter {
                 $0.guildID == nil && conversationAccess(for: $0) != .hidden
             }
         }
-        visibleChannels = selectedGuildChannels
+        if selectedGuildChannels != visibleChannels {
+            visibleChannels = selectedGuildChannels
+        }
         if let selectedChannelID,
            !selectedGuildChannels.contains(where: { $0.id == selectedChannelID })
         {
@@ -4265,9 +4866,14 @@ final class AppModel {
                 in: selectedGuildChannels
             )
         }
-        selectedChannel =
-            selectedChannelID.flatMap { id in value.channels.first { $0.id == id } }
+        let projectedSelectedChannel =
+            selectedChannelID.flatMap { id in
+                projectedChannels.first { $0.id == id }
+            }
                 ?? selectedChannel
+        if projectedSelectedChannel != selectedChannel {
+            selectedChannel = projectedSelectedChannel
+        }
         notificationService.setDockBadge(
             readState.totalMentions,
             enabled: notificationPreferences.showsDockBadge
@@ -4288,6 +4894,11 @@ final class AppModel {
     }
 
     private func deliverNativeNotification(for message: Message) {
+        // The offline timeline benchmark measures event ingestion, layout,
+        // drawing, and scroll scheduling. Enqueuing thousands of synthetic
+        // UNUserNotificationCenter requests measures an unrelated XPC queue
+        // and eventually starves the main run loop in periodic bursts.
+        guard !runsChatPerformanceBenchmark else { return }
         guard !readState.isActivelyPresentedAtNewest(message.channelID) else { return }
         let channel =
             snapshot?.channels.first { $0.id == message.channelID }
@@ -4307,13 +4918,126 @@ final class AppModel {
     }
 
     private func cancelNativeNotifications(channelID: ChannelID) {
+        guard !runsChatPerformanceBenchmark else { return }
         let accountID = readState.accountID ?? "offline"
         Task {
             await notificationService.cancel(accountID: accountID, channelID: channelID)
         }
     }
 
-    private func consume(_ event: ClientEvent) {
+    private func consume(_ event: ClientEvent) async {
+        if case let .messageCreated(message) = event {
+            let preparedTextPlan: NativeTimelineTextPlan? =
+                if message.channelID == selectedChannelID {
+                    await Task.detached(priority: .utility) {
+                        NativeTimelineTextPlan.make(for: message)
+                    }.value
+                } else {
+                    nil
+                }
+            guard !Task.isCancelled else { return }
+            pendingCreatedMessages.append(
+                PreparedCreatedMessage(
+                    message: message,
+                    textPlan: preparedTextPlan
+                )
+            )
+            guard createdMessageFlushTask == nil else { return }
+            createdMessageFlushTask = Task { @MainActor [weak self] in
+                do {
+                    try await Task.sleep(for: .milliseconds(8))
+                } catch {
+                    return
+                }
+                self?.flushPendingCreatedMessages(
+                    maximumCount: self?.maximumCreatedMessagesPerFlush ?? 4
+                )
+            }
+            return
+        }
+        flushPendingCreatedMessages()
+        let preparedTextPlan: NativeTimelineTextPlan? =
+            if case let .messageUpdated(message) = event,
+               message.channelID == selectedChannelID
+            {
+                await Task.detached(priority: .userInitiated) {
+                    NativeTimelineTextPlan.make(for: message)
+                }.value
+            } else {
+                nil
+        }
+        guard !Task.isCancelled else { return }
+        consumeImmediately(event, preparedTextPlan: preparedTextPlan)
+    }
+
+    private func flushPendingCreatedMessages(
+        maximumCount: Int = .max
+    ) {
+        guard !pendingCreatedMessages.isEmpty else {
+            createdMessageFlushTask = nil
+            return
+        }
+        createdMessageFlushTask?.cancel()
+        createdMessageFlushTask = nil
+        let flushCount = min(
+            max(1, maximumCount),
+            pendingCreatedMessages.count
+        )
+        let pending = Array(pendingCreatedMessages.prefix(flushCount))
+        pendingCreatedMessages.removeFirst(flushCount)
+        isFlushingCreatedMessageBatch = true
+        for prepared in pending {
+            consumeImmediately(
+                .messageCreated(prepared.message),
+                preparedTextPlan: prepared.textPlan
+            )
+        }
+        commitBatchedSelectedMessages()
+        isFlushingCreatedMessageBatch = false
+        flushBatchedCreatedMessageSideEffects()
+        if !pendingCreatedMessages.isEmpty {
+            // A display or AppKit transaction can occasionally delay the
+            // eight-millisecond timer long enough for dozens of gateway
+            // creates to accumulate. Never turn that scheduling delay into
+            // one giant main-actor layout burst; drain bounded chunks while
+            // yielding between them.
+            createdMessageFlushTask = Task { @MainActor [weak self] in
+                await Task.yield()
+                guard let self, !Task.isCancelled else { return }
+                self.flushPendingCreatedMessages(
+                    maximumCount: self.maximumCreatedMessagesPerFlush
+                )
+            }
+        }
+    }
+
+    private func resetPendingCreatedMessages() {
+        createdMessageFlushTask?.cancel()
+        createdMessageFlushTask = nil
+        pendingCreatedMessages.removeAll(keepingCapacity: false)
+        batchedSelectedMessages.removeAll(keepingCapacity: false)
+        batchedSelectedTextPlansByID.removeAll(keepingCapacity: false)
+        batchedUnreadPresentationNeedsRefresh = false
+        batchedAcknowledgementChannelIDs.removeAll(keepingCapacity: false)
+        isFlushingCreatedMessageBatch = false
+    }
+
+    private func flushBatchedCreatedMessageSideEffects() {
+        if batchedUnreadPresentationNeedsRefresh {
+            batchedUnreadPresentationNeedsRefresh = false
+            requestUnreadPresentationRefresh()
+        }
+        let acknowledgementChannelIDs = batchedAcknowledgementChannelIDs
+        batchedAcknowledgementChannelIDs.removeAll(keepingCapacity: true)
+        for channelID in acknowledgementChannelIDs {
+            acknowledgeIfEligible(channelID: channelID)
+        }
+    }
+
+    private func consumeImmediately(
+        _ event: ClientEvent,
+        preparedTextPlan: NativeTimelineTextPlan? = nil
+    ) {
         switch event {
         case .connectionChanged(let state):
             connectionState = state
@@ -4339,7 +5063,10 @@ final class AppModel {
                 reconcileThread(message)
             }
             if message.channelID == selectedChannelID {
-                reconcile(message)
+                reconcile(
+                    message,
+                    preparedTextPlan: preparedTextPlan
+                )
             } else {
                 cache(message)
             }
@@ -4347,23 +5074,36 @@ final class AppModel {
             if let currentUserID = snapshot?.currentUser.id {
                 let disposition = readState.receive(message, currentUserID: currentUserID)
                 if disposition.accepted {
-                    refreshUnreadPresentation()
+                    if isFlushingCreatedMessageBatch {
+                        batchedUnreadPresentationNeedsRefresh = true
+                    } else {
+                        refreshUnreadPresentation()
+                    }
                     if disposition.shouldNotify {
                         deliverNativeNotification(for: message)
                     }
-                    acknowledgeIfEligible(channelID: message.channelID)
+                    if isFlushingCreatedMessageBatch {
+                        batchedAcknowledgementChannelIDs.insert(
+                            message.channelID
+                        )
+                    } else {
+                        acknowledgeIfEligible(channelID: message.channelID)
+                    }
                 }
             }
         case .messageUpdated(let incoming):
             let message = reactionPresentationPreserving(incoming)
             persist(reactionConfirmedSnapshot(message))
             if message.channelID == openThread?.id {
-                reconcileThread(message)
+                reconcileThreadUpdate(message)
             }
             if message.channelID == selectedChannelID {
-                reconcile(message)
+                reconcileSelectedMessageUpdate(
+                    message,
+                    preparedTextPlan: preparedTextPlan
+                )
             } else {
-                cache(message)
+                reconcileCachedMessageUpdate(message)
             }
             reconcileForumMessage(message)
         case .messageReactionUpdated(let update):
@@ -4379,7 +5119,7 @@ final class AppModel {
                 threadMessages.removeAll { $0.id == messageID }
             }
             if channelID == selectedChannelID {
-                messages.removeAll { $0.id == messageID }
+                removeSelectedMessage(id: messageID)
             } else {
                 messageCache[channelID]?.removeAll { $0.id == messageID }
             }
@@ -4505,8 +5245,30 @@ final class AppModel {
                     updatesByID[$0.id] ?? $0
                 }
             }
-            if let selectedMember, let updated = value.first(where: { $0.id == selectedMember.id }) {
-                self.selectedMember = updated
+            if let selectedMember,
+               let updated = value.first(where: {
+                   $0.id == selectedMember.id
+               })
+            {
+                inspectorProfilePresentation?.member = updated
+                if var profile = inspectorProfilePresentation?.profile {
+                    profile.status = updated.status
+                    profile.customStatus = updated.customStatus
+                    inspectorProfilePresentation?.profile = profile
+                }
+            }
+            if let contextualMember =
+                contextualProfilePresentation?.member,
+               let updated = value.first(where: {
+                   $0.id == contextualMember.id
+               })
+            {
+                contextualProfilePresentation?.member = updated
+                if var profile = contextualProfilePresentation?.profile {
+                    profile.status = updated.status
+                    profile.customStatus = updated.customStatus
+                    contextualProfilePresentation?.profile = profile
+                }
             }
         case .currentUserRolesChanged(let guildID, let roleIDs):
             let roleIDs = Set(roleIDs)
@@ -4599,13 +5361,47 @@ final class AppModel {
         serverRailItems = snapshot.guildRailItems
     }
 
-    private func reconcile(_ message: Message) {
+    private func reconcile(
+        _ message: Message,
+        preparedTextPlan: NativeTimelineTextPlan? = nil
+    ) {
+        if message.nonce == nil,
+           let index = selectedMessageIndex(for: message.id)
+        {
+            replaceSelectedMessage(
+                message,
+                at: index,
+                preparedTextPlan: preparedTextPlan
+            )
+            return
+        }
+        let previousMessage = batchedSelectedMessages.last ?? messages.last
+        if message.nonce == nil,
+           previousMessage.map({
+               $0.id < message.id && !Self.messagePrecedes(message, $0)
+           }) ?? true
+        {
+            if isFlushingCreatedMessageBatch {
+                batchedSelectedMessages.append(message)
+                if let preparedTextPlan {
+                    batchedSelectedTextPlansByID[message.id] =
+                        preparedTextPlan
+                }
+            } else {
+                appendSelectedMessage(
+                    message,
+                    preparedTextPlan: preparedTextPlan
+                )
+            }
+            return
+        }
+        commitBatchedSelectedMessages()
         var updated = messages
         var resolved = message
         let replacementIndex =
             message.nonce.flatMap { nonce in
                 updated.firstIndex(where: { $0.nonce == nonce })
-            } ?? updated.firstIndex(where: { $0.id == message.id })
+            } ?? selectedMessageIndex(for: message.id)
         if let index = replacementIndex {
             resolved.replyTo = resolved.replyTo ?? updated[index].replyTo
             resolved.replyPreview = resolved.replyPreview ?? updated[index].replyPreview
@@ -4618,8 +5414,412 @@ final class AppModel {
             Self.insert(resolved, intoSorted: &updated)
         }
         if updated != messages {
-            messages = updated
+            replaceSelectedMessages(with: updated)
         }
+    }
+
+    private func reconcileSelectedMessageUpdate(
+        _ message: Message,
+        preparedTextPlan: NativeTimelineTextPlan? = nil
+    ) {
+        commitBatchedSelectedMessages()
+        guard let index = selectedMessageIndex(for: message.id) else { return }
+        replaceSelectedMessage(
+            message,
+            at: index,
+            preparedTextPlan: preparedTextPlan
+        )
+    }
+
+    private func replaceSelectedMessage(
+        _ incoming: Message,
+        at index: Int,
+        preparedTextPlan: NativeTimelineTextPlan? = nil
+    ) {
+        guard messages.indices.contains(index),
+              messageRows.indices.contains(index)
+        else { return }
+        var resolved = incoming
+        resolved.replyTo = resolved.replyTo ?? messages[index].replyTo
+        resolved.replyPreview =
+            resolved.replyPreview ?? messages[index].replyPreview
+        guard resolved != messages[index] else { return }
+        let previousReplyTarget = messages[index].replyTo
+        if previousReplyTarget != resolved.replyTo {
+            if let previousReplyTarget {
+                selectedReplyMessageIDsByTarget[previousReplyTarget]?.remove(
+                    resolved.id
+                )
+                if selectedReplyMessageIDsByTarget[previousReplyTarget]?.isEmpty
+                    == true
+                {
+                    selectedReplyMessageIDsByTarget[previousReplyTarget] = nil
+                }
+            }
+            if let replyTarget = resolved.replyTo {
+                selectedReplyMessageIDsByTarget[
+                    replyTarget,
+                    default: []
+                ].insert(resolved.id)
+            }
+        }
+        messages[index] = resolved
+        let changedIndexes = MessageGrouping.reconcileChangedMessage(
+            id: resolved.id,
+            replacement: resolved,
+            messages: messages,
+            availableMessageIDs: selectedMessageIDs,
+            rows: &messageRows,
+            messageIndex: selectedMessageIndex(for:),
+            replyingMessageIDs:
+                selectedReplyMessageIDsByTarget[resolved.id] ?? [],
+            replacementTextPlan: preparedTextPlan
+        )
+        publishMessageRowsUpdate(
+            change: .replace(changedIndexes),
+            changedMessageIDs: Set(changedIndexes.map { messageRows[$0].id })
+        )
+        messageRowsNonAppendRevision &+= 1
+    }
+
+    private func removeSelectedMessage(id: MessageID) {
+        guard let index = selectedMessageIndex(for: id),
+              messageRows.indices.contains(index)
+        else { return }
+        let removedReplyTarget = messages[index].replyTo
+        messages.remove(at: index)
+        messageRows.remove(at: index)
+        selectedMessageIDs.remove(id)
+        selectedMessageStoredIndexByID[id] = nil
+        if index < messages.endIndex {
+            for shiftedIndex in index ..< messages.endIndex {
+                setSelectedMessageIndex(
+                    shiftedIndex,
+                    for: messages[shiftedIndex].id
+                )
+            }
+        }
+        if let removedReplyTarget {
+            selectedReplyMessageIDsByTarget[removedReplyTarget]?.remove(id)
+            if selectedReplyMessageIDsByTarget[removedReplyTarget]?.isEmpty
+                == true
+            {
+                selectedReplyMessageIDsByTarget[removedReplyTarget] = nil
+            }
+        }
+        let changedIndexes = MessageGrouping.reconcileChangedMessage(
+            id: id,
+            replacement: nil,
+            messages: messages,
+            availableMessageIDs: selectedMessageIDs,
+            rows: &messageRows,
+            neighborIndex: index,
+            messageIndex: selectedMessageIndex(for:),
+            replyingMessageIDs:
+                selectedReplyMessageIDsByTarget[id] ?? []
+        )
+        publishMessageRowsUpdate(
+            change: .remove(
+                removedIndexes: IndexSet(integer: index),
+                changedIndexes: changedIndexes
+            ),
+            changedMessageIDs: Set(changedIndexes.map { messageRows[$0].id }),
+            removedMessageIDs: [id]
+        )
+        messageRowsNonAppendRevision &+= 1
+    }
+
+    private func publishMessageRowsUpdate(
+        change: MessageRowsUpdateHint.Change? = nil,
+        insertedMessageIDs: [MessageID] = [],
+        changedMessageIDs: Set<MessageID> = [],
+        removedMessageIDs: Set<MessageID> = [],
+        invalidatesAllRows: Bool = false
+    ) {
+        let nextRevision = latestMessageRowsRevision &+ 1
+        latestMessageRowsRevision = nextRevision
+        messageRowsUpdateHint = change.map {
+            MessageRowsUpdateHint(revision: nextRevision, change: $0)
+        }
+        messageRowsUpdateJournal.append(
+            MessageRowsUpdateRecord(
+                revision: nextRevision,
+                change: change,
+                insertedMessageIDs: insertedMessageIDs,
+                changedMessageIDs: changedMessageIDs,
+                removedMessageIDs: removedMessageIDs,
+                invalidatesAllRows: invalidatesAllRows
+            )
+        )
+        messageRowsRevision = nextRevision
+        NotificationCenter.default.post(
+            name: .sakuracordMessageRowsDidChange,
+            object: self
+        )
+    }
+
+    private func requestUnreadPresentationRefresh() {
+        guard !liveScrollingConversationIDs.isEmpty else {
+            refreshUnreadPresentation()
+            return
+        }
+        guard unreadPresentationRefreshTask == nil else { return }
+        unreadPresentationRefreshTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(500))
+            } catch {
+                return
+            }
+            self?.flushUnreadPresentationRefresh()
+        }
+    }
+
+    private func flushUnreadPresentationRefresh() {
+        unreadPresentationRefreshTask?.cancel()
+        unreadPresentationRefreshTask = nil
+        refreshUnreadPresentation()
+    }
+
+    private func selectedMessageIndex(for id: MessageID) -> Int? {
+        selectedMessageStoredIndexByID[id].map {
+            $0 - selectedMessageIndexOrigin
+        }
+    }
+
+    private func setSelectedMessageIndex(
+        _ index: Int,
+        for id: MessageID
+    ) {
+        selectedMessageStoredIndexByID[id] =
+            index + selectedMessageIndexOrigin
+    }
+
+    private func rebuildSelectedMessageIndexes() {
+        selectedMessageIDs = Set(messages.lazy.map(\.id))
+        selectedMessageIndexOrigin = 0
+        selectedMessageStoredIndexByID.removeAll(keepingCapacity: true)
+        selectedMessageStoredIndexByID.reserveCapacity(messages.count)
+        selectedReplyMessageIDsByTarget.removeAll(keepingCapacity: true)
+        for (index, message) in messages.enumerated() {
+            setSelectedMessageIndex(index, for: message.id)
+            if let replyTarget = message.replyTo {
+                selectedReplyMessageIDsByTarget[
+                    replyTarget,
+                    default: []
+                ].insert(message.id)
+            }
+        }
+    }
+
+    private func replaceSelectedMessages(with newMessages: [Message]) {
+        let oldMessages = messages
+        messages = newMessages
+        rebuildSelectedMessageIndexes()
+        messageRows = MessageGrouping.updating(
+            existing: messageRows,
+            oldMessages: oldMessages,
+            newMessages: newMessages
+        )
+        publishMessageRowsUpdate(invalidatesAllRows: true)
+        messageRowsNonAppendRevision &+= 1
+    }
+
+    private func mutateSelectedMessages(
+        _ mutation: (inout [Message]) -> Void
+    ) {
+        let oldMessages = messages
+        mutation(&messages)
+        rebuildSelectedMessageIndexes()
+        messageRows = MessageGrouping.updating(
+            existing: messageRows,
+            oldMessages: oldMessages,
+            newMessages: messages
+        )
+        publishMessageRowsUpdate(invalidatesAllRows: true)
+        messageRowsNonAppendRevision &+= 1
+    }
+
+    private func prependSelectedMessages(
+        _ earlier: [Message],
+        channelID: ChannelID
+    ) async -> Bool {
+        guard !earlier.isEmpty else { return true }
+        // History preparation performs Markdown/CoreText setup for an entire
+        // page. Running it at userInitiated priority lets it contend with the
+        // main thread for font and attributed-string internals precisely
+        // while the display link is trying to present the next scroll frame.
+        // The page is prefetched thousands of points ahead, so utility
+        // priority preserves that headroom without priority-inverting UI
+        // presentation on every pagination boundary.
+        let preparedInsertedRows = await Task.detached(priority: .utility) {
+            await MessageGrouping.rowsCooperatively(for: earlier)
+        }.value
+        guard !Task.isCancelled, selectedChannelID == channelID else {
+            return false
+        }
+        let commitStart = ProcessInfo.processInfo.systemUptime
+        var potentiallyChangedMessageIDs = Set<MessageID>()
+        if let firstExistingID = messageRows.first?.id {
+            potentiallyChangedMessageIDs.insert(firstExistingID)
+        }
+        for message in earlier {
+            potentiallyChangedMessageIDs.formUnion(
+                selectedReplyMessageIDsByTarget[message.id] ?? []
+            )
+        }
+        var previousRowsByID: [MessageID: MessageRowPresentation] = [:]
+        previousRowsByID.reserveCapacity(potentiallyChangedMessageIDs.count)
+        for id in potentiallyChangedMessageIDs {
+            if let oldIndex = selectedMessageIndex(for: id),
+               messageRows.indices.contains(oldIndex)
+            {
+                previousRowsByID[id] = messageRows[oldIndex]
+            }
+        }
+        MessageGrouping.prependRows(
+            for: earlier,
+            into: &messageRows,
+            preparedInsertedRows: preparedInsertedRows,
+            existingMessageIndex: selectedMessageIndex(for:),
+            replyingMessageIDsByTarget:
+                selectedReplyMessageIDsByTarget
+        )
+        let changedMessageIDs = Set(
+            potentiallyChangedMessageIDs.filter { id in
+                guard let oldIndex = selectedMessageIndex(for: id),
+                      let previousRow = previousRowsByID[id],
+                      messageRows.indices.contains(earlier.count + oldIndex)
+                else { return false }
+                return previousRow
+                    != messageRows[earlier.count + oldIndex]
+            }
+        )
+        messages.insert(contentsOf: earlier, at: 0)
+        selectedMessageIndexOrigin -= earlier.count
+        selectedMessageIDs.formUnion(earlier.lazy.map(\.id))
+        selectedMessageStoredIndexByID.reserveCapacity(messages.count)
+        for (index, message) in earlier.enumerated() {
+            setSelectedMessageIndex(index, for: message.id)
+            if let replyTarget = message.replyTo {
+                selectedReplyMessageIDsByTarget[
+                    replyTarget,
+                    default: []
+                ].insert(message.id)
+            }
+        }
+        publishMessageRowsUpdate(
+            change: .insert(
+                IndexSet(integersIn: 0 ..< earlier.count)
+            ),
+            insertedMessageIDs: earlier.map(\.id),
+            changedMessageIDs: changedMessageIDs
+        )
+        messageRowsNonAppendRevision &+= 1
+        if runsChatPerformanceBenchmark {
+            let commitMilliseconds =
+                (ProcessInfo.processInfo.systemUptime - commitStart) * 1_000
+            if commitMilliseconds >= 4 {
+                NSLog(
+                    "SakuraCord history commit: %.2f ms (%d rows)",
+                    commitMilliseconds,
+                    messageRows.count
+                )
+            }
+        }
+        return true
+    }
+
+    private func appendSelectedMessage(
+        _ message: Message,
+        preparedTextPlan: NativeTimelineTextPlan? = nil
+    ) {
+        appendSelectedMessages(
+            [message],
+            preparedTextPlans:
+                preparedTextPlan.map { [message.id: $0] } ?? [:]
+        )
+    }
+
+    private func appendSelectedMessages(
+        _ appendedMessages: [Message],
+        preparedTextPlans: [MessageID: NativeTimelineTextPlan] = [:]
+    ) {
+        guard !appendedMessages.isEmpty else { return }
+        let insertionStart = messageRows.count
+        var appendedRows: [MessageRowPresentation] = []
+        appendedRows.reserveCapacity(appendedMessages.count)
+        var previous = messages.last
+        let appendedByID = Dictionary(
+            appendedMessages.map { ($0.id, $0) },
+            uniquingKeysWith: { _, newer in newer }
+        )
+        for message in appendedMessages {
+            let replyPreview =
+                message.replyTo.flatMap { replyID in
+                    (
+                        appendedByID[replyID]
+                            ?? selectedMessageIndex(for: replyID).map {
+                                messages[$0]
+                            }
+                    ).map {
+                        MessageReplyPreview(
+                            messageID: $0.id,
+                            author: $0.author,
+                            content: $0.content
+                        )
+                    }
+                } ?? message.replyPreview
+            let isReplyAvailable =
+                replyPreview.map { preview in
+                    appendedByID[preview.messageID] != nil
+                        || selectedMessageIDs.contains(preview.messageID)
+                } ?? false
+            let row = MessageGrouping.appendingRow(
+                for: message,
+                after: previous,
+                replyPreview: replyPreview,
+                isReplyAvailable: isReplyAvailable,
+                textPlan: preparedTextPlans[message.id]
+            )
+            appendedRows.append(row)
+            previous = message
+        }
+        messages.append(contentsOf: appendedMessages)
+        selectedMessageIDs.formUnion(appendedMessages.lazy.map(\.id))
+        for (offset, message) in appendedMessages.enumerated() {
+            setSelectedMessageIndex(
+                insertionStart + offset,
+                for: message.id
+            )
+            if let replyTarget = message.replyTo {
+                selectedReplyMessageIDsByTarget[
+                    replyTarget,
+                    default: []
+                ].insert(message.id)
+            }
+        }
+        messageRows.append(contentsOf: appendedRows)
+        publishMessageRowsUpdate(
+            change: .insert(
+                IndexSet(
+                    integersIn:
+                        insertionStart ..< insertionStart + appendedRows.count
+                )
+            ),
+            insertedMessageIDs: appendedRows.map(\.id)
+        )
+    }
+
+    private func commitBatchedSelectedMessages() {
+        guard !batchedSelectedMessages.isEmpty else { return }
+        let pending = batchedSelectedMessages
+        batchedSelectedMessages.removeAll(keepingCapacity: true)
+        let preparedTextPlans = batchedSelectedTextPlansByID
+        batchedSelectedTextPlansByID.removeAll(keepingCapacity: true)
+        appendSelectedMessages(
+            pending,
+            preparedTextPlans: preparedTextPlans
+        )
     }
 
     private func reconcileVisibleOrCached(_ message: Message) {
@@ -4717,7 +5917,9 @@ final class AppModel {
         if selectedChannelID == channelID,
            let index = messages.firstIndex(where: { $0.nonce == nonce })
         {
-            messages[index].outboxState = state
+            mutateSelectedMessages {
+                $0[index].outboxState = state
+            }
             return
         }
         guard var cached = messageCache[channelID],
@@ -4729,7 +5931,9 @@ final class AppModel {
 
     private func removeOutgoingMessage(nonce: String, channelID: ChannelID) {
         if selectedChannelID == channelID {
-            messages.removeAll { $0.nonce == nonce }
+            mutateSelectedMessages {
+                $0.removeAll { $0.nonce == nonce }
+            }
             return
         }
         guard var cached = messageCache[channelID] else { return }
@@ -4746,21 +5950,38 @@ final class AppModel {
 
     private func persist(_ message: Message) {
         guard !message.flags.contains(.ephemeral) else { return }
-        Task { try? await database?.save(messages: [message]) }
+        messagePersistenceSink.enqueue(message, database: database)
     }
 
     private func reconcileThread(_ message: Message) {
-        if let index = threadMessages.firstIndex(where: {
+        var updated = threadMessages
+        if let index = updated.firstIndex(where: {
             $0.id == message.id || ($0.nonce != nil && $0.nonce == message.nonce)
         }) {
-            threadMessages.remove(at: index)
-            if let duplicateIndex = threadMessages.firstIndex(where: { $0.id == message.id }) {
-                threadMessages.remove(at: duplicateIndex)
+            updated.remove(at: index)
+            if let duplicateIndex = updated.firstIndex(where: {
+                $0.id == message.id
+            }) {
+                updated.remove(at: duplicateIndex)
             }
-            Self.insert(message, intoSorted: &threadMessages)
-        } else {
-            Self.insert(message, intoSorted: &threadMessages)
         }
+        Self.insert(message, intoSorted: &updated)
+        guard updated != threadMessages else { return }
+        threadMessages = updated
+    }
+
+    private func reconcileThreadUpdate(_ message: Message) {
+        guard let index = threadMessages.firstIndex(where: {
+            $0.id == message.id
+        }) else { return }
+        var updated = threadMessages
+        var resolved = message
+        resolved.replyTo = resolved.replyTo ?? updated[index].replyTo
+        resolved.replyPreview =
+            resolved.replyPreview ?? updated[index].replyPreview
+        guard resolved != updated[index] else { return }
+        updated[index] = resolved
+        threadMessages = updated
     }
 
     private static func insert(_ message: Message, intoSorted messages: inout [Message]) {
@@ -4794,6 +6015,19 @@ final class AppModel {
         let current = messageCache[message.channelID] ?? []
         messageCache[message.channelID] = Self.merging(current: current, fresh: [message])
     }
+
+    private func reconcileCachedMessageUpdate(_ message: Message) {
+        guard var cached = messageCache[message.channelID],
+              let index = cached.firstIndex(where: { $0.id == message.id })
+        else { return }
+        var resolved = message
+        resolved.replyTo = resolved.replyTo ?? cached[index].replyTo
+        resolved.replyPreview =
+            resolved.replyPreview ?? cached[index].replyPreview
+        guard resolved != cached[index] else { return }
+        cached[index] = resolved
+        messageCache[message.channelID] = cached
+    }
 }
 
 private actor OfflineCredentialStore: CredentialStore {
@@ -4814,7 +6048,78 @@ private actor OfflineCredentialStore: CredentialStore {
     }
 }
 
-struct MessageRowPresentation: Identifiable, Equatable {
+nonisolated final class NativeTimelineAttributedTextBox: @unchecked Sendable {
+    let value: NSAttributedString
+    let framesetter: CTFramesetter
+    let layoutHeightAdjustment: CGFloat
+
+    nonisolated init(
+        _ value: NSAttributedString,
+        layoutHeightAdjustment: CGFloat = 0
+    ) {
+        self.value = value
+        self.layoutHeightAdjustment = layoutHeightAdjustment
+        framesetter = CTFramesetterCreateWithAttributedString(value)
+    }
+}
+
+struct NativeTimelineTextPlan: Equatable, Sendable {
+    let preparedText: RichMessageAttributedText.Prepared?
+    let linkedImages: [LinkedImageReference]
+    let attributedText: NativeTimelineAttributedTextBox?
+    let baseFontSize: CGFloat
+
+    nonisolated static func == (
+        lhs: NativeTimelineTextPlan,
+        rhs: NativeTimelineTextPlan
+    ) -> Bool {
+        lhs.preparedText == rhs.preparedText
+            && lhs.linkedImages == rhs.linkedImages
+            && lhs.baseFontSize == rhs.baseFontSize
+    }
+
+    nonisolated static func make(for message: Message) -> Self {
+        let baseFontSize: CGFloat =
+            if message.type.hasGeneratedContent {
+                13
+            } else {
+                15
+            }
+        let visibleContent =
+            if message.type.hasGeneratedContent {
+                SystemMessagePresentation.label(for: message)
+            } else {
+                MessageEmbedPresentation.visibleMessageContent(for: message)
+            }
+        let linkedPresentation = LinkedImagePresentation(content: visibleContent)
+        let prepared = linkedPresentation.visibleText.isEmpty
+            ? nil
+            : RichMessageAttributedText.prepare(
+                source: linkedPresentation.visibleText
+            )
+        let attributed: NativeTimelineAttributedTextBox?
+        if let prepared, prepared.tokens.isEmpty {
+            attributed = NativeTimelineAttributedTextBox(
+                DiscordMarkdown.appKitAttributed(
+                    prepared.markdownPlan,
+                    baseFontSize: prepared.isEmojiOnly
+                        ? 48
+                        : baseFontSize
+                )
+            )
+        } else {
+            attributed = nil
+        }
+        return Self(
+            preparedText: prepared,
+            linkedImages: linkedPresentation.images,
+            attributedText: attributed,
+            baseFontSize: baseFontSize
+        )
+    }
+}
+
+final class MessageRowPresentation: Identifiable, Equatable, Sendable {
     var id: MessageID {
         message.id
     }
@@ -4824,60 +6129,386 @@ struct MessageRowPresentation: Identifiable, Equatable {
     let startsDay: Bool
     let replyPreview: MessageReplyPreview?
     let isReplyAvailable: Bool
+    let textPlan: NativeTimelineTextPlan
+
+    nonisolated init(
+        message: Message,
+        startsGroup: Bool,
+        startsDay: Bool,
+        replyPreview: MessageReplyPreview?,
+        isReplyAvailable: Bool,
+        textPlan: NativeTimelineTextPlan? = nil
+    ) {
+        self.message = message
+        self.startsGroup = startsGroup
+        self.startsDay = startsDay
+        self.replyPreview = replyPreview
+        self.isReplyAvailable = isReplyAvailable
+        self.textPlan = textPlan ?? NativeTimelineTextPlan.make(for: message)
+    }
+
+    nonisolated static func == (
+        lhs: MessageRowPresentation,
+        rhs: MessageRowPresentation
+    ) -> Bool {
+        lhs.message == rhs.message
+            && lhs.startsGroup == rhs.startsGroup
+            && lhs.startsDay == rhs.startsDay
+            && lhs.replyPreview == rhs.replyPreview
+            && lhs.isReplyAvailable == rhs.isReplyAvailable
+            && lhs.textPlan == rhs.textPlan
+    }
 }
 
-enum MessageGrouping {
+nonisolated enum MessageGrouping {
     /// Discord's current cozy layout uses a seven-minute continuation barrier.
     private static let continuationInterval: TimeInterval = 7 * 60
 
     static func rows(for messages: [Message], calendar: Calendar = .autoupdatingCurrent)
         -> [MessageRowPresentation]
     {
-        var messagesByID: [MessageID: Message] = [:]
-        if messages.contains(where: { $0.replyTo != nil }) {
-            messagesByID.reserveCapacity(messages.count)
-            for message in messages {
-                messagesByID[message.id] = message
+        let messagesByID = messageLookup(for: messages)
+        return messages.indices.map { index in
+            row(
+                at: index,
+                in: messages,
+                messagesByID: messagesByID,
+                calendar: calendar
+            )
+        }
+    }
+
+    static func rowsCooperatively(
+        for messages: [Message],
+        calendar: Calendar = .autoupdatingCurrent,
+        batchSize: Int = 4
+    ) async -> [MessageRowPresentation] {
+        let messagesByID = messageLookup(for: messages)
+        let batchSize = max(1, batchSize)
+        var result: [MessageRowPresentation] = []
+        result.reserveCapacity(messages.count)
+        for index in messages.indices {
+            result.append(
+                autoreleasepool {
+                    row(
+                        at: index,
+                        in: messages,
+                        messagesByID: messagesByID,
+                        calendar: calendar
+                    )
+                }
+            )
+            if (index + 1).isMultiple(of: batchSize),
+               index + 1 < messages.endIndex
+            {
+                await Task.yield()
             }
         }
-        return messages.enumerated().map { index, message in
-            let replyPreview = message.replyTo.flatMap { messageID -> MessageReplyPreview? in
+        return result
+    }
+
+    private static func messageLookup(
+        for messages: [Message]
+    ) -> [MessageID: Message] {
+        guard messages.contains(where: { $0.replyTo != nil }) else {
+            return [:]
+        }
+        return Dictionary(
+            messages.map { ($0.id, $0) },
+            uniquingKeysWith: { _, newer in newer }
+        )
+    }
+
+    private static func row(
+        at index: Int,
+        in messages: [Message],
+        messagesByID: [MessageID: Message],
+        calendar: Calendar
+    ) -> MessageRowPresentation {
+        let message = messages[index]
+        let replyPreview =
+            message.replyTo.flatMap { messageID -> MessageReplyPreview? in
                 if let referenced = messagesByID[messageID] {
                     return MessageReplyPreview(
-                        messageID: referenced.id, author: referenced.author,
+                        messageID: referenced.id,
+                        author: referenced.author,
                         content: referenced.content
                     )
                 }
                 return message.replyPreview
             }
-            guard index > 0 else {
-                return MessageRowPresentation(
-                    message: message,
-                    startsGroup: true,
-                    startsDay: true,
-                    replyPreview: replyPreview,
-                    isReplyAvailable: replyPreview.map { messagesByID[$0.messageID] != nil }
-                        ?? false
-                )
-            }
-            let continues = continuesGroup(
-                from: messages[index - 1], to: message, calendar: calendar
-            )
+        guard index > 0 else {
             return MessageRowPresentation(
                 message: message,
-                startsGroup: !continues,
-                startsDay: !calendar.isDate(
-                    messages[index - 1].timestamp,
-                    inSameDayAs: message.timestamp
-                ),
+                startsGroup: true,
+                startsDay: true,
                 replyPreview: replyPreview,
-                isReplyAvailable: replyPreview.map { messagesByID[$0.messageID] != nil } ?? false
+                isReplyAvailable:
+                    replyPreview.map {
+                        messagesByID[$0.messageID] != nil
+                    } ?? false
             )
         }
+        let previous = messages[index - 1]
+        return MessageRowPresentation(
+            message: message,
+            startsGroup: !continuesGroup(
+                from: previous,
+                to: message,
+                calendar: calendar
+            ),
+            startsDay: !calendar.isDate(
+                previous.timestamp,
+                inSameDayAs: message.timestamp
+            ),
+            replyPreview: replyPreview,
+            isReplyAvailable:
+                replyPreview.map {
+                    messagesByID[$0.messageID] != nil
+                } ?? false
+        )
     }
 
     private static func isGroupable(_ message: Message) -> Bool {
         !message.type.hasGeneratedContent && message.type != .chatInputCommand
+    }
+
+    static func appendingRow(
+        for message: Message,
+        after previous: Message?,
+        replyPreview: MessageReplyPreview?,
+        isReplyAvailable: Bool,
+        textPlan: NativeTimelineTextPlan? = nil,
+        calendar: Calendar = .autoupdatingCurrent
+    ) -> MessageRowPresentation {
+        guard let previous else {
+            return MessageRowPresentation(
+                message: message,
+                startsGroup: true,
+                startsDay: true,
+                replyPreview: replyPreview,
+                isReplyAvailable: isReplyAvailable,
+                textPlan: textPlan
+            )
+        }
+        return MessageRowPresentation(
+            message: message,
+            startsGroup: !continuesGroup(
+                from: previous,
+                to: message,
+                calendar: calendar
+            ),
+            startsDay: !calendar.isDate(
+                previous.timestamp,
+                inSameDayAs: message.timestamp
+            ),
+            replyPreview: replyPreview,
+            isReplyAvailable: isReplyAvailable,
+            textPlan: textPlan
+        )
+    }
+
+    static func reconcileChangedMessage(
+        id changedID: MessageID,
+        replacement: Message?,
+        messages: [Message],
+        availableMessageIDs: Set<MessageID>,
+        rows: inout [MessageRowPresentation],
+        neighborIndex: Int? = nil,
+        messageIndex: ((MessageID) -> Int?)? = nil,
+        replyingMessageIDs: Set<MessageID>? = nil,
+        replacementTextPlan: NativeTimelineTextPlan? = nil,
+        calendar: Calendar = .autoupdatingCurrent
+    ) -> IndexSet {
+        guard rows.count == messages.count else {
+            rows = self.rows(for: messages, calendar: calendar)
+            return IndexSet(integersIn: messages.indices)
+        }
+        var affected = IndexSet()
+        if let replacement,
+           let index =
+                messageIndex?(replacement.id)
+                ?? messages.firstIndex(where: { $0.id == replacement.id })
+        {
+            affected.insert(index)
+            if messages.indices.contains(index + 1) {
+                affected.insert(index + 1)
+            }
+        } else if let neighborIndex,
+                  messages.indices.contains(neighborIndex)
+        {
+            affected.insert(neighborIndex)
+        }
+        if let replyingMessageIDs, let messageIndex {
+            for replyingMessageID in replyingMessageIDs {
+                if let index = messageIndex(replyingMessageID) {
+                    affected.insert(index)
+                }
+            }
+        } else {
+            for index in messages.indices
+            where messages[index].replyTo == changedID {
+                affected.insert(index)
+            }
+        }
+
+        for index in affected {
+            let message = messages[index]
+            let priorRow = rows[index]
+            let replyPreview: MessageReplyPreview?
+            if message.replyTo == changedID, let replacement {
+                replyPreview = MessageReplyPreview(
+                    messageID: replacement.id,
+                    author: replacement.author,
+                    content: replacement.content
+                )
+            } else {
+                replyPreview = message.replyPreview ?? priorRow.replyPreview
+            }
+            let startsGroup: Bool
+            let startsDay: Bool
+            if index == messages.startIndex {
+                startsGroup = true
+                startsDay = true
+            } else {
+                startsGroup = !continuesGroup(
+                    from: messages[index - 1],
+                    to: message,
+                    calendar: calendar
+                )
+                startsDay = !calendar.isDate(
+                    messages[index - 1].timestamp,
+                    inSameDayAs: message.timestamp
+                )
+            }
+            rows[index] = MessageRowPresentation(
+                message: message,
+                startsGroup: startsGroup,
+                startsDay: startsDay,
+                replyPreview: replyPreview,
+                isReplyAvailable:
+                    replyPreview.map {
+                        availableMessageIDs.contains($0.messageID)
+                    } ?? false,
+                textPlan:
+                    priorRow.message == message
+                    ? priorRow.textPlan
+                    : message.id == replacement?.id
+                    ? replacementTextPlan
+                    : nil
+            )
+        }
+        return affected
+    }
+
+    static func prependRows(
+        for insertedMessages: [Message],
+        into existingRows: inout [MessageRowPresentation],
+        preparedInsertedRows: [MessageRowPresentation]? = nil,
+        existingMessageIndex: ((MessageID) -> Int?)? = nil,
+        replyingMessageIDsByTarget:
+            [MessageID: Set<MessageID>]? = nil,
+        calendar: Calendar = .autoupdatingCurrent
+    ) {
+        guard !insertedMessages.isEmpty else { return }
+        let insertedRows =
+            if let preparedInsertedRows,
+               preparedInsertedRows.count == insertedMessages.count,
+               zip(preparedInsertedRows, insertedMessages).allSatisfy({ pair in
+                   pair.0.message.id == pair.1.id
+               })
+            {
+                preparedInsertedRows
+            } else {
+                rows(for: insertedMessages, calendar: calendar)
+            }
+        guard !existingRows.isEmpty else {
+            existingRows = insertedRows
+            return
+        }
+
+        let insertedByID = Dictionary(
+            uniqueKeysWithValues: insertedMessages.map { ($0.id, $0) }
+        )
+        let insertedLast = insertedMessages[insertedMessages.count - 1]
+
+        var affectedExistingIndexes = IndexSet(integer: 0)
+        if let existingMessageIndex,
+           let replyingMessageIDsByTarget
+        {
+            for insertedMessage in insertedMessages {
+                for replyingMessageID in
+                    replyingMessageIDsByTarget[insertedMessage.id] ?? []
+                {
+                    if let index = existingMessageIndex(replyingMessageID) {
+                        affectedExistingIndexes.insert(index)
+                    }
+                }
+            }
+        } else {
+            for (index, row) in existingRows.enumerated()
+            where row.message.replyTo.map({
+                insertedByID[$0] != nil
+            }) == true {
+                affectedExistingIndexes.insert(index)
+            }
+        }
+
+        var replacements: [(index: Int, row: MessageRowPresentation)] = []
+        replacements.reserveCapacity(affectedExistingIndexes.count)
+        for index in affectedExistingIndexes
+        where existingRows.indices.contains(index) {
+            let row = existingRows[index]
+            let message = row.message
+            let referenced = message.replyTo.flatMap { insertedByID[$0] }
+            let replyPreview =
+                referenced.map {
+                    MessageReplyPreview(
+                        messageID: $0.id,
+                        author: $0.author,
+                        content: $0.content
+                    )
+                } ?? row.replyPreview
+            let startsGroup =
+                index == 0
+                ? !continuesGroup(
+                    from: insertedLast,
+                    to: message,
+                    calendar: calendar
+                )
+                : row.startsGroup
+            let startsDay =
+                index == 0
+                ? !calendar.isDate(
+                    insertedLast.timestamp,
+                    inSameDayAs: message.timestamp
+                )
+                : row.startsDay
+            replacements.append(
+                (
+                    index,
+                    MessageRowPresentation(
+                        message: message,
+                        startsGroup: startsGroup,
+                        startsDay: startsDay,
+                        replyPreview: replyPreview,
+                        isReplyAvailable:
+                            referenced != nil || row.isReplyAvailable,
+                        textPlan: row.textPlan
+                    )
+                )
+            )
+        }
+        // Mutate the existing buffer so its geometric spare capacity is
+        // reused across pagination. Rebuilding an exact-sized row array for
+        // every 50-message page left one progressively larger 4–9 MB malloc
+        // region behind per page, producing both the periodic hitch and a
+        // hundreds-of-megabytes allocator high-water mark after long runs.
+        existingRows.insert(contentsOf: insertedRows, at: 0)
+        for replacement in replacements {
+            existingRows[insertedMessages.count + replacement.index] =
+                replacement.row
+        }
     }
 
     private static func continuesGroup(
@@ -4920,19 +6551,45 @@ enum MessageGrouping {
         if newMessages.count > oldMessages.count {
             let insertedCount = newMessages.count - oldMessages.count
             if newMessages.suffix(oldMessages.count).elementsEqual(oldMessages) {
-                let byID = Dictionary(uniqueKeysWithValues: newMessages.map { ($0.id, $0) })
+                let insertedMessages = newMessages.prefix(insertedCount)
+                let insertedByID = Dictionary(
+                    uniqueKeysWithValues: insertedMessages.map { ($0.id, $0) }
+                )
                 var result =
-                    rows(for: Array(newMessages.prefix(insertedCount)), calendar: calendar)
-                        + existing
-                var affected = Set([insertedCount])
-                let insertedIDs = Set(newMessages.prefix(insertedCount).map(\.id))
+                    rows(for: Array(insertedMessages), calendar: calendar) + existing
+                let insertedIDs = Set(insertedMessages.map(\.id))
+                var affected = Set<Int>()
                 for (index, message) in newMessages.enumerated()
                     where message.replyTo.map(insertedIDs.contains) == true {
                     affected.insert(index)
                 }
                 for index in affected where newMessages.indices.contains(index) {
                     result[index] = presentation(
-                        at: index, in: newMessages, messagesByID: byID, calendar: calendar
+                        at: index,
+                        in: newMessages,
+                        messagesByID: insertedByID,
+                        calendar: calendar
+                    )
+                }
+                if newMessages.indices.contains(insertedCount),
+                   !affected.contains(insertedCount)
+                {
+                    let prior = existing[0]
+                    let message = newMessages[insertedCount]
+                    result[insertedCount] = MessageRowPresentation(
+                        message: message,
+                        startsGroup: !continuesGroup(
+                            from: newMessages[insertedCount - 1],
+                            to: message,
+                            calendar: calendar
+                        ),
+                        startsDay: !calendar.isDate(
+                            newMessages[insertedCount - 1].timestamp,
+                            inSameDayAs: message.timestamp
+                        ),
+                        replyPreview: prior.replyPreview,
+                        isReplyAvailable: prior.isReplyAvailable,
+                        textPlan: prior.textPlan
                     )
                 }
                 return result

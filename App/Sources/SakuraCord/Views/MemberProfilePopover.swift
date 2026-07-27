@@ -2,6 +2,19 @@ import AppKit
 import SakuraCordModels
 import SwiftUI
 
+struct ProfilePresentationContent: View {
+    let presentation: ProfilePresentationState
+
+    var body: some View {
+        MemberProfilePopover(
+            member: presentation.member,
+            profile: presentation.profile,
+            isLoading: presentation.isLoading,
+            errorMessage: presentation.errorMessage
+        )
+    }
+}
+
 struct MemberProfilePopover: View {
     let member: Member
     let profile: UserProfile?

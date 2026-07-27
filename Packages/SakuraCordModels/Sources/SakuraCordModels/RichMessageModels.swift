@@ -89,16 +89,41 @@ public struct EmojiReference: Codable, Hashable, Sendable {
     }
 
     public init(rawToken: String) {
-        let pattern = #"^<(a?):([^:>]+):(\d+)>$"#
-        if let match = rawToken.firstMatch(of: try! Regex(pattern)) {
-            id = String(match.output[3].substring!)
-            name = String(match.output[2].substring!)
-            isAnimated = match.output[1].substring?.isEmpty == false
-        } else {
+        guard rawToken.first == "<", rawToken.last == ">" else {
             id = nil
             name = rawToken
             isAnimated = false
+            return
         }
+
+        let enclosed = rawToken.dropFirst().dropLast()
+        let animated = enclosed.hasPrefix("a:")
+        let payload = animated ? enclosed.dropFirst(2) : enclosed.dropFirst()
+        guard animated || enclosed.first == ":",
+              let separator = payload.firstIndex(of: ":"),
+              separator != payload.startIndex
+        else {
+            id = nil
+            name = rawToken
+            isAnimated = false
+            return
+        }
+
+        let emojiName = payload[..<separator]
+        let emojiID = payload[payload.index(after: separator)...]
+        guard !emojiID.isEmpty,
+              !emojiName.contains(":"),
+              emojiID.unicodeScalars.allSatisfy({ (48 ... 57).contains($0.value) })
+        else {
+            id = nil
+            name = rawToken
+            isAnimated = false
+            return
+        }
+
+        id = String(emojiID)
+        name = String(emojiName)
+        isAnimated = animated
     }
 
     public var rawToken: String {

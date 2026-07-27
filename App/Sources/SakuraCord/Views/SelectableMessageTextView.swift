@@ -267,19 +267,20 @@ private struct RichMessageRenderSignature: Equatable {
     let mentionPresentations: [String: MentionPresentation]
 }
 
-@MainActor
-private enum RichMessageAttributedText {
-    private enum InlineToken {
+nonisolated enum RichMessageAttributedText {
+    enum InlineToken: Hashable, Sendable {
         case customEmoji(RenderedEmoji)
         case mention(RenderedMention)
     }
 
-    static func make(
-        source: String,
-        emojiSize: CGFloat,
-        mentionPresentations: [String: MentionPresentation]
-    ) -> NSAttributedString {
-        let document = MessageDocumentCache.shared.document(for: source)
+    struct Prepared: Hashable, Sendable {
+        let markdownPlan: DiscordMarkdown.AppKitPlan
+        let tokens: [InlineToken]
+        let isEmojiOnly: Bool
+    }
+
+    nonisolated static func prepare(source: String) -> Prepared {
+        let document = MessageDocument(source: source)
         var transformed = ""
         var tokens: [InlineToken] = []
 
@@ -295,18 +296,46 @@ private enum RichMessageAttributedText {
                 tokens.append(.mention(mention))
             }
         }
+        return Prepared(
+            markdownPlan: DiscordMarkdown.appKitPlan(transformed),
+            tokens: tokens,
+            isEmojiOnly: document.isEmojiOnly
+        )
+    }
 
-        let baseFontSize: CGFloat = document.isEmojiOnly ? emojiSize : 15
+    @MainActor
+    static func make(
+        source: String,
+        emojiSize: CGFloat,
+        mentionPresentations: [String: MentionPresentation]
+    ) -> NSAttributedString {
+        make(
+            prepared: prepare(source: source),
+            emojiSize: emojiSize,
+            mentionPresentations: mentionPresentations
+        )
+    }
+
+    @MainActor
+    static func make(
+        prepared: Prepared,
+        emojiSize: CGFloat,
+        mentionPresentations: [String: MentionPresentation]
+    ) -> NSAttributedString {
+        let baseFontSize: CGFloat = prepared.isEmojiOnly ? emojiSize : 15
         let baseFont = NSFont.systemFont(ofSize: baseFontSize)
         let output = NSMutableAttributedString(
             attributedString: DiscordMarkdown.appKitAttributed(
-                transformed,
+                prepared.markdownPlan,
                 baseFontSize: baseFontSize
             )
         )
         let placeholderRanges = ranges(of: "\u{FFFC}", in: output.string)
 
-        for (range, token) in zip(placeholderRanges.reversed(), tokens.reversed()) {
+        for (range, token) in zip(
+            placeholderRanges.reversed(),
+            prepared.tokens.reversed()
+        ) {
             switch token {
             case let .customEmoji(emoji):
                 output.replaceCharacters(
@@ -341,6 +370,7 @@ private enum RichMessageAttributedText {
         return ranges
     }
 
+    @MainActor
     private static func customEmoji(
         _ emoji: RenderedEmoji,
         size: CGFloat,
@@ -365,6 +395,7 @@ private enum RichMessageAttributedText {
         return value
     }
 
+    @MainActor
     private static func mentionAttributedString(
         _ presentation: MentionPresentation,
         font: NSFont

@@ -51,60 +51,22 @@ struct DiscordFittingWidthLayout: Layout {
     }
 }
 
-struct RichMessageContentView: View {
-    let model: AppModel
-    let message: Message
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if message.type.hasGeneratedContent {
-                SystemMessageContentView(message: message)
-            }
-            if message.flags.contains(.isComponentsV2) {
-                MessageComponentsView(model: model, message: message)
-            } else {
-                if !message.type.hasGeneratedContent, !visibleContent.isEmpty {
-                    DiscordMessageContentView(
-                        model: model,
-                        message: message,
-                        content: visibleContent,
-                        textOpacity: MessageOutboxPresentation.textOpacity(
-                            for: message.outboxState
-                        )
-                    )
-                }
-                if !message.attachments.isEmpty {
-                    MediaGalleryView(items: message.attachments.map(RichMediaItem.init))
-                        .opacity(
-                            MessageOutboxPresentation.mediaOpacity(for: message.outboxState)
-                        )
-                }
-                ForEach(message.embeds.filter { MessageEmbedPresentation.kind(for: $0) != .hidden }) { embed in
-                    MessageEmbedView(model: model, message: message, embed: embed, attachments: message.attachments)
-                }
-                if !message.components.isEmpty {
-                    MessageComponentsView(model: model, message: message)
-                }
-            }
-            if !message.stickers.isEmpty {
-                MessageStickersView(stickers: message.stickers)
-            }
-            if let thread = message.thread {
-                MessageThreadSummaryView(thread: thread, open: { model.open(thread) })
-            }
-        }
-    }
-
-    private var visibleContent: String {
-        MessageEmbedPresentation.visibleMessageContent(message.content, embeds: message.embeds)
-    }
-}
-
-enum MessageEmbedPresentationKind: Equatable {
+nonisolated enum MessageEmbedPresentationKind: Equatable {
     case hidden, bareMedia, card
 }
 
-enum MessageEmbedPresentation {
+nonisolated enum MessageEmbedPresentation {
+    static func visibleEmbeds(for message: Message) -> [MessageEmbed] {
+        message.flags.contains(.suppressEmbeds) ? [] : message.embeds
+    }
+
+    static func visibleMessageContent(for message: Message) -> String {
+        visibleMessageContent(
+            message.content,
+            embeds: visibleEmbeds(for: message)
+        )
+    }
+
     static func kind(for embed: MessageEmbed) -> MessageEmbedPresentationKind {
         let type = embed.type?.lowercased()
         if type == "gifv" || type == "image" {
@@ -135,21 +97,8 @@ enum MessageEmbedPresentation {
     }
 }
 
-private struct SystemMessageContentView: View {
-    let message: Message
-
-    var body: some View {
-        Label {
-            Text(label)
-        } icon: {
-            Image(systemName: icon)
-                .foregroundStyle(iconColor)
-        }
-        .font(.body)
-        .accessibilityLabel(label)
-    }
-
-    private var label: String {
+nonisolated enum SystemMessagePresentation {
+    static func label(for message: Message) -> String {
         let author = message.author.displayName
         switch message.type {
         case .recipientAdd:
@@ -195,18 +144,19 @@ private struct SystemMessageContentView: View {
         }
     }
 
-    private var icon: String {
+    static func systemImage(for message: Message) -> String {
         switch message.type {
         case .userJoin: "arrow.right"
-        case .guildBoost, .guildBoostTier1, .guildBoostTier2, .guildBoostTier3: "sparkles"
+        case .guildBoost, .guildBoostTier1, .guildBoostTier2, .guildBoostTier3:
+            "sparkles"
         case .channelPinnedMessage: "pin.fill"
         case .call: "phone.fill"
         default: "info.circle.fill"
         }
     }
 
-    private var iconColor: Color {
-        message.type == .userJoin ? .green : .secondary
+    static func usesSuccessColor(for message: Message) -> Bool {
+        message.type == .userJoin
     }
 }
 
@@ -271,6 +221,35 @@ struct RichMediaItem: Identifiable, Hashable {
         }
         isSpoiler = false
         self.autoplaysInline = autoplaysInline
+    }
+
+    init?(embed: MessageEmbed, attachments: [Attachment]) {
+        guard var media = embed.image ?? embed.video else { return nil }
+        if let raw = media.url?.absoluteString,
+           raw.hasPrefix("attachment://"),
+           let attachment = attachments.first(where: {
+               $0.filename == String(raw.dropFirst("attachment://".count))
+           })
+        {
+            self.init(attachment)
+            return
+        }
+        guard media.url != nil else { return nil }
+        if embed.video != nil {
+            media.contentType = "video/unknown"
+            if media.width == nil {
+                media.width = embed.thumbnail?.width ?? embed.image?.width
+            }
+            if media.height == nil {
+                media.height = embed.thumbnail?.height ?? embed.image?.height
+            }
+        }
+        self.init(
+            id: "\(embed.id)-media",
+            media: media,
+            fallbackTitle: embed.title ?? "Embed media",
+            autoplaysInline: embed.type?.lowercased() == "gifv"
+        )
     }
 
     init(id: String, media: ComponentMedia, fallbackTitle: String) {
@@ -583,11 +562,21 @@ private final class PassiveAVPlayerView: AVPlayerView {
     }
 }
 
-private struct MediaViewer: View {
+struct MediaViewer: View {
     let items: [RichMediaItem]
     @State var selection: Int
     let close: () -> Void
     @State private var imageScale: CGFloat = 1
+
+    init(
+        items: [RichMediaItem],
+        selection: Int,
+        close: @escaping () -> Void
+    ) {
+        self.items = items
+        _selection = State(initialValue: selection)
+        self.close = close
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -698,57 +687,7 @@ private struct ViewerAVPlayer: NSViewRepresentable {
     }
 }
 
-private struct MessageEmbedView: View {
-    let model: AppModel
-    let message: Message
-    let embed: MessageEmbed
-    let attachments: [Attachment]
-
-    @ViewBuilder var body: some View {
-        switch MessageEmbedPresentation.kind(for: embed) {
-        case .hidden:
-            EmptyView()
-        case .bareMedia:
-            if let mediaItem {
-                MediaGalleryView(items: [mediaItem])
-            }
-        case .card:
-            MessageEmbedCard(
-                model: model,
-                message: message,
-                embed: embed,
-                mediaItem: mediaItem
-            )
-        }
-    }
-
-    private var mediaItem: RichMediaItem? {
-        guard var media = embed.image ?? embed.video else { return nil }
-        if let raw = media.url?.absoluteString, raw.hasPrefix("attachment://"),
-           let attachment = attachments.first(where: {
-               $0.filename == String(raw.dropFirst("attachment://".count))
-           })
-        {
-            return RichMediaItem(attachment)
-        }
-        guard media.url != nil else { return nil }
-        if embed.video != nil {
-            media.contentType = "video/unknown"
-            if media.width == nil {
-                media.width = embed.thumbnail?.width ?? embed.image?.width
-            }
-            if media.height == nil {
-                media.height = embed.thumbnail?.height ?? embed.image?.height
-            }
-        }
-        return RichMediaItem(
-            id: "\(embed.id)-media", media: media, fallbackTitle: embed.title ?? "Embed media",
-            autoplaysInline: embed.type?.lowercased() == "gifv"
-        )
-    }
-}
-
-private struct MessageEmbedCard: View {
+struct MessageEmbedCard: View {
     let model: AppModel
     let message: Message
     let embed: MessageEmbed
@@ -976,21 +915,6 @@ nonisolated enum EmbedFieldLayoutPlan {
         }
         flushInlineFields()
         return rows
-    }
-}
-
-private struct MessageComponentsView: View {
-    let model: AppModel
-    let message: Message
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(message.components) {
-                ComponentNodeView(model: model, message: message, component: $0)
-            }
-            if let error = model.componentError(for: message.id) {
-                Label(error, systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.red)
-            }
-        }
     }
 }
 
@@ -1224,7 +1148,7 @@ struct DiscordComponentContainerLayout: Layout {
     }
 }
 
-private struct DiscordComponentContainerView: View {
+struct DiscordComponentContainerView: View {
     let model: AppModel
     let message: Message
     let accent: UInt32?
@@ -1379,7 +1303,7 @@ private struct ComponentFileAttachment: View {
     }
 }
 
-private struct MessageStickersView: View {
+struct MessageStickersView: View {
     let stickers: [MessageSticker]
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
@@ -1479,7 +1403,7 @@ private final class LottieStickerContainer: NSView {
     }
 }
 
-private struct MessageThreadSummaryView: View {
+struct MessageThreadSummaryView: View {
     let thread: MessageThreadSummary
     let open: () -> Void
     var body: some View {

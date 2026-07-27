@@ -12,7 +12,7 @@ workspace is a convenience entry point.
 | `SakuraCordModels` | Stable domain values, typed snowflakes, messages, commands, interactions, and provider events. |
 | `DiscordProtocol` | Provider contract, REST and Gateway implementation, Discord DTO decoding, credentials, request scheduling, and offline provider. |
 | `SakuraCordPersistence` | Account-scoped GRDB database, migrations, drafts, messages, and non-credential cache state. |
-| `MessageRendering` | Parsed message documents and native message-content rendering support. |
+| `MessageRendering` | Parsed message documents, Discord Markdown conversion, and attributed-content planning support. |
 | `MediaPipeline` | Media cache interfaces plus voice/video signaling, transport, capture, playback, Opus, H.264, and DAVE integration. |
 | `SakuraCordPluginSDK` | Plugin manifest, capability, and permission contracts. |
 | `DaveKit` | Swift wrapper over the vendored libdave/MLS implementation used by `MediaPipeline`. |
@@ -76,8 +76,16 @@ storage behavior.
 
 History responses and Gateway events decode into the same domain message
 model. Updates merge only fields present in the event. `MessageRendering`
-parses message content, while the app composes attachments, embeds, components,
-stickers, replies, reactions, and interaction metadata into native views.
+parses message content; it does not own a competing message-row view.
+
+Every rendered conversation surface—guild text and announcement channels,
+direct and group direct messages, voice-channel chat, regular threads, and
+forum-post conversations—configures the same virtualized
+`NativeMessageTimelineView` and Core Graphics row painter. Surface-specific
+headers, pagination, permissions, composers, and thread/forum state remain
+outside that shared row engine. SwiftUI/AppKit hosting inside the timeline is
+bounded to interaction surfaces that need native controls, including editing,
+media playback, menus, pickers, and component interactions.
 
 `MediaPipeline` owns public-media caching and the complete native voice/video
 stack. `DaveKit` is an implementation dependency of `MediaPipeline`; the app

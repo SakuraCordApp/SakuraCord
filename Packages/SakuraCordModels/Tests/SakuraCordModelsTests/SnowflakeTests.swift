@@ -62,6 +62,22 @@ import Testing
     #expect(unicode.rawToken == "👋🏽")
 }
 
+@Test func `malformed custom emoji tokens remain ordinary text`() {
+    for token in [
+        "<:name:>",
+        "<:name:not-a-snowflake>",
+        "<::123>",
+        "<:two:names:123>",
+        "<b:name:123>",
+        "<a:name:123",
+    ] {
+        let reference = EmojiReference(rawToken: token)
+        #expect(reference.id == nil)
+        #expect(reference.name == token)
+        #expect(!reference.isAnimated)
+    }
+}
+
 @Test func `attachment flags use Discord media bit positions`() {
     let flags = AttachmentFlags(rawValue: (1 << 0) | (1 << 3) | (1 << 5))
     #expect(flags.contains(.clip))

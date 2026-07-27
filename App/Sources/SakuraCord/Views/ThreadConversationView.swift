@@ -87,7 +87,10 @@ private struct ThreadConversationFooter: View {
     var body: some View {
         VStack(spacing: 0) {
             if let error = model.threadErrorMessage {
-                ThreadErrorBanner(message: error)
+                ThreadErrorBanner(
+                    message: error,
+                    retry: retryThreadLoad
+                )
             }
             if thread.isLocked {
                 ThreadStateBanner(
@@ -119,6 +122,11 @@ private struct ThreadConversationFooter: View {
 
     private var isForumPost: Bool {
         model.selectedChannel?.kind == .forum
+    }
+
+    private var retryThreadLoad: (() -> Void)? {
+        guard model.canRetryThreadLoad else { return nil }
+        return { model.retryThreadLoad() }
     }
 
     private var forumPost: ForumPost {
@@ -228,242 +236,119 @@ private struct ThreadUnavailableView: View {
     }
 }
 
-private struct ThreadBeginningView: View {
-    let title: String
-    let starterName: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Image(systemName: "bubble.left.and.bubble.right.fill")
-                .font(.system(size: 34, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 68, height: 68)
-                .background(.quaternary, in: Circle())
-
-            Text(title)
-                .font(.largeTitle.weight(.bold))
-                .textSelection(.enabled)
-
-            if let starterName {
-                Text("Started by \(starterName)")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-            } else {
-                Text("This is the start of the thread.")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 28)
-        .padding(.bottom, 18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
-    }
-}
-
 private struct ThreadMessageTimelineView: View {
     let model: AppModel
     let bottomContentInset: CGFloat
     @State private var isNearBottom = false
-    @State private var didEstablishInitialPosition = false
-    @State private var initialPositionTracker = TimelineInitialPositionTracker()
-
-    private let bottomID = "thread-conversation-bottom"
+    @State private var hasEstablishedInitialPosition = false
+    @State private var scrollRequest: MessageTimelineScrollRequest?
 
     var body: some View {
-        ScrollViewReader { proxy in
-            GeometryReader { geometry in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        if let thread = model.openThread,
-                           ConversationBeginningPolicy.showsBeginning(
-                               isLoading: model.isLoadingThread,
-                               hasMoreBefore: model.hasMoreThreadMessages,
-                               hasError: model.threadErrorMessage != nil
-                           )
-                        {
-                            ThreadBeginningView(
-                                title: thread.name,
-                                starterName: threadStarterName
-                            )
-                            if let startedAt = model.openThreadStartedAt {
-                                DateSeparator(date: startedAt)
-                            }
-                        }
-
-                        if model.hasMoreThreadMessages {
-                            EarlierThreadMessageLoader(
-                                isLoading: model.isLoadingEarlierThread,
-                                load: { loadEarlier(using: proxy) }
-                            )
-                        }
-
-                        ForEach(model.threadMessageRows.enumerated(), id: \.element.id) {
-                            index, row in
-                            VStack(alignment: .leading, spacing: 0) {
-                                if showsDateSeparator(at: index, for: row) {
-                                    DateSeparator(date: row.message.timestamp)
-                                }
-                                if unreadSummary?.firstUnreadMessageID == row.id {
-                                    NewMessagesSeparator()
-                                }
-
-                                MessageRowView(
-                                    model: model,
-                                    message: row.message,
-                                    authorPresentation: model.authorPresentation(for: row.message),
-                                    startsGroup: row.startsGroup,
-                                    replyPreview: row.replyPreview,
-                                    isReplyAvailable: row.isReplyAvailable,
-                                    canEdit: row.message.author.id
-                                        == model.snapshot?.currentUser.id,
-                                    saveEdit: { value in
-                                        Task { await model.edit(row.message, content: value) }
-                                    },
-                                    reply: nil,
-                                    markUnread: {
-                                        model.markMessageAndFollowingUnread(row.message)
-                                    },
-                                    openReply: { id in
-                                        withAnimation(.easeInOut(duration: 0.2)) {
-                                            proxy.scrollTo(id, anchor: .center)
-                                        }
-                                    },
-                                    delete: { Task { await model.delete(row.message) } },
-                                    react: { emoji in
-                                        Task { await model.toggleReaction(emoji, on: row.message) }
-                                    }
-                                )
-                                .equatable()
-                            }
-                            .id(row.id)
-                        }
-
-                        Color.clear.frame(height: bottomContentInset).id(bottomID)
-                    }
-                    .padding(.vertical, 10)
-                    .frame(
-                        minHeight: ThreadTimelineLayoutPolicy.minimumContentHeight(
-                            viewportHeight: geometry.size.height
-                        ),
-                        alignment: .bottom
+        let conversationID = model.openThread?.id
+        NativeMessageTimelineView(
+            model: model,
+            conversation: .thread(conversationID),
+            beginning: beginning,
+            firstMessageStartsDayOverride: firstMessageStartsDayOverride,
+            hasMoreMessages: model.hasMoreThreadMessages,
+            isLoadingEarlier:
+                MessageTimelineLoadingPolicy.showsEarlierIndicator(
+                    isLoadingInitialPage: model.isLoadingThread,
+                    messageCount: model.threadMessages.count,
+                    isLoadingEarlierPage: model.isLoadingEarlierThread
+                ),
+            bottomContentInset: bottomContentInset,
+            unreadMessageID: exactUnreadBoundaryMessageID,
+            highlightedMessageID: nil,
+            initialScrollTarget: initialScrollTarget,
+            scrollRequest: scrollRequest,
+            runsPerformanceAutoScroll: false,
+            loadEarlier: loadEarlier,
+            openReply: openReply,
+            onScrollActivityChange: { isScrolling in
+                if let conversationID {
+                    model.reportTimelineLiveScrolling(
+                        isScrolling,
+                        conversationID: conversationID
                     )
                 }
-                .defaultScrollAnchor(.bottom)
-                .scrollEdgeEffectStyle(.soft, for: .top)
-                .onScrollGeometryChange(for: ThreadScrollState.self) { geometry in
-                    ThreadScrollState(
-                        isNearBottom: geometry.contentSize.height - geometry.contentOffset.y
-                            - geometry.containerSize.height < 100
-                    )
-                } action: { _, value in
-                    isNearBottom = value.isNearBottom
+            },
+            onScrollStateChange: handleScrollState,
+            onInitialPositionEstablished: handleInitialPosition,
+            onUserScrollBegan: handleUserScrollBegan,
+            onUserScrollEnded: { state in
+                isNearBottom = state.isNearBottom
+            }
+        )
+        .scrollEdgeEffectStyle(.soft, for: .top)
+        .ignoresSafeArea(.container, edges: .top)
+        .overlay {
+            if MessageTimelineLoadingPolicy.showsInitialPlaceholder(
+                isLoading: model.isLoadingThread,
+                messageCount: model.threadMessages.count
+            ) {
+                MessageTimelineLoadingSkeleton()
+            }
+        }
+        .overlay(alignment: .top) {
+            if let threadID = model.openThread?.id,
+               let summary = unreadSummary
+            {
+                UnreadMessagesBanner(summary: summary) {
+                    model.markConversationRead(channelID: threadID)
+                    requestScroll(.bottom)
+                }
+                .padding(8)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if ThreadTimelinePresentationPolicy.showsNewRepliesButton(
+                isNearBottom: isNearBottom,
+                hasUnreadReplies: unreadSummary != nil,
+                messageCount: model.threadMessages.count
+            ), hasEstablishedInitialPosition {
+                Button {
                     if let threadID = model.openThread?.id {
-                        if let isAtNewest = initialPositionTracker.resolve(
-                            channelID: threadID,
-                            actualIsAtNewest: value.isNearBottom
-                        ) {
-                            model.reportTimelineInitialPosition(
-                                channelID: threadID,
-                                isAtNewest: isAtNewest
-                            )
-                        } else {
-                            model.reportTimelinePosition(
-                                channelID: threadID,
-                                isAtNewest: value.isNearBottom
-                            )
-                        }
+                        model.reportTimelineUserInteraction(channelID: threadID)
                     }
-                }
-                .onScrollPhaseChange { _, newPhase, _ in
-                    switch newPhase {
-                    case .tracking, .interacting, .decelerating:
-                        if let threadID = model.openThread?.id {
-                            model.reportTimelineUserInteraction(channelID: threadID)
-                        }
-                    case .idle, .animating:
-                        break
-                    }
-                }
-                .overlay {
-                    if MessageTimelineLoadingPolicy.showsInitialPlaceholder(
-                        isLoading: model.isLoadingThread,
-                        messageCount: model.threadMessages.count
-                    ) {
-                        MessageTimelineLoadingSkeleton()
-                    }
-                }
-                .overlay(alignment: .top) {
-                    if let threadID = model.openThread?.id,
-                       let summary = unreadSummary
-                    {
-                        UnreadMessagesBanner(summary: summary) {
-                            model.markConversationRead(channelID: threadID)
-                            withAnimation(.easeOut(duration: 0.2)) {
-                                proxy.scrollTo(bottomID, anchor: .bottom)
-                            }
-                        }
-                        .padding(8)
-                    }
-                }
-                .overlay(alignment: .bottom) {
-                    if ThreadTimelinePresentationPolicy.showsNewRepliesButton(
-                        isNearBottom: isNearBottom,
-                        hasUnreadReplies: unreadSummary != nil,
-                        messageCount: model.threadMessages.count
-                    ) {
-                        Button {
-                            if let threadID = model.openThread?.id {
-                                model.reportTimelineUserInteraction(channelID: threadID)
-                            }
-                            withAnimation(.easeOut(duration: 0.2)) {
-                                proxy.scrollTo(bottomID, anchor: .bottom)
-                            }
-                        } label: {
-                            Label("New replies", systemImage: "arrow.down")
-                                .font(.callout.weight(.semibold))
-                                .padding(.horizontal, 15)
-                                .padding(.vertical, 8)
-                                .contentShape(Capsule())
-                                .glassEffect(
-                                    .regular.tint(Color.accentColor).interactive(),
-                                    in: Capsule()
-                                )
-                        }
-                        .buttonStyle(.plain)
-                        .padding(
-                            .bottom,
-                            ChatDetailLayoutPolicy.newMessagesButtonBottomPadding(
-                                bottomContentInset: bottomContentInset
-                            )
+                    requestScroll(.bottom)
+                } label: {
+                    Label("New replies", systemImage: "arrow.down")
+                        .font(.callout.weight(.semibold))
+                        .padding(.horizontal, 15)
+                        .padding(.vertical, 8)
+                        .contentShape(Capsule())
+                        .glassEffect(
+                            .regular.tint(Color.accentColor).interactive(),
+                            in: Capsule()
                         )
-                        .accessibilityHint("Scrolls to the latest reply")
-                    }
                 }
-                .onChange(of: model.threadMessages.last?.id) { oldID, id in
-                    guard oldID != nil, id != nil, isNearBottom else { return }
-                    proxy.scrollTo(bottomID, anchor: .bottom)
-                }
-                .onChange(of: bottomContentInset) {
-                    guard isNearBottom else { return }
-                    proxy.scrollTo(bottomID, anchor: .bottom)
-                }
-                .onChange(of: model.openThread?.id) {
-                    isNearBottom = false
-                    didEstablishInitialPosition = false
-                    initialPositionTracker.cancel()
-                }
-                .onChange(of: model.hasCompletedInitialThreadLoad) {
-                    establishInitialPosition(using: proxy)
-                }
-                .task(id: model.openThread?.id) {
-                    isNearBottom = false
-                    didEstablishInitialPosition = false
-                    initialPositionTracker.cancel()
-                    establishInitialPosition(using: proxy)
-                }
+                .buttonStyle(.plain)
+                .padding(
+                    .bottom,
+                    ChatDetailLayoutPolicy.newMessagesButtonBottomPadding(
+                        bottomContentInset: bottomContentInset
+                    )
+                )
+                .accessibilityHint("Scrolls to the latest reply")
+            }
+        }
+        .onChange(of: model.openThread?.id) { oldID, _ in
+            if let oldID {
+                model.reportTimelineLiveScrolling(
+                    false,
+                    conversationID: oldID
+                )
+            }
+            isNearBottom = false
+            hasEstablishedInitialPosition = false
+        }
+        .onDisappear {
+            if let conversationID {
+                model.reportTimelineLiveScrolling(
+                    false,
+                    conversationID: conversationID
+                )
             }
         }
     }
@@ -474,30 +359,43 @@ private struct ThreadMessageTimelineView: View {
             ?? starter.displayName
     }
 
-    private func showsDateSeparator(at index: Int, for row: MessageRowPresentation) -> Bool {
-        if index > 0 {
-            return row.startsDay
-        }
-        let showsBeginning = ConversationBeginningPolicy.showsBeginning(
+    private var beginning: NativeTimelineBeginning? {
+        guard let thread = model.openThread,
+              ConversationBeginningPolicy.showsBeginning(
             isLoading: model.isLoadingThread,
             hasMoreBefore: model.hasMoreThreadMessages,
             hasError: model.threadErrorMessage != nil
-        )
-        return ThreadTimelineLayoutPolicy.showsFirstReplyDateSeparator(
-            showsBeginning: showsBeginning,
-            starterDate: model.openThreadStartedAt,
-            firstReplyDate: row.message.timestamp
+        ) else { return nil }
+        return .thread(
+            id: thread.id,
+            title: thread.name,
+            starterName: threadStarterName,
+            startedAt: model.openThreadStartedAt
         )
     }
 
-    private func loadEarlier(using proxy: ScrollViewProxy) {
-        let threadID = model.openThread?.id
-        let anchor = model.threadMessages.first?.id
+    private var firstMessageStartsDayOverride: Bool? {
+        guard beginning != nil, let first = model.threadMessageRows.first else {
+            return nil
+        }
+        return ThreadTimelineLayoutPolicy.showsFirstReplyDateSeparator(
+            showsBeginning: true,
+            starterDate: model.openThreadStartedAt,
+            firstReplyDate: first.message.timestamp
+        )
+    }
+
+    private func loadEarlier() {
         Task {
             await model.loadEarlierThread()
-            guard let anchor, model.openThread?.id == threadID else { return }
-            proxy.scrollTo(anchor, anchor: .top)
         }
+    }
+
+    private func openReply(_ messageID: MessageID) {
+        guard model.threadMessages.contains(where: { $0.id == messageID }) else {
+            return
+        }
+        requestScroll(.message(messageID, anchor: .center))
     }
 
     private var unreadSummary: AccountReadStateModel.TimelineUnreadSummary? {
@@ -505,83 +403,89 @@ private struct ThreadMessageTimelineView: View {
         return model.timelineUnreadSummary(
             channelID: threadID,
             messages: model.threadMessages,
-            hasMoreBefore: model.hasMoreThreadMessages
+            hasMoreBefore:
+                model.hasMoreThreadMessages
+                || (model.isLoadingThread && !model.threadMessages.isEmpty)
         )
     }
 
-    private func establishInitialPosition(using proxy: ScrollViewProxy) {
-        guard !didEstablishInitialPosition,
-              model.hasCompletedInitialThreadLoad,
-              let threadID = model.openThread?.id
-        else { return }
-        didEstablishInitialPosition = true
+    private var exactUnreadBoundaryMessageID: MessageID? {
+        TimelineUnreadBoundaryPolicy.displayedMessageID(
+            firstUnreadMessageID: unreadSummary?.firstUnreadMessageID,
+            isLowerBound: unreadSummary?.isLowerBound ?? false
+        )
+    }
+
+    private var initialScrollTarget: MessageTimelineScrollRequest.Target? {
+        let summary = unreadSummary
         let initialTarget = ThreadTimelinePresentationPolicy.initialScrollTarget(
             isForumPost: model.selectedChannel?.kind == .forum,
-            hasUnreadReplies: unreadSummary != nil
+            hasUnreadReplies: summary != nil
         )
-        if initialTarget == .firstUnread, let summary = unreadSummary {
-            proxy.scrollTo(summary.firstUnreadMessageID, anchor: .top)
-        } else {
-            isNearBottom = true
-            proxy.scrollTo(bottomID, anchor: .bottom)
-        }
-        initialPositionTracker.begin(channelID: threadID)
-        resolveInitialPositionAfterLayout(
-            threadID: threadID,
-            assumesNewestPosition: initialTarget == .newest
+        return TimelineInitialPositionPolicy.targetWhenReady(
+            hasCompletedInitialLoad:
+                model.hasCompletedInitialThreadLoad,
+            firstUnreadMessageID: summary?.firstUnreadMessageID,
+            hasExactUnreadBoundary: summary?.isLowerBound == false,
+            prefersNewest: initialTarget == .newest
         )
     }
 
-    private func resolveInitialPositionAfterLayout(
-        threadID: ChannelID,
-        assumesNewestPosition: Bool
-    ) {
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(100))
-            guard model.openThread?.id == threadID,
-                  let isAtNewest = initialPositionTracker.resolve(
-                      channelID: threadID,
-                      actualIsAtNewest: assumesNewestPosition || isNearBottom
-                  )
-            else { return }
-            model.reportTimelineInitialPosition(
-                channelID: threadID,
-                isAtNewest: isAtNewest
-            )
+    private func handleInitialPosition(_ state: TimelineScrollState) {
+        guard !hasEstablishedInitialPosition,
+              let threadID = model.openThread?.id
+        else {
+            return
         }
+        hasEstablishedInitialPosition = true
+        isNearBottom = state.isNearBottom
+        model.reportTimelineInitialPosition(
+            channelID: threadID,
+            isAtNewest: state.isNearBottom
+        )
     }
-}
 
-private struct EarlierThreadMessageLoader: View {
-    let isLoading: Bool
-    let load: () -> Void
-
-    var body: some View {
-        HStack(spacing: 8) {
-            if isLoading {
-                ProgressView().controlSize(.small)
-                Text("Loading earlier replies…")
-            } else {
-                Button("Load earlier replies", action: load)
-                    .buttonStyle(.link)
-            }
+    private func handleScrollState(_ state: TimelineScrollState) {
+        isNearBottom = state.isNearBottom
+        if state.isNearTop,
+           model.hasMoreThreadMessages,
+           !model.isLoadingEarlierThread
+        {
+            loadEarlier()
         }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 10)
+        guard hasEstablishedInitialPosition,
+              let threadID = model.openThread?.id
+        else { return }
+        model.reportTimelinePosition(
+            channelID: threadID,
+            isAtNewest: state.isNearBottom
+        )
+    }
+
+    private func handleUserScrollBegan() {
+        guard let threadID = model.openThread?.id else { return }
+        model.reportTimelineUserInteraction(channelID: threadID)
+    }
+
+    private func requestScroll(_ target: MessageTimelineScrollRequest.Target) {
+        scrollRequest = MessageTimelineScrollRequest(target: target)
     }
 }
 
 private struct ThreadErrorBanner: View {
     let message: String
+    let retry: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle")
             Text(message)
                 .lineLimit(2)
-            Spacer(minLength: 0)
+            Spacer(minLength: 8)
+            if let retry {
+                Button("Retry", action: retry)
+                    .buttonStyle(.link)
+            }
         }
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -591,8 +495,4 @@ private struct ThreadErrorBanner: View {
         .padding(.horizontal, 12)
         .padding(.bottom, 6)
     }
-}
-
-private struct ThreadScrollState: Equatable {
-    let isNearBottom: Bool
 }

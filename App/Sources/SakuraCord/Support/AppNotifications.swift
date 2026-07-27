@@ -7,4 +7,7 @@ extension Notification.Name {
     static let sakuracordNotificationDeepLink = Notification.Name(
         "dev.sakuracord.notification-deep-link"
     )
+    static let sakuracordMessageRowsDidChange = Notification.Name(
+        "dev.sakuracord.message-rows-did-change"
+    )
 }

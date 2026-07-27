@@ -9,13 +9,58 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
     let mode: AppLaunchMode
     let includesLongServerList: Bool
     let includesForumPerformanceFixture: Bool
+    let includesChatPerformanceFixture: Bool
+    let includesChatMediaPerformanceFixture: Bool
+    let runsChatPerformanceAutoScroll: Bool
+    let runsChatLiveArrivalStress: Bool
 
     init(arguments: [String]) {
         includesLongServerList = arguments.contains("--offline-long-server-list")
         includesForumPerformanceFixture = arguments.contains("--offline-forum-performance")
+        includesChatMediaPerformanceFixture =
+            arguments.contains("--offline-chat-media-performance-autoscroll")
+        runsChatPerformanceAutoScroll =
+            arguments.contains("--offline-chat-performance-autoscroll")
+            || arguments.contains("--offline-chat-performance-live-autoscroll")
+            || includesChatMediaPerformanceFixture
+        runsChatLiveArrivalStress =
+            arguments.contains("--offline-chat-performance-live-autoscroll")
+        includesChatPerformanceFixture =
+            runsChatPerformanceAutoScroll
+            || arguments.contains("--offline-chat-performance")
         let testingFlags: Set = [
             "--offline", "--offline-long-server-list", "--offline-forum-performance",
+            "--offline-chat-performance", "--offline-chat-performance-autoscroll",
+            "--offline-chat-performance-live-autoscroll",
+            "--offline-chat-media-performance-autoscroll",
         ]
         mode = arguments.contains(where: testingFlags.contains) ? .offlineTesting : .normal
+    }
+}
+
+@MainActor
+final class NativeTimelinePerformanceBenchmarkGate {
+    static let shared = NativeTimelinePerformanceBenchmarkGate()
+
+    private var didStart = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    private init() {}
+
+    func waitUntilStarted() async {
+        guard !didStart else { return }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func begin() {
+        guard !didStart else { return }
+        didStart = true
+        let pending = waiters
+        waiters.removeAll(keepingCapacity: false)
+        for continuation in pending {
+            continuation.resume()
+        }
     }
 }

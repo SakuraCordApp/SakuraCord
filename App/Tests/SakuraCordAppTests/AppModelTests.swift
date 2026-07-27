@@ -506,10 +506,14 @@ import Testing
     await model.start()
     let message = try #require(model.messages.first)
 
+    let initialRowsRevision = model.messageRowsRevision
     await model.toggleReaction("🔥", on: message)
     #expect(model.messages.first?.reactions.first?.didCurrentUserReact == true)
+    #expect(model.messageRows.first?.message.reactions.first?.didCurrentUserReact == true)
+    #expect(model.messageRowsRevision > initialRowsRevision)
     await model.toggleReaction("🔥", on: message)
     #expect(model.messages.first?.reactions.isEmpty == true)
+    #expect(model.messageRows.first?.message.reactions.isEmpty == true)
     await model.toggleReaction("🔥", on: message)
     #expect(model.messages.first?.reactions.first?.didCurrentUserReact == true)
 
@@ -817,6 +821,63 @@ import Testing
     await Task.yield()
 
     #expect(model.openThread?.id == thread.id)
+}
+
+@MainActor
+@Test func `thread send commits one final timeline revision`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let forum = try #require(
+        model.snapshot?.channels.first(where: { $0.kind == .forum })
+    )
+    model.selectedChannelID = forum.id
+    #expect(
+        await eventuallyOnMain {
+            model.hasLoadedForumPosts
+                && model.forumPosts.contains(where: { !$0.thread.isLocked })
+        }
+    )
+    let post = try #require(
+        model.forumPosts.first(where: { !$0.thread.isLocked })
+    )
+    model.open(post)
+    #expect(
+        await eventuallyOnMain {
+            model.hasCompletedInitialThreadLoad
+                && model.openThreadAccess.canSend
+        }
+    )
+    let previousCount = model.threadMessages.count
+    let previousRevision = model.threadMessageRowsRevision
+    model.threadDraft = "one thread timeline mutation"
+
+    #expect(await model.sendThreadComposerMessage(attachments: []))
+    #expect(
+        await eventuallyOnMain {
+            model.threadMessages.count == previousCount + 1
+        }
+    )
+    await Task.yield()
+
+    #expect(model.threadMessageRowsRevision == previousRevision + 1)
+    guard case let .insert(insertedIndexes) =
+        model.threadMessageRowsUpdateHint?.change
+    else {
+        Issue.record("Expected a bounded thread insertion hint")
+        return
+    }
+    #expect(insertedIndexes == IndexSet(integer: previousCount))
+    let records = try #require(
+        model.threadMessageRowsUpdateJournal.records(
+            after: previousRevision,
+            through: model.threadMessageRowsRevision
+        )
+    )
+    let record = try #require(records.first)
+    #expect(record.revision == model.threadMessageRowsRevision)
+    #expect(record.insertedMessageIDs == [model.threadMessages[previousCount].id])
+    #expect(!record.invalidatesAllRows)
 }
 
 @MainActor
@@ -1186,6 +1247,34 @@ private func forumPresentationPost(
     )
     #expect(forumPerformance.mode == .offlineTesting)
     #expect(forumPerformance.includesForumPerformanceFixture)
+    let chatPerformance = AppLaunchConfiguration(
+        arguments: ["SakuraCord", "--offline-chat-performance"]
+    )
+    #expect(chatPerformance.mode == .offlineTesting)
+    #expect(chatPerformance.includesChatPerformanceFixture)
+    #expect(!chatPerformance.runsChatPerformanceAutoScroll)
+    let chatAutoScroll = AppLaunchConfiguration(
+        arguments: ["SakuraCord", "--offline-chat-performance-autoscroll"]
+    )
+    #expect(chatAutoScroll.mode == .offlineTesting)
+    #expect(chatAutoScroll.includesChatPerformanceFixture)
+    #expect(chatAutoScroll.runsChatPerformanceAutoScroll)
+    #expect(!chatAutoScroll.runsChatLiveArrivalStress)
+    let chatLiveAutoScroll = AppLaunchConfiguration(
+        arguments: ["SakuraCord", "--offline-chat-performance-live-autoscroll"]
+    )
+    #expect(chatLiveAutoScroll.mode == .offlineTesting)
+    #expect(chatLiveAutoScroll.includesChatPerformanceFixture)
+    #expect(chatLiveAutoScroll.runsChatPerformanceAutoScroll)
+    #expect(chatLiveAutoScroll.runsChatLiveArrivalStress)
+    let chatMediaAutoScroll = AppLaunchConfiguration(
+        arguments: ["SakuraCord", "--offline-chat-media-performance-autoscroll"]
+    )
+    #expect(chatMediaAutoScroll.mode == .offlineTesting)
+    #expect(chatMediaAutoScroll.includesChatPerformanceFixture)
+    #expect(chatMediaAutoScroll.includesChatMediaPerformanceFixture)
+    #expect(chatMediaAutoScroll.runsChatPerformanceAutoScroll)
+    #expect(!chatMediaAutoScroll.runsChatLiveArrivalStress)
 }
 
 @MainActor
@@ -1544,6 +1633,27 @@ private actor CredentialAccessProbeStore: CredentialStore {
     #expect(ProfileRolePresentation.collapsedLimit == 5)
 }
 
+@Test func `unchanged unread projection does not republish the account snapshot`() async throws {
+    let snapshot = try await MockChatProvider().bootstrap()
+    #expect(
+        !UnreadPresentationPublicationPolicy.shouldPublish(
+            snapshot: snapshot,
+            channels: snapshot.channels,
+            guilds: snapshot.guilds
+        )
+    )
+
+    var changedChannels = snapshot.channels
+    changedChannels[0].unreadCount += 1
+    #expect(
+        UnreadPresentationPublicationPolicy.shouldPublish(
+            snapshot: snapshot,
+            channels: changedChannels,
+            guilds: snapshot.guilds
+        )
+    )
+}
+
 @MainActor
 @Test func `selecting member loads full profile`() async throws {
     let model = AppModel(launchMode: .offlineTesting)
@@ -1565,19 +1675,44 @@ private actor CredentialAccessProbeStore: CredentialStore {
 @Test func `message profile does not compete with the member inspector popover`() async throws {
     let model = AppModel(launchMode: .offlineTesting)
     await model.start()
-    let member = try #require(model.members.first)
+    let contextualMember = try #require(model.members.first)
+    let inspectorMember = try #require(
+        model.members.first { $0.id != contextualMember.id }
+    )
     model.showInspector = false
 
-    model.showProfile(for: member.user)
-    #expect(await eventuallyOnMain { model.selectedProfile?.id == member.id })
-
-    #expect(model.selectedMember?.id == member.id)
-    #expect(model.selectedProfile?.id == member.id)
-    #expect(!model.isInspectorProfilePresented)
-    #expect(!model.showInspector)
-
-    model.selectMember(member)
+    model.selectMember(inspectorMember)
+    model.showProfile(for: contextualMember.user)
     #expect(model.isInspectorProfilePresented)
+    #expect(model.selectedMember?.id == inspectorMember.id)
+    #expect(
+        model.contextualProfilePresentation?.member.id
+            == contextualMember.id
+    )
+    #expect(
+        await eventuallyOnMain {
+            model.contextualProfilePresentation?.profile?.id
+                == contextualMember.id
+        }
+    )
+    #expect(
+        await eventuallyOnMain {
+            model.selectedProfile?.id == inspectorMember.id
+        }
+    )
+    #expect(model.selectedMember?.id == inspectorMember.id)
+    #expect(model.selectedProfile?.id == inspectorMember.id)
+    #expect(model.isInspectorProfilePresented)
+    #expect(!model.showInspector)
+    #expect(
+        model.contextualProfilePresentation?.member.id
+            == contextualMember.id
+    )
+
+    model.dismissContextualProfile(for: contextualMember.id)
+    #expect(model.contextualProfilePresentation == nil)
+    #expect(model.isInspectorProfilePresented)
+    #expect(model.selectedMember?.id == inspectorMember.id)
 }
 
 @MainActor
@@ -1653,9 +1788,11 @@ private func eventuallyOnMain(_ condition: @escaping @MainActor () -> Bool) asyn
     try await Task.sleep(for: .milliseconds(5))
     model.selectedChannelID = firstChannel
 
-    // The in-memory page is restored synchronously, before either refresh finishes.
+    // The in-memory page is restored synchronously, while the refresh remains
+    // explicitly in flight so the UI cannot claim this cached boundary is the
+    // start of the channel.
     #expect(model.messages.map(\.channelID) == [firstChannel])
-    #expect(!model.isLoadingMessages)
+    #expect(model.isLoadingMessages)
     try await Task.sleep(for: .milliseconds(160))
 
     #expect(model.selectedChannelID == firstChannel)
@@ -1681,6 +1818,145 @@ private func eventuallyOnMain(_ condition: @escaping @MainActor () -> Bool) asyn
 
     await model.loadReactionReactors(loaded, on: try #require(model.messages.first))
     #expect(await provider.reactorRequestCount() == 1)
+}
+
+@MainActor
+@Test func `failed earlier page stays retryable without refreshing the newest page`() async throws {
+    let provider = ChannelLoadTestProvider(failsFirstEarlierPage: true)
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+
+    await model.start()
+    let channelID = try #require(model.selectedChannelID)
+    #expect(model.hasMoreMessages)
+
+    await model.loadEarlier()
+    #expect(model.messageLoadError != nil)
+    #expect(model.hasMoreMessages)
+    #expect(!model.isLoadingEarlier)
+
+    model.retryMessageLoad()
+
+    #expect(await eventuallyOnMain {
+        model.messageLoadError == nil
+            && !model.isLoadingEarlier
+            && !model.hasMoreMessages
+            && model.messages.count == 2
+    })
+    #expect(await provider.requestCount(for: channelID) == 3)
+    #expect(await provider.earlierRequestCount() == 2)
+}
+
+@MainActor
+@Test func `gateway mutations keep exact indexes after repeated history prepends`() async throws {
+    let provider = MockChatProvider(timelineMessageCount: 500)
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+
+    #expect(model.selectedChannelID == ChannelID(rawValue: 210))
+    let initialCount = model.messages.count
+    for _ in 0 ..< 5 {
+        await model.loadEarlier()
+    }
+    #expect(model.messages.count == min(500, initialCount + 250))
+
+    let updateTarget = model.messages[173]
+    var updated = updateTarget
+    updated.content = "Updated after five prepended pages"
+    await provider.emit(.messageUpdated(updated))
+
+    #expect(await eventuallyOnMain {
+        model.messages.first(where: { $0.id == updateTarget.id })?.content
+            == updated.content
+    })
+
+    let deleted = model.messages[211]
+    await provider.emit(.messageDeleted(
+        channelID: deleted.channelID,
+        messageID: deleted.id
+    ))
+    #expect(await eventuallyOnMain {
+        !model.messages.contains(where: { $0.id == deleted.id })
+    })
+}
+
+@MainActor
+@Test func `failed earlier thread page retries inside the shared conversation`() async throws {
+    let provider = ChannelLoadTestProvider(failsFirstEarlierPage: true)
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let parentID = try #require(model.selectedChannelID)
+    let thread = MessageThreadSummary(
+        id: ChannelID(rawValue: 91_099),
+        parentID: parentID,
+        name: "Pagination retry"
+    )
+
+    model.open(thread)
+    #expect(await eventuallyOnMain {
+        model.hasCompletedInitialThreadLoad
+            && model.hasMoreThreadMessages
+            && model.threadMessages.count == 1
+    })
+
+    await model.loadEarlierThread()
+    #expect(model.threadErrorMessage != nil)
+    #expect(model.canRetryThreadLoad)
+    #expect(model.hasMoreThreadMessages)
+
+    model.retryThreadLoad()
+
+    #expect(await eventuallyOnMain {
+        model.threadErrorMessage == nil
+            && !model.isLoadingEarlierThread
+            && !model.hasMoreThreadMessages
+            && model.threadMessages.count == 2
+    })
+    #expect(await provider.requestCount(for: thread.id) == 3)
+}
+
+@MainActor
+@Test func `reaction preview enrichment waits for live timeline scrolling to end`() async throws {
+    let provider = ChannelLoadTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+
+    let message = try #require(model.messages.first)
+    let reaction = try #require(message.reactions.first)
+    let primaryID = message.channelID
+    let supplementaryID = ChannelID(rawValue: 910_002)
+    model.reportTimelineLiveScrolling(
+        true,
+        conversationID: primaryID
+    )
+    model.reportTimelineLiveScrolling(
+        true,
+        conversationID: supplementaryID
+    )
+    let load = Task {
+        await model.loadReactionReactors(reaction, on: message)
+    }
+    try await Task.sleep(for: .milliseconds(80))
+
+    #expect(await provider.reactorRequestCount() == 0)
+    #expect(model.messages.first?.reactions.first?.reactors.isEmpty == true)
+
+    model.reportTimelineLiveScrolling(
+        false,
+        conversationID: primaryID
+    )
+    try await Task.sleep(for: .milliseconds(80))
+
+    #expect(await provider.reactorRequestCount() == 0)
+    #expect(model.messages.first?.reactions.first?.reactors.isEmpty == true)
+
+    model.reportTimelineLiveScrolling(
+        false,
+        conversationID: supplementaryID
+    )
+    await load.value
+
+    #expect(await provider.reactorRequestCount() == 1)
+    #expect(model.messages.first?.reactions.first?.reactors.count == 5)
 }
 
 @MainActor
@@ -1878,6 +2154,12 @@ private actor ChannelLoadTestProvider: ChatProvider {
     private var reactorRequests = 0
     private var activeReactorRequests = 0
     private var maximumActiveReactorRequests = 0
+    private let failsFirstEarlierPage: Bool
+    private var earlierRequests = 0
+
+    init(failsFirstEarlierPage: Bool = false) {
+        self.failsFirstEarlierPage = failsFirstEarlierPage
+    }
 
     func bootstrap() async throws -> BootstrapSnapshot {
         BootstrapSnapshot(currentUser: user, guilds: [], channels: testChannels, members: [])
@@ -1905,6 +2187,25 @@ private actor ChannelLoadTestProvider: ChatProvider {
         -> MessagePage
     {
         messageRequests[channelID, default: 0] += 1
+        if failsFirstEarlierPage, before != nil {
+            earlierRequests += 1
+            if earlierRequests == 1 {
+                throw ChatProviderError.invalidRequest(
+                    "Synthetic earlier-page timeout."
+                )
+            }
+            return MessagePage(
+                messages: [
+                    Message(
+                        id: MessageID(rawValue: channelID.rawValue - 1),
+                        channelID: channelID,
+                        author: user,
+                        content: "earlier"
+                    )
+                ],
+                hasMoreBefore: false
+            )
+        }
         // Intentionally ignore cancellation to prove the model's generation guard works.
         let delay: Duration =
             channelID == testChannels[1].id ? .milliseconds(100) : .milliseconds(20)
@@ -1916,7 +2217,10 @@ private actor ChannelLoadTestProvider: ChatProvider {
             content: "channel \(channelID)",
             reactions: [Reaction(emoji: "🔥", count: 8)]
         )
-        return MessagePage(messages: [message], hasMoreBefore: false)
+        return MessagePage(
+            messages: [message],
+            hasMoreBefore: failsFirstEarlierPage
+        )
     }
 
     func send(_ draft: SendMessageDraft) async throws -> Message {
@@ -1958,6 +2262,10 @@ private actor ChannelLoadTestProvider: ChatProvider {
 
     func requestCount(for channelID: ChannelID) -> Int {
         messageRequests[channelID, default: 0]
+    }
+
+    func earlierRequestCount() -> Int {
+        earlierRequests
     }
 
     func reactorRequestCount() -> Int {

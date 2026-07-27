@@ -107,13 +107,11 @@ private struct ChatWorkspaceSupplementaryContent: View {
         case .memberInspector:
             MemberInspectorView(
                 sections: model.memberSections,
-                selectedMemberID: model.selectedMember?.id,
+                profilePresentation:
+                    model.inspectorProfilePresentation,
                 isProfilePresented: model.isInspectorProfilePresented,
-                profile: model.selectedProfile,
-                isLoadingProfile: model.isLoadingProfile,
-                profileErrorMessage: model.profileErrorMessage,
                 selectMember: model.selectMember,
-                dismissProfile: model.dismissProfile
+                dismissProfile: model.dismissInspectorProfile
             )
             .frame(width: ChatChromeMetrics.memberListWidth)
             .frame(maxHeight: .infinity)

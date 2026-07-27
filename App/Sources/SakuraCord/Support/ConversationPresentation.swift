@@ -276,8 +276,22 @@ nonisolated enum ConversationBeginningPolicy {
 }
 
 nonisolated enum MessageTimelineSkeletonLayout {
+    static let rowHeight: CGFloat = 44
+    static let rowSpacing: CGFloat = 20
+    static let verticalPadding: CGFloat = 36
+
     static func rowCount(for height: CGFloat) -> Int {
-        max(6, Int(ceil(max(0, height - 36) / 76)))
+        let availableHeight = max(0, height - verticalPadding)
+        return max(
+            6,
+            Int(ceil((availableHeight + rowSpacing) / (rowHeight + rowSpacing)))
+        )
+    }
+
+    static func coveredHeight(rowCount: Int) -> CGFloat {
+        verticalPadding
+            + CGFloat(max(0, rowCount)) * rowHeight
+            + CGFloat(max(0, rowCount - 1)) * rowSpacing
     }
 }
 

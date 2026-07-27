@@ -701,10 +701,21 @@ final class AccountReadStateModel {
             return nil
         }
         let acknowledged = entry.lastAcknowledgedMessageID
-        let unread = messages.filter { message in
-            acknowledged.map { message.id > $0 } ?? true
+        var lowerBound = messages.startIndex
+        var upperBound = messages.endIndex
+        if let acknowledged {
+            while lowerBound < upperBound {
+                let midpoint = lowerBound + (upperBound - lowerBound) / 2
+                if messages[midpoint].id <= acknowledged {
+                    lowerBound = midpoint + 1
+                } else {
+                    upperBound = midpoint
+                }
+            }
         }
-        guard let first = unread.first else { return nil }
+        guard lowerBound < messages.endIndex else { return nil }
+        let firstUnreadIndex = lowerBound
+        let first = messages[firstUnreadIndex]
         let firstLoadedMessageID = messages.first?.id
         let oldestLoadedIsNewerThanAcknowledgement =
             acknowledged.map { acknowledged in
@@ -713,7 +724,10 @@ final class AccountReadStateModel {
         let isLowerBound = hasMoreBefore && oldestLoadedIsNewerThanAcknowledgement
         return TimelineUnreadSummary(
             firstUnreadMessageID: first.id,
-            loadedUnreadCount: unread.count,
+            loadedUnreadCount: messages.distance(
+                from: firstUnreadIndex,
+                to: messages.endIndex
+            ),
             isLowerBound: isLowerBound,
             firstUnreadTimestamp: first.timestamp
         )
