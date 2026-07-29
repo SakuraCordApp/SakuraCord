@@ -166,6 +166,7 @@ actor GatewaySession {
     private let clock: any GatewayClock
     private let random: any GatewayRandomSource
     private let codec: any GatewayCodec
+    private let apiDiagnostics: DiscordAPIDiagnosticStore
     private let eventContinuation: AsyncStream<GatewaySessionEvent>.Continuation
 
     private var state: State = .disconnected
@@ -188,13 +189,15 @@ actor GatewaySession {
         transport: any GatewayTransport,
         clock: any GatewayClock = ContinuousGatewayClock(),
         random: any GatewayRandomSource = SystemGatewayRandomSource(),
-        codec: any GatewayCodec = JSONGatewayCodec()
+        codec: any GatewayCodec = JSONGatewayCodec(),
+        apiDiagnostics: DiscordAPIDiagnosticStore = .shared
     ) {
         self.configuration = configuration
         self.transport = transport
         self.clock = clock
         self.random = random
         self.codec = codec
+        self.apiDiagnostics = apiDiagnostics
         let stream = AsyncStream<GatewaySessionEvent>.makeStream(bufferingPolicy: .bufferingNewest(500))
         events = stream.stream
         eventContinuation = stream.continuation
@@ -228,6 +231,7 @@ actor GatewaySession {
 
     func send(_ data: Data) async throws {
         guard !intentionallyStopped, state == .ready, let socket else { throw GatewaySessionError.stopped }
+        apiDiagnostics.recordGatewayData(direction: "request", data: data)
         try await socket.send(data)
     }
 
@@ -350,6 +354,7 @@ actor GatewaySession {
                 let payloads = try framer.append(message)
                 for payload in payloads {
                     let envelope = try codec.decode(payload)
+                    apiDiagnostics.recordGateway(direction: "response", envelope: envelope)
                     if let outcome = try await process(envelope, generation: activeGeneration) {
                         await activeSocket.close(code: 4000)
                         return outcome
@@ -437,6 +442,10 @@ actor GatewaySession {
                 try await sendResume()
             } else {
                 transition(to: .identifying)
+                apiDiagnostics.recordGatewayData(
+                    direction: "request",
+                    data: configuration.identifyPayload
+                )
                 try await socket?.send(configuration.identifyPayload)
             }
         case 11:
@@ -458,6 +467,7 @@ actor GatewaySession {
             "session_id": .string(sessionID),
             "seq": .number(Double(sequence))
         ]))
+        apiDiagnostics.recordGateway(direction: "request", envelope: envelope)
         try await socket?.send(codec.encode(envelope))
     }
 
@@ -498,7 +508,9 @@ actor GatewaySession {
     private func sendHeartbeat(generation activeGeneration: Int, restartCadence: Bool) async throws {
         guard isActive(activeGeneration), let socket else { throw GatewaySessionError.stopped }
         let data: JSONValue = sequence.map { .number(Double($0)) } ?? .null
-        try await socket.send(codec.encode(GatewayEnvelope(op: 1, data: data)))
+        let envelope = GatewayEnvelope(op: 1, data: data)
+        apiDiagnostics.recordGateway(direction: "request", envelope: envelope)
+        try await socket.send(codec.encode(envelope))
         awaitingHeartbeatACK = true
         if restartCadence, let interval = heartbeatInterval {
             startHeartbeatLoop(generation: activeGeneration, initialDelay: interval, interval: interval)

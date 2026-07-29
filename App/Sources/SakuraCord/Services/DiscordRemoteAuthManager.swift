@@ -52,6 +52,7 @@ nonisolated struct DiscordRemoteAuthPayload: Decodable, Sendable {
 /// owned by `DiscordSessionAuthenticator`.
 actor DiscordRemoteAuthManager {
     private let session: URLSession
+    private let apiDiagnostics: DiscordAPIDiagnosticStore
     private var webSocket: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var heartbeatTask: Task<Void, Never>?
@@ -59,7 +60,11 @@ actor DiscordRemoteAuthManager {
     private var continuations: [UUID: AsyncStream<DiscordRemoteAuthEvent>.Continuation] = [:]
     private var generation = UUID()
 
-    init(session: URLSession? = nil) {
+    init(
+        session: URLSession? = nil,
+        apiDiagnostics: DiscordAPIDiagnosticStore = .shared
+    ) {
+        self.apiDiagnostics = apiDiagnostics
         if let session {
             self.session = session
         } else {
@@ -147,6 +152,11 @@ actor DiscordRemoteAuthManager {
                 case let .data(value): data = value
                 @unknown default: continue
                 }
+                apiDiagnostics.recordWebSocketData(
+                    transport: "remote_auth_gateway",
+                    direction: "response",
+                    data: data
+                )
                 let payload = try JSONDecoder().decode(DiscordRemoteAuthPayload.self, from: data)
                 try await process(payload, encodedPublicKey: encodedPublicKey, generation: generation)
             }
@@ -239,6 +249,11 @@ actor DiscordRemoteAuthManager {
         guard let text = String(data: data, encoding: .utf8) else {
             throw DiscordRemoteAuthError.invalidGatewayPayload
         }
+        apiDiagnostics.recordWebSocketData(
+            transport: "remote_auth_gateway",
+            direction: "request",
+            data: data
+        )
         try await webSocket.send(.string(text))
     }
 

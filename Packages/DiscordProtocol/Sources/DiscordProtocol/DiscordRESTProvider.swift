@@ -42,6 +42,7 @@ public actor DiscordRESTProvider: ChatProvider {
     private let session: URLSession
     private let gatewayTransport: any GatewayTransport
     private let clientMetadata: DiscordClientMetadata
+    private let apiDiagnostics: DiscordAPIDiagnosticStore
     private var continuation: AsyncStream<ClientEvent>.Continuation?
     private var currentUser: User?
     private var authorizationValue: String?
@@ -149,7 +150,8 @@ public actor DiscordRESTProvider: ChatProvider {
         credentials: any CredentialStore,
         handle: CredentialHandle,
         session: URLSession? = nil,
-        fingerprint: String? = nil
+        fingerprint: String? = nil,
+        apiDiagnostics: DiscordAPIDiagnosticStore = .shared
     ) {
         let resolvedSession = session ?? URLSession(configuration: .default)
         self.credentials = credentials
@@ -157,6 +159,7 @@ public actor DiscordRESTProvider: ChatProvider {
         self.session = resolvedSession
         gatewayTransport = URLSessionGatewayTransport(session: resolvedSession)
         clientMetadata = DiscordClientMetadata(fingerprint: fingerprint)
+        self.apiDiagnostics = apiDiagnostics
     }
 
     init(
@@ -164,13 +167,15 @@ public actor DiscordRESTProvider: ChatProvider {
         handle: CredentialHandle,
         session: URLSession,
         gatewayTransport: any GatewayTransport,
-        fingerprint: String? = nil
+        fingerprint: String? = nil,
+        apiDiagnostics: DiscordAPIDiagnosticStore = .shared
     ) {
         self.credentials = credentials
         self.handle = handle
         self.session = session
         self.gatewayTransport = gatewayTransport
         clientMetadata = DiscordClientMetadata(fingerprint: fingerprint)
+        self.apiDiagnostics = apiDiagnostics
     }
 
     public func bootstrap() async throws -> BootstrapSnapshot {
@@ -1994,7 +1999,42 @@ public actor DiscordRESTProvider: ChatProvider {
                         as? NSNumber)?
                     .int64Value ?? 0
             progress(.uploading(fileName: file.name, completed: 0, total: total))
-            let (_, rawResponse) = try await session.upload(for: uploadRequest, fromFile: fileURL)
+            apiDiagnostics.recordHTTPRequest(
+                transport: "attachment_storage",
+                method: "PUT",
+                path: "/attachments/\(slot.id)",
+                body: nil,
+                attempt: 1
+            )
+            let uploadStarted = ContinuousClock.now
+            let rawResponse: URLResponse
+            do {
+                (_, rawResponse) = try await session.upload(
+                    for: uploadRequest,
+                    fromFile: fileURL
+                )
+            } catch {
+                apiDiagnostics.recordHTTPFailure(
+                    transport: "attachment_storage",
+                    method: "PUT",
+                    path: "/attachments/\(slot.id)",
+                    attempt: 1,
+                    duration: uploadStarted.duration(to: .now),
+                    error: error
+                )
+                throw error
+            }
+            if let response = rawResponse as? HTTPURLResponse {
+                apiDiagnostics.recordHTTPResponse(
+                    transport: "attachment_storage",
+                    method: "PUT",
+                    path: "/attachments/\(slot.id)",
+                    attempt: 1,
+                    response: response,
+                    body: Data(),
+                    duration: uploadStarted.duration(to: .now)
+                )
+            }
             guard let response = rawResponse as? HTTPURLResponse,
                   (200 ..< 300).contains(response.statusCode)
             else {
@@ -2431,7 +2471,8 @@ public actor DiscordRESTProvider: ChatProvider {
                 identifyPayload: identifyData,
                 token: token
             ),
-            transport: gatewayTransport
+            transport: gatewayTransport,
+            apiDiagnostics: apiDiagnostics
         )
         gatewaySession = gateway
         gatewayEventTask = Task { [weak self, events = gateway.events] in
@@ -3641,10 +3682,40 @@ extension DiscordRESTProvider {
                 request.httpBody = try JSONEncoder().encode(JSONValue.object(body))
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             }
-            let (data, rawResponse) = try await session.data(for: request)
+            let requestAttempt = attempt + 1
+            apiDiagnostics.recordHTTPRequest(
+                method: method,
+                path: path,
+                query: query,
+                body: request.httpBody,
+                attempt: requestAttempt
+            )
+            let requestStarted = ContinuousClock.now
+            let data: Data
+            let rawResponse: URLResponse
+            do {
+                (data, rawResponse) = try await session.data(for: request)
+            } catch {
+                apiDiagnostics.recordHTTPFailure(
+                    method: method,
+                    path: path,
+                    attempt: requestAttempt,
+                    duration: requestStarted.duration(to: .now),
+                    error: error
+                )
+                throw error
+            }
             guard let response = rawResponse as? HTTPURLResponse else {
                 throw ChatProviderError.invalidRequest("Discord returned an invalid HTTP response.")
             }
+            apiDiagnostics.recordHTTPResponse(
+                method: method,
+                path: path,
+                attempt: requestAttempt,
+                response: response,
+                body: data,
+                duration: requestStarted.duration(to: .now)
+            )
 
             if response.statusCode == 429 {
                 let retryAfter = Self.retryAfter(from: data, response: response)

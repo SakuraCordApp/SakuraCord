@@ -157,10 +157,17 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
 
     private static let opusSilence = Data([0xF8, 0xFF, 0xFE])
 
-    public init(info: VoiceConnectionInfo, configuration: VoiceSessionConfiguration = .init()) {
+    public init(
+        info: VoiceConnectionInfo,
+        configuration: VoiceSessionConfiguration = .init(),
+        gatewayDiagnostics: VoiceGatewayDiagnostics = .disabled
+    ) {
         self.info = info
         self.configuration = configuration
-        gateway = VoiceGatewayConnection(info: info)
+        gateway = VoiceGatewayConnection(
+            info: info,
+            diagnostics: gatewayDiagnostics
+        )
         let stream = AsyncStream<VoiceSessionEvent>.makeStream(bufferingPolicy: .bufferingNewest(1000))
         events = stream.stream
         eventContinuation = stream.continuation

@@ -2,6 +2,28 @@ import Foundation
 @testable import MediaPipeline
 import Testing
 
+@Test func `voice gateway diagnostics preserve direction without retaining traffic`() {
+    final class Capture: @unchecked Sendable {
+        let lock = NSLock()
+        var records: [(VoiceGatewayDiagnosticDirection, Data)] = []
+    }
+    let capture = Capture()
+    let diagnostics = VoiceGatewayDiagnostics { direction, data in
+        capture.lock.withLock {
+            capture.records.append((direction, data))
+        }
+    }
+    diagnostics.record(.request, data: Data("request".utf8))
+    diagnostics.record(.response, data: Data("response".utf8))
+
+    let records = capture.lock.withLock { capture.records }
+    #expect(records.map(\.0) == [.request, .response])
+    #expect(records.map(\.1) == [
+        Data("request".utf8),
+        Data("response".utf8),
+    ])
+}
+
 @Test func `voice gateway JSON codec decodes version eight events`() throws {
     let ready = try VoiceGatewayCodec.decodeJSON(Data(#"{"op":2,"d":{"ssrc":42,"ip":"127.0.0.1","port":5000,"modes":["aead_aes256_gcm_rtpsize"]},"seq":7}"#.utf8))
     #expect(ready == SequencedVoiceGatewayEvent(

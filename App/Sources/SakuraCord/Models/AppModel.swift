@@ -4229,7 +4229,17 @@ final class AppModel {
             return
         }
 
-        let session = DiscordVoiceSession(info: info, configuration: currentVoiceConfiguration())
+        let session = DiscordVoiceSession(
+            info: info,
+            configuration: currentVoiceConfiguration(),
+            gatewayDiagnostics: VoiceGatewayDiagnostics { direction, data in
+                DiscordAPIDiagnosticStore.shared.recordWebSocketData(
+                    transport: "voice_gateway",
+                    direction: direction.rawValue,
+                    data: data
+                )
+            }
+        )
         voiceSession = session
         voiceEventTask?.cancel()
         voiceEventTask = Task { [weak self] in

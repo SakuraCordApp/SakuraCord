@@ -67,6 +67,12 @@ Within the production provider:
   app networking.
 - Every authenticated REST route uses the central transport. Views and feature
   helpers do not create one-off authenticated `URLSession` paths.
+- `DiscordAPIDiagnosticStore` receives REST attempts and responses, attachment
+  uploads, native-authentication traffic, and main, voice, and remote-auth
+  Gateway envelopes at those transport boundaries. It discards user-authored and
+  credential-bearing values before retaining a bounded in-memory session log.
+  The Diagnostics settings pane exports the retained JSON Lines data and
+  reports when older entries were dropped.
 
 The current production capability gates and request contracts are documented
 in [PROTOCOL_BASELINE.md](PROTOCOL_BASELINE.md).

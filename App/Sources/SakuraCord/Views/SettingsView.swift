@@ -1,3 +1,4 @@
+import DiscordProtocol
 import MediaPipeline
 import SwiftUI
 
@@ -14,6 +15,8 @@ struct SettingsView: View {
     @AppStorage("voiceOutputVolume") private var outputVolume = 1.0
     @State private var mediaDevices: MediaDeviceSnapshot = .empty
     @State private var notificationPermission = "Checking…"
+    @State private var apiDiagnosticEntryCount = 0
+    @State private var apiDiagnosticStatus: String?
 
     var body: some View {
         @Bindable var notificationPreferences = model.notificationPreferences
@@ -196,6 +199,44 @@ struct SettingsView: View {
             }
             .formStyle(.grouped)
             .tabItem { Label("Plugins", systemImage: "puzzlepiece.extension") }
+
+            Form {
+                Section("Discord API logs") {
+                    LabeledContent("Retained entries") {
+                        Text(apiDiagnosticEntryCount.formatted())
+                            .monospacedDigit()
+                    }
+
+                    Text(
+                        "Exports retained Discord REST, attachment, authentication, and Gateway request/response metadata from this app session. Message text, names, usernames, profile text, credentials, cookies, challenge data, filenames, and URLs are discarded before logging. Message, user, channel, and server IDs may be included."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                    HStack {
+                        Button("Export API Logs…") {
+                            Task { await exportAPILogs() }
+                        }
+                        Button("Clear Logs", role: .destructive) {
+                            DiscordAPIDiagnosticStore.shared.clear()
+                            apiDiagnosticEntryCount = 0
+                            apiDiagnosticStatus = "The retained API log was cleared."
+                        }
+                    }
+
+                    if let apiDiagnosticStatus {
+                        Text(apiDiagnosticStatus)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
+            .formStyle(.grouped)
+            .tabItem { Label("Diagnostics", systemImage: "stethoscope") }
+            .task {
+                refreshAPIDiagnosticCount()
+            }
         }
         .frame(width: 620, height: 470)
     }
@@ -208,5 +249,24 @@ struct SettingsView: View {
             case .notDetermined: "Not requested"
             @unknown default: "Unknown"
             }
+    }
+
+    private func refreshAPIDiagnosticCount() {
+        apiDiagnosticEntryCount =
+            DiscordAPIDiagnosticStore.shared.retainedEntryCount
+    }
+
+    private func exportAPILogs() async {
+        do {
+            guard let url = try await DiscordAPILogExporter.export() else {
+                apiDiagnosticStatus = "Export cancelled."
+                refreshAPIDiagnosticCount()
+                return
+            }
+            apiDiagnosticStatus = "Exported \(url.lastPathComponent)"
+        } catch {
+            apiDiagnosticStatus = "Export failed: \(error.localizedDescription)"
+        }
+        refreshAPIDiagnosticCount()
     }
 }

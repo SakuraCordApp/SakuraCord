@@ -65,8 +65,17 @@ Every authenticated request goes through `DiscordRESTProvider.perform`:
   Identify;
 - authorization and client metadata applied centrally;
 - conservative request-slot scheduling and server rate-limit state;
-- sanitized route/status/bucket logging; and
+- sanitized route/status/bucket logging;
+- a bounded session-local diagnostics export covering REST attempts and
+  responses, attachment uploads, native authentication, and main, voice, and
+  remote-auth Gateway envelopes; and
 - one provider-wide safety circuit shared with the Gateway session.
+
+Diagnostics payloads are allowlisted and redacted before they enter the
+in-memory store. The export may retain protocol metadata and snowflake IDs, but
+never retains credentials, cookies, challenge values, message content, names,
+usernames, profile text, filenames, or URLs. It is a debugging record of the
+current app session, not an unbounded traffic archive.
 
 The default attempt budget is exact:
 

@@ -5,11 +5,38 @@ import SakuraCordModels
 
 private let voiceGatewayLogger = Logger(subsystem: "dev.sakuracord.SakuraCord", category: "VoiceGateway")
 
+public enum VoiceGatewayDiagnosticDirection: String, Sendable {
+    case request
+    case response
+}
+
+public struct VoiceGatewayDiagnostics: Sendable {
+    public static let disabled = VoiceGatewayDiagnostics { _, _ in }
+
+    private let recorder:
+        @Sendable (VoiceGatewayDiagnosticDirection, Data) -> Void
+
+    public init(
+        recorder:
+            @escaping @Sendable (VoiceGatewayDiagnosticDirection, Data) -> Void
+    ) {
+        self.recorder = recorder
+    }
+
+    public func record(
+        _ direction: VoiceGatewayDiagnosticDirection,
+        data: Data
+    ) {
+        recorder(direction, data)
+    }
+}
+
 public actor VoiceGatewayConnection {
     public let events: AsyncStream<SequencedVoiceGatewayEvent>
 
     private let info: VoiceConnectionInfo
     private let session: URLSession
+    private let diagnostics: VoiceGatewayDiagnostics
     private let continuation: AsyncStream<SequencedVoiceGatewayEvent>.Continuation
     private var socket: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
@@ -17,9 +44,14 @@ public actor VoiceGatewayConnection {
     private var lastSequence = -1
     private var lastHeartbeatAcknowledged = true
 
-    public init(info: VoiceConnectionInfo, session: URLSession = .shared) {
+    public init(
+        info: VoiceConnectionInfo,
+        session: URLSession = .shared,
+        diagnostics: VoiceGatewayDiagnostics = .disabled
+    ) {
         self.info = info
         self.session = session
+        self.diagnostics = diagnostics
         let stream = AsyncStream<SequencedVoiceGatewayEvent>.makeStream(bufferingPolicy: .bufferingNewest(1000))
         events = stream.stream
         continuation = stream.continuation
@@ -133,6 +165,15 @@ public actor VoiceGatewayConnection {
                 return
             }
 
+            switch message {
+            case let .data(data):
+                diagnostics.record(.response, data: data)
+            case let .string(string):
+                diagnostics.record(.response, data: Data(string.utf8))
+            @unknown default:
+                break
+            }
+
             do {
                 let sequenced: SequencedVoiceGatewayEvent = switch message {
                 case let .data(data): try VoiceGatewayCodec.decodeBinary(data)
@@ -213,11 +254,13 @@ public actor VoiceGatewayConnection {
 
     private func sendText(_ text: String) async throws {
         guard let socket else { throw URLError(.notConnectedToInternet) }
+        diagnostics.record(.request, data: Data(text.utf8))
         try await socket.send(.string(text))
     }
 
     private func sendBinary(_ data: Data) async throws {
         guard let socket else { throw URLError(.notConnectedToInternet) }
+        diagnostics.record(.request, data: data)
         try await socket.send(.data(data))
     }
 

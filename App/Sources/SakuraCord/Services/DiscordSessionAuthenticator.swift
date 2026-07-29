@@ -55,16 +55,19 @@ actor DiscordSessionAuthenticator {
     private let credentials: any CredentialStore
     private let session: URLSession
     private let fingerprints: any DiscordFingerprintStoring
+    private let apiDiagnostics: DiscordAPIDiagnosticStore
     private var pendingCaptchaRequest: PendingCaptchaRequest?
     private var pendingRemoteAuthCaptchaRequest: PendingRemoteAuthCaptchaRequest?
 
     init(
         credentials: any CredentialStore = KeychainCredentialStore(),
         session: URLSession? = nil,
-        fingerprints: (any DiscordFingerprintStoring)? = nil
+        fingerprints: (any DiscordFingerprintStoring)? = nil,
+        apiDiagnostics: DiscordAPIDiagnosticStore = .shared
     ) {
         self.credentials = credentials
         self.fingerprints = fingerprints ?? UserDefaultsDiscordFingerprintStore.shared
+        self.apiDiagnostics = apiDiagnostics
         if let session {
             self.session = session
         } else {
@@ -338,10 +341,41 @@ actor DiscordSessionAuthenticator {
         request.timeoutInterval = 20
         request.setValue(normalized, forHTTPHeaderField: "Authorization")
         try DiscordClientMetadata(fingerprint: fingerprint).apply(to: &request)
-        let (data, rawResponse) = try await session.data(for: request)
+        apiDiagnostics.recordHTTPRequest(
+            transport: "authentication",
+            method: "GET",
+            path: "/users/@me",
+            body: nil,
+            attempt: 1
+        )
+        let requestStarted = ContinuousClock.now
+        let data: Data
+        let rawResponse: URLResponse
+        do {
+            (data, rawResponse) = try await session.data(for: request)
+        } catch {
+            apiDiagnostics.recordHTTPFailure(
+                transport: "authentication",
+                method: "GET",
+                path: "/users/@me",
+                attempt: 1,
+                duration: requestStarted.duration(to: .now),
+                error: error
+            )
+            throw error
+        }
         guard let response = rawResponse as? HTTPURLResponse else {
             throw AuthenticationError.invalidResponse
         }
+        apiDiagnostics.recordHTTPResponse(
+            transport: "authentication",
+            method: "GET",
+            path: "/users/@me",
+            attempt: 1,
+            response: response,
+            body: data,
+            duration: requestStarted.duration(to: .now)
+        )
         guard response.statusCode == 200 else {
             throw AuthenticationError.rejected
         }
@@ -377,10 +411,41 @@ actor DiscordSessionAuthenticator {
                 request.setValue(value, forHTTPHeaderField: name)
             }
             try DiscordClientMetadata(fingerprint: fingerprint).apply(to: &request)
-            let (data, rawResponse) = try await session.data(for: request)
+            apiDiagnostics.recordHTTPRequest(
+                transport: "authentication",
+                method: method,
+                path: path,
+                body: body,
+                attempt: attempt + 1
+            )
+            let requestStarted = ContinuousClock.now
+            let data: Data
+            let rawResponse: URLResponse
+            do {
+                (data, rawResponse) = try await session.data(for: request)
+            } catch {
+                apiDiagnostics.recordHTTPFailure(
+                    transport: "authentication",
+                    method: method,
+                    path: path,
+                    attempt: attempt + 1,
+                    duration: requestStarted.duration(to: .now),
+                    error: error
+                )
+                throw error
+            }
             guard let response = rawResponse as? HTTPURLResponse else {
                 throw AuthenticationError.invalidResponse
             }
+            apiDiagnostics.recordHTTPResponse(
+                transport: "authentication",
+                method: method,
+                path: path,
+                attempt: attempt + 1,
+                response: response,
+                body: data,
+                duration: requestStarted.duration(to: .now)
+            )
             let retryStatuses = [429, 500, 502, 504]
             if retryStatuses.contains(response.statusCode),
                attempt < maximumRetries,
