@@ -106,9 +106,9 @@ struct SakuraCordApp: App {
                 }
         }
         .defaultSize(width: 1280, height: 780)
-        .windowToolbarStyle(.unified(showsTitle: false))
         .windowBackgroundDragBehavior(.disabled)
         .commands {
+            SidebarCommands()
             SakuraCordCommands(updateController: appDelegate.updateController)
         }
 

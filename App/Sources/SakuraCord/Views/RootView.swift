@@ -98,136 +98,13 @@ private struct ChatRootView: View {
                 model: model,
                 presentsForumComposer: $presentsForumComposer
             )
-                .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
-                .toolbar(id: "sakuracord-main-v2") {
-                    ToolbarItem(id: "channel") {
-                        if let channel = model.selectedChannel {
-                            if isDirectMessageSelected {
-                                ConversationToolbarLabel(
-                                    title: channel.name,
-                                    systemImage: channelToolbarSymbol(channel),
-                                    subtitle: directMessageToolbarSubtitle(for: channel)
-                                )
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 5)
-                            } else {
-                                Button { model.showQuickSwitcher = true } label: {
-                                    ConversationToolbarLabel(
-                                        title: channel.name,
-                                        systemImage: channelToolbarSymbol(channel)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    .visibilityPriority(.high)
-                    ToolbarSpacer(.flexible)
-                    ToolbarItem(id: "thread") {
-                        if let presentation = supplementaryToolbarPresentation {
-                            HStack(spacing: 0) {
-                                Button { model.showQuickSwitcher = true } label: {
-                                    ConversationToolbarLabel(
-                                        title: presentation.title,
-                                        systemImage: presentation.systemImage,
-                                        subtitle: presentation.subtitle
-                                    )
-                                }
-                                Spacer(minLength: 0)
-                            }
-                            .frame(
-                                width: max(supplementaryPaneFrame.width - 64, 120),
-                                alignment: .leading
-                            )
-                        }
-                    }
-                    .visibilityPriority(.high)
-                    ToolbarItem(id: "close-thread") {
-                        if hasOpenSupplementaryConversation {
-                            Button(action: closeSupplementaryConversation) {
-                                Label("Close conversation", systemImage: "xmark")
-                                    .labelStyle(.iconOnly)
-                            }
-                            .help(model.openThread == nil ? "Close voice channel chat" : "Close thread")
-                        }
-                    }
-                    .visibilityPriority(.high)
-                    ToolbarSpacer(.fixed)
-                    ToolbarItem(id: "dm-voice-call") {
-                        if let channel = selectedPrivateChannel {
-                            Button {
-                                Task {
-                                    if model.privateCall(in: channel.id) != nil {
-                                        await model.joinPrivateCall(in: channel)
-                                    } else {
-                                        await model.startPrivateCall(in: channel)
-                                    }
-                                }
-                            } label: {
-                                Label(
-                                    model.privateCall(in: channel.id) == nil
-                                        ? "Start Voice Call" : "Join Voice Call",
-                                    systemImage: "phone.fill"
-                                )
-                            }
-                            .disabled(model.activeVoiceChannel?.id == channel.id)
-                            .help(
-                                model.privateCall(in: channel.id) == nil
-                                    ? "Start Voice Call" : "Join Ongoing Call"
-                            )
-                        }
-                    }
-                    .visibilityPriority(.high)
-                    ToolbarItem(id: "dm-video-call") {
-                        if let channel = selectedPrivateChannel {
-                            Button {
-                                Task {
-                                    if model.privateCall(in: channel.id) != nil {
-                                        await model.joinPrivateCall(in: channel, withVideo: true)
-                                    } else {
-                                        await model.startPrivateCall(in: channel, withVideo: true)
-                                    }
-                                }
-                            } label: {
-                                Label("Start Video Call", systemImage: "video.fill")
-                            }
-                            .disabled(model.activeVoiceChannel?.id == channel.id)
-                            .help(
-                                model.privateCall(in: channel.id) == nil
-                                    ? "Start Video Call" : "Join Ongoing Call with Video"
-                            )
-                        }
-                    }
-                    .visibilityPriority(.high)
-                    ToolbarItem(id: "voice-chat") {
-                        if let channel = selectedVoiceChannel, !model.isVoiceChatOpen {
-                            Button { model.openVoiceChat(for: channel) } label: {
-                                Label("Open Chat", systemImage: "bubble.left.fill")
-                            }
-                            .help("Open voice channel chat")
-                        }
-                    }
-                    .visibilityPriority(.high)
-                    ToolbarItem(id: "quick-switcher") {
-                        if !isDirectMessageSelected,
-                           !hasOpenSupplementaryConversation,
-                           selectedVoiceChannel == nil
-                        {
-                            Button { model.showQuickSwitcher = true } label: { Label("Quick Switcher", systemImage: "magnifyingglass") }
-                        }
-                    }
-                    .visibilityPriority(.high)
-                    ToolbarItem(id: "members") {
-                        if !hasOpenSupplementaryConversation, selectedVoiceChannel == nil {
-                            Button { model.showInspector.toggle() } label: {
-                                Label(
-                                    isDirectMessageSelected ? "People" : "Members",
-                                    systemImage: "person.2"
-                                )
-                            }
-                        }
-                    }
-                    .visibilityPriority(.high)
-                }
+            .navigationTitle("")
+            .toolbar {
+                detailToolbar
+            }
+        }
+        .toolbar {
+            conversationToolbar
         }
         .overlay(alignment: .topLeading) {
             ZStack(alignment: .topLeading) {
@@ -360,6 +237,136 @@ private struct ChatRootView: View {
         }
     }
 
+    @ToolbarContentBuilder
+    private var conversationToolbar: some ToolbarContent {
+        if let channel = model.selectedChannel {
+            ToolbarItem(placement: .navigation) {
+                if isDirectMessageSelected {
+                    ConversationToolbarLabel(
+                        title: channel.name,
+                        systemImage: channelToolbarSymbol(channel),
+                        subtitle: directMessageToolbarSubtitle(for: channel)
+                    )
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                } else {
+                    Button { model.showQuickSwitcher = true } label: {
+                        ConversationToolbarLabel(
+                            title: channel.name,
+                            systemImage: channelToolbarSymbol(channel)
+                        )
+                    }
+                }
+            }
+            .visibilityPriority(.high)
+        }
+
+        if let presentation = supplementaryToolbarPresentation {
+            ToolbarItem {
+                HStack(spacing: 0) {
+                    Button { model.showQuickSwitcher = true } label: {
+                        ConversationToolbarLabel(
+                            title: presentation.title,
+                            systemImage: presentation.systemImage,
+                            subtitle: presentation.subtitle
+                        )
+                    }
+                    Spacer(minLength: 0)
+                }
+                .frame(
+                    width: max(supplementaryPaneFrame.width - 64, 120),
+                    alignment: .leading
+                )
+            }
+            .visibilityPriority(.high)
+        }
+
+        if hasOpenSupplementaryConversation {
+            ToolbarItem {
+                Button(action: closeSupplementaryConversation) {
+                    Label("Close conversation", systemImage: "xmark")
+                        .labelStyle(.iconOnly)
+                }
+                .help(model.openThread == nil ? "Close voice channel chat" : "Close thread")
+            }
+            .visibilityPriority(.high)
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var detailToolbar: some ToolbarContent {
+        ToolbarSpacer(.flexible)
+
+        if let channel = selectedPrivateChannel {
+            ToolbarItemGroup {
+                Button {
+                    Task {
+                        if model.privateCall(in: channel.id) != nil {
+                            await model.joinPrivateCall(in: channel)
+                        } else {
+                            await model.startPrivateCall(in: channel)
+                        }
+                    }
+                } label: {
+                    Label(
+                        model.privateCall(in: channel.id) == nil
+                            ? "Start Voice Call" : "Join Voice Call",
+                        systemImage: "phone.fill"
+                    )
+                }
+                .disabled(model.activeVoiceChannel?.id == channel.id)
+                .help(
+                    model.privateCall(in: channel.id) == nil
+                        ? "Start Voice Call" : "Join Ongoing Call"
+                )
+
+                Button {
+                    Task {
+                        if model.privateCall(in: channel.id) != nil {
+                            await model.joinPrivateCall(in: channel, withVideo: true)
+                        } else {
+                            await model.startPrivateCall(in: channel, withVideo: true)
+                        }
+                    }
+                } label: {
+                    Label("Start Video Call", systemImage: "video.fill")
+                }
+                .disabled(model.activeVoiceChannel?.id == channel.id)
+                .help(
+                    model.privateCall(in: channel.id) == nil
+                        ? "Start Video Call" : "Join Ongoing Call with Video"
+                )
+            }
+            .visibilityPriority(.high)
+        } else if let channel = selectedVoiceChannel, !model.isVoiceChatOpen {
+            ToolbarItem {
+                Button { model.openVoiceChat(for: channel) } label: {
+                    Label("Open Chat", systemImage: "bubble.left.fill")
+                }
+                .help("Open voice channel chat")
+            }
+            .visibilityPriority(.high)
+        } else if !hasOpenSupplementaryConversation {
+            ToolbarItemGroup {
+                Button { model.showQuickSwitcher = true } label: {
+                    Label("Quick Switcher", systemImage: "magnifyingglass")
+                }
+            }
+            .visibilityPriority(.high)
+        }
+
+        if !hasOpenSupplementaryConversation, selectedVoiceChannel == nil {
+            ToolbarSpacer(.fixed)
+
+            ToolbarItem {
+                Button { model.showInspector.toggle() } label: {
+                    inspectorToolbarLabel
+                }
+            }
+            .visibilityPriority(.high)
+        }
+    }
+
     private var sidebarDisplayName: String {
         guard let guild = selectedGuild else { return "Messages" }
         return guild.name.isEmpty ? "Unnamed Server" : guild.name
@@ -428,6 +435,15 @@ private struct ChatRootView: View {
     private var isDirectMessageSelected: Bool {
         guard let channel = model.selectedChannel else { return false }
         return channel.kind == .directMessage || channel.kind == .groupDirectMessage
+    }
+
+    private var inspectorToolbarLabel: some View {
+        Label(
+            isDirectMessageSelected ? "People" : "Members",
+            systemImage: model.showInspector
+                ? "person.2.fill"
+                : "person.2"
+        )
     }
 
     private var selectedPrivateChannel: Channel? {

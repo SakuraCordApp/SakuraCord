@@ -158,7 +158,6 @@ private struct DirectMessageProfileInspector: View {
         }
         .frame(width: ChatChromeMetrics.memberListWidth)
         .frame(maxHeight: .infinity)
-        .ignoresSafeArea(.container, edges: .top)
         .task(id: recipient.id) {
             model.showInspectorProfile(for: recipient)
         }

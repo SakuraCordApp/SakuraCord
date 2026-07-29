@@ -66,7 +66,6 @@ struct ChannelSidebarView: View {
                 updateStatus: updateStatus
             )
         }
-        .navigationTitle("")
         .overlay {
             SidebarChromeSeparator(
                 cornerRadius: ChatChromeMetrics.sidebarContentCornerRadius,

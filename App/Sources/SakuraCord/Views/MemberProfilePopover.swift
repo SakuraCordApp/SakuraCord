@@ -52,7 +52,6 @@ struct MemberProfilePopover: View {
                     )
             case .inspector:
                 profileContent
-                    .ignoresSafeArea(.container, edges: .top)
                     .frame(
                         maxWidth: .infinity,
                         maxHeight: .infinity,
