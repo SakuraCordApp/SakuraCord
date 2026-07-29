@@ -23,7 +23,11 @@ struct ChatWorkspaceView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             if let supplementaryContent = presentation.supplementaryContent {
-                Divider()
+                if supplementaryContent != .memberInspector
+                    || model.selectedChannel?.kind != .directMessage
+                {
+                    Divider()
+                }
                 ChatWorkspaceSupplementaryContent(model: model, content: supplementaryContent)
             }
         }
@@ -158,6 +162,14 @@ private struct DirectMessageProfileInspector: View {
         }
         .frame(width: ChatChromeMetrics.memberListWidth)
         .frame(maxHeight: .infinity)
+        .clipShape(
+            ConcentricRectangle(
+                topLeadingCorner: .fixed(ChatChromeMetrics.sidebarContentCornerRadius),
+                topTrailingCorner: .fixed(ChatChromeMetrics.sidebarContentCornerRadius),
+                bottomLeadingCorner: .fixed(ChatChromeMetrics.sidebarContentCornerRadius),
+                bottomTrailingCorner: .concentric
+            )
+        )
         .task(id: recipient.id) {
             model.showInspectorProfile(for: recipient)
         }
