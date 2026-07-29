@@ -47,22 +47,78 @@ jobs:
           fi
           echo "SAKURACORD_VERSION=$version" >> "$GITHUB_ENV"
           echo "SAKURACORD_BUILD_NUMBER=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+          echo "SAKURACORD_RELEASE_TAG=$GITHUB_REF_NAME" >> "$GITHUB_ENV"
+          echo "SAKURACORD_DMG_PATH=dist/SakuraCord v$version.dmg" >> "$GITHUB_ENV"
+      - name: Validate Sparkle release secrets
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          SPARKLE_ED_PUBLIC_KEY: ${{ secrets.SPARKLE_ED_PUBLIC_KEY }}
+          SPARKLE_ADHOC_RELEASE_ACK: ${{ secrets.SPARKLE_ADHOC_RELEASE_ACK }}
+        run: |
+          if [[ -z "$SPARKLE_ED_PRIVATE_KEY" || -z "$SPARKLE_ED_PUBLIC_KEY" ]]; then
+            echo "SPARKLE_ED_PRIVATE_KEY and SPARKLE_ED_PUBLIC_KEY must be configured." >&2
+            exit 1
+          fi
+          private_key_bytes="$(printf '%s' "$SPARKLE_ED_PRIVATE_KEY" | base64 -D | wc -c | tr -d '[:space:]')"
+          public_key_bytes="$(printf '%s' "$SPARKLE_ED_PUBLIC_KEY" | base64 -D | wc -c | tr -d '[:space:]')"
+          if [[ "$private_key_bytes" != "32" || "$public_key_bytes" != "32" ]]; then
+            echo "Sparkle secrets must contain base64-encoded 32-byte Ed25519 keys." >&2
+            exit 1
+          fi
+          if [[ "$SPARKLE_ADHOC_RELEASE_ACK" != "ad-hoc-updates-are-not-notarized" ]]; then
+            echo "Set SPARKLE_ADHOC_RELEASE_ACK only after reviewing the documented distribution limitation." >&2
+            exit 1
+          fi
       - name: Install DMG tooling
         run: |
           python3 -m venv "$RUNNER_TEMP/dmgbuild"
           "$RUNNER_TEMP/dmgbuild/bin/pip" install "dmgbuild==1.6.7"
           echo "DMGBUILD=$RUNNER_TEMP/dmgbuild/bin/dmgbuild" >> "$GITHUB_ENV"
       - name: Package DMG
+        env:
+          SAKURACORD_ENABLE_UPDATES: 1
+          SPARKLE_ED_PUBLIC_KEY: ${{ secrets.SPARKLE_ED_PUBLIC_KEY }}
         run: ./script/package_dmg.sh
+      - name: Generate GitHub release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method POST \
+            "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+            --raw-field "tag_name=$GITHUB_REF_NAME" \
+            --raw-field "target_commitish=$GITHUB_SHA" \
+            --jq .body > dist/release-notes.md
+          if ! grep -q '[^[:space:]]' dist/release-notes.md; then
+            echo "GitHub generated empty release notes." >&2
+            exit 1
+          fi
+      - name: Generate and validate signed Sparkle appcast
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          SPARKLE_ED_PUBLIC_KEY: ${{ secrets.SPARKLE_ED_PUBLIC_KEY }}
+        run: |
+          ./script/generate_appcast.sh \
+            "$SAKURACORD_DMG_PATH" dist/appcast.xml dist/release-notes.md
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist/SakuraCord.dmg --clobber
+            is_draft="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)"
+            if [[ "$is_draft" != "true" ]]; then
+              echo "Refusing to replace assets on an already published release." >&2
+              exit 1
+            fi
+            gh release upload "$GITHUB_REF_NAME" \
+              "$SAKURACORD_DMG_PATH" dist/appcast.xml --clobber
           else
-            gh release create "$GITHUB_REF_NAME" dist/SakuraCord.dmg \
+            gh release create "$GITHUB_REF_NAME" \
+              "$SAKURACORD_DMG_PATH" dist/appcast.xml \
+              --draft \
               --title "SakuraCord $GITHUB_REF_NAME" \
               --verify-tag \
-              --generate-notes
+              --notes-file dist/release-notes.md
           fi
+          gh release edit "$GITHUB_REF_NAME" \
+            --notes-file dist/release-notes.md \
+            --draft=false

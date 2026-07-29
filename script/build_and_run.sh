@@ -5,6 +5,8 @@ MODE="${1:-run}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 # shellcheck source=worktree_runtime.sh
 source "$ROOT_DIR/script/worktree_runtime.sh"
+# shellcheck source=release_metadata.sh
+source "$ROOT_DIR/script/release_metadata.sh"
 
 case "$MODE" in
   package|package-release|--offline|--offline-long-server-list|--offline-forum-performance|--offline-chat-performance|--offline-chat-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-media-performance-autoscroll|--verify) ;;
@@ -31,15 +33,39 @@ MACOS="$CONTENTS/MacOS"
 FRAMEWORKS="$CONTENTS/Frameworks"
 RESOURCES="$CONTENTS/Resources"
 PRODUCT_NAME="$SAKURACORD_PRODUCT_NAME"
-BUNDLE_SHORT_VERSION="${SAKURACORD_VERSION:-0.1.0}"
+BUNDLE_SHORT_VERSION="$(sakuracord_release_version "$ROOT_DIR")"
 BUNDLE_BUILD_VERSION="${SAKURACORD_BUILD_NUMBER:-1}"
-if [[ ! "$BUNDLE_SHORT_VERSION" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
-  echo "SAKURACORD_VERSION must contain one to three dot-separated integers." >&2
-  exit 2
-fi
 if [[ ! "$BUNDLE_BUILD_VERSION" =~ ^[0-9]+$ ]]; then
   echo "SAKURACORD_BUILD_NUMBER must be an integer." >&2
   exit 2
+fi
+UPDATES_ENABLED="${SAKURACORD_ENABLE_UPDATES:-0}"
+if [[ "$UPDATES_ENABLED" != "0" && "$UPDATES_ENABLED" != "1" ]]; then
+  echo "SAKURACORD_ENABLE_UPDATES must be 0 or 1." >&2
+  exit 2
+fi
+if [[ "$UPDATES_ENABLED" == "1" ]]; then
+  if [[ "$SAKURACORD_IS_MAIN_WORKTREE" -ne 1 ]]; then
+    echo "Production updates can only be enabled for the canonical main-checkout bundle." >&2
+    exit 2
+  fi
+  if [[ -z "${SPARKLE_ED_PUBLIC_KEY:-}" ]]; then
+    echo "SPARKLE_ED_PUBLIC_KEY is required when production updates are enabled." >&2
+    exit 2
+  fi
+  if ! public_key_bytes="$(
+    printf '%s' "$SPARKLE_ED_PUBLIC_KEY" \
+      | base64 -D 2>/dev/null \
+      | wc -c \
+      | tr -d '[:space:]'
+  )"; then
+    echo "SPARKLE_ED_PUBLIC_KEY is not valid base64." >&2
+    exit 2
+  fi
+  if [[ "$public_key_bytes" != "32" ]]; then
+    echo "SPARKLE_ED_PUBLIC_KEY must be a base64-encoded 32-byte Ed25519 public key." >&2
+    exit 2
+  fi
 fi
 BUILD_FLAGS=()
 if [[ "$MODE" == "package-release" ]]; then
@@ -55,9 +81,13 @@ fi
 
 sakuracord_acquire_operation_lock
 ICON_STAGING_DIR=""
+ENTITLEMENTS_STAGING=""
 cleanup() {
   if [[ -n "$ICON_STAGING_DIR" && -d "$ICON_STAGING_DIR" ]]; then
     rm -rf "$ICON_STAGING_DIR"
+  fi
+  if [[ -n "$ENTITLEMENTS_STAGING" && -f "$ENTITLEMENTS_STAGING" ]]; then
+    rm -f "$ENTITLEMENTS_STAGING"
   fi
   sakuracord_release_operation_lock
 }
@@ -138,7 +168,32 @@ cat >"$CONTENTS/Info.plist" <<PLIST
 </plist>
 PLIST
 
-codesign --force --sign - --entitlements "$ROOT_DIR/Config/SakuraCord.entitlements" "$APP_BUNDLE" >/dev/null
+if [[ "$UPDATES_ENABLED" == "1" ]]; then
+  /usr/libexec/PlistBuddy -c "Add :SakuraCordUpdatesEnabled bool true" "$CONTENTS/Info.plist"
+  /usr/libexec/PlistBuddy -c \
+    "Add :SUFeedURL string https://github.com/SakuraCordApp/SakuraCord/releases/latest/download/appcast.xml" \
+    "$CONTENTS/Info.plist"
+  /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $SPARKLE_ED_PUBLIC_KEY" "$CONTENTS/Info.plist"
+  /usr/libexec/PlistBuddy -c "Add :SUEnableAutomaticChecks bool true" "$CONTENTS/Info.plist"
+  /usr/libexec/PlistBuddy -c "Add :SUScheduledCheckInterval integer 21600" "$CONTENTS/Info.plist"
+  /usr/libexec/PlistBuddy -c "Add :SUAutomaticallyUpdate bool false" "$CONTENTS/Info.plist"
+  /usr/libexec/PlistBuddy -c "Add :SUAllowsAutomaticUpdates bool true" "$CONTENTS/Info.plist"
+  /usr/libexec/PlistBuddy -c "Add :SUEnableInstallerLauncherService bool true" "$CONTENTS/Info.plist"
+  /usr/libexec/PlistBuddy -c "Add :SUVerifyUpdateBeforeExtraction bool true" "$CONTENTS/Info.plist"
+  /usr/libexec/PlistBuddy -c "Add :SURequireSignedFeed bool true" "$CONTENTS/Info.plist"
+fi
+plutil -lint "$CONTENTS/Info.plist" >/dev/null
+
+ENTITLEMENTS_STAGING="$(mktemp "$DIST_DIR/SakuraCord.entitlements.XXXXXX")"
+sed "s/__SAKURACORD_BUNDLE_IDENTIFIER__/$BUNDLE_ID/g" \
+  "$ROOT_DIR/Config/SakuraCord.entitlements" >"$ENTITLEMENTS_STAGING"
+if [[ "$UPDATES_ENABLED" != "1" ]]; then
+  /usr/libexec/PlistBuddy -c \
+    "Delete :com.apple.security.temporary-exception.mach-lookup.global-name" \
+    "$ENTITLEMENTS_STAGING"
+fi
+plutil -lint "$ENTITLEMENTS_STAGING" >/dev/null
+codesign --force --sign - --entitlements "$ENTITLEMENTS_STAGING" "$APP_BUNDLE" >/dev/null
 
 open_app() {
   /usr/bin/open -n "$APP_BUNDLE" "$@"

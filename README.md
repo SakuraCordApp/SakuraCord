@@ -27,7 +27,7 @@
   </p>
 
   <p>
-    <a href="https://github.com/SakuraCordApp/SakuraCord/releases/latest/download/SakuraCord.dmg">Download DMG</a>
+    <a href="https://github.com/SakuraCordApp/SakuraCord/releases/latest">Download DMG</a>
     ·
     <a href="#build-from-source">Build from source</a>
     ·
@@ -91,7 +91,7 @@ Mac app.
 ## Download
 
 Download the newest
-[SakuraCord.dmg](https://github.com/SakuraCordApp/SakuraCord/releases/latest/download/SakuraCord.dmg)
+[Download the latest versioned DMG](https://github.com/SakuraCordApp/SakuraCord/releases/latest)
 directly, or browse its notes and checksums on
 [GitHub Releases](https://github.com/SakuraCordApp/SakuraCord/releases/latest).
 
@@ -99,8 +99,8 @@ directly, or browse its notes and checksums on
 | --- | --- |
 | **Current release** | [Latest GitHub release](https://github.com/SakuraCordApp/SakuraCord/releases/latest) |
 | **System requirement** | macOS 27 or newer |
-| **Package** | [Download `SakuraCord.dmg`](https://github.com/SakuraCordApp/SakuraCord/releases/latest/download/SakuraCord.dmg) |
-| **Update channel** | GitHub Releases |
+| **Package** | [Download the latest versioned DMG](https://github.com/SakuraCordApp/SakuraCord/releases/latest) |
+| **Update channel** | Signed GitHub Releases, checked automatically every six hours or manually through **Check for Updates…** |
 
 Open the DMG and move SakuraCord into Applications. Current release artifacts
 are ad-hoc signed rather than notarized, so macOS may require approval from
@@ -214,13 +214,77 @@ builds.
 ## Releases and development
 
 Version tags drive the release workflow. A tag matching `vMAJOR.MINOR.PATCH`
-builds the app, verifies its nested signatures, packages the DMG, and publishes
-the result through GitHub Actions.
+builds the app, verifies its nested signatures, packages the DMG, generates and
+verifies a Sparkle-signed appcast, and publishes both files through GitHub
+Actions. The packaged app and native About panel use that release version, and
+the downloadable archive is named `SakuraCord vMAJOR.MINOR.PATCH.dmg`.
 
 ```sh
 git tag v0.1.0
 git push origin v0.1.0
 ```
+
+### One-time Sparkle release setup
+
+SakuraCord pins the official Sparkle 2.9.4 Swift package. Resolve it, locate the
+bundled official tools, and generate one Ed25519 keypair on a trusted maintainer
+Mac:
+
+```sh
+swift package --package-path App resolve
+find App/.build/artifacts -path '*/bin/generate_keys' -type f
+App/.build/artifacts/sparkle/Sparkle/bin/generate_keys
+App/.build/artifacts/sparkle/Sparkle/bin/generate_keys -x sparkle-private-key
+```
+
+Copy the printed base64 public key, back up `sparkle-private-key` in an offline
+secret store, and configure these exact GitHub Actions repository secrets:
+
+```sh
+gh secret set SPARKLE_ED_PRIVATE_KEY < sparkle-private-key
+gh secret set SPARKLE_ED_PUBLIC_KEY
+printf '%s' 'ad-hoc-updates-are-not-notarized' | gh secret set SPARKLE_ADHOC_RELEASE_ACK
+```
+
+`SPARKLE_ED_PUBLIC_KEY` is the public value printed by `generate_keys`.
+`SPARKLE_ADHOC_RELEASE_ACK` is an explicit acknowledgement of the current
+distribution limitation described below. Remove the exported working copy only
+after confirming the offline backup and repository secrets.
+
+The release job fails before publishing when these secrets are absent or
+malformed, when the private and public keys do not match the packaged app, when
+Sparkle cannot sign the archive/feed, or when appcast, bundle, URL, version, or
+nested-signature validation fails. Local, debug, and linked-worktree packages
+do not embed the production feed or public key and never perform update checks.
+
+Canonical releases check the signed feed every six hours while SakuraCord is
+running and after launch when a check is overdue. Users can change automatic
+checking and downloading in **Settings → General**, and those preferences
+persist through Sparkle across launches. A new release opens Sparkle's standard
+update alert with the complete GitHub-generated release notes. Installation is
+manual by default, and the alert lets the user opt into automatically
+downloading and installing future updates. The GitHub Release and signed
+appcast receive the same generated Markdown body so their changelogs cannot
+drift. Sparkle's standard UI reports no-update, network, download, signature,
+and installation failures without crashing SakuraCord.
+
+Current artifacts remain ad-hoc signed and are not notarized. Sparkle's EdDSA
+signature authenticates the update archive and signed feed, but it does not
+replace Apple Developer ID signing, hardened-runtime distribution, or
+notarization. Gatekeeper behavior for an in-place update must therefore be
+verified manually from an older public build before maintainers rely on the
+channel; the GitHub DMG remains the fallback. The workflow does not claim that
+this verification has occurred.
+
+Treat the Sparkle private key as irreplaceable while releases remain ad-hoc
+signed. Sparkle's supported Ed25519 key-rotation fallback requires Developer ID
+signed application updates (and, with pre-extraction verification enabled, a
+Developer ID signed DMG). Do not replace either key secret in place. To rotate,
+first establish and verify a Developer ID signed/notarized transition release
+using the old Sparkle key, then follow Sparkle's current key-rotation procedure
+in a later release while keeping the Apple signing identity stable. If the key
+is lost or compromised before that transition, stop publishing the appcast and
+ship a manual-download migration rather than weakening validation.
 
 Before proposing a change:
 

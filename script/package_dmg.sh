@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 # shellcheck source=worktree_runtime.sh
 source "$ROOT_DIR/script/worktree_runtime.sh"
+# shellcheck source=release_metadata.sh
+source "$ROOT_DIR/script/release_metadata.sh"
 
 if [[ "$SAKURACORD_IS_MAIN_WORKTREE" -ne 1 ]]; then
   echo "Release DMGs must be built from the main checkout, not a linked worktree." >&2
@@ -11,7 +13,9 @@ if [[ "$SAKURACORD_IS_MAIN_WORKTREE" -ne 1 ]]; then
 fi
 
 DMGBUILD="${DMGBUILD:-dmgbuild}"
-OUTPUT_PATH="${1:-$ROOT_DIR/dist/SakuraCord.dmg}"
+RELEASE_VERSION="$(sakuracord_release_version "$ROOT_DIR")"
+DMG_NAME="$(sakuracord_release_dmg_name "$RELEASE_VERSION")"
+OUTPUT_PATH="${1:-$ROOT_DIR/dist/$DMG_NAME}"
 SETTINGS="$ROOT_DIR/App/Packaging/DMG/settings.py"
 
 if [[ "$OUTPUT_PATH" != /* ]]; then
@@ -35,10 +39,10 @@ trap cleanup EXIT
 
 export SAKURACORD_DMG_APP_BUNDLE="$SAKURACORD_APP_BUNDLE"
 export SAKURACORD_DMG_BACKGROUND="$ROOT_DIR/App/Packaging/DMG/background.png"
-"$DMGBUILD" -s "$SETTINGS" SakuraCord "$DMG_TEMP_DIR/SakuraCord.dmg"
-hdiutil verify "$DMG_TEMP_DIR/SakuraCord.dmg"
+"$DMGBUILD" -s "$SETTINGS" SakuraCord "$DMG_TEMP_DIR/$DMG_NAME"
+hdiutil verify "$DMG_TEMP_DIR/$DMG_NAME"
 rm -f "$OUTPUT_PATH"
-mv "$DMG_TEMP_DIR/SakuraCord.dmg" "$OUTPUT_PATH"
+mv "$DMG_TEMP_DIR/$DMG_NAME" "$OUTPUT_PATH"
 
 printf 'Created %s\n' "$OUTPUT_PATH"
 shasum -a 256 "$OUTPUT_PATH"

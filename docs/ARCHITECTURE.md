@@ -38,6 +38,17 @@ Launch state is explicit:
 High-frequency presentation state such as remote typing is kept in narrower
 observable models so it does not invalidate the complete app tree.
 
+`AppUpdateController` owns Sparkle's `SPUStandardUpdaterController` for the
+application lifetime. It starts only when the canonical release bundle contains
+the complete production update configuration. Source, debug, ad-hoc developer,
+offline, and linked-worktree builds omit that configuration, make no update
+request, and leave the native **Check for Updates…** controls disabled.
+Production checks the signed feed every six hours while the app is running, or
+after launch when a check is overdue, and presents Sparkle's standard update
+alert when a release is available. Sparkle persists the user's automatic-check
+and automatic-download preferences. Installation remains manual by default.
+Sparkle's standard user driver reports no-update and update-cycle failures.
+
 ## Discord boundary
 
 `ChatProvider` is the application-facing boundary. `MockChatProvider` provides
@@ -116,3 +127,13 @@ The canonical icon sources are:
 signature, builds the DMG, verifies the image, and writes its SHA-256 digest.
 Developer ID signing and notarization are not currently part of the release
 workflow.
+
+Tag releases enable the canonical Sparkle configuration, generate a signed
+`appcast.xml` from the same `SakuraCord vX.Y.Z.dmg`, and validate the feed signature,
+archive signature, bundle metadata, and nested code signatures before staging
+both files on a draft GitHub Release and publishing them together. The workflow
+refuses to replace assets on an already published tag. Sparkle signing keys
+exist only in GitHub repository secrets. The workflow generates the GitHub
+release notes once and uses the same complete Markdown body for both the GitHub
+Release and the release notes embedded in the signed appcast. The public feed
+is `https://github.com/SakuraCordApp/SakuraCord/releases/latest/download/appcast.xml`.

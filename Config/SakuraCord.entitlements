@@ -12,5 +12,10 @@
     <true/>
     <key>com.apple.security.files.user-selected.read-only</key>
     <true/>
+    <key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
+    <array>
+        <string>__SAKURACORD_BUNDLE_IDENTIFIER__-spks</string>
+        <string>__SAKURACORD_BUNDLE_IDENTIFIER__-spki</string>
+    </array>
 </dict>
 </plist>

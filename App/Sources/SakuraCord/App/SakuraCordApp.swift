@@ -101,21 +101,28 @@ struct SakuraCordApp: App {
         .defaultSize(width: 1280, height: 780)
         .windowToolbarStyle(.unified(showsTitle: false))
         .windowBackgroundDragBehavior(.disabled)
-        .commands { SakuraCordCommands() }
+        .commands {
+            SakuraCordCommands(updateController: appDelegate.updateController)
+        }
 
         Settings {
-            SettingsView(model: model)
+            SettingsView(
+                model: model,
+                updateController: appDelegate.updateController
+            )
         }
     }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    let updateController = AppUpdateController()
     private let notificationCenterDelegate = SakuraCordNotificationCenterDelegate()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = notificationCenterDelegate
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        updateController.start()
     }
 }
 

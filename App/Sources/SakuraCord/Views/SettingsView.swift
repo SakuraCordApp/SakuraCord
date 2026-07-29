@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SettingsView: View {
     let model: AppModel
+    @ObservedObject var updateController: AppUpdateController
     @AppStorage("sendWithReturn") private var sendWithReturn = true
     @AppStorage("mediaCacheLimit") private var mediaCacheLimit = 2_147_483_648
     @AppStorage("reduceAnimatedMedia") private var reduceAnimatedMedia = false
@@ -18,8 +19,59 @@ struct SettingsView: View {
         @Bindable var notificationPreferences = model.notificationPreferences
         TabView {
             Form {
-                Toggle("Press Return to send messages", isOn: $sendWithReturn)
-                Toggle("Reduce animated media", isOn: $reduceAnimatedMedia)
+                Section("Messages and media") {
+                    Toggle("Press Return to send messages", isOn: $sendWithReturn)
+                    Toggle("Reduce animated media", isOn: $reduceAnimatedMedia)
+                }
+
+                Section("Software updates") {
+                    Toggle(
+                        "Automatically check for updates",
+                        isOn: Binding(
+                            get: {
+                                updateController.automaticallyChecksForUpdates
+                            },
+                            set: {
+                                updateController.setAutomaticallyChecksForUpdates($0)
+                            }
+                        )
+                    )
+                    .disabled(!updateController.isEnabled)
+                    .accessibilityHint(
+                        "Uses SakuraCord’s signed update feed on the configured schedule."
+                    )
+
+                    Toggle(
+                        "Automatically download updates",
+                        isOn: Binding(
+                            get: {
+                                updateController.automaticallyDownloadsUpdates
+                            },
+                            set: {
+                                updateController.setAutomaticallyDownloadsUpdates($0)
+                            }
+                        )
+                    )
+                    .disabled(
+                        !updateController.isEnabled
+                            || !updateController.allowsAutomaticUpdates
+                    )
+                    .accessibilityHint(
+                        "Downloaded updates remain cryptographically verified before installation."
+                    )
+
+                    LabeledContent("Update status") {
+                        Text(updateController.availabilityDescription)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.trailing)
+                    }
+
+                    Button("Check for Updates…") {
+                        updateController.checkForUpdates()
+                    }
+                    .disabled(!updateController.canCheckForUpdates)
+                    .accessibilityHint(updateController.availabilityDescription)
+                }
             }
             .formStyle(.grouped)
             .tabItem { Label("General", systemImage: "gearshape") }
@@ -145,7 +197,7 @@ struct SettingsView: View {
             .formStyle(.grouped)
             .tabItem { Label("Plugins", systemImage: "puzzlepiece.extension") }
         }
-        .frame(width: 580, height: 410)
+        .frame(width: 620, height: 470)
     }
 
     private func updateNotificationPermission() async {
