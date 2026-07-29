@@ -1132,7 +1132,6 @@ final class AppModel {
     private(set) var channelComposerAttachments: [ForumPostAttachment] = []
     private(set) var threadComposerAttachments: [ForumPostAttachment] = []
     var showInspector = true
-    var showQuickSwitcher = false
     var errorMessage: String?
 
     @ObservationIgnored private var provider: any ChatProvider

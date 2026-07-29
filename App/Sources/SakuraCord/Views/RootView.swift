@@ -218,7 +218,6 @@ private struct ChatRootView: View {
                     : (model.errorMessage ?? "Discord account bootstrap failed for an unknown reason.")
             }
         }
-        .sheet(isPresented: $model.showQuickSwitcher) { QuickSwitcherView(model: model) }
         .alert("SakuraCord", isPresented: Binding(get: { model.errorMessage != nil }, set: {
             if !$0 {
                 model.dismissError()
@@ -228,7 +227,6 @@ private struct ChatRootView: View {
         } message: {
             Text(model.errorMessage ?? "Unknown error")
         }
-        .onReceive(NotificationCenter.default.publisher(for: .sakuracordQuickSwitcher)) { _ in model.showQuickSwitcher = true }
         .onReceive(NotificationCenter.default.publisher(for: .sakuracordToggleInspector)) { _ in model.showInspector.toggle() }
         .onReceive(NotificationCenter.default.publisher(for: .sakuracordNotificationDeepLink)) {
             notification in
@@ -241,22 +239,15 @@ private struct ChatRootView: View {
     private var conversationToolbar: some ToolbarContent {
         if let channel = model.selectedChannel {
             ToolbarItem(placement: .navigation) {
-                if isDirectMessageSelected {
-                    ConversationToolbarLabel(
-                        title: channel.name,
-                        systemImage: channelToolbarSymbol(channel),
-                        subtitle: directMessageToolbarSubtitle(for: channel)
-                    )
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                } else {
-                    Button { model.showQuickSwitcher = true } label: {
-                        ConversationToolbarLabel(
-                            title: channel.name,
-                            systemImage: channelToolbarSymbol(channel)
-                        )
-                    }
-                }
+                ConversationToolbarLabel(
+                    title: channel.name,
+                    systemImage: channelToolbarSymbol(channel),
+                    subtitle: isDirectMessageSelected
+                        ? directMessageToolbarSubtitle(for: channel)
+                        : nil
+                )
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
             }
             .visibilityPriority(.high)
         }
@@ -264,13 +255,11 @@ private struct ChatRootView: View {
         if let presentation = supplementaryToolbarPresentation {
             ToolbarItem {
                 HStack(spacing: 0) {
-                    Button { model.showQuickSwitcher = true } label: {
-                        ConversationToolbarLabel(
-                            title: presentation.title,
-                            systemImage: presentation.systemImage,
-                            subtitle: presentation.subtitle
-                        )
-                    }
+                    ConversationToolbarLabel(
+                        title: presentation.title,
+                        systemImage: presentation.systemImage,
+                        subtitle: presentation.subtitle
+                    )
                     Spacer(minLength: 0)
                 }
                 .frame(
@@ -346,17 +335,12 @@ private struct ChatRootView: View {
                 .help("Open voice channel chat")
             }
             .visibilityPriority(.high)
-        } else if !hasOpenSupplementaryConversation {
-            ToolbarItemGroup {
-                Button { model.showQuickSwitcher = true } label: {
-                    Label("Quick Switcher", systemImage: "magnifyingglass")
-                }
-            }
-            .visibilityPriority(.high)
         }
 
         if !hasOpenSupplementaryConversation, selectedVoiceChannel == nil {
-            ToolbarSpacer(.fixed)
+            if selectedPrivateChannel != nil {
+                ToolbarSpacer(.fixed)
+            }
 
             ToolbarItem {
                 Button { model.showInspector.toggle() } label: {
@@ -375,7 +359,6 @@ private struct ChatRootView: View {
     private var canAcceptWindowDrops: Bool {
         !presentsForumComposer
             && !showLogin
-            && !model.showQuickSwitcher
             && model.presentedInteractionModal == nil
             && (model.isComposerDropEligible(.channel)
                 || model.isComposerDropEligible(.thread))

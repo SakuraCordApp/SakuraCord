@@ -58,7 +58,7 @@ Mac app.
     <td width="50%" valign="top">
       <h3>💬 The whole conversation</h3>
       Servers, channels, DMs, forums, threads, rich messages, reactions,
-      mentions, drafts, and a fast quick switcher.
+      mentions, and drafts.
     </td>
   </tr>
   <tr>
