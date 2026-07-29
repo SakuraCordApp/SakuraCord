@@ -3611,7 +3611,7 @@ final class NativeTimelineCanvasView: NSView {
         }
         for region in layouts[index].linkedImageRegions {
             keys.append(.media(
-                region.reference.url,
+                region.reference.displayURL,
                 maximumPixelDimension: region.reference.isEmoji ? 96 : 720
             ))
         }
@@ -5582,12 +5582,12 @@ final class NativeTimelineCanvasView: NSView {
 
             for (linkedIndex, region) in
                 layout.linkedImageRegions.enumerated()
-            where Self.isPotentiallyAnimated(region.reference.url) {
+            where Self.isPotentiallyAnimated(region.reference.displayURL) {
                 append(
                     row: identifier,
                     role: .linkedImage(linkedIndex),
                     media: .media(
-                        region.reference.url,
+                        region.reference.displayURL,
                         maximumPixelDimension:
                             region.reference.isEmoji ? 96 : 720
                     ),
@@ -6421,9 +6421,9 @@ final class NativeTimelineCanvasView: NSView {
         var keys: Set<NativeTimelineMediaKey> = []
 
         for region in layout.linkedImageRegions
-        where Self.isPotentiallyAnimated(region.reference.url) {
+        where Self.isPotentiallyAnimated(region.reference.displayURL) {
             keys.insert(.media(
-                region.reference.url,
+                region.reference.displayURL,
                 maximumPixelDimension: region.reference.isEmoji ? 96 : 720
             ))
         }
@@ -10880,7 +10880,7 @@ private enum NativeTimelineRowPainter {
 
         for region in layout.linkedImageRegions {
             let key = NativeTimelineMediaKey.media(
-                region.reference.url,
+                region.reference.displayURL,
                 maximumPixelDimension: region.reference.isEmoji ? 96 : 720
             )
             if let image = mediaImage(for: key) {

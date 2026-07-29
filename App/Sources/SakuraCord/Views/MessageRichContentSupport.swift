@@ -57,7 +57,15 @@ nonisolated enum MessageEmbedPresentationKind: Equatable {
 
 nonisolated enum MessageEmbedPresentation {
     static func visibleEmbeds(for message: Message) -> [MessageEmbed] {
-        message.flags.contains(.suppressEmbeds) ? [] : message.embeds
+        guard !message.flags.contains(.suppressEmbeds) else { return [] }
+        let linkedEmojiURLs =
+            LinkedImagePresentation(content: message.content)
+                .matchedEmojiURLs
+        guard !linkedEmojiURLs.isEmpty else { return message.embeds }
+        return message.embeds.filter { embed in
+            !(kind(for: embed) == .bareMedia
+                && embed.url.map(linkedEmojiURLs.contains) == true)
+        }
     }
 
     static func visibleMessageContent(for message: Message) -> String {

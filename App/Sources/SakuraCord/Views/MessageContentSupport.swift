@@ -290,6 +290,7 @@ nonisolated struct LinkedImagePresentation: Sendable {
 
     let visibleText: String
     let images: [LinkedImageReference]
+    let matchedEmojiURLs: Set<URL>
 
     init(content: String) {
         let sourceRange = NSRange(content.startIndex ..< content.endIndex, in: content)
@@ -309,12 +310,48 @@ nonisolated struct LinkedImagePresentation: Sendable {
                 )
             )
         }
-        images = references.map(\.1)
-        let textWithoutMedia = NSMutableString(string: content)
-        for reference in references.reversed() {
-            textWithoutMedia.replaceCharacters(in: reference.0, with: "")
+        matchedEmojiURLs = Set(
+            references.compactMap { reference in
+                reference.1.linkedEmoji == nil ? nil : reference.1.url
+            }
+        )
+
+        let rendersAsEmojiOnly = !references.isEmpty
+            && references.allSatisfy { $0.1.linkedEmoji != nil }
+            && Self.remainingText(
+                in: content,
+                removing: references.map(\.0)
+            ).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+        let presentedText = NSMutableString(string: content)
+        if rendersAsEmojiOnly {
+            images = []
+            for reference in references.reversed() {
+                guard let token = reference.1.linkedEmoji?.rawToken else {
+                    continue
+                }
+                presentedText.replaceCharacters(in: reference.0, with: token)
+            }
+        } else {
+            images = references.map(\.1)
+            for reference in references.reversed()
+            where reference.1.linkedEmoji == nil {
+                presentedText.replaceCharacters(in: reference.0, with: "")
+            }
         }
-        visibleText = String(textWithoutMedia).trimmingCharacters(in: .whitespacesAndNewlines)
+        visibleText = String(presentedText)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func remainingText(
+        in content: String,
+        removing ranges: [NSRange]
+    ) -> String {
+        let remaining = NSMutableString(string: content)
+        for range in ranges.reversed() {
+            remaining.replaceCharacters(in: range, with: "")
+        }
+        return remaining as String
     }
 }
 
@@ -325,6 +362,55 @@ nonisolated struct LinkedImageReference: Identifiable, Hashable, Sendable {
 
     var isEmoji: Bool {
         url.host == "cdn.discordapp.com" && url.path.hasPrefix("/emojis/")
+    }
+
+    var linkedEmoji: EmojiReference? {
+        guard isEmoji else { return nil }
+        let filename = url.lastPathComponent
+        let emojiID = (filename as NSString).deletingPathExtension
+        guard !emojiID.isEmpty,
+              emojiID.unicodeScalars.allSatisfy({
+                  (48 ... 57).contains($0.value)
+              })
+        else { return nil }
+
+        let queryName = URLComponents(
+            url: url,
+            resolvingAgainstBaseURL: false
+        )?.queryItems?.first(where: { $0.name == "name" })?.value
+        let rawName = (queryName ?? label)
+            .trimmingCharacters(
+                in: CharacterSet.whitespacesAndNewlines.union(
+                    CharacterSet(charactersIn: ":")
+                )
+            )
+        guard !rawName.isEmpty,
+              rawName.unicodeScalars.allSatisfy({
+                  (48 ... 57).contains($0.value)
+                      || (65 ... 90).contains($0.value)
+                      || (97 ... 122).contains($0.value)
+                      || $0.value == 95
+              })
+        else { return nil }
+
+        let queryItems = URLComponents(
+            url: url,
+            resolvingAgainstBaseURL: false
+        )?.queryItems ?? []
+        let isAnimated =
+            url.pathExtension.lowercased() == "gif"
+            || queryItems.contains {
+                $0.name == "animated" && $0.value?.lowercased() == "true"
+            }
+        return EmojiReference(
+            id: emojiID,
+            name: rawName,
+            isAnimated: isAnimated
+        )
+    }
+
+    var displayURL: URL {
+        linkedEmoji?.imageURL(size: 96) ?? url
     }
 
     var isSticker: Bool {

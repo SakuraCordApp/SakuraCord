@@ -2569,6 +2569,42 @@ func `native timeline render plan preserves markdown inline emoji mentions and l
 }
 
 @MainActor @Test
+func `emoji only linked images use jumbo custom emoji layout without a duplicate preview`() throws {
+    let author = User(
+        id: UserID(rawValue: 20),
+        username: "fixture",
+        displayName: "Fixture"
+    )
+    let message = Message(
+        id: MessageID(rawValue: 21),
+        channelID: ChannelID(rawValue: 22),
+        author: author,
+        content:
+            "[party](https://cdn.discordapp.com/emojis/456.gif?size=48&animated=true&name=party&lossless=true)"
+    )
+    let row = MessageRowPresentation(
+        message: message,
+        startsGroup: true,
+        startsDay: false,
+        replyPreview: nil,
+        isReplyAvailable: false
+    )
+    let layout = NativeTimelineRowLayout.make(
+        item: .message(
+            row,
+            isUnreadBoundary: false,
+            isHighlighted: false
+        ),
+        width: 620
+    )
+    let attributed = try #require(layout.attributedContent)
+
+    #expect(attributed.string == "\u{FFFC}")
+    #expect(layout.linkedImageRegions.isEmpty)
+    #expect((layout.contentFrame?.height ?? 0) >= 48)
+}
+
+@MainActor @Test
 func `native timeline mention popover anchor follows the exact Core Text run after reflow`() throws {
     let author = User(
         id: UserID(rawValue: 5),
