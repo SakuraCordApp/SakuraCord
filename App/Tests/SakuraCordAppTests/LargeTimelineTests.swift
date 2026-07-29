@@ -2604,6 +2604,42 @@ func `emoji only linked images use jumbo custom emoji layout without a duplicate
     #expect((layout.contentFrame?.height ?? 0) >= 48)
 }
 
+@Test
+func `timeline avatar animation policy avoids decoding ordinary static avatars`() throws {
+    let staticAvatar = try #require(URL(
+        string:
+            "https://cdn.discordapp.com/avatars/1/static.webp?size=128&animated=false"
+    ))
+    let animatedAvatar = try #require(URL(
+        string:
+            "https://cdn.discordapp.com/avatars/1/a_hash.webp?size=128&animated=true"
+    ))
+    let gifAvatar = try #require(URL(
+        string: "https://example.com/avatar.gif"
+    ))
+
+    #expect(
+        !NativeTimelineAvatarPresentation
+            .shouldDecodeAnimation(for: staticAvatar)
+    )
+    #expect(
+        NativeTimelineAvatarPresentation
+            .shouldDecodeAnimation(for: animatedAvatar)
+    )
+    #expect(
+        NativeTimelineAvatarPresentation
+            .shouldDecodeAnimation(for: gifAvatar)
+    )
+    let decorationFrame =
+        NativeTimelineAvatarPresentation.decorationFrame(
+            around: CGRect(x: 14, y: 3, width: 38, height: 38)
+        )
+    #expect(abs(decorationFrame.minX - 10.96) < 0.000_001)
+    #expect(abs(decorationFrame.minY + 0.04) < 0.000_001)
+    #expect(abs(decorationFrame.width - 44.08) < 0.000_001)
+    #expect(abs(decorationFrame.height - 44.08) < 0.000_001)
+}
+
 @MainActor @Test
 func `native timeline mention popover anchor follows the exact Core Text run after reflow`() throws {
     let author = User(

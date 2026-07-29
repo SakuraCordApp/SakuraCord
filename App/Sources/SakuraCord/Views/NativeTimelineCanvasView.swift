@@ -700,6 +700,45 @@ nonisolated enum NativeTimelineAuthorProfileGeometry {
     }
 }
 
+nonisolated enum NativeTimelineAvatarPresentation {
+    static let decorationScale: CGFloat = 1.16
+
+    static func decorationFrame(around avatarFrame: CGRect) -> CGRect {
+        let width = avatarFrame.width * decorationScale
+        let height = avatarFrame.height * decorationScale
+        return CGRect(
+            x: avatarFrame.midX - width / 2,
+            y: avatarFrame.midY - height / 2,
+            width: width,
+            height: height
+        )
+    }
+
+    static func replyAvatarFrame(in replyFrame: CGRect) -> CGRect {
+        CGRect(
+            x: replyFrame.minX + 35,
+            y: replyFrame.minY + 3,
+            width: 14,
+            height: 14
+        )
+    }
+
+    static func shouldDecodeAnimation(for url: URL) -> Bool {
+        switch url.pathExtension.lowercased() {
+        case "gif", "apng":
+            return true
+        default:
+            return URLComponents(
+                url: url,
+                resolvingAgainstBaseURL: false
+            )?.queryItems?.contains {
+                $0.name == "animated"
+                    && $0.value?.lowercased() == "true"
+            } == true
+        }
+    }
+}
+
 nonisolated enum NativeTimelineScrollingRenderPolicy {
     static func usesDirectPainter(
         isScrolling: Bool,
@@ -1369,7 +1408,8 @@ private final class NativeTimelineAnimatedMediaOverlay: NSView {
         selectionFrame: CGRect?,
         cornerRadius: CGFloat,
         isLooping: Bool,
-        opacity: CGFloat
+        opacity: CGFloat,
+        fillsFrame: Bool
     ) {
         imageClipView.frame = mediaFrame
         imageClipView.alphaValue = opacity
@@ -1377,7 +1417,12 @@ private final class NativeTimelineAnimatedMediaOverlay: NSView {
         if #available(macOS 13.0, *) {
             imageClipView.layer?.cornerCurve = .continuous
         }
-        imageView.display(image, animates: true, isLooping: isLooping)
+        imageView.display(
+            image,
+            animates: true,
+            isLooping: isLooping,
+            contentMode: fillsFrame ? .fill : .fit
+        )
         if let selectionFrame {
             selectionView.frame = selectionFrame
             selectionView.isHidden = false
@@ -1395,6 +1440,10 @@ struct NativeTimelineMediaKey: Hashable {
 
     static func avatar(_ url: URL) -> Self {
         Self(url: url, maximumPixelDimension: 96)
+    }
+
+    static func avatarDecoration(_ url: URL) -> Self {
+        Self(url: url, maximumPixelDimension: 128)
     }
 
     static func media(_ url: URL, maximumPixelDimension: Int = 1_024) -> Self {
@@ -1492,6 +1541,12 @@ final class NativeTimelineMediaStore {
               media.isAnimated
         else { return nil }
         return media.decoded
+    }
+
+    func decodedImage(
+        for key: NativeTimelineMediaKey
+    ) -> DecodedAnimatedImage? {
+        animatedCache.object(forKey: key.cacheKey)?.decoded
     }
 
     func requestAnimated(
@@ -2197,6 +2252,11 @@ final class NativeTimelineCanvasView: NSView {
     }
 
     private enum AnimatedMediaOverlayRole: Hashable {
+        case authorAvatar
+        case authorAvatarDecoration
+        case replyAvatar
+        case invocationAvatar
+        case reactionAvatar(String, Int)
         case linkedImage(Int)
         case attachment(String)
         case messageEmoji(Int)
@@ -3600,6 +3660,12 @@ final class NativeTimelineCanvasView: NSView {
         let author = model?.authorPresentation(for: message)
         if let url = author?.user.avatarURL ?? message.author.avatarURL {
             keys.append(.avatar(url))
+        }
+        if let url =
+            author?.user.avatarDecorationURL
+                ?? message.author.avatarDecorationURL
+        {
+            keys.append(.avatarDecoration(url))
         }
         if let url = message.interactionMetadata?.user?.avatarURL {
             keys.append(.avatar(url))
@@ -5484,6 +5550,7 @@ final class NativeTimelineCanvasView: NSView {
         let cornerRadius: CGFloat
         let isLooping: Bool
         let opacity: CGFloat
+        let fillsFrame: Bool
         let image: DecodedAnimatedImage
     }
 
@@ -5509,12 +5576,17 @@ final class NativeTimelineCanvasView: NSView {
             selectionFrame: CGRect? = nil,
             cornerRadius: CGFloat,
             isLooping: Bool,
-            opacity: CGFloat = 1
+            opacity: CGFloat = 1,
+            fillsFrame: Bool = false,
+            allowsStaticImage: Bool = false
         ) {
+            let image = allowsStaticImage
+                ? NativeTimelineMediaStore.shared.decodedImage(for: media)
+                : NativeTimelineMediaStore.shared
+                    .decodedAnimatedImage(for: media)
             guard desired.count < Self.maximumAnimatedMediaOverlayCount,
                   animatedMediaRows[row]?.contains(media) == true,
-                  let image = NativeTimelineMediaStore.shared
-                      .decodedAnimatedImage(for: media)
+                  let image
             else { return }
             desired.append(DesiredAnimatedMediaOverlay(
                 key: AnimatedMediaOverlayKey(
@@ -5527,6 +5599,7 @@ final class NativeTimelineCanvasView: NSView {
                 cornerRadius: cornerRadius,
                 isLooping: isLooping,
                 opacity: opacity,
+                fillsFrame: fillsFrame,
                 image: image
             ))
         }
@@ -5578,6 +5651,100 @@ final class NativeTimelineCanvasView: NSView {
             guard animatedMediaRows[identifier] != nil else {
                 index += 1
                 continue
+            }
+
+            let author =
+                model?.authorPresentation(for: row.message).user
+                ?? row.message.author
+            if let frame = layout.avatarFrame {
+                if let url =
+                    author.avatarURL
+                        ?? row.message.author.avatarURL,
+                   NativeTimelineAvatarPresentation
+                    .shouldDecodeAnimation(for: url)
+                {
+                    append(
+                        row: identifier,
+                        role: .authorAvatar,
+                        media: .avatar(url),
+                        frame: frame,
+                        cornerRadius: frame.width / 2,
+                        isLooping: true,
+                        fillsFrame: true
+                    )
+                }
+                if let decorationURL =
+                    author.avatarDecorationURL
+                        ?? row.message.author.avatarDecorationURL
+                {
+                    append(
+                        row: identifier,
+                        role: .authorAvatarDecoration,
+                        media: .avatarDecoration(decorationURL),
+                        frame:
+                            NativeTimelineAvatarPresentation
+                                .decorationFrame(around: frame),
+                        cornerRadius: 0,
+                        isLooping: true,
+                        allowsStaticImage: true
+                    )
+                }
+            }
+            if let preview = row.replyPreview,
+               let url = preview.author.avatarURL,
+               let replyFrame = layout.replyFrame,
+               NativeTimelineAvatarPresentation
+                .shouldDecodeAnimation(for: url)
+            {
+                let frame =
+                    NativeTimelineAvatarPresentation
+                        .replyAvatarFrame(in: replyFrame)
+                append(
+                    row: identifier,
+                    role: .replyAvatar,
+                    media: .avatar(url),
+                    frame: frame,
+                    cornerRadius: frame.width / 2,
+                    isLooping: true,
+                    fillsFrame: true
+                )
+            }
+            if let frame = layout.commandInvocationRegion?.avatarFrame,
+               let url = row.message.interactionMetadata?.user?.avatarURL,
+               NativeTimelineAvatarPresentation
+                .shouldDecodeAnimation(for: url)
+            {
+                append(
+                    row: identifier,
+                    role: .invocationAvatar,
+                    media: .avatar(url),
+                    frame: frame,
+                    cornerRadius: frame.width / 2,
+                    isLooping: true,
+                    fillsFrame: true
+                )
+            }
+            for reaction in layout.reactionRegions {
+                for (avatarIndex, avatar) in
+                    reaction.avatarRegions.enumerated()
+                {
+                    guard let url = avatar.reactor.avatarURL,
+                          NativeTimelineAvatarPresentation
+                            .shouldDecodeAnimation(for: url)
+                    else { continue }
+                    append(
+                        row: identifier,
+                        role: .reactionAvatar(
+                            reaction.reaction.id,
+                            avatarIndex
+                        ),
+                        media: .avatar(url),
+                        frame: avatar.frame,
+                        cornerRadius: avatar.frame.width / 2,
+                        isLooping: true,
+                        fillsFrame: true
+                    )
+                }
             }
 
             for (linkedIndex, region) in
@@ -5855,6 +6022,7 @@ final class NativeTimelineCanvasView: NSView {
                 .removeFromSuperview()
         }
 
+        var didCreateOverlay = false
         for item in desired {
             let rowOrigin: CGFloat
             guard let rowIndex = items.firstIndex(where: {
@@ -5893,6 +6061,7 @@ final class NativeTimelineCanvasView: NSView {
                     relativeTo: mediaViewerHost
                 )
                 animatedMediaOverlays[item.key] = overlay
+                didCreateOverlay = true
             }
             overlay.frame = hostFrame
             overlay.display(
@@ -5901,8 +6070,26 @@ final class NativeTimelineCanvasView: NSView {
                 selectionFrame: localSelectionFrame,
                 cornerRadius: item.cornerRadius,
                 isLooping: item.isLooping,
-                opacity: item.opacity
+                opacity: item.opacity,
+                fillsFrame: item.fillsFrame
             )
+        }
+        if didCreateOverlay {
+            // A decoration can decode before its avatar (or vice versa).
+            // Restore the desired order whenever a late result creates a new
+            // overlay so decorations always remain above avatar frames while
+            // the media viewer remains the topmost interaction surface.
+            for item in desired {
+                guard let overlay = animatedMediaOverlays[item.key] else {
+                    continue
+                }
+                overlay.removeFromSuperview()
+                addSubview(
+                    overlay,
+                    positioned: .below,
+                    relativeTo: mediaViewerHost
+                )
+            }
         }
         // Animated frames are native subviews while spoiler materials are
         // separate native overlays. Loading may complete after the spoiler
@@ -6419,6 +6606,53 @@ final class NativeTimelineCanvasView: NSView {
     ) -> Set<NativeTimelineMediaKey> {
         let message = row.message
         var keys: Set<NativeTimelineMediaKey> = []
+
+        let author =
+            model?.authorPresentation(for: message).user
+            ?? message.author
+        if layout.avatarFrame != nil {
+            if let url =
+                author.avatarURL
+                    ?? message.author.avatarURL,
+               NativeTimelineAvatarPresentation
+                .shouldDecodeAnimation(for: url)
+            {
+                keys.insert(.avatar(url))
+            }
+            if let url =
+                author.avatarDecorationURL
+                    ?? message.author.avatarDecorationURL
+            {
+                // Discord serves both static PNG and animated APNG decoration
+                // assets from this route. Decode only for visible rows; the
+                // media store discards single-frame results from overlay use.
+                keys.insert(.avatarDecoration(url))
+            }
+        }
+        if layout.replyFrame != nil,
+           let url = row.replyPreview?.author.avatarURL,
+           NativeTimelineAvatarPresentation
+            .shouldDecodeAnimation(for: url)
+        {
+            keys.insert(.avatar(url))
+        }
+        if layout.commandInvocationRegion?.avatarFrame != nil,
+           let url = message.interactionMetadata?.user?.avatarURL,
+           NativeTimelineAvatarPresentation
+            .shouldDecodeAnimation(for: url)
+        {
+            keys.insert(.avatar(url))
+        }
+        for reaction in layout.reactionRegions {
+            for avatar in reaction.avatarRegions {
+                if let url = avatar.reactor.avatarURL,
+                   NativeTimelineAvatarPresentation
+                    .shouldDecodeAnimation(for: url)
+                {
+                    keys.insert(.avatar(url))
+                }
+            }
+        }
 
         for region in layout.linkedImageRegions
         where Self.isPotentiallyAnimated(region.reference.displayURL) {
@@ -10737,11 +10971,25 @@ private enum NativeTimelineRowPainter {
 
         let author = model?.authorPresentation(for: message)
         if let frame = layout.avatarFrame {
+            let presentedAuthor =
+                author?.user
+                ?? message.author
             avatar(
-                name: author?.user.displayName ?? message.author.displayName,
-                url: author?.user.avatarURL ?? message.author.avatarURL,
+                name: presentedAuthor.displayName,
+                url:
+                    presentedAuthor.avatarURL
+                        ?? message.author.avatarURL,
                 in: frame
             )
+            if let decorationURL =
+                presentedAuthor.avatarDecorationURL
+                    ?? message.author.avatarDecorationURL
+            {
+                avatarDecoration(
+                    url: decorationURL,
+                    around: frame
+                )
+            }
         }
         if let frame = layout.authorFrame {
             let presentedAuthor =
@@ -11243,6 +11491,23 @@ private enum NativeTimelineRowPainter {
         )
     }
 
+    private static func avatarDecoration(
+        url: URL,
+        around avatarFrame: CGRect
+    ) {
+        guard let image = mediaImage(for: .avatarDecoration(url)) else {
+            return
+        }
+        drawImage(
+            image,
+            in:
+                NativeTimelineAvatarPresentation
+                    .decorationFrame(around: avatarFrame),
+            cornerRadius: 0,
+            fillsFrame: false
+        )
+    }
+
     private static func replyContext(
         preview: MessageReplyPreview,
         isAvailable: Bool,
@@ -11257,12 +11522,9 @@ private enum NativeTimelineRowPainter {
         )
         replyConnector(in: connectorFrame)
 
-        let avatarFrame = CGRect(
-            x: connectorFrame.maxX + 5,
-            y: frame.minY + 3,
-            width: 14,
-            height: 14
-        )
+        let avatarFrame =
+            NativeTimelineAvatarPresentation
+                .replyAvatarFrame(in: frame)
         avatar(
             name: preview.author.displayName,
             url: preview.author.avatarURL,
