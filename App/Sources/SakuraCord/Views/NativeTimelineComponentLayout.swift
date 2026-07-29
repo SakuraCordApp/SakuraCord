@@ -487,17 +487,17 @@ private enum NodeBuilder {
             )
             var result = Node(
                 size: CGSize(
-                    width: min(
-                        maximumWidth,
-                        left.size.width + 8 + accessoryNode.size.width
-                    ),
+                    width: maximumWidth,
                     height: max(left.size.height, accessoryNode.size.height)
                 )
             )
             result.merge(left, at: .zero)
             result.merge(
                 accessoryNode,
-                at: CGPoint(x: left.size.width + 8, y: 0)
+                at: CGPoint(
+                    x: maximumWidth - accessoryNode.size.width,
+                    y: 0
+                )
             )
             return result
 

@@ -3890,6 +3890,66 @@ func `native timeline component layout preserves the complete V2 hierarchy`() th
     #expect(layout.embedRegions.isEmpty)
 }
 
+@MainActor @Test
+func `native component section pins its button accessory to the trailing edge`() throws {
+    let message = Message(
+        id: MessageID(rawValue: 310),
+        channelID: ChannelID(rawValue: 311),
+        author: User(
+            id: UserID(rawValue: 312),
+            username: "fixture",
+            displayName: "Fixture"
+        ),
+        content: "",
+        flags: [.isComponentsV2],
+        components: [
+            .section(
+                id: "candidate",
+                children: [
+                    .textDisplay(
+                        id: "candidate-copy",
+                        content: "<@313>"
+                    )
+                ],
+                accessory: .button(
+                    id: "vote",
+                    style: .success,
+                    label: "Vote",
+                    emoji: nil,
+                    customID: "vote",
+                    url: nil,
+                    skuID: nil,
+                    disabled: false
+                )
+            )
+        ]
+    )
+    let row = MessageRowPresentation(
+        message: message,
+        startsGroup: true,
+        startsDay: false,
+        replyPreview: nil,
+        isReplyAvailable: false
+    )
+    let layout = NativeTimelineRowLayout.make(
+        item: .message(
+            row,
+            isUnreadBoundary: false,
+            isHighlighted: false
+        ),
+        width: 720
+    )
+    let components = try #require(layout.componentLayouts.first)
+    let button = try #require(components.buttons.first)
+
+    #expect(button.frame.maxX == components.frame.maxX)
+    #expect(
+        components.textRegions.allSatisfy {
+            $0.frame.maxX <= button.frame.minX - 8
+        }
+    )
+}
+
 @Test
 func `native component button preserves legacy hover press and activation behavior`() {
     #expect(
