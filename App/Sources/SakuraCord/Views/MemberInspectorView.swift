@@ -145,10 +145,19 @@ private struct MemberRow: View {
         Button(action: select) {
             ZStack {
                 if let nameplate = member.user.nameplate {
-                    NameplateBackground(nameplate: nameplate)
+                    NameplateBackground(
+                        nameplate: nameplate,
+                        isAnimated: isHovered
+                    )
+                    .opacity(NameplatePresentationPolicy.opacity(isHovered: isHovered))
                 } else {
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(isHovered || isSelected ? Color.primary.opacity(0.07) : .clear)
+                        .fill(isSelected && !isHovered ? Color.primary.opacity(0.07) : .clear)
+                }
+                if isHovered {
+                    Color.gray.opacity(0.2)
+                } else if isSelected, member.user.nameplate != nil {
+                    Color.primary.opacity(0.07)
                 }
 
                 HStack(spacing: 8) {
@@ -185,10 +194,11 @@ private struct MemberRow: View {
                     .opacity(member.isOnline ? 1 : 0.55)
                     Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 6)
+                .padding(.horizontal, 4)
             }
             .frame(height: 44)
             .padding(.vertical, 1)
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
         .buttonStyle(.plain)
@@ -284,60 +294,79 @@ struct PresenceIndicator: View {
     }
 }
 
+nonisolated struct NameplatePaletteColors: Equatable {
+    let light: UInt32
+    let dark: UInt32
+}
+
+nonisolated enum NameplatePresentationPolicy {
+    static func opacity(isHovered: Bool) -> Double {
+        isHovered ? 0.8 : 0.5
+    }
+
+    static func colors(for palette: String) -> NameplatePaletteColors? {
+        switch palette {
+        case "crimson": .init(light: 0xE7040F, dark: 0x900007)
+        case "berry": .init(light: 0xB11FCF, dark: 0x893A99)
+        case "sky": .init(light: 0x56CCFF, dark: 0x0080B7)
+        case "teal": .init(light: 0x7DEED7, dark: 0x086460)
+        case "forest": .init(light: 0x6AA624, dark: 0x2D5401)
+        case "bubble_gum": .init(light: 0xF957B3, dark: 0xDC3E97)
+        case "violet": .init(light: 0x972FED, dark: 0x730BC8)
+        case "cobalt": .init(light: 0x4278FF, dark: 0x0131C2)
+        case "clover": .init(light: 0x63CD5A, dark: 0x047B20)
+        case "lemon": .init(light: 0xFED400, dark: 0xF6CD12)
+        case "white": .init(light: 0xFFFFFF, dark: 0xFFFFFF)
+        default: nil
+        }
+    }
+}
+
 private struct NameplateBackground: View {
     let nameplate: Nameplate
+    let isAnimated: Bool
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        staticBackground
-            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-            .mask(nameplateMask)
+        ZStack {
+            paletteGradient
+            staticAsset
+            if isAnimated, let url = nameplate.animatedURL {
+                AnimatedRemoteImage(
+                    url: url,
+                    maximumPixelDimension: 512,
+                    contentMode: .fill
+                )
+            }
+        }
+            .clipped()
             .accessibilityLabel(nameplate.label)
     }
 
-    private var staticBackground: some View {
-        RoundedRectangle(cornerRadius: 9, style: .continuous)
-            .fill(paletteGradient)
-            .overlay {
-                if let url = nameplate.staticURL {
-                    AsyncImage(url: url) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: {
-                        Color.clear
-                    }
-                }
+    @ViewBuilder
+    private var staticAsset: some View {
+        if let url = nameplate.staticURL {
+            AsyncImage(url: url) { image in
+                image.resizable().scaledToFill()
+            } placeholder: {
+                Color.clear
             }
-    }
-
-    private var nameplateMask: some View {
-        LinearGradient(
-            stops: [
-                .init(color: .clear, location: 0),
-                .init(color: .clear, location: 0.42),
-                .init(color: .black.opacity(0.18), location: 0.52),
-                .init(color: .black.opacity(0.72), location: 0.66),
-                .init(color: .black, location: 0.76)
-            ],
-            startPoint: .leading,
-            endPoint: .trailing
-        )
-    }
-
-    private var paletteGradient: LinearGradient {
-        let colors: [Color] = switch nameplate.palette {
-        case "crimson": [Color(hex: 0x7F1D1D), Color(hex: 0xE11D48)]
-        case "berry": [Color(hex: 0x701A75), Color(hex: 0xDB2777)]
-        case "sky": [Color(hex: 0x075985), Color(hex: 0x38BDF8)]
-        case "teal": [Color(hex: 0x115E59), Color(hex: 0x2DD4BF)]
-        case "forest": [Color(hex: 0x14532D), Color(hex: 0x22C55E)]
-        case "bubble_gum": [Color(hex: 0x9D174D), Color(hex: 0xF9A8D4)]
-        case "violet": [Color(hex: 0x4C1D95), Color(hex: 0x8B5CF6)]
-        case "cobalt": [Color(hex: 0x172554), Color(hex: 0x2563EB)]
-        case "clover": [Color(hex: 0x166534), Color(hex: 0x4ADE80)]
-        case "lemon": [Color(hex: 0x854D0E), Color(hex: 0xFACC15)]
-        case "white": [Color.white.opacity(0.3), Color.white.opacity(0.08)]
-        default: [Color.primary.opacity(0.1), Color.primary.opacity(0.03)]
         }
-        return LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
+    }
+
+    @ViewBuilder
+    private var paletteGradient: some View {
+        if let colors = NameplatePresentationPolicy.colors(for: nameplate.palette) {
+            let hex = colorScheme == .dark ? colors.dark : colors.light
+            LinearGradient(
+                stops: [
+                    .init(color: Color(hex: hex).opacity(0.1), location: 0),
+                    .init(color: Color(hex: hex).opacity(0.4), location: 1),
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+        }
     }
 }
 

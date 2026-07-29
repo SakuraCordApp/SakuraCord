@@ -167,6 +167,7 @@ func `animated image canvas installs discrete compositor frames and resets to it
         frame: CGRect(x: 0, y: 0, width: 18, height: 18)
     )
     canvas.display(decoded, animates: true, isLooping: true)
+    #expect(canvas.layer?.contentsGravity == .resizeAspect)
     let animation = try #require(
         canvas.layer?.animation(
             forKey: "remoteAnimatedImage"
@@ -185,6 +186,14 @@ func `animated image canvas installs discrete compositor frames and resets to it
         (canvas.layer?.contents as AnyObject?)
             === decoded.frames.first
     )
+
+    canvas.display(
+        decoded,
+        animates: false,
+        isLooping: true,
+        contentMode: .fill
+    )
+    #expect(canvas.layer?.contentsGravity == .resizeAspectFill)
 }
 
 @Test func `animated media only plays while visible and motion is enabled`() {

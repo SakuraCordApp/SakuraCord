@@ -4455,17 +4455,10 @@ struct UserDTO: Decodable {
             guard let asset = value.asset else { return nil }
             let path = asset.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
             return Nameplate(
-                staticURL: value.assets?.staticImageURL.flatMap(URL.init)
-                    ?? URL(
-                        string: "https://cdn.discordapp.com/assets/collectibles/\(path)/static.png"),
-                // Discord supplies WebM alongside the animated image for current
-                // nameplates. Prefer the streaming video representation so the UI
-                // can use WebKit's hardware-backed decoder instead of eagerly
-                // expanding every APNG frame in memory.
-                animatedURL: value.assets?.videoURL.flatMap(URL.init)
-                    ?? value.assets?.animatedImageURL.flatMap(URL.init)
-                    ?? URL(
-                        string: "https://cdn.discordapp.com/assets/collectibles/\(path)/asset.webm"),
+                staticURL: URL(
+                    string: "https://cdn.discordapp.com/assets/collectibles/\(path)/static.png"),
+                animatedURL: URL(
+                    string: "https://cdn.discordapp.com/assets/collectibles/\(path)/img.png"),
                 label: value.label ?? "",
                 palette: value.palette ?? "none"
             )

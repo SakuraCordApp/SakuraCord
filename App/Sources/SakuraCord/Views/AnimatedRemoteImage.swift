@@ -26,6 +26,7 @@ struct AnimatedRemoteImage: View {
     var fallbackSystemImage: String?
     var fallbackInset: CGFloat = 2
     var maximumPixelDimension: Int?
+    var contentMode: ContentMode = .fit
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("reduceAnimatedMedia") private var reduceAnimatedMedia = false
@@ -39,7 +40,8 @@ struct AnimatedRemoteImage: View {
         isLooping: Bool = true,
         fallbackSystemImage: String? = nil,
         fallbackInset: CGFloat = 2,
-        maximumPixelDimension: Int? = nil
+        maximumPixelDimension: Int? = nil,
+        contentMode: ContentMode = .fit
     ) {
         self.url = url
         self.animates = animates
@@ -47,6 +49,7 @@ struct AnimatedRemoteImage: View {
         self.fallbackSystemImage = fallbackSystemImage
         self.fallbackInset = fallbackInset
         self.maximumPixelDimension = maximumPixelDimension
+        self.contentMode = contentMode
 
         let loadID = AnimatedRemoteImageRequestIdentity(
             url: url,
@@ -66,7 +69,8 @@ struct AnimatedRemoteImage: View {
                 AnimatedImageRepresentable(
                     decodedImage: decodedImage,
                     animates: animates && !reduceMotion && !reduceAnimatedMedia,
-                    isLooping: isLooping
+                    isLooping: isLooping,
+                    contentMode: contentMode
                 )
             } else if didFail, let fallbackSystemImage {
                 Image(systemName: fallbackSystemImage)
@@ -343,19 +347,26 @@ private struct AnimatedImageRepresentable: NSViewRepresentable {
     let decodedImage: DecodedAnimatedImage
     let animates: Bool
     let isLooping: Bool
+    let contentMode: ContentMode
 
     func makeNSView(context: Context) -> AnimatedImageCanvas {
         AnimatedImageCanvas()
     }
 
     func updateNSView(_ view: AnimatedImageCanvas, context: Context) {
-        view.display(decodedImage, animates: animates, isLooping: isLooping)
+        view.display(
+            decodedImage,
+            animates: animates,
+            isLooping: isLooping,
+            contentMode: contentMode
+        )
     }
 }
 
 final class AnimatedImageCanvas: NSView {
     private var displayedImage: DecodedAnimatedImage?
     private var displayedAnimationPreference: (animates: Bool, isLooping: Bool)?
+    private var displayedContentMode: ContentMode?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -369,15 +380,23 @@ final class AnimatedImageCanvas: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func display(_ image: DecodedAnimatedImage, animates: Bool, isLooping: Bool) {
+    func display(
+        _ image: DecodedAnimatedImage,
+        animates: Bool,
+        isLooping: Bool,
+        contentMode: ContentMode = .fit
+    ) {
         let preference = (animates: animates, isLooping: isLooping)
         guard
             displayedImage !== image
             || displayedAnimationPreference?.animates != preference.animates
             || displayedAnimationPreference?.isLooping != preference.isLooping
+            || displayedContentMode != contentMode
         else { return }
         displayedImage = image
         displayedAnimationPreference = preference
+        displayedContentMode = contentMode
+        layer?.contentsGravity = contentMode == .fill ? .resizeAspectFill : .resizeAspect
         layer?.removeAnimation(forKey: "remoteAnimatedImage")
 
         let frames = image.frames

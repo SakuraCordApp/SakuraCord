@@ -2,7 +2,7 @@
 import Foundation
 import Testing
 
-@Test func `nameplates prefer streaming video over eager animated images`() throws {
+@Test func `nameplates match Paicord static and APNG asset selection`() throws {
     let data = Data(
         #"""
         {
@@ -21,13 +21,19 @@ import Testing
 
     let user = try JSONDecoder().decode(UserDTO.self, from: data).domain()
 
-    #expect(user.nameplate?.staticURL?.absoluteString == "https://cdn.example/static.png")
-    #expect(user.nameplate?.animatedURL?.absoluteString == "https://cdn.example/animated.webm")
+    #expect(
+        user.nameplate?.staticURL?.absoluteString
+            == "https://cdn.discordapp.com/assets/collectibles/nameplates/cityscape/static.png"
+    )
+    #expect(
+        user.nameplate?.animatedURL?.absoluteString
+            == "https://cdn.discordapp.com/assets/collectibles/nameplates/cityscape/img.png"
+    )
     #expect(user.nameplate?.label == "Cityscape")
     #expect(user.nameplate?.palette == "violet")
 }
 
-@Test func `nameplates retain animated image and derived WebM fallbacks`() throws {
+@Test func `nameplates retain animated image and derived APNG fallbacks`() throws {
     let animatedImageData = Data(
         #"""
         {
@@ -51,9 +57,12 @@ import Testing
     let animatedImageUser = try JSONDecoder().decode(UserDTO.self, from: animatedImageData).domain()
     let derivedUser = try JSONDecoder().decode(UserDTO.self, from: derivedData).domain()
 
-    #expect(animatedImageUser.nameplate?.animatedURL?.absoluteString == "https://cdn.example/animated.png")
+    #expect(
+        animatedImageUser.nameplate?.animatedURL?.absoluteString
+            == "https://cdn.discordapp.com/assets/collectibles/nameplates/cityscape/img.png"
+    )
     #expect(
         derivedUser.nameplate?.animatedURL?.absoluteString
-            == "https://cdn.discordapp.com/assets/collectibles/nameplates/cosmic-storm/asset.webm"
+            == "https://cdn.discordapp.com/assets/collectibles/nameplates/cosmic-storm/img.png"
     )
 }

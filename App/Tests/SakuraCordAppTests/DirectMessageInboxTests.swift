@@ -70,6 +70,17 @@ import Testing
     )
 }
 
+@Test func `nameplate presentation matches Paicord palette and hover opacity`() {
+    #expect(
+        NameplatePresentationPolicy.colors(for: "violet")
+            == NameplatePaletteColors(light: 0x972FED, dark: 0x730BC8)
+    )
+    #expect(NameplatePresentationPolicy.colors(for: "none") == nil)
+    #expect(NameplatePresentationPolicy.colors(for: "unknown") == nil)
+    #expect(NameplatePresentationPolicy.opacity(isHovered: false) == 0.5)
+    #expect(NameplatePresentationPolicy.opacity(isHovered: true) == 0.8)
+}
+
 @Test func `composer prompts distinguish private conversations from channels`() {
     #expect(
         ComposerPlaceholderPolicy.text(
