@@ -1440,12 +1440,14 @@ struct AccountReadStateModelTests {
 @Test func `notification delivery deduplicates cancels by conversation and badges mentions`() async {
     let provider = MockChatProvider()
     let service = RecordingNotificationService()
+    let sounds = RecordingAppSoundPlayer()
     let defaults = UserDefaults(suiteName: "NotificationTests.\(UUID().uuidString)")!
     let preferences = NotificationPreferences(defaults: defaults)
     let model = AppModel(
         launchMode: .offlineTesting,
         provider: provider,
         notificationService: service,
+        soundPlayer: sounds,
         notificationPreferences: preferences
     )
     await model.start()
@@ -1461,11 +1463,13 @@ struct AccountReadStateModelTests {
     )
     await provider.emit(.messageCreated(message))
     #expect(await eventually { service.deliveredMessageIDs == [message.id] })
+    #expect(sounds.played == [.message])
     #expect(service.badgeCounts.last == baselineBadgeCount + 1)
 
     await provider.emit(.messageCreated(message))
     try? await Task.sleep(for: .milliseconds(20))
     #expect(service.deliveredMessageIDs == [message.id])
+    #expect(sounds.played == [.message])
 
     await provider.emit(
         .readStateChanged(

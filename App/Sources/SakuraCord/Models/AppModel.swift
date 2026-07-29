@@ -766,6 +766,7 @@ final class AppModel {
     let readState = AccountReadStateModel()
     let notificationPreferences: NotificationPreferences
     @ObservationIgnored private let notificationService: any NativeNotificationService
+    @ObservationIgnored private let soundPlayer: any AppSoundPlaying
     private(set) var isLoading = false
     private(set) var isLoadingMessages = false
     private(set) var hasCompletedInitialMessageLoad = false
@@ -1141,6 +1142,10 @@ final class AppModel {
         AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments)
         .runsChatPerformanceAutoScroll
     @ObservationIgnored private var eventTask: Task<Void, Never>?
+    @ObservationIgnored private var locallyStartedOutgoingPrivateCallRings:
+        Set<ChannelID> = []
+    @ObservationIgnored private var outgoingPrivateCallRingTimeoutTasks:
+        [ChannelID: Task<Void, Never>] = [:]
     @ObservationIgnored private var pendingCreatedMessages:
         [PreparedCreatedMessage] = []
     @ObservationIgnored private var createdMessageFlushTask: Task<Void, Never>?
@@ -1233,6 +1238,7 @@ final class AppModel {
         credentialStore: (any CredentialStore)? = nil,
         authenticatedProviderFactory: ((CredentialHandle, String?) -> any ChatProvider)? = nil,
         notificationService: (any NativeNotificationService)? = nil,
+        soundPlayer: (any AppSoundPlaying)? = nil,
         notificationPreferences: NotificationPreferences? = nil,
         typingExpiry: Duration = .seconds(10),
         localTypingTiming: LocalTypingTiming = LocalTypingTiming(),
@@ -1241,6 +1247,7 @@ final class AppModel {
         self.launchMode = launchMode
         self.notificationService =
             notificationService ?? NoopNativeNotificationService()
+        self.soundPlayer = soundPlayer ?? NoopAppSoundPlayer()
         self.notificationPreferences = notificationPreferences ?? NotificationPreferences()
         self.provider =
             provider
@@ -1306,6 +1313,7 @@ final class AppModel {
             return false
         }
         await leaveVoice()
+        resetAppSounds()
         await provider.disconnect()
         eventTask?.cancel()
         resetPendingCreatedMessages()
@@ -1356,11 +1364,15 @@ final class AppModel {
         await start(publishesSessionState: !preservesInteractivePresentation)
         isAuthenticated = snapshot != nil
         sessionState = isAuthenticated ? .workspace : .signedOut
+        if isAuthenticated {
+            await requestNotificationPermissionIfNeeded()
+        }
         return isAuthenticated
     }
 
     func logout() async {
         await leaveVoice()
+        resetAppSounds()
         await provider.disconnect()
         eventTask?.cancel()
         resetPendingCreatedMessages()
@@ -1464,6 +1476,7 @@ final class AppModel {
         do {
             let value = try await provider.bootstrap()
             snapshot = value
+            reconcilePrivateCallSounds()
             readState.configure(
                 accountID: credentialHandle?.accountID ?? (launchMode == .offlineTesting ? "offline" : nil),
                 guilds: value.guilds,
@@ -4045,6 +4058,7 @@ final class AppModel {
         }
         await leaveVoice()
         activeVoiceChannel = channel
+        reconcilePrivateCallSounds()
         voiceSessionState = .connecting
         voiceErrorMessage = nil
         do {
@@ -4055,6 +4069,7 @@ final class AppModel {
                 selfDeaf: isVoiceDeafened
             )
             try await startVoiceSession(with: info)
+            soundPlayer.play(.userJoin)
         } catch {
             voiceEventTask?.cancel()
             voiceEventTask = nil
@@ -4071,6 +4086,7 @@ final class AppModel {
             )
             activeVoiceChannel = nil
             voiceSession = nil
+            reconcilePrivateCallSounds()
         }
     }
 
@@ -4114,12 +4130,14 @@ final class AppModel {
                 await toggleCamera()
             }
             if shouldRing {
+                beginLocalOutgoingPrivateCallRing(channelID: channel.id)
                 do {
                     try await provider.ringPrivateCall(
                         channelID: channel.id,
                         recipients: nil
                     )
                 } catch {
+                    endLocalOutgoingPrivateCallRing(channelID: channel.id)
                     // Joining succeeded and is not replayed. Surface the bounded
                     // ring failure without turning it into a second call action.
                     voiceErrorMessage = error.localizedDescription
@@ -4173,6 +4191,7 @@ final class AppModel {
             if var updated = privateCallsByChannel[call.channelID] {
                 updated.ongoingRings.removeAll { $0.recipientID == currentUserID }
                 privateCallsByChannel[call.channelID] = updated
+                reconcilePrivateCallSounds()
             }
         } catch {
             voiceErrorMessage = error.localizedDescription
@@ -4195,8 +4214,54 @@ final class AppModel {
         }
     }
 
+    private func beginLocalOutgoingPrivateCallRing(channelID: ChannelID) {
+        locallyStartedOutgoingPrivateCallRings.insert(channelID)
+        outgoingPrivateCallRingTimeoutTasks[channelID]?.cancel()
+        outgoingPrivateCallRingTimeoutTasks[channelID] = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(45))
+            } catch {
+                return
+            }
+            self?.endLocalOutgoingPrivateCallRing(channelID: channelID)
+        }
+        reconcilePrivateCallSounds()
+    }
+
+    private func endLocalOutgoingPrivateCallRing(channelID: ChannelID) {
+        locallyStartedOutgoingPrivateCallRings.remove(channelID)
+        outgoingPrivateCallRingTimeoutTasks.removeValue(forKey: channelID)?.cancel()
+        reconcilePrivateCallSounds()
+    }
+
+    private func reconcilePrivateCallSounds() {
+        let state = PrivateCallSoundState.make(
+            calls: privateCallsByChannel.values,
+            currentUserID: snapshot?.currentUser.id,
+            activeChannelID: activeVoiceChannel?.id,
+            locallyStartedOutgoingChannelIDs:
+                locallyStartedOutgoingPrivateCallRings
+        )
+        soundPlayer.setLooping(.callRinging, active: state.ringsIncoming)
+        soundPlayer.setLooping(.callCalling, active: state.ringsOutgoing)
+    }
+
+    private func resetAppSounds() {
+        for task in outgoingPrivateCallRingTimeoutTasks.values {
+            task.cancel()
+        }
+        outgoingPrivateCallRingTimeoutTasks = [:]
+        locallyStartedOutgoingPrivateCallRings = []
+        soundPlayer.stopAll()
+    }
+
     func leaveVoice() async {
-        let guildID = activeVoiceChannel?.guildID
+        let channel = activeVoiceChannel
+        let guildID = channel?.guildID
+        let hadActiveVoice = channel != nil
+        if let channelID = channel?.id {
+            endLocalOutgoingPrivateCallRing(channelID: channelID)
+        }
         voiceMigrationGeneration &+= 1
         voiceMigrationTask?.cancel()
         voiceMigrationTask = nil
@@ -4224,6 +4289,10 @@ final class AppModel {
         voiceLatencyMilliseconds = nil
         voiceSessionState = .idle
         isCameraEnabled = false
+        reconcilePrivateCallSounds()
+        if hadActiveVoice {
+            soundPlayer.play(.disconnect)
+        }
     }
 
     func toggleVoiceMute() async {
@@ -4231,6 +4300,9 @@ final class AppModel {
         UserDefaults.standard.set(isVoiceMuted, forKey: "voiceMuted")
         await voiceSession?.setMuted(isVoiceMuted)
         await publishVoiceState()
+        if activeVoiceChannel != nil {
+            soundPlayer.play(isVoiceMuted ? .mute : .unmute)
+        }
     }
 
     func toggleVoiceDeafen() async {
@@ -4238,6 +4310,9 @@ final class AppModel {
         UserDefaults.standard.set(isVoiceDeafened, forKey: "voiceDeafened")
         await voiceSession?.setDeafened(isVoiceDeafened)
         await publishVoiceState()
+        if activeVoiceChannel != nil {
+            soundPlayer.play(isVoiceDeafened ? .deafen : .undeafen)
+        }
     }
 
     func toggleCamera() async {
@@ -4245,6 +4320,9 @@ final class AppModel {
         if voiceSession == nil {
             isCameraEnabled = enabled
             await publishVoiceState()
+            if activeVoiceChannel != nil {
+                soundPlayer.play(enabled ? .cameraOn : .cameraOff)
+            }
             return
         }
         do {
@@ -4260,6 +4338,7 @@ final class AppModel {
                 selfDeaf: isVoiceDeafened,
                 selfVideo: enabled
             )
+            soundPlayer.play(enabled ? .cameraOn : .cameraOff)
         } catch {
             voiceErrorMessage = error.localizedDescription
             errorMessage = error.localizedDescription
@@ -4915,6 +4994,13 @@ final class AppModel {
         (try? await notificationService.requestAuthorization()) ?? false
     }
 
+    private func requestNotificationPermissionIfNeeded() async {
+        guard notificationPreferences.isEnabled,
+              await notificationService.authorizationStatus() == .notDetermined
+        else { return }
+        _ = try? await notificationService.requestAuthorization()
+    }
+
     func notificationAuthorizationStatus() async -> UNAuthorizationStatus {
         await notificationService.authorizationStatus()
     }
@@ -5189,6 +5275,16 @@ final class AppModel {
         let guildID = message.guildID ?? channel?.guildID
         let guild = guildID.flatMap { serverRailGuildsByID[$0] }
         let accountID = readState.accountID ?? "offline"
+        if notificationPreferences.isEnabled,
+           notificationPreferences.playsSound,
+           !notificationPreferences.isQuiet()
+        {
+            // Apple's notification sound facility does not support MP3. Play
+            // Discord's exact message asset through the same retained audio
+            // path as the voice sounds, and let Notification Center own only
+            // the banner/list presentation.
+            soundPlayer.play(.message)
+        }
         Task {
             await notificationService.deliver(
                 message: message,
@@ -5582,6 +5678,13 @@ final class AppModel {
             readState.updateCurrentUserRoles(roleIDs, guildID: guildID)
             refreshUnreadPresentation()
         case .voiceStateChanged(let state):
+            let previous = voiceStates[state.userID]
+            let effects = VoiceStateSoundPolicy.effects(
+                previous: previous,
+                current: state,
+                activeChannelID: activeVoiceChannel?.id,
+                currentUserID: snapshot?.currentUser.id
+            )
             if state.channelID == nil {
                 voiceStates[state.userID] = nil
             } else {
@@ -5593,11 +5696,24 @@ final class AppModel {
             if state.guildID == nil {
                 reconcilePrivateCallVoiceState(state)
             }
+            for effect in effects {
+                soundPlayer.play(effect)
+            }
         case .privateCallChanged(var call):
             if call.voiceStates == nil {
                 call.voiceStates = privateCallsByChannel[call.channelID]?.voiceStates
             }
             privateCallsByChannel[call.channelID] = call
+            if let currentUserID = snapshot?.currentUser.id,
+               call.ongoingRings.contains(where: {
+                   $0.senderID == currentUserID
+                       && $0.recipientID != currentUserID
+               })
+            {
+                endLocalOutgoingPrivateCallRing(channelID: call.channelID)
+            } else {
+                reconcilePrivateCallSounds()
+            }
         case .privateCallDeleted(let channelID, let unavailable):
             if unavailable, var call = privateCallsByChannel[channelID] {
                 call.isUnavailable = true
@@ -5611,6 +5727,7 @@ final class AppModel {
                     }
                 }
             }
+            endLocalOutgoingPrivateCallRing(channelID: channelID)
         case .voiceServerChanged(let info):
             scheduleVoiceServerMigration(to: info)
         case .snapshotChanged(let value):

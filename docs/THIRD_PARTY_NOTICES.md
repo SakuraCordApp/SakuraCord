@@ -1,5 +1,39 @@
 # Third-party notices
 
+## Discord client sound effects
+
+SakuraCord includes the classic Discord client sound effects for message
+notifications, incoming and outgoing calls, voice join and leave, disconnect,
+mute and unmute, deafen and undeafen, and camera on and off.
+
+- Source: Discord's public first-party web-client asset bundle and
+  `https://discord.com/assets/`
+- Retrieved: 2026-07-29
+- Verification: the live web-client module names and content-addressed asset
+  URLs were resolved directly. The classic assets' HTTP ETags match the
+  full-length hashes in the independently archived 2019 asset list; the camera
+  assets come from the current first-party client.
+
+| File | SHA-256 |
+| --- | --- |
+| `call_calling.mp3` | `c3999dbbbea7fca113d6f396b81d6054dd2dd6df79f442b62dfb74afddd36934` |
+| `call_ringing.mp3` | `a2365a04f839099538271d06889147475ceef0845f8cc010425618f5dc412880` |
+| `camera_off.mp3` | `fe81a2ab7b0581736108c5fc79ab7884ab2e5211a50b69f56badde08d41e7bfb` |
+| `camera_on.mp3` | `faeb721a072575c96d1e140aaecd469bf3f7278347596968dddf22fdb65005bf` |
+| `deafen.mp3` | `dee4468bbafb321b159dcab42f52d1fbfb1d01358437e0a3088c3345979211b8` |
+| `disconnect.mp3` | `c06c7e58099969eacc5f8eb925fb381f445250b9f37acf959b11df72aabb44ca` |
+| `message1.mp3` | `31ad0482eee7770597b8aa723a80fd041ade0b076679b12293664f1f1777211b` |
+| `mute.mp3` | `f6194168829b0701e8b40817d5173afed4b3b1e0b5074ab82ca31d97e4cb65c1` |
+| `undeafen.mp3` | `690b64977594baa41c7978d76259224f67799ba337df2d1045dce970ef82b243` |
+| `unmute.mp3` | `1572881f90703c1e0cd138fe7486d2e53c0ac5d8509cade32029fb31650b9304` |
+| `user_join.mp3` | `d30746caf3e4675ae0d822d51461a9ad24832afa1e20179c3c2fc7b50b911a26` |
+| `user_leave.mp3` | `9fd71c2d8112c82a7fb316602bb1645bc65f5edfa260110bbaae80090fbe9df0` |
+
+Discord has not published an open-source license for these recordings. They
+remain the property of Discord and are included only to reproduce familiar
+client interaction cues. Their inclusion does not imply Discord affiliation or
+endorsement.
+
 ## Sparkle
 
 SakuraCord uses the official Sparkle 2 software update framework, pinned to

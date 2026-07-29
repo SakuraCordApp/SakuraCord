@@ -35,10 +35,15 @@ struct SakuraCordApp: App {
             configuration.mode == .offlineTesting
             ? NoopNativeNotificationService()
             : MacNativeNotificationService()
+        let soundPlayer: any AppSoundPlaying =
+            configuration.mode == .offlineTesting
+            ? NoopAppSoundPlayer()
+            : MacAppSoundPlayer()
         _model = State(initialValue: AppModel(
             launchMode: configuration.mode,
             provider: provider,
-            notificationService: notificationService
+            notificationService: notificationService,
+            soundPlayer: soundPlayer
         ))
     }
 

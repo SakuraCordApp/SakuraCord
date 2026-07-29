@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Observation
+import OSLog
 import SakuraCordModels
 import UserNotifications
 
@@ -175,6 +176,10 @@ final class NoopNativeNotificationService: NativeNotificationService {
 
 @MainActor
 final class MacNativeNotificationService: NSObject, NativeNotificationService {
+    private static let logger = Logger(
+        subsystem: "dev.sakuracord.SakuraCord",
+        category: "Notifications"
+    )
     private var center: UNUserNotificationCenter { .current() }
 
     func requestAuthorization() async throws -> Bool {
@@ -203,9 +208,6 @@ final class MacNativeNotificationService: NSObject, NativeNotificationService {
         content.title = presentation.title
         content.subtitle = presentation.subtitle
         content.body = presentation.body
-        if preferences.playsSound {
-            content.sound = .default
-        }
         let link = NotificationDeepLink(
             accountID: accountID,
             guildID: message.guildID ?? channel?.guildID,
@@ -216,7 +218,20 @@ final class MacNativeNotificationService: NSObject, NativeNotificationService {
         let identifier = Self.identifier(
             accountID: accountID, channelID: message.channelID, messageID: message.id
         )
-        try? await center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
+        do {
+            try await center.add(
+                UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
+            )
+        } catch {
+            let notificationError = error as NSError
+            Self.logger.error(
+                """
+                Notification delivery failed; \
+                domain=\(notificationError.domain, privacy: .public), \
+                code=\(notificationError.code)
+                """
+            )
+        }
     }
 
     func cancel(accountID: String, channelID: ChannelID) async {

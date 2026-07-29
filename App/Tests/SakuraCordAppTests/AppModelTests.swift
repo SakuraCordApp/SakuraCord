@@ -3,6 +3,7 @@ import DiscordProtocol
 import Foundation
 import SakuraCordModels
 import Testing
+import UserNotifications
 @testable import SakuraCord
 
 @MainActor
@@ -1308,11 +1309,13 @@ private func forumPresentationPost(
 @MainActor
 @Test func `interactive sign in keeps login presentation alive until bootstrap finishes`() async {
     let provider = SuspendedBootstrapTestProvider()
+    let notifications = PermissionRecordingNotificationService()
     let model = AppModel(
         launchMode: .normal,
         discordNetworkDisabledOverride: false,
         restoresStoredSession: false,
-        authenticatedProviderFactory: { _, _ in provider }
+        authenticatedProviderFactory: { _, _ in provider },
+        notificationService: notifications
     )
     await model.start()
     #expect(model.sessionState == .signedOut)
@@ -1333,6 +1336,7 @@ private func forumPresentationPost(
     #expect(await connection.value)
     #expect(model.sessionState == .workspace)
     #expect(model.isAuthenticated)
+    #expect(notifications.authorizationRequestCount == 1)
 }
 
 private actor CredentialAccessProbeStore: CredentialStore {
@@ -1361,11 +1365,13 @@ private actor CredentialAccessProbeStore: CredentialStore {
 @MainActor
 @Test func `interactive sign in failure stays signed out and exposes bootstrap error`() async {
     let provider = SuspendedBootstrapTestProvider(bootstrapError: "fixture bootstrap stopped")
+    let notifications = PermissionRecordingNotificationService()
     let model = AppModel(
         launchMode: .normal,
         discordNetworkDisabledOverride: false,
         restoresStoredSession: false,
-        authenticatedProviderFactory: { _, _ in provider }
+        authenticatedProviderFactory: { _, _ in provider },
+        notificationService: notifications
     )
     await model.start()
 
@@ -1382,6 +1388,7 @@ private actor CredentialAccessProbeStore: CredentialStore {
     #expect(await !(connection.value))
     #expect(model.sessionState == .signedOut)
     #expect(model.errorMessage == "fixture bootstrap stopped")
+    #expect(notifications.authorizationRequestCount == 0)
 }
 
 @MainActor
@@ -1999,13 +2006,19 @@ private func eventuallyOnMain(_ condition: @escaping @MainActor () -> Bool) asyn
 @MainActor
 @Test func `voice server reallocation keeps the call selected and reconnects`() async throws {
     let provider = VoiceMigrationTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let sounds = RecordingAppSoundPlayer()
+    let model = AppModel(
+        launchMode: .offlineTesting,
+        provider: provider,
+        soundPlayer: sounds
+    )
     await model.start()
     let voiceChannel = try #require(model.visibleChannels.first)
 
     await model.joinVoice(voiceChannel)
     #expect(model.activeVoiceChannel?.id == voiceChannel.id)
     #expect(model.voiceSessionState == .connected)
+    #expect(sounds.played == [.userJoin])
 
     await provider.emit(.voiceServerChanged(nil))
     try await Task.sleep(for: .milliseconds(20))
@@ -2016,12 +2029,21 @@ private func eventuallyOnMain(_ condition: @escaping @MainActor () -> Bool) asyn
     try await Task.sleep(for: .milliseconds(20))
     #expect(model.activeVoiceChannel?.id == voiceChannel.id)
     #expect(model.voiceSessionState == .connected)
+    #expect(sounds.played == [.userJoin])
+
+    await model.leaveVoice()
+    #expect(sounds.played == [.userJoin, .disconnect])
 }
 
 @MainActor
 @Test func `private calls remain app wide and reconcile incoming ongoing and deleted state`() async throws {
     let provider = VoiceMigrationTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let sounds = RecordingAppSoundPlayer()
+    let model = AppModel(
+        launchMode: .offlineTesting,
+        provider: provider,
+        soundPlayer: sounds
+    )
     await model.start()
     let currentUserID = try #require(model.snapshot?.currentUser.id)
     let channelID = ChannelID(rawValue: 88_800)
@@ -2046,6 +2068,7 @@ private func eventuallyOnMain(_ condition: @escaping @MainActor () -> Bool) asyn
     try await Task.sleep(for: .milliseconds(20))
     #expect(model.incomingPrivateCalls.map(\.channelID) == [channelID])
     #expect(model.privateCall(in: channelID)?.isRinging(currentUserID) == true)
+    #expect(sounds.looping[.callRinging] == true)
 
     await provider.emit(
         .privateCallChanged(
@@ -2068,10 +2091,12 @@ private func eventuallyOnMain(_ condition: @escaping @MainActor () -> Bool) asyn
     try await Task.sleep(for: .milliseconds(20))
     #expect(model.incomingPrivateCalls.isEmpty)
     #expect(model.privateCall(in: channelID)?.voiceStates?.map(\.userID) == [senderID])
+    #expect(sounds.looping[.callRinging] == false)
 
     await provider.emit(.privateCallDeleted(channelID: channelID, unavailable: false))
     try await Task.sleep(for: .milliseconds(20))
     #expect(model.privateCall(in: channelID) == nil)
+    #expect(sounds.looping[.callRinging] == false)
 }
 
 private struct ReactionMutationRequest: Equatable, Sendable {
@@ -2840,6 +2865,34 @@ private actor SuspendedBootstrapTestProvider: ChatProvider {
     }
 
     func disconnect() async {}
+}
+
+@MainActor
+private final class PermissionRecordingNotificationService: NativeNotificationService {
+    private(set) var authorizationRequestCount = 0
+    private var status: UNAuthorizationStatus = .notDetermined
+
+    func requestAuthorization() async throws -> Bool {
+        authorizationRequestCount += 1
+        status = .authorized
+        return true
+    }
+
+    func authorizationStatus() async -> UNAuthorizationStatus {
+        status
+    }
+
+    func deliver(
+        message: Message,
+        channel: Channel?,
+        guild: Guild?,
+        accountID: String,
+        preferences: NotificationPreferences
+    ) async {}
+
+    func cancel(accountID: String, channelID: ChannelID) async {}
+
+    func setDockBadge(_ count: Int, enabled: Bool) {}
 }
 
 private actor VoiceMigrationTestProvider: ChatProvider {
