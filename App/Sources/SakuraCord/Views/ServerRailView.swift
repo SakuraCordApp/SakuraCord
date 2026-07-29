@@ -105,7 +105,13 @@ struct GuildRailButton: View {
                 hasNotification: guild.unreadCount > 0
             )
             Button(action: action) {
-                GuildIconView(name: displayName, iconURL: guild.iconURL, size: 44, cornerRadius: 14)
+                GuildIconView(
+                    name: displayName,
+                    iconURL: guild.iconURL,
+                    size: 44,
+                    cornerRadius: 14,
+                    animates: isHovering
+                )
                     .overlay(alignment: .bottomTrailing) {
                         if guild.mentionCount > 0 {
                             Text(guild.mentionCount, format: .number)
