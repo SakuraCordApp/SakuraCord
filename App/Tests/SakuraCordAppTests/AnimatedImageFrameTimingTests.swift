@@ -46,6 +46,85 @@ import Testing
     )
 }
 
+@MainActor @Test
+func `cached avatar frame is installed before the representable is attached`() throws {
+    let colorSpace = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+    let context = try #require(
+        CGContext(
+            data: nil,
+            width: 2,
+            height: 2,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )
+    )
+    context.setFillColor(CGColor(red: 0.3, green: 0.6, blue: 0.9, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
+    let image = try #require(context.makeImage())
+    let data = NSMutableData()
+    let destination = try #require(
+        CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil)
+    )
+    CGImageDestinationAddImage(destination, image, nil)
+    #expect(CGImageDestinationFinalize(destination))
+    let decoded = try DecodedAnimatedImage(
+        data: data as Data,
+        maximumPixelDimension: 68
+    )
+    let url = try #require(URL(string: "https://cdn.example/avatar.webp"))
+    let cache = AnimatedRemoteImageDisplayCache.shared
+    cache.removeAll()
+    cache.insert(decoded, for: url, maximumPixelDimension: 68)
+
+    #expect(cache.image(for: url, maximumPixelDimension: 68) === decoded)
+    let canvas = AnimatedImageRepresentable.configuredCanvas(
+        decodedImage: decoded,
+        animates: true,
+        isLooping: true,
+        contentMode: .fit
+    )
+    #expect(canvas.layer?.contents != nil)
+}
+
+@MainActor @Test
+func `recreated avatar paints its cached frame before animated content mounts`() throws {
+    let colorSpace = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+    let context = try #require(
+        CGContext(
+            data: nil,
+            width: 2,
+            height: 2,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )
+    )
+    context.setFillColor(CGColor(red: 0.8, green: 0.4, blue: 0.2, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
+    let image = try #require(context.makeImage())
+    let data = NSMutableData()
+    let destination = try #require(
+        CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil)
+    )
+    CGImageDestinationAddImage(destination, image, nil)
+    #expect(CGImageDestinationFinalize(destination))
+    let decoded = try DecodedAnimatedImage(
+        data: data as Data,
+        maximumPixelDimension: 64
+    )
+    let url = try #require(URL(string: "https://cdn.example/recreated-avatar.webp"))
+    let cache = AnimatedRemoteImageDisplayCache.shared
+    cache.removeAll()
+    cache.insert(decoded, for: url, maximumPixelDimension: 64)
+
+    let avatar = AvatarView(name: "Maya", url: url, size: 32)
+    #expect(avatar.requestedPixelDimension == 64)
+    #expect(avatar.cachedFrame === decoded.frames.first)
+}
+
 @Test func `animated image decoding respects the requested display pixel budget`() throws {
     let width = 1_200
     let height = 800

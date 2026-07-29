@@ -11,6 +11,7 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
     let includesForumPerformanceFixture: Bool
     let includesChatPerformanceFixture: Bool
     let includesChatMediaPerformanceFixture: Bool
+    let includesIncomingPrivateCallFixture: Bool
     let runsChatPerformanceAutoScroll: Bool
     let runsChatLiveArrivalStress: Bool
 
@@ -19,6 +20,8 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
         includesForumPerformanceFixture = arguments.contains("--offline-forum-performance")
         includesChatMediaPerformanceFixture =
             arguments.contains("--offline-chat-media-performance-autoscroll")
+        includesIncomingPrivateCallFixture =
+            arguments.contains("--offline-incoming-private-call")
         runsChatPerformanceAutoScroll =
             arguments.contains("--offline-chat-performance-autoscroll")
             || arguments.contains("--offline-chat-performance-live-autoscroll")
@@ -33,6 +36,7 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
             "--offline-chat-performance", "--offline-chat-performance-autoscroll",
             "--offline-chat-performance-live-autoscroll",
             "--offline-chat-media-performance-autoscroll",
+            "--offline-incoming-private-call",
         ]
         mode = arguments.contains(where: testingFlags.contains) ? .offlineTesting : .normal
     }

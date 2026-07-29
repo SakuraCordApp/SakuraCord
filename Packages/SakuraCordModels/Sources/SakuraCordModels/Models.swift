@@ -1015,6 +1015,16 @@ public struct MessageGuildMember: Codable, Hashable, Sendable {
     }
 }
 
+public struct MessageCall: Codable, Hashable, Sendable {
+    public var participantIDs: [UserID]
+    public var endedAt: Date?
+
+    public init(participantIDs: [UserID] = [], endedAt: Date? = nil) {
+        self.participantIDs = participantIDs
+        self.endedAt = endedAt
+    }
+}
+
 public struct Message: Identifiable, Codable, Hashable, Sendable {
     public let id: MessageID
     public var channelID: ChannelID
@@ -1042,6 +1052,7 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
     public var mentionedUsers: [User]
     public var mentionedRoleIDs: [RoleID]
     public var mentionsEveryone: Bool
+    public var call: MessageCall?
 
     public init(
         id: MessageID,
@@ -1069,7 +1080,8 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
         thread: MessageThreadSummary? = nil,
         mentionedUsers: [User] = [],
         mentionedRoleIDs: [RoleID] = [],
-        mentionsEveryone: Bool = false
+        mentionsEveryone: Bool = false,
+        call: MessageCall? = nil
     ) {
         self.id = id
         self.channelID = channelID
@@ -1097,6 +1109,7 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
         self.mentionedUsers = mentionedUsers
         self.mentionedRoleIDs = mentionedRoleIDs
         self.mentionsEveryone = mentionsEveryone
+        self.call = call
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -1105,6 +1118,7 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
         case attachments, reactions, nonce, outboxState, type, flags, applicationID, application
         case interactionMetadata, guildID
         case embeds, components, stickers, thread, mentionedUsers, mentionedRoleIDs, mentionsEveryone
+        case call
     }
 
     public init(from decoder: Decoder) throws {
@@ -1140,6 +1154,7 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
         mentionedUsers = try values.decodeIfPresent([User].self, forKey: .mentionedUsers) ?? []
         mentionedRoleIDs = try values.decodeIfPresent([RoleID].self, forKey: .mentionedRoleIDs) ?? []
         mentionsEveryone = try values.decodeIfPresent(Bool.self, forKey: .mentionsEveryone) ?? false
+        call = try values.decodeIfPresent(MessageCall.self, forKey: .call)
     }
 }
 
@@ -1751,6 +1766,50 @@ public struct VoiceParticipantState: Equatable, Sendable {
     }
 }
 
+public struct PrivateCallRing: Equatable, Hashable, Sendable {
+    public var recipientID: UserID
+    public var senderID: UserID
+
+    public init(recipientID: UserID, senderID: UserID) {
+        self.recipientID = recipientID
+        self.senderID = senderID
+    }
+}
+
+/// Discord's app-wide state for an active direct-message or group-DM call.
+///
+/// `voiceStates` is nil on partial CALL_UPDATE payloads. Callers should retain
+/// the last complete participant snapshot until individual VOICE_STATE_UPDATE
+/// events reconcile it.
+public struct PrivateCall: Equatable, Sendable {
+    public var channelID: ChannelID
+    public var messageID: MessageID?
+    public var region: String?
+    public var ongoingRings: [PrivateCallRing]
+    public var voiceStates: [VoiceParticipantState]?
+    public var isUnavailable: Bool
+
+    public init(
+        channelID: ChannelID,
+        messageID: MessageID? = nil,
+        region: String? = nil,
+        ongoingRings: [PrivateCallRing] = [],
+        voiceStates: [VoiceParticipantState]? = nil,
+        isUnavailable: Bool = false
+    ) {
+        self.channelID = channelID
+        self.messageID = messageID
+        self.region = region
+        self.ongoingRings = ongoingRings
+        self.voiceStates = voiceStates
+        self.isUnavailable = isUnavailable
+    }
+
+    public func isRinging(_ userID: UserID) -> Bool {
+        ongoingRings.contains { $0.recipientID == userID }
+    }
+}
+
 public enum ClientNonce {
     /// Discord message nonces use the same timestamp layout as snowflakes.
     /// The upper 42 bits are milliseconds since Discord's 2015 epoch, not Unix
@@ -1804,6 +1863,8 @@ public enum ClientEvent: Equatable, Sendable {
         deletedIDs: [String]
     )
     case voiceStateChanged(VoiceParticipantState)
+    case privateCallChanged(PrivateCall)
+    case privateCallDeleted(channelID: ChannelID, unavailable: Bool)
     /// A nil value means Discord deallocated the current voice server and the
     /// client must wait for a replacement allocation before reconnecting.
     case voiceServerChanged(VoiceConnectionInfo?)

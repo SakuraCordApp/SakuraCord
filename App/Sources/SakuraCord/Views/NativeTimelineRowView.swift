@@ -695,12 +695,21 @@ struct NativeTimelineRowLayout {
         var contentFrame: CGRect?
         var hasRichContent = false
         let usesComponentsV2 = message.flags.contains(.isComponentsV2)
+        let textPlan =
+            if message.type == .call {
+                NativeTimelineTextPlan.make(
+                    for: message,
+                    currentUserID: model?.snapshot?.currentUser.id
+                )
+            } else {
+                row.textPlan
+            }
         let contentPresentation =
             usesComponentsV2
                 ? NativeTimelineTextPresentation.empty
                 : NativeTimelineTextPresentation.make(
                     message: message,
-                    plan: row.textPlan,
+                    plan: textPlan,
                     model: model
                 )
         if let attributedContent = contentPresentation.attributedContent {

@@ -127,7 +127,7 @@ struct AnimatedRemoteImage: View {
     }
 }
 
-private final class AnimatedRemoteImageDisplayCache: @unchecked Sendable {
+final class AnimatedRemoteImageDisplayCache: @unchecked Sendable {
     static let shared = AnimatedRemoteImageDisplayCache()
 
     private let cache: NSCache<NSString, DecodedAnimatedImage> = {
@@ -160,6 +160,10 @@ private final class AnimatedRemoteImageDisplayCache: @unchecked Sendable {
             ),
             cost: image.estimatedByteCount
         )
+    }
+
+    func removeAll() {
+        cache.removeAllObjects()
     }
 
     private func key(
@@ -343,14 +347,19 @@ actor SharedMediaDataLoader {
 
 }
 
-private struct AnimatedImageRepresentable: NSViewRepresentable {
+struct AnimatedImageRepresentable: NSViewRepresentable {
     let decodedImage: DecodedAnimatedImage
     let animates: Bool
     let isLooping: Bool
     let contentMode: ContentMode
 
     func makeNSView(context: Context) -> AnimatedImageCanvas {
-        AnimatedImageCanvas()
+        Self.configuredCanvas(
+            decodedImage: decodedImage,
+            animates: animates,
+            isLooping: isLooping,
+            contentMode: contentMode
+        )
     }
 
     func updateNSView(_ view: AnimatedImageCanvas, context: Context) {
@@ -360,6 +369,22 @@ private struct AnimatedImageRepresentable: NSViewRepresentable {
             isLooping: isLooping,
             contentMode: contentMode
         )
+    }
+
+    static func configuredCanvas(
+        decodedImage: DecodedAnimatedImage,
+        animates: Bool,
+        isLooping: Bool,
+        contentMode: ContentMode
+    ) -> AnimatedImageCanvas {
+        let view = AnimatedImageCanvas()
+        view.display(
+            decodedImage,
+            animates: animates,
+            isLooping: isLooping,
+            contentMode: contentMode
+        )
+        return view
     }
 }
 

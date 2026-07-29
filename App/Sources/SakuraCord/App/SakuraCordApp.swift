@@ -24,7 +24,9 @@ struct SakuraCordApp: App {
                 forumPostCount: configuration.includesForumPerformanceFixture ? 5_000 : nil,
                 timelineMessageCount: configuration.includesChatPerformanceFixture ? 5_000 : nil,
                 timelineIncludesAnimatedMedia:
-                    configuration.includesChatMediaPerformanceFixture
+                    configuration.includesChatMediaPerformanceFixture,
+                includesIncomingPrivateCall:
+                    configuration.includesIncomingPrivateCallFixture
             )
             : nil
         performanceMockProvider = mockProvider

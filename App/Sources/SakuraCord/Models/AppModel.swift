@@ -882,6 +882,7 @@ final class AppModel {
     private(set) var voiceLatencyMilliseconds: Int?
     private(set) var voiceErrorMessage: String?
     private(set) var voiceStates: [UserID: VoiceParticipantState] = [:]
+    private(set) var privateCallsByChannel: [ChannelID: PrivateCall] = [:]
     private(set) var mediaDevices: MediaDeviceSnapshot = .empty
     private(set) var emojisByGuild: [GuildID: [DiscordEmoji]] = [:] {
         didSet { updateOrderedCustomEmojis() }
@@ -926,6 +927,23 @@ final class AppModel {
         UserDefaults.standard.object(forKey: "voiceOutputVolume") as? Double ?? 1
     )
     var selectedGuildID: GuildID?
+    var incomingPrivateCalls: [PrivateCall] {
+        guard let currentUserID = snapshot?.currentUser.id else { return [] }
+        return privateCallsByChannel.values
+            .filter {
+                !$0.isUnavailable
+                    && $0.isRinging(currentUserID)
+                    && activeVoiceChannel?.id != $0.channelID
+            }
+            .sorted { $0.channelID.rawValue < $1.channelID.rawValue }
+    }
+
+    func privateCall(in channelID: ChannelID) -> PrivateCall? {
+        guard let call = privateCallsByChannel[channelID], !call.isUnavailable else {
+            return nil
+        }
+        return call
+    }
     var selectedConversationAccess: ConversationAccess {
         guard let channel = selectedChannel else { return .checking }
         return conversationAccess(for: channel)
@@ -1097,6 +1115,13 @@ final class AppModel {
                 beginForumLoad()
             } else {
                 beginSelectedChannelLoad()
+            }
+            if let channel = selectedChannel,
+               channel.kind == .directMessage || channel.kind == .groupDirectMessage
+            {
+                Task { [weak self] in
+                    await self?.observePrivateCall(in: channel)
+                }
             }
         }
     }
@@ -1316,6 +1341,7 @@ final class AppModel {
         hasLoadedDiscordEmojiSettings = false
         didAttemptDiscordEmojiSettings = false
         voiceStates = [:]
+        privateCallsByChannel = [:]
         visibleChannels = []
         selectedChannel = nil
         selectedGuildID = nil
@@ -1528,21 +1554,14 @@ final class AppModel {
         guard let channel = selectedChannel, channel.guildID == nil else {
             return memberSections
         }
-        let knownMembersByID = Dictionary(
-            members.map { ($0.id, $0) },
-            uniquingKeysWith: { _, newer in newer }
-        )
-        var participants = channel.recipients.map { user in
-            knownMembersByID[user.id]
-                ?? Member(user: user, roleName: "Members", status: .offline)
-        }
-        if let currentUser = snapshot?.currentUser {
-            participants.append(
-                knownMembersByID[currentUser.id]
-                    ?? Member(user: currentUser, roleName: "You", status: currentStatus)
+        return MemberSection.make(
+            from: DirectMessageMemberResolver.members(
+                for: channel,
+                knownMembers: members,
+                currentUser: snapshot?.currentUser,
+                currentStatus: currentStatus
             )
-        }
-        return MemberSection.make(from: participants)
+        )
     }
 
     func navigate(to channelID: ChannelID) {
@@ -4015,7 +4034,10 @@ final class AppModel {
     }
 
     func joinVoice(_ channel: Channel) async {
-        guard channel.kind == .voice else { return }
+        guard channel.kind == .voice
+                || channel.kind == .directMessage
+                || channel.kind == .groupDirectMessage
+        else { return }
         if activeVoiceChannel?.id == channel.id,
            voiceSessionState == .connected || voiceSessionState == .connecting
         {
@@ -4049,6 +4071,127 @@ final class AppModel {
             )
             activeVoiceChannel = nil
             voiceSession = nil
+        }
+    }
+
+    func observePrivateCall(in channel: Channel) async {
+        guard channel.kind == .directMessage || channel.kind == .groupDirectMessage else {
+            return
+        }
+        do {
+            try await provider.subscribeToPrivateCall(channelID: channel.id)
+        } catch {
+            // Observation is opportunistic while the Gateway is reconnecting.
+            // Connection-ready reconciliation will subscribe again.
+        }
+    }
+
+    func startPrivateCall(in channel: Channel, withVideo: Bool = false) async {
+        guard channel.kind == .directMessage || channel.kind == .groupDirectMessage,
+              !channel.isOfficialSystemDirectMessage
+        else { return }
+
+        if privateCall(in: channel.id) != nil {
+            await joinPrivateCall(in: channel, withVideo: withVideo)
+            return
+        }
+
+        do {
+            try await provider.subscribeToPrivateCall(channelID: channel.id)
+            let shouldRing: Bool
+            if channel.kind == .groupDirectMessage {
+                shouldRing = true
+            } else {
+                shouldRing = try await provider.privateCallIsRingable(
+                    channelID: channel.id
+                )
+            }
+            await joinVoice(channel)
+            guard activeVoiceChannel?.id == channel.id,
+                  voiceSessionState == .connected
+            else { return }
+            if withVideo, !isCameraEnabled {
+                await toggleCamera()
+            }
+            if shouldRing {
+                do {
+                    try await provider.ringPrivateCall(
+                        channelID: channel.id,
+                        recipients: nil
+                    )
+                } catch {
+                    // Joining succeeded and is not replayed. Surface the bounded
+                    // ring failure without turning it into a second call action.
+                    voiceErrorMessage = error.localizedDescription
+                    errorMessage = error.localizedDescription
+                }
+            }
+        } catch {
+            voiceErrorMessage = error.localizedDescription
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func joinPrivateCall(in channel: Channel, withVideo: Bool = false) async {
+        guard channel.kind == .directMessage || channel.kind == .groupDirectMessage,
+              !channel.isOfficialSystemDirectMessage
+        else { return }
+        do {
+            try await provider.subscribeToPrivateCall(channelID: channel.id)
+            await joinVoice(channel)
+            if withVideo,
+               activeVoiceChannel?.id == channel.id,
+               voiceSessionState == .connected,
+               !isCameraEnabled
+            {
+                await toggleCamera()
+            }
+        } catch {
+            voiceErrorMessage = error.localizedDescription
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func acceptPrivateCall(_ call: PrivateCall) async {
+        guard let channel = snapshot?.channels.first(where: { $0.id == call.channelID })
+                ?? visibleChannels.first(where: { $0.id == call.channelID })
+        else { return }
+        if selectedChannelID != channel.id {
+            selectedGuildID = nil
+            selectedChannelID = channel.id
+        }
+        await joinPrivateCall(in: channel)
+    }
+
+    func declinePrivateCall(_ call: PrivateCall) async {
+        guard let currentUserID = snapshot?.currentUser.id else { return }
+        do {
+            try await provider.stopRingingPrivateCall(
+                channelID: call.channelID,
+                recipients: [currentUserID]
+            )
+            if var updated = privateCallsByChannel[call.channelID] {
+                updated.ongoingRings.removeAll { $0.recipientID == currentUserID }
+                privateCallsByChannel[call.channelID] = updated
+            }
+        } catch {
+            voiceErrorMessage = error.localizedDescription
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func reconcilePrivateCallVoiceState(_ state: VoiceParticipantState) {
+        if let channelID = state.channelID, var call = privateCallsByChannel[channelID] {
+            var states = call.voiceStates ?? []
+            states.removeAll { $0.userID == state.userID }
+            states.append(state)
+            call.voiceStates = states
+            privateCallsByChannel[channelID] = call
+        } else if state.channelID == nil {
+            for (channelID, var call) in privateCallsByChannel {
+                call.voiceStates?.removeAll { $0.userID == state.userID }
+                privateCallsByChannel[channelID] = call
+            }
         }
     }
 
@@ -5185,6 +5328,12 @@ final class AppModel {
                 stopLocalTyping(clearThrottle: true)
                 typingState.clearAll()
                 resetAcknowledgementWork()
+            } else if let channel = selectedChannel,
+                      channel.kind == .directMessage || channel.kind == .groupDirectMessage
+            {
+                Task { [weak self] in
+                    await self?.observePrivateCall(in: channel)
+                }
             }
         case .emojisChanged(let guildID, let emojis):
             applyEmojis(emojis, to: guildID)
@@ -5440,6 +5589,27 @@ final class AppModel {
             }
             if !state.isVideoEnabled {
                 voiceVideoFrames[String(state.userID.rawValue)] = nil
+            }
+            if state.guildID == nil {
+                reconcilePrivateCallVoiceState(state)
+            }
+        case .privateCallChanged(var call):
+            if call.voiceStates == nil {
+                call.voiceStates = privateCallsByChannel[call.channelID]?.voiceStates
+            }
+            privateCallsByChannel[call.channelID] = call
+        case .privateCallDeleted(let channelID, let unavailable):
+            if unavailable, var call = privateCallsByChannel[channelID] {
+                call.isUnavailable = true
+                call.ongoingRings = []
+                privateCallsByChannel[channelID] = call
+            } else {
+                privateCallsByChannel[channelID] = nil
+                if activeVoiceChannel?.id == channelID {
+                    Task { [weak self] in
+                        await self?.leaveVoice()
+                    }
+                }
             }
         case .voiceServerChanged(let info):
             scheduleVoiceServerMigration(to: info)
@@ -6235,7 +6405,10 @@ struct NativeTimelineTextPlan: Equatable, Sendable {
             && lhs.baseFontSize == rhs.baseFontSize
     }
 
-    nonisolated static func make(for message: Message) -> Self {
+    nonisolated static func make(
+        for message: Message,
+        currentUserID: UserID? = nil
+    ) -> Self {
         let baseFontSize: CGFloat =
             if message.type.hasGeneratedContent {
                 13
@@ -6244,7 +6417,10 @@ struct NativeTimelineTextPlan: Equatable, Sendable {
             }
         let visibleContent =
             if message.type.hasGeneratedContent {
-                SystemMessagePresentation.label(for: message)
+                SystemMessagePresentation.label(
+                    for: message,
+                    currentUserID: currentUserID
+                )
             } else {
                 MessageEmbedPresentation.visibleMessageContent(for: message)
             }
@@ -6255,7 +6431,15 @@ struct NativeTimelineTextPlan: Equatable, Sendable {
                 source: linkedPresentation.visibleText
             )
         let attributed: NativeTimelineAttributedTextBox?
-        if let prepared, prepared.tokens.isEmpty {
+        if message.type.hasGeneratedContent {
+            attributed = NativeTimelineAttributedTextBox(
+                SystemMessagePresentation.attributedLabel(
+                    for: message,
+                    currentUserID: currentUserID,
+                    baseFontSize: baseFontSize
+                )
+            )
+        } else if let prepared, prepared.tokens.isEmpty {
             attributed = NativeTimelineAttributedTextBox(
                 DiscordMarkdown.appKitAttributed(
                     prepared.markdownPlan,

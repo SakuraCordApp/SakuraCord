@@ -98,6 +98,8 @@ public actor DiscordRESTProvider: ChatProvider {
     private var pendingVoiceNegotiation: PendingVoiceNegotiation?
     private var activeVoiceConnection: VoiceConnectionInfo?
     private var voiceNegotiationTimeoutTask: Task<Void, Never>?
+    private var privateCallsByChannel: [ChannelID: PrivateCall] = [:]
+    private var subscribedPrivateCallChannelIDs: Set<ChannelID> = []
     #if DEBUG
         private var suspendsForumCatalogueRefreshForTesting = false
     #endif
@@ -2287,6 +2289,66 @@ public actor DiscordRESTProvider: ChatProvider {
         }
     }
 
+    public func subscribeToPrivateCall(channelID: ChannelID) async throws {
+        guard gatewayReady else {
+            throw ChatProviderError.invalidRequest(
+                "Discord Gateway is not ready to observe this private call.")
+        }
+        guard subscribedPrivateCallChannelIDs.insert(channelID).inserted else { return }
+        do {
+            try await sendGateway(
+                DiscordGatewayPayloadFactory.privateCallConnect(channelID: channelID)
+            )
+        } catch {
+            subscribedPrivateCallChannelIDs.remove(channelID)
+            throw error
+        }
+    }
+
+    public func privateCallIsRingable(channelID: ChannelID) async throws -> Bool {
+        let response: PrivateCallEligibilityDTO = try await request(
+            "/channels/\(channelID)/call")
+        return response.ringable
+    }
+
+    public func ringPrivateCall(channelID: ChannelID, recipients: [UserID]?) async throws {
+        // Discord creates the call through the voice Gateway transition first.
+        // Wait only for that pushed state; never probe or retry the mutation.
+        try await waitForPrivateCall(channelID: channelID)
+        try await requestEmpty(
+            "/channels/\(channelID)/call/ring",
+            method: "POST",
+            body: [
+                "recipients": recipients.map {
+                    .array($0.map { .string($0.description) })
+                } ?? .null
+            ]
+        )
+    }
+
+    public func stopRingingPrivateCall(channelID: ChannelID, recipients: [UserID]) async throws {
+        guard !recipients.isEmpty else {
+            throw ChatProviderError.invalidRequest(
+                "Stopping a private-call ring requires at least one recipient.")
+        }
+        try await requestEmpty(
+            "/channels/\(channelID)/call/stop-ringing",
+            method: "POST",
+            body: [
+                "recipients": .array(recipients.map { .string($0.description) })
+            ]
+        )
+    }
+
+    private func waitForPrivateCall(channelID: ChannelID) async throws {
+        for _ in 0 ..< 50 {
+            if privateCallsByChannel[channelID] != nil { return }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        throw ChatProviderError.invalidRequest(
+            "Discord did not create the private call before ringing timed out.")
+    }
+
     private func sendVoiceState(
         channelID: ChannelID?,
         guildID: GuildID?,
@@ -2437,6 +2499,14 @@ public actor DiscordRESTProvider: ChatProvider {
 
         func cachedMessageForTesting(messageID: MessageID) -> Message? {
             cachedMessages[messageID]
+        }
+
+        func seedPrivateCallSubscriptionForTesting(channelID: ChannelID) {
+            subscribedPrivateCallChannelIDs.insert(channelID)
+        }
+
+        func hasPrivateCallSubscriptionForTesting(channelID: ChannelID) -> Bool {
+            subscribedPrivateCallChannelIDs.contains(channelID)
         }
     #endif
 
@@ -2657,9 +2727,11 @@ public actor DiscordRESTProvider: ChatProvider {
         else { return }
         switch name {
         case "READY", "RESUMED":
+            subscribedPrivateCallChannelIDs = []
             if name == "READY",
                let ready = try? JSONDecoder().decode(GatewayReadyGuildsDTO.self, from: data)
             {
+                privateCallsByChannel = [:]
                 cachedMembers = [:]
                 cachedPrivateMembersByID = [:]
                 cachedGatewayUsersByID = Dictionary(
@@ -3378,6 +3450,7 @@ public actor DiscordRESTProvider: ChatProvider {
                   let participant = state.domain()
             else { return }
             continuation?.yield(.voiceStateChanged(participant))
+            reconcilePrivateCallVoiceState(participant)
             if participant.userID == currentUser?.id {
                 if participant.channelID == nil {
                     activeVoiceConnection = nil
@@ -3415,8 +3488,69 @@ public actor DiscordRESTProvider: ChatProvider {
                 self.activeVoiceConnection = info
                 continuation?.yield(.voiceServerChanged(info))
             }
+        case "CALL_CREATE":
+            guard let update = try? JSONDecoder().decode(PrivateCallDTO.self, from: data),
+                  let call = update.domain()
+            else { return }
+            privateCallsByChannel[call.channelID] = call
+            continuation?.yield(.privateCallChanged(call))
+        case "CALL_UPDATE":
+            guard let update = try? JSONDecoder().decode(PrivateCallDTO.self, from: data),
+                  let incoming = update.domain()
+            else { return }
+            let existing = privateCallsByChannel[incoming.channelID]
+            let merged = PrivateCall(
+                channelID: incoming.channelID,
+                messageID: incoming.messageID ?? existing?.messageID,
+                region: incoming.region ?? existing?.region,
+                ongoingRings: update.ongoingRings == nil
+                    ? (existing?.ongoingRings ?? [])
+                    : incoming.ongoingRings,
+                voiceStates: incoming.voiceStates ?? existing?.voiceStates,
+                isUnavailable: update.unavailable ?? existing?.isUnavailable ?? false
+            )
+            privateCallsByChannel[merged.channelID] = merged
+            continuation?.yield(.privateCallChanged(merged))
+        case "CALL_DELETE":
+            guard let deletion = try? JSONDecoder().decode(PrivateCallDeleteDTO.self, from: data),
+                  let channelID = ChannelID(deletion.channelID)
+            else { return }
+            privateCallsByChannel[channelID] = nil
+            continuation?.yield(
+                .privateCallDeleted(
+                    channelID: channelID,
+                    unavailable: deletion.unavailable ?? false
+                )
+            )
         default:
             break
+        }
+    }
+
+    private func reconcilePrivateCallVoiceState(_ state: VoiceParticipantState) {
+        var changedChannelIDs: [ChannelID] = []
+        if let channelID = state.channelID, var call = privateCallsByChannel[channelID] {
+            var states = call.voiceStates ?? []
+            states.removeAll { $0.userID == state.userID }
+            states.append(state)
+            call.voiceStates = states
+            privateCallsByChannel[channelID] = call
+            changedChannelIDs.append(channelID)
+        } else if state.channelID == nil {
+            for (channelID, var call) in privateCallsByChannel {
+                guard var states = call.voiceStates,
+                      states.contains(where: { $0.userID == state.userID })
+                else { continue }
+                states.removeAll { $0.userID == state.userID }
+                call.voiceStates = states
+                privateCallsByChannel[channelID] = call
+                changedChannelIDs.append(channelID)
+            }
+        }
+        for channelID in changedChannelIDs {
+            if let call = privateCallsByChannel[channelID] {
+                continuation?.yield(.privateCallChanged(call))
+            }
         }
     }
 
@@ -3615,9 +3749,13 @@ extension DiscordRESTProvider {
         }
     }
 
-    private func requestEmpty(_ path: String, method: String) async throws {
+    private func requestEmpty(
+        _ path: String,
+        method: String,
+        body: [String: JSONValue]? = nil
+    ) async throws {
         let (_, response) = try await perform(
-            path, method: method, query: [], body: nil, headers: [:])
+            path, method: method, query: [], body: body, headers: [:])
         guard (200 ..< 300).contains(response.statusCode) else {
             if response.statusCode == 401 {
                 authorizationValue = nil
@@ -5617,6 +5755,68 @@ enum DiscordGatewayPayloadFactory {
             ] as [String: Any],
         ]
     }
+
+    static func privateCallConnect(channelID: ChannelID) -> [String: Any] {
+        [
+            "op": 13,
+            "d": [
+                "channel_id": channelID.description
+            ] as [String: Any],
+        ]
+    }
+}
+
+private struct PrivateCallEligibilityDTO: Decodable {
+    var ringable: Bool
+}
+
+private struct PrivateCallDTO: Decodable {
+    var channelID: String
+    var messageID: String?
+    var region: String?
+    var ongoingRings: [String: String?]?
+    var voiceStates: [VoiceStateUpdateDTO]?
+    var unavailable: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case channelID = "channel_id"
+        case messageID = "message_id"
+        case region
+        case ongoingRings = "ongoing_rings"
+        case voiceStates = "voice_states"
+        case unavailable
+    }
+
+    func domain() -> PrivateCall? {
+        guard let channelID = ChannelID(channelID) else { return nil }
+        let rings = (ongoingRings ?? [:]).compactMap {
+            recipient, sender -> PrivateCallRing? in
+            guard let recipientID = UserID(recipient),
+                  let sender,
+                  let senderID = UserID(sender)
+            else { return nil }
+            return PrivateCallRing(recipientID: recipientID, senderID: senderID)
+        }
+        .sorted { $0.recipientID.rawValue < $1.recipientID.rawValue }
+        return PrivateCall(
+            channelID: channelID,
+            messageID: messageID.flatMap(MessageID.init),
+            region: region,
+            ongoingRings: rings,
+            voiceStates: voiceStates?.compactMap { $0.domain() },
+            isUnavailable: unavailable ?? false
+        )
+    }
+}
+
+private struct PrivateCallDeleteDTO: Decodable {
+    var channelID: String
+    var unavailable: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case channelID = "channel_id"
+        case unavailable
+    }
 }
 
 private struct PendingRoleMemberRequest {
@@ -6554,6 +6754,23 @@ private struct AttachmentSlotDTO: Decodable {
 }
 
 private struct MessageDTO: Decodable {
+    struct CallDTO: Decodable {
+        var participants: [String]?
+        var endedTimestamp: String?
+
+        enum CodingKeys: String, CodingKey {
+            case participants
+            case endedTimestamp = "ended_timestamp"
+        }
+
+        var domain: MessageCall {
+            MessageCall(
+                participantIDs: (participants ?? []).compactMap(UserID.init),
+                endedAt: endedTimestamp.flatMap(DiscordDate.parse)
+            )
+        }
+    }
+
     struct MemberDTO: Decodable {
         var nick: String?
         var roles: [String]?
@@ -6677,6 +6894,7 @@ private struct MessageDTO: Decodable {
     var mentions: LossyList<MessageMentionDTO>?
     var mentionRoles: [String]?
     var mentionEveryone: Bool?
+    var call: CallDTO?
     enum CodingKeys: String, CodingKey {
         case id
         case channelID = "channel_id"
@@ -6692,6 +6910,7 @@ private struct MessageDTO: Decodable {
         case interactionMetadata = "interaction_metadata"
         case guildID = "guild_id"
         case stickerItems = "sticker_items"
+        case call
     }
 
     func domain() throws -> Message {
@@ -6749,7 +6968,8 @@ private struct MessageDTO: Decodable {
                 try? $0.domain(guildID: resolvedGuildID)
             } ?? [],
             mentionedRoleIDs: (mentionRoles ?? []).compactMap(RoleID.init),
-            mentionsEveryone: mentionEveryone ?? false
+            mentionsEveryone: mentionEveryone ?? false,
+            call: call?.domain
         )
     }
 }

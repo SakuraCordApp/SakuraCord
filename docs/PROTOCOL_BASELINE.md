@@ -405,6 +405,52 @@ account action or traffic capture was performed.
   Paicord's current shape plus the stricter nonce, deduplication, and
   one-attempt safety rules above.
 
+### Private calls
+
+The private-call contract was statically rechecked on 29 July 2026 against
+Discord's clean public web build `585344` (version hash
+`8b1d591342d4b0a3c7f82d388cbba1dab56b17a9`), the pinned Paicord and Swiftcord
+revisions above, and Discord's public Gateway and voice-connection
+documentation. No authenticated call was started, answered, declined, or
+captured. Paicord exposes opcode 13 and the `CALL_*` event family but its pinned
+call handler is incomplete and predates the current `ongoing_rings` field.
+Swiftcord v1 and DiscordKit supply only the historical guild-optional voice
+state path.
+
+- Private-call discovery is event driven and app wide. `CALL_CREATE` and
+  `CALL_UPDATE` carry `channel_id`, `message_id`, region, `ongoing_rings`, and
+  an optional guildless voice-state snapshot; `CALL_DELETE` removes or marks
+  the call unavailable. `ongoing_rings` maps each ringing recipient to the
+  user who initiated that ring. Individual guildless `VOICE_STATE_UPDATE`
+  events reconcile participants without conflating calls in other DMs.
+- Selecting or joining a private call sends one main-Gateway opcode 13
+  `CALL_CONNECT` payload with `channel_id`, deduplicated per channel and
+  Gateway session. Media negotiation remains the existing documented voice
+  path: main-Gateway opcode 4 with `guild_id: null`, the private channel ID,
+  mute/deafen/video state, followed by the matching guildless
+  `VOICE_STATE_UPDATE` and `VOICE_SERVER_UPDATE`. The existing DAVE-capable
+  voice transport owns the resulting session.
+- Starting a one-to-one call performs one ordinary
+  `GET /channels/{channel_id}/call` readiness read. The client joins through
+  opcode 4, waits for pushed `CALL_CREATE`, and sends at most one
+  `POST /channels/{channel_id}/call/ring` with `{"recipients": null}` only when
+  the readiness response is ringable. A group-DM start skips the readiness GET
+  and otherwise uses the same single ring mutation. A false one-to-one
+  `ringable` value still permits a non-ringing joined call.
+- Joining an existing or incoming DM/group-DM call sends no readiness read and
+  no ring mutation. It subscribes with opcode 13 and joins with opcode 4.
+  Accepting an incoming call is the same join path. Declining sends exactly one
+  `POST /channels/{channel_id}/call/stop-ringing` with the current user in the
+  `recipients` array and does not join.
+- Both private-call POSTs use the shared authenticated scheduler and have one
+  attempt. They are never replayed after `429`, timeout, challenge,
+  restriction, or an ambiguous result. Ringing waits only for pushed call
+  creation; it does not poll or probe. An already successful media join is not
+  repeated when the later ring mutation fails.
+- Type-3 call messages decode their participant list and `ended_timestamp`;
+  presentation derives a bounded human-readable duration locally and adds no
+  request.
+
 Before materially changing DM creation or sending, recheck the current official
 client, Paicord, Swiftcord v1, request body, nonce, context, ordering, challenge
 behavior, and Gateway reconciliation. Keep incomplete paths capability-gated

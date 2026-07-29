@@ -308,6 +308,154 @@ struct DirectMessageProviderContractTests {
         await provider.disconnect()
     }
 
+    @Test func `private call gateway events preserve rings participants and deletion`() async throws {
+        let provider = makeProvider()
+        let events = await provider.eventStream()
+        let created = Task { () -> PrivateCall? in
+            for await event in events {
+                if case let .privateCallChanged(call) = event { return call }
+            }
+            return nil
+        }
+
+        await provider.receiveGatewayDispatchForTesting(
+            name: "CALL_CREATE",
+            data: .object([
+                "channel_id": .string("41"),
+                "message_id": .string("501"),
+                "region": .string("rotterdam"),
+                "ongoing_rings": .object([
+                    "2": .string("1")
+                ]),
+                "voice_states": .array([
+                    .object([
+                        "user_id": .string("1"),
+                        "channel_id": .string("41"),
+                        "guild_id": .null,
+                        "session_id": .string("private-session"),
+                        "self_mute": .bool(false),
+                        "self_deaf": .bool(false),
+                    ])
+                ]),
+            ])
+        )
+        let call = try #require(await created.value)
+        #expect(call.channelID == ChannelID(rawValue: 41))
+        #expect(call.messageID == MessageID(rawValue: 501))
+        #expect(call.region == "rotterdam")
+        #expect(
+            call.ongoingRings == [
+                PrivateCallRing(
+                    recipientID: UserID(rawValue: 2),
+                    senderID: UserID(rawValue: 1)
+                )
+            ]
+        )
+        #expect(call.voiceStates?.first?.guildID == nil)
+        #expect(call.voiceStates?.first?.channelID == ChannelID(rawValue: 41))
+
+        let deleted = Task { () -> (ChannelID, Bool)? in
+            for await event in events {
+                if case let .privateCallDeleted(channelID, unavailable) = event {
+                    return (channelID, unavailable)
+                }
+            }
+            return nil
+        }
+        await provider.receiveGatewayDispatchForTesting(
+            name: "CALL_DELETE",
+            data: .object([
+                "channel_id": .string("41"),
+                "unavailable": .bool(true),
+            ])
+        )
+        let deletion = try #require(await deleted.value)
+        #expect(deletion.0 == ChannelID(rawValue: 41))
+        #expect(deletion.1)
+        await provider.disconnect()
+    }
+
+    @Test func `private call REST paths use exact bounded bodies`() async throws {
+        DirectMessageURLProtocol.reset()
+        let provider = makeProvider()
+
+        #expect(
+            try await provider.privateCallIsRingable(
+                channelID: ChannelID(rawValue: 41)
+            )
+        )
+        await provider.receiveGatewayDispatchForTesting(
+            name: "CALL_CREATE",
+            data: .object([
+                "channel_id": .string("41"),
+                "message_id": .string("501"),
+                "ongoing_rings": .object([:]),
+            ])
+        )
+        try await provider.ringPrivateCall(
+            channelID: ChannelID(rawValue: 41),
+            recipients: nil
+        )
+        try await provider.stopRingingPrivateCall(
+            channelID: ChannelID(rawValue: 41),
+            recipients: [UserID(rawValue: 1)]
+        )
+
+        #expect(DirectMessageURLProtocol.requests.map(\.method) == [
+            "GET", "POST", "POST",
+        ])
+        #expect(DirectMessageURLProtocol.requests.map(\.path) == [
+            "/api/v9/channels/41/call",
+            "/api/v9/channels/41/call/ring",
+            "/api/v9/channels/41/call/stop-ringing",
+        ])
+        #expect(
+            DirectMessageURLProtocol.requests[1].body?["recipients"] is NSNull
+        )
+        #expect(
+            DirectMessageURLProtocol.requests[2].body?["recipients"] as? [String]
+                == ["1"]
+        )
+
+        DirectMessageURLProtocol.ringStatus = 429
+        await #expect(throws: ChatProviderError.self) {
+            try await provider.ringPrivateCall(
+                channelID: ChannelID(rawValue: 41),
+                recipients: nil
+            )
+        }
+        #expect(
+            DirectMessageURLProtocol.requests.count {
+                $0.path == "/api/v9/channels/41/call/ring"
+            } == 2
+        )
+        await provider.disconnect()
+    }
+
+    @Test func `private call connect uses current gateway opcode`() throws {
+        let payload = DiscordGatewayPayloadFactory.privateCallConnect(
+            channelID: ChannelID(rawValue: 41)
+        )
+        #expect(payload["op"] as? Int == 13)
+        let body = try #require(payload["d"] as? [String: Any])
+        #expect(body["channel_id"] as? String == "41")
+    }
+
+    @Test func `private call subscriptions reset after Gateway resume`() async {
+        let provider = makeProvider()
+        let channelID = ChannelID(rawValue: 41)
+        await provider.seedPrivateCallSubscriptionForTesting(channelID: channelID)
+        #expect(await provider.hasPrivateCallSubscriptionForTesting(channelID: channelID))
+
+        await provider.receiveGatewayDispatchForTesting(
+            name: "RESUMED",
+            data: .object([:])
+        )
+
+        #expect(!(await provider.hasPrivateCallSubscriptionForTesting(channelID: channelID)))
+        await provider.disconnect()
+    }
+
     private func privateChannel(
         id: String,
         lastMessageID: String?,
@@ -372,11 +520,12 @@ private struct CapturedQueryItem: Equatable, Sendable {
     var value: String?
 }
 
-private struct CapturedDirectMessageRequest: Sendable {
+private struct CapturedDirectMessageRequest: @unchecked Sendable {
     var method: String
     var path: String
     var query: [CapturedQueryItem]
     var hadAuthorization: Bool
+    var body: [String: Any]?
 }
 
 private final class DirectMessageURLProtocol:
@@ -385,9 +534,11 @@ private final class DirectMessageURLProtocol:
 {
     nonisolated(unsafe) static var requests:
         [CapturedDirectMessageRequest] = []
+    nonisolated(unsafe) static var ringStatus = 204
 
     static func reset() {
         requests = []
+        ringStatus = 204
     }
 
     override class func canInit(with request: URLRequest) -> Bool {
@@ -415,7 +566,10 @@ private final class DirectMessageURLProtocol:
                 hadAuthorization:
                     request.value(
                         forHTTPHeaderField: "Authorization"
-                    ) != nil
+                    ) != nil,
+                body: Self.requestBody(request).flatMap {
+                    try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
+                }
             )
         )
 
@@ -426,12 +580,17 @@ private final class DirectMessageURLProtocol:
         case "/api/v9/users/2/profile":
             body =
                 #"{"user":{"id":"2","username":"maya","global_name":"Maya","avatar":null},"mutual_guilds":[],"mutual_friends":[],"mutual_friends_count":0}"#
+        case "/api/v9/channels/41/call":
+            body = #"{"ringable":true}"#
         default:
             body = "{}"
         }
+        let status =
+            request.url?.path == "/api/v9/channels/41/call/ring"
+            ? Self.ringStatus : 200
         let response = HTTPURLResponse(
             url: request.url!,
-            statusCode: 200,
+            statusCode: status,
             httpVersion: "HTTP/1.1",
             headerFields: nil
         )!
@@ -445,4 +604,19 @@ private final class DirectMessageURLProtocol:
     }
 
     override func stopLoading() {}
+
+    private static func requestBody(_ request: URLRequest) -> Data? {
+        if let data = request.httpBody { return data }
+        guard let stream = request.httpBodyStream else { return nil }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            guard count > 0 else { break }
+            data.append(buffer, count: count)
+        }
+        return data
+    }
 }

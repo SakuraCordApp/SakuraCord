@@ -1641,8 +1641,162 @@ func `native generated messages preserve the pre CoreText body font`() throws {
 
     #expect(generatedPlan.baseFontSize == 13)
     #expect(generatedFont.pointSize == 13)
-    #expect(attributedWidth == reference.width)
+    #expect(attributedWidth > reference.width)
     #expect(ordinaryPlan.baseFontSize == 15)
+}
+
+@MainActor @Test
+func `group action rows use specific symbols names and text contrast`() throws {
+    let author = User(
+        id: UserID(rawValue: 71),
+        username: "nova",
+        displayName: "Nova"
+    )
+    let recipient = User(
+        id: UserID(rawValue: 72),
+        username: "maya",
+        displayName: "Maya"
+    )
+    let channelID = ChannelID(rawValue: 73)
+    let added = Message(
+        id: MessageID(rawValue: 74),
+        channelID: channelID,
+        author: author,
+        content: "",
+        type: .recipientAdd,
+        mentionedUsers: [recipient]
+    )
+
+    #expect(
+        SystemMessagePresentation.label(for: added)
+            == "Nova added Maya to the group."
+    )
+    #expect(SystemMessagePresentation.systemImage(for: added) == "arrow.right")
+    #expect(SystemMessagePresentation.usesSuccessColor(for: added))
+    #expect(
+        SystemMessagePresentation.textRuns(for: added).map(\.isEmphasized)
+            == [true, false, true, false]
+    )
+
+    let attributed = try #require(
+        NativeTimelineTextPlan.make(for: added).attributedText?.value
+    )
+    let authorFont = try #require(
+        attributed.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
+    )
+    let connectiveFont = try #require(
+        attributed.attribute(
+            .font,
+            at: author.displayName.utf16.count,
+            effectiveRange: nil
+        ) as? NSFont
+    )
+    #expect(
+        NSFontManager.shared.traits(of: authorFont).contains(.boldFontMask)
+    )
+    #expect(
+        !NSFontManager.shared.traits(of: connectiveFont).contains(.boldFontMask)
+    )
+
+    let removed = Message(
+        id: MessageID(rawValue: 75),
+        channelID: channelID,
+        author: author,
+        content: "",
+        type: .recipientRemove,
+        mentionedUsers: [recipient]
+    )
+    let renamed = Message(
+        id: MessageID(rawValue: 76),
+        channelID: channelID,
+        author: author,
+        content: "Layout crew",
+        type: .channelNameChange
+    )
+    let iconChanged = Message(
+        id: MessageID(rawValue: 77),
+        channelID: channelID,
+        author: author,
+        content: "",
+        type: .channelIconChange
+    )
+    #expect(SystemMessagePresentation.systemImage(for: removed) == "arrow.left")
+    #expect(SystemMessagePresentation.systemImage(for: renamed) == "pencil")
+    #expect(SystemMessagePresentation.systemImage(for: iconChanged) == "photo.fill")
+    #expect(
+        SystemMessagePresentation.label(for: renamed)
+            == "Nova changed the group name to Layout crew."
+    )
+    #expect(
+        SystemMessagePresentation.textRuns(for: renamed).map(\.isEmphasized)
+            == [true, false, true, false]
+    )
+}
+
+@MainActor @Test
+func `completed call system messages include the bounded discord duration`() {
+    let start = Date(timeIntervalSince1970: 1_800_000_000)
+    let currentUserID = UserID(rawValue: 64)
+    var message = Message(
+        id: MessageID(rawValue: 62),
+        channelID: ChannelID(rawValue: 63),
+        author: User(
+            id: UserID(rawValue: 61),
+            username: "nova",
+            displayName: "Nova"
+        ),
+        content: "",
+        timestamp: start,
+        type: .call,
+        call: MessageCall(
+            participantIDs: [UserID(rawValue: 61), currentUserID],
+            endedAt: start.addingTimeInterval(4 * 60 + 42)
+        )
+    )
+
+    #expect(
+        SystemMessagePresentation.label(
+            for: message,
+            currentUserID: currentUserID
+        )
+            == "Nova started a call that lasted 4 minutes."
+    )
+    #expect(
+        SystemMessagePresentation.systemImage(
+            for: message,
+            currentUserID: currentUserID
+        ) == "phone.fill"
+    )
+    #expect(
+        SystemMessagePresentation.usesSuccessColor(
+            for: message,
+            currentUserID: currentUserID
+        )
+    )
+
+    message.call = MessageCall(
+        participantIDs: [UserID(rawValue: 61)],
+        endedAt: start.addingTimeInterval(18)
+    )
+    #expect(
+        SystemMessagePresentation.label(
+            for: message,
+            currentUserID: currentUserID
+        )
+            == "You missed a call from Nova that lasted a few seconds."
+    )
+    #expect(
+        SystemMessagePresentation.systemImage(
+            for: message,
+            currentUserID: currentUserID
+        ) == "phone.down.fill"
+    )
+    #expect(
+        !SystemMessagePresentation.usesSuccessColor(
+            for: message,
+            currentUserID: currentUserID
+        )
+    )
 }
 
 @MainActor @Test

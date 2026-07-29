@@ -645,7 +645,10 @@ final class AccountReadStateModel {
     }
 
     func guildUnread(_ guildID: GuildID, now: Date = .now) -> Bool {
-        entries.values.contains { $0.guildID == guildID && unread(channelID: $0.channelID, now: now) }
+        channelByID.values.contains { channel in
+            channel.guildID == guildID
+                && unread(channelID: channel.id, now: now)
+        }
     }
 
     func guildMentions(_ guildID: GuildID) -> Int {

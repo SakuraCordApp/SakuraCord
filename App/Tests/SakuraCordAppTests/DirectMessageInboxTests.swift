@@ -70,6 +70,27 @@ import Testing
     )
 }
 
+@Test func `direct message inbox only surfaces actively ringing calls`() {
+    let channelID = ChannelID(rawValue: 40)
+    let ongoing = PrivateCall(
+        channelID: channelID,
+        voiceStates: []
+    )
+    let ringing = PrivateCall(
+        channelID: channelID,
+        ongoingRings: [
+            PrivateCallRing(
+                recipientID: UserID(rawValue: 2),
+                senderID: UserID(rawValue: 3)
+            )
+        ],
+        voiceStates: []
+    )
+
+    #expect(DirectMessageInboxPolicy.callStatus(for: ongoing) == nil)
+    #expect(DirectMessageInboxPolicy.callStatus(for: ringing) == "Ringing")
+}
+
 @Test func `nameplate presentation matches Paicord palette and hover opacity`() {
     #expect(
         NameplatePresentationPolicy.colors(for: "violet")
@@ -184,6 +205,46 @@ func `large direct message inbox filtering remains bounded`() {
         Set(model.directMessageInspectorSections.flatMap(\.members).map(\.id))
             == Set(group.recipients.map(\.id) + [currentUserID])
     )
+}
+
+@MainActor
+@Test func `group direct message participants reconcile a partial owner payload`() {
+    let currentUser = User(
+        id: UserID(rawValue: 1),
+        username: "current",
+        displayName: "Current"
+    )
+    let owner = User(
+        id: UserID(rawValue: 2),
+        username: "owner",
+        displayName: "Owner"
+    )
+    let recipient = User(
+        id: UserID(rawValue: 3),
+        username: "recipient",
+        displayName: "Recipient"
+    )
+    let channel = Channel(
+        id: ChannelID(rawValue: 40),
+        guildID: nil,
+        name: "Group",
+        ownerID: owner.id,
+        kind: .groupDirectMessage,
+        recipients: [currentUser, recipient]
+    )
+    let members = DirectMessageMemberResolver.members(
+        for: channel,
+        knownMembers: [
+            Member(user: owner, roleName: "Members", status: .offline),
+            Member(user: recipient, roleName: "Members", status: .online),
+        ],
+        currentUser: currentUser,
+        currentStatus: .offline
+    )
+
+    #expect(members.map(\.id) == [recipient.id, owner.id, currentUser.id])
+    #expect(Set(members.map(\.id)).count == 3)
+    #expect(MemberSection.make(from: members).flatMap(\.members).count == 3)
 }
 
 @MainActor

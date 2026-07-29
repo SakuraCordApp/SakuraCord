@@ -49,19 +49,22 @@ struct VoiceChannelView: View {
 
             if previewParticipants.isEmpty {
                 Spacer()
-                Text("No one is currently in voice")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                VStack(spacing: 16) {
+                    Text("No one is currently in voice")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    joinButton
+                }
                 Spacer()
             } else {
                 Text(occupancyText)
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 VoiceChannelPreviewGrid(participants: previewParticipants)
-            }
 
-            joinButton
-                .padding(.bottom, 24)
+                joinButton
+                    .padding(.bottom, 24)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -79,7 +82,10 @@ struct VoiceChannelView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.white)
-        .glassEffect(.regular.tint(Color.accentColor).interactive(), in: Capsule())
+        .glassEffect(
+            .regular.tint(Color(hex: 0x23A55A)).interactive(),
+            in: Capsule()
+        )
     }
 
     private var channel: Channel? {

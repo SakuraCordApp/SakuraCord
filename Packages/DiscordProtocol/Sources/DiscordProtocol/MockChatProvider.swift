@@ -10,6 +10,7 @@ public actor MockChatProvider: ChatProvider {
     private var messagesByChannel: [ChannelID: [Message]]
     private var forumPostsByChannel: [ChannelID: [ForumPost]]
     private var profilesByUser: [UserID: UserProfile]
+    private var privateCallsByChannel: [ChannelID: PrivateCall] = [:]
     private var continuation: AsyncStream<ClientEvent>.Continuation?
     private var nextMessageID: UInt64
     public private(set) var typingRequests: [ChannelID] = []
@@ -30,7 +31,8 @@ public actor MockChatProvider: ChatProvider {
         includesLongServerList: Bool = false,
         forumPostCount: Int? = nil,
         timelineMessageCount: Int? = nil,
-        timelineIncludesAnimatedMedia: Bool = false
+        timelineIncludesAnimatedMedia: Bool = false,
+        includesIncomingPrivateCall: Bool = false
     ) {
         let fixture = MockChatFixture.make(
             includesLongServerList: includesLongServerList,
@@ -66,6 +68,29 @@ public actor MockChatProvider: ChatProvider {
             }
         }
         profilesByUser = fixture.profilesByUser
+        if includesIncomingPrivateCall {
+            let channelID = ChannelID(rawValue: 400)
+            let callerID = UserID(rawValue: 2)
+            privateCallsByChannel[channelID] = PrivateCall(
+                channelID: channelID,
+                messageID: MessageID(rawValue: nextMessageID),
+                region: "mock",
+                ongoingRings: [
+                    PrivateCallRing(
+                        recipientID: fixture.currentUser.id,
+                        senderID: callerID
+                    )
+                ],
+                voiceStates: [
+                    VoiceParticipantState(
+                        userID: callerID,
+                        channelID: channelID,
+                        guildID: nil,
+                        sessionID: "mock-incoming-private-call"
+                    )
+                ]
+            )
+        }
     }
 
     public func bootstrap() async throws -> BootstrapSnapshot {
@@ -1066,7 +1091,12 @@ public actor MockChatProvider: ChatProvider {
         selfMute: Bool,
         selfDeaf: Bool
     ) async throws -> VoiceConnectionInfo {
-        guard snapshot.channels.contains(where: { $0.id == channelID && $0.kind == .voice }) else {
+        guard snapshot.channels.contains(where: {
+            $0.id == channelID
+                && ($0.kind == .voice
+                    || $0.kind == .directMessage
+                    || $0.kind == .groupDirectMessage)
+        }) else {
             throw ChatProviderError.invalidRequest("That demo voice channel is unavailable.")
         }
         let state = VoiceParticipantState(
@@ -1078,6 +1108,22 @@ public actor MockChatProvider: ChatProvider {
             isSelfDeafened: selfDeaf
         )
         continuation?.yield(.voiceStateChanged(state))
+        if guildID == nil {
+            var call =
+                privateCallsByChannel[channelID]
+                ?? PrivateCall(
+                    channelID: channelID,
+                    messageID: MessageID(rawValue: nextMessageID),
+                    region: "mock",
+                    voiceStates: []
+                )
+            var states = call.voiceStates ?? []
+            states.removeAll { $0.userID == currentUser.id }
+            states.append(state)
+            call.voiceStates = states
+            privateCallsByChannel[channelID] = call
+            continuation?.yield(.privateCallChanged(call))
+        }
         return VoiceConnectionInfo(
             serverID: guildID?.description ?? channelID.description,
             channelID: channelID,
@@ -1109,11 +1155,82 @@ public actor MockChatProvider: ChatProvider {
                 )
             )
         )
+        if guildID == nil {
+            if let channelID, var call = privateCallsByChannel[channelID] {
+                var states = call.voiceStates ?? []
+                states.removeAll { $0.userID == currentUser.id }
+                states.append(
+                    VoiceParticipantState(
+                        userID: currentUser.id,
+                        channelID: channelID,
+                        guildID: nil,
+                        sessionID: "demo-session",
+                        isSelfMuted: selfMute,
+                        isSelfDeafened: selfDeaf,
+                        isVideoEnabled: selfVideo
+                    )
+                )
+                call.voiceStates = states
+                privateCallsByChannel[channelID] = call
+                continuation?.yield(.privateCallChanged(call))
+            } else if channelID == nil {
+                for (id, var call) in privateCallsByChannel {
+                    call.voiceStates?.removeAll { $0.userID == currentUser.id }
+                    privateCallsByChannel[id] = call
+                    continuation?.yield(.privateCallChanged(call))
+                }
+            }
+        }
+    }
+
+    public func subscribeToPrivateCall(channelID: ChannelID) async throws {
+        if let call = privateCallsByChannel[channelID] {
+            continuation?.yield(.privateCallChanged(call))
+        }
+    }
+
+    public func privateCallIsRingable(channelID: ChannelID) async throws -> Bool {
+        snapshot.channels.contains {
+            $0.id == channelID && $0.kind == .directMessage
+        }
+    }
+
+    public func ringPrivateCall(channelID: ChannelID, recipients: [UserID]?) async throws {
+        guard let channel = snapshot.channels.first(where: { $0.id == channelID }),
+              channel.kind == .directMessage || channel.kind == .groupDirectMessage
+        else {
+            throw ChatProviderError.channelNotFound
+        }
+        var call =
+            privateCallsByChannel[channelID]
+            ?? PrivateCall(
+                channelID: channelID,
+                messageID: MessageID(rawValue: nextMessageID),
+                region: "mock",
+                voiceStates: []
+            )
+        let targets = recipients ?? channel.recipients.map(\.id)
+        call.ongoingRings = targets
+            .filter { $0 != currentUser.id }
+            .map { PrivateCallRing(recipientID: $0, senderID: currentUser.id) }
+        privateCallsByChannel[channelID] = call
+        continuation?.yield(.privateCallChanged(call))
+    }
+
+    public func stopRingingPrivateCall(channelID: ChannelID, recipients: [UserID]) async throws {
+        guard var call = privateCallsByChannel[channelID] else { return }
+        let targetIDs = Set(recipients)
+        call.ongoingRings.removeAll { targetIDs.contains($0.recipientID) }
+        privateCallsByChannel[channelID] = call
+        continuation?.yield(.privateCallChanged(call))
     }
 
     public func eventStream() async -> AsyncStream<ClientEvent> {
         let stream = AsyncStream<ClientEvent>.makeStream(bufferingPolicy: .bufferingNewest(500))
         continuation = stream.continuation
+        for call in privateCallsByChannel.values {
+            stream.continuation.yield(.privateCallChanged(call))
+        }
         return stream.stream
     }
 

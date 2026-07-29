@@ -2,6 +2,59 @@ import AppKit
 import SakuraCordModels
 import SwiftUI
 
+nonisolated enum DirectMessageMemberResolver {
+    static func members(
+        for channel: Channel,
+        knownMembers: [Member],
+        currentUser: User?,
+        currentStatus: PresenceStatus
+    ) -> [Member] {
+        let knownMembersByID = Dictionary(
+            knownMembers.map { ($0.id, $0) },
+            uniquingKeysWith: { _, newer in newer }
+        )
+        let currentUserID = currentUser?.id
+        var resolved: [Member] = []
+        var seen: Set<UserID> = []
+
+        func append(_ member: Member) {
+            guard seen.insert(member.id).inserted else { return }
+            resolved.append(member)
+        }
+
+        for user in channel.recipients where user.id != currentUserID {
+            append(
+                knownMembersByID[user.id]
+                    ?? Member(
+                        user: user,
+                        roleName: "Members",
+                        status: .offline
+                    )
+            )
+        }
+
+        if channel.kind == .groupDirectMessage,
+           let ownerID = channel.ownerID,
+           ownerID != currentUserID,
+           let owner = knownMembersByID[ownerID]
+        {
+            append(owner)
+        }
+
+        if let currentUser {
+            append(
+                knownMembersByID[currentUser.id]
+                    ?? Member(
+                        user: currentUser,
+                        roleName: "You",
+                        status: currentStatus
+                    )
+            )
+        }
+        return resolved
+    }
+}
+
 struct MemberInspectorView: View {
     let sections: [MemberSection]
     let profilePresentation: ProfilePresentationState?

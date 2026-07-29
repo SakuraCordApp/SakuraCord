@@ -85,6 +85,10 @@ public protocol ChatProvider: Sendable {
         selfDeaf: Bool,
         selfVideo: Bool
     ) async throws
+    func subscribeToPrivateCall(channelID: ChannelID) async throws
+    func privateCallIsRingable(channelID: ChannelID) async throws -> Bool
+    func ringPrivateCall(channelID: ChannelID, recipients: [UserID]?) async throws
+    func stopRingingPrivateCall(channelID: ChannelID, recipients: [UserID]) async throws
     func eventStream() async -> AsyncStream<ClientEvent>
     func disconnect() async
 }
@@ -275,6 +279,26 @@ public extension ChatProvider {
             selfDeaf: selfDeaf,
             selfVideo: false
         )
+    }
+
+    func subscribeToPrivateCall(channelID: ChannelID) async throws {
+        throw ChatProviderError.invalidRequest(
+            "Direct-message calling is unavailable for this provider.")
+    }
+
+    func privateCallIsRingable(channelID: ChannelID) async throws -> Bool {
+        throw ChatProviderError.invalidRequest(
+            "Direct-message calling is unavailable for this provider.")
+    }
+
+    func ringPrivateCall(channelID: ChannelID, recipients: [UserID]?) async throws {
+        throw ChatProviderError.invalidRequest(
+            "Direct-message calling is unavailable for this provider.")
+    }
+
+    func stopRingingPrivateCall(channelID: ChannelID, recipients: [UserID]) async throws {
+        throw ChatProviderError.invalidRequest(
+            "Direct-message calling is unavailable for this provider.")
     }
 }
 

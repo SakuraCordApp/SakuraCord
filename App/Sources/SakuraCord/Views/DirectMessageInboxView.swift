@@ -4,6 +4,8 @@ import SwiftUI
 struct DirectMessageInboxView: View {
     let channels: [Channel]
     let membersByID: [UserID: Member]
+    let privateCallsByChannel: [ChannelID: PrivateCall]
+    let animatesAvatars: Bool
     @Binding var selection: ChannelID?
 
     var body: some View {
@@ -15,7 +17,9 @@ struct DirectMessageInboxView: View {
                         member: DirectMessageInboxPolicy.recipientMember(
                             for: channel,
                             membersByID: membersByID
-                        )
+                        ),
+                        call: privateCallsByChannel[channel.id],
+                        animatesAvatar: animatesAvatars
                     )
                         .tag(channel.id)
                 }
@@ -72,25 +76,41 @@ nonisolated enum DirectMessageInboxPolicy {
         else { return nil }
         return status
     }
+
+    static func callStatus(for call: PrivateCall?) -> String? {
+        guard call?.ongoingRings.isEmpty == false else { return nil }
+        return "Ringing"
+    }
 }
 
 private struct DirectMessageInboxRow: View {
     let channel: Channel
     let member: Member?
+    let call: PrivateCall?
+    let animatesAvatar: Bool
 
     var body: some View {
         HStack(spacing: 10) {
             DirectMessageAvatar(
                 channel: channel,
                 size: 32,
-                status: channel.kind == .directMessage ? member?.status ?? .offline : nil
+                status: channel.kind == .directMessage ? member?.status ?? .offline : nil,
+                animates: animatesAvatar
             )
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(channel.name)
                     .fontWeight(channel.unreadCount > 0 ? .semibold : .regular)
                     .lineLimit(1)
-                if let secondaryText =
+                if let callStatus =
+                    DirectMessageInboxPolicy.callStatus(for: call)
+                {
+                    Label(callStatus, systemImage: "bell.fill")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color(hex: 0x23A55A))
+                    .lineLimit(1)
+                } else if let secondaryText =
                     DirectMessageInboxPolicy.secondaryText(for: channel, member: member)
                 {
                     ProfileStatusTextView(
@@ -139,6 +159,7 @@ struct DirectMessageAvatar: View {
     let channel: Channel
     let size: CGFloat
     let status: PresenceStatus?
+    let animates: Bool
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -159,9 +180,14 @@ struct DirectMessageAvatar: View {
     @ViewBuilder
     private var avatar: some View {
         if let iconURL = channel.iconURL {
-            AvatarView(name: channel.name, url: iconURL, size: size)
+            AvatarView(name: channel.name, url: iconURL, size: size, animates: animates)
         } else if channel.kind == .directMessage, let recipient = channel.recipients.first {
-            AvatarView(name: recipient.displayName, url: recipient.avatarURL, size: size)
+            AvatarView(
+                name: recipient.displayName,
+                url: recipient.avatarURL,
+                size: size,
+                animates: animates
+            )
         } else {
             Image(systemName: "person.2.fill")
                 .font(.system(size: size * 0.38, weight: .semibold))

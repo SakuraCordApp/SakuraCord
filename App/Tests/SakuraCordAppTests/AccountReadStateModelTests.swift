@@ -62,7 +62,7 @@ struct AccountReadStateModelTests {
         #expect(model.guildUnread(guildID))
     }
 
-    @Test func `threads omitted from ready read state begin read and become unread live`() {
+    @Test func `thread unread stays local without creating an orphan guild rail indicator`() {
         let threadID = ChannelID(rawValue: 201)
         let model = AccountReadStateModel()
         model.reset(accountID: "account")
@@ -114,7 +114,7 @@ struct AccountReadStateModelTests {
         )
         #expect(disposition.accepted)
         #expect(model.unread(channelID: threadID))
-        #expect(model.guildUnread(guildID))
+        #expect(!model.guildUnread(guildID))
 
         #expect(
             model.applyRemote(
@@ -311,7 +311,7 @@ struct AccountReadStateModelTests {
         #expect(model.entries[threadID]?.latestKnownMessageID == latestMessageID)
         #expect(model.unread(channelID: threadID))
         #expect(model.unreadMessageCount(channelID: threadID) == 3)
-        #expect(model.guildUnread(guildID))
+        #expect(!model.guildUnread(guildID))
 
         let reply = Message(
             id: MessageID(rawValue: 13),
@@ -484,7 +484,7 @@ struct AccountReadStateModelTests {
             ),
             currentUserID: currentUser.id
         )
-        #expect(model.guildUnread(guildID))
+        #expect(!model.guildUnread(guildID))
 
         model.replaceReadStates([
             ChannelReadState(

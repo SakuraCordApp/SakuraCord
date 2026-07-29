@@ -9,7 +9,7 @@ source "$ROOT_DIR/script/worktree_runtime.sh"
 source "$ROOT_DIR/script/release_metadata.sh"
 
 case "$MODE" in
-  package|package-release|--offline|--offline-long-server-list|--offline-forum-performance|--offline-chat-performance|--offline-chat-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-media-performance-autoscroll|--verify) ;;
+  package|package-release|--offline|--offline-long-server-list|--offline-forum-performance|--offline-chat-performance|--offline-chat-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-media-performance-autoscroll|--offline-incoming-private-call|--verify) ;;
   run|--debug|--logs|--telemetry)
     if [[ "$SAKURACORD_IS_MAIN_WORKTREE" -ne 1 && "${SAKURACORD_ALLOW_LIVE_WORKTREE:-0}" != "1" ]]; then
       echo "Live-account launch is disabled in linked worktrees. Use --offline, or set SAKURACORD_ALLOW_LIVE_WORKTREE=1 deliberately." >&2
@@ -17,7 +17,7 @@ case "$MODE" in
     fi
     ;;
   *)
-    echo "usage: $0 [package|package-release|run|--offline|--offline-long-server-list|--offline-forum-performance|--offline-chat-performance|--offline-chat-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-media-performance-autoscroll|--verify|--debug|--logs|--telemetry]" >&2
+    echo "usage: $0 [package|package-release|run|--offline|--offline-long-server-list|--offline-forum-performance|--offline-chat-performance|--offline-chat-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-media-performance-autoscroll|--offline-incoming-private-call|--verify|--debug|--logs|--telemetry]" >&2
     exit 2
     ;;
 esac
@@ -212,6 +212,9 @@ open_offline_chat_performance_live_autoscroll() {
 open_offline_chat_media_performance_autoscroll() {
   open_app --args --offline-chat-media-performance-autoscroll
 }
+open_offline_incoming_private_call() {
+  open_app --args --offline-incoming-private-call
+}
 
 case "$MODE" in
   package|package-release) ;;
@@ -238,4 +241,5 @@ case "$MODE" in
   --offline-chat-performance-autoscroll) open_offline_chat_performance_autoscroll ;;
   --offline-chat-performance-live-autoscroll) open_offline_chat_performance_live_autoscroll ;;
   --offline-chat-media-performance-autoscroll) open_offline_chat_media_performance_autoscroll ;;
+  --offline-incoming-private-call) open_offline_incoming_private_call ;;
 esac

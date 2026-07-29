@@ -86,7 +86,15 @@ private struct ChatWorkspacePrimaryContent: View {
     var body: some View {
         switch content {
         case .chat:
-            ChatDetailView(model: model)
+            if let channel = model.selectedChannel,
+               channel.kind == .directMessage || channel.kind == .groupDirectMessage,
+               model.privateCall(in: channel.id) != nil
+                    || model.activeVoiceChannel?.id == channel.id
+            {
+                DirectMessageCallWorkspace(model: model, channel: channel)
+            } else {
+                ChatDetailView(model: model)
+            }
         case .forum:
             ForumChannelView(model: model, presentsComposer: $presentsForumComposer)
         case .voice:

@@ -106,65 +106,249 @@ nonisolated enum MessageEmbedPresentation {
 }
 
 nonisolated enum SystemMessagePresentation {
-    static func label(for message: Message) -> String {
-        let author = message.author.displayName
-        switch message.type {
-        case .recipientAdd:
-            return "\(author) added someone to the conversation."
-        case .recipientRemove:
-            return "\(author) removed someone from the conversation."
-        case .call:
-            return "\(author) started a call."
-        case .channelNameChange:
-            return message.content.isEmpty
-                ? "\(author) changed the channel name."
-                : "\(author) changed the channel name to \(message.content)."
-        case .channelIconChange:
-            return "\(author) changed the channel icon."
-        case .channelPinnedMessage:
-            return "\(author) pinned a message to this channel."
-        case .userJoin:
-            return "Yay you made it, \(author)!"
-        case .guildBoost:
-            return "\(author) boosted the server!"
-        case .guildBoostTier1:
-            return "\(author) boosted the server to Level 1!"
-        case .guildBoostTier2:
-            return "\(author) boosted the server to Level 2!"
-        case .guildBoostTier3:
-            return "\(author) boosted the server to Level 3!"
-        case .channelFollowAdd:
-            return "\(author) added a followed channel."
-        case .threadCreated:
-            return "\(author) started a thread: \(message.content.isEmpty ? "Thread" : message.content)"
-        case .guildInviteReminder:
-            return "Wondering who to invite? Start by inviting anyone who can help this server grow."
-        case .stageStart:
-            return "\(author) started a Stage."
-        case .stageEnd:
-            return "\(author) ended the Stage."
-        case .stageSpeaker:
-            return "\(author) is now a speaker."
-        case .stageTopic:
-            return message.content.isEmpty ? "The Stage topic changed." : "Stage topic: \(message.content)"
-        default:
-            return message.content.isEmpty ? "Discord system message" : message.content
+    struct TextRun: Equatable, Sendable {
+        let text: String
+        let isEmphasized: Bool
+
+        static func emphasized(_ text: String) -> Self {
+            Self(text: text, isEmphasized: true)
+        }
+
+        static func secondary(_ text: String) -> Self {
+            Self(text: text, isEmphasized: false)
         }
     }
 
-    static func systemImage(for message: Message) -> String {
+    static func label(
+        for message: Message,
+        currentUserID: UserID? = nil
+    ) -> String {
+        textRuns(for: message, currentUserID: currentUserID)
+            .map(\.text)
+            .joined()
+    }
+
+    static func attributedLabel(
+        for message: Message,
+        currentUserID: UserID? = nil,
+        baseFontSize: CGFloat
+    ) -> NSAttributedString {
+        let value = NSMutableAttributedString()
+        for run in textRuns(for: message, currentUserID: currentUserID) {
+            value.append(
+                NSAttributedString(
+                    string: run.text,
+                    attributes: [
+                        .font: NSFont.systemFont(
+                            ofSize: baseFontSize,
+                            weight: run.isEmphasized ? .semibold : .regular
+                        ),
+                        .foregroundColor:
+                            run.isEmphasized
+                            ? NSColor.labelColor
+                            : NSColor.secondaryLabelColor,
+                    ]
+                )
+            )
+        }
+        return value
+    }
+
+    static func textRuns(
+        for message: Message,
+        currentUserID: UserID? = nil
+    ) -> [TextRun] {
+        let author = message.author.displayName
         switch message.type {
+        case .recipientAdd:
+            let recipient = message.mentionedUsers.first?.displayName ?? "someone"
+            return [
+                .emphasized(author),
+                .secondary(" added "),
+                .emphasized(recipient),
+                .secondary(" to the group."),
+            ]
+        case .recipientRemove:
+            let recipient = message.mentionedUsers.first?.displayName ?? "someone"
+            return [
+                .emphasized(author),
+                .secondary(" removed "),
+                .emphasized(recipient),
+                .secondary(" from the group."),
+            ]
+        case .call:
+            guard let endedAt = message.call?.endedAt else {
+                return [
+                    .emphasized(author),
+                    .secondary(" started a call."),
+                ]
+            }
+            let duration = callDuration(
+                from: message.timestamp,
+                to: endedAt
+            )
+            if isMissedCall(message, currentUserID: currentUserID) {
+                return [
+                    .secondary("You missed a call from "),
+                    .emphasized(author),
+                    .secondary(" that lasted \(duration)."),
+                ]
+            }
+            return [
+                .emphasized(author),
+                .secondary(" started a call that lasted \(duration)."),
+            ]
+        case .channelNameChange:
+            if message.content.isEmpty {
+                return [
+                    .emphasized(author),
+                    .secondary(" changed the group name."),
+                ]
+            }
+            return [
+                .emphasized(author),
+                .secondary(" changed the group name to "),
+                .emphasized(message.content),
+                .secondary("."),
+            ]
+        case .channelIconChange:
+            return [
+                .emphasized(author),
+                .secondary(" changed the group icon."),
+            ]
+        case .channelPinnedMessage:
+            return [
+                .emphasized(author),
+                .secondary(" pinned a message to this channel."),
+            ]
+        case .userJoin:
+            return [
+                .secondary("Yay you made it, "),
+                .emphasized(author),
+                .secondary("!"),
+            ]
+        case .guildBoost:
+            return [.emphasized(author), .secondary(" boosted the server!")]
+        case .guildBoostTier1:
+            return [
+                .emphasized(author),
+                .secondary(" boosted the server to "),
+                .emphasized("Level 1"),
+                .secondary("!"),
+            ]
+        case .guildBoostTier2:
+            return [
+                .emphasized(author),
+                .secondary(" boosted the server to "),
+                .emphasized("Level 2"),
+                .secondary("!"),
+            ]
+        case .guildBoostTier3:
+            return [
+                .emphasized(author),
+                .secondary(" boosted the server to "),
+                .emphasized("Level 3"),
+                .secondary("!"),
+            ]
+        case .channelFollowAdd:
+            return [
+                .emphasized(author),
+                .secondary(" added a followed channel."),
+            ]
+        case .threadCreated:
+            return [
+                .emphasized(author),
+                .secondary(" started a thread: "),
+                .emphasized(message.content.isEmpty ? "Thread" : message.content),
+            ]
+        case .guildInviteReminder:
+            return [
+                .secondary(
+                    "Wondering who to invite? Start by inviting anyone who can help this server grow."
+                )
+            ]
+        case .stageStart:
+            return [.emphasized(author), .secondary(" started a Stage.")]
+        case .stageEnd:
+            return [.emphasized(author), .secondary(" ended the Stage.")]
+        case .stageSpeaker:
+            return [.emphasized(author), .secondary(" is now a speaker.")]
+        case .stageTopic:
+            if message.content.isEmpty {
+                return [.secondary("The Stage topic changed.")]
+            }
+            return [
+                .secondary("Stage topic: "),
+                .emphasized(message.content),
+            ]
+        default:
+            return [
+                .secondary(
+                    message.content.isEmpty
+                        ? "Discord system message"
+                        : message.content
+                )
+            ]
+        }
+    }
+
+    static func systemImage(
+        for message: Message,
+        currentUserID: UserID? = nil
+    ) -> String {
+        switch message.type {
+        case .recipientAdd: "arrow.right"
+        case .recipientRemove: "arrow.left"
+        case .channelNameChange: "pencil"
+        case .channelIconChange: "photo.fill"
         case .userJoin: "arrow.right"
         case .guildBoost, .guildBoostTier1, .guildBoostTier2, .guildBoostTier3:
             "sparkles"
         case .channelPinnedMessage: "pin.fill"
-        case .call: "phone.fill"
+        case .call:
+            isMissedCall(message, currentUserID: currentUserID)
+                ? "phone.down.fill" : "phone.fill"
         default: "info.circle.fill"
         }
     }
 
-    static func usesSuccessColor(for message: Message) -> Bool {
-        message.type == .userJoin
+    static func usesSuccessColor(
+        for message: Message,
+        currentUserID: UserID? = nil
+    ) -> Bool {
+        message.type == .recipientAdd
+            || message.type == .userJoin
+            || (message.type == .call
+                && !isMissedCall(message, currentUserID: currentUserID))
+    }
+
+    static func isMissedCall(
+        _ message: Message,
+        currentUserID: UserID?
+    ) -> Bool {
+        guard message.type == .call,
+              let currentUserID,
+              let call = message.call,
+              call.endedAt != nil,
+              !call.participantIDs.isEmpty
+        else { return false }
+        return !call.participantIDs.contains(currentUserID)
+    }
+
+    private static func callDuration(from start: Date, to end: Date) -> String {
+        let totalSeconds = max(0, Int(end.timeIntervalSince(start)))
+        if totalSeconds < 60 {
+            return "a few seconds"
+        }
+        let totalMinutes = totalSeconds / 60
+        if totalMinutes < 60 {
+            return totalMinutes == 1 ? "1 minute" : "\(totalMinutes) minutes"
+        }
+        let hours = totalMinutes / 60
+        let minutes = totalMinutes % 60
+        let hourText = hours == 1 ? "1 hour" : "\(hours) hours"
+        guard minutes > 0 else { return hourText }
+        return "\(hourText) \(minutes == 1 ? "1 minute" : "\(minutes) minutes")"
     }
 }
 

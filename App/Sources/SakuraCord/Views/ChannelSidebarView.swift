@@ -20,29 +20,38 @@ struct ChannelSidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if guild == nil {
+            ZStack {
                 DirectMessageInboxView(
-                    channels: displayedChannels,
+                    channels: directMessageChannels,
                     membersByID: voiceModel.membersByID,
+                    privateCallsByChannel: voiceModel.privateCallsByChannel.filter {
+                        !$0.value.isUnavailable
+                    },
+                    animatesAvatars: guild == nil,
                     selection: $selection
                 )
-            } else {
-                List(selection: $selection) {
-                    let groups = ChannelGroup.make(from: displayedChannels)
-                    ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
-                        ChannelGroupRows(
-                            group: group,
-                            addsTopSpacing: index == groups.startIndex,
-                            rulesChannelID: guild?.rulesChannelID,
-                            activeVoiceChannelID: activeVoiceChannelID,
-                            hiddenChannelIDs: hiddenChannelIDs,
-                            voiceParticipantsByChannel: voiceSidebarParticipantsByChannel
-                        )
+                .opacity(guild == nil ? 1 : 0)
+                .allowsHitTesting(guild == nil)
+                .accessibilityHidden(guild != nil)
+
+                if guild != nil {
+                    List(selection: $selection) {
+                        let groups = ChannelGroup.make(from: displayedChannels)
+                        ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
+                            ChannelGroupRows(
+                                group: group,
+                                addsTopSpacing: index == groups.startIndex,
+                                rulesChannelID: guild?.rulesChannelID,
+                                activeVoiceChannelID: activeVoiceChannelID,
+                                hiddenChannelIDs: hiddenChannelIDs,
+                                voiceParticipantsByChannel: voiceSidebarParticipantsByChannel
+                            )
+                        }
                     }
+                    .listStyle(.sidebar)
+                    .scrollContentBackground(.hidden)
+                    .clipped()
                 }
-                .listStyle(.sidebar)
-                .scrollContentBackground(.hidden)
-                .clipped()
             }
 
             AccountControlView(
@@ -78,6 +87,15 @@ struct ChannelSidebarView: View {
 
     private var displayedChannels: [Channel] {
         channels.filter { voiceModel.conversationAccess(for: $0) != .hidden }
+    }
+
+    private var directMessageChannels: [Channel] {
+        let snapshotChannels = voiceModel.snapshot?.channels.filter {
+            $0.guildID == nil
+        }
+        return (snapshotChannels ?? channels).filter {
+            voiceModel.conversationAccess(for: $0) != .hidden
+        }
     }
 
     private var voiceSidebarParticipantsByChannel: [ChannelID: [VoiceSidebarParticipant]] {

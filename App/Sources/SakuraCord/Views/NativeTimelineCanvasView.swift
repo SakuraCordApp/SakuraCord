@@ -7708,8 +7708,12 @@ final class NativeTimelineCanvasView: NSView {
         let timestamp = NativeTimelineTimestamp.text(
             for: message.timestamp
         )
+        let generatedLabel = SystemMessagePresentation.label(
+            for: message,
+            currentUserID: model?.snapshot?.currentUser.id
+        )
         let rowLabel = message.type.hasGeneratedContent
-            ? "System message, \(SystemMessagePresentation.label(for: message))"
+            ? "System message, \(generatedLabel)"
             : "Message from \(author.displayName), \(timestamp)"
         let element = accessibilityElement(
             role: .row,
@@ -8532,7 +8536,10 @@ final class NativeTimelineCanvasView: NSView {
 
     private func accessibilityMessageText(_ message: Message) -> String {
         if message.type.hasGeneratedContent {
-            return SystemMessagePresentation.label(for: message)
+            return SystemMessagePresentation.label(
+                for: message,
+                currentUserID: model?.snapshot?.currentUser.id
+            )
         }
         if message.flags.contains(.isComponentsV2) {
             return ""
@@ -11071,11 +11078,18 @@ private enum NativeTimelineRowPainter {
             return
         }
         if let frame = layout.systemIconFrame {
+            let currentUserID = model?.snapshot?.currentUser.id
             systemSymbol(
-                SystemMessagePresentation.systemImage(for: message),
+                SystemMessagePresentation.systemImage(
+                    for: message,
+                    currentUserID: currentUserID
+                ),
                 in: frame,
                 color:
-                    SystemMessagePresentation.usesSuccessColor(for: message)
+                    SystemMessagePresentation.usesSuccessColor(
+                        for: message,
+                        currentUserID: currentUserID
+                    )
                         ? .systemGreen
                         : .secondaryLabelColor,
                 inset: 1

@@ -152,6 +152,52 @@ private struct ChatRootView: View {
                     }
                     .visibilityPriority(.high)
                     ToolbarSpacer(.fixed)
+                    ToolbarItem(id: "dm-voice-call") {
+                        if let channel = selectedPrivateChannel {
+                            Button {
+                                Task {
+                                    if model.privateCall(in: channel.id) != nil {
+                                        await model.joinPrivateCall(in: channel)
+                                    } else {
+                                        await model.startPrivateCall(in: channel)
+                                    }
+                                }
+                            } label: {
+                                Label(
+                                    model.privateCall(in: channel.id) == nil
+                                        ? "Start Voice Call" : "Join Voice Call",
+                                    systemImage: "phone.fill"
+                                )
+                            }
+                            .disabled(model.activeVoiceChannel?.id == channel.id)
+                            .help(
+                                model.privateCall(in: channel.id) == nil
+                                    ? "Start Voice Call" : "Join Ongoing Call"
+                            )
+                        }
+                    }
+                    .visibilityPriority(.high)
+                    ToolbarItem(id: "dm-video-call") {
+                        if let channel = selectedPrivateChannel {
+                            Button {
+                                Task {
+                                    if model.privateCall(in: channel.id) != nil {
+                                        await model.joinPrivateCall(in: channel, withVideo: true)
+                                    } else {
+                                        await model.startPrivateCall(in: channel, withVideo: true)
+                                    }
+                                }
+                            } label: {
+                                Label("Start Video Call", systemImage: "video.fill")
+                            }
+                            .disabled(model.activeVoiceChannel?.id == channel.id)
+                            .help(
+                                model.privateCall(in: channel.id) == nil
+                                    ? "Start Video Call" : "Join Ongoing Call with Video"
+                            )
+                        }
+                    }
+                    .visibilityPriority(.high)
                     ToolbarItem(id: "voice-chat") {
                         if let channel = selectedVoiceChannel, !model.isVoiceChatOpen {
                             Button { model.openVoiceChat(for: channel) } label: {
@@ -199,6 +245,12 @@ private struct ChatRootView: View {
             }
             .ignoresSafeArea()
             .allowsHitTesting(false)
+        }
+        .overlay {
+            if !model.incomingPrivateCalls.isEmpty {
+                IncomingPrivateCallOverlay(model: model)
+                    .zIndex(500)
+            }
         }
         .background {
             ZStack {
@@ -378,12 +430,23 @@ private struct ChatRootView: View {
         return channel.kind == .directMessage || channel.kind == .groupDirectMessage
     }
 
+    private var selectedPrivateChannel: Channel? {
+        guard let channel = model.selectedChannel,
+              channel.kind == .directMessage || channel.kind == .groupDirectMessage,
+              !channel.isOfficialSystemDirectMessage
+        else { return nil }
+        return channel
+    }
+
     private func directMessageToolbarSubtitle(for channel: Channel) -> String? {
         switch channel.kind {
         case .directMessage:
             return channel.recipients.first.map { "@\($0.username)" }
         case .groupDirectMessage:
-            return "\(channel.recipients.count + 1) members"
+            let memberCount = model.directMessageInspectorSections.reduce(0) {
+                $0 + $1.members.count
+            }
+            return "\(memberCount) members"
         default:
             return nil
         }

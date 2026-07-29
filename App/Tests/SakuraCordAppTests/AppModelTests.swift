@@ -1275,6 +1275,11 @@ private func forumPresentationPost(
     #expect(chatMediaAutoScroll.includesChatMediaPerformanceFixture)
     #expect(chatMediaAutoScroll.runsChatPerformanceAutoScroll)
     #expect(!chatMediaAutoScroll.runsChatLiveArrivalStress)
+    let incomingPrivateCall = AppLaunchConfiguration(
+        arguments: ["SakuraCord", "--offline-incoming-private-call"]
+    )
+    #expect(incomingPrivateCall.mode == .offlineTesting)
+    #expect(incomingPrivateCall.includesIncomingPrivateCallFixture)
 }
 
 @MainActor
@@ -2011,6 +2016,62 @@ private func eventuallyOnMain(_ condition: @escaping @MainActor () -> Bool) asyn
     try await Task.sleep(for: .milliseconds(20))
     #expect(model.activeVoiceChannel?.id == voiceChannel.id)
     #expect(model.voiceSessionState == .connected)
+}
+
+@MainActor
+@Test func `private calls remain app wide and reconcile incoming ongoing and deleted state`() async throws {
+    let provider = VoiceMigrationTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let currentUserID = try #require(model.snapshot?.currentUser.id)
+    let channelID = ChannelID(rawValue: 88_800)
+    let senderID = UserID(rawValue: 88_801)
+
+    await provider.emit(
+        .privateCallChanged(
+            PrivateCall(
+                channelID: channelID,
+                messageID: MessageID(rawValue: 88_802),
+                region: "rotterdam",
+                ongoingRings: [
+                    PrivateCallRing(
+                        recipientID: currentUserID,
+                        senderID: senderID
+                    )
+                ],
+                voiceStates: []
+            )
+        )
+    )
+    try await Task.sleep(for: .milliseconds(20))
+    #expect(model.incomingPrivateCalls.map(\.channelID) == [channelID])
+    #expect(model.privateCall(in: channelID)?.isRinging(currentUserID) == true)
+
+    await provider.emit(
+        .privateCallChanged(
+            PrivateCall(
+                channelID: channelID,
+                messageID: MessageID(rawValue: 88_802),
+                region: "rotterdam",
+                ongoingRings: [],
+                voiceStates: [
+                    VoiceParticipantState(
+                        userID: senderID,
+                        channelID: channelID,
+                        guildID: nil,
+                        sessionID: "private-session"
+                    )
+                ]
+            )
+        )
+    )
+    try await Task.sleep(for: .milliseconds(20))
+    #expect(model.incomingPrivateCalls.isEmpty)
+    #expect(model.privateCall(in: channelID)?.voiceStates?.map(\.userID) == [senderID])
+
+    await provider.emit(.privateCallDeleted(channelID: channelID, unavailable: false))
+    try await Task.sleep(for: .milliseconds(20))
+    #expect(model.privateCall(in: channelID) == nil)
 }
 
 private struct ReactionMutationRequest: Equatable, Sendable {

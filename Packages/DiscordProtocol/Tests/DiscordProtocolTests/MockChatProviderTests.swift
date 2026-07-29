@@ -3,6 +3,25 @@ import SakuraCordModels
 import Testing
 @testable import DiscordProtocol
 
+@Test func `offline incoming private call fixture is app wide`() async throws {
+    let provider = MockChatProvider(includesIncomingPrivateCall: true)
+    let stream = await provider.eventStream()
+    var iterator = stream.makeAsyncIterator()
+    let event = try #require(await iterator.next())
+
+    guard case .privateCallChanged(let call) = event else {
+        Issue.record("Expected the seeded private call to be the first app-wide event")
+        return
+    }
+    #expect(call.channelID == ChannelID(rawValue: 400))
+    #expect(call.ongoingRings == [
+        PrivateCallRing(
+            recipientID: UserID(rawValue: 1),
+            senderID: UserID(rawValue: 2)
+        )
+    ])
+}
+
 @Test func `forum channel metadata decodes official field names`() throws {
     let data = Data(
         #"""
