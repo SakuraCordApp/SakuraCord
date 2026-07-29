@@ -1331,7 +1331,13 @@ final class ApplicationCommandNSTextView: NSTextView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        unfocusedTypingMonitor.synchronize(with: self, enabled: true)
+        unfocusedTypingMonitor.synchronize(
+            with: self,
+            enabled: true,
+            onUnfocusedReturn: { [weak self] event in
+                self?.handleReturn(event) ?? false
+            }
+        )
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -1392,19 +1398,24 @@ final class ApplicationCommandNSTextView: NSTextView {
             }
             return
         }
-        if event.keyCode == 36 || event.keyCode == 76 {
-            let action = ComposerReturnAction.decide(
-                sendWithReturn: sendWithReturn,
-                shift: event.modifierFlags.contains(.shift),
-                command: event.modifierFlags.contains(.command),
-                hasMarkedText: hasMarkedText()
-            )
-            if action == .send {
-                onSubmit()
-                return
-            }
+        if ComposerUnfocusedTypingMonitor.shouldOfferReturn(event.keyCode),
+           handleReturn(event)
+        {
+            return
         }
         super.keyDown(with: event)
+    }
+
+    private func handleReturn(_ event: NSEvent) -> Bool {
+        let action = ComposerReturnAction.decide(
+            sendWithReturn: sendWithReturn,
+            shift: event.modifierFlags.contains(.shift),
+            command: event.modifierFlags.contains(.command),
+            hasMarkedText: hasMarkedText()
+        )
+        guard action == .send else { return false }
+        onSubmit()
+        return true
     }
 
     func updateTypingAttributes(at location: Int) {

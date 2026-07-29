@@ -102,11 +102,21 @@ private struct ChatRootView: View {
                 .toolbar(id: "sakuracord-main-v2") {
                     ToolbarItem(id: "channel") {
                         if let channel = model.selectedChannel {
-                            Button { model.showQuickSwitcher = true } label: {
+                            if isDirectMessageSelected {
                                 ConversationToolbarLabel(
                                     title: channel.name,
-                                    systemImage: channelToolbarSymbol(channel)
+                                    systemImage: channelToolbarSymbol(channel),
+                                    subtitle: directMessageToolbarSubtitle(for: channel)
                                 )
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 5)
+                            } else {
+                                Button { model.showQuickSwitcher = true } label: {
+                                    ConversationToolbarLabel(
+                                        title: channel.name,
+                                        systemImage: channelToolbarSymbol(channel)
+                                    )
+                                }
                             }
                         }
                     }
@@ -152,14 +162,22 @@ private struct ChatRootView: View {
                     }
                     .visibilityPriority(.high)
                     ToolbarItem(id: "quick-switcher") {
-                        if !hasOpenSupplementaryConversation, selectedVoiceChannel == nil {
+                        if !isDirectMessageSelected,
+                           !hasOpenSupplementaryConversation,
+                           selectedVoiceChannel == nil
+                        {
                             Button { model.showQuickSwitcher = true } label: { Label("Quick Switcher", systemImage: "magnifyingglass") }
                         }
                     }
                     .visibilityPriority(.high)
                     ToolbarItem(id: "members") {
                         if !hasOpenSupplementaryConversation, selectedVoiceChannel == nil {
-                            Button { model.showInspector.toggle() } label: { Label("Members", systemImage: "person.2") }
+                            Button { model.showInspector.toggle() } label: {
+                                Label(
+                                    isDirectMessageSelected ? "People" : "Members",
+                                    systemImage: "person.2"
+                                )
+                            }
                         }
                     }
                     .visibilityPriority(.high)
@@ -353,6 +371,22 @@ private struct ChatRootView: View {
             isHidden: model.conversationAccess(for: channel) == .hidden,
             rulesChannelID: selectedGuild?.rulesChannelID
         )
+    }
+
+    private var isDirectMessageSelected: Bool {
+        guard let channel = model.selectedChannel else { return false }
+        return channel.kind == .directMessage || channel.kind == .groupDirectMessage
+    }
+
+    private func directMessageToolbarSubtitle(for channel: Channel) -> String? {
+        switch channel.kind {
+        case .directMessage:
+            return channel.recipients.first.map { "@\($0.username)" }
+        case .groupDirectMessage:
+            return "\(channel.recipients.count + 1) members"
+        default:
+            return nil
+        }
     }
 
     private var hasOpenSupplementaryConversation: Bool {

@@ -29,8 +29,7 @@ struct ChatDetailView: View {
                 .overlay(alignment: .bottom) {
                     ChatDetailFooter(
                         model: model,
-                        channelID: channel.id,
-                        channelName: channel.name,
+                        channel: channel,
                         access: model.selectedConversationAccess
                     )
                     .onGeometryChange(for: CGFloat.self) { proxy in
@@ -48,8 +47,7 @@ struct ChatDetailView: View {
 
 private struct ChatDetailFooter: View {
     let model: AppModel
-    let channelID: ChannelID
-    let channelName: String
+    let channel: Channel
     let access: ConversationAccess
 
     var body: some View {
@@ -58,11 +56,13 @@ private struct ChatDetailFooter: View {
             case .checking:
                 DisabledComposerView(message: "Checking channel permissions…")
             case .readable(canSend: true):
-                TypingIndicatorView(typingState: model.typingState, channelID: channelID)
-                ComposerView(model: model, channelName: channelName)
+                TypingIndicatorView(typingState: model.typingState, channelID: channel.id)
+                ComposerView(model: model, channelName: channel.name)
             case .readable(canSend: false):
                 DisabledComposerView(
-                    message: "You do not have permission to send messages in this channel."
+                    message: channel.isOfficialSystemDirectMessage
+                        ? "This chat is reserved for official Discord notifications."
+                        : "You do not have permission to send messages in this channel."
                 )
             case .hidden:
                 EmptyView()

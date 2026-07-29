@@ -20,22 +20,30 @@ struct ChannelSidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            List(selection: $selection) {
-                let groups = ChannelGroup.make(from: displayedChannels)
-                ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
-                    ChannelGroupRows(
-                        group: group,
-                        addsTopSpacing: index == groups.startIndex,
-                        rulesChannelID: guild?.rulesChannelID,
-                        activeVoiceChannelID: activeVoiceChannelID,
-                        hiddenChannelIDs: hiddenChannelIDs,
-                        voiceParticipantsByChannel: voiceSidebarParticipantsByChannel
-                    )
+            if guild == nil {
+                DirectMessageInboxView(
+                    channels: displayedChannels,
+                    membersByID: voiceModel.membersByID,
+                    selection: $selection
+                )
+            } else {
+                List(selection: $selection) {
+                    let groups = ChannelGroup.make(from: displayedChannels)
+                    ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
+                        ChannelGroupRows(
+                            group: group,
+                            addsTopSpacing: index == groups.startIndex,
+                            rulesChannelID: guild?.rulesChannelID,
+                            activeVoiceChannelID: activeVoiceChannelID,
+                            hiddenChannelIDs: hiddenChannelIDs,
+                            voiceParticipantsByChannel: voiceSidebarParticipantsByChannel
+                        )
+                    }
                 }
+                .listStyle(.sidebar)
+                .scrollContentBackground(.hidden)
+                .clipped()
             }
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
-            .clipped()
 
             AccountControlView(
                 voiceModel: voiceModel,

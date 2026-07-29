@@ -682,6 +682,7 @@ final class AppModel {
     @ObservationIgnored private(set) var messages: [Message] = []
     @ObservationIgnored private(set) var messageRows: [MessageRowPresentation] = []
     @ObservationIgnored private(set) var messageRowsRevision: UInt64 = 0
+    private(set) var timelinePresentationRevision: UInt64 = 0
     @ObservationIgnored private(set) var messageRowsUpdateHint:
         MessageRowsUpdateHint?
     @ObservationIgnored let messageRowsUpdateJournal =
@@ -702,6 +703,9 @@ final class AppModel {
     private(set) var messageNavigationRequest: MessageNavigationRequest?
     private(set) var members: [Member] = [] {
         didSet {
+            if oldValue != members {
+                timelinePresentationRevision &+= 1
+            }
             memberSections = MemberSection.make(from: members)
             let indexed = Dictionary(
                 members.map { ($0.id, $0) },
@@ -725,12 +729,23 @@ final class AppModel {
     private(set) var membersByID: [UserID: Member] = [:]
     private(set) var memberSections: [MemberSection] = []
     private(set) var guildRoles: [GuildRole] = [] {
-        didSet { refreshUnreadPresentation() }
+        didSet {
+            if oldValue != guildRoles {
+                timelinePresentationRevision &+= 1
+            }
+            refreshUnreadPresentation()
+        }
     }
     private(set) var commandMemberResults: [Member] = []
     private(set) var mentionMemberResults: [Member] = []
     private(set) var mentionAutocompleteMembers: [Member] = []
-    private(set) var knownMentionMembers: [UserID: Member] = [:]
+    private(set) var knownMentionMembers: [UserID: Member] = [:] {
+        didSet {
+            if oldValue != knownMentionMembers {
+                timelinePresentationRevision &+= 1
+            }
+        }
+    }
     private(set) var roleMemberResult: RoleMemberResult?
     private(set) var isLoadingRoleMembers = false
     private(set) var roleMemberErrorMessage: String?
@@ -985,7 +1000,9 @@ final class AppModel {
     }
 
     func conversationAccess(for channel: Channel) -> ConversationAccess {
-        guard let guildID = channel.guildID else { return .readable(canSend: true) }
+        guard let guildID = channel.guildID else {
+            return .readable(canSend: !channel.isOfficialSystemDirectMessage)
+        }
         guard let guild = serverRailGuildsByID[guildID],
               let currentUserID = snapshot?.currentUser.id
         else {
@@ -1033,6 +1050,7 @@ final class AppModel {
     var selectedChannelID: ChannelID? {
         didSet {
             guard selectedChannelID != oldValue else { return }
+            dismissInspectorProfile()
             if let oldValue {
                 messageCache[oldValue] = messages
                 lastTypingRequestAt[oldValue] = nil
@@ -1492,6 +1510,27 @@ final class AppModel {
         guildActivationTask = Task { [weak self] in
             await self?.activateGuild(guildID)
         }
+    }
+
+    var directMessageInspectorSections: [MemberSection] {
+        guard let channel = selectedChannel, channel.guildID == nil else {
+            return memberSections
+        }
+        let knownMembersByID = Dictionary(
+            members.map { ($0.id, $0) },
+            uniquingKeysWith: { _, newer in newer }
+        )
+        var participants = channel.recipients.map { user in
+            knownMembersByID[user.id]
+                ?? Member(user: user, roleName: "Members", status: .offline)
+        }
+        if let currentUser = snapshot?.currentUser {
+            participants.append(
+                knownMembersByID[currentUser.id]
+                    ?? Member(user: currentUser, roleName: "You", status: currentStatus)
+            )
+        }
+        return MemberSection.make(from: participants)
     }
 
     func navigate(to channelID: ChannelID) {
@@ -4273,6 +4312,18 @@ final class AppModel {
         presentProfile(for: member, destination: .contextual)
     }
 
+    func showInspectorProfile(for user: User) {
+        isInspectorProfilePresented = true
+        let member =
+            membersByID[user.id]
+                ?? Member(
+                    user: user,
+                    roleName: "Direct Message",
+                    status: .offline
+                )
+        presentProfile(for: member, destination: .inspector)
+    }
+
     func authorPresentation(for message: Message) -> MessageAuthorPresentation {
         MessageAuthorPresentation.resolve(
             message: message,
@@ -5176,7 +5227,16 @@ final class AppModel {
                 value.channels.append(contentsOf: channels)
                 snapshot = value
             }
-            if guildID == selectedGuildID { visibleChannels = channels }
+            if guildID == selectedGuildID {
+                visibleChannels = channels
+                if let selectedChannelID {
+                    if let updated = channels.first(where: { $0.id == selectedChannelID }) {
+                        selectedChannel = updated
+                    } else if guildID == nil {
+                        self.selectedChannelID = channels.first?.id
+                    }
+                }
+            }
             readState.replaceChannels(in: guildID, with: channels)
             refreshUnreadPresentation()
         case .forumPostsChanged(let channelID, let posts):
@@ -5270,6 +5330,9 @@ final class AppModel {
                     contextualProfilePresentation?.profile = profile
                 }
             }
+        case .privateMembersChanged(let value):
+            guard selectedGuildID == nil else { return }
+            members = value
         case .currentUserRolesChanged(let guildID, let roleIDs):
             let roleIDs = Set(roleIDs)
             currentUserRoleIDsByGuild[guildID] = roleIDs

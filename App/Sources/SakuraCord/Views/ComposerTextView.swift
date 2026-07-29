@@ -584,11 +584,18 @@ final class ComposerNSTextView: NSTextView {
         didSet {
             unfocusedTypingMonitor.synchronize(
                 with: self,
-                enabled: capturesUnfocusedTyping
+                enabled: capturesUnfocusedTyping,
+                onUnfocusedReturn: unfocusedReturnHandler
             )
         }
     }
     private lazy var unfocusedTypingMonitor = ComposerUnfocusedTypingMonitor()
+
+    private var unfocusedReturnHandler: (NSEvent) -> Bool {
+        { [weak self] event in
+            self?.onReturn?(event) ?? false
+        }
+    }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
@@ -598,7 +605,8 @@ final class ComposerNSTextView: NSTextView {
         super.viewDidMoveToWindow()
         unfocusedTypingMonitor.synchronize(
             with: self,
-            enabled: capturesUnfocusedTyping
+            enabled: capturesUnfocusedTyping,
+            onUnfocusedReturn: unfocusedReturnHandler
         )
     }
 
@@ -677,6 +685,7 @@ final class ComposerNSTextView: NSTextView {
 final class ComposerUnfocusedTypingMonitor {
     private weak var textView: NSTextView?
     private var eventMonitor: Any?
+    private var onUnfocusedReturn: ((NSEvent) -> Bool)?
 
     isolated deinit {
         if let eventMonitor {
@@ -684,8 +693,13 @@ final class ComposerUnfocusedTypingMonitor {
         }
     }
 
-    func synchronize(with textView: NSTextView, enabled: Bool) {
+    func synchronize(
+        with textView: NSTextView,
+        enabled: Bool,
+        onUnfocusedReturn: ((NSEvent) -> Bool)? = nil
+    ) {
         self.textView = textView
+        self.onUnfocusedReturn = onUnfocusedReturn
         guard enabled, textView.window != nil
         else {
             removeMonitor()
@@ -699,10 +713,13 @@ final class ComposerUnfocusedTypingMonitor {
                   event.window === window,
                   window.isKeyWindow,
                   window.firstResponder !== textView,
-                  !Self.isEditingText(window.firstResponder),
-                  Self.shouldRedirect(event)
+                  !Self.isEditingText(window.firstResponder)
             else { return event }
 
+            if Self.shouldOfferReturn(event.keyCode) {
+                return self.onUnfocusedReturn?(event) == true ? nil : event
+            }
+            guard Self.shouldRedirect(event) else { return event }
             window.makeFirstResponder(textView)
             return event
         }
@@ -731,6 +748,10 @@ final class ComposerUnfocusedTypingMonitor {
         return characters.unicodeScalars.contains {
             !CharacterSet.controlCharacters.contains($0)
         }
+    }
+
+    nonisolated static func shouldOfferReturn(_ keyCode: UInt16) -> Bool {
+        keyCode == 36 || keyCode == 76
     }
 
     private static func shouldRedirect(_ event: NSEvent) -> Bool {

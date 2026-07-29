@@ -1270,6 +1270,9 @@ import Testing
         characters: "\t",
         modifierFlags: []
     ))
+    #expect(ComposerUnfocusedTypingMonitor.shouldOfferReturn(36))
+    #expect(ComposerUnfocusedTypingMonitor.shouldOfferReturn(76))
+    #expect(!ComposerUnfocusedTypingMonitor.shouldOfferReturn(49))
 }
 
 @MainActor

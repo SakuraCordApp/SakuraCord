@@ -79,9 +79,31 @@ public actor MockChatProvider: ChatProvider {
         snapshot.channels.filter { $0.guildID == guildID }
     }
 
+    private var privateChannels: [Channel] {
+        snapshot.channels.filter { $0.guildID == nil }
+    }
+
     public func members(in guildID: GuildID?) async throws -> [Member] {
         guard let guildID else {
-            return [Member(user: currentUser, roleName: "You", status: .online)]
+            var usersByID = Dictionary(
+                privateChannels.flatMap(\.recipients).map { ($0.id, $0) },
+                uniquingKeysWith: { _, newer in newer }
+            )
+            usersByID[currentUser.id] = currentUser
+            let referenceMembersByID = Dictionary(
+                (membersByGuild[GuildID(rawValue: 100)] ?? []).map { ($0.id, $0) },
+                uniquingKeysWith: { _, newer in newer }
+            )
+            return usersByID.values.map {
+                let reference = referenceMembersByID[$0.id]
+                return Member(
+                    user: $0,
+                    roleName: $0.id == currentUser.id ? "You" : "Direct Message",
+                    status: $0.id == currentUser.id ? .online : reference?.status ?? .offline,
+                    activityText: reference?.activityText,
+                    customStatus: reference?.customStatus
+                )
+            }
         }
         return membersByGuild[guildID] ?? []
     }

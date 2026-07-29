@@ -2,34 +2,78 @@ import AppKit
 import SakuraCordModels
 import SwiftUI
 
+enum ProfilePresentationLayout {
+    case popover
+    case inspector
+}
+
 struct ProfilePresentationContent: View {
     let presentation: ProfilePresentationState
+    var layout: ProfilePresentationLayout = .popover
 
     var body: some View {
         MemberProfilePopover(
             member: presentation.member,
             profile: presentation.profile,
             isLoading: presentation.isLoading,
-            errorMessage: presentation.errorMessage
+            errorMessage: presentation.errorMessage,
+            layout: layout
         )
     }
 }
 
 struct MemberProfilePopover: View {
+    static let preferredWidth: CGFloat = 330
+
     let member: Member
     let profile: UserProfile?
     let isLoading: Bool
     let errorMessage: String?
+    var layout: ProfilePresentationLayout = .popover
 
     @State private var contentHeight: CGFloat = 320
 
-    private let width: CGFloat = 330
     private let maximumHeight: CGFloat = 560
 
     var body: some View {
+        Group {
+            switch layout {
+            case .popover:
+                profileContent
+                    .frame(
+                        width: width,
+                        height: min(
+                            contentHeight + surfaceInset * 2,
+                            maximumHeight
+                        )
+                    )
+                    .profilePresentationBackground(
+                        themeHexes: activeNitroThemeHexes
+                    )
+            case .inspector:
+                profileContent
+                    .ignoresSafeArea(.container, edges: .top)
+                    .frame(
+                        maxWidth: .infinity,
+                        maxHeight: .infinity,
+                        alignment: .top
+                    )
+                    .background { inspectorBackground }
+            }
+        }
+        .onPreferenceChange(ProfileContentHeightKey.self) { newHeight in
+            guard newHeight.isFinite, newHeight > 0 else { return }
+            contentHeight = max(250, newHeight)
+        }
+    }
+
+    private var profileContent: some View {
         ZStack(alignment: .top) {
             if !activeNitroThemeHexes.isEmpty {
-                RoundedRectangle(cornerRadius: innerCornerRadius, style: .continuous)
+                RoundedRectangle(
+                    cornerRadius: innerCornerRadius,
+                    style: .continuous
+                )
                     .fill(.black.opacity(0.64))
                     .padding(surfaceInset)
             }
@@ -40,7 +84,9 @@ struct MemberProfilePopover: View {
                         member: member,
                         profile: profile,
                         themeHexes: activeNitroThemeHexes,
-                        avatarCutoutColor: ProfilePalette.innerSurfaceColor(themeHexes: activeNitroThemeHexes)
+                        avatarCutoutColor: ProfilePalette.innerSurfaceColor(themeHexes: activeNitroThemeHexes),
+                        topCornerRadius: layout == .popover ? 16 : 0,
+                        statusBubbleWidth: statusBubbleWidth
                     )
                     .zIndex(10)
 
@@ -63,7 +109,8 @@ struct MemberProfilePopover: View {
                         ProfileMutualSummary(
                             guilds: profile.mutualGuilds,
                             friends: profile.mutualFriends,
-                            mutualFriendCount: profile.mutualFriendsCount
+                            mutualFriendCount: profile.mutualFriendsCount,
+                            layout: layout
                         )
                         if let bio = profile.bio, !bio.isEmpty {
                             ProfileAboutSection(bio: bio)
@@ -92,11 +139,18 @@ struct MemberProfilePopover: View {
                     .zIndex(100)
             }
         }
-        .frame(width: width, height: min(contentHeight + surfaceInset * 2, maximumHeight))
-        .profilePresentationBackground(themeHexes: activeNitroThemeHexes)
-        .onPreferenceChange(ProfileContentHeightKey.self) { newHeight in
-            guard newHeight.isFinite, newHeight > 0 else { return }
-            contentHeight = max(250, newHeight)
+    }
+
+    @ViewBuilder
+    private var inspectorBackground: some View {
+        if activeNitroThemeHexes.count >= 2 {
+            LinearGradient(
+                colors: activeNitroThemeHexes.prefix(2).map(Color.init(hex:)),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        } else {
+            Color(nsColor: .controlBackgroundColor).opacity(0.62)
         }
     }
 
@@ -108,11 +162,29 @@ struct MemberProfilePopover: View {
     }
 
     private var surfaceInset: CGFloat {
-        3
+        layout == .popover ? 3 : 0
     }
 
     private var innerCornerRadius: CGFloat {
-        16
+        layout == .popover ? 16 : 0
+    }
+
+    private var width: CGFloat {
+        Self.preferredWidth
+    }
+
+    private var statusBubbleWidth: CGFloat {
+        guard layout == .inspector else { return 194 }
+        let leadingAnchor: CGFloat = 97
+        let trailingInset: CGFloat = 16
+        let bubbleHorizontalPadding: CGFloat = 22
+        return max(
+            80,
+            ChatChromeMetrics.memberListWidth
+                - leadingAnchor
+                - trailingInset
+                - bubbleHorizontalPadding
+        )
     }
 }
 
@@ -145,10 +217,17 @@ private struct ProfileHeroSection: View {
     let profile: UserProfile?
     let themeHexes: [UInt32]
     let avatarCutoutColor: Color
+    let topCornerRadius: CGFloat
+    let statusBubbleWidth: CGFloat
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ProfileBanner(url: profile?.bannerURL, accentHex: profile?.accentHex, themeHexes: themeHexes)
+            ProfileBanner(
+                url: profile?.bannerURL,
+                accentHex: profile?.accentHex,
+                themeHexes: themeHexes,
+                topCornerRadius: topCornerRadius
+            )
                 .overlay(alignment: .topLeading) {
                     Circle()
                         .fill(.black)
@@ -198,7 +277,11 @@ private struct ProfileHeroSection: View {
                     .offset(x: 82, y: 106)
                     .allowsHitTesting(false)
 
-                ProfileStatusBubble(text: customStatus, surfaceColor: avatarCutoutColor)
+                ProfileStatusBubble(
+                    text: customStatus,
+                    surfaceColor: avatarCutoutColor,
+                    width: statusBubbleWidth
+                )
                     .offset(x: 97, y: 118)
             }
         }
@@ -208,6 +291,7 @@ private struct ProfileHeroSection: View {
 private struct ProfileStatusBubble: View {
     let text: String
     let surfaceColor: Color
+    let width: CGFloat
     @State private var isBubbleHovering = false
     @State private var isTextHovering = false
 
@@ -219,7 +303,7 @@ private struct ProfileStatusBubble: View {
             isExpanded: isExpanded,
             onHoverChange: { isTextHovering = $0 }
         )
-            .frame(width: 194, alignment: .leading)
+            .frame(width: width, alignment: .leading)
             .padding(.horizontal, 11)
             .padding(.vertical, 8)
             .fixedSize(horizontal: false, vertical: true)
@@ -267,32 +351,52 @@ private struct ProfileBanner: View {
     let url: URL?
     let accentHex: UInt32?
     let themeHexes: [UInt32]
+    let topCornerRadius: CGFloat
 
     var body: some View {
-        ZStack {
-            LinearGradient(
-                colors: ProfilePalette.banner(themeHexes: themeHexes, accentHex: accentHex),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            if let url {
-                AsyncImage(url: url) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    Color.clear
+        GeometryReader { proxy in
+            let width = ProfileBannerLayout.constrainedWidth(proxy.size.width)
+
+            ZStack {
+                LinearGradient(
+                    colors: ProfilePalette.banner(themeHexes: themeHexes, accentHex: accentHex),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                if let url {
+                    AsyncImage(url: url) { image in
+                        image
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: width, height: ProfileBannerLayout.height)
+                            .clipped()
+                    } placeholder: {
+                        Color.clear
+                    }
                 }
             }
+            .frame(width: width, height: ProfileBannerLayout.height)
         }
-        .frame(height: 112)
+        .frame(maxWidth: .infinity)
+        .frame(height: ProfileBannerLayout.height)
         .clipShape(
             UnevenRoundedRectangle(
-                topLeadingRadius: 16,
+                topLeadingRadius: topCornerRadius,
                 bottomLeadingRadius: 0,
                 bottomTrailingRadius: 0,
-                topTrailingRadius: 16,
+                topTrailingRadius: topCornerRadius,
                 style: .continuous
             )
         )
+    }
+}
+
+nonisolated enum ProfileBannerLayout {
+    static let height: CGFloat = 112
+
+    static func constrainedWidth(_ proposedWidth: CGFloat) -> CGFloat {
+        guard proposedWidth.isFinite else { return 0 }
+        return max(0, proposedWidth)
     }
 }
 
@@ -536,17 +640,20 @@ private struct ProfileMutualSummary: View {
     let guilds: [MutualGuild]
     let friends: [User]
     let mutualFriendCount: Int
+    let layout: ProfilePresentationLayout
 
     @State private var presentedList: MutualList?
 
     var body: some View {
         if !guilds.isEmpty || mutualFriendCount > 0 {
-            HStack(spacing: 14) {
+            HStack(spacing: layout == .inspector ? 8 : 14) {
                 if !guilds.isEmpty {
                     Button {
                         presentedList = .servers
                     } label: {
                         Label(countLabel(guilds.count, singular: "Mutual Server", plural: "Mutual Servers"), systemImage: "server.rack")
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
                     }
                 }
 
@@ -555,13 +662,19 @@ private struct ProfileMutualSummary: View {
                         presentedList = .friends
                     } label: {
                         Label(countLabel(mutualFriendCount, singular: "Mutual Friend", plural: "Mutual Friends"), systemImage: "person.2.fill")
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
                     }
                 }
             }
             .buttonStyle(.plain)
-            .font(.callout.weight(.medium))
+            .font(
+                layout == .inspector
+                    ? .caption.weight(.medium)
+                    : .callout.weight(.medium)
+            )
             .foregroundStyle(.secondary)
-            .padding(.horizontal, 16)
+            .padding(.horizontal, layout == .inspector ? 14 : 16)
             .popover(item: $presentedList, arrowEdge: .trailing) { list in
                 switch list {
                 case .servers:

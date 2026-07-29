@@ -625,6 +625,10 @@ struct NativeMessageTimelineView: NSViewRepresentable {
         conversation.rowsRevision(in: model)
     }
 
+    fileprivate var presentationRevision: UInt64 {
+        model.timelinePresentationRevision
+    }
+
     fileprivate var rowsUpdateHint: MessageRowsUpdateHint? {
         conversation.rowsUpdateHint(in: model)
     }
@@ -709,6 +713,7 @@ struct NativeMessageTimelineView: NSViewRepresentable {
         private var firstRowID: MessageID?
         private var lastRowID: MessageID?
         private var rowsRevision: UInt64 = 0
+        private var presentationRevision: UInt64 = 0
         private var layoutWidth: CGFloat = 0
         private var didMutateItems = false
         private var dirtyItemIndexes = IndexSet()
@@ -793,11 +798,15 @@ struct NativeMessageTimelineView: NSViewRepresentable {
 
         func update(parent: NativeMessageTimelineView, scrollView: NSScrollView) {
             guard let canvas else { return }
+            let conversationChanged =
+                parent.conversation != self.parent.conversation
+            let presentationChanged =
+                parent.presentationRevision != presentationRevision
             // Capture reaction counts before mutating the shared timeline
             // storage. Capturing inside canvas.apply is too late because both
             // objects reference this same storage instance.
             if parent.rowsRevision != rowsRevision
-                || parent.conversation != self.parent.conversation
+                || conversationChanged
             {
                 canvas.captureReactionCountsBeforeStorageMutation()
             }
@@ -811,7 +820,7 @@ struct NativeMessageTimelineView: NSViewRepresentable {
                     oldParent.bottomContentInset
                         - parent.bottomContentInset
                 ) >= 0.5
-            if oldParent.conversation != parent.conversation {
+            if conversationChanged {
                 leadingHistoryReserve = 0
                 followsMaterializedHistoryBoundary = false
                 initialPositionConversation = nil
@@ -826,8 +835,7 @@ struct NativeMessageTimelineView: NSViewRepresentable {
             let acceptsNewRows =
                 NativeMessageTimelineLayoutPolicy.acceptsRowSnapshot(
                     itemsAreEmpty: items.isEmpty,
-                    conversationChanged:
-                        oldParent.conversation != parent.conversation,
+                    conversationChanged: conversationChanged,
                     publishedRevision: parent.rowsRevision,
                     appliedRevision: rowsRevision
                 )
@@ -854,15 +862,20 @@ struct NativeMessageTimelineView: NSViewRepresentable {
                 widthChanged ? anchor?.topPinnedForWidthChange : anchor
             didMutateItems = false
             dirtyItemIndexes.removeAll()
-            requiresVisibleRedraw = widthChanged || items.isEmpty
-            requiresAnchorRestore = widthChanged
-            requiresFullOriginRebuild = widthChanged
+            requiresVisibleRedraw =
+                widthChanged || presentationChanged || items.isEmpty
+            requiresAnchorRestore = widthChanged || presentationChanged
+            requiresFullOriginRebuild =
+                widthChanged || presentationChanged
             appendedLayoutCount = 0
             didPrependItems = false
             performanceUpdatePath = "none"
             performanceFallbackReason = "none"
             let reconcileStartUptime = ProcessInfo.processInfo.systemUptime
-            if widthChanged {
+            if presentationChanged || conversationChanged {
+                canvas.invalidatePresentationCaches()
+            }
+            if widthChanged || presentationChanged {
                 layoutWidth = width
                 if acceptsNewRows, !hasUnpublishedRows {
                     rebuildAll(
@@ -875,7 +888,10 @@ struct NativeMessageTimelineView: NSViewRepresentable {
                     layouts = items.map { layout(for: $0, width: width) }
                     rowHeights = layouts.map(\.height)
                     didMutateItems = true
-                    performanceUpdatePath = "width-only"
+                    performanceUpdatePath =
+                        presentationChanged
+                        ? "presentation-only"
+                        : "width-only"
                 }
             } else if hasUnpublishedRows {
                 // Row storage can advance while its observable revision is
@@ -920,6 +936,7 @@ struct NativeMessageTimelineView: NSViewRepresentable {
                 lastRowID = newRows.last?.id
                 rowsRevision = parent.rowsRevision
             }
+            presentationRevision = parent.presentationRevision
             let metadataEndUptime = ProcessInfo.processInfo.systemUptime
             if didMutateItems {
                 if requiresFullOriginRebuild {

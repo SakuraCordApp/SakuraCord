@@ -47,6 +47,7 @@ public struct User: Identifiable, Codable, Hashable, Sendable {
     public var displayName: String
     public var avatarURL: URL?
     public var isBot: Bool
+    public var isSystem: Bool
     public var avatarDecorationURL: URL?
     public var nameplate: Nameplate?
     public var primaryGuild: PrimaryGuildIdentity?
@@ -60,6 +61,7 @@ public struct User: Identifiable, Codable, Hashable, Sendable {
         displayName: String,
         avatarURL: URL? = nil,
         isBot: Bool = false,
+        isSystem: Bool = false,
         avatarDecorationURL: URL? = nil,
         nameplate: Nameplate? = nil,
         primaryGuild: PrimaryGuildIdentity? = nil,
@@ -72,6 +74,7 @@ public struct User: Identifiable, Codable, Hashable, Sendable {
         self.displayName = displayName
         self.avatarURL = avatarURL
         self.isBot = isBot
+        self.isSystem = isSystem
         self.avatarDecorationURL = avatarDecorationURL
         self.nameplate = nameplate
         self.primaryGuild = primaryGuild
@@ -81,7 +84,7 @@ public struct User: Identifiable, Codable, Hashable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, username, displayName, avatarURL, isBot, avatarDecorationURL, nameplate
+        case id, username, displayName, avatarURL, isBot, isSystem, avatarDecorationURL, nameplate
         case primaryGuild, displayNameStyle, publicFlags, premiumType
     }
 
@@ -92,6 +95,7 @@ public struct User: Identifiable, Codable, Hashable, Sendable {
         displayName = try container.decodeIfPresent(String.self, forKey: .displayName) ?? username
         avatarURL = try container.decodeIfPresent(URL.self, forKey: .avatarURL)
         isBot = try container.decodeIfPresent(Bool.self, forKey: .isBot) ?? false
+        isSystem = try container.decodeIfPresent(Bool.self, forKey: .isSystem) ?? false
         avatarDecorationURL = try container.decodeIfPresent(URL.self, forKey: .avatarDecorationURL)
         nameplate = try container.decodeIfPresent(Nameplate.self, forKey: .nameplate)
         primaryGuild = try container.decodeIfPresent(
@@ -397,6 +401,8 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
     public let id: ChannelID
     public var guildID: GuildID?
     public var name: String
+    public var iconURL: URL?
+    public var ownerID: UserID?
     public var topic: String?
     public var kind: ChannelKindValue
     public var category: String?
@@ -424,6 +430,8 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         id: ChannelID,
         guildID: GuildID?,
         name: String,
+        iconURL: URL? = nil,
+        ownerID: UserID? = nil,
         topic: String? = nil,
         kind: ChannelKindValue = .text,
         category: String? = nil,
@@ -450,6 +458,8 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         self.id = id
         self.guildID = guildID
         self.name = name
+        self.iconURL = iconURL
+        self.ownerID = ownerID
         self.topic = topic
         self.kind = kind
         self.category = category
@@ -478,8 +488,12 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         flags & (1 << 4) != 0
     }
 
+    public var isOfficialSystemDirectMessage: Bool {
+        kind == .directMessage && recipients.contains(where: \.isSystem)
+    }
+
     private enum CodingKeys: String, CodingKey {
-        case id, guildID, name, topic, kind, category, categoryID, position, categoryPosition
+        case id, guildID, name, iconURL, ownerID, topic, kind, category, categoryID, position, categoryPosition
         case unreadCount, mentionCount, isMuted, recipients, permissionOverwrites, lastMessageID, lastPinTimestamp
         case flags, availableTags, defaultReaction, defaultSortOrder, defaultForumLayout
         case defaultTagMatch, defaultAutoArchiveDuration, defaultThreadRateLimitPerUser
@@ -491,6 +505,8 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         id = try values.decode(ChannelID.self, forKey: .id)
         guildID = try values.decodeIfPresent(GuildID.self, forKey: .guildID)
         name = try values.decode(String.self, forKey: .name)
+        iconURL = try values.decodeIfPresent(URL.self, forKey: .iconURL)
+        ownerID = try values.decodeIfPresent(UserID.self, forKey: .ownerID)
         topic = try values.decodeIfPresent(String.self, forKey: .topic)
         kind = try values.decodeIfPresent(ChannelKindValue.self, forKey: .kind) ?? .text
         category = try values.decodeIfPresent(String.self, forKey: .category)
@@ -1774,11 +1790,12 @@ public enum ClientEvent: Equatable, Sendable {
     case notificationModeChanged(usesNewNotifications: Bool)
     case notificationSettingsChanged(GuildNotificationSettings)
     case typing(channelID: ChannelID, user: User)
-    case channelsChanged(guildID: GuildID, channels: [Channel])
+    case channelsChanged(guildID: GuildID?, channels: [Channel])
     case forumPostsChanged(channelID: ChannelID, posts: [ForumPost])
     case forumPostPreviewsChanged(channelID: ChannelID, posts: [ForumPost])
     case forumPageLoaded(channelID: ChannelID, query: ForumPostQuery, page: ForumPostPage)
     case membersChanged(guildID: GuildID, members: [Member])
+    case privateMembersChanged([Member])
     case currentUserRolesChanged(guildID: GuildID, roleIDs: [RoleID])
     case emojisChanged(guildID: GuildID, emojis: [DiscordEmoji])
     case emojisUpdated(

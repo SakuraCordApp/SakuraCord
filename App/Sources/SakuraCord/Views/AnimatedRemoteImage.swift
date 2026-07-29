@@ -4,13 +4,22 @@ import QuartzCore
 import SwiftUI
 import WebKit
 
+nonisolated struct AnimatedRemoteImageRequestIdentity: Hashable {
+    let url: URL
+    let maximumPixelDimension: Int?
+}
+
+nonisolated enum AnimatedRemoteImageReloadPolicy {
+    static func shouldReplaceDisplayedImage(
+        displayed: AnimatedRemoteImageRequestIdentity?,
+        requested: AnimatedRemoteImageRequestIdentity
+    ) -> Bool {
+        displayed != requested
+    }
+}
+
 /// Displays remote GIF/APNG/WebP assets without flattening them to their first frame.
 struct AnimatedRemoteImage: View {
-    private struct LoadID: Hashable {
-        let url: URL
-        let maximumPixelDimension: Int?
-    }
-
     let url: URL
     var animates = true
     var isLooping = true
@@ -21,7 +30,35 @@ struct AnimatedRemoteImage: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("reduceAnimatedMedia") private var reduceAnimatedMedia = false
     @State private var decodedImage: DecodedAnimatedImage?
+    @State private var displayedLoadID: AnimatedRemoteImageRequestIdentity?
     @State private var didFail = false
+
+    init(
+        url: URL,
+        animates: Bool = true,
+        isLooping: Bool = true,
+        fallbackSystemImage: String? = nil,
+        fallbackInset: CGFloat = 2,
+        maximumPixelDimension: Int? = nil
+    ) {
+        self.url = url
+        self.animates = animates
+        self.isLooping = isLooping
+        self.fallbackSystemImage = fallbackSystemImage
+        self.fallbackInset = fallbackInset
+        self.maximumPixelDimension = maximumPixelDimension
+
+        let loadID = AnimatedRemoteImageRequestIdentity(
+            url: url,
+            maximumPixelDimension: maximumPixelDimension
+        )
+        let cached = AnimatedRemoteImageDisplayCache.shared.image(
+            for: url,
+            maximumPixelDimension: maximumPixelDimension
+        )
+        _decodedImage = State(initialValue: cached)
+        _displayedLoadID = State(initialValue: cached == nil ? nil : loadID)
+    }
 
     var body: some View {
         Group {
@@ -41,8 +78,28 @@ struct AnimatedRemoteImage: View {
                 Color.clear
             }
         }
-        .task(id: LoadID(url: url, maximumPixelDimension: maximumPixelDimension)) {
-            decodedImage = nil
+        .task(id: AnimatedRemoteImageRequestIdentity(
+            url: url,
+            maximumPixelDimension: maximumPixelDimension
+        )) {
+            let loadID = AnimatedRemoteImageRequestIdentity(
+                url: url,
+                maximumPixelDimension: maximumPixelDimension
+            )
+            if AnimatedRemoteImageReloadPolicy.shouldReplaceDisplayedImage(
+                displayed: displayedLoadID,
+                requested: loadID
+            ) {
+                decodedImage = AnimatedRemoteImageDisplayCache.shared.image(
+                    for: url,
+                    maximumPixelDimension: maximumPixelDimension
+                )
+                displayedLoadID = decodedImage == nil ? nil : loadID
+            }
+            guard decodedImage == nil else {
+                didFail = false
+                return
+            }
             didFail = false
             do {
                 let image = try await SharedAnimatedImageLoader.shared.image(
@@ -50,12 +107,63 @@ struct AnimatedRemoteImage: View {
                     maximumPixelDimension: maximumPixelDimension
                 )
                 guard !Task.isCancelled else { return }
+                AnimatedRemoteImageDisplayCache.shared.insert(
+                    image,
+                    for: url,
+                    maximumPixelDimension: maximumPixelDimension
+                )
                 decodedImage = image
+                displayedLoadID = loadID
             } catch {
                 decodedImage = nil
+                displayedLoadID = nil
                 didFail = true
             }
         }
+    }
+}
+
+private final class AnimatedRemoteImageDisplayCache: @unchecked Sendable {
+    static let shared = AnimatedRemoteImageDisplayCache()
+
+    private let cache: NSCache<NSString, DecodedAnimatedImage> = {
+        let cache = NSCache<NSString, DecodedAnimatedImage>()
+        cache.countLimit = 256
+        cache.totalCostLimit = 64 * 1_024 * 1_024
+        return cache
+    }()
+
+    func image(
+        for url: URL,
+        maximumPixelDimension: Int?
+    ) -> DecodedAnimatedImage? {
+        cache.object(forKey: key(
+            url: url,
+            maximumPixelDimension: maximumPixelDimension
+        ))
+    }
+
+    func insert(
+        _ image: DecodedAnimatedImage,
+        for url: URL,
+        maximumPixelDimension: Int?
+    ) {
+        cache.setObject(
+            image,
+            forKey: key(
+                url: url,
+                maximumPixelDimension: maximumPixelDimension
+            ),
+            cost: image.estimatedByteCount
+        )
+    }
+
+    private func key(
+        url: URL,
+        maximumPixelDimension: Int?
+    ) -> NSString {
+        "\(url.absoluteString)#display-pixel-max=\(maximumPixelDimension ?? 0)"
+            as NSString
     }
 }
 

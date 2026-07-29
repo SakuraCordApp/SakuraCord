@@ -1,3 +1,4 @@
+import SakuraCordModels
 import SwiftUI
 
 struct ChatWorkspaceView: View {
@@ -105,16 +106,53 @@ private struct ChatWorkspaceSupplementaryContent: View {
         case .voiceChat:
             VoiceChannelChatView(model: model)
         case .memberInspector:
-            MemberInspectorView(
-                sections: model.memberSections,
-                profilePresentation:
-                    model.inspectorProfilePresentation,
-                isProfilePresented: model.isInspectorProfilePresented,
-                selectMember: model.selectMember,
-                dismissProfile: model.dismissInspectorProfile
-            )
-            .frame(width: ChatChromeMetrics.memberListWidth)
-            .frame(maxHeight: .infinity)
+            if let channel = model.selectedChannel,
+               channel.kind == .directMessage,
+               let recipient = channel.recipients.first
+            {
+                DirectMessageProfileInspector(
+                    model: model,
+                    recipient: recipient
+                )
+            } else {
+                MemberInspectorView(
+                    sections: model.directMessageInspectorSections,
+                    profilePresentation:
+                        model.inspectorProfilePresentation,
+                    isProfilePresented: model.isInspectorProfilePresented,
+                    selectMember: model.selectMember,
+                    dismissProfile: model.dismissInspectorProfile
+                )
+                .frame(width: ChatChromeMetrics.memberListWidth)
+                .frame(maxHeight: .infinity)
+            }
+        }
+    }
+}
+
+private struct DirectMessageProfileInspector: View {
+    let model: AppModel
+    let recipient: User
+
+    var body: some View {
+        Group {
+            if let presentation = model.inspectorProfilePresentation,
+               presentation.member.id == recipient.id
+            {
+                ProfilePresentationContent(
+                    presentation: presentation,
+                    layout: .inspector
+                )
+            } else {
+                ProgressView("Loading profile…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .frame(width: ChatChromeMetrics.memberListWidth)
+        .frame(maxHeight: .infinity)
+        .ignoresSafeArea(.container, edges: .top)
+        .task(id: recipient.id) {
+            model.showInspectorProfile(for: recipient)
         }
     }
 }

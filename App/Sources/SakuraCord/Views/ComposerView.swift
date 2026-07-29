@@ -8,6 +8,22 @@ nonisolated struct ComposerDraftEdit: Equatable {
     let selection: NSRange
 }
 
+nonisolated enum ComposerPlaceholderPolicy {
+    static func text(
+        channelName: String,
+        channelKind: ChannelKindValue?,
+        destination: MessageComposerDestination
+    ) -> String {
+        if destination == .channel,
+           channelKind == .directMessage
+            || channelKind == .groupDirectMessage
+        {
+            return "Message @\(channelName)"
+        }
+        return "Message #\(channelName)"
+    }
+}
+
 nonisolated enum ComposerDraftEditing {
     static func insert(_ insertedText: String, into source: String, replacing selection: NSRange?)
         -> ComposerDraftEdit
@@ -134,7 +150,7 @@ struct ComposerView: View {
                             ZStack(alignment: .leading) {
                                 ComposerTextView(
                                     text: draft,
-                                    placeholder: "Message #\(channelName)",
+                                    placeholder: composerPlaceholder,
                                     sendWithReturn: sendWithReturn,
                                     mentionPresentations: composerMentionPresentations,
                                     onTextChange: updateDraft,
@@ -146,7 +162,7 @@ struct ComposerView: View {
                                 )
 
                                 if draft.isEmpty {
-                                    Text("Message #\(channelName)")
+                                    Text(composerPlaceholder)
                                         .foregroundStyle(.tertiary)
                                         .font(.system(size: 15))
                                         .lineLimit(1)
@@ -828,6 +844,14 @@ struct ComposerView: View {
 
     private var hasActiveCommand: Bool {
         conversation == .channel && model.commandComposer.activeCommand != nil
+    }
+
+    private var composerPlaceholder: String {
+        ComposerPlaceholderPolicy.text(
+            channelName: channelName,
+            channelKind: model.selectedChannel?.kind,
+            destination: conversation
+        )
     }
 
     private var activeConversationID: ChannelID? {

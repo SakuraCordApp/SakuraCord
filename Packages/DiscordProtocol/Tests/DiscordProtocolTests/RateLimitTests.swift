@@ -17,6 +17,31 @@ import Testing
 
 @Suite(.serialized)
 struct ProviderRequestContractTests {
+    @Test func `concurrent sends with one nonce use one message mutation`() async throws {
+        RateLimitURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RateLimitURLProtocol.self]
+        let provider = DiscordRESTProvider(
+            credentials: TestCredentialStore(),
+            handle: CredentialHandle(accountID: "1"),
+            session: URLSession(configuration: configuration)
+        )
+        let draft = SendMessageDraft(
+            channelID: ChannelID(rawValue: 200),
+            content: "one intentional send",
+            nonce: "one-intentional-send"
+        )
+
+        async let first = provider.send(draft)
+        async let second = provider.send(draft)
+        let messages = try await (first, second)
+
+        #expect(messages.0.id == messages.1.id)
+        #expect(RateLimitURLProtocol.messageRequestCount == 1)
+        #expect(RateLimitURLProtocol.sentNonce == draft.nonce)
+        #expect(RateLimitURLProtocol.sentEnforceNonce)
+    }
+
     @Test func `message send rejects more than ten attachments without a request`() async {
         RateLimitURLProtocol.reset()
         let configuration = URLSessionConfiguration.ephemeral
@@ -792,7 +817,23 @@ struct ProviderRequestContractTests {
             data: .object([
                 "session_id": .string("request-contract-session"),
                 "resume_gateway_url": .string("wss://gateway.discord.gg"),
-                "guilds": .array([])
+                "guilds": .array([]),
+                "users": .array([
+                    .object([
+                        "id": .string("2"),
+                        "username": .string("maya"),
+                        "global_name": .string("Maya"),
+                        "avatar": .null,
+                    ])
+                ]),
+                "private_channels": .array([
+                    .object([
+                        "id": .string("401"),
+                        "type": .number(1),
+                        "last_message_id": .string("601"),
+                        "recipient_ids": .array([.string("2")]),
+                    ])
+                ]),
             ]),
             sequence: 1,
             eventName: "READY"
@@ -815,11 +856,16 @@ struct ProviderRequestContractTests {
         #expect(await connected.value)
         #expect(snapshot.currentUser.id == UserID(rawValue: 1))
         #expect(snapshot.guilds.count == 1)
-        #expect(snapshot.channels.isEmpty)
+        #expect(snapshot.channels.map(\.id) == [ChannelID(rawValue: 401)])
+        #expect(snapshot.channels.first?.name == "Maya")
+        #expect(snapshot.channels.first?.recipients.map(\.id) == [
+            UserID(rawValue: 2)
+        ])
         #expect(snapshot.guildRailItems == [.guild(GuildID(rawValue: 100))])
         #expect(snapshot.guilds.first?.isOwnedByCurrentUser == false)
         #expect(snapshot.guilds.first?.currentUserPermissions == 1024)
         #expect(RateLimitURLProtocol.guildListAttempts == 2)
+        #expect(RateLimitURLProtocol.privateChannelListRequests == 0)
         #expect(RateLimitURLProtocol.guildChannelRequests == 0)
         #expect(RateLimitURLProtocol.settingsRequestCount == 0)
         #expect(RateLimitURLProtocol.settingsMethod == nil)
@@ -838,8 +884,8 @@ struct ProviderRequestContractTests {
                 in: GuildID(rawValue: 100), query: "maya", limit: 25
             )
         }
-        #expect(await eventually { await socket.sentCount >= 2 })
-        let gatewayData = try #require(await socket.sentPayloads.last)
+        #expect(await eventually { await socket.sentPayload(opcode: 8) != nil })
+        let gatewayData = try #require(await socket.sentPayload(opcode: 8))
         let gatewayPayload = try #require(
             JSONSerialization.jsonObject(with: gatewayData) as? [String: Any]
         )
@@ -898,7 +944,6 @@ struct ProviderRequestContractTests {
         #expect(draft.nonce.count <= 25)
         #expect(RateLimitURLProtocol.sentNonce == draft.nonce)
         #expect(RateLimitURLProtocol.sentEnforceNonce)
-        #expect(RateLimitURLProtocol.sentNetworkType == "unknown")
         #expect(RateLimitURLProtocol.messageContextProperties == DiscordClientMetadata.messageContextHeader)
         let encodedProperties = try #require(RateLimitURLProtocol.messageSuperProperties)
         let propertiesData = try #require(Data(base64Encoded: encodedProperties))
@@ -919,14 +964,12 @@ struct ProviderRequestContractTests {
         #expect(RateLimitURLProtocol.messagePath == "/api/v9/channels/200/messages")
         let mentionBody = try #require(RateLimitURLProtocol.sentMessageBody)
         #expect(Set(mentionBody.keys) == [
-            "content", "nonce", "enforce_nonce", "tts", "flags", "mobile_network_type",
+            "content", "nonce", "enforce_nonce", "attachments",
         ])
         #expect(mentionBody["content"] as? String == "hello <@2>")
         #expect(mentionBody["nonce"] as? String == mentionDraft.nonce)
         #expect(mentionBody["enforce_nonce"] as? Bool == true)
-        #expect(mentionBody["tts"] as? Bool == false)
-        #expect((mentionBody["flags"] as? NSNumber)?.intValue == 0)
-        #expect(mentionBody["mobile_network_type"] as? String == "unknown")
+        #expect((mentionBody["attachments"] as? [Any])?.isEmpty == true)
         #expect(mentionBody["allowed_mentions"] == nil)
 
         let reply = try await provider.send(SendMessageDraft(
@@ -937,6 +980,13 @@ struct ProviderRequestContractTests {
         #expect(reply.replyTo == MessageID(rawValue: 299))
         #expect(reply.replyPreview?.author.displayName == "Original Author")
         #expect(reply.replyPreview?.content == "original message")
+        let replyBody = try #require(RateLimitURLProtocol.sentMessageBody)
+        let reference = try #require(
+            replyBody["message_reference"] as? [String: Any]
+        )
+        #expect((reference["type"] as? NSNumber)?.intValue == 0)
+        #expect(reference["message_id"] as? String == "299")
+        #expect(reference["channel_id"] as? String == "200")
 
         let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent("sakuracord-upload-test.txt")
         try Data("attachment".utf8).write(to: fileURL)
@@ -1155,6 +1205,16 @@ private actor ReadyGatewaySocket: GatewaySocket {
         sentPayloads.append(data)
     }
 
+    func sentPayload(opcode: Int) -> Data? {
+        sentPayloads.last { data in
+            guard
+                let object = try? JSONSerialization.jsonObject(with: data)
+                    as? [String: Any]
+            else { return false }
+            return (object["op"] as? NSNumber)?.intValue == opcode
+        }
+    }
+
     func close(code: Int) async {
         receiver?.resume(throwing: ReadyGatewayError.closed)
         receiver = nil
@@ -1263,10 +1323,10 @@ private func eventually(_ condition: @escaping @Sendable () async -> Bool) async
 
 private final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var guildListAttempts = 0
+    nonisolated(unsafe) static var privateChannelListRequests = 0
     nonisolated(unsafe) static var guildChannelRequests = 0
     nonisolated(unsafe) static var sentNonce: String?
     nonisolated(unsafe) static var sentEnforceNonce = false
-    nonisolated(unsafe) static var sentNetworkType: String?
     nonisolated(unsafe) static var uploadHadAuthorization = false
     nonisolated(unsafe) static var sentUploadedFilename: String?
     nonisolated(unsafe) static var typingRequestCount = 0
@@ -1302,10 +1362,10 @@ private final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
 
     static func reset() {
         guildListAttempts = 0
+        privateChannelListRequests = 0
         guildChannelRequests = 0
         sentNonce = nil
         sentEnforceNonce = false
-        sentNetworkType = nil
         uploadHadAuthorization = false
         sentUploadedFilename = nil
         typingRequestCount = 0
@@ -1366,6 +1426,7 @@ private final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
                 json = #"[{"id":"100","name":"Guild","icon":null,"owner":false,"permissions":"1024"}]"#
             }
         case "/api/v9/users/@me/channels":
+            Self.privateChannelListRequests += 1
             status = 200
             json = "[]"
         case "/api/v9/users/@me/settings-proto/1":
@@ -1462,7 +1523,6 @@ private final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
             Self.sentMessageBody = body
             Self.sentNonce = body?["nonce"] as? String
             Self.sentEnforceNonce = body?["enforce_nonce"] as? Bool == true
-            Self.sentNetworkType = body?["mobile_network_type"] as? String
             Self.sentUploadedFilename = ((body?["attachments"] as? [[String: Any]])?.first)?["uploaded_filename"] as? String
             if Self.restrictMessageSend {
                 status = 400

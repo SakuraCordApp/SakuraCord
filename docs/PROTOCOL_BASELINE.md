@@ -347,10 +347,54 @@ new-post implementation.
 
 ## Direct-message safety boundary
 
-Opening or creating a DM, loading history, and sending are separate operations.
-Do not create/open a channel as part of every send. Duplicate creation and
-sending must be serialized and deduplicated, and an ambiguous send must never
-be repeated automatically.
+Opening an existing DM, creating a DM, loading history, and sending are separate
+operations. Do not create/open a channel as part of every send. Duplicate sends
+must be serialized and deduplicated, and an ambiguous send must never be
+repeated automatically.
+
+The production DM contract was rechecked on 29 July 2026 against the public
+JavaScript assets shipped by Discord's stable desktop host `0.0.402`, Paicord
+revision `694761c1938b73bb60bd58942674dfe73aab1135`, Swiftcord v1 revision
+`14465d927ebe1ba34b3befa00f9365fad7b56eb9`, and Discord's public channel and
+message documentation. This was a static, unauthenticated comparison; no
+account action or traffic capture was performed.
+
+- Existing private channels are restored from `READY.private_channels`; cold
+  bootstrap does not issue `GET /users/@me/channels`. Matching Paicord, the
+  Ready list is sorted by descending `last_message_id`, falling back to the
+  channel snowflake when no last message exists. `CHANNEL_CREATE` appends a new
+  private channel, while `MESSAGE_CREATE` updates its `last_message_id` and
+  moves it to the front. When Identify requests deduplicated user objects,
+  private-channel `recipient_ids` are joined against Ready's top-level `users`
+  before any channel reaches presentation; prioritized
+  `READY_SUPPLEMENTAL.lazy_private_channels` entries use the same join and
+  ordering. This hydration adds no authenticated request; selecting the
+  one-to-one DM then uses the established single profile request below.
+  `CHANNEL_UPDATE`, `CHANNEL_RECIPIENT_ADD`,
+  `CHANNEL_RECIPIENT_REMOVE`, and `CHANNEL_DELETE` reconcile in place without
+  inventing another read or mutation. SakuraCord exposes no create-DM,
+  user-lookup, group-name, or group-membership REST mutation while those
+  product surfaces are disabled.
+- History uses one `GET /channels/{channel.id}/messages`, with `before` before
+  `limit` when paginating, matching Paicord's reviewed query construction.
+  Full profiles use one `GET /users/{user.id}/profile` with
+  `with_mutual_guilds`, `with_mutual_friends`, and
+  `with_mutual_friends_count` set to `true`; one-to-one DMs omit `guild_id`.
+- Message sends remain independent of channel selection. The Paicord-aligned
+  JSON shape is `content`, `nonce`, and an `attachments` array, plus a reply
+  reference containing type `0`, `message_id`, and `channel_id` when needed.
+  The `X-Context-Properties` location is `chat_input`. Concurrent calls with
+  the same channel and nonce share one in-flight mutation.
+- SakuraCord deliberately adds `enforce_nonce: true` to Paicord's body. Discord
+  publicly documents this as returning the already-created message for a
+  duplicate nonce, and SakuraCord's safety contract requires that stronger
+  idempotency boundary. This is the sole reviewed body-shape difference.
+  Mutations still have one attempt, use server-provided cooldowns, and never
+  replay an ambiguous result automatically.
+- Swiftcord v1 supplied a historical existing-DM history and send reference. It
+  omits a nonce and permits a manual retry after failure, so SakuraCord follows
+  Paicord's current shape plus the stricter nonce, deduplication, and
+  one-attempt safety rules above.
 
 Before materially changing DM creation or sending, recheck the current official
 client, Paicord, Swiftcord v1, request body, nonce, context, ordering, challenge

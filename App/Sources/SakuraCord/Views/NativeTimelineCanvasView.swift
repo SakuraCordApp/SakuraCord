@@ -1406,6 +1406,14 @@ struct NativeTimelineMediaKey: Hashable {
     }
 }
 
+enum NativeTimelineReplyMediaPolicy {
+    static func avatarKey(
+        for preview: MessageReplyPreview?
+    ) -> NativeTimelineMediaKey? {
+        preview?.author.avatarURL.map(NativeTimelineMediaKey.avatar)
+    }
+}
+
 @MainActor
 private final class NativeTimelineAnimatedMedia {
     let decoded: DecodedAnimatedImage
@@ -1760,7 +1768,7 @@ final class NativeTimelineCanvasStorage {
     var contentHeight: CGFloat = 0
 }
 
-nonisolated private final class NativeTimelineAccessibilityElement:
+nonisolated final class NativeTimelineAccessibilityElement:
     NSAccessibilityElement
 {
     private let press: (@MainActor @Sendable () -> Bool)?
@@ -1784,11 +1792,16 @@ nonisolated private final class NativeTimelineAccessibilityElement:
             action?() ?? false
         }
     }
+
+    @MainActor
+    func performPressIfAvailable() -> Bool {
+        press?() ?? false
+    }
 }
 
 @MainActor
-private final class NativeTimelineAccessibilityProxyView: NSView {
-    private let source: NSAccessibilityElement
+final class NativeTimelineAccessibilityProxyView: NSView {
+    nonisolated private let press: (@MainActor @Sendable () -> Bool)?
 
     override var isFlipped: Bool { true }
     override var isOpaque: Bool { false }
@@ -1798,7 +1811,13 @@ private final class NativeTimelineAccessibilityProxyView: NSView {
     }
 
     init(source: NSAccessibilityElement) {
-        self.source = source
+        if let source = source as? NativeTimelineAccessibilityElement {
+            press = {
+                source.performPressIfAvailable()
+            }
+        } else {
+            press = nil
+        }
         super.init(frame: .zero)
         setAccessibilityRole(source.accessibilityRole())
         setAccessibilitySubrole(source.accessibilitySubrole())
@@ -1823,8 +1842,17 @@ private final class NativeTimelineAccessibilityProxyView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {}
 
-    override func accessibilityPerformPress() -> Bool {
-        source.accessibilityPerformPress()
+    nonisolated override func accessibilityActionNames()
+        -> [NSAccessibility.Action]
+    {
+        press == nil ? [] : [.press]
+    }
+
+    nonisolated override func accessibilityPerformPress() -> Bool {
+        let action = press
+        return MainActor.assumeIsolated {
+            action?() ?? false
+        }
     }
 }
 
@@ -2258,6 +2286,7 @@ final class NativeTimelineCanvasView: NSView {
     private var bitmapInsertionOrder: [NativeMessageTimelineItem.Identifier] = []
     private var bitmapEvictionIndex = 0
     private var bitmapCost = 0
+    private(set) var presentationCacheInvalidationCount = 0
     private var mentionPointerRegionCache:
         [NativeMessageTimelineItem.Identifier: [MentionPointerRegion]] = [:]
     private var codeBlockPointerRegionCache:
@@ -3574,6 +3603,11 @@ final class NativeTimelineCanvasView: NSView {
         }
         if let url = message.interactionMetadata?.user?.avatarURL {
             keys.append(.avatar(url))
+        }
+        if let key = NativeTimelineReplyMediaPolicy.avatarKey(
+            for: row.replyPreview
+        ) {
+            keys.append(key)
         }
         for region in layouts[index].linkedImageRegions {
             keys.append(.media(

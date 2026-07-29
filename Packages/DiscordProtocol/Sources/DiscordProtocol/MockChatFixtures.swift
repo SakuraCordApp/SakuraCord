@@ -264,6 +264,7 @@ struct MockChatFixture {
             ),
             Channel(
                 id: ChannelID(rawValue: 401), guildID: nil, name: "Design crew",
+                ownerID: nova.id,
                 kind: .groupDirectMessage,
                 recipients: [maya, theo, juniper]
             )

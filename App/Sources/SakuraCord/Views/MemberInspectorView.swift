@@ -206,9 +206,7 @@ private struct MemberRow: View {
             arrowEdge: .trailing
         ) {
             if let profilePresentation {
-                ProfilePresentationContent(
-                    presentation: profilePresentation
-                )
+                ProfilePresentationContent(presentation: profilePresentation)
             }
         }
         .help(member.user.username)

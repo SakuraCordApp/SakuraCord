@@ -363,6 +363,33 @@ func `spoiler cover centers its pill and owns pointer keyboard and accessibility
     #expect(accessibilityActivations == 1)
 }
 
+@MainActor
+@Test func `timeline accessibility proxy rejects unsupported row presses without crashing`() {
+    let source = NSAccessibilityElement()
+    source.setAccessibilityRole(.row)
+    source.setAccessibilityLabel("Message row")
+    let proxy = NativeTimelineAccessibilityProxyView(source: source)
+
+    #expect(proxy.accessibilityActionNames().isEmpty)
+    #expect(!proxy.accessibilityPerformPress())
+}
+
+@MainActor
+@Test func `timeline accessibility proxy routes supported presses through its native action`() {
+    var activationCount = 0
+    let source = NativeTimelineAccessibilityElement {
+        activationCount += 1
+        return true
+    }
+    source.setAccessibilityRole(.button)
+    source.setAccessibilityLabel("Open reply")
+    let proxy = NativeTimelineAccessibilityProxyView(source: source)
+
+    #expect(proxy.accessibilityActionNames() == [.press])
+    #expect(proxy.accessibilityPerformPress())
+    #expect(activationCount == 1)
+}
+
 @MainActor @Test
 func `concealed spoiler covers survive repeated far offscreen recycling and pagination`() throws {
     let width: CGFloat = 560
