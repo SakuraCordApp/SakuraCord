@@ -1273,6 +1273,30 @@ import Testing
     #expect(ComposerUnfocusedTypingMonitor.shouldOfferReturn(36))
     #expect(ComposerUnfocusedTypingMonitor.shouldOfferReturn(76))
     #expect(!ComposerUnfocusedTypingMonitor.shouldOfferReturn(49))
+    #expect(ComposerUnfocusedTypingMonitor.shouldOfferEscape(53))
+    #expect(!ComposerUnfocusedTypingMonitor.shouldOfferEscape(49))
+}
+
+@MainActor
+@Test func `escape is consumed by the native composer after autocomplete declines it`() {
+    let textView = ComposerNSTextView()
+    var escapeCount = 0
+    textView.onAutocompleteCommand = { _ in false }
+    textView.onEscape = { escapeCount += 1 }
+    let event = NSEvent.keyEvent(
+        with: .keyDown,
+        location: .zero,
+        modifierFlags: [],
+        timestamp: 0,
+        windowNumber: 0,
+        context: nil,
+        characters: "\u{1B}",
+        charactersIgnoringModifiers: "\u{1B}",
+        isARepeat: false,
+        keyCode: 53
+    )
+    textView.keyDown(with: try! #require(event))
+    #expect(escapeCount == 1)
 }
 
 @MainActor

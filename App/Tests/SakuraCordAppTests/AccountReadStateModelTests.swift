@@ -1649,6 +1649,83 @@ struct AccountReadStateModelTests {
 }
 
 @MainActor
+@Test func `new divider survives acknowledgement until an explicit conversation advance`() async
+    throws
+{
+    let provider = MockChatProvider()
+    let model = AppModel(
+        launchMode: .offlineTesting,
+        provider: provider,
+        readAcknowledgementTiming: .init(debounce: .milliseconds(10))
+    )
+    await model.start()
+    let channelID = ChannelID(rawValue: 210)
+    model.selectedChannelID = channelID
+    #expect(await eventually { !model.isLoadingMessages && model.selectedChannelID == channelID })
+    model.reportTimelinePosition(channelID: channelID, isAtNewest: false)
+    let originalDivider = try #require(model.unreadDividerMessageID(channelID: channelID))
+
+    model.markConversationRead(channelID: channelID)
+    #expect(model.unreadDividerMessageID(channelID: channelID) == originalDivider)
+    #expect(model.conversationNewestRequest == nil)
+    #expect(await eventually { !model.isChannelUnread(channelID) })
+    #expect(model.unreadDividerMessageID(channelID: channelID) == originalDivider)
+    for _ in 0 ..< 500 {
+        if await provider.acknowledgementRequests.count == 1 { break }
+        try? await Task.sleep(for: .milliseconds(1))
+    }
+    #expect(await provider.acknowledgementRequests.count == 1)
+
+    model.completeConversationReadingAndAdvance(channelID: channelID)
+    #expect(model.unreadDividerMessageID(channelID: channelID) == nil)
+    let request = try #require(model.conversationNewestRequest)
+    #expect(request.channelID == channelID)
+    model.completeConversationNewestRequest(requestID: request.requestID)
+    #expect(model.conversationNewestRequest == nil)
+}
+
+@MainActor
+@Test func `reopening an acknowledged conversation clears its old new divider`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let channelID = ChannelID(rawValue: 210)
+    model.selectedChannelID = channelID
+    #expect(await eventually { !model.isLoadingMessages && model.selectedChannelID == channelID })
+    model.reportTimelinePosition(channelID: channelID, isAtNewest: false)
+    #expect(model.unreadDividerMessageID(channelID: channelID) != nil)
+    model.markConversationRead(channelID: channelID)
+
+    let otherChannelID = ChannelID(rawValue: 211)
+    model.selectedChannelID = otherChannelID
+    #expect(await eventually {
+        !model.isLoadingMessages && model.selectedChannelID == otherChannelID
+    })
+    model.selectedChannelID = channelID
+    #expect(await eventually {
+        !model.isLoadingMessages && model.selectedChannelID == channelID
+    })
+    #expect(model.unreadDividerMessageID(channelID: channelID) == nil)
+}
+
+@MainActor
+@Test func `successful message send clears new divider and requests newest`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let channelID = ChannelID(rawValue: 210)
+    model.selectedChannelID = channelID
+    #expect(await eventually { !model.isLoadingMessages && model.selectedChannelID == channelID })
+    model.reportTimelinePosition(channelID: channelID, isAtNewest: false)
+    #expect(model.unreadDividerMessageID(channelID: channelID) != nil)
+
+    model.updateDraft("reply")
+    #expect(await model.send())
+    #expect(model.unreadDividerMessageID(channelID: channelID) == nil)
+    #expect(model.conversationNewestRequest?.channelID == channelID)
+}
+
+@MainActor
 @Test func `mark unread sends one backward manual acknowledgement`() async throws {
     let provider = MockChatProvider()
     let model = AppModel(
@@ -1670,6 +1747,7 @@ struct AccountReadStateModelTests {
     )
 
     model.markMessageAndFollowingUnread(selectedMessage)
+    #expect(model.unreadDividerMessageID(channelID: channelID) == selectedMessage.id)
     for _ in 0 ..< 500 {
         if await provider.acknowledgementRequests.count == 1 { break }
         try? await Task.sleep(for: .milliseconds(1))

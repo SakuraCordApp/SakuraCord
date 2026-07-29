@@ -111,6 +111,11 @@ nonisolated struct MessageNavigationRequest: Equatable, Sendable {
     let messageID: MessageID
 }
 
+nonisolated struct ConversationNewestRequest: Equatable, Sendable {
+    let requestID: UInt64
+    let channelID: ChannelID
+}
+
 struct ProfilePresentationState {
     fileprivate let requestID: UUID
     var member: Member
@@ -701,6 +706,8 @@ final class AppModel {
     @ObservationIgnored private var selectedReplyMessageIDsByTarget:
         [MessageID: Set<MessageID>] = [:]
     private(set) var messageNavigationRequest: MessageNavigationRequest?
+    private(set) var conversationNewestRequest: ConversationNewestRequest?
+    private(set) var unreadDividerMessageIDs: [ChannelID: MessageID] = [:]
     private(set) var members: [Member] = [] {
         didSet {
             if oldValue != members {
@@ -1052,6 +1059,10 @@ final class AppModel {
             guard selectedChannelID != oldValue else { return }
             dismissInspectorProfile()
             if let oldValue {
+                unreadDividerMessageIDs[oldValue] = nil
+                if conversationNewestRequest?.channelID == oldValue {
+                    conversationNewestRequest = nil
+                }
                 messageCache[oldValue] = messages
                 lastTypingRequestAt[oldValue] = nil
                 _ = readState.updatePresentation(channelID: oldValue, isPresented: false)
@@ -1168,6 +1179,7 @@ final class AppModel {
     @ObservationIgnored private var voiceMigrationGeneration = 0
     @ObservationIgnored private var channelLoadGeneration = 0
     @ObservationIgnored private var messageNavigationRequestID: UInt64 = 0
+    @ObservationIgnored private var conversationNewestRequestID: UInt64 = 0
     @ObservationIgnored private var messageCache: [ChannelID: [Message]] = [:]
     @ObservationIgnored private var hasMoreCache: [ChannelID: Bool] = [:]
     @ObservationIgnored private let discordNetworkDisabled: Bool
@@ -1697,6 +1709,11 @@ final class AppModel {
     func completeMessageNavigation(requestID: UInt64) {
         guard messageNavigationRequest?.requestID == requestID else { return }
         messageNavigationRequest = nil
+    }
+
+    func completeConversationNewestRequest(requestID: UInt64) {
+        guard conversationNewestRequest?.requestID == requestID else { return }
+        conversationNewestRequest = nil
     }
 
     private func activateGuild(_ guildID: GuildID?) async {
@@ -2343,12 +2360,13 @@ final class AppModel {
         let cachedMessages = messageCache.removeValue(forKey: channelID) ?? []
         replaceSelectedMessages(with: cachedMessages)
         hasMoreMessages = hasMoreCache[channelID] ?? false
-        draft = ""
         // Cached rows are immediately presentable, but the newest-page
         // request is still in flight and the older-history boundary is
         // unknown until it answers. Keeping this true suppresses a false
         // channel beginning and exposes compact progress above cached rows.
         isLoadingMessages = true
+        preserveUnreadDividerIfNeeded(channelID: channelID)
+        draft = ""
         channelLoadTask = Task { [weak self] in
             await self?.loadSelectedChannel(channelID, generation: generation)
         }
@@ -2363,6 +2381,7 @@ final class AppModel {
         guard isCurrentLoad(channelID, generation: generation) else { return }
         if messages.isEmpty, !cached.isEmpty {
             replaceSelectedMessages(with: cached)
+            preserveUnreadDividerIfNeeded(channelID: channelID)
         }
 
         let savedDraft = await storedDraft
@@ -2384,6 +2403,7 @@ final class AppModel {
             messageLoadErrorIsEarlierPage = false
             isLoadingMessages = false
             hasCompletedInitialMessageLoad = true
+            preserveUnreadDividerIfNeeded(channelID: channelID)
             reportConversationHistoryLoaded(channelID: channelID)
             try await database?.save(messages: page.messages)
         } catch is CancellationError {
@@ -2563,6 +2583,10 @@ final class AppModel {
 
     func closeThread() {
         if let threadID = openThread?.id {
+            unreadDividerMessageIDs[threadID] = nil
+            if conversationNewestRequest?.channelID == threadID {
+                conversationNewestRequest = nil
+            }
             _ = readState.updatePresentation(channelID: threadID, isPresented: false)
         }
         threadLoadTask?.cancel()
@@ -2698,6 +2722,7 @@ final class AppModel {
                 threadMessages = updated
             }
             try await database?.save(messages: [message])
+            completeConversationReadingAndAdvance(channelID: thread.id)
             return true
         } catch {
             guard openThread?.id == thread.id else { return false }
@@ -3065,6 +3090,7 @@ final class AppModel {
             let message = try await provider.send(draft)
             reconcile(message)
             try await database?.save(messages: [message])
+            completeConversationReadingAndAdvance(channelID: channelID)
             return true
         } catch {
             errorMessage = error.localizedDescription
@@ -3282,7 +3308,11 @@ final class AppModel {
             replyingTo = nil
             updateDraft("")
         }
-        return await performOutgoingSend(outgoing, isRetry: false)
+        let didSend = await performOutgoingSend(outgoing, isRetry: false)
+        if didSend {
+            completeConversationReadingAndAdvance(channelID: channelID)
+        }
+        return didSend
     }
 
     func composerAttachments(
@@ -4552,6 +4582,7 @@ final class AppModel {
     func reportMainWindowActive(_ isActive: Bool) {
         mainWindowIsActive = isActive
         if let selectedChannelID {
+            preserveUnreadDividerIfNeeded(channelID: selectedChannelID)
             if let target = readState.updatePresentation(
                 channelID: selectedChannelID,
                 windowIsActive: isActive
@@ -4559,18 +4590,20 @@ final class AppModel {
                 scheduleAcknowledgement(channelID: selectedChannelID, messageID: target)
             }
         }
-        if let threadID = openThread?.id,
-           let target = readState.updatePresentation(
-               channelID: threadID,
-               windowIsActive: isActive
-           )
-        {
-            scheduleAcknowledgement(channelID: threadID, messageID: target)
+        if let threadID = openThread?.id {
+            preserveUnreadDividerIfNeeded(channelID: threadID)
+            if let target = readState.updatePresentation(
+                channelID: threadID,
+                windowIsActive: isActive
+            ) {
+                scheduleAcknowledgement(channelID: threadID, messageID: target)
+            }
         }
     }
 
     func reportTimelinePosition(channelID: ChannelID, isAtNewest: Bool) {
         guard channelID == selectedChannelID || channelID == openThread?.id else { return }
+        preserveUnreadDividerIfNeeded(channelID: channelID)
         if let target = readState.updatePresentation(
             channelID: channelID,
             isPresented: true,
@@ -4582,6 +4615,7 @@ final class AppModel {
 
     func reportTimelineInitialPosition(channelID: ChannelID, isAtNewest: Bool) {
         guard channelID == selectedChannelID || channelID == openThread?.id else { return }
+        preserveUnreadDividerIfNeeded(channelID: channelID)
         if let target = readState.updatePresentation(
             channelID: channelID,
             isPresented: true,
@@ -4599,6 +4633,7 @@ final class AppModel {
 
     func reportConversationHistoryLoaded(channelID: ChannelID) {
         guard channelID == selectedChannelID || channelID == openThread?.id else { return }
+        preserveUnreadDividerIfNeeded(channelID: channelID)
         if let target = readState.updatePresentation(
             channelID: channelID,
             isPresented: true,
@@ -4620,10 +4655,15 @@ final class AppModel {
         )
     }
 
+    func unreadDividerMessageID(channelID: ChannelID) -> MessageID? {
+        unreadDividerMessageIDs[channelID]
+    }
+
     func markConversationRead(channelID: ChannelID) {
         guard channelID == selectedChannelID || channelID == openThread?.id,
               let target = readState.entries[channelID]?.latestKnownMessageID
         else { return }
+        preserveUnreadDividerIfNeeded(channelID: channelID)
         acknowledgementTasks[channelID]?.cancel()
         acknowledgementTasks[channelID] = nil
         queuedAcknowledgements[channelID] = nil
@@ -4641,6 +4681,41 @@ final class AppModel {
                 mentionCount: nil
             )
         )
+    }
+
+    func completeConversationReadingAndAdvance(channelID: ChannelID) {
+        guard channelID == selectedChannelID || channelID == openThread?.id else { return }
+        markConversationRead(channelID: channelID)
+        unreadDividerMessageIDs[channelID] = nil
+        conversationNewestRequestID &+= 1
+        conversationNewestRequest = ConversationNewestRequest(
+            requestID: conversationNewestRequestID,
+            channelID: channelID
+        )
+    }
+
+    private func preserveUnreadDividerIfNeeded(channelID: ChannelID) {
+        guard unreadDividerMessageIDs[channelID] == nil else { return }
+        let conversationMessages: [Message]
+        let hasMoreBefore: Bool
+        if channelID == openThread?.id {
+            conversationMessages = threadMessages
+            hasMoreBefore = hasMoreThreadMessages
+                || (isLoadingThread && !threadMessages.isEmpty)
+        } else if channelID == selectedChannelID {
+            conversationMessages = messages
+            hasMoreBefore = hasMoreMessages
+                || (isLoadingMessages && !messages.isEmpty)
+        } else {
+            return
+        }
+        guard let summary = readState.timelineUnreadSummary(
+            channelID: channelID,
+            messages: conversationMessages,
+            hasMoreBefore: hasMoreBefore
+        ), !summary.isLowerBound
+        else { return }
+        unreadDividerMessageIDs[channelID] = summary.firstUnreadMessageID
     }
 
     func markMessageAndFollowingUnread(_ message: Message) {
@@ -4667,6 +4742,10 @@ final class AppModel {
             after: target,
             mentionCount: mentionCount
         )
+        // "Mark Unread" identifies the exact first-new row. Publish that
+        // anchor in the same transaction instead of waiting for a later
+        // timeline geometry callback to infer it from read state.
+        unreadDividerMessageIDs[channelID] = message.id
         refreshUnreadPresentation()
         enqueueAcknowledgement(
             channelID: channelID,
@@ -5125,6 +5204,11 @@ final class AppModel {
             if let currentUserID = snapshot?.currentUser.id {
                 let disposition = readState.receive(message, currentUserID: currentUserID)
                 if disposition.accepted {
+                    if message.channelID == selectedChannelID
+                        || message.channelID == openThread?.id
+                    {
+                        preserveUnreadDividerIfNeeded(channelID: message.channelID)
+                    }
                     if isFlushingCreatedMessageBatch {
                         batchedUnreadPresentationNeedsRefresh = true
                     } else {

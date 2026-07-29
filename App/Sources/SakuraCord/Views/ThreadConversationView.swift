@@ -296,7 +296,6 @@ private struct ThreadMessageTimelineView: View {
             {
                 UnreadMessagesBanner(summary: summary) {
                     model.markConversationRead(channelID: threadID)
-                    requestScroll(.bottom)
                 }
                 .padding(8)
             }
@@ -343,11 +342,25 @@ private struct ThreadMessageTimelineView: View {
             isNearBottom = false
             hasEstablishedInitialPosition = false
         }
+        .onChange(of: model.conversationNewestRequest) { _, request in
+            guard let request,
+                  request.channelID == model.openThread?.id
+            else { return }
+            requestScroll(.bottom)
+            model.completeConversationNewestRequest(requestID: request.requestID)
+        }
         .onDisappear {
             if let conversationID {
                 model.reportTimelineLiveScrolling(
                     false,
                     conversationID: conversationID
+                )
+            }
+        }
+        .onExitCommand {
+            if let conversationID {
+                model.completeConversationReadingAndAdvance(
+                    channelID: conversationID
                 )
             }
         }
@@ -410,14 +423,13 @@ private struct ThreadMessageTimelineView: View {
     }
 
     private var exactUnreadBoundaryMessageID: MessageID? {
-        TimelineUnreadBoundaryPolicy.displayedMessageID(
-            firstUnreadMessageID: unreadSummary?.firstUnreadMessageID,
-            isLowerBound: unreadSummary?.isLowerBound ?? false
-        )
+        guard let threadID = model.openThread?.id else { return nil }
+        return model.unreadDividerMessageID(channelID: threadID)
     }
 
     private var initialScrollTarget: MessageTimelineScrollRequest.Target? {
         let summary = unreadSummary
+        let dividerMessageID = exactUnreadBoundaryMessageID
         let initialTarget = ThreadTimelinePresentationPolicy.initialScrollTarget(
             isForumPost: model.selectedChannel?.kind == .forum,
             hasUnreadReplies: summary != nil
@@ -425,8 +437,9 @@ private struct ThreadMessageTimelineView: View {
         return TimelineInitialPositionPolicy.targetWhenReady(
             hasCompletedInitialLoad:
                 model.hasCompletedInitialThreadLoad,
-            firstUnreadMessageID: summary?.firstUnreadMessageID,
-            hasExactUnreadBoundary: summary?.isLowerBound == false,
+            firstUnreadMessageID: dividerMessageID ?? summary?.firstUnreadMessageID,
+            hasExactUnreadBoundary:
+                dividerMessageID != nil || summary?.isLowerBound == false,
             prefersNewest: initialTarget == .newest
         )
     }

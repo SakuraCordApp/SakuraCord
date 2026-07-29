@@ -2551,6 +2551,14 @@ struct NativeMessageTimelineView: NSViewRepresentable {
                     NativeMessageTimelineLayoutPolicy.isAtTrueBottom(
                         documentHeight: scrollableDocumentHeight,
                         visibleMaximumY: visibleRect.maxY
+                    ),
+                contentFitsViewport:
+                    !NativeMessageTimelineLayoutPolicy.showsVerticalScroller(
+                        contentHeight: contentHeight,
+                        viewportHeight: visibleRect.height,
+                        bottomInset: bottomInset,
+                        verticalPadding:
+                            ChatDetailLayoutPolicy.timelineTopPadding
                     )
             )
         }

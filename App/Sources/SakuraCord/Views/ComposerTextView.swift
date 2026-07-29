@@ -200,6 +200,7 @@ struct ComposerTextView: NSViewRepresentable {
     var mentionPresentations: [String: MentionPresentation] = [:]
     let onTextChange: (String) -> Void
     let onSubmit: () -> Void
+    var onEscape: () -> Void = {}
     var onAutocompleteCommand: (ComposerAutocompleteCommand) -> Bool = { _ in false }
     var capturesUnfocusedTyping = false
     var maximumHeight: CGFloat = 150
@@ -253,6 +254,9 @@ struct ComposerTextView: NSViewRepresentable {
         textView.onAutocompleteCommand = { [weak coordinator = context.coordinator] command in
             coordinator?.parent.onAutocompleteCommand(command) ?? false
         }
+        textView.onEscape = { [weak coordinator = context.coordinator] in
+            coordinator?.parent.onEscape()
+        }
         textView.capturesUnfocusedTyping = capturesUnfocusedTyping
 
         let scrollView = NSScrollView()
@@ -276,6 +280,9 @@ struct ComposerTextView: NSViewRepresentable {
         }
         textView.onAutocompleteCommand = { [weak coordinator = context.coordinator] command in
             coordinator?.parent.onAutocompleteCommand(command) ?? false
+        }
+        textView.onEscape = { [weak coordinator = context.coordinator] in
+            coordinator?.parent.onEscape()
         }
         textView.capturesUnfocusedTyping = capturesUnfocusedTyping
         textView.setAccessibilityLabel(placeholder)
@@ -578,6 +585,7 @@ final class ComposerEmojiImageStore {
 
 final class ComposerNSTextView: NSTextView {
     var onReturn: ((NSEvent) -> Bool)?
+    var onEscape: (() -> Void)?
     var onAutocompleteCommand: ((ComposerAutocompleteCommand) -> Bool)?
     var plainTypingAttributes: [NSAttributedString.Key: Any] = [:]
     var capturesUnfocusedTyping = false {
@@ -585,7 +593,8 @@ final class ComposerNSTextView: NSTextView {
             unfocusedTypingMonitor.synchronize(
                 with: self,
                 enabled: capturesUnfocusedTyping,
-                onUnfocusedReturn: unfocusedReturnHandler
+                onUnfocusedReturn: unfocusedReturnHandler,
+                onEscape: escapeHandler
             )
         }
     }
@@ -594,6 +603,12 @@ final class ComposerNSTextView: NSTextView {
     private var unfocusedReturnHandler: (NSEvent) -> Bool {
         { [weak self] event in
             self?.onReturn?(event) ?? false
+        }
+    }
+
+    private var escapeHandler: () -> Void {
+        { [weak self] in
+            self?.onEscape?()
         }
     }
 
@@ -606,7 +621,8 @@ final class ComposerNSTextView: NSTextView {
         unfocusedTypingMonitor.synchronize(
             with: self,
             enabled: capturesUnfocusedTyping,
-            onUnfocusedReturn: unfocusedReturnHandler
+            onUnfocusedReturn: unfocusedReturnHandler,
+            onEscape: escapeHandler
         )
     }
 
@@ -644,6 +660,10 @@ final class ComposerNSTextView: NSTextView {
             default: nil
             }
         if let autocompleteCommand, onAutocompleteCommand?(autocompleteCommand) == true {
+            return
+        }
+        if event.keyCode == 53 {
+            onEscape?()
             return
         }
         let isReturn = event.keyCode == 36 || event.keyCode == 76
@@ -686,6 +706,7 @@ final class ComposerUnfocusedTypingMonitor {
     private weak var textView: NSTextView?
     private var eventMonitor: Any?
     private var onUnfocusedReturn: ((NSEvent) -> Bool)?
+    private var onEscape: (() -> Void)?
 
     isolated deinit {
         if let eventMonitor {
@@ -696,10 +717,12 @@ final class ComposerUnfocusedTypingMonitor {
     func synchronize(
         with textView: NSTextView,
         enabled: Bool,
-        onUnfocusedReturn: ((NSEvent) -> Bool)? = nil
+        onUnfocusedReturn: ((NSEvent) -> Bool)? = nil,
+        onEscape: (() -> Void)? = nil
     ) {
         self.textView = textView
         self.onUnfocusedReturn = onUnfocusedReturn
+        self.onEscape = onEscape
         guard enabled, textView.window != nil
         else {
             removeMonitor()
@@ -718,6 +741,10 @@ final class ComposerUnfocusedTypingMonitor {
 
             if Self.shouldOfferReturn(event.keyCode) {
                 return self.onUnfocusedReturn?(event) == true ? nil : event
+            }
+            if Self.shouldOfferEscape(event.keyCode) {
+                self.onEscape?()
+                return nil
             }
             guard Self.shouldRedirect(event) else { return event }
             window.makeFirstResponder(textView)
@@ -752,6 +779,10 @@ final class ComposerUnfocusedTypingMonitor {
 
     nonisolated static func shouldOfferReturn(_ keyCode: UInt16) -> Bool {
         keyCode == 36 || keyCode == 76
+    }
+
+    nonisolated static func shouldOfferEscape(_ keyCode: UInt16) -> Bool {
+        keyCode == 53
     }
 
     private static func shouldRedirect(_ event: NSEvent) -> Bool {

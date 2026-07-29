@@ -155,6 +155,7 @@ struct ComposerView: View {
                                     mentionPresentations: composerMentionPresentations,
                                     onTextChange: updateDraft,
                                     onSubmit: send,
+                                    onEscape: handleEscapeCommand,
                                     onAutocompleteCommand: handleAutocomplete,
                                     capturesUnfocusedTyping: true,
                                     selection: $draftSelection,
@@ -393,7 +394,19 @@ struct ComposerView: View {
                 draftSelection = restoredSelection
             }
         }
-        .onExitCommand { showEmojiPicker = false }
+        .onExitCommand {
+            handleEscapeCommand()
+        }
+    }
+
+    private func handleEscapeCommand() {
+        if showEmojiPicker {
+            showEmojiPicker = false
+        } else if let conversationID = activeConversationID {
+            model.completeConversationReadingAndAdvance(
+                channelID: conversationID
+            )
+        }
     }
 
     private func toggleEmojiPicker() {

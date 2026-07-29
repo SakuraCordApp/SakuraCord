@@ -14,7 +14,8 @@ struct MessageTimelineView: View {
     @State private var scrollRequest: MessageTimelineScrollRequest?
     @State private var latestScrollState = TimelineScrollState(
         isNearTop: false,
-        isNearBottom: false
+        isNearBottom: false,
+        contentFitsViewport: false
     )
 
     var body: some View {
@@ -77,8 +78,6 @@ struct MessageTimelineView: View {
                 {
                     UnreadMessagesBanner(summary: summary) {
                         model.markConversationRead(channelID: channelID)
-                        scrollPolicy.didRequestBottom()
-                        requestScroll(.bottom)
                     }
                 }
             }
@@ -127,7 +126,8 @@ struct MessageTimelineView: View {
             scrollPolicy.didBeginChannel()
             latestScrollState = TimelineScrollState(
                 isNearTop: false,
-                isNearBottom: false
+                isNearBottom: false,
+                contentFitsViewport: false
             )
         }
         .onChange(of: model.messageNavigationRequest) { _, request in
@@ -139,6 +139,14 @@ struct MessageTimelineView: View {
             requestScroll(.message(request.messageID, anchor: .center))
             highlight(request.messageID)
             model.completeMessageNavigation(requestID: request.requestID)
+        }
+        .onChange(of: model.conversationNewestRequest) { _, request in
+            guard let request,
+                  request.channelID == model.selectedChannelID
+            else { return }
+            scrollPolicy.didRequestBottom()
+            requestScroll(.bottom)
+            model.completeConversationNewestRequest(requestID: request.requestID)
         }
         .task(id: model.selectedChannelID) {
             allowsAutomaticHistoryLoading = false
@@ -152,6 +160,13 @@ struct MessageTimelineView: View {
                 model.reportTimelineLiveScrolling(
                     false,
                     conversationID: conversationID
+                )
+            }
+        }
+        .onExitCommand {
+            if let conversationID {
+                model.completeConversationReadingAndAdvance(
+                    channelID: conversationID
                 )
             }
         }
@@ -197,19 +212,19 @@ struct MessageTimelineView: View {
     }
 
     private var exactUnreadBoundaryMessageID: MessageID? {
-        TimelineUnreadBoundaryPolicy.displayedMessageID(
-            firstUnreadMessageID: unreadSummary?.firstUnreadMessageID,
-            isLowerBound: unreadSummary?.isLowerBound ?? false
-        )
+        guard let channelID = model.selectedChannelID else { return nil }
+        return model.unreadDividerMessageID(channelID: channelID)
     }
 
     private var initialScrollTarget: MessageTimelineScrollRequest.Target? {
         let summary = unreadSummary
+        let dividerMessageID = exactUnreadBoundaryMessageID
         return TimelineInitialPositionPolicy.targetWhenReady(
             hasCompletedInitialLoad:
                 model.hasCompletedInitialMessageLoad,
-            firstUnreadMessageID: summary?.firstUnreadMessageID,
-            hasExactUnreadBoundary: summary?.isLowerBound == false,
+            firstUnreadMessageID: dividerMessageID ?? summary?.firstUnreadMessageID,
+            hasExactUnreadBoundary:
+                dividerMessageID != nil || summary?.isLowerBound == false,
             prefersNewest: false
         )
     }
@@ -222,14 +237,15 @@ struct MessageTimelineView: View {
         }
         hasEstablishedInitialPosition = true
         latestScrollState = state
-        if state.isNearBottom {
+        let isAtNewest = TimelineInitialReadPolicy.isAtNewest(state)
+        if isAtNewest {
             scrollPolicy.didRequestBottom()
         } else {
             scrollPolicy.didNavigateAwayFromBottom()
         }
         model.reportTimelineInitialPosition(
             channelID: channelID,
-            isAtNewest: state.isNearBottom
+            isAtNewest: isAtNewest
         )
     }
 
@@ -369,15 +385,27 @@ struct UnreadMessagesBanner: View {
     }
 }
 
-struct TimelineScrollState: Equatable {
+nonisolated struct TimelineScrollState: Equatable, Sendable {
     let isNearTop: Bool
     let isNearBottom: Bool
+    let contentFitsViewport: Bool
 
-    init(isNearTop: Bool, isNearBottom: Bool) {
+    init(
+        isNearTop: Bool,
+        isNearBottom: Bool,
+        contentFitsViewport: Bool = false
+    ) {
         self.isNearTop = isNearTop
         self.isNearBottom = isNearBottom
+        self.contentFitsViewport = contentFitsViewport
     }
 
+}
+
+nonisolated enum TimelineInitialReadPolicy {
+    static func isAtNewest(_ state: TimelineScrollState) -> Bool {
+        state.isNearBottom || state.contentFitsViewport
+    }
 }
 
 struct MessageTimelineScrollPolicy: Equatable {
