@@ -90,8 +90,8 @@ Mac app.
 
 ## Download
 
-Download the newest
-[Download the latest versioned DMG](https://github.com/SakuraCordApp/SakuraCord/releases/latest)
+Download the
+[latest versioned SakuraCord DMG](https://github.com/SakuraCordApp/SakuraCord/releases/latest)
 directly, or browse its notes and checksums on
 [GitHub Releases](https://github.com/SakuraCordApp/SakuraCord/releases/latest).
 

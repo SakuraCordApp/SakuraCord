@@ -17,6 +17,7 @@ xcuserdata/
 .secrets/
 *.pem
 *.key
+sparkle-private-key
 *.p12
 *.mobileprovision
 Package.resolved
