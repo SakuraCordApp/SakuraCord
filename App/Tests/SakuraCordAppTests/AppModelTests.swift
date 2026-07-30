@@ -1,6 +1,7 @@
 import AppKit
 import DiscordProtocol
 import Foundation
+import MessageRendering
 import SakuraCordModels
 import Testing
 import UserNotifications
@@ -924,10 +925,18 @@ import UserNotifications
 @Test func `Discord channel links accept forum thread URLs without accepting lookalike hosts`() throws {
     let forumURL = try #require(URL(string: "https://discord.com/channels/100/220"))
     let lookalikeURL = try #require(URL(string: "https://discord.example/channels/100/220"))
-    let link = DiscordChannelLink(forumURL)
-    #expect(link?.guildID == GuildID(rawValue: 100))
-    #expect(link?.channelID == ChannelID(rawValue: 220))
-    #expect(DiscordChannelLink(lookalikeURL) == nil)
+    guard case let .discordChannel(guildID, channelID) =
+        MessageLinkPolicy.destination(for: forumURL)
+    else {
+        Issue.record("Expected an internal Discord channel destination.")
+        return
+    }
+    #expect(guildID == GuildID(rawValue: 100))
+    #expect(channelID == ChannelID(rawValue: 220))
+    #expect(
+        MessageLinkPolicy.destination(for: lookalikeURL)
+            == .web(lookalikeURL)
+    )
 }
 
 @Test func `cancelled forum searches never become user visible errors`() {

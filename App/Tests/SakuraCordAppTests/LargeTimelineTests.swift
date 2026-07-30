@@ -5768,6 +5768,7 @@ private struct NativeTimelineLegacyPlainMessageReference: View {
                     .font(.caption)
                 }
                 SelectableMessageTextView(
+                    model: nil,
                     source: message.content,
                     emojiSize: 18,
                     mentionPresentations: [:]
@@ -5851,6 +5852,7 @@ private struct NativeTimelineLegacyCommandEphemeralReference: View {
                     }
                     VStack(alignment: .leading, spacing: 4) {
                         SelectableMessageTextView(
+                            model: nil,
                             source: message.content,
                             emojiSize: 18,
                             mentionPresentations: [:]

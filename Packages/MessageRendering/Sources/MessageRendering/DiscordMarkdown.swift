@@ -531,8 +531,8 @@ public enum DiscordMarkdown {
                    source[openingParenthesis] == "(",
                    let closingParenthesis = source[openingParenthesis...]
                     .firstIndex(of: ")"),
-                   let url = URL(
-                       string: String(
+                   let url = MessageLinkPolicy.allowedURL(
+                       from: String(
                            source[
                                source.index(after: openingParenthesis)
                                    ..< closingParenthesis

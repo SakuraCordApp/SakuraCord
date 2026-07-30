@@ -1,10 +1,48 @@
 import AppKit
+import SakuraCordModels
 @testable import MessageRendering
 import Testing
 
 @Test func `markdown removes delimiters`() {
     let value = DiscordMarkdown.attributed("Hello **native** `client`")
     #expect(String(value.characters) == "Hello native client")
+}
+
+@Test func `message link policy permits web links and classifies Discord channels`() throws {
+    let webURL = try #require(URL(string: "https://example.com/docs"))
+    let channelURL = try #require(
+        URL(string: "https://discord.com/channels/100/220")
+    )
+
+    #expect(MessageLinkPolicy.destination(for: webURL) == .web(webURL))
+    #expect(
+        MessageLinkPolicy.destination(for: channelURL)
+            == .discordChannel(
+                guildID: GuildID(rawValue: 100),
+                channelID: ChannelID(rawValue: 220)
+            )
+    )
+}
+
+@Test func `message link policy rejects local and custom schemes`() throws {
+    let rejectedURLs = try [
+        #require(URL(string: "file:///Users/example/private.txt")),
+        #require(URL(string: "x-apple.systempreferences:com.apple.settings")),
+        #require(URL(string: "sakuracord-test://open")),
+        #require(URL(string: "javascript:alert(1)")),
+        #require(URL(string: "https:relative-path"))
+    ]
+
+    #expect(rejectedURLs.allSatisfy {
+        MessageLinkPolicy.destination(for: $0) == nil
+    })
+
+    let rendered = DiscordMarkdown.appKitAttributed(
+        "[safe-looking label](file:///Users/example/private.txt)"
+    )
+    #expect(
+        rendered.attribute(.link, at: 0, effectiveRange: nil) == nil
+    )
 }
 
 @Test func `message document tokenizes mixed and animated custom emoji`() {

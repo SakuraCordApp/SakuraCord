@@ -7482,15 +7482,7 @@ final class NativeTimelineCanvasView: NSView {
             return true
         }
         guard let url = hit.url else { return false }
-        if let channelLink = DiscordChannelLink(url) {
-            model?.navigate(
-                to: channelLink.guildID,
-                linkedChannelID: channelLink.channelID
-            )
-        } else {
-            NSWorkspace.shared.open(url)
-        }
-        return true
+        return MessageLinkActivator.activate(url, model: model)
     }
 
     private func revealTextSpoiler(

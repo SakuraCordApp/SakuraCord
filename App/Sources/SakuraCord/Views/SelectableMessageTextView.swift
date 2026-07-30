@@ -12,31 +12,6 @@ enum MentionTarget: Hashable {
     case message(guildID: GuildID?, channelID: ChannelID, messageID: MessageID)
 }
 
-struct DiscordChannelLink: Hashable {
-    let guildID: GuildID?
-    let channelID: ChannelID
-
-    init?(_ url: URL) {
-        guard url.scheme?.lowercased() == "https",
-              let host = url.host?.lowercased(),
-              Self.hosts.contains(host)
-        else { return nil }
-        let components = url.pathComponents.filter { $0 != "/" }
-        guard components.count == 3,
-              components[0] == "channels",
-              components[1] == "@me" || UInt64(components[1]) != nil,
-              let channelID = ChannelID(components[2])
-        else { return nil }
-        guildID = components[1] == "@me" ? nil : GuildID(components[1])
-        self.channelID = channelID
-    }
-
-    private static let hosts: Set<String> = [
-        "discord.com", "www.discord.com", "canary.discord.com", "ptb.discord.com",
-        "discordapp.com", "www.discordapp.com", "canary.discordapp.com", "ptb.discordapp.com"
-    ]
-}
-
 struct MentionPresentation: Hashable, Identifiable {
     let rawToken: String
     let label: String
@@ -136,6 +111,7 @@ struct MentionPresentation: Hashable, Identifiable {
 }
 
 struct SelectableMessageTextView: NSViewRepresentable {
+    var model: AppModel?
     let source: String
     let emojiSize: CGFloat
     let mentionPresentations: [String: MentionPresentation]
@@ -171,12 +147,14 @@ struct SelectableMessageTextView: NSViewRepresentable {
         textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         textView.onMentionClick = onMentionClick
         textView.onURLClick = onURLClick
+        textView.model = model
         return textView
     }
 
     func updateNSView(_ textView: RichMessageNSTextView, context: Context) {
         textView.onMentionClick = onMentionClick
         textView.onURLClick = onURLClick
+        textView.model = model
         let signature = RichMessageRenderSignature(
             source: source,
             emojiSize: emojiSize,
@@ -234,11 +212,14 @@ struct SelectableMessageTextView: NSViewRepresentable {
 
         func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
             guard let url = link as? URL else { return false }
-            if (textView as? RichMessageNSTextView)?.onURLClick(url) == true {
-                return true
+            guard let richTextView = textView as? RichMessageNSTextView else {
+                return false
             }
-            NSWorkspace.shared.open(url)
-            return true
+            return MessageLinkActivator.activate(
+                url,
+                model: richTextView.model,
+                customHandler: richTextView.onURLClick
+            )
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
@@ -421,6 +402,7 @@ enum RichMessageCopySerializer {
 
 final class RichMessageNSTextView: NSTextView {
     fileprivate var renderSignature: RichMessageRenderSignature?
+    weak var model: AppModel?
     var onMentionClick: (MentionPresentation, StablePopoverAnchor) -> Void = { _, _ in }
     var onURLClick: (URL) -> Bool = { _ in false }
     private var hoveredMentionLocation: Int?

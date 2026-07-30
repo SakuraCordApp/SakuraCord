@@ -183,6 +183,7 @@ struct CustomEmojiRichText: View {
 
     var body: some View {
         SelectableMessageTextView(
+            model: model,
             source: content,
             emojiSize: emojiSize,
             mentionPresentations: mentionPresentations,
