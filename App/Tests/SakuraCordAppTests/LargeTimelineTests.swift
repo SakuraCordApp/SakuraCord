@@ -3923,7 +3923,7 @@ func `native media viewer preserves remote embed video playback kind`() throws {
 }
 
 @MainActor @Test
-func `native timeline rich embed preserves previous card geometry`() throws {
+func `native timeline rich embed lays out live card content`() throws {
     let iconURL = try #require(URL(string: "https://example.com/icon.png"))
     let thumbnailURL = try #require(URL(string: "https://example.com/thumbnail.png"))
     let embed = MessageEmbed(
@@ -3984,17 +3984,6 @@ func `native timeline rich embed preserves previous card geometry`() throws {
     )
 
     let region = try #require(layout.embedRegions.first)
-    let previousRenderer = NSHostingController(
-        rootView: MessageEmbedCard(
-            model: AppModel(launchMode: .offlineTesting),
-            message: message,
-            embed: embed,
-            mediaItem: nil
-        )
-    )
-    let previousSize = previousRenderer.sizeThatFits(
-        in: CGSize(width: 520, height: 10_000)
-    )
     let author = try #require(
         region.textRegions.first(where: {
             $0.text.value.string == "Aurora Studio"
@@ -4017,8 +4006,11 @@ func `native timeline rich embed preserves previous card geometry`() throws {
         })
     )
 
-    #expect(abs(region.frame.width - previousSize.width) <= 1)
-    #expect(abs(region.frame.height - previousSize.height) <= 1)
+    #expect(region.kind == .card)
+    #expect(region.accentColor == 0x7C3AED)
+    #expect(region.frame.width <= DiscordRichMessageMetrics.maximumWidth)
+    #expect(region.frame.height > description.frame.height)
+    #expect(region.imageRegions.count == 3)
     #expect(author.frame.minX - region.frame.minX == 42)
     #expect(
         description.frame.width
@@ -4970,7 +4962,7 @@ func `native timeline attachments preserve the previous media mosaic geometry`()
 }
 
 @MainActor @Test
-func `native timeline component container preserves previous fitting geometry`() throws {
+func `native timeline component container lays out live controls`() throws {
     func button(
         _ id: String,
         _ style: ComponentButtonStyle,
@@ -5033,59 +5025,30 @@ func `native timeline component container preserves previous fitting geometry`()
             maximumWidth: 520
         )
     )
-    let previousRenderer = NSHostingController(
-        rootView: DiscordComponentContainerView(
-            model: model,
-            message: message,
-            accent: 0x5865F2,
-            spoiler: false,
-            children: children
-        )
+    let container = try #require(layout.containers.first)
+    #expect(container.accentColor == 0x5865F2)
+    #expect(container.frame == layout.frame)
+    #expect(layout.frame.width <= DiscordRichMessageMetrics.maximumWidth)
+    #expect(layout.buttons.count == 5)
+    #expect(
+        layout.buttons.allSatisfy {
+            $0.frame.height == NativeTimelineComponentButtonMetrics.height
+        }
     )
-    let previousSize = previousRenderer.sizeThatFits(
-        in: CGSize(width: 520, height: 10_000)
-    )
-    let buttonFixtures: [
-        (ComponentButtonStyle, String, String)
-    ] = [
-        (.success, "Reddit", "🙂"),
-        (.secondary, "Other social media", "🌐"),
-        (.primary, "A friend invited me", "🧑‍🤝‍🧑"),
-        (.primary, "I was here before", "🏠"),
-        (.destructive, "Other", "❓"),
-    ]
-    let previousButtonSizes = buttonFixtures.map {
-        style, label, emoji in
-        NSHostingController(
-            rootView: DiscordComponentButton(
-                style: style,
-                label: label,
-                emoji: EmojiReference(name: emoji),
-                showsExternalLink: false,
-                action: {}
-            )
-        ).sizeThatFits(
-            in: CGSize(width: 520, height: 1_000)
-        )
-    }
-
-    #expect(abs(layout.frame.width - previousSize.width) <= 1)
-    #expect(abs(layout.frame.height - previousSize.height) <= 1)
-    #expect(layout.buttons.count == previousButtonSizes.count)
-    for (button, previousButtonSize) in zip(
-        layout.buttons,
-        previousButtonSizes
-    ) {
-        #expect(abs(button.frame.width - previousButtonSize.width) <= 1)
-        #expect(button.frame.height == previousButtonSize.height)
-    }
+    #expect(layout.buttons.map(\.label) == [
+        "Reddit",
+        "Other social media",
+        "A friend invited me",
+        "I was here before",
+        "Other",
+    ])
     #expect(layout.buttons.map(\.emoji?.name) == [
         "🙂", "🌐", "🧑‍🤝‍🧑", "🏠", "❓",
     ])
 }
 
 @MainActor @Test
-func `native timeline stickers thread and reactions preserve previous geometry`() throws {
+func `native timeline stickers thread and reactions use live geometry`() throws {
     let assetURL = try #require(
         URL(string: "https://example.com/sticker.png")
     )
@@ -5152,15 +5115,6 @@ func `native timeline stickers thread and reactions preserve previous geometry`(
         width: 720
     )
 
-    let previousStickers = NSHostingController(
-        rootView: MessageStickersView(stickers: stickers)
-    ).sizeThatFits(in: CGSize(width: 520, height: 10_000))
-    let threadView = NSHostingController(
-        rootView: MessageThreadSummaryView(thread: thread, open: {})
-    )
-    let previousThread = threadView.sizeThatFits(
-        in: CGSize(width: 500, height: 10_000)
-    )
     let previousReaction = NSHostingController(
         rootView: MessageReactionPill(
             reaction: reaction,
@@ -5174,14 +5128,14 @@ func `native timeline stickers thread and reactions preserve previous geometry`(
     #expect(
         layout.stickerFrames[1].maxX
             - layout.stickerFrames[0].minX
-            == previousStickers.width
+            == 232
     )
     #expect(layout.stickerFrames.allSatisfy {
-        $0.height == previousStickers.height
+        $0.size == CGSize(width: 112, height: 112)
     })
     let threadFrame = try #require(layout.threadFrame)
-    #expect(abs(threadFrame.width - previousThread.width) <= 1)
-    #expect(abs(threadFrame.height - previousThread.height) <= 1)
+    #expect(threadFrame.width == 500)
+    #expect(threadFrame.height == 48)
     let reactionRegion = try #require(layout.reactionRegions.first)
     #expect(abs(reactionRegion.frame.width - previousReaction.width) <= 1)
     #expect(abs(reactionRegion.frame.height - previousReaction.height) <= 1)

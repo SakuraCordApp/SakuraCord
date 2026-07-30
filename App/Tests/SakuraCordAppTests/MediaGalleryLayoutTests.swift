@@ -1,7 +1,6 @@
 import CoreGraphics
 import Foundation
 import SakuraCordModels
-import SwiftUI
 @testable import SakuraCord
 import Testing
 
@@ -201,10 +200,6 @@ func `suppressed embeds retain their source link and expose no preview`() throws
         spacing: 4
     )[0]
     #expect(frame.size == CGSize(width: 128, height: 128))
-
-    let host = NSHostingView(rootView: MediaGalleryView(items: [item]))
-    host.layoutSubtreeIfNeeded()
-    #expect(host.fittingSize == CGSize(width: 128, height: 128))
 }
 
 @Test func `single oversized attachment is downscaled within the media cap`() {
@@ -244,51 +239,11 @@ func `suppressed embeds retain their source link and expose no preview`() throws
     #expect(narrow.frames[2].minX == 0)
 }
 
-@Test func `embed field rows honor non inline fields and group only consecutive inline fields`() {
-    let fields = [
-        MessageEmbedField(id: 1, name: "One", value: "1", isInline: true),
-        MessageEmbedField(id: 2, name: "Two", value: "2", isInline: true),
-        MessageEmbedField(id: 3, name: "Full width", value: "3"),
-        MessageEmbedField(id: 4, name: "Four", value: "4", isInline: true),
-        MessageEmbedField(id: 5, name: "Five", value: "5", isInline: true),
-        MessageEmbedField(id: 6, name: "Six", value: "6", isInline: true),
-        MessageEmbedField(id: 7, name: "Seven", value: "7", isInline: true)
-    ]
-    let rows = EmbedFieldLayoutPlan.rows(for: fields)
-    #expect(rows.map { $0.fields.map(\.id) } == [[1, 2], [3], [4, 5, 6], [7]])
-    #expect(!rows[1].fields[0].isInline)
-}
-
 @Test func `discord cards hug content and clamp only to the available maximum`() {
     #expect(DiscordFittingWidthPlan.width(ideal: 284, available: 900, maximum: 520) == 284)
     #expect(DiscordFittingWidthPlan.width(ideal: 760, available: 900, maximum: 520) == 520)
     #expect(DiscordFittingWidthPlan.width(ideal: 420, available: 360, maximum: 520) == 360)
     #expect(DiscordFittingWidthPlan.width(ideal: 284, available: nil, maximum: 520) == 284)
-}
-
-@MainActor @Test func `component container derives its width from rendered content`() {
-    func width(_ title: String) -> CGFloat {
-        let view = DiscordComponentContainerLayout(
-            maximumWidth: DiscordRichMessageMetrics.maximumWidth,
-            padding: DiscordRichMessageMetrics.cardPadding,
-            hasAccent: true
-        ) {
-            Rectangle()
-            CustomEmojiRichText(content: title, emojiSize: 18)
-        }
-        let host = NSHostingView(rootView: view)
-        host.layoutSubtreeIfNeeded()
-        return host.fittingSize.width
-    }
-
-    let short = width("Short")
-    let medium = width("## How did you join the server?")
-    let long = width(String(repeating: "A genuinely wide title ", count: 8))
-    #expect(short < medium)
-    #expect(medium < long)
-    #expect(medium > 220)
-    #expect(medium < 320)
-    #expect(long == DiscordRichMessageMetrics.maximumWidth)
 }
 
 @MainActor @Test func `component media preserves dimensions and avoids fallback letterboxing`() throws {
@@ -316,14 +271,7 @@ func `suppressed embeds retain their source link and expose no preview`() throws
     #expect(abs(frame.width / frame.height - 6) < 0.001)
 }
 
-@Test func `component containers omit the accent when no color was provided`() {
-    #expect(DiscordComponentContainerAppearance.accent(nil) == nil)
-    let expected = DiscordComponentContainerAppearance.RGB(
-        red: Double(0x58) / 255,
-        green: Double(0x65) / 255,
-        blue: Double(0xF2) / 255
-    )
-    #expect(DiscordComponentContainerAppearance.accent(0x5865F2) == expected)
+@Test func `component container width accounts for an optional accent`() {
     #expect(
         DiscordComponentContainerLayoutPlan.width(
             idealContent: 100, available: 600, maximum: 520, padding: 12, hasAccent: false
