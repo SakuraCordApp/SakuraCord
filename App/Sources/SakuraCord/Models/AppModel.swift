@@ -3205,6 +3205,27 @@ final class AppModel {
         supportedCapabilities.contains(capability)
     }
 
+    func componentChoices(
+        kind: ComponentSelectKind,
+        query: String,
+        guildID: GuildID?,
+        channelID: ChannelID
+    ) async throws -> [ComponentSelectOption] {
+        guard supportedCapabilities.contains(.remoteComponentChoices) else {
+            throw ChatProviderError.capabilityDisabled(
+                .remoteComponentChoices
+            )
+        }
+        return Array(
+            try await provider.componentChoices(
+                kind: kind,
+                query: query,
+                guildID: guildID,
+                channelID: channelID
+            ).prefix(25)
+        )
+    }
+
     func isComponentPending(messageID: MessageID, customID: String) -> Bool {
         pendingComponentControls.contains(
             ComponentControlKey(messageID: messageID, customID: customID))

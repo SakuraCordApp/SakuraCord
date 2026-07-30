@@ -15,6 +15,26 @@ enum NativeTimelineComponentButtonMetrics {
     }
 }
 
+enum NativeTimelineComponentSelectPolicy {
+    nonisolated static func isEnabled(
+        kind: ComponentSelectKind,
+        hasStaticOptions: Bool,
+        supportsComponents: Bool,
+        supportsRemoteChoices: Bool,
+        interactionUnavailable: Bool
+    ) -> Bool {
+        guard supportsComponents, !interactionUnavailable else {
+            return false
+        }
+        switch kind {
+        case .string:
+            return hasStaticOptions
+        case .user, .role, .mentionable, .channel:
+            return supportsRemoteChoices
+        }
+    }
+}
+
 struct NativeTimelineComponentLayout {
     struct ContainerRegion {
         let frame: CGRect
@@ -422,14 +442,20 @@ private enum NodeBuilder {
                 maximumWidth,
                 max(210, min(380, labelWidth + 76))
             )
-            let isDisabled =
-                disabled
-                || options.isEmpty
-                || model?.supportsCapability(.components) != true
-                || model?.isComponentPending(
-                    messageID: message.id,
-                    customID: customID
-                ) == true
+            let isDisabled = !NativeTimelineComponentSelectPolicy.isEnabled(
+                kind: kind,
+                hasStaticOptions: !options.isEmpty,
+                supportsComponents:
+                    model?.supportsCapability(.components) == true,
+                supportsRemoteChoices:
+                    model?.supportsCapability(.remoteComponentChoices) == true,
+                interactionUnavailable:
+                    disabled
+                    || model?.isComponentPending(
+                        messageID: message.id,
+                        customID: customID
+                    ) == true
+            )
             return Node(
                 size: CGSize(width: width, height: 38),
                 selects: [

@@ -605,3 +605,53 @@ import Testing
     messages = try await provider.messages(in: channelID, before: nil, limit: 100).messages
     #expect(!messages.contains { $0.nonce == "offline-response-failure" })
 }
+
+@Test func `mock component choices cover every select kind with bounded filtering`()
+    async throws
+{
+    let provider = MockChatProvider()
+    _ = try await provider.bootstrap()
+    let guildID = GuildID(rawValue: 100)
+    let channelID = ChannelID(rawValue: 210)
+
+    #expect(await provider.supports(.remoteComponentChoices))
+    #expect(
+        try await provider.componentChoices(
+            kind: .string,
+            query: "",
+            guildID: guildID,
+            channelID: channelID
+        ).isEmpty
+    )
+    for kind in [
+        ComponentSelectKind.user,
+        .role,
+        .mentionable,
+        .channel,
+    ] {
+        let choices = try await provider.componentChoices(
+            kind: kind,
+            query: "",
+            guildID: guildID,
+            channelID: channelID
+        )
+        #expect(!choices.isEmpty)
+        #expect(choices.count <= 25)
+    }
+    #expect(
+        try await provider.componentChoices(
+            kind: .role,
+            query: "engineering",
+            guildID: guildID,
+            channelID: channelID
+        ).map(\.label) == ["@Engineering"]
+    )
+    #expect(
+        try await provider.componentChoices(
+            kind: .user,
+            query: "not-a-fixture-user",
+            guildID: guildID,
+            channelID: channelID
+        ).isEmpty
+    )
+}

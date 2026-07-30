@@ -2592,6 +2592,7 @@ final class NativeTimelineCanvasView: NSView {
     private var editingOverlayLocalFrame: CGRect?
     private var editingRowScrollSnapshot: NSImage?
     private var messageProfilePopover: NSPopover?
+    private var componentChoicePopover: NSPopover?
     private let mentionPopoverCoordinator =
         StableAnchoredPopoverPresenter<AnyView>.Coordinator()
     private var activeMentionPopoverAnchor: StablePopoverAnchor?
@@ -3122,6 +3123,7 @@ final class NativeTimelineCanvasView: NSView {
             reactionPickerCoordinator.close(notifyBinding: false)
             reactionHoverCoordinator.close()
             closeMessageProfilePopover()
+            closeComponentChoicePopover()
             closeMentionPopover()
             reactionPickerSource.frame = .zero
             hoveredMention = nil
@@ -7670,6 +7672,14 @@ final class NativeTimelineCanvasView: NSView {
         message: Message,
         rowIndex: Int
     ) {
+        guard region.kind == .string else {
+            showComponentChoicePicker(
+                for: region,
+                message: message,
+                rowIndex: rowIndex
+            )
+            return
+        }
         let menu = NSMenu()
         menu.autoenablesItems = false
         for option in region.options {
@@ -7699,6 +7709,61 @@ final class NativeTimelineCanvasView: NSView {
             y: displayedRowOrigin(at: rowIndex) + region.frame.maxY + 2
         )
         menu.popUp(positioning: nil, at: point, in: self)
+    }
+
+    private func showComponentChoicePicker(
+        for region: NativeTimelineComponentLayout.SelectRegion,
+        message: Message,
+        rowIndex: Int
+    ) {
+        guard let model else { return }
+        closeComponentChoicePopover()
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = true
+        popover.contentViewController = NSHostingController(
+            rootView: ComponentChoicePicker(
+                placeholder: region.placeholder,
+                loader: { [weak model] query in
+                    guard let model else {
+                        throw CancellationError()
+                    }
+                    return try await model.componentChoices(
+                        kind: region.kind,
+                        query: query,
+                        guildID: message.guildID,
+                        channelID: message.channelID
+                    )
+                },
+                select: { [weak self] option in
+                    guard let self else { return }
+                    self.actions?.submitComponent(
+                        message,
+                        region.customID,
+                        self.interactionKind(region.kind),
+                        [option.value]
+                    )
+                    self.closeComponentChoicePopover()
+                }
+            )
+        )
+        componentChoicePopover = popover
+        popover.show(
+            relativeTo: CGRect(
+                x: region.frame.minX,
+                y: displayedRowOrigin(at: rowIndex)
+                    + region.frame.minY,
+                width: region.frame.width,
+                height: region.frame.height
+            ),
+            of: self,
+            preferredEdge: .maxY
+        )
+    }
+
+    private func closeComponentChoicePopover() {
+        componentChoicePopover?.performClose(nil)
+        componentChoicePopover = nil
     }
 
     private func interactionKind(

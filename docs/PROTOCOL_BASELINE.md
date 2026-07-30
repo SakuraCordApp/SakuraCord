@@ -73,7 +73,7 @@ request-contract and request-budget tests.
 | Forum channels | Enabled | Enabled |
 | Slash commands | Enabled | Enabled |
 | Message components and returned modals | Disabled | Enabled with fixtures |
-| Remote component choices | Disabled | Disabled |
+| Remote component choices | Disabled | Enabled with local fixtures |
 | GIF search | Disabled | Enabled with fixtures |
 | Guild sticker catalog and sticker sending | Disabled | Enabled with fixtures |
 
