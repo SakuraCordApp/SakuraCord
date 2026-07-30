@@ -443,24 +443,66 @@ import Testing
     #expect(ThreadTimelineLayoutPolicy.minimumContentHeight(viewportHeight: 680) == 680)
 }
 
-@Test func `short initial timeline is eligible for acknowledgement`() {
+@Test func `read eligibility uses established newest message geometry`() {
     #expect(
-        TimelineInitialReadPolicy.isAtNewest(
+        TimelineReadEligibilityPolicy.hasReachedReadBoundary(
             TimelineScrollState(
                 isNearTop: true,
                 isNearBottom: false,
-                contentFitsViewport: true
+                contentFitsViewport: true,
+                hasEstablishedInitialPosition: true,
+                hasReachedNewestMessageBoundary: true
             )
         )
     )
     #expect(
-        !TimelineInitialReadPolicy.isAtNewest(
+        !TimelineReadEligibilityPolicy.hasReachedReadBoundary(
             TimelineScrollState(
                 isNearTop: false,
-                isNearBottom: false,
-                contentFitsViewport: false
+                isNearBottom: true,
+                contentFitsViewport: true,
+                hasEstablishedInitialPosition: false,
+                hasReachedNewestMessageBoundary: true
             )
         )
+    )
+    #expect(
+        !TimelineReadEligibilityPolicy.hasReachedReadBoundary(
+            TimelineScrollState(
+                isNearTop: false,
+                isNearBottom: true,
+                contentFitsViewport: true,
+                hasEstablishedInitialPosition: true,
+                hasReachedNewestMessageBoundary: false
+            )
+        )
+    )
+}
+
+@Test func `newest message boundary uses exact viewport space`() {
+    #expect(
+        NativeTimelineReadBoundaryPolicy
+            .hasReachedNewestMessageBoundary(
+                newestMessageMaximumY: 700,
+                viewportMinimumY: 200,
+                viewportMaximumY: 700
+            )
+    )
+    #expect(
+        !NativeTimelineReadBoundaryPolicy
+            .hasReachedNewestMessageBoundary(
+                newestMessageMaximumY: 701,
+                viewportMinimumY: 200,
+                viewportMaximumY: 700
+            )
+    )
+    #expect(
+        !NativeTimelineReadBoundaryPolicy
+            .hasReachedNewestMessageBoundary(
+                newestMessageMaximumY: 199,
+                viewportMinimumY: 200,
+                viewportMaximumY: 700
+            )
     )
 }
 

@@ -9,6 +9,7 @@ struct MessageTimelineView: View {
         .runsChatPerformanceAutoScroll
     @State private var scrollPolicy = MessageTimelineScrollPolicy()
     @State private var allowsAutomaticHistoryLoading = false
+    @State private var hasUserRequestedEarlierHistory = false
     @State private var highlightedMessageID: MessageID?
     @State private var hasEstablishedInitialPosition = false
     @State private var scrollRequest: MessageTimelineScrollRequest?
@@ -123,6 +124,7 @@ struct MessageTimelineView: View {
                 )
             }
             hasEstablishedInitialPosition = false
+            hasUserRequestedEarlierHistory = false
             scrollPolicy.didBeginChannel()
             latestScrollState = TimelineScrollState(
                 isNearTop: false,
@@ -150,6 +152,7 @@ struct MessageTimelineView: View {
         }
         .task(id: model.selectedChannelID) {
             allowsAutomaticHistoryLoading = false
+            hasUserRequestedEarlierHistory = false
             try? await Task.sleep(for: .milliseconds(350))
             guard !Task.isCancelled else { return }
             allowsAutomaticHistoryLoading = true
@@ -216,9 +219,23 @@ struct MessageTimelineView: View {
         return model.unreadDividerMessageID(channelID: channelID)
     }
 
+    private var loadedExactUnreadBoundaryMessageID: MessageID? {
+        guard let messageID = exactUnreadBoundaryMessageID,
+              model.messages.contains(where: { $0.id == messageID })
+        else {
+            return nil
+        }
+        return messageID
+    }
+
+    private var hasUnresolvedInitialUnreadBoundary: Bool {
+        loadedExactUnreadBoundaryMessageID == nil
+            && unreadSummary?.isLowerBound == true
+    }
+
     private var initialScrollTarget: MessageTimelineScrollRequest.Target? {
         let summary = unreadSummary
-        let dividerMessageID = exactUnreadBoundaryMessageID
+        let dividerMessageID = loadedExactUnreadBoundaryMessageID
         return TimelineInitialPositionPolicy.targetWhenReady(
             hasCompletedInitialLoad:
                 model.hasCompletedInitialMessageLoad,
@@ -231,21 +248,24 @@ struct MessageTimelineView: View {
 
     private func handleInitialPosition(_ state: TimelineScrollState) {
         guard !hasEstablishedInitialPosition,
+              state.hasEstablishedInitialPosition,
               let channelID = model.selectedChannelID
         else {
             return
         }
         hasEstablishedInitialPosition = true
         latestScrollState = state
-        let isAtNewest = TimelineInitialReadPolicy.isAtNewest(state)
-        if isAtNewest {
+        let hasReachedReadBoundary =
+            TimelineReadEligibilityPolicy.hasReachedReadBoundary(state)
+            && !hasUnresolvedInitialUnreadBoundary
+        if hasReachedReadBoundary {
             scrollPolicy.didRequestBottom()
         } else {
             scrollPolicy.didNavigateAwayFromBottom()
         }
         model.reportTimelineInitialPosition(
             channelID: channelID,
-            isAtNewest: isAtNewest
+            hasReachedReadBoundary: hasReachedReadBoundary
         )
     }
 
@@ -269,27 +289,45 @@ struct MessageTimelineView: View {
             scrollPolicy.updateGeometry(isNearBottom: value.isNearBottom)
         }
         loadEarlierIfNeeded(for: value)
-        if hasEstablishedInitialPosition,
-           let channelID = model.selectedChannelID
-        {
+        guard value.hasEstablishedInitialPosition else { return }
+        if !hasEstablishedInitialPosition {
+            // Exact viewport state is repeatable, so it also recovers if a
+            // one-shot initial callback was superseded by another AppKit
+            // update before delivery.
+            handleInitialPosition(value)
+            return
+        }
+        if let channelID = model.selectedChannelID {
             model.reportTimelinePosition(
                 channelID: channelID,
-                isAtNewest: value.isNearBottom
+                hasReachedReadBoundary:
+                    TimelineReadEligibilityPolicy.hasReachedReadBoundary(value)
+                    && !hasUnresolvedInitialUnreadBoundary
             )
         }
     }
 
     private func loadEarlierIfNeeded(for state: TimelineScrollState) {
-        guard state.isNearTop,
-              allowsAutomaticHistoryLoading,
-              model.hasMoreMessages,
-              !model.isLoadingEarlier
+        guard TimelineEarlierHistoryLoadingPolicy.shouldLoad(
+            isNearTop: state.isNearTop,
+            allowsAutomaticLoading: allowsAutomaticHistoryLoading,
+            hasMoreMessages: model.hasMoreMessages,
+            isLoading: model.isLoadingEarlier,
+            hasUnresolvedUnreadBoundary:
+                hasUnresolvedInitialUnreadBoundary,
+            hasUserScrollIntent:
+                hasUserRequestedEarlierHistory
+        )
         else { return }
+        hasUserRequestedEarlierHistory = false
         loadEarlier()
     }
 
     private func handleUserScrollBegan() {
         scrollPolicy.userScrollBegan()
+        if hasUnresolvedInitialUnreadBoundary {
+            hasUserRequestedEarlierHistory = true
+        }
         if let channelID = model.selectedChannelID {
             model.reportTimelineUserInteraction(channelID: channelID)
         }
@@ -389,22 +427,33 @@ nonisolated struct TimelineScrollState: Equatable, Sendable {
     let isNearTop: Bool
     let isNearBottom: Bool
     let contentFitsViewport: Bool
+    let hasEstablishedInitialPosition: Bool
+    let hasReachedNewestMessageBoundary: Bool
 
     init(
         isNearTop: Bool,
         isNearBottom: Bool,
-        contentFitsViewport: Bool = false
+        contentFitsViewport: Bool = false,
+        hasEstablishedInitialPosition: Bool = false,
+        hasReachedNewestMessageBoundary: Bool = false
     ) {
         self.isNearTop = isNearTop
         self.isNearBottom = isNearBottom
         self.contentFitsViewport = contentFitsViewport
+        self.hasEstablishedInitialPosition =
+            hasEstablishedInitialPosition
+        self.hasReachedNewestMessageBoundary =
+            hasReachedNewestMessageBoundary
     }
 
 }
 
-nonisolated enum TimelineInitialReadPolicy {
-    static func isAtNewest(_ state: TimelineScrollState) -> Bool {
-        state.isNearBottom || state.contentFitsViewport
+nonisolated enum TimelineReadEligibilityPolicy {
+    static func hasReachedReadBoundary(
+        _ state: TimelineScrollState
+    ) -> Bool {
+        state.hasEstablishedInitialPosition
+            && state.hasReachedNewestMessageBoundary
     }
 }
 

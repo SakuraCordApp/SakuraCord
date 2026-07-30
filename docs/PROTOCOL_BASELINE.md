@@ -304,10 +304,27 @@ new-post implementation.
   separate `notification_settings.flags` bit 4 (`USE_NEW_NOTIFICATIONS`) is
   part of unread resolution and must not be inferred from guild settings.
 - A conversation becomes locally read only after its initial history is
-  loaded, the timeline has established its real initial position, its newest
-  message is visible/followed, and the main window is active. An unread
-  conversation initially presents its first loaded unread message, so selection
-  alone does not acknowledge it.
+  loaded, the timeline has established its real initial position, the bottom
+  edge of its newest message is inside the native viewport, and the main window
+  is active. An unread conversation initially presents its first loaded unread
+  message. If the complete unread run fits in that viewport, its newest edge is
+  visible and opening the conversation acknowledges it immediately. Longer
+  unread runs remain unread until the reader reaches that exact newest-message
+  boundary. Eligibility uses message geometry rather than message count,
+  footer/composer space, or a fuzzy near-bottom threshold.
+- An unread channel whose acknowledged boundary predates the newest 100
+  messages uses the ordinary single newest-page `GET
+  /channels/{channel_id}/messages?limit=100`. The viewport starts at the oldest
+  row in that page and the banner reports the loaded lower bound (`100+`).
+  SakuraCord does not automatically walk backward to find an arbitrarily old
+  acknowledgement boundary. An upward user scroll may request one older
+  50-message page with `before={oldest_loaded_message_id}&limit=50`; after that
+  page is incorporated, the banner grows with the discovered unread rows
+  (`150+`, `200+`, and so on). Each additional page requires further user
+  scrolling. The conversation cannot acknowledge while the unread boundary is
+  unresolved. Once the page containing the acknowledged boundary is loaded,
+  the count becomes exact, the true unread divider is shown, and ordinary
+  newest-message viewport eligibility applies.
 - Forum selection is the deliberate exception to ordinary timeline
   acknowledgement. Once the active forum catalogue is available, a forum with
   unseen thread IDs sends one immediate parent `POST
@@ -318,14 +335,17 @@ new-post implementation.
   the channel's `N New` state but never changes a child thread's independent
   unread-reply boundary. The mutation has one attempt and is not repeated by
   warm rerenders or pagination.
-- A read acknowledgement waits 1.5 seconds and sends one `POST
-  /channels/{channel_id}/messages/{message_id}/ack`. Its JSON body includes the
-  calculated guild/thread read-state `flags` and `last_viewed` day relative to
-  Discord's epoch, plus the latest server-issued `token` when present. Requests
-  are serialized across the account, coalesced per channel, and have one
-  attempt. A `429`, timeout, challenge, restriction, or ambiguous failure is
-  not retried automatically; a failed optimistic local transition is reverted
-  to its preceding authoritative boundary.
+- Once that read boundary is established, a read acknowledgement sends one
+  immediate `POST /channels/{channel_id}/messages/{message_id}/ack`. This
+  deliberately removes Paicord's 1.5-second view debounce: exact native
+  geometry prevents a transient pre-position viewport from qualifying, while
+  the debounce only delayed an already-qualified user-visible read. The JSON
+  body includes the calculated guild/thread read-state `flags` and
+  `last_viewed` day relative to Discord's epoch, plus the latest server-issued
+  `token` when present. Requests are serialized across the account, coalesced
+  per channel, and have one attempt. A `429`, timeout, challenge, restriction,
+  or ambiguous failure is not retried automatically; a failed optimistic local
+  transition is reverted to its preceding authoritative boundary.
 - Marking a message and everything after it unread moves the boundary to the
   preceding snowflake through the same route with `manual: true`, the
   recalculated `mention_count`, and the latest acknowledgement `token` when

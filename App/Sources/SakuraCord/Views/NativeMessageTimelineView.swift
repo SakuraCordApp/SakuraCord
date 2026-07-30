@@ -59,6 +59,9 @@ nonisolated enum TimelineInitialPositionPolicy {
     /// Keep the unread divider in the upper third of the viewport so the
     /// reader sees both prior context and the unread run that follows.
     static let unreadViewportAnchor = UnitPoint(x: 0.5, y: 0.28)
+    /// When the acknowledged boundary is older than the loaded page, begin at
+    /// that page's oldest row. Earlier unread pages remain above the reader.
+    static let unresolvedUnreadViewportAnchor = UnitPoint.top
 
     static func target(
         firstUnreadMessageID: MessageID?,
@@ -66,14 +69,16 @@ nonisolated enum TimelineInitialPositionPolicy {
         prefersNewest: Bool
     ) -> MessageTimelineScrollRequest.Target {
         guard !prefersNewest,
-              hasExactUnreadBoundary,
               let firstUnreadMessageID
         else {
             return .bottom
         }
         return .message(
             firstUnreadMessageID,
-            anchor: unreadViewportAnchor
+            anchor:
+                hasExactUnreadBoundary
+                ? unreadViewportAnchor
+                : unresolvedUnreadViewportAnchor
         )
     }
 
@@ -89,6 +94,26 @@ nonisolated enum TimelineInitialPositionPolicy {
             hasExactUnreadBoundary: hasExactUnreadBoundary,
             prefersNewest: prefersNewest
         )
+    }
+}
+
+nonisolated enum TimelineEarlierHistoryLoadingPolicy {
+    static func shouldLoad(
+        isNearTop: Bool,
+        allowsAutomaticLoading: Bool,
+        hasMoreMessages: Bool,
+        isLoading: Bool,
+        hasUnresolvedUnreadBoundary: Bool,
+        hasUserScrollIntent: Bool
+    ) -> Bool {
+        guard isNearTop,
+              allowsAutomaticLoading,
+              hasMoreMessages,
+              !isLoading
+        else {
+            return false
+        }
+        return !hasUnresolvedUnreadBoundary || hasUserScrollIntent
     }
 }
 
@@ -327,6 +352,18 @@ nonisolated enum NativeTimelineAutomaticHistoryPolicy {
         wasLoadingEarlier
             && !isLoadingEarlier
             && currentRowCount > previousRowCount
+    }
+}
+
+nonisolated enum NativeTimelineReadBoundaryPolicy {
+    static func hasReachedNewestMessageBoundary(
+        newestMessageMaximumY: CGFloat,
+        viewportMinimumY: CGFloat,
+        viewportMaximumY: CGFloat,
+        tolerance: CGFloat = 0.5
+    ) -> Bool {
+        newestMessageMaximumY >= viewportMinimumY - tolerance
+            && newestMessageMaximumY <= viewportMaximumY + tolerance
     }
 }
 
@@ -2543,6 +2580,8 @@ struct NativeMessageTimelineView: NSViewRepresentable {
                 return TimelineScrollState(isNearTop: true, isNearBottom: true)
             }
             let visibleRect = scrollView.contentView.bounds
+            let hasEstablishedInitialPosition =
+                initialPositionConversation == parent.conversation
             return TimelineScrollState(
                 isNearTop:
                     visibleRect.minY - leadingHistoryReserve
@@ -2559,8 +2598,39 @@ struct NativeMessageTimelineView: NSViewRepresentable {
                         bottomInset: bottomInset,
                         verticalPadding:
                             ChatDetailLayoutPolicy.timelineTopPadding
-                    )
+                    ),
+                hasEstablishedInitialPosition:
+                    hasEstablishedInitialPosition,
+                hasReachedNewestMessageBoundary:
+                    hasEstablishedInitialPosition
+                    && hasReachedNewestMessageBoundary(in: visibleRect)
             )
+        }
+
+        private func hasReachedNewestMessageBoundary(
+            in visibleRect: CGRect
+        ) -> Bool {
+            guard let newestIndex = items.lastIndex(where: {
+                $0.messageID != nil
+            }),
+                rowOrigins.indices.contains(newestIndex),
+                layouts.indices.contains(newestIndex)
+            else {
+                return false
+            }
+            let newestMessageMaximumY =
+                contentOriginY(viewportHeight: visibleRect.height)
+                + rowOrigins[newestIndex]
+                + layouts[newestIndex].height
+            // This is the semantic read boundary: the bottom edge of the
+            // newest message has entered the viewport. Composer/footer space
+            // is irrelevant, and no fuzzy "near bottom" threshold is used.
+            return NativeTimelineReadBoundaryPolicy
+                .hasReachedNewestMessageBoundary(
+                    newestMessageMaximumY: newestMessageMaximumY,
+                    viewportMinimumY: visibleRect.minY,
+                    viewportMaximumY: visibleRect.maxY
+                )
         }
 
         private func startPerformanceAutoScrollIfNeeded() {

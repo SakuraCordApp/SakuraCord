@@ -1833,6 +1833,10 @@ private func eventuallyOnMain(_ condition: @escaping @MainActor () -> Bool) asyn
     let firstChannel = ChannelID(rawValue: 91001)
     let secondChannel = ChannelID(rawValue: 91002)
     #expect(await provider.requestCount(for: firstChannel) == 1)
+    #expect(
+        await provider.requests(for: firstChannel)
+            == [ChannelLoadMessageRequest(before: nil, limit: 100)]
+    )
     #expect(model.messages.map(\.channelID) == [firstChannel])
 
     model.selectedChannelID = secondChannel
@@ -2263,6 +2267,11 @@ private actor ReactionMutationTestProvider: ChatProvider {
     }
 }
 
+private struct ChannelLoadMessageRequest: Equatable, Sendable {
+    let before: MessageID?
+    let limit: Int
+}
+
 private actor ChannelLoadTestProvider: ChatProvider {
     private let user = User(id: UserID(rawValue: 91000), username: "tester", displayName: "Tester")
     private let testChannels = [
@@ -2276,6 +2285,8 @@ private actor ChannelLoadTestProvider: ChatProvider {
         ),
     ]
     private var messageRequests: [ChannelID: Int] = [:]
+    private var messageRequestParameters:
+        [ChannelID: [ChannelLoadMessageRequest]] = [:]
     private var reactorRequests = 0
     private var activeReactorRequests = 0
     private var maximumActiveReactorRequests = 0
@@ -2312,6 +2323,9 @@ private actor ChannelLoadTestProvider: ChatProvider {
         -> MessagePage
     {
         messageRequests[channelID, default: 0] += 1
+        messageRequestParameters[channelID, default: []].append(
+            ChannelLoadMessageRequest(before: before, limit: limit)
+        )
         if failsFirstEarlierPage, before != nil {
             earlierRequests += 1
             if earlierRequests == 1 {
@@ -2387,6 +2401,12 @@ private actor ChannelLoadTestProvider: ChatProvider {
 
     func requestCount(for channelID: ChannelID) -> Int {
         messageRequests[channelID, default: 0]
+    }
+
+    func requests(
+        for channelID: ChannelID
+    ) -> [ChannelLoadMessageRequest] {
+        messageRequestParameters[channelID, default: []]
     }
 
     func earlierRequestCount() -> Int {

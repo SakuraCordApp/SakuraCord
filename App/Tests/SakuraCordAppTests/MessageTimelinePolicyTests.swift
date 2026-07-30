@@ -119,7 +119,7 @@ private final class MessageTimelineSkeletonSafeAreaHost<Content: View>:
 }
 
 @MainActor
-@Test func `initial conversation position falls back to true newest deterministically`() {
+@Test func `initial conversation position uses the oldest loaded unread when boundary is unresolved`() {
     #expect(
         TimelineInitialPositionPolicy.target(
             firstUnreadMessageID: nil,
@@ -132,7 +132,17 @@ private final class MessageTimelineSkeletonSafeAreaHost<Content: View>:
             firstUnreadMessageID: MessageID(rawValue: 42),
             hasExactUnreadBoundary: false,
             prefersNewest: false
-        ) == .bottom
+        )
+        == .message(
+            MessageID(rawValue: 42),
+            anchor:
+                TimelineInitialPositionPolicy
+                .unresolvedUnreadViewportAnchor
+        )
+    )
+    #expect(
+        TimelineInitialPositionPolicy.unresolvedUnreadViewportAnchor
+            == .top
     )
     #expect(
         TimelineInitialPositionPolicy.target(
@@ -160,6 +170,63 @@ private final class MessageTimelineSkeletonSafeAreaHost<Content: View>:
             hasExactUnreadBoundary: false,
             prefersNewest: false
         ) == .bottom
+    )
+    #expect(
+        TimelineInitialPositionPolicy.targetWhenReady(
+            hasCompletedInitialLoad: true,
+            firstUnreadMessageID: MessageID(rawValue: 101),
+            hasExactUnreadBoundary: false,
+            prefersNewest: false
+        )
+        == .message(
+            MessageID(rawValue: 101),
+            anchor:
+                TimelineInitialPositionPolicy
+                .unresolvedUnreadViewportAnchor
+        )
+    )
+}
+
+@Test func `unresolved unread history requires a user scroll before loading one older page`() {
+    #expect(
+        !TimelineEarlierHistoryLoadingPolicy.shouldLoad(
+            isNearTop: true,
+            allowsAutomaticLoading: true,
+            hasMoreMessages: true,
+            isLoading: false,
+            hasUnresolvedUnreadBoundary: true,
+            hasUserScrollIntent: false
+        )
+    )
+    #expect(
+        TimelineEarlierHistoryLoadingPolicy.shouldLoad(
+            isNearTop: true,
+            allowsAutomaticLoading: true,
+            hasMoreMessages: true,
+            isLoading: false,
+            hasUnresolvedUnreadBoundary: true,
+            hasUserScrollIntent: true
+        )
+    )
+    #expect(
+        TimelineEarlierHistoryLoadingPolicy.shouldLoad(
+            isNearTop: true,
+            allowsAutomaticLoading: true,
+            hasMoreMessages: true,
+            isLoading: false,
+            hasUnresolvedUnreadBoundary: false,
+            hasUserScrollIntent: false
+        )
+    )
+    #expect(
+        !TimelineEarlierHistoryLoadingPolicy.shouldLoad(
+            isNearTop: true,
+            allowsAutomaticLoading: true,
+            hasMoreMessages: true,
+            isLoading: true,
+            hasUnresolvedUnreadBoundary: true,
+            hasUserScrollIntent: true
+        )
     )
 }
 

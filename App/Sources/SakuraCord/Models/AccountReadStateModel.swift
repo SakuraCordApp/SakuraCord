@@ -40,7 +40,7 @@ final class AccountReadStateModel {
         var initialHistoryLoaded = false
         var initialPositionEstablished = false
         var windowIsActive = false
-        var isAtNewest = false
+        var hasReachedReadBoundary = false
         var blocksAutomaticAcknowledgement = false
 
         var canAcknowledge: Bool {
@@ -48,7 +48,7 @@ final class AccountReadStateModel {
                 && initialHistoryLoaded
                 && initialPositionEstablished
                 && windowIsActive
-                && isAtNewest
+                && hasReachedReadBoundary
                 && !blocksAutomaticAcknowledgement
         }
     }
@@ -513,7 +513,7 @@ final class AccountReadStateModel {
         initialHistoryLoaded: Bool? = nil,
         initialPositionEstablished: Bool? = nil,
         windowIsActive: Bool? = nil,
-        isAtNewest: Bool? = nil,
+        hasReachedReadBoundary: Bool? = nil,
         blocksAutomaticAcknowledgement: Bool? = nil
     ) -> MessageID? {
         var value = presentations[channelID] ?? Presentation()
@@ -523,7 +523,9 @@ final class AccountReadStateModel {
             value.initialPositionEstablished = initialPositionEstablished
         }
         if let windowIsActive { value.windowIsActive = windowIsActive }
-        if let isAtNewest { value.isAtNewest = isAtNewest }
+        if let hasReachedReadBoundary {
+            value.hasReachedReadBoundary = hasReachedReadBoundary
+        }
         if let blocksAutomaticAcknowledgement {
             value.blocksAutomaticAcknowledgement = blocksAutomaticAcknowledgement
         }
@@ -576,7 +578,7 @@ final class AccountReadStateModel {
         entries[channelID] = entry
         _ = updatePresentation(
             channelID: channelID,
-            isAtNewest: false,
+            hasReachedReadBoundary: false,
             blocksAutomaticAcknowledgement: true
         )
     }
@@ -692,7 +694,7 @@ final class AccountReadStateModel {
         guard let presentation = presentations[channelID] else { return false }
         return presentation.isPresented
             && presentation.windowIsActive
-            && presentation.isAtNewest
+            && presentation.hasReachedReadBoundary
     }
 
     func timelineUnreadSummary(

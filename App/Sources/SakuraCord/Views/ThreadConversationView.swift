@@ -241,6 +241,7 @@ private struct ThreadMessageTimelineView: View {
     let bottomContentInset: CGFloat
     @State private var isNearBottom = false
     @State private var hasEstablishedInitialPosition = false
+    @State private var hasUserRequestedEarlierHistory = false
     @State private var scrollRequest: MessageTimelineScrollRequest?
 
     var body: some View {
@@ -341,6 +342,7 @@ private struct ThreadMessageTimelineView: View {
             }
             isNearBottom = false
             hasEstablishedInitialPosition = false
+            hasUserRequestedEarlierHistory = false
         }
         .onChange(of: model.conversationNewestRequest) { _, request in
             guard let request,
@@ -427,9 +429,23 @@ private struct ThreadMessageTimelineView: View {
         return model.unreadDividerMessageID(channelID: threadID)
     }
 
+    private var loadedExactUnreadBoundaryMessageID: MessageID? {
+        guard let messageID = exactUnreadBoundaryMessageID,
+              model.threadMessages.contains(where: { $0.id == messageID })
+        else {
+            return nil
+        }
+        return messageID
+    }
+
+    private var hasUnresolvedInitialUnreadBoundary: Bool {
+        loadedExactUnreadBoundaryMessageID == nil
+            && unreadSummary?.isLowerBound == true
+    }
+
     private var initialScrollTarget: MessageTimelineScrollRequest.Target? {
         let summary = unreadSummary
-        let dividerMessageID = exactUnreadBoundaryMessageID
+        let dividerMessageID = loadedExactUnreadBoundaryMessageID
         let initialTarget = ThreadTimelinePresentationPolicy.initialScrollTarget(
             isForumPost: model.selectedChannel?.kind == .forum,
             hasUnreadReplies: summary != nil
@@ -446,6 +462,7 @@ private struct ThreadMessageTimelineView: View {
 
     private func handleInitialPosition(_ state: TimelineScrollState) {
         guard !hasEstablishedInitialPosition,
+              state.hasEstablishedInitialPosition,
               let threadID = model.openThread?.id
         else {
             return
@@ -454,28 +471,46 @@ private struct ThreadMessageTimelineView: View {
         isNearBottom = state.isNearBottom
         model.reportTimelineInitialPosition(
             channelID: threadID,
-            isAtNewest: state.isNearBottom
+            hasReachedReadBoundary:
+                TimelineReadEligibilityPolicy.hasReachedReadBoundary(state)
+                && !hasUnresolvedInitialUnreadBoundary
         )
     }
 
     private func handleScrollState(_ state: TimelineScrollState) {
         isNearBottom = state.isNearBottom
-        if state.isNearTop,
-           model.hasMoreThreadMessages,
-           !model.isLoadingEarlierThread
+        if TimelineEarlierHistoryLoadingPolicy.shouldLoad(
+            isNearTop: state.isNearTop,
+            allowsAutomaticLoading: true,
+            hasMoreMessages: model.hasMoreThreadMessages,
+            isLoading: model.isLoadingEarlierThread,
+            hasUnresolvedUnreadBoundary:
+                hasUnresolvedInitialUnreadBoundary,
+            hasUserScrollIntent:
+                hasUserRequestedEarlierHistory
+        )
         {
+            hasUserRequestedEarlierHistory = false
             loadEarlier()
         }
-        guard hasEstablishedInitialPosition,
-              let threadID = model.openThread?.id
-        else { return }
+        guard state.hasEstablishedInitialPosition else { return }
+        if !hasEstablishedInitialPosition {
+            handleInitialPosition(state)
+            return
+        }
+        guard let threadID = model.openThread?.id else { return }
         model.reportTimelinePosition(
             channelID: threadID,
-            isAtNewest: state.isNearBottom
+            hasReachedReadBoundary:
+                TimelineReadEligibilityPolicy.hasReachedReadBoundary(state)
+                && !hasUnresolvedInitialUnreadBoundary
         )
     }
 
     private func handleUserScrollBegan() {
+        if hasUnresolvedInitialUnreadBoundary {
+            hasUserRequestedEarlierHistory = true
+        }
         guard let threadID = model.openThread?.id else { return }
         model.reportTimelineUserInteraction(channelID: threadID)
     }

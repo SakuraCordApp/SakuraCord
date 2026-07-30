@@ -678,7 +678,7 @@ final class AppModel {
     }
 
     struct ReadAcknowledgementTiming: Sendable {
-        var debounce: Duration = .seconds(1.5)
+        var debounce: Duration = .zero
     }
 
     private struct ReadStateMutation: Sendable {
@@ -1118,7 +1118,7 @@ final class AppModel {
                     initialHistoryLoaded: false,
                     initialPositionEstablished: false,
                     windowIsActive: mainWindowIsActive,
-                    isAtNewest: false,
+                    hasReachedReadBoundary: false,
                     blocksAutomaticAcknowledgement: false
                 )
             }
@@ -2415,14 +2415,24 @@ final class AppModel {
         preserveUnreadDividerIfNeeded(channelID: channelID)
         draft = ""
         channelLoadTask = Task { [weak self] in
-            await self?.loadSelectedChannel(channelID, generation: generation)
+            await self?.loadSelectedChannel(
+                channelID,
+                generation: generation
+            )
         }
     }
 
-    private func loadSelectedChannel(_ channelID: ChannelID, generation: Int) async {
+    private func loadSelectedChannel(
+        _ channelID: ChannelID,
+        generation: Int
+    ) async {
         async let cachedMessages = storedMessages(in: channelID)
         async let storedDraft = storedDraft(in: channelID)
-        async let freshPage = provider.messages(in: channelID, before: nil, limit: 100)
+        async let freshPage = provider.messages(
+            in: channelID,
+            before: nil,
+            limit: 100
+        )
 
         let cached = await cachedMessages
         guard isCurrentLoad(channelID, generation: generation) else { return }
@@ -2440,12 +2450,15 @@ final class AppModel {
         do {
             let page = try await freshPage
             guard isCurrentLoad(channelID, generation: generation) else { return }
-            let merged = Self.merging(current: messages, fresh: page.messages)
+            let merged = Self.merging(
+                current: messages,
+                fresh: page.messages
+            )
             if merged != messages {
                 replaceSelectedMessages(with: merged)
             }
             hasMoreMessages = page.hasMoreBefore
-            hasMoreCache[channelID] = page.hasMoreBefore
+            hasMoreCache[channelID] = hasMoreMessages
             messageLoadError = nil
             messageLoadErrorIsEarlierPage = false
             isLoadingMessages = false
@@ -2579,7 +2592,7 @@ final class AppModel {
             initialHistoryLoaded: false,
             initialPositionEstablished: false,
             windowIsActive: mainWindowIsActive,
-            isAtNewest: false,
+            hasReachedReadBoundary: false,
             blocksAutomaticAcknowledgement: false
         )
         openThreadStarter = starter
@@ -4848,26 +4861,32 @@ final class AppModel {
         }
     }
 
-    func reportTimelinePosition(channelID: ChannelID, isAtNewest: Bool) {
+    func reportTimelinePosition(
+        channelID: ChannelID,
+        hasReachedReadBoundary: Bool
+    ) {
         guard channelID == selectedChannelID || channelID == openThread?.id else { return }
         preserveUnreadDividerIfNeeded(channelID: channelID)
         if let target = readState.updatePresentation(
             channelID: channelID,
             isPresented: true,
-            isAtNewest: isAtNewest
+            hasReachedReadBoundary: hasReachedReadBoundary
         ) {
             scheduleAcknowledgement(channelID: channelID, messageID: target)
         }
     }
 
-    func reportTimelineInitialPosition(channelID: ChannelID, isAtNewest: Bool) {
+    func reportTimelineInitialPosition(
+        channelID: ChannelID,
+        hasReachedReadBoundary: Bool
+    ) {
         guard channelID == selectedChannelID || channelID == openThread?.id else { return }
         preserveUnreadDividerIfNeeded(channelID: channelID)
         if let target = readState.updatePresentation(
             channelID: channelID,
             isPresented: true,
             initialPositionEstablished: true,
-            isAtNewest: isAtNewest
+            hasReachedReadBoundary: hasReachedReadBoundary
         ) {
             scheduleAcknowledgement(channelID: channelID, messageID: target)
         }

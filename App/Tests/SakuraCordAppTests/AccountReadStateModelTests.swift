@@ -376,11 +376,18 @@ struct AccountReadStateModelTests {
             model.updatePresentation(channelID: channelID, initialHistoryLoaded: true) == nil
         )
         #expect(
-            model.updatePresentation(channelID: channelID, windowIsActive: true, isAtNewest: false)
+            model.updatePresentation(
+                channelID: channelID,
+                windowIsActive: true,
+                hasReachedReadBoundary: false
+            )
                 == nil
         )
         #expect(
-            model.updatePresentation(channelID: channelID, isAtNewest: true) == nil
+            model.updatePresentation(
+                channelID: channelID,
+                hasReachedReadBoundary: true
+            ) == nil
         )
         #expect(
             model.updatePresentation(channelID: channelID, initialPositionEstablished: true)
@@ -397,7 +404,7 @@ struct AccountReadStateModelTests {
                 initialHistoryLoaded: true,
                 initialPositionEstablished: true,
                 windowIsActive: true,
-                isAtNewest: true
+                hasReachedReadBoundary: true
             ) == MessageID(rawValue: 12)
         )
 
@@ -727,7 +734,7 @@ struct AccountReadStateModelTests {
             isPresented: true,
             initialHistoryLoaded: false,
             windowIsActive: true,
-            isAtNewest: true
+            hasReachedReadBoundary: true
         )
         #expect(model.isActivelyPresentedAtNewest(channelID))
         #expect(!model.isVisibleAtNewest(channelID))
@@ -738,7 +745,7 @@ struct AccountReadStateModelTests {
         _ = model.updatePresentation(
             channelID: channelID,
             windowIsActive: true,
-            isAtNewest: false
+            hasReachedReadBoundary: false
         )
         #expect(!model.isActivelyPresentedAtNewest(channelID))
     }
@@ -1327,7 +1334,7 @@ struct AccountReadStateModelTests {
             isPresented: true,
             initialHistoryLoaded: true,
             windowIsActive: true,
-            isAtNewest: true
+            hasReachedReadBoundary: true
         )
         model.completeAcknowledgement(
             channelID: channelID, messageID: MessageID(rawValue: 12), token: "token"
@@ -1544,6 +1551,11 @@ struct AccountReadStateModelTests {
 }
 
 @MainActor
+@Test func `qualified read acknowledgements have no arbitrary delay`() {
+    #expect(AppModel.ReadAcknowledgementTiming().debounce == .zero)
+}
+
+@MainActor
 @Test func `view acknowledgements coalesce serialize and chain the response token`() async {
     let provider = MockChatProvider()
     let model = AppModel(
@@ -1581,7 +1593,10 @@ struct AccountReadStateModelTests {
     // read state. This tests the intended newest-boundary coalescing without
     // racing the test's 10 ms debounce against event-stream scheduling under
     // a parallel suite.
-    model.reportTimelineInitialPosition(channelID: channelID, isAtNewest: true)
+    model.reportTimelineInitialPosition(
+        channelID: channelID,
+        hasReachedReadBoundary: true
+    )
     try? await Task.sleep(for: .milliseconds(40))
 
     let requests = await provider.acknowledgementRequests
@@ -1596,7 +1611,10 @@ struct AccountReadStateModelTests {
         !model.isLoadingMessages && model.selectedChannelID == nextChannelID
     })
     model.reportConversationHistoryLoaded(channelID: nextChannelID)
-    model.reportTimelineInitialPosition(channelID: nextChannelID, isAtNewest: true)
+    model.reportTimelineInitialPosition(
+        channelID: nextChannelID,
+        hasReachedReadBoundary: true
+    )
     for _ in 0 ..< 500 {
         if await provider.acknowledgementRequests.count == 2 { break }
         try? await Task.sleep(for: .milliseconds(1))
@@ -1624,7 +1642,10 @@ struct AccountReadStateModelTests {
     #expect(await eventually { !model.isLoadingMessages && model.selectedChannelID == channelID })
     let previousAcknowledgement = model.readState.entries[channelID]?.lastAcknowledgedMessageID
     model.reportMainWindowActive(true)
-    model.reportTimelineInitialPosition(channelID: channelID, isAtNewest: true)
+    model.reportTimelineInitialPosition(
+        channelID: channelID,
+        hasReachedReadBoundary: true
+    )
 
     let newest = Message(
         id: MessageID(rawValue: UInt64.max - 2),
@@ -1666,7 +1687,10 @@ struct AccountReadStateModelTests {
     let channelID = ChannelID(rawValue: 210)
     model.selectedChannelID = channelID
     #expect(await eventually { !model.isLoadingMessages && model.selectedChannelID == channelID })
-    model.reportTimelinePosition(channelID: channelID, isAtNewest: false)
+    model.reportTimelinePosition(
+        channelID: channelID,
+        hasReachedReadBoundary: false
+    )
     let originalDivider = try #require(model.unreadDividerMessageID(channelID: channelID))
 
     model.markConversationRead(channelID: channelID)
@@ -1696,7 +1720,10 @@ struct AccountReadStateModelTests {
     let channelID = ChannelID(rawValue: 210)
     model.selectedChannelID = channelID
     #expect(await eventually { !model.isLoadingMessages && model.selectedChannelID == channelID })
-    model.reportTimelinePosition(channelID: channelID, isAtNewest: false)
+    model.reportTimelinePosition(
+        channelID: channelID,
+        hasReachedReadBoundary: false
+    )
     #expect(model.unreadDividerMessageID(channelID: channelID) != nil)
     model.markConversationRead(channelID: channelID)
 
@@ -1720,7 +1747,10 @@ struct AccountReadStateModelTests {
     let channelID = ChannelID(rawValue: 210)
     model.selectedChannelID = channelID
     #expect(await eventually { !model.isLoadingMessages && model.selectedChannelID == channelID })
-    model.reportTimelinePosition(channelID: channelID, isAtNewest: false)
+    model.reportTimelinePosition(
+        channelID: channelID,
+        hasReachedReadBoundary: false
+    )
     #expect(model.unreadDividerMessageID(channelID: channelID) != nil)
 
     model.updateDraft("reply")

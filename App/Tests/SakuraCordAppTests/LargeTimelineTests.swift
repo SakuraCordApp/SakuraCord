@@ -2425,6 +2425,10 @@ func `short timeline is bottom aligned on its first frame and stays there while 
     let firstOrigin = coordinator.contentOriginYForTesting
     #expect(coordinator.hasAppliedInitialPositionForTesting)
     #expect(coordinator.scrollStateForTesting.isNearBottom)
+    #expect(
+        coordinator.scrollStateForTesting
+            .hasEstablishedInitialPosition
+    )
     #expect(!scrollView.hasVerticalScroller)
     #expect(
         abs(
@@ -2551,6 +2555,14 @@ func `media rich timeline establishes unread context before display and preserve
     #expect(coordinator.hasAppliedInitialPositionForTesting)
     #expect(abs(firstOffset - expectedOffset) < 1)
     #expect(!coordinator.scrollStateForTesting.isNearBottom)
+    #expect(
+        coordinator.scrollStateForTesting
+            .hasEstablishedInitialPosition
+    )
+    #expect(
+        !coordinator.scrollStateForTesting
+            .hasReachedNewestMessageBoundary
+    )
 
     scrollView.frame.size.height = 650
     scrollView.tile()
