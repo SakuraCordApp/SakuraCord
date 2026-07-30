@@ -184,7 +184,8 @@ implementation records.
 ### Messages, typing, mentions, and links
 
 - One user send creates one message POST with a Discord-epoch nonce,
-  `chat_input` context, and `mobile_network_type: "unknown"`.
+  `enforce_nonce: true`, an `attachments` array, and `chat_input` context. The
+  body contains no `mobile_network_type` field.
 - Local typing waits 1.5 seconds, then sends at most one empty typing POST per
   eight-second activity window. Draft restoration, send, empty draft, channel
   change, and unsupported channel types cancel pending typing.
