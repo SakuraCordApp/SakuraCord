@@ -144,6 +144,29 @@ nonisolated enum NativeTimelineCompactTimestampHitTesting {
     }
 }
 
+nonisolated enum NativeTimelineReactionClickHitTesting {
+    enum Target: Equatable, Sendable {
+        case reaction(index: Int)
+        case add
+    }
+
+    static func target(
+        at point: CGPoint,
+        reactionFrames: [CGRect],
+        addReactionFrame: CGRect?
+    ) -> Target? {
+        if let index = reactionFrames.firstIndex(where: {
+            $0.contains(point)
+        }) {
+            return .reaction(index: index)
+        }
+        if addReactionFrame?.contains(point) == true {
+            return .add
+        }
+        return nil
+    }
+}
+
 enum NativeTimelineCompactTimestampMetrics {
     static var font: NSFont {
         .preferredFont(forTextStyle: .caption2)
@@ -4904,11 +4927,7 @@ final class NativeTimelineCanvasView: NSView {
                   self.editingMessageID == nil
             else { return event }
             let point = self.convert(event.locationInWindow, from: nil)
-            let hit = self.reactionPointerHit(at: point)
-                ?? self.hoveredReaction.flatMap {
-                self.reactionPointerHit(for: $0)
-            }
-            guard let hit else {
+            guard let hit = self.reactionPointerHit(at: point) else {
                 return event
             }
             self.window?.makeFirstResponder(self)
@@ -5397,9 +5416,15 @@ final class NativeTimelineCanvasView: NSView {
             y: point.y - displayedRowOrigin(at: index)
         )
         let rowOrigin = displayedRowOrigin(at: index)
-        if let region = layouts[index].reactionRegions.first(where: {
-            $0.frame.contains(local)
-        }) {
+        let layout = layouts[index]
+        let target = NativeTimelineReactionClickHitTesting.target(
+            at: local,
+            reactionFrames: layout.reactionRegions.map(\.frame),
+            addReactionFrame: layout.addReactionFrame
+        )
+        switch target {
+        case let .reaction(regionIndex):
+            let region = layout.reactionRegions[regionIndex]
             return ReactionPointerHit(
                 target: .reaction(
                     messageID: row.id,
@@ -5410,10 +5435,8 @@ final class NativeTimelineCanvasView: NSView {
                 reaction: region.reaction,
                 frame: region.frame.offsetBy(dx: 0, dy: rowOrigin)
             )
-        }
-        if let frame = layouts[index].addReactionFrame,
-           frame.contains(local)
-        {
+        case .add:
+            guard let frame = layout.addReactionFrame else { return nil }
             return ReactionPointerHit(
                 target: .add(messageID: row.id),
                 rowIndex: index,
@@ -5421,8 +5444,9 @@ final class NativeTimelineCanvasView: NSView {
                 reaction: nil,
                 frame: frame.offsetBy(dx: 0, dy: rowOrigin)
             )
+        case nil:
+            return nil
         }
-        return nil
     }
 
     private func reactionPointerHit(

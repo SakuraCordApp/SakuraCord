@@ -3212,6 +3212,26 @@ func `native mention hover preserves the legacy artwork and exact glyph hit regi
     )
 }
 
+@Test func `reaction click hit testing ignores stale hover outside the click point`() {
+    let staleHoveredFrame = CGRect(x: 20, y: 20, width: 80, height: 28)
+    let addFrame = CGRect(x: 110, y: 20, width: 28, height: 28)
+
+    #expect(
+        NativeTimelineReactionClickHitTesting.target(
+            at: CGPoint(x: 60, y: 34),
+            reactionFrames: [staleHoveredFrame],
+            addReactionFrame: addFrame
+        ) == .reaction(index: 0)
+    )
+    #expect(
+        NativeTimelineReactionClickHitTesting.target(
+            at: CGPoint(x: 300, y: 120),
+            reactionFrames: [staleHoveredFrame],
+            addReactionFrame: addFrame
+        ) == nil
+    )
+}
+
 @MainActor @Test
 func `native timeline ordinary rows preserve compact geometry and center the avatar`() throws {
     let author = User(
