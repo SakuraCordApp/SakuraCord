@@ -2,6 +2,19 @@ import Foundation
 import SakuraCordModels
 
 struct MockChatFixture {
+    private struct TimelineFixtureInput {
+        let count: Int
+        let now: Date
+        let channelID: ChannelID
+        let guildID: GuildID
+        let users: [User]
+        let mediaURL: URL?
+        let animatedMediaURL: URL?
+        let videoURL: URL?
+        let lottieURL: URL?
+        let includesAnimatedMedia: Bool
+    }
+
     let currentUser: User
     let snapshot: BootstrapSnapshot
     let membersByGuild: [GuildID: [Member]]
@@ -22,6 +35,11 @@ struct MockChatFixture {
         let auroraIcon = demoAsset("guild-aurora")
         let nativeLabIcon = demoAsset("guild-native-lab")
         let animatedFixture = animatedDemoAsset()
+        let videoFixture = demoResource("benchmark-video", extension: "mp4")
+        let lottieFixture = demoResource("benchmark-lottie", extension: "json")
+        let animatedFixtureLink = animatedFixture.map {
+            "[Animated fixture](\($0.absoluteString))"
+        } ?? "Animated fixture"
 
         let nova = User(
             id: UserID(rawValue: 1),
@@ -472,8 +490,8 @@ struct MockChatFixture {
             )
         }
         let lottieSticker = MessageSticker(
-            id: "749054660769218631", name: "Wave", description: "Discord standard sticker fixture",
-            tags: "wave,hello", format: .lottie
+            id: "offline-lottie", name: "Pulse", description: "Bundled Lottie sticker fixture",
+            tags: "pulse,benchmark", format: .lottie, assetURL: lottieFixture
         )
         let thread = MessageThreadSummary(
             id: ChannelID(rawValue: 901), guildID: nativeLabID, parentID: ChannelID(rawValue: 301),
@@ -604,7 +622,7 @@ struct MockChatFixture {
                 ),
                 message(
                     2010, 210, theo,
-                    "[mmLol](https://cdn.discordapp.com/emojis/216154654256398347.webp?size=96&quality=lossless)",
+                    animatedFixtureLink,
                     base.addingTimeInterval(1_100)
                 ),
                 Message(
@@ -616,10 +634,8 @@ struct MockChatFixture {
                             title: "Autoplay regression fixture", type: "gifv",
                             url: URL(string: "https://klipy.com/gifs/cat-bouncing-LhA"),
                             video: MessageEmbedMedia(
-                                url: URL(
-                                    string: "https://www.w3schools.com/html/mov_bbb.mp4"
-                                ),
-                                width: 1280, height: 720, description: "A looping sample video.",
+                                url: videoFixture,
+                                width: 320, height: 180, description: "A looping sample video.",
                                 contentType: "video/mp4"
                             ),
                             provider: MessageEmbedProvider(name: "Offline fixture")
@@ -1285,7 +1301,7 @@ struct MockChatFixture {
             ]
         ]
         if let timelineMessageCount {
-            messages[ChannelID(rawValue: 210)] = makeTimelinePerformanceMessages(
+            messages[ChannelID(rawValue: 210)] = makeTimelinePerformanceMessages(.init(
                 count: timelineMessageCount,
                 now: now,
                 channelID: ChannelID(rawValue: 210),
@@ -1293,8 +1309,10 @@ struct MockChatFixture {
                 users: [nova, maya, theo, juniper, rowan],
                 mediaURL: layoutAttachment?.url,
                 animatedMediaURL: animatedFixture,
+                videoURL: videoFixture,
+                lottieURL: lottieFixture,
                 includesAnimatedMedia: timelineIncludesAnimatedMedia
-            )
+            ))
         }
         for (index, guild) in longListGuilds.enumerated() {
             let channelID = ChannelID(rawValue: UInt64(2000 + index))
@@ -1363,8 +1381,18 @@ struct MockChatFixture {
     }
 
     private static func demoAsset(_ name: String) -> URL? {
-        Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "DemoAssets")
-            ?? Bundle.module.url(forResource: name, withExtension: "png")
+        demoResource(name, extension: "png")
+    }
+
+    private static func demoResource(
+        _ name: String,
+        extension fileExtension: String
+    ) -> URL? {
+        Bundle.module.url(
+            forResource: name,
+            withExtension: fileExtension,
+            subdirectory: "DemoAssets"
+        ) ?? Bundle.module.url(forResource: name, withExtension: fileExtension)
     }
 
     private static let animatedDemoAssetURL: URL? = {
@@ -1396,15 +1424,18 @@ struct MockChatFixture {
     }
 
     private static func makeTimelinePerformanceMessages(
-        count: Int,
-        now: Date,
-        channelID: ChannelID,
-        guildID: GuildID,
-        users: [User],
-        mediaURL: URL?,
-        animatedMediaURL: URL?,
-        includesAnimatedMedia: Bool
+        _ input: TimelineFixtureInput
     ) -> [Message] {
+        let count = input.count
+        let now = input.now
+        let channelID = input.channelID
+        let guildID = input.guildID
+        let users = input.users
+        let mediaURL = input.mediaURL
+        let animatedMediaURL = input.animatedMediaURL
+        let videoURL = input.videoURL
+        let lottieURL = input.lottieURL
+        let includesAnimatedMedia = input.includesAnimatedMedia
         guard count > 0, !users.isEmpty else { return [] }
         let firstID: UInt64 = 5_000_000
         let start = now.addingTimeInterval(-Double(count) * 35)
@@ -1492,18 +1523,15 @@ struct MockChatFixture {
                         )
                     ]
                     : []
-            if animatedMediaKind == 0 {
+            if animatedMediaKind == 0, let videoURL {
                 embeds.append(
                     MessageEmbed(
                         title: "Animated video benchmark \(index)",
                         type: "gifv",
                         video: MessageEmbedMedia(
-                            url: URL(
-                                string:
-                                    "https://www.w3schools.com/html/mov_bbb.mp4?sakuracord-benchmark=\(index)"
-                            ),
-                            width: 1280,
-                            height: 720,
+                            url: videoURL,
+                            width: 320,
+                            height: 180,
                             description: "A looping benchmark video.",
                             contentType: "video/mp4"
                         ),
@@ -1514,14 +1542,15 @@ struct MockChatFixture {
                 )
             }
             let stickers: [MessageSticker] =
-                animatedMediaKind == 1
+                animatedMediaKind == 1 && lottieURL != nil
                     ? [
                         MessageSticker(
-                            id: "749054660769218631",
-                            name: "Wave",
-                            description: "Discord standard sticker benchmark",
-                            tags: "wave,benchmark",
-                            format: .lottie
+                            id: "offline-lottie-\(index)",
+                            name: "Pulse",
+                            description: "Bundled Lottie sticker benchmark",
+                            tags: "pulse,benchmark",
+                            format: .lottie,
+                            assetURL: lottieURL
                         ),
                     ]
                     : []

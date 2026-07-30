@@ -401,7 +401,7 @@ import Testing
     }
 }
 
-@Test func `media timeline fixture mixes video lottie and animated raster rows`() async throws {
+@Test func `media timeline fixture uses bundled video lottie and animated raster rows`() async throws {
     let provider = MockChatProvider(
         timelineMessageCount: 120,
         timelineIncludesAnimatedMedia: true
@@ -413,14 +413,15 @@ import Testing
         limit: 120
     )
 
-    #expect(page.messages.contains { message in
-        message.embeds.contains {
-            $0.type == "gifv" && $0.video?.contentType == "video/mp4"
-        }
-    })
-    #expect(page.messages.contains { message in
-        message.stickers.contains { $0.format == .lottie }
-    })
+    let videos = page.messages.flatMap(\.embeds).compactMap(\.video)
+        .filter { $0.contentType == "video/mp4" }
+    let lottieStickers = page.messages.flatMap(\.stickers)
+        .filter { $0.format == .lottie }
+
+    #expect(!videos.isEmpty)
+    #expect(videos.allSatisfy { $0.url?.isFileURL == true })
+    #expect(!lottieStickers.isEmpty)
+    #expect(lottieStickers.allSatisfy { $0.mediaURL?.isFileURL == true })
     #expect(page.messages.contains {
         $0.content.contains("file://") && $0.content.contains(".gif")
     })
