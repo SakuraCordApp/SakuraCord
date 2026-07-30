@@ -123,15 +123,15 @@ struct DiscordCaptchaPresentation: View {
                     onToken: onToken
                 )
                 .frame(width: 520, height: 590)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .clipShape(ConcentricRectangle(cornerRadius: 12, style: .continuous))
             }
             .padding(18)
             .background(
                 Color(hex: 0x211824),
-                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                in: ConcentricRectangle(cornerRadius: 18, style: .continuous)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                ConcentricRectangle(cornerRadius: 18, style: .continuous)
                     .stroke(Color(hex: 0xFF79AA).opacity(0.24), lineWidth: 1)
             }
             .shadow(color: .black.opacity(0.5), radius: 30, y: 16)

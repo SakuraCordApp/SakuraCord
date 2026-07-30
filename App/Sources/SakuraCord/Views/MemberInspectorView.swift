@@ -204,7 +204,7 @@ private struct MemberRow: View {
                     )
                     .opacity(NameplatePresentationPolicy.opacity(isHovered: isHovered))
                 } else {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    ConcentricRectangle(cornerRadius: 9, style: .continuous)
                         .fill(isSelected && !isHovered ? Color.primary.opacity(0.07) : .clear)
                 }
                 if isHovered {
@@ -227,7 +227,7 @@ private struct MemberRow: View {
                                     .padding(.horizontal, 5)
                                     .padding(.vertical, 2)
                                     .foregroundStyle(.white)
-                                    .background(.indigo, in: RoundedRectangle(cornerRadius: 4))
+                                    .background(.indigo, in: ConcentricRectangle(cornerRadius: 4))
                             }
                             if let identity = member.user.primaryGuild, let tag = identity.tag {
                                 PrimaryGuildTag(identity: identity, tag: tag)
@@ -251,8 +251,8 @@ private struct MemberRow: View {
             }
             .frame(height: 44)
             .padding(.vertical, 1)
-            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .clipShape(ConcentricRectangle(cornerRadius: 9, style: .continuous))
+            .contentShape(ConcentricRectangle(cornerRadius: 9, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
@@ -442,6 +442,6 @@ private struct PrimaryGuildTag: View {
         }
         .padding(.horizontal, 5)
         .padding(.vertical, 2)
-        .background(.black.opacity(0.32), in: RoundedRectangle(cornerRadius: 5))
+        .background(.black.opacity(0.32), in: ConcentricRectangle(cornerRadius: 5))
     }
 }

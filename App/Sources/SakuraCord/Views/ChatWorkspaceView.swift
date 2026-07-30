@@ -164,10 +164,12 @@ private struct DirectMessageProfileInspector: View {
         .frame(maxHeight: .infinity)
         .clipShape(
             ConcentricRectangle(
-                topLeadingCorner: .fixed(ChatChromeMetrics.sidebarContentCornerRadius),
-                topTrailingCorner: .fixed(ChatChromeMetrics.sidebarContentCornerRadius),
-                bottomLeadingCorner: .fixed(ChatChromeMetrics.sidebarContentCornerRadius),
-                bottomTrailingCorner: .concentric
+                corners: .concentric(
+                    minimum: .fixed(
+                        ChatChromeMetrics.composerMinimumCornerRadius
+                    )
+                ),
+                isUniform: true
             )
         )
         .task(id: recipient.id) {

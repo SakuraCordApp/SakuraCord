@@ -273,14 +273,15 @@ struct MessageReactionPill: View {
             .padding(.horizontal, 6)
             .frame(height: MessageReactionMetrics.pillHeight)
             .background(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                ConcentricRectangle(cornerRadius: 9, style: .continuous)
                     .fill(backgroundColor)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .strokeBorder(borderColor, lineWidth: reaction.didCurrentUserReact ? 1.5 : 1)
+                ConcentricRectangle(cornerRadius: 9, style: .continuous)
+                    .stroke(borderColor, lineWidth: reaction.didCurrentUserReact ? 1.5 : 1)
+                    .padding(reaction.didCurrentUserReact ? 0.75 : 0.5)
             }
-            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .contentShape(ConcentricRectangle(cornerRadius: 9, style: .continuous))
         }
         .buttonStyle(.plain)
         .task(
@@ -345,7 +346,7 @@ private struct MessageReactionEmoji: View {
         Group {
             if reaction.emojiReference.id != nil {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    ConcentricRectangle(cornerRadius: 5, style: .continuous)
                         .fill(Color.secondary.opacity(0.12))
                     Image(systemName: "face.smiling")
                         .font(.system(size: size * 0.58, weight: .medium))

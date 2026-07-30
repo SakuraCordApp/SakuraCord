@@ -101,9 +101,8 @@ enum MentionAttachmentRenderer {
             let background = color.withAlphaComponent(hovered ? 0.34 : 0.18)
             background.setFill()
             NSBezierPath(
-                roundedRect: bounds,
-                xRadius: 5.5,
-                yRadius: 5.5
+                concentricRoundedRect: bounds,
+                cornerRadius: 5.5
             ).fill()
 
             var textX = horizontalPadding

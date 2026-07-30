@@ -21,14 +21,14 @@ struct LocalAttachmentThumbnail: View {
                         .resizable()
                         .scaledToFit()
                         .clipShape(
-                            RoundedRectangle(cornerRadius: imageCornerRadius, style: .continuous)
+                            ConcentricRectangle(cornerRadius: imageCornerRadius, style: .continuous)
                         )
                 } else {
                     Image(nsImage: displayImage)
                         .resizable()
                         .scaledToFill()
                         .clipShape(
-                            RoundedRectangle(cornerRadius: imageCornerRadius, style: .continuous)
+                            ConcentricRectangle(cornerRadius: imageCornerRadius, style: .continuous)
                         )
                 }
             } else if isImageFile {

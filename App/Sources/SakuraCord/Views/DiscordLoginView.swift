@@ -452,10 +452,10 @@ private struct DiscordLoginCard<Content: View>: View {
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 ),
-                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                in: ConcentricRectangle(cornerRadius: 18, style: .continuous)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                ConcentricRectangle(cornerRadius: 18, style: .continuous)
                     .stroke(
                         LinearGradient(
                             colors: [Color(hex: 0xFF7EAD).opacity(0.32), .white.opacity(0.05)],
@@ -519,7 +519,7 @@ private struct DiscordCredentialForm: View {
                     startPoint: .leading,
                     endPoint: .trailing
                 ),
-                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                in: ConcentricRectangle(cornerRadius: 10, style: .continuous)
             )
             .shadow(color: Color(hex: 0xE84778).opacity(0.28), radius: 12, y: 6)
             .opacity(identifier.isEmpty || password.count < 8 || isWorking ? 0.45 : 1)
@@ -539,16 +539,16 @@ private extension View {
             .foregroundStyle(.white)
             .padding(.horizontal, 13)
             .frame(height: 44)
-            .background(Color(hex: 0x130F17).opacity(0.76), in: RoundedRectangle(cornerRadius: 10))
+            .background(Color(hex: 0x130F17).opacity(0.76), in: ConcentricRectangle(cornerRadius: 10))
             .overlay {
-                RoundedRectangle(cornerRadius: 10)
+                ConcentricRectangle(cornerRadius: 10)
                     .stroke(.white.opacity(0.09), lineWidth: 1)
             }
             .background {
                 LoginTextEditorStyleBridge(isActive: isEditorActive)
                     .allowsHitTesting(false)
             }
-            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .contentShape(ConcentricRectangle(cornerRadius: 10, style: .continuous))
             .simultaneousGesture(TapGesture().onEnded(onActivate))
             .tint(.white)
     }
@@ -616,14 +616,14 @@ private struct DiscordRemoteAuthPanel: View {
             case let .ready(url):
                 DiscordQRCodeView(url: url)
                     .frame(width: 174, height: 174)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .clipShape(ConcentricRectangle(cornerRadius: 12, style: .continuous))
                     .padding(6)
                     .background(
                         Color(hex: 0xFFF7FA),
-                        in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        in: ConcentricRectangle(cornerRadius: 18, style: .continuous)
                     )
                     .overlay {
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        ConcentricRectangle(cornerRadius: 18, style: .continuous)
                             .stroke(Color(hex: 0xFF8BB6).opacity(0.32), lineWidth: 1)
                     }
                     .shadow(color: Color(hex: 0xFF659F).opacity(0.18), radius: 18, y: 8)
@@ -692,9 +692,9 @@ private struct DiscordRemoteAuthPanel: View {
     private func remoteAuthSymbol(@ViewBuilder content: () -> some View) -> some View {
         content()
             .frame(width: 174, height: 174)
-            .background(Color(hex: 0x160F1A).opacity(0.68), in: RoundedRectangle(cornerRadius: 18))
+            .background(Color(hex: 0x160F1A).opacity(0.68), in: ConcentricRectangle(cornerRadius: 18))
             .overlay {
-                RoundedRectangle(cornerRadius: 18)
+                ConcentricRectangle(cornerRadius: 18)
                     .stroke(Color(hex: 0xFF79AA).opacity(0.15), lineWidth: 1)
             }
     }

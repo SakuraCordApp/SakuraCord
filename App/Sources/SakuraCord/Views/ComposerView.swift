@@ -215,8 +215,13 @@ struct ComposerView: View {
                 }
                 .glassEffect(
                     .regular.interactive(),
-                    in: RoundedRectangle(
-                        cornerRadius: ChatChromeMetrics.controlCornerRadius, style: .continuous
+                    in: ConcentricRectangle(
+                        corners: .concentric(
+                            minimum: .fixed(
+                                ChatChromeMetrics.composerMinimumCornerRadius
+                            )
+                        ),
+                        isUniform: true
                     )
                 )
                 .overlay(alignment: .top) {
@@ -228,7 +233,8 @@ struct ComposerView: View {
                 }
         }
         .fixedSize(horizontal: false, vertical: true)
-        .padding(.horizontal, 12).padding(.bottom, 12)
+        .padding(.horizontal, ChatChromeMetrics.composerWindowInset)
+        .padding(.bottom, ChatChromeMetrics.composerWindowInset)
         .fileImporter(
             isPresented: $showFileImporter,
             allowedContentTypes: [.item],
@@ -1025,12 +1031,12 @@ private struct ComposerAttachmentTray: View {
         }
             .frame(width: tileSize, height: tileSize, alignment: .topLeading)
             .background(.primary.opacity(0.035))
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .clipShape(ConcentricRectangle(cornerRadius: 16, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                ConcentricRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(.separator, lineWidth: 1)
             }
-            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .contentShape(ConcentricRectangle(cornerRadius: 14, style: .continuous))
             .onHover { hovering in
                 hoveredURL =
                     hovering
@@ -1839,8 +1845,18 @@ private struct ComposerAutocompletePanel<Content: View>: View {
         .frame(maxWidth: .infinity)
         .glassEffect(
             .regular.interactive(),
-            in: RoundedRectangle(
-                cornerRadius: ChatChromeMetrics.controlCornerRadius,
+            in: ConcentricRectangle(
+                corners: .concentric(
+                    minimum: .fixed(
+                        ChatChromeMetrics.composerMinimumCornerRadius
+                    )
+                ),
+                isUniform: true
+            )
+        )
+        .containerShape(
+            .rect(
+                cornerRadius: ChatChromeMetrics.composerMinimumCornerRadius,
                 style: .continuous
             )
         )
@@ -1915,7 +1931,7 @@ private struct MentionAutocompleteRow: View {
             .frame(height: 40)
             .background(
                 isSelected ? Color.primary.opacity(0.10) : .clear,
-                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                in: ConcentricRectangle(cornerRadius: 7, style: .continuous)
             )
             .contentShape(Rectangle())
         }
@@ -1989,15 +2005,15 @@ private struct EmojiAutocompleteRow: View {
         .buttonStyle(.plain)
         .focusable(false)
         .background {
-            RoundedRectangle(
-                cornerRadius: ChatChromeMetrics.controlCornerRadius,
+            ConcentricRectangle(
+                cornerRadius: 7,
                 style: .continuous
             )
             .fill(isSelected ? Color.primary.opacity(0.13) : .clear)
         }
         .clipShape(
-            RoundedRectangle(
-                cornerRadius: ChatChromeMetrics.controlCornerRadius,
+            ConcentricRectangle(
+                cornerRadius: 7,
                 style: .continuous
             )
         )
@@ -2063,8 +2079,8 @@ struct ComposerActionButton: View {
         .help(help)
     }
 
-    private var buttonShape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: 9, style: .continuous)
+    private var buttonShape: ConcentricRectangle {
+        ConcentricRectangle(cornerRadius: 9, style: .continuous)
     }
 
     private var hoverColor: Color {
@@ -2093,8 +2109,8 @@ struct ComposerSendButton: View {
         .help("Send message")
     }
 
-    private var buttonShape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: 9, style: .continuous)
+    private var buttonShape: ConcentricRectangle {
+        ConcentricRectangle(cornerRadius: 9, style: .continuous)
     }
 
     private var hoverColor: Color {

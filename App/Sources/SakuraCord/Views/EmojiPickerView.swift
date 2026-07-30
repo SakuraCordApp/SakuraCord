@@ -102,7 +102,7 @@ private struct EmojiPickerButton: View {
         .buttonStyle(.plain)
         .focusable(false)
         .background {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+            ConcentricRectangle(cornerRadius: 9, style: .continuous)
                 .fill(
                     interaction.selectedCellID == cell.id
                         ? Color.primary.opacity(0.13)
@@ -1031,7 +1031,10 @@ struct EmojiPickerView: View {
                     .padding(5)
                     .glassEffect(
                         .regular,
-                        in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        in: ConcentricRectangle(cornerRadius: 16, style: .continuous)
+                    )
+                    .containerShape(
+                        .rect(cornerRadius: 16, style: .continuous)
                     )
                     .task {
                         document.synchronize(with: model, useCase: useCase)
@@ -2055,7 +2058,7 @@ private struct EmojiGuildBookmarkIcon: View {
         }
         .frame(width: 28, height: 28, alignment: .center)
         .background(Color.secondary.opacity(0.12))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(ConcentricRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 

@@ -25,7 +25,7 @@ where Section.ID == String {
                     height: PickerSectionRailLayout.iconSize,
                     alignment: .center
                 )
-                .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .contentShape(ConcentricRectangle(cornerRadius: 9, style: .continuous))
         }
         .buttonStyle(.plain)
         .focusable(false)
@@ -36,10 +36,10 @@ where Section.ID == String {
         )
         .background {
             if visibleSection == section {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                ConcentricRectangle(cornerRadius: 9, style: .continuous)
                     .fill(Color.primary.opacity(0.13))
             } else if isHovering {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                ConcentricRectangle(cornerRadius: 9, style: .continuous)
                     .fill(Color.primary.opacity(0.08))
             }
         }

@@ -6,7 +6,11 @@ nonisolated enum ChatChromeMetrics {
     static let serverRailWidth: CGFloat = 68
     static let sidebarTitleLeadingOffset: CGFloat = serverRailWidth + 24
     static let sidebarTitleTopOffset: CGFloat = 11
-    static let sidebarContentCornerRadius: CGFloat = 20
+    static let sidebarContentCornerRadius: CGFloat = 16
+    static let composerWindowInset: CGFloat = 12
+    /// Only a fallback for layouts where the composer isn't adjacent to a
+    /// rounded container corner. macOS resolves the actual aligned radius.
+    static let composerMinimumCornerRadius: CGFloat = 12
     static let channelListTopPadding: CGFloat = 12
     static let memberListWidth: CGFloat = 280
     static let emojiPickerWidth: CGFloat = 520

@@ -86,13 +86,17 @@ struct DisabledComposerView: View {
         .frame(height: ChatChromeMetrics.controlHeight)
         .glassEffect(
             .regular,
-            in: RoundedRectangle(
-                cornerRadius: ChatChromeMetrics.controlCornerRadius,
-                style: .continuous
+            in: ConcentricRectangle(
+                corners: .concentric(
+                    minimum: .fixed(
+                        ChatChromeMetrics.composerMinimumCornerRadius
+                    )
+                ),
+                isUniform: true
             )
         )
-        .padding(.horizontal, 12)
-        .padding(.bottom, 12)
+        .padding(.horizontal, ChatChromeMetrics.composerWindowInset)
+        .padding(.bottom, ChatChromeMetrics.composerWindowInset)
         .accessibilityElement(children: .combine)
     }
 }

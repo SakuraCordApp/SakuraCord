@@ -327,8 +327,18 @@ struct ApplicationCommandSuggestionPanel: View {
         .frame(maxWidth: .infinity)
         .glassEffect(
             .regular.interactive(),
-            in: RoundedRectangle(
-                cornerRadius: ChatChromeMetrics.controlCornerRadius,
+            in: ConcentricRectangle(
+                corners: .concentric(
+                    minimum: .fixed(
+                        ChatChromeMetrics.composerMinimumCornerRadius
+                    )
+                ),
+                isUniform: true
+            )
+        )
+        .containerShape(
+            .rect(
+                cornerRadius: ChatChromeMetrics.composerMinimumCornerRadius,
                 style: .continuous
             )
         )
@@ -369,15 +379,15 @@ private struct ApplicationCommandSuggestionRow: View {
         .buttonStyle(.plain)
         .focusable(false)
         .background {
-            RoundedRectangle(
-                cornerRadius: ChatChromeMetrics.controlCornerRadius,
+            ConcentricRectangle(
+                cornerRadius: 7,
                 style: .continuous
             )
                 .fill(isSelected ? Color.primary.opacity(0.13) : .clear)
         }
         .clipShape(
-            RoundedRectangle(
-                cornerRadius: ChatChromeMetrics.controlCornerRadius,
+            ConcentricRectangle(
+                cornerRadius: 7,
                 style: .continuous
             )
         )
@@ -1472,7 +1482,10 @@ final class ApplicationCommandNSTextView: NSTextView {
             fieldRect.size.height = 28
             guard fieldRect.intersects(rect) else { continue }
 
-            let path = NSBezierPath(roundedRect: fieldRect, xRadius: 7, yRadius: 7)
+            let path = NSBezierPath(
+                concentricRoundedRect: fieldRect,
+                cornerRadius: 7
+            )
             NSColor.labelColor.withAlphaComponent(0.08).setFill()
             path.fill()
 

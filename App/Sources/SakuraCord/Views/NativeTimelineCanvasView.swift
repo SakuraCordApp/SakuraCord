@@ -1321,9 +1321,8 @@ final class NativeTimelineSpoilerOverlayHost: NSView {
         if window?.firstResponder === self {
             NSColor.keyboardFocusIndicatorColor.setStroke()
             let focus = NSBezierPath(
-                roundedRect: bounds.insetBy(dx: 2, dy: 2),
-                xRadius: max(1, cornerRadius - 2),
-                yRadius: max(1, cornerRadius - 2)
+                concentricRoundedRect: bounds.insetBy(dx: 2, dy: 2),
+                cornerRadius: max(1, cornerRadius - 2)
             )
             focus.lineWidth = 2
             focus.stroke()
@@ -3200,9 +3199,8 @@ final class NativeTimelineCanvasView: NSView {
         {
             NSColor.labelColor.withAlphaComponent(0.10).setFill()
             NSBezierPath(
-                roundedRect: buttonFrame,
-                xRadius: 4,
-                yRadius: 4
+                concentricRoundedRect: buttonFrame,
+                cornerRadius: 4
             ).fill()
         }
         guard let symbol = NSImage(
@@ -11017,9 +11015,8 @@ private enum NativeTimelineRowPainter {
         if let frame = layout.botBadgeFrame {
             NSColor.controlAccentColor.setFill()
             NSBezierPath(
-                roundedRect: frame,
-                xRadius: 3,
-                yRadius: 3
+                concentricRoundedRect: frame,
+                cornerRadius: 3
             ).fill()
             text(
                 "APP",
@@ -11197,9 +11194,8 @@ private enum NativeTimelineRowPainter {
             }
             NSColor.secondaryLabelColor.withAlphaComponent(0.10).setFill()
             NSBezierPath(
-                roundedRect: region.frame,
-                xRadius: 8,
-                yRadius: 8
+                concentricRoundedRect: region.frame,
+                cornerRadius: 8
             ).fill()
             let key = NativeTimelineMediaKey.media(
                 attachment.proxyURL ?? attachment.url
@@ -11344,9 +11340,8 @@ private enum NativeTimelineRowPainter {
                         0.10
                     ).setFill()
                     NSBezierPath(
-                        roundedRect: frame,
-                        xRadius: 8,
-                        yRadius: 8
+                        concentricRoundedRect: frame,
+                        cornerRadius: 8
                     ).fill()
                     let image = mediaImage(for: .media(url))
                     if let image {
@@ -11777,7 +11772,10 @@ private enum NativeTimelineRowPainter {
 
     private static func card(_ frame: CGRect, tint: NSColor) {
         tint.withAlphaComponent(0.09).setFill()
-        NSBezierPath(roundedRect: frame, xRadius: 8, yRadius: 8).fill()
+        NSBezierPath(
+            concentricRoundedRect: frame,
+            cornerRadius: 8
+        ).fill()
         tint.withAlphaComponent(0.55).setStroke()
         let edge = NSBezierPath()
         edge.lineWidth = 3
@@ -11791,9 +11789,8 @@ private enum NativeTimelineRowPainter {
         accentColor: UInt32?
     ) {
         let shape = NSBezierPath(
-            roundedRect: frame,
-            xRadius: DiscordRichMessageMetrics.cardCornerRadius,
-            yRadius: DiscordRichMessageMetrics.cardCornerRadius
+            concentricRoundedRect: frame,
+            cornerRadius: DiscordRichMessageMetrics.cardCornerRadius
         )
         NSGraphicsContext.saveGraphicsState()
         shape.addClip()
@@ -11822,9 +11819,8 @@ private enum NativeTimelineRowPainter {
             0.08
         ).setStroke()
         let border = NSBezierPath(
-            roundedRect: frame.insetBy(dx: 0.5, dy: 0.5),
-            xRadius: DiscordRichMessageMetrics.cardCornerRadius - 0.5,
-            yRadius: DiscordRichMessageMetrics.cardCornerRadius - 0.5
+            concentricRoundedRect: frame.insetBy(dx: 0.5, dy: 0.5),
+            cornerRadius: DiscordRichMessageMetrics.cardCornerRadius - 0.5
         )
         border.lineWidth = 1
         border.stroke()
@@ -11957,9 +11953,8 @@ private enum NativeTimelineRowPainter {
             }
             NSColor.secondaryLabelColor.withAlphaComponent(0.08).setFill()
             NSBezierPath(
-                roundedRect: region.frame,
-                xRadius: region.cornerRadius,
-                yRadius: region.cornerRadius
+                concentricRoundedRect: region.frame,
+                cornerRadius: region.cornerRadius
             ).fill()
             if let image = mediaImage(
                 for: .media(
@@ -11996,9 +11991,8 @@ private enum NativeTimelineRowPainter {
             }
             NSColor.secondaryLabelColor.withAlphaComponent(0.10).setFill()
             NSBezierPath(
-                roundedRect: region.frame,
-                xRadius: 8,
-                yRadius: 8
+                concentricRoundedRect: region.frame,
+                cornerRadius: 8
             ).fill()
             if let image = mediaImage(
                 for: .media(region.displayURL)
@@ -12087,9 +12081,8 @@ private enum NativeTimelineRowPainter {
         accentColor: UInt32?
     ) {
         let shape = NSBezierPath(
-            roundedRect: frame,
-            xRadius: DiscordRichMessageMetrics.cardCornerRadius,
-            yRadius: DiscordRichMessageMetrics.cardCornerRadius
+            concentricRoundedRect: frame,
+            cornerRadius: DiscordRichMessageMetrics.cardCornerRadius
         )
         NSGraphicsContext.saveGraphicsState()
         shape.addClip()
@@ -12108,9 +12101,8 @@ private enum NativeTimelineRowPainter {
 
         NSColor.labelColor.withAlphaComponent(0.13).setStroke()
         let border = NSBezierPath(
-            roundedRect: frame.insetBy(dx: 0.5, dy: 0.5),
-            xRadius: DiscordRichMessageMetrics.cardCornerRadius - 0.5,
-            yRadius: DiscordRichMessageMetrics.cardCornerRadius - 0.5
+            concentricRoundedRect: frame.insetBy(dx: 0.5, dy: 0.5),
+            cornerRadius: DiscordRichMessageMetrics.cardCornerRadius - 0.5
         )
         border.lineWidth = 1
         border.stroke()
@@ -12127,9 +12119,8 @@ private enum NativeTimelineRowPainter {
             alpha: 1
         ).setFill()
         NSBezierPath(
-            roundedRect: frame,
-            xRadius: cornerRadius,
-            yRadius: cornerRadius
+            concentricRoundedRect: frame,
+            cornerRadius: cornerRadius
         ).fill()
     }
 
@@ -12138,7 +12129,10 @@ private enum NativeTimelineRowPainter {
         in frame: CGRect
     ) {
         NSColor.secondaryLabelColor.withAlphaComponent(0.08).setFill()
-        NSBezierPath(roundedRect: frame, xRadius: 8, yRadius: 8).fill()
+        NSBezierPath(
+            concentricRoundedRect: frame,
+            cornerRadius: 8
+        ).fill()
         systemSymbol(
             "bubble.left.and.bubble.right",
             in: CGRect(
@@ -12221,9 +12215,8 @@ private enum NativeTimelineRowPainter {
         if let id = reference.id {
             NSColor.secondaryLabelColor.withAlphaComponent(0.12).setFill()
             NSBezierPath(
-                roundedRect: region.emojiFrame,
-                xRadius: 5,
-                yRadius: 5
+                concentricRoundedRect: region.emojiFrame,
+                cornerRadius: 5
             ).fill()
             systemSymbol(
                 "face.smiling",
@@ -12304,7 +12297,10 @@ private enum NativeTimelineRowPainter {
         in frame: CGRect,
         isHovered: Bool
     ) {
-        let shape = NSBezierPath(roundedRect: frame, xRadius: 9, yRadius: 9)
+        let shape = NSBezierPath(
+            concentricRoundedRect: frame,
+            cornerRadius: 9
+        )
         NSColor.labelColor.withAlphaComponent(
             isHovered ? 0.14 : 0.09
         ).setFill()
@@ -12382,9 +12378,8 @@ private enum NativeTimelineRowPainter {
 
         background.withAlphaComponent(opacity).setFill()
         NSBezierPath(
-            roundedRect: region.frame,
-            xRadius: 6,
-            yRadius: 6
+            concentricRoundedRect: region.frame,
+            cornerRadius: 6
         ).fill()
         adjustedBrightness(
             .white,
@@ -12396,9 +12391,8 @@ private enum NativeTimelineRowPainter {
             ) * opacity
         ).setStroke()
         let border = NSBezierPath(
-            roundedRect: region.frame.insetBy(dx: 0.5, dy: 0.5),
-            xRadius: 5.5,
-            yRadius: 5.5
+            concentricRoundedRect: region.frame.insetBy(dx: 0.5, dy: 0.5),
+            cornerRadius: 5.5
         )
         border.lineWidth = 1
         border.stroke()
@@ -12489,15 +12483,13 @@ private enum NativeTimelineRowPainter {
         let opacity: CGFloat = region.isDisabled ? 0.65 : 1
         NSColor.labelColor.withAlphaComponent(0.075 * opacity).setFill()
         NSBezierPath(
-            roundedRect: region.frame,
-            xRadius: 7,
-            yRadius: 7
+            concentricRoundedRect: region.frame,
+            cornerRadius: 7
         ).fill()
         NSColor.labelColor.withAlphaComponent(0.16 * opacity).setStroke()
         let border = NSBezierPath(
-            roundedRect: region.frame.insetBy(dx: 0.5, dy: 0.5),
-            xRadius: 6.5,
-            yRadius: 6.5
+            concentricRoundedRect: region.frame.insetBy(dx: 0.5, dy: 0.5),
+            cornerRadius: 6.5
         )
         border.lineWidth = 1
         border.stroke()
@@ -12680,9 +12672,8 @@ private enum NativeTimelineRowPainter {
         )
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(
-            roundedRect: frame,
-            xRadius: cornerRadius,
-            yRadius: cornerRadius
+            concentricRoundedRect: frame,
+            cornerRadius: cornerRadius
         ).addClip()
         image.draw(
             in: destination,
@@ -13157,15 +13148,13 @@ private enum NativeTimelineRowPainter {
             let backgroundFrame = inlineRect.insetBy(dx: -4, dy: -2)
             discordCodeBackgroundColor.setFill()
             NSBezierPath(
-                roundedRect: backgroundFrame,
-                xRadius: 4,
-                yRadius: 4
+                concentricRoundedRect: backgroundFrame,
+                cornerRadius: 4
             ).fill()
             discordCodeBorderColor.setStroke()
             let border = NSBezierPath(
-                roundedRect: backgroundFrame.insetBy(dx: 0.5, dy: 0.5),
-                xRadius: 4,
-                yRadius: 4
+                concentricRoundedRect: backgroundFrame.insetBy(dx: 0.5, dy: 0.5),
+                cornerRadius: 4
             )
             border.lineWidth = 1
             border.stroke()
@@ -13179,10 +13168,8 @@ private enum NativeTimelineRowPainter {
                 )
             ).setFill()
             NSBezierPath(
-                roundedRect: backgroundFrame,
-                xRadius:
-                    NativeTimelineSpoilerAppearance.textCornerRadius,
-                yRadius:
+                concentricRoundedRect: backgroundFrame,
+                cornerRadius:
                     NativeTimelineSpoilerAppearance.textCornerRadius
             ).fill()
         }
@@ -13191,15 +13178,13 @@ private enum NativeTimelineRowPainter {
             let backgroundFrame = codeBlock.backgroundFrame
             discordCodeBackgroundColor.setFill()
             NSBezierPath(
-                roundedRect: backgroundFrame,
-                xRadius: 4,
-                yRadius: 4
+                concentricRoundedRect: backgroundFrame,
+                cornerRadius: 4
             ).fill()
             discordCodeBorderColor.setStroke()
             let border = NSBezierPath(
-                roundedRect: backgroundFrame.insetBy(dx: 0.5, dy: 0.5),
-                xRadius: 4,
-                yRadius: 4
+                concentricRoundedRect: backgroundFrame.insetBy(dx: 0.5, dy: 0.5),
+                cornerRadius: 4
             )
             border.lineWidth = 1
             border.stroke()
@@ -13472,9 +13457,8 @@ private enum NativeTimelineRowPainter {
             )
         ).setFill()
         NSBezierPath(
-            roundedRect: frame,
-            xRadius: 5.5,
-            yRadius: 5.5
+            concentricRoundedRect: frame,
+            cornerRadius: 5.5
         ).fill()
 
         var labelX = frame.minX + 6

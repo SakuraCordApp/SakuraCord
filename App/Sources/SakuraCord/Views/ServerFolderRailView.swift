@@ -46,7 +46,7 @@ struct ServerFolderRailView: View {
         .padding(.vertical, isExpanded ? 5 : 0)
         .background {
             if isExpanded {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                ConcentricRectangle(cornerRadius: 18, style: .continuous)
                     .fill(folderColor.opacity(0.12))
                     .padding(.horizontal, 7)
                     .transition(.opacity)
@@ -78,7 +78,7 @@ struct ServerFolderRailView: View {
                     }
                 }
                 .background(folderColor.opacity(isExpanded ? 0.18 : 0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .clipShape(ConcentricRectangle(cornerRadius: 14, style: .continuous))
                 .overlay(alignment: .bottomTrailing) {
                     if folderMentionCount > 0 {
                         Text(folderMentionCount, format: .number)

@@ -579,7 +579,7 @@ private struct ComposerFileDropOverlay: View {
                                         .frame(width: 21, height: 19)
                                         .glassEffect(
                                             .regular,
-                                            in: RoundedRectangle(
+                                            in: ConcentricRectangle(
                                                 cornerRadius: 6,
                                                 style: .continuous
                                             )
@@ -598,7 +598,7 @@ private struct ComposerFileDropOverlay: View {
                     .frame(maxWidth: 460)
                     .glassEffect(
                         .regular,
-                        in: RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        in: ConcentricRectangle(cornerRadius: 28, style: .continuous)
                     )
                     .padding(24)
                 }

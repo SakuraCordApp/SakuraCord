@@ -216,7 +216,7 @@ private struct ThreadStateBanner: View {
             .frame(minHeight: 46)
             .glassEffect(
                 .regular,
-                in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+                in: ConcentricRectangle(cornerRadius: 13, style: .continuous)
             )
         }
         .padding(.horizontal, 10)
@@ -504,7 +504,7 @@ private struct ThreadErrorBanner: View {
         .foregroundStyle(.secondary)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(.quaternary, in: ConcentricRectangle(cornerRadius: 10, style: .continuous))
         .padding(.horizontal, 12)
         .padding(.bottom, 6)
     }

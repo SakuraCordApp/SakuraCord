@@ -191,7 +191,7 @@ private struct HomeRailButton: View {
                 Image(systemName: "message.fill")
                     .font(.title2)
                     .frame(width: 44, height: 44)
-                    .background(isSelected ? Color.accentColor : Color.secondary.opacity(0.16), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .background(isSelected ? Color.accentColor : Color.secondary.opacity(0.16), in: ConcentricRectangle(cornerRadius: 14, style: .continuous))
                     .overlay(alignment: .bottomTrailing) {
                         if mentionCount > 0 {
                             Text(mentionCount, format: .number)

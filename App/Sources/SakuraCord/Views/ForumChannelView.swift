@@ -183,7 +183,7 @@ private struct ForumPaginationStatusView: View {
                 Button("Try Again", action: retry)
             }
             .padding(12)
-            .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
+            .background(.quaternary, in: ConcentricRectangle(cornerRadius: 12))
             .accessibilityElement(children: .combine)
         }
     }
@@ -253,7 +253,7 @@ private struct ForumBrowseHeader: View {
                     .contentShape(Rectangle())
                     .glassEffect(
                         .regular.interactive(),
-                        in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        in: ConcentricRectangle(cornerRadius: 14, style: .continuous)
                     )
                     .simultaneousGesture(TapGesture().onEnded { isSearchFocused = true })
 
@@ -269,7 +269,7 @@ private struct ForumBrowseHeader: View {
                     .buttonStyle(.plain)
                     .glassEffect(
                         .regular.interactive(),
-                        in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        in: ConcentricRectangle(cornerRadius: 14, style: .continuous)
                     )
                     .disabled(!model.canCreateForumPosts)
                     .help("New Post")
@@ -797,9 +797,9 @@ private struct ForumPostListAttachment: View {
             height: ForumPostCardMetrics.listAttachmentSize
         )
         .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .clipShape(ConcentricRectangle(cornerRadius: 11, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
+            ConcentricRectangle(cornerRadius: 11, style: .continuous)
                 .stroke(.separator.opacity(0.6), lineWidth: 1)
         }
     }
@@ -897,7 +897,7 @@ private struct ForumPostGalleryHero: View {
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            ConcentricRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color.primary.opacity(0.07))
 
             if let attachment = post.firstMessage?.attachments.first {
@@ -928,9 +928,9 @@ private struct ForumPostGalleryHero: View {
             .padding(10)
         }
         .frame(height: ForumPostCardMetrics.galleryHeroHeight)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(ConcentricRectangle(cornerRadius: 12, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            ConcentricRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(.separator.opacity(0.65), lineWidth: 1)
         }
     }
@@ -1222,7 +1222,7 @@ private struct ForumPostCardChrome<Content: View>: View {
                 Button {
                     model.open(post)
                 } label: {
-                    RoundedRectangle(
+                    ConcentricRectangle(
                         cornerRadius: ForumPostCardMetrics.cornerRadius,
                         style: .continuous
                     )
@@ -1232,7 +1232,7 @@ private struct ForumPostCardChrome<Content: View>: View {
                             : Color.clear
                     )
                     .contentShape(
-                        RoundedRectangle(
+                        ConcentricRectangle(
                             cornerRadius: ForumPostCardMetrics.cornerRadius,
                             style: .continuous
                         )
@@ -1245,7 +1245,7 @@ private struct ForumPostCardChrome<Content: View>: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .overlay {
-                RoundedRectangle(
+                ConcentricRectangle(
                     cornerRadius: ForumPostCardMetrics.cornerRadius,
                     style: .continuous
                 )
@@ -1309,7 +1309,7 @@ private struct ForumPostCardChrome<Content: View>: View {
                 )
             }
             .contentShape(
-                RoundedRectangle(
+                ConcentricRectangle(
                     cornerRadius: ForumPostCardMetrics.cornerRadius,
                     style: .continuous
                 )
@@ -1427,10 +1427,10 @@ private struct ForumPostComposer: View {
         }
         .background(
             Color(nsColor: .windowBackgroundColor),
-            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+            in: ConcentricRectangle(cornerRadius: 20, style: .continuous)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            ConcentricRectangle(cornerRadius: 20, style: .continuous)
                 .stroke(.separator, lineWidth: 1)
         }
         .shadow(color: .black.opacity(0.28), radius: 24, y: 10)
@@ -1824,10 +1824,10 @@ private struct ForumComposerAttachmentControl: View {
         .frame(width: currentWidth, height: currentHeight, alignment: .trailing)
         .background {
             if isExpanded {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                ConcentricRectangle(cornerRadius: 18, style: .continuous)
                     .fill(.regularMaterial)
                     .overlay {
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        ConcentricRectangle(cornerRadius: 18, style: .continuous)
                             .stroke(.separator, lineWidth: 1)
                     }
             }
@@ -1839,7 +1839,7 @@ private struct ForumComposerAttachmentControl: View {
         .overlay(alignment: .topLeading) {
             hoveredAttachmentActions
         }
-        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .contentShape(ConcentricRectangle(cornerRadius: 18, style: .continuous))
         .onHover { hovering in
             isExpanded = hovering
             if !hovering {
@@ -1881,7 +1881,7 @@ private struct ForumComposerAttachmentControl: View {
             width: isExpanded ? expandedAttachmentViewportWidth : tileSize,
             height: tileSize
         )
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .clipShape(ConcentricRectangle(cornerRadius: 14, style: .continuous))
         .onChange(of: isExpanded) { _, expanded in
             if !expanded {
                 scrollTarget = attachments.first?.url
@@ -1948,15 +1948,15 @@ private struct ForumComposerAttachmentControl: View {
                 .symbolVariant(.none)
                 .font(.system(size: 22, weight: .medium))
                 .frame(width: tileSize, height: tileSize)
-                .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .contentShape(ConcentricRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(.plain)
         .glassEffect(
             .regular.interactive(),
-            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            in: ConcentricRectangle(cornerRadius: 14, style: .continuous)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            ConcentricRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(.separator, lineWidth: 1)
         }
         .help("Add attachments")
@@ -2057,12 +2057,12 @@ private struct ForumComposerAttachmentTile: View {
         }
         .frame(width: size, height: size)
         .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .clipShape(ConcentricRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            ConcentricRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(.separator, lineWidth: 1)
         }
-        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .contentShape(ConcentricRectangle(cornerRadius: 14, style: .continuous))
         .onHover(perform: hoverChanged)
         .help(attachment.filename)
         .accessibilityElement(children: .contain)
@@ -2118,7 +2118,7 @@ struct ForumAttachmentEditor: View {
                 LocalAttachmentThumbnail(url: attachment.url, maximumPixelDimension: 480)
                     .frame(width: 220, height: 220)
                     .background(.quaternary)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .clipShape(ConcentricRectangle(cornerRadius: 14, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 18) {
                     VStack(alignment: .leading, spacing: 7) {
@@ -2139,9 +2139,9 @@ struct ForumAttachmentEditor: View {
                             .font(.body)
                             .scrollContentBackground(.hidden)
                             .padding(7)
-                            .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                            .background(.quaternary, in: ConcentricRectangle(cornerRadius: 8))
                             .overlay {
-                                RoundedRectangle(cornerRadius: 8)
+                                ConcentricRectangle(cornerRadius: 8)
                                     .stroke(.separator, lineWidth: 1)
                             }
                             .frame(minHeight: 116)
@@ -2272,7 +2272,7 @@ private struct ForumLoadingView: View {
         ScrollView {
             LazyVStack(spacing: 10) {
                 ForEach(0 ..< 5, id: \.self) { _ in
-                    RoundedRectangle(cornerRadius: 14)
+                    ConcentricRectangle(cornerRadius: 14)
                         .fill(.quaternary)
                         .frame(height: 130)
                 }

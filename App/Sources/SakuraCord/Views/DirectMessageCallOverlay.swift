@@ -378,7 +378,7 @@ private struct IncomingPrivateCallCard: View {
         .frame(width: 236)
         .glassEffect(
             .regular,
-            in: RoundedRectangle(cornerRadius: 46, style: .continuous)
+            in: ConcentricRectangle(cornerRadius: 46, style: .continuous)
         )
     }
 }

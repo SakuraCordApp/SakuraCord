@@ -5546,7 +5546,7 @@ private struct NativeTimelineLegacyCommandEphemeralReference: View {
                 .padding(.vertical, 2)
                 .background(
                     Color.accentColor.opacity(0.16),
-                    in: RoundedRectangle(cornerRadius: 4)
+                    in: ConcentricRectangle(cornerRadius: 4)
                 )
             }
             .padding(.trailing, 48)

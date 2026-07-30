@@ -9,7 +9,7 @@ struct GuildIconView: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            ConcentricRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(Color.secondary.opacity(0.16))
             if let iconURL {
                 AnimatedRemoteImage(url: iconURL, animates: animates)
@@ -20,7 +20,7 @@ struct GuildIconView: View {
             }
         }
         .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .clipShape(ConcentricRectangle(cornerRadius: cornerRadius, style: .continuous))
         .accessibilityLabel(name.isEmpty ? "Unnamed Server" : name)
     }
 }

@@ -69,7 +69,7 @@ struct MemberProfilePopover: View {
     private var profileContent: some View {
         ZStack(alignment: .top) {
             if !activeNitroThemeHexes.isEmpty {
-                RoundedRectangle(
+                ConcentricRectangle(
                     cornerRadius: innerCornerRadius,
                     style: .continuous
                 )
@@ -306,12 +306,12 @@ private struct ProfileStatusBubble: View {
             .padding(.horizontal, 11)
             .padding(.vertical, 8)
             .fixedSize(horizontal: false, vertical: true)
-            .background(surfaceColor, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(surfaceColor, in: ConcentricRectangle(cornerRadius: 14, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                ConcentricRectangle(cornerRadius: 14, style: .continuous)
                     .stroke(.primary.opacity(0.14), lineWidth: 1)
             }
-            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .contentShape(ConcentricRectangle(cornerRadius: 14, style: .continuous))
             .onHover { isBubbleHovering = $0 }
             .animation(.snappy(duration: 0.16), value: isExpanded)
             .help(displayText)
@@ -379,12 +379,15 @@ private struct ProfileBanner: View {
         .frame(maxWidth: .infinity)
         .frame(height: ProfileBannerLayout.height)
         .clipShape(
-            UnevenRoundedRectangle(
-                topLeadingRadius: topCornerRadius,
-                bottomLeadingRadius: 0,
-                bottomTrailingRadius: 0,
-                topTrailingRadius: topCornerRadius,
-                style: .continuous
+            ConcentricRectangle(
+                topLeadingCorner: .concentric(
+                    minimum: .fixed(topCornerRadius)
+                ),
+                topTrailingCorner: .concentric(
+                    minimum: .fixed(topCornerRadius)
+                ),
+                bottomLeadingCorner: .fixed(0),
+                bottomTrailingCorner: .fixed(0)
             )
         )
     }
@@ -426,7 +429,7 @@ private struct ProfileIdentitySection: View {
                         .padding(.horizontal, 6)
                         .padding(.vertical, 3)
                         .foregroundStyle(.white)
-                        .background(.indigo, in: RoundedRectangle(cornerRadius: 5))
+                        .background(.indigo, in: ConcentricRectangle(cornerRadius: 5))
                 }
             }
             HStack(spacing: 6) {
@@ -508,7 +511,7 @@ private struct CopyableProfileUsername: View {
             .font(.callout)
             .foregroundStyle(isActive ? .primary : .secondary)
             .background {
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                ConcentricRectangle(cornerRadius: 5, style: .continuous)
                     .fill(Color.primary.opacity(isActive ? 0.09 : 0))
                     .padding(.horizontal, -5)
                     .padding(.vertical, -2)
@@ -768,9 +771,9 @@ private struct RoleChip: View {
         .fixedSize(horizontal: true, vertical: true)
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
-        .background(.black.opacity(0.2), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .background(.black.opacity(0.2), in: ConcentricRectangle(cornerRadius: 9, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+            ConcentricRectangle(cornerRadius: 9, style: .continuous)
                 .stroke(.white.opacity(0.09), lineWidth: 1)
         }
         .help(item.name)
@@ -812,9 +815,9 @@ private struct RoleExpansionButton: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
-        .background(isHovering ? Color.primary.opacity(0.12) : .black.opacity(0.16), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .background(isHovering ? Color.primary.opacity(0.12) : .black.opacity(0.16), in: ConcentricRectangle(cornerRadius: 9, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+            ConcentricRectangle(cornerRadius: 9, style: .continuous)
                 .stroke(.white.opacity(isHovering ? 0.16 : 0.09), lineWidth: 1)
         }
         .onHover { isHovering = $0 }
@@ -1105,7 +1108,7 @@ private struct ProfileGuildIdentity: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
-        .background(.black.opacity(0.28), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .background(.black.opacity(0.28), in: ConcentricRectangle(cornerRadius: 7, style: .continuous))
     }
 }
 

@@ -632,7 +632,7 @@ private struct MediaTile: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.secondary.opacity(0.1))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(ConcentricRectangle(cornerRadius: 8, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -910,17 +910,18 @@ struct MessageEmbedCard: View {
             }
             .background(Color.secondary.opacity(0.08))
             .clipShape(
-                RoundedRectangle(
+                ConcentricRectangle(
                     cornerRadius: DiscordRichMessageMetrics.cardCornerRadius,
                     style: .continuous
                 )
             )
             .overlay {
-                RoundedRectangle(
+                ConcentricRectangle(
                     cornerRadius: DiscordRichMessageMetrics.cardCornerRadius,
                     style: .continuous
                 )
-                .strokeBorder(Color.primary.opacity(0.08))
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                .padding(0.5)
             }
         }
         .accessibilityElement(children: .contain)
@@ -1011,7 +1012,7 @@ private struct MessageEmbedThumbnail: View {
         if let url = media.proxyURL ?? media.url {
             AnimatedRemoteImage(url: url, isLooping: false, fallbackSystemImage: "photo")
                 .frame(width: 80, height: 80)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .clipShape(ConcentricRectangle(cornerRadius: 6, style: .continuous))
                 .help(media.description ?? title ?? "Embed thumbnail")
                 .accessibilityLabel(media.description ?? title ?? "Embed thumbnail")
         }
@@ -1366,17 +1367,18 @@ struct DiscordComponentContainerView: View {
         }
         .background(Color.primary.opacity(0.055))
         .clipShape(
-            RoundedRectangle(
+            ConcentricRectangle(
                 cornerRadius: DiscordRichMessageMetrics.cardCornerRadius,
                 style: .continuous
             )
         )
         .overlay {
-            RoundedRectangle(
+            ConcentricRectangle(
                 cornerRadius: DiscordRichMessageMetrics.cardCornerRadius,
                 style: .continuous
             )
-            .strokeBorder(Color.primary.opacity(0.13))
+            .stroke(Color.primary.opacity(0.13), lineWidth: 1)
+            .padding(0.5)
         }
         .overlay {
             if spoiler, !spoilerRevealed {
@@ -1418,7 +1420,7 @@ private struct ComponentThumbnailView: View {
             }
             .frame(width: 80, height: 80)
             .background(Color.secondary.opacity(0.08))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(ConcentricRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
         .help(item.description ?? item.title)
@@ -1464,7 +1466,7 @@ private struct ComponentFileAttachment: View {
                     .padding(10)
 
                     if item.isSpoiler, !isRevealed {
-                        RoundedRectangle(
+                        ConcentricRectangle(
                             cornerRadius: DiscordRichMessageMetrics.cardCornerRadius,
                             style: .continuous
                         )
@@ -1475,17 +1477,18 @@ private struct ComponentFileAttachment: View {
                 }
                 .background(Color.primary.opacity(0.055))
                 .clipShape(
-                    RoundedRectangle(
+                    ConcentricRectangle(
                         cornerRadius: DiscordRichMessageMetrics.cardCornerRadius,
                         style: .continuous
                     )
                 )
                 .overlay {
-                    RoundedRectangle(
+                    ConcentricRectangle(
                         cornerRadius: DiscordRichMessageMetrics.cardCornerRadius,
                         style: .continuous
                     )
-                    .strokeBorder(Color.primary.opacity(0.13))
+                    .stroke(Color.primary.opacity(0.13), lineWidth: 1)
+                    .padding(0.5)
                 }
             }
             .buttonStyle(.plain)
@@ -1610,7 +1613,7 @@ struct MessageThreadSummaryView: View {
                 Spacer()
                 Image(systemName: "chevron.right")
             }.padding(9).frame(maxWidth: 500).background(
-                Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8)
+                Color.secondary.opacity(0.08), in: ConcentricRectangle(cornerRadius: 8)
             )
         }.buttonStyle(.plain).accessibilityElement(children: .combine).accessibilityLabel(
             "Open thread \(thread.name), \(thread.messageCount) replies"

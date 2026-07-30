@@ -435,11 +435,11 @@ private struct VoiceParticipantTile: View {
         .frame(maxWidth: .infinity)
         .aspectRatio(16 / 9, contentMode: .fit)
         .clipShape(
-            RoundedRectangle(cornerRadius: isCompact ? 12 : 16, style: .continuous)
+            ConcentricRectangle(cornerRadius: isCompact ? 12 : 16, style: .continuous)
         )
         .overlay {
             if !participant.isRinging {
-                RoundedRectangle(
+                ConcentricRectangle(
                     cornerRadius: isCompact ? 12 : 16,
                     style: .continuous
                 )

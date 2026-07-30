@@ -366,7 +366,7 @@ struct UnreadMessagesBanner: View {
         .padding(.vertical, 9)
         .glassEffect(
             .regular.interactive(),
-            in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+            in: ConcentricRectangle(cornerRadius: 13, style: .continuous)
         )
         .accessibilityElement(children: .contain)
     }

@@ -348,11 +348,12 @@ private struct ReactionActionMenu: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: presentation.cornerRadius, style: .continuous)
+            ConcentricRectangle(cornerRadius: presentation.cornerRadius, style: .continuous)
                 .fill(backgroundColor)
                 .overlay {
-                    RoundedRectangle(cornerRadius: presentation.cornerRadius, style: .continuous)
-                        .strokeBorder(borderColor, lineWidth: 1)
+                    ConcentricRectangle(cornerRadius: presentation.cornerRadius, style: .continuous)
+                        .stroke(borderColor, lineWidth: 1)
+                        .padding(0.5)
                 }
 
             Button {
@@ -364,14 +365,14 @@ private struct ReactionActionMenu: View {
                     .foregroundStyle(.primary)
                     .frame(width: presentation.width, height: presentation.height)
                     .contentShape(
-                        RoundedRectangle(cornerRadius: presentation.cornerRadius, style: .continuous)
+                        ConcentricRectangle(cornerRadius: presentation.cornerRadius, style: .continuous)
                     )
             }
             .buttonStyle(.plain)
         }
         .frame(width: presentation.width, height: presentation.height)
         .contentShape(
-            RoundedRectangle(cornerRadius: presentation.cornerRadius, style: .continuous)
+            ConcentricRectangle(cornerRadius: presentation.cornerRadius, style: .continuous)
         )
         .onHover { isHovering = $0 }
         .help("Add reaction")
@@ -535,11 +536,12 @@ private struct InlineMessageEditor: View {
                 .padding(9)
                 .background(
                     Color.primary.opacity(0.065),
-                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    in: ConcentricRectangle(cornerRadius: 8, style: .continuous)
                 )
                 .overlay {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1)
+                    ConcentricRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+                        .padding(0.5)
                 }
                 .accessibilityLabel("Message text")
                 .accessibilityHint("Press Return to save, Shift-Return for a new line, or Escape to cancel.")
@@ -648,7 +650,7 @@ private struct InlineEditTextButton: View {
             .padding(.horizontal, MessageEditLayoutMetrics.actionHorizontalPadding)
             .frame(height: MessageEditLayoutMetrics.actionHeight)
             .background {
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                ConcentricRectangle(cornerRadius: 5, style: .continuous)
                     .fill(Color.primary.opacity(isHovering && isEnabled ? 0.09 : 0))
             }
             .contentShape(Rectangle())
@@ -670,7 +672,7 @@ private struct InlineEditKeycap: View {
             .foregroundStyle(isActive ? .primary : .secondary)
             .padding(.horizontal, MessageEditLayoutMetrics.keycapHorizontalPadding)
             .padding(.vertical, MessageEditLayoutMetrics.keycapVerticalPadding)
-            .background(.quaternary, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .background(.quaternary, in: ConcentricRectangle(cornerRadius: 4, style: .continuous))
             .accessibilityHidden(true)
     }
 }

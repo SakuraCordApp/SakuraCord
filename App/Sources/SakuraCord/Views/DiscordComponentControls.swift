@@ -47,7 +47,7 @@ struct DiscordComponentButton: View {
             .font(.callout.weight(.semibold))
             .padding(.horizontal, 12)
             .frame(minHeight: 32)
-            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .contentShape(ConcentricRectangle(cornerRadius: 6, style: .continuous))
         }
         .buttonStyle(DiscordComponentButtonStyle(style: style))
     }
@@ -69,10 +69,14 @@ private struct DiscordComponentButtonStyle: ButtonStyle {
         var body: some View {
             configuration.label
                 .foregroundStyle(Color.white.opacity(isEnabled ? 1 : 0.62))
-                .background(backgroundColor, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .background(backgroundColor, in: ConcentricRectangle(cornerRadius: 6, style: .continuous))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .strokeBorder(Color.white.opacity(isHovering && isEnabled ? 0.14 : 0.07))
+                    ConcentricRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(
+                            Color.white.opacity(isHovering && isEnabled ? 0.14 : 0.07),
+                            lineWidth: 1
+                        )
+                        .padding(0.5)
                 }
                 .scaleEffect(configuration.isPressed ? 0.985 : 1)
                 .brightness(configuration.isPressed ? -0.07 : isHovering ? 0.035 : 0)
@@ -124,10 +128,11 @@ struct DiscordComponentSelect: View {
             }
             .padding(.horizontal, 12)
             .frame(minWidth: 210, maxWidth: 380, minHeight: 38)
-            .background(Color.primary.opacity(0.075), in: RoundedRectangle(cornerRadius: 7))
+            .background(Color.primary.opacity(0.075), in: ConcentricRectangle(cornerRadius: 7))
             .overlay {
-                RoundedRectangle(cornerRadius: 7)
-                    .strokeBorder(Color.primary.opacity(0.16))
+                ConcentricRectangle(cornerRadius: 7)
+                    .stroke(Color.primary.opacity(0.16), lineWidth: 1)
+                    .padding(0.5)
             }
         }
         .menuStyle(.borderlessButton)

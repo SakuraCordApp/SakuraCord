@@ -25,7 +25,7 @@ struct VoiceChannelView: View {
                         .font(.callout.weight(.medium))
                 }
                 .padding(18)
-                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .glassEffect(.regular, in: ConcentricRectangle(cornerRadius: 16, style: .continuous))
             }
         } else {
             VoiceVideoGrid(model: model)
@@ -200,9 +200,9 @@ private struct VoiceChannelPreviewCard: View {
         }
         .frame(maxWidth: .infinity)
         .aspectRatio(16 / 9, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .clipShape(ConcentricRectangle(cornerRadius: 16, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            ConcentricRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(Color.primary.opacity(0.08), lineWidth: 1)
         }
         .accessibilityElement(children: .combine)

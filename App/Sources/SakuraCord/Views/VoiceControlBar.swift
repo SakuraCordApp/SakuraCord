@@ -115,8 +115,8 @@ struct VoiceControlBar<SettingsControl: View>: View {
 
             settingsControl
                 .frame(width: 34, height: 34)
-                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .contentShape(ConcentricRectangle(cornerRadius: 8, style: .continuous))
+                .background(Color.primary.opacity(0.045), in: ConcentricRectangle(cornerRadius: 8, style: .continuous))
         }
         .frame(maxWidth: .infinity)
     }
@@ -407,7 +407,7 @@ private struct VoiceSquareButton: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(isAlert ? Color(hex: 0xF23F43) : Color.primary)
-        .background(buttonBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(buttonBackground, in: ConcentricRectangle(cornerRadius: 8, style: .continuous))
         .disabled(isDisabled)
         .opacity(isDisabled ? 0.42 : 1)
         .help(help)
@@ -452,8 +452,8 @@ private struct VoiceSplitButton: View {
             .help(secondaryHelp)
         }
         .foregroundStyle(isAlert ? Color(hex: 0xF23F43) : Color.primary)
-        .background(buttonBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(buttonBackground, in: ConcentricRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(ConcentricRectangle(cornerRadius: 8, style: .continuous))
         .disabled(isDisabled)
         .opacity(isDisabled ? 0.42 : 1)
     }

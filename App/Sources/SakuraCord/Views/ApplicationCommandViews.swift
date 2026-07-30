@@ -49,8 +49,18 @@ struct ApplicationCommandPickerView: View {
         .frame(maxWidth: .infinity, minHeight: 190, maxHeight: 340)
         .glassEffect(
             .regular.interactive(),
-            in: RoundedRectangle(
-                cornerRadius: ChatChromeMetrics.controlCornerRadius,
+            in: ConcentricRectangle(
+                corners: .concentric(
+                    minimum: .fixed(
+                        ChatChromeMetrics.composerMinimumCornerRadius
+                    )
+                ),
+                isUniform: true
+            )
+        )
+        .containerShape(
+            .rect(
+                cornerRadius: ChatChromeMetrics.composerMinimumCornerRadius,
                 style: .continuous
             )
         )
@@ -270,8 +280,8 @@ private struct ApplicationCommandPickerRow: View {
         .buttonStyle(.plain)
         .focusable(false)
         .background {
-            RoundedRectangle(
-                cornerRadius: ChatChromeMetrics.controlCornerRadius,
+            ConcentricRectangle(
+                cornerRadius: 7,
                 style: .continuous
             )
                 .fill(isSelected ? Color.primary.opacity(0.13) : .clear)
@@ -335,12 +345,12 @@ struct ApplicationCommandEditorView: View {
             .padding(10)
             .background(
                 .regularMaterial,
-                in: RoundedRectangle(
+                in: ConcentricRectangle(
                     cornerRadius: ChatChromeMetrics.controlCornerRadius, style: .continuous
                 )
             )
             .overlay {
-                RoundedRectangle(
+                ConcentricRectangle(
                     cornerRadius: ChatChromeMetrics.controlCornerRadius, style: .continuous
                 )
                 .stroke(.primary.opacity(0.12), lineWidth: 1)
@@ -530,7 +540,7 @@ private struct ApplicationCommandOptionEditor: View {
             }
         }
         .padding(8)
-        .background(.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 8))
+        .background(.primary.opacity(0.055), in: ConcentricRectangle(cornerRadius: 8))
         .onTapGesture(perform: focus)
         .onChange(of: autocompleteChoices) { _, choices in
             autocompleteSelection = min(autocompleteSelection, max(0, choices.count - 1))
@@ -805,7 +815,7 @@ private struct CommandTextOptionEditor: View {
             .textFieldStyle(.plain)
             .padding(.horizontal, 8)
             .frame(minHeight: 30)
-            .background(.background.opacity(0.55), in: RoundedRectangle(cornerRadius: 6))
+            .background(.background.opacity(0.55), in: ConcentricRectangle(cornerRadius: 6))
             .onChange(of: text) { _, value in onChange(value) }
             .onTapGesture(perform: onFocus)
             .onMoveCommand(perform: onMove)
@@ -844,7 +854,7 @@ private struct CommandChoicePicker: View {
             }
             .padding(.horizontal, 8)
             .frame(minHeight: 30)
-            .background(.background.opacity(0.55), in: RoundedRectangle(cornerRadius: 6))
+            .background(.background.opacity(0.55), in: ConcentricRectangle(cornerRadius: 6))
         }
         .menuStyle(.borderlessButton)
     }
@@ -885,7 +895,7 @@ private struct CommandEntityOptionEditor: View {
             }
             .padding(.horizontal, 8)
             .frame(minHeight: 30)
-            .background(.background.opacity(0.55), in: RoundedRectangle(cornerRadius: 6))
+            .background(.background.opacity(0.55), in: ConcentricRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
@@ -965,7 +975,7 @@ private struct CommandEntityResolver: View {
                                 .contentShape(Rectangle())
                                 .background(
                                     index == selectedIndex ? Color.primary.opacity(0.13) : .clear,
-                                    in: RoundedRectangle(cornerRadius: 5)
+                                    in: ConcentricRectangle(cornerRadius: 5)
                                 )
                             }
                             .buttonStyle(.plain)
@@ -1007,14 +1017,14 @@ private struct CommandAutocompleteChoiceList: View {
                     .contentShape(Rectangle())
                     .background(
                         index == selectedIndex ? Color.primary.opacity(0.13) : .clear,
-                        in: RoundedRectangle(cornerRadius: 5)
+                        in: ConcentricRectangle(cornerRadius: 5)
                     )
                 }
                 .buttonStyle(.plain)
             }
         }
         .padding(4)
-        .background(.background.opacity(0.65), in: RoundedRectangle(cornerRadius: 6))
+        .background(.background.opacity(0.65), in: ConcentricRectangle(cornerRadius: 6))
     }
 }
 
@@ -1049,7 +1059,7 @@ private struct CommandAttachmentOptionEditor: View {
                     .buttonStyle(.plain)
                 }
                 .padding(8)
-                .background(.background.opacity(0.55), in: RoundedRectangle(cornerRadius: 7))
+                .background(.background.opacity(0.55), in: ConcentricRectangle(cornerRadius: 7))
             } else {
                 Button {
                     showImporter = true
@@ -1065,14 +1075,15 @@ private struct CommandAttachmentOptionEditor: View {
                         isDropTarget
                             ? AnyShapeStyle(Color.primary.opacity(0.13))
                             : AnyShapeStyle(.background.opacity(0.45)),
-                        in: RoundedRectangle(cornerRadius: 8)
+                        in: ConcentricRectangle(cornerRadius: 8)
                     )
                     .overlay {
-                        RoundedRectangle(cornerRadius: 8)
-                            .strokeBorder(
+                        ConcentricRectangle(cornerRadius: 8)
+                            .stroke(
                                 isDropTarget ? Color.primary : .secondary.opacity(0.45),
                                 style: StrokeStyle(lineWidth: 1, dash: [5, 4])
                             )
+                            .padding(0.5)
                     }
                 }
                 .buttonStyle(.plain)

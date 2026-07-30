@@ -382,7 +382,14 @@ private struct AccountControlView: View {
             }
             .glassEffect(
                 .regular.interactive(),
-                in: RoundedRectangle(cornerRadius: ChatChromeMetrics.controlCornerRadius, style: .continuous)
+                in: ConcentricRectangle(
+                    corners: .concentric(
+                        minimum: .fixed(
+                            ChatChromeMetrics.composerMinimumCornerRadius
+                        )
+                    ),
+                    isUniform: true
+                )
             )
         }
         .padding(.horizontal, 8)

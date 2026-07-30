@@ -2,6 +2,10 @@ import CoreGraphics
 @testable import SakuraCord
 import Testing
 
+@Test func `composer keeps a rounded fallback away from window corners`() {
+    #expect(ChatChromeMetrics.composerMinimumCornerRadius == 12)
+}
+
 @Test func `timeline reserves the measured compact floating footer height`() {
     let compactFooterHeight: CGFloat = 86
 
