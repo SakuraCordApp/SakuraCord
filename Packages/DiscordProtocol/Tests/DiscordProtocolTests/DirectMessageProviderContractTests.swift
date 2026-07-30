@@ -375,6 +375,12 @@ struct DirectMessageProviderContractTests {
         await provider.disconnect()
     }
 
+    @Test func `guildless voice move evicts the participant from the previous call`() async throws {
+        try await assertGuildlessVoiceMoveReconciliation(
+            provider: makeProvider()
+        )
+    }
+
     @Test func `private call REST paths use exact bounded bodies`() async throws {
         DirectMessageURLProtocol.reset()
         let provider = makeProvider()
@@ -494,6 +500,89 @@ struct DirectMessageProviderContractTests {
             session: URLSession(configuration: configuration)
         )
     }
+}
+
+private func assertGuildlessVoiceMoveReconciliation(
+    provider: DiscordRESTProvider
+) async throws {
+    await provider.receiveGatewayDispatchForTesting(
+        name: "CALL_CREATE",
+        data: privateCallPayload(
+            channelID: "41",
+            messageID: "501",
+            voiceState: .object([
+                "user_id": .string("9"),
+                "channel_id": .string("41"),
+                "guild_id": .null,
+                "session_id": .string("private-session-a")
+            ])
+        )
+    )
+    await provider.receiveGatewayDispatchForTesting(
+        name: "CALL_CREATE",
+        data: privateCallPayload(
+            channelID: "42",
+            messageID: "502",
+            voiceState: nil
+        )
+    )
+
+    let events = await provider.eventStream()
+    let changedCalls = Task {
+        await nextPrivateCallChanges(count: 2, from: events)
+    }
+
+    await provider.receiveGatewayDispatchForTesting(
+        name: "VOICE_STATE_UPDATE",
+        data: .object([
+            "user_id": .string("9"),
+            "channel_id": .string("42"),
+            "guild_id": .null,
+            "session_id": .string("private-session-b"),
+            "self_mute": .bool(false),
+            "self_deaf": .bool(false)
+        ])
+    )
+
+    let calls = await changedCalls.value
+    #expect(calls.map(\.channelID) == [
+        ChannelID(rawValue: 41),
+        ChannelID(rawValue: 42)
+    ])
+    #expect(calls[0].voiceStates?.isEmpty == true)
+    #expect(calls[1].voiceStates?.map(\.userID) == [UserID(rawValue: 9)])
+    #expect(calls[1].voiceStates?.first?.sessionID == "private-session-b")
+    await provider.disconnect()
+}
+
+private func nextPrivateCallChanges(
+    count: Int,
+    from events: AsyncStream<ClientEvent>
+) async -> [PrivateCall] {
+    var calls: [PrivateCall] = []
+    for await event in events {
+        guard case let .privateCallChanged(call) = event else {
+            continue
+        }
+        calls.append(call)
+        if calls.count == count {
+            return calls
+        }
+    }
+    return calls
+}
+
+private func privateCallPayload(
+    channelID: String,
+    messageID: String,
+    voiceState: JSONValue?
+) -> JSONValue {
+    .object([
+        "channel_id": .string(channelID),
+        "message_id": .string(messageID),
+        "ongoing_rings": .object([:]),
+        "voice_states": .array(voiceState.map { [$0] } ?? [])
+    ])
 }
 
 private actor DirectMessageCredentialStore: CredentialStore {

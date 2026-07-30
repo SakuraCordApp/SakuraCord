@@ -3702,25 +3702,21 @@ public actor DiscordRESTProvider: ChatProvider {
 
     private func reconcilePrivateCallVoiceState(_ state: VoiceParticipantState) {
         var changedChannelIDs: [ChannelID] = []
-        if let channelID = state.channelID, var call = privateCallsByChannel[channelID] {
+        for (channelID, var call) in privateCallsByChannel {
             var states = call.voiceStates ?? []
+            let originalStates = states
             states.removeAll { $0.userID == state.userID }
-            states.append(state)
+            if channelID == state.channelID {
+                states.append(state)
+            }
+            guard states != originalStates else { continue }
             call.voiceStates = states
             privateCallsByChannel[channelID] = call
             changedChannelIDs.append(channelID)
-        } else if state.channelID == nil {
-            for (channelID, var call) in privateCallsByChannel {
-                guard var states = call.voiceStates,
-                      states.contains(where: { $0.userID == state.userID })
-                else { continue }
-                states.removeAll { $0.userID == state.userID }
-                call.voiceStates = states
-                privateCallsByChannel[channelID] = call
-                changedChannelIDs.append(channelID)
-            }
         }
-        for channelID in changedChannelIDs {
+        for channelID in changedChannelIDs.sorted(by: {
+            $0.rawValue < $1.rawValue
+        }) {
             if let call = privateCallsByChannel[channelID] {
                 continuation?.yield(.privateCallChanged(call))
             }

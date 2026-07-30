@@ -506,7 +506,10 @@ state path.
   an optional guildless voice-state snapshot; `CALL_DELETE` removes or marks
   the call unavailable. `ongoing_rings` maps each ringing recipient to the
   user who initiated that ring. Individual guildless `VOICE_STATE_UPDATE`
-  events reconcile participants without conflating calls in other DMs.
+  events reconcile participants without conflating calls in other DMs. A
+  non-null update first evicts that user from every other private call before
+  inserting the destination state, so a direct A-to-B move cannot leave a
+  participant behind in A.
 - Selecting or joining a private call sends one main-Gateway opcode 13
   `CALL_CONNECT` payload with `channel_id`, deduplicated per channel and
   Gateway session. Media negotiation remains the existing documented voice

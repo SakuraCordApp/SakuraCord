@@ -2136,6 +2136,33 @@ private func eventuallyOnMain(_ condition: @escaping @MainActor () -> Bool) asyn
     #expect(model.privateCall(in: channelID)?.voiceStates?.map(\.userID) == [senderID])
     #expect(sounds.looping[.callRinging] == false)
 
+    let destinationChannelID = ChannelID(rawValue: 88_804)
+    await provider.emit(
+        .privateCallChanged(
+            PrivateCall(
+                channelID: destinationChannelID,
+                messageID: MessageID(rawValue: 88_805),
+                region: "rotterdam",
+                voiceStates: []
+            )
+        )
+    )
+    await provider.emit(
+        .voiceStateChanged(
+            VoiceParticipantState(
+                userID: senderID,
+                channelID: destinationChannelID,
+                guildID: nil,
+                sessionID: "private-session-b"
+            )
+        )
+    )
+    #expect(await eventuallyOnMain {
+        model.privateCall(in: channelID)?.voiceStates?.isEmpty == true
+            && model.privateCall(in: destinationChannelID)?.voiceStates?.map(\.userID)
+                == [senderID]
+    })
+
     await provider.emit(.privateCallDeleted(channelID: channelID, unavailable: false))
     try await Task.sleep(for: .milliseconds(20))
     #expect(model.privateCall(in: channelID) == nil)

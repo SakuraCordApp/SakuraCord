@@ -4369,17 +4369,16 @@ final class AppModel {
     }
 
     private func reconcilePrivateCallVoiceState(_ state: VoiceParticipantState) {
-        if let channelID = state.channelID, var call = privateCallsByChannel[channelID] {
+        for (channelID, var call) in privateCallsByChannel {
             var states = call.voiceStates ?? []
+            let originalStates = states
             states.removeAll { $0.userID == state.userID }
-            states.append(state)
+            if channelID == state.channelID {
+                states.append(state)
+            }
+            guard states != originalStates else { continue }
             call.voiceStates = states
             privateCallsByChannel[channelID] = call
-        } else if state.channelID == nil {
-            for (channelID, var call) in privateCallsByChannel {
-                call.voiceStates?.removeAll { $0.userID == state.userID }
-                privateCallsByChannel[channelID] = call
-            }
         }
     }
 
