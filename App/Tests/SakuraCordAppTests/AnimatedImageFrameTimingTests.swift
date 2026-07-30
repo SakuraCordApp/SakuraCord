@@ -169,6 +169,16 @@ func `recreated avatar paints its cached frame before animated content mounts`()
 }
 
 @MainActor @Test
+func `remote avatars never paint the fallback beneath transparent pixels`() throws {
+    let url = try #require(
+        URL(string: "https://cdn.example/transparent-avatar.png")
+    )
+
+    #expect(!AvatarView(name: "Transparent", url: url, size: 32).showsFallback)
+    #expect(AvatarView(name: "Fallback", url: nil, size: 32).showsFallback)
+}
+
+@MainActor @Test
 func `recent displayed images use a deterministic bounded cache`() throws {
     let colorSpace = try #require(CGColorSpace(name: CGColorSpace.sRGB))
     let context = try #require(

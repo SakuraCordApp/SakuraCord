@@ -27,7 +27,7 @@ struct AvatarView: View {
                 Image(decorative: cachedFrame, scale: 1)
                     .resizable()
                     .scaledToFill()
-            } else {
+            } else if showsFallback {
                 Circle().fill(Color.accentColor.gradient)
                 fallback
             }
@@ -51,6 +51,10 @@ struct AvatarView: View {
 
     var requestedPixelDimension: Int {
         maximumPixelDimension ?? max(1, Int((size * 2).rounded(.up)))
+    }
+
+    var showsFallback: Bool {
+        url == nil
     }
 
     var cachedFrame: CGImage? {
