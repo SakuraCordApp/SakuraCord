@@ -8,10 +8,77 @@ import Foundation
 public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
     public static let shared = DiscordAPIDiagnosticStore()
 
+    private struct RetainedEntry {
+        let entry: Entry
+        let estimatedByteCount: Int
+    }
+
     private struct State {
-        var entries: [Entry] = []
+        var entries: [RetainedEntry?]
+        var headIndex = 0
+        var entryCount = 0
+        var retainedEstimatedByteCount = 0
         var nextSequence: UInt64 = 1
         var droppedEntryCount = 0
+
+        init(capacity: Int) {
+            entries = Array(repeating: nil, count: capacity)
+        }
+
+        var orderedEntries: [Entry] {
+            (0 ..< entryCount).compactMap { offset in
+                entries[(headIndex + offset) % entries.count]?.entry
+            }
+        }
+
+        mutating func append(
+            _ entry: Entry,
+            estimatedByteCount: Int,
+            maximumRetainedBytes: Int
+        ) {
+            guard estimatedByteCount <= maximumRetainedBytes else {
+                droppedEntryCount += 1
+                return
+            }
+            while shouldEvict(estimatedByteCount, maximumRetainedBytes) {
+                removeOldest()
+            }
+            let insertionIndex = (headIndex + entryCount) % entries.count
+            entries[insertionIndex] = RetainedEntry(
+                entry: entry,
+                estimatedByteCount: estimatedByteCount
+            )
+            entryCount += 1
+            retainedEstimatedByteCount += estimatedByteCount
+        }
+
+        mutating func clear() {
+            entries = Array(repeating: nil, count: entries.count)
+            headIndex = 0
+            entryCount = 0
+            retainedEstimatedByteCount = 0
+            droppedEntryCount = 0
+        }
+
+        private mutating func removeOldest() {
+            guard entryCount > 0 else { return }
+            if let removed = entries[headIndex] {
+                retainedEstimatedByteCount -= removed.estimatedByteCount
+            }
+            entries[headIndex] = nil
+            headIndex = (headIndex + 1) % entries.count
+            entryCount -= 1
+            droppedEntryCount += 1
+        }
+
+        private func shouldEvict(
+            _ estimatedByteCount: Int,
+            _ maximumRetainedBytes: Int
+        ) -> Bool {
+            entryCount == entries.count
+                || retainedEstimatedByteCount + estimatedByteCount
+                    > maximumRetainedBytes
+        }
     }
 
     private struct Entry: Codable {
@@ -34,27 +101,45 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
         let format: String
         let generatedAt: Date
         let retainedEntryCount: Int
+        let retainedEstimatedByteCount: Int
         let droppedEntryCount: Int
         let redaction: String
     }
 
-    private let lock = NSLock()
-    private let maximumEntries: Int
-    private var state = State()
+    private struct EntrySizeComponents {
+        let transport: String
+        let direction: String
+        let operation: String
+        let method: String?
+        let path: String?
+        let headers: [String: String]?
+        let payload: JSONValue?
+        let errorType: String?
+    }
 
-    public init(maximumEntries: Int = 25_000) {
-        self.maximumEntries = max(1, maximumEntries)
+    private let lock = NSLock()
+    private let maximumRetainedBytes: Int
+    private var state: State
+
+    public init(
+        maximumEntries: Int = 5_000,
+        maximumRetainedBytes: Int = 8 * 1_024 * 1_024
+    ) {
+        let capacity = max(1, maximumEntries)
+        self.maximumRetainedBytes = max(1, maximumRetainedBytes)
+        state = State(capacity: capacity)
     }
 
     public var retainedEntryCount: Int {
-        withLock { $0.entries.count }
+        withLock { $0.entryCount }
+    }
+
+    public var retainedEstimatedByteCount: Int {
+        withLock { $0.retainedEstimatedByteCount }
     }
 
     public func clear() {
-        withLock {
-            $0.entries.removeAll(keepingCapacity: true)
-            $0.droppedEntryCount = 0
-        }
+        withLock { $0.clear() }
     }
 
     public func recordHTTPRequest(
@@ -188,7 +273,9 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
     public func exportData() throws -> Data {
         let snapshot = withLock { state in
             (
-                entries: state.entries,
+                entries: state.orderedEntries,
+                retainedEstimatedByteCount:
+                    state.retainedEstimatedByteCount,
                 droppedEntryCount: state.droppedEntryCount
             )
         }
@@ -200,6 +287,8 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
             format: "sakuracord-discord-api-log-v1",
             generatedAt: .now,
             retainedEntryCount: snapshot.entries.count,
+            retainedEstimatedByteCount:
+                snapshot.retainedEstimatedByteCount,
             droppedEntryCount: snapshot.droppedEntryCount,
             redaction:
                 "Sensitive values are discarded before retention. Message content, names, usernames, profile text, credentials, cookies, challenge data, filenames, and URLs are not included. Snowflake IDs and protocol metadata may be included."
@@ -233,6 +322,16 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
         payload: JSONValue? = nil,
         errorType: String? = nil
     ) {
+        let estimatedByteCount = Self.estimatedEntryByteCount(.init(
+            transport: transport,
+            direction: direction,
+            operation: operation,
+            method: method,
+            path: path,
+            headers: headers,
+            payload: payload,
+            errorType: errorType
+        ))
         withLock { state in
             let entry = Entry(
                 sequence: state.nextSequence,
@@ -250,11 +349,11 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
                 errorType: errorType
             )
             state.nextSequence &+= 1
-            if state.entries.count == maximumEntries {
-                state.entries.removeFirst()
-                state.droppedEntryCount += 1
-            }
-            state.entries.append(entry)
+            state.append(
+                entry,
+                estimatedByteCount: estimatedByteCount,
+                maximumRetainedBytes: maximumRetainedBytes
+            )
         }
     }
 
@@ -284,46 +383,31 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
         "release_channel", "os", "browser", "device", "scope",
     ]
 
+    private static let maximumCollectionCount = 100
+    private static let maximumPayloadDepth = 10
+
     private static func sanitize(
         _ value: JSONValue,
         key: String?,
         depth: Int
     ) -> JSONValue {
-        guard depth < 12 else { return .string("<truncated-depth>") }
+        guard depth < maximumPayloadDepth else {
+            return .string("<truncated-depth>")
+        }
         let normalizedKey = key?.lowercased().replacingOccurrences(of: "-", with: "_")
         if let normalizedKey, sensitiveKeys.contains(normalizedKey) {
             return .string("<redacted>")
         }
         switch value {
         case let .object(object):
-            return .object(object.reduce(into: [String: JSONValue]()) { result, pair in
-                result[pair.key] = sanitize(
-                    pair.value,
-                    key: pair.key,
-                    depth: depth + 1
-                )
-            })
+            return sanitizedObject(object, depth: depth)
         case let .array(values):
-            let retained = values.prefix(500).map {
-                sanitize($0, key: normalizedKey, depth: depth + 1)
-            }
-            if values.count > retained.count {
-                return .array(
-                    retained + [
-                        .object([
-                            "truncated_count": .number(
-                                Double(values.count - retained.count)
-                            )
-                        ])
-                    ]
-                )
-            }
-            return .array(retained)
+            return sanitizedArray(values, key: normalizedKey, depth: depth)
         case let .string(string):
-            if normalizedKey.map(isIDKey) == true
+            let preservesString = normalizedKey.map(isIDKey) == true
                 || normalizedKey == "nonce"
-                || normalizedKey.map({ safeStringKeys.contains($0) }) == true
-            {
+                || normalizedKey.map { safeStringKeys.contains($0) } == true
+            if preservesString {
                 return .string(String(string.prefix(256)))
             }
             return .string("<redacted>")
@@ -332,14 +416,58 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
         }
     }
 
+    private static func sanitizedObject(
+        _ object: [String: JSONValue],
+        depth: Int
+    ) -> JSONValue {
+        let retainedPairs = object.sorted { $0.key < $1.key }
+            .prefix(maximumCollectionCount)
+        var result: [String: JSONValue] = [:]
+        for pair in retainedPairs {
+            result[pair.key] = sanitize(
+                pair.value,
+                key: pair.key,
+                depth: depth + 1
+            )
+        }
+        if object.count > result.count {
+            result["truncated_field_count"] = .number(
+                Double(object.count - result.count)
+            )
+        }
+        return .object(result)
+    }
+
+    private static func sanitizedArray(
+        _ values: [JSONValue],
+        key: String?,
+        depth: Int
+    ) -> JSONValue {
+        let retained = values.prefix(maximumCollectionCount).map {
+            sanitize($0, key: key, depth: depth + 1)
+        }
+        guard values.count > retained.count else {
+            return .array(retained)
+        }
+        return .array(
+            retained + [
+                .object([
+                    "truncated_count": .number(
+                        Double(values.count - retained.count)
+                    )
+                ])
+            ]
+        )
+    }
+
     private static func sanitizedQuery(_ query: [URLQueryItem]) -> [String: JSONValue] {
         var result: [String: JSONValue] = [:]
         for item in query {
             let key = item.name.lowercased()
-            if isIDKey(key)
+            let preservesValue = isIDKey(key)
                 || ["before", "after", "around", "limit", "type", "with_counts"]
                     .contains(key)
-            {
+            if preservesValue {
                 result[item.name] = item.value.map(JSONValue.string) ?? .null
             } else {
                 result[item.name] = .string("<redacted>")
@@ -367,6 +495,47 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
             || key.hasSuffix("_id")
             || key.hasSuffix("_ids")
             || key == "sequence"
+    }
+
+    private static func estimatedEntryByteCount(
+        _ components: EntrySizeComponents
+    ) -> Int {
+        var size = 256
+        size += components.transport.utf8.count
+        size += components.direction.utf8.count
+        size += components.operation.utf8.count
+        size += components.method?.utf8.count ?? 0
+        size += components.path?.utf8.count ?? 0
+        size += components.errorType?.utf8.count ?? 0
+        if let headers = components.headers {
+            size += headers.reduce(0) {
+                $0 + $1.key.utf8.count + $1.value.utf8.count + 16
+            }
+        }
+        if let payload = components.payload {
+            size += estimatedJSONByteCount(payload)
+        }
+        return size
+    }
+
+    private static func estimatedJSONByteCount(_ value: JSONValue) -> Int {
+        switch value {
+        case let .object(object):
+            16 + object.reduce(0) {
+                $0 + $1.key.utf8.count
+                    + estimatedJSONByteCount($1.value) + 16
+            }
+        case let .array(values):
+            16 + values.reduce(0) {
+                $0 + estimatedJSONByteCount($1) + 8
+            }
+        case let .string(string):
+            string.utf8.count + 16
+        case .number:
+            16
+        case .bool, .null:
+            8
+        }
     }
 
     private static func milliseconds(_ duration: Duration) -> Int {

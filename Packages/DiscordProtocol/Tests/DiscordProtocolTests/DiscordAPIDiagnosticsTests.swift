@@ -149,3 +149,115 @@ import Testing
     #expect(lines.count == 3)
     #expect(lines[0].contains("\"droppedEntryCount\":1"))
 }
+
+@Test func `API diagnostics ring buffer stays bounded beyond capacity`() throws {
+    let maximumEntries = 128
+    let recordedEntries = 50_000
+    let store = DiscordAPIDiagnosticStore(
+        maximumEntries: maximumEntries,
+        maximumRetainedBytes: 2 * 1_024 * 1_024
+    )
+
+    for attempt in 1 ... recordedEntries {
+        store.recordHTTPRequest(
+            method: "GET",
+            path: "/channels/\(attempt)",
+            body: nil,
+            attempt: attempt
+        )
+    }
+
+    let lines = try #require(
+        String(data: store.exportData(), encoding: .utf8)
+    ).split(separator: "\n")
+    let metadata = try decodedJSONObject(lines[0])
+    let firstEntry = try decodedJSONObject(lines[1])
+    let lastEntry = try decodedJSONObject(lines[maximumEntries])
+
+    #expect(store.retainedEntryCount == maximumEntries)
+    #expect(lines.count == maximumEntries + 1)
+    #expect(metadata["droppedEntryCount"] as? Int == recordedEntries - maximumEntries)
+    #expect(firstEntry["sequence"] as? Int == recordedEntries - maximumEntries + 1)
+    #expect(lastEntry["sequence"] as? Int == recordedEntries)
+}
+
+@Test func `API diagnostics bound payload collections`() throws {
+    let values = (0 ..< 250).map { JSONValue.string(String($0)) }
+    let fields = Dictionary(
+        uniqueKeysWithValues: (0 ..< 250).map {
+            ("field_\($0)", JSONValue.number(Double($0)))
+        }
+    )
+    let payload = JSONValue.object([
+        "items": .array(values),
+        "fields": .object(fields)
+    ])
+    let data = try JSONEncoder().encode(payload)
+
+    let sanitized = try #require(
+        DiscordAPIDiagnosticStore.sanitizedPayload(data)
+    )
+    guard case let .object(root) = sanitized,
+          case let .array(retainedItems)? = root["items"],
+          case let .object(retainedFields)? = root["fields"]
+    else {
+        Issue.record("Expected a sanitized object with bounded collections.")
+        return
+    }
+    #expect(retainedItems.count == 101)
+    #expect(retainedFields.count == 101)
+    #expect(retainedItems.last == .object([
+        "truncated_count": .number(150)
+    ]))
+    #expect(retainedFields["truncated_field_count"] == .number(150))
+}
+
+@Test func `API diagnostics enforce retained byte budget`() throws {
+    let maximumRetainedBytes = 4_096
+    let store = DiscordAPIDiagnosticStore(
+        maximumEntries: 1_000,
+        maximumRetainedBytes: maximumRetainedBytes
+    )
+    let payload = JSONValue.object([
+        "items": .array(
+            (0 ..< 250).map { JSONValue.string(String($0)) }
+        )
+    ])
+    let data = try JSONEncoder().encode(payload)
+
+    for attempt in 1 ... 50 {
+        store.recordHTTPRequest(
+            method: "POST",
+            path: "/channels/1/messages",
+            body: data,
+            attempt: attempt
+        )
+    }
+
+    let metadataLine = try #require(
+        String(data: store.exportData(), encoding: .utf8)?
+            .split(separator: "\n")
+            .first
+    )
+    let metadata = try decodedJSONObject(metadataLine)
+    #expect(store.retainedEstimatedByteCount <= maximumRetainedBytes)
+    #expect(store.retainedEntryCount < 50)
+    #expect((metadata["droppedEntryCount"] as? Int ?? 0) > 0)
+    #expect(
+        metadata["retainedEstimatedByteCount"] as? Int
+            == store.retainedEstimatedByteCount
+    )
+
+    store.clear()
+    #expect(store.retainedEntryCount == 0)
+    #expect(store.retainedEstimatedByteCount == 0)
+}
+
+private func decodedJSONObject(
+    _ line: Substring
+) throws -> [String: Any] {
+    let data = Data(line.utf8)
+    return try #require(
+        JSONSerialization.jsonObject(with: data) as? [String: Any]
+    )
+}
