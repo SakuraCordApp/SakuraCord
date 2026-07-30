@@ -127,6 +127,7 @@ for framework in "$BIN_DIR"/*.framework; do
   ditto "$framework" "$FRAMEWORKS/$framework_name"
   codesign --force --sign - "$FRAMEWORKS/$framework_name" >/dev/null
 done
+cp "$ROOT_DIR/docs/THIRD_PARTY_NOTICES.md" "$RESOURCES/THIRD_PARTY_NOTICES.md"
 
 if [[ ! -d "$APP_ICON" ]]; then
   echo "missing app icon: $APP_ICON" >&2

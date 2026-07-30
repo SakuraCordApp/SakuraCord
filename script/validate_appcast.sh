@@ -177,6 +177,13 @@ if [[ ! -d "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework" ]]; then
   echo "The packaged app is missing Sparkle.framework." >&2
   exit 1
 fi
+THIRD_PARTY_NOTICES="$APP_BUNDLE/Contents/Resources/THIRD_PARTY_NOTICES.md"
+if [[ ! -f "$THIRD_PARTY_NOTICES" ]] \
+  || ! grep -Fq "## Sparkle" "$THIRD_PARTY_NOTICES" \
+  || ! grep -Fq "Copyright (c) 2006-2013 Andy Matuschak." "$THIRD_PARTY_NOTICES"; then
+  echo "The packaged app is missing the complete Sparkle third-party notices." >&2
+  exit 1
+fi
 
 ENTITLEMENTS="$(
   codesign -d --entitlements :- "$APP_BUNDLE" 2>/dev/null
