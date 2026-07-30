@@ -1278,12 +1278,49 @@ import Testing
 }
 
 @MainActor
-@Test func `escape is consumed by the native composer after autocomplete declines it`() {
+@Test func `escape is consumed by the native composer after autocomplete declines it`() throws {
     let textView = ComposerNSTextView()
     var escapeCount = 0
     textView.onAutocompleteCommand = { _ in false }
     textView.onEscape = { escapeCount += 1 }
-    let event = NSEvent.keyEvent(
+    textView.keyDown(with: try escapeKeyEvent())
+    #expect(escapeCount == 1)
+}
+
+@MainActor
+@Test func `inline editor cancel handles focused and unfocused Escape`() throws {
+    var cancelCount = 0
+    let actions = InlineMessageEditorComposerActions(
+        onSubmit: {},
+        onEscape: { cancelCount += 1 }
+    )
+    let textView = ComposerNSTextView()
+    textView.onAutocompleteCommand = { _ in false }
+    textView.onEscape = actions.onEscape
+    textView.keyDown(with: try escapeKeyEvent())
+    #expect(cancelCount == 1)
+
+    #expect(ComposerUnfocusedTypingMonitor.handleEscape(
+        keyCode: 53,
+        onEscape: actions.onEscape
+    ))
+    #expect(cancelCount == 2)
+    #expect(!ComposerUnfocusedTypingMonitor.handleEscape(
+        keyCode: 49,
+        onEscape: actions.onEscape
+    ))
+    #expect(cancelCount == 2)
+}
+
+@MainActor
+@Test func `composer text accepts the activation click`() {
+    let textView = ComposerNSTextView()
+    #expect(textView.acceptsFirstMouse(for: nil))
+}
+
+@MainActor
+private func escapeKeyEvent() throws -> NSEvent {
+    try #require(NSEvent.keyEvent(
         with: .keyDown,
         location: .zero,
         modifierFlags: [],
@@ -1294,15 +1331,7 @@ import Testing
         charactersIgnoringModifiers: "\u{1B}",
         isARepeat: false,
         keyCode: 53
-    )
-    textView.keyDown(with: try! #require(event))
-    #expect(escapeCount == 1)
-}
-
-@MainActor
-@Test func `composer text accepts the activation click`() {
-    let textView = ComposerNSTextView()
-    #expect(textView.acceptsFirstMouse(for: nil))
+    ))
 }
 
 @MainActor

@@ -501,6 +501,11 @@ enum MessageEditLayoutMetrics {
     }
 }
 
+struct InlineMessageEditorComposerActions {
+    let onSubmit: () -> Void
+    let onEscape: () -> Void
+}
+
 private struct InlineMessageEditor: View {
     let model: AppModel
     @Binding var text: String
@@ -510,6 +515,13 @@ private struct InlineMessageEditor: View {
     @State private var isFocused = true
     @State private var autocompleteIndex = 0
     @State private var isAutocompleteDismissed = false
+
+    private var composerActions: InlineMessageEditorComposerActions {
+        InlineMessageEditorComposerActions(
+            onSubmit: save,
+            onEscape: cancel
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: MessageEditLayoutMetrics.editorFooterSpacing) {
@@ -527,7 +539,8 @@ private struct InlineMessageEditor: View {
                 placeholder: "Edit message",
                 sendWithReturn: MessageEditInputPolicy.sendsWithReturn,
                 onTextChange: { text = $0 },
-                onSubmit: save,
+                onSubmit: composerActions.onSubmit,
+                onEscape: composerActions.onEscape,
                 onAutocompleteCommand: handleAutocomplete,
                 capturesUnfocusedTyping: true,
                 selection: $selection,

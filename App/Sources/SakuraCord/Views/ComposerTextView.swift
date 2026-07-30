@@ -742,8 +742,10 @@ final class ComposerUnfocusedTypingMonitor {
             if Self.shouldOfferReturn(event.keyCode) {
                 return self.onUnfocusedReturn?(event) == true ? nil : event
             }
-            if Self.shouldOfferEscape(event.keyCode) {
-                self.onEscape?()
+            if Self.handleEscape(
+                keyCode: event.keyCode,
+                onEscape: self.onEscape
+            ) {
                 return nil
             }
             guard Self.shouldRedirect(event) else { return event }
@@ -775,6 +777,15 @@ final class ComposerUnfocusedTypingMonitor {
         return characters.unicodeScalars.contains {
             !CharacterSet.controlCharacters.contains($0)
         }
+    }
+
+    static func handleEscape(
+        keyCode: UInt16,
+        onEscape: (() -> Void)?
+    ) -> Bool {
+        guard shouldOfferEscape(keyCode) else { return false }
+        onEscape?()
+        return true
     }
 
     nonisolated static func shouldOfferReturn(_ keyCode: UInt16) -> Bool {
