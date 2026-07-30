@@ -155,11 +155,23 @@ Clone the repository and start in the offline demo:
 ```sh
 git clone https://github.com/SakuraCordApp/SakuraCord.git
 cd SakuraCord
+./script/install_git_hooks.sh
 ./script/build_and_run.sh --offline
 ```
 
+Installing the repository hooks is a required one-time setup step for every
+fresh clone, including clones used by coding agents. The installer is
+idempotent and refuses to overwrite a different existing Git hooks path.
+
 The application package lives in `App/`, and the convenience workspace is
 `SakuraCord.xcworkspace`.
+
+The repository-managed pre-push hook checks the exact committed tips being
+pushed and any staged Swift snapshot before contacting the remote. It downloads
+checksum-verified SwiftFormat and SwiftLint binaries at the repository-pinned
+versions and caches them under the ignored `.build/` directory. Existing
+SwiftLint debt is recorded in `.swiftlint-baseline.json`; new violations are
+rejected without disabling the corresponding rules.
 
 When you deliberately want to open the normal app:
 
@@ -185,6 +197,10 @@ work, screenshots, and fixture-driven development.
   | `./script/worktree_test.sh protocol` | Run the protocol package tests. |
   | `./script/worktree_test.sh app` | Run the application package tests. |
   | `./script/worktree_test.sh all` | Run the repository test matrix. |
+  | `./script/code_quality.sh check` | Run the complete pinned SwiftFormat and SwiftLint policy used by CI and pre-push. |
+  | `./script/code_quality.sh fix --staged` | Format only staged Swift files and re-stage them; refuses files with additional unstaged edits. |
+  | `./script/code_quality.sh fix --files App/Sources/Example.swift` | Format only explicitly selected tracked Swift files. |
+  | `./script/test_code_quality.sh` | Verify committed/staged failures, file diagnostics, correction, and dirty-work preservation. |
   | `./script/ci.sh` | Run the same build entrypoint used by CI. |
 
 </details>

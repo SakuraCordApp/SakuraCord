@@ -3,13 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-if command -v swiftformat >/dev/null 2>&1; then
-  swiftformat "$ROOT_DIR/App" "$ROOT_DIR/Packages" --config "$ROOT_DIR/.swiftformat" --lint
-fi
-
-if command -v swiftlint >/dev/null 2>&1; then
-  swiftlint lint --strict --config "$ROOT_DIR/.swiftlint.yml"
-fi
+"$ROOT_DIR/script/code_quality.sh" check
 
 CREDENTIAL_PATTERN='(Authorization:[[:space:]]*(Bot|Bearer)?[[:space:]]*[A-Za-z0-9._-]{24,}|mfa\.[A-Za-z0-9_-]{20,})'
 if command -v rg >/dev/null 2>&1; then

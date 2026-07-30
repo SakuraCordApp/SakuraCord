@@ -226,6 +226,13 @@ triggered an account restriction.
 - Use `./script/worktree_test.sh protocol`, `app`, or `all`. For packaged-app
   claims, run `./script/build_and_run.sh package` and strict deep `codesign`
   verification. A successful compile is not shipped-app or visual proof.
+- Every agent must run `./script/install_git_hooks.sh` once in each fresh clone
+  before its first push and verify `git config --local --get core.hooksPath`
+  reports `.githooks`. The installer refuses to replace a different existing
+  hooks path; stop and report that conflict instead of bypassing it.
+- Run `./script/code_quality.sh check` before reporting a change ready to push.
+  The versioned pre-push hook checks the committed ref tips and staged Swift
+  snapshot with that same pinned command; do not bypass it.
 
 An authenticated test is an exception for a defect that genuinely depends on
 authenticated or server-issued state and cannot be reproduced faithfully in

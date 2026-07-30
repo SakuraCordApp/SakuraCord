@@ -15,18 +15,6 @@ jobs:
           xcodebuild -version
           swift --version
           xcrun --sdk macosx --show-sdk-version
-      - name: Install SwiftFormat
-        env:
-          SWIFTFORMAT_VERSION: 0.62.1
-          SWIFTFORMAT_SHA256: 7cb1cb1fae04932047c7015441c543848e8e60e1572d808d080e0a1f1661114a
-        run: |
-          curl --fail --location --retry 3 \
-            --output "$RUNNER_TEMP/swiftformat.zip" \
-            "https://github.com/nicklockwood/SwiftFormat/releases/download/$SWIFTFORMAT_VERSION/swiftformat.zip"
-          echo "$SWIFTFORMAT_SHA256  $RUNNER_TEMP/swiftformat.zip" | shasum -a 256 --check
-          ditto -x -k "$RUNNER_TEMP/swiftformat.zip" "$RUNNER_TEMP/swiftformat"
-          echo "$RUNNER_TEMP/swiftformat" >> "$GITHUB_PATH"
-          "$RUNNER_TEMP/swiftformat/swiftformat" --version
       - name: Build
         run: ./script/ci.sh
 

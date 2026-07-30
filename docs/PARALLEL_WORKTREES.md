@@ -127,6 +127,10 @@ Use one designated integration checkout:
 Worktrees share Git metadata. Never force-move or delete another task's branch
 while it is in use.
 
+The repository Git hooks path is also shared. Run
+`./script/install_git_hooks.sh` once in a fresh clone before creating or using
+linked worktrees; do not install or bypass a different hook per worktree.
+
 ## Command reference
 
 Main checkout:
