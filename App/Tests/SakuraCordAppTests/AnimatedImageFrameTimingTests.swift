@@ -79,6 +79,14 @@ import Testing
 }
 
 @Test func `pending prefetch backlog is bounded`() {
+    #expect(SharedMediaRequestSchedulingPolicy.acceptsRemoteLoad(
+        pendingRemoteCount:
+            SharedMediaRequestSchedulingPolicy.maximumPendingRemoteLoads - 1
+    ))
+    #expect(!SharedMediaRequestSchedulingPolicy.acceptsRemoteLoad(
+        pendingRemoteCount:
+            SharedMediaRequestSchedulingPolicy.maximumPendingRemoteLoads
+    ))
     #expect(SharedMediaRequestSchedulingPolicy.acceptsPrefetch(
         pendingPrefetchCount:
             SharedMediaRequestSchedulingPolicy.maximumPendingPrefetchLoads - 1

@@ -1,6 +1,5 @@
 import AppKit
 import ImageIO
-import MediaPipeline
 import QuartzCore
 import SwiftUI
 import WebKit
@@ -326,12 +325,12 @@ actor SharedAnimatedImageLoader {
             maximumPixelDimension: maximumPixelDimension.map { max(1, $0) }
         )
         if let cached = cache.object(forKey: key.cacheKey) { return cached }
-        if let task = inFlight[key] { return try await task.value }
-
         let data = try await SharedMediaDataLoader.shared.data(
             for: url,
             priority: .visible
         )
+        if let cached = cache.object(forKey: key.cacheKey) { return cached }
+        if let task = inFlight[key] { return try await task.value }
         let task = Task.detached(priority: .userInitiated) {
             try DecodedAnimatedImage(
                 data: data,
@@ -359,7 +358,12 @@ nonisolated enum MediaLoadPriority: Int, Sendable {
 nonisolated enum SharedMediaRequestSchedulingPolicy {
     static let maximumConcurrentRemoteLoads = 8
     static let maximumConcurrentPrefetchLoads = 2
+    static let maximumPendingRemoteLoads = 64
     static let maximumPendingPrefetchLoads = 24
+
+    static func acceptsRemoteLoad(pendingRemoteCount: Int) -> Bool {
+        pendingRemoteCount < maximumPendingRemoteLoads
+    }
 
     static func acceptsPrefetch(pendingPrefetchCount: Int) -> Bool {
         pendingPrefetchCount < maximumPendingPrefetchLoads
@@ -383,217 +387,6 @@ nonisolated enum SharedMediaRequestSchedulingPolicy {
         return order.first(where: {
             priorities[$0] == .prefetch
         })
-    }
-}
-
-actor SharedMediaDataLoader {
-    static let shared = SharedMediaDataLoader()
-    private static let remoteMemoryCostLimit = 24 * 1024 * 1024
-    private static let remoteDiskCostLimit: Int64 = 512 * 1024 * 1024
-
-    private struct PendingRemoteLoad {
-        var priority: MediaLoadPriority
-        var continuations: [CheckedContinuation<Data, any Error>]
-    }
-
-    private let localFileCache = NSCache<NSURL, NSData>()
-    private let remoteDataCache = NSCache<NSURL, NSData>()
-    private let remoteDiskCache = try? MediaCache(
-        maximumBytes: remoteDiskCostLimit
-    )
-    private var localFileLoads: [URL: Task<Data, any Error>] = [:]
-    private var pendingRemoteLoads: [URL: PendingRemoteLoad] = [:]
-    private var pendingRemoteOrder: [URL] = []
-    private var activeRemotePriorities: [URL: MediaLoadPriority] = [:]
-    private var activeRemoteContinuations:
-        [URL: [CheckedContinuation<Data, any Error>]] = [:]
-
-    init() {
-        localFileCache.totalCostLimit = 32 * 1024 * 1024
-        localFileCache.countLimit = 256
-        remoteDataCache.totalCostLimit = Self.remoteMemoryCostLimit
-        remoteDataCache.countLimit = 128
-    }
-
-    func data(
-        for url: URL,
-        priority: MediaLoadPriority = .visible
-    ) async throws -> Data {
-        if url.isFileURL {
-            return try await localData(for: url)
-        }
-        if let value = remoteDataCache.object(forKey: url as NSURL) {
-            return value as Data
-        }
-        if let remoteDiskCache {
-            do {
-                if let value = try await remoteDiskCache.data(for: url) {
-                    remoteDataCache.setObject(
-                        value as NSData,
-                        forKey: url as NSURL,
-                        cost: value.count
-                    )
-                    return value
-                }
-            } catch {
-                // A disposable cache failure must never prevent media loading.
-            }
-        }
-        if let value = remoteDataCache.object(forKey: url as NSURL) {
-            return value as Data
-        }
-        return try await withCheckedThrowingContinuation { continuation in
-            enqueueRemoteLoad(
-                for: url,
-                priority: priority,
-                continuation: continuation
-            )
-        }
-    }
-
-    func promotePendingLoad(for url: URL) {
-        guard var pending = pendingRemoteLoads[url],
-              pending.priority != .visible
-        else { return }
-        pending.priority = .visible
-        pendingRemoteLoads[url] = pending
-        startEligibleRemoteLoads()
-    }
-
-    private func localData(for url: URL) async throws -> Data {
-        if let value = localFileCache.object(forKey: url as NSURL) {
-            return value as Data
-        }
-        if let task = localFileLoads[url] {
-            return try await task.value
-        }
-        let task = Task.detached(priority: .utility) {
-            try Data(contentsOf: url)
-        }
-        localFileLoads[url] = task
-        do {
-            let value = try await task.value
-            localFileLoads[url] = nil
-            localFileCache.setObject(
-                value as NSData,
-                forKey: url as NSURL,
-                cost: value.count
-            )
-            return value
-        } catch {
-            localFileLoads[url] = nil
-            throw error
-        }
-    }
-
-    private func enqueueRemoteLoad(
-        for url: URL,
-        priority: MediaLoadPriority,
-        continuation: CheckedContinuation<Data, any Error>
-    ) {
-        if activeRemotePriorities[url] != nil {
-            activeRemoteContinuations[url, default: []].append(continuation)
-            return
-        }
-        if var pending = pendingRemoteLoads[url] {
-            if priority.rawValue > pending.priority.rawValue {
-                pending.priority = priority
-            }
-            pending.continuations.append(continuation)
-            pendingRemoteLoads[url] = pending
-        } else {
-            if priority == .prefetch {
-                let pendingPrefetchCount =
-                    pendingRemoteLoads.values.count(where: {
-                        $0.priority == .prefetch
-                    })
-                guard SharedMediaRequestSchedulingPolicy.acceptsPrefetch(
-                    pendingPrefetchCount: pendingPrefetchCount
-                ) else {
-                    continuation.resume(throwing: CancellationError())
-                    return
-                }
-            }
-            pendingRemoteLoads[url] = PendingRemoteLoad(
-                priority: priority,
-                continuations: [continuation]
-            )
-            pendingRemoteOrder.append(url)
-        }
-        startEligibleRemoteLoads()
-    }
-
-    private func startEligibleRemoteLoads() {
-        while let url = SharedMediaRequestSchedulingPolicy.nextURL(
-            in: pendingRemoteOrder,
-            priorities: pendingRemoteLoads.mapValues(\.priority),
-            activeCount: activeRemotePriorities.count,
-            activePrefetchCount:
-                activeRemotePriorities.values.count(where: {
-                    $0 == .prefetch
-                })
-        ), let pending = pendingRemoteLoads.removeValue(forKey: url) {
-            pendingRemoteOrder.removeAll { $0 == url }
-            activeRemotePriorities[url] = pending.priority
-            activeRemoteContinuations[url] = pending.continuations
-            let taskPriority: TaskPriority =
-                pending.priority == .visible ? .userInitiated : .utility
-            Task.detached(priority: taskPriority) { [weak self] in
-                guard let self else { return }
-                let result: Result<Data, any Error>
-                do {
-                    result = .success(try await Self.download(url))
-                } catch {
-                    result = .failure(error)
-                }
-                await self.finishRemoteLoad(for: url, result: result)
-            }
-        }
-    }
-
-    nonisolated private static func download(_ url: URL) async throws -> Data {
-        let request = URLRequest(
-            url: url,
-            cachePolicy: .returnCacheDataElseLoad,
-            timeoutInterval: 30
-        )
-        let (data, response) = try await URLSession.shared.data(for: request)
-        if let response = response as? HTTPURLResponse,
-           !(200 ..< 300).contains(response.statusCode)
-        {
-            throw URLError(.badServerResponse)
-        }
-        return data
-    }
-
-    private func finishRemoteLoad(
-        for url: URL,
-        result: Result<Data, any Error>
-    ) {
-        activeRemotePriorities[url] = nil
-        let continuations =
-            activeRemoteContinuations.removeValue(forKey: url) ?? []
-        if case let .success(data) = result {
-            remoteDataCache.setObject(
-                data as NSData,
-                forKey: url as NSURL,
-                cost: data.count
-            )
-            if let remoteDiskCache {
-                Task {
-                    try? await remoteDiskCache.insert(data, for: url)
-                }
-            }
-        }
-        for continuation in continuations {
-            switch result {
-            case let .success(data):
-                continuation.resume(returning: data)
-            case let .failure(error):
-                continuation.resume(throwing: error)
-            }
-        }
-        startEligibleRemoteLoads()
     }
 }
 
