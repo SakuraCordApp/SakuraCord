@@ -653,11 +653,18 @@ func commandArgumentsUseAtomicMentionPresentation() throws {
     ) as? String == user.id)
 
     let textView = ApplicationCommandNSTextView()
+    let pasteboard = NSPasteboard(
+        name: NSPasteboard.Name(
+            "dev.sakuracord.tests.command-copy.\(UUID().uuidString)"
+        )
+    )
+    defer { pasteboard.clearContents() }
+    textView.commandPasteboard = pasteboard
     textView.textStorage?.setAttributedString(document.attributedText)
     textView.setSelectedRange(NSRange(location: 0, length: document.attributedText.length))
     textView.copy(nil)
     #expect(
-        NSPasteboard.general.string(forType: .string)
+        pasteboard.string(forType: .string)
             == "/sayas text: testing user: @exy1"
     )
 }

@@ -1330,6 +1330,8 @@ private struct ApplicationCommandStructuredTextView: NSViewRepresentable {
 }
 
 final class ApplicationCommandNSTextView: NSTextView {
+    var commandPasteboard = NSPasteboard.general
+
     var document = ApplicationCommandTextDocument(
         attributedText: NSAttributedString(), segments: [], focusedOptionID: nil
     )
@@ -1362,12 +1364,12 @@ final class ApplicationCommandNSTextView: NSTextView {
             from: attributedString(),
             range: range
         )
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(plainText, forType: .string)
+        commandPasteboard.clearContents()
+        commandPasteboard.setString(plainText, forType: .string)
     }
 
     override func paste(_ sender: Any?) {
-        guard let value = NSPasteboard.general.string(forType: .string) else {
+        guard let value = commandPasteboard.string(forType: .string) else {
             super.paste(sender)
             return
         }
