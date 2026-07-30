@@ -1144,6 +1144,119 @@ func `inline rich tokens inherit their enclosing spoiler`() {
 }
 
 @MainActor
+@Test func `updating a visible media lease keeps shared images pinned`() throws {
+    let firstKey = NativeTimelineMediaKey.media(try #require(URL(
+        string: "https://cdn.example/visible-first.png"
+    )))
+    let secondKey = NativeTimelineMediaKey.media(try #require(URL(
+        string: "https://cdn.example/visible-second.png"
+    )))
+    let firstImage = NSImage(size: NSSize(width: 32, height: 32))
+    let secondImage = NSImage(size: NSSize(width: 32, height: 32))
+    let owner = UUID()
+    let store = NativeTimelineMediaStore.shared
+
+    store.cacheImageForTesting(firstImage, for: firstKey)
+    store.pinLoadedImages(for: [firstKey], owner: owner)
+    store.evictVolatileImageForTesting(for: firstKey)
+    store.cacheImageForTesting(secondImage, for: secondKey)
+    store.pinLoadedImages(for: [firstKey, secondKey], owner: owner)
+    store.evictVolatileImageForTesting(for: secondKey)
+
+    #expect((store.image(for: firstKey) as AnyObject?) === firstImage)
+    #expect((store.image(for: secondKey) as AnyObject?) === secondImage)
+
+    store.pinLoadedImages(for: [secondKey], owner: owner)
+    #expect(store.image(for: firstKey) == nil)
+    #expect((store.image(for: secondKey) as AnyObject?) === secondImage)
+    store.releasePinnedImages(owner: owner)
+    #expect(store.image(for: secondKey) == nil)
+}
+
+@MainActor
+@Test func `retained row media has a hard decoded pixel budget`() throws {
+    let store = NativeTimelineMediaStore.shared
+    let image = NSImage(size: NSSize(width: 1_024, height: 1_024))
+    let representation = try #require(
+        NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: 1_024,
+            pixelsHigh: 1_024,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        )
+    )
+    image.addRepresentation(representation)
+    var owners: [UUID] = []
+
+    for index in 0 ..< 10 {
+        let key = NativeTimelineMediaKey.media(try #require(URL(
+            string: "https://cdn.example/large-\(index).png"
+        )))
+        let owner = UUID()
+        owners.append(owner)
+        store.cacheImageForTesting(image, for: key)
+        store.pinLoadedImages(for: [key], owner: owner)
+    }
+
+    #expect(
+        store.pinnedImageCostForTesting
+            <= store.pinnedImageCostLimitForTesting
+    )
+    for owner in owners {
+        store.releasePinnedImages(owner: owner)
+    }
+    #expect(store.pinnedImageCostForTesting == 0)
+}
+
+@MainActor
+@Test func `visible gallery survives deterministic decoded cache trimming`() throws {
+    let store = NativeTimelineMediaStore.shared
+    let image = NSImage(size: NSSize(width: 1_024, height: 1_024))
+    let representation = try #require(
+        NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: 1_024,
+            pixelsHigh: 1_024,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        )
+    )
+    image.addRepresentation(representation)
+    let keys = try (0 ..< 20).map { index in
+        NativeTimelineMediaKey.media(try #require(URL(
+            string: "https://cdn.example/cache-pressure-\(index).png"
+        )))
+    }
+    let visibleKey = keys[0]
+    let owner = UUID()
+    defer {
+        store.releaseVisibleImages(owner: owner)
+        for key in keys {
+            store.evictVolatileImageForTesting(for: key)
+        }
+    }
+
+    store.cacheImageForTesting(image, for: visibleKey)
+    store.retainVisibleImages(for: [visibleKey], owner: owner)
+    for key in keys.dropFirst() {
+        store.cacheImageForTesting(image, for: key)
+    }
+
+    #expect((store.image(for: visibleKey) as AnyObject?) === image)
+}
+
+@MainActor
 @Test func `native reply media dependencies include the replied-to author avatar`() throws {
     let avatarURL = try #require(
         URL(string: "https://cdn.discordapp.com/avatars/2/reply.webp")

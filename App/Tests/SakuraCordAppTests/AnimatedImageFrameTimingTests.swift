@@ -46,6 +46,49 @@ import Testing
     )
 }
 
+@Test func `visible media is scheduled ahead of queued prefetch work`() throws {
+    let prefetch = try #require(URL(string: "https://cdn.example/prefetch.png"))
+    let visible = try #require(URL(string: "https://cdn.example/visible.png"))
+    let order = [prefetch, visible]
+    let priorities: [URL: MediaLoadPriority] = [
+        prefetch: .prefetch,
+        visible: .visible,
+    ]
+
+    #expect(
+        SharedMediaRequestSchedulingPolicy.nextURL(
+            in: order,
+            priorities: priorities,
+            activeCount: 2,
+            activePrefetchCount: 2
+        ) == visible
+    )
+}
+
+@Test func `prefetch media cannot consume visible request capacity`() throws {
+    let prefetch = try #require(URL(string: "https://cdn.example/prefetch.png"))
+    #expect(
+        SharedMediaRequestSchedulingPolicy.nextURL(
+            in: [prefetch],
+            priorities: [prefetch: .prefetch],
+            activeCount: 2,
+            activePrefetchCount:
+                SharedMediaRequestSchedulingPolicy.maximumConcurrentPrefetchLoads
+        ) == nil
+    )
+}
+
+@Test func `pending prefetch backlog is bounded`() {
+    #expect(SharedMediaRequestSchedulingPolicy.acceptsPrefetch(
+        pendingPrefetchCount:
+            SharedMediaRequestSchedulingPolicy.maximumPendingPrefetchLoads - 1
+    ))
+    #expect(!SharedMediaRequestSchedulingPolicy.acceptsPrefetch(
+        pendingPrefetchCount:
+            SharedMediaRequestSchedulingPolicy.maximumPendingPrefetchLoads
+    ))
+}
+
 @MainActor @Test
 func `cached avatar frame is installed before the representable is attached`() throws {
     let colorSpace = try #require(CGColorSpace(name: CGColorSpace.sRGB))
@@ -123,6 +166,61 @@ func `recreated avatar paints its cached frame before animated content mounts`()
     let avatar = AvatarView(name: "Maya", url: url, size: 32)
     #expect(avatar.requestedPixelDimension == 64)
     #expect(avatar.cachedFrame === decoded.frames.first)
+}
+
+@MainActor @Test
+func `recent displayed images use a deterministic bounded cache`() throws {
+    let colorSpace = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+    let context = try #require(
+        CGContext(
+            data: nil,
+            width: 1,
+            height: 1,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )
+    )
+    let image = try #require(context.makeImage())
+    let data = NSMutableData()
+    let destination = try #require(
+        CGImageDestinationCreateWithData(
+            data,
+            "public.png" as CFString,
+            1,
+            nil
+        )
+    )
+    CGImageDestinationAddImage(destination, image, nil)
+    #expect(CGImageDestinationFinalize(destination))
+    let decoded = try DecodedAnimatedImage(
+        data: data as Data,
+        maximumPixelDimension: 1
+    )
+    let cache = AnimatedRemoteImageDisplayCache.shared
+    cache.removeAll()
+
+    for index in 0 ... cache.maximumCountForTesting {
+        let url = try #require(URL(
+            string: "https://cdn.example/recent-\(index).png"
+        ))
+        cache.insert(decoded, for: url, maximumPixelDimension: 1)
+    }
+
+    #expect(cache.entryCountForTesting == cache.maximumCountForTesting)
+    let oldest = try #require(URL(
+        string: "https://cdn.example/recent-0.png"
+    ))
+    let newest = try #require(URL(
+        string:
+            "https://cdn.example/recent-\(cache.maximumCountForTesting).png"
+    ))
+    #expect(cache.image(for: oldest, maximumPixelDimension: 1) == nil)
+    #expect(
+        cache.image(for: newest, maximumPixelDimension: 1) === decoded
+    )
+    cache.removeAll()
 }
 
 @Test func `animated image decoding respects the requested display pixel budget`() throws {

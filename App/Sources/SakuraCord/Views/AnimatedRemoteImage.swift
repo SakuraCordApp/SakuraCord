@@ -1,5 +1,6 @@
 import AppKit
 import ImageIO
+import MediaPipeline
 import QuartzCore
 import SwiftUI
 import WebKit
@@ -130,21 +131,32 @@ struct AnimatedRemoteImage: View {
 final class AnimatedRemoteImageDisplayCache: @unchecked Sendable {
     static let shared = AnimatedRemoteImageDisplayCache()
 
-    private let cache: NSCache<NSString, DecodedAnimatedImage> = {
-        let cache = NSCache<NSString, DecodedAnimatedImage>()
-        cache.countLimit = 256
-        cache.totalCostLimit = 64 * 1_024 * 1_024
-        return cache
-    }()
+    private struct Entry {
+        let image: DecodedAnimatedImage
+        let cost: Int
+    }
+
+    private let maximumCount = 128
+    private let maximumCost = 32 * 1_024 * 1_024
+    private let lock = NSLock()
+    private var entries: [String: Entry] = [:]
+    private var recency: [String] = []
+    private var totalCost = 0
 
     func image(
         for url: URL,
         maximumPixelDimension: Int?
     ) -> DecodedAnimatedImage? {
-        cache.object(forKey: key(
+        let key = key(
             url: url,
             maximumPixelDimension: maximumPixelDimension
-        ))
+        )
+        lock.lock()
+        defer { lock.unlock() }
+        guard let entry = entries[key] else { return nil }
+        recency.removeAll { $0 == key }
+        recency.append(key)
+        return entry.image
     }
 
     func insert(
@@ -152,26 +164,67 @@ final class AnimatedRemoteImageDisplayCache: @unchecked Sendable {
         for url: URL,
         maximumPixelDimension: Int?
     ) {
-        cache.setObject(
-            image,
-            forKey: key(
-                url: url,
-                maximumPixelDimension: maximumPixelDimension
-            ),
-            cost: image.estimatedByteCount
+        let key = key(
+            url: url,
+            maximumPixelDimension: maximumPixelDimension
         )
+        let entry = Entry(
+            image: image,
+            cost: max(1, image.estimatedByteCount)
+        )
+        lock.lock()
+        defer { lock.unlock() }
+        if let previous = entries[key] {
+            totalCost -= previous.cost
+            entries[key] = nil
+            recency.removeAll { $0 == key }
+        }
+        guard entry.cost <= maximumCost else {
+            return
+        }
+        entries[key] = entry
+        totalCost += entry.cost
+        recency.append(key)
+        evictIfNeeded()
     }
 
     func removeAll() {
-        cache.removeAllObjects()
+        lock.lock()
+        entries.removeAll(keepingCapacity: true)
+        recency.removeAll(keepingCapacity: true)
+        totalCost = 0
+        lock.unlock()
     }
+
+#if DEBUG
+    var entryCountForTesting: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return entries.count
+    }
+
+    var maximumCountForTesting: Int {
+        maximumCount
+    }
+#endif
 
     private func key(
         url: URL,
         maximumPixelDimension: Int?
-    ) -> NSString {
+    ) -> String {
         "\(url.absoluteString)#display-pixel-max=\(maximumPixelDimension ?? 0)"
-            as NSString
+    }
+
+    private func evictIfNeeded() {
+        while entries.count > maximumCount
+            || totalCost > maximumCost
+        {
+            guard let key = recency.first,
+                  let removed = entries.removeValue(forKey: key)
+            else { return }
+            recency.removeAll { $0 == key }
+            totalCost -= removed.cost
+        }
     }
 }
 
@@ -263,8 +316,8 @@ actor SharedAnimatedImageLoader {
     private var inFlight: [RequestKey: Task<DecodedAnimatedImage, any Error>] = [:]
 
     init() {
-        cache.totalCostLimit = 96 * 1024 * 1024
-        cache.countLimit = 256
+        cache.totalCostLimit = 48 * 1024 * 1024
+        cache.countLimit = 96
     }
 
     func image(for url: URL, maximumPixelDimension: Int?) async throws -> DecodedAnimatedImage {
@@ -275,7 +328,10 @@ actor SharedAnimatedImageLoader {
         if let cached = cache.object(forKey: key.cacheKey) { return cached }
         if let task = inFlight[key] { return try await task.value }
 
-        let data = try await SharedMediaDataLoader.shared.data(for: url)
+        let data = try await SharedMediaDataLoader.shared.data(
+            for: url,
+            priority: .visible
+        )
         let task = Task.detached(priority: .userInitiated) {
             try DecodedAnimatedImage(
                 data: data,
@@ -295,56 +351,250 @@ actor SharedAnimatedImageLoader {
     }
 }
 
+nonisolated enum MediaLoadPriority: Int, Sendable {
+    case prefetch
+    case visible
+}
+
+nonisolated enum SharedMediaRequestSchedulingPolicy {
+    static let maximumConcurrentRemoteLoads = 8
+    static let maximumConcurrentPrefetchLoads = 2
+    static let maximumPendingPrefetchLoads = 24
+
+    static func acceptsPrefetch(pendingPrefetchCount: Int) -> Bool {
+        pendingPrefetchCount < maximumPendingPrefetchLoads
+    }
+
+    static func nextURL(
+        in order: [URL],
+        priorities: [URL: MediaLoadPriority],
+        activeCount: Int,
+        activePrefetchCount: Int
+    ) -> URL? {
+        guard activeCount < maximumConcurrentRemoteLoads else { return nil }
+        if let visible = order.first(where: {
+            priorities[$0] == .visible
+        }) {
+            return visible
+        }
+        guard activePrefetchCount < maximumConcurrentPrefetchLoads else {
+            return nil
+        }
+        return order.first(where: {
+            priorities[$0] == .prefetch
+        })
+    }
+}
+
 actor SharedMediaDataLoader {
     static let shared = SharedMediaDataLoader()
+    private static let remoteMemoryCostLimit = 24 * 1024 * 1024
+    private static let remoteDiskCostLimit: Int64 = 512 * 1024 * 1024
+
+    private struct PendingRemoteLoad {
+        var priority: MediaLoadPriority
+        var continuations: [CheckedContinuation<Data, any Error>]
+    }
+
     private let localFileCache = NSCache<NSURL, NSData>()
-    private var inFlight: [URL: Task<Data, any Error>] = [:]
+    private let remoteDataCache = NSCache<NSURL, NSData>()
+    private let remoteDiskCache = try? MediaCache(
+        maximumBytes: remoteDiskCostLimit
+    )
+    private var localFileLoads: [URL: Task<Data, any Error>] = [:]
+    private var pendingRemoteLoads: [URL: PendingRemoteLoad] = [:]
+    private var pendingRemoteOrder: [URL] = []
+    private var activeRemotePriorities: [URL: MediaLoadPriority] = [:]
+    private var activeRemoteContinuations:
+        [URL: [CheckedContinuation<Data, any Error>]] = [:]
 
     init() {
         localFileCache.totalCostLimit = 32 * 1024 * 1024
         localFileCache.countLimit = 256
+        remoteDataCache.totalCostLimit = Self.remoteMemoryCostLimit
+        remoteDataCache.countLimit = 128
     }
 
-    func data(for url: URL) async throws -> Data {
-        if url.isFileURL, let value = localFileCache.object(forKey: url as NSURL) {
+    func data(
+        for url: URL,
+        priority: MediaLoadPriority = .visible
+    ) async throws -> Data {
+        if url.isFileURL {
+            return try await localData(for: url)
+        }
+        if let value = remoteDataCache.object(forKey: url as NSURL) {
             return value as Data
         }
-        if let task = inFlight[url] {
+        if let remoteDiskCache {
+            do {
+                if let value = try await remoteDiskCache.data(for: url) {
+                    remoteDataCache.setObject(
+                        value as NSData,
+                        forKey: url as NSURL,
+                        cost: value.count
+                    )
+                    return value
+                }
+            } catch {
+                // A disposable cache failure must never prevent media loading.
+            }
+        }
+        if let value = remoteDataCache.object(forKey: url as NSURL) {
+            return value as Data
+        }
+        return try await withCheckedThrowingContinuation { continuation in
+            enqueueRemoteLoad(
+                for: url,
+                priority: priority,
+                continuation: continuation
+            )
+        }
+    }
+
+    func promotePendingLoad(for url: URL) {
+        guard var pending = pendingRemoteLoads[url],
+              pending.priority != .visible
+        else { return }
+        pending.priority = .visible
+        pendingRemoteLoads[url] = pending
+        startEligibleRemoteLoads()
+    }
+
+    private func localData(for url: URL) async throws -> Data {
+        if let value = localFileCache.object(forKey: url as NSURL) {
+            return value as Data
+        }
+        if let task = localFileLoads[url] {
             return try await task.value
         }
-        let task = Task<Data, any Error> {
-            if url.isFileURL {
-                return try Data(contentsOf: url)
-            }
-            let request = URLRequest(
-                url: url,
-                cachePolicy: .returnCacheDataElseLoad,
-                timeoutInterval: 30
-            )
-            let (data, response) = try await URLSession.shared.data(for: request)
-            if let response = response as? HTTPURLResponse, !(200 ..< 300).contains(response.statusCode) {
-                throw URLError(.badServerResponse)
-            }
-            return data
+        let task = Task.detached(priority: .utility) {
+            try Data(contentsOf: url)
         }
-        inFlight[url] = task
+        localFileLoads[url] = task
         do {
             let value = try await task.value
-            inFlight[url] = nil
-            if url.isFileURL {
-                localFileCache.setObject(
-                    value as NSData,
-                    forKey: url as NSURL,
-                    cost: value.count
-                )
-            }
+            localFileLoads[url] = nil
+            localFileCache.setObject(
+                value as NSData,
+                forKey: url as NSURL,
+                cost: value.count
+            )
             return value
         } catch {
-            inFlight[url] = nil
+            localFileLoads[url] = nil
             throw error
         }
     }
 
+    private func enqueueRemoteLoad(
+        for url: URL,
+        priority: MediaLoadPriority,
+        continuation: CheckedContinuation<Data, any Error>
+    ) {
+        if activeRemotePriorities[url] != nil {
+            activeRemoteContinuations[url, default: []].append(continuation)
+            return
+        }
+        if var pending = pendingRemoteLoads[url] {
+            if priority.rawValue > pending.priority.rawValue {
+                pending.priority = priority
+            }
+            pending.continuations.append(continuation)
+            pendingRemoteLoads[url] = pending
+        } else {
+            if priority == .prefetch {
+                let pendingPrefetchCount =
+                    pendingRemoteLoads.values.count(where: {
+                        $0.priority == .prefetch
+                    })
+                guard SharedMediaRequestSchedulingPolicy.acceptsPrefetch(
+                    pendingPrefetchCount: pendingPrefetchCount
+                ) else {
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+            }
+            pendingRemoteLoads[url] = PendingRemoteLoad(
+                priority: priority,
+                continuations: [continuation]
+            )
+            pendingRemoteOrder.append(url)
+        }
+        startEligibleRemoteLoads()
+    }
+
+    private func startEligibleRemoteLoads() {
+        while let url = SharedMediaRequestSchedulingPolicy.nextURL(
+            in: pendingRemoteOrder,
+            priorities: pendingRemoteLoads.mapValues(\.priority),
+            activeCount: activeRemotePriorities.count,
+            activePrefetchCount:
+                activeRemotePriorities.values.count(where: {
+                    $0 == .prefetch
+                })
+        ), let pending = pendingRemoteLoads.removeValue(forKey: url) {
+            pendingRemoteOrder.removeAll { $0 == url }
+            activeRemotePriorities[url] = pending.priority
+            activeRemoteContinuations[url] = pending.continuations
+            let taskPriority: TaskPriority =
+                pending.priority == .visible ? .userInitiated : .utility
+            Task.detached(priority: taskPriority) { [weak self] in
+                guard let self else { return }
+                let result: Result<Data, any Error>
+                do {
+                    result = .success(try await Self.download(url))
+                } catch {
+                    result = .failure(error)
+                }
+                await self.finishRemoteLoad(for: url, result: result)
+            }
+        }
+    }
+
+    nonisolated private static func download(_ url: URL) async throws -> Data {
+        let request = URLRequest(
+            url: url,
+            cachePolicy: .returnCacheDataElseLoad,
+            timeoutInterval: 30
+        )
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let response = response as? HTTPURLResponse,
+           !(200 ..< 300).contains(response.statusCode)
+        {
+            throw URLError(.badServerResponse)
+        }
+        return data
+    }
+
+    private func finishRemoteLoad(
+        for url: URL,
+        result: Result<Data, any Error>
+    ) {
+        activeRemotePriorities[url] = nil
+        let continuations =
+            activeRemoteContinuations.removeValue(forKey: url) ?? []
+        if case let .success(data) = result {
+            remoteDataCache.setObject(
+                data as NSData,
+                forKey: url as NSURL,
+                cost: data.count
+            )
+            if let remoteDiskCache {
+                Task {
+                    try? await remoteDiskCache.insert(data, for: url)
+                }
+            }
+        }
+        for continuation in continuations {
+            switch result {
+            case let .success(data):
+                continuation.resume(returning: data)
+            case let .failure(error):
+                continuation.resume(throwing: error)
+            }
+        }
+        startEligibleRemoteLoads()
+    }
 }
 
 struct AnimatedImageRepresentable: NSViewRepresentable {

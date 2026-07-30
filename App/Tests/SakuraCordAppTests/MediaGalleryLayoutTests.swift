@@ -32,6 +32,12 @@ import Testing
     #expect(MediaGalleryPlan.frames(count: 14, width: 500, aspectRatios: [], spacing: 4).count == 14)
 }
 
+@Test func `multi image galleries crop edge to edge while single images preserve aspect`() {
+    #expect(!MediaGalleryImagePresentation.fillsFrame(itemCount: 1))
+    #expect(MediaGalleryImagePresentation.fillsFrame(itemCount: 2))
+    #expect(MediaGalleryImagePresentation.fillsFrame(itemCount: 4))
+}
+
 @MainActor @Test func `gifv embed media autoplays while ordinary video attachments remain click to play`() throws {
     let videoURL = try #require(URL(string: "https://cdn.example/animation.mp4"))
     let embed = RichMediaItem(

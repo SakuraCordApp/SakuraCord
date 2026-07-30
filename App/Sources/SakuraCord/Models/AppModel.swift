@@ -600,6 +600,18 @@ enum MessageRowsUpdateRecordBuilder {
     }
 }
 
+nonisolated enum ChannelMessageCachePolicy {
+    static let maximumChannelCount = 8
+    static let maximumMessageCountPerChannel = 250
+
+    static func retainedMessages(from messages: [Message]) -> [Message] {
+        guard messages.count > maximumMessageCountPerChannel else {
+            return messages
+        }
+        return Array(messages.suffix(maximumMessageCountPerChannel))
+    }
+}
+
 @Observable
 final class AppModel {
     private enum ThreadErrorScope {
@@ -714,10 +726,11 @@ final class AppModel {
                 timelinePresentationRevision &+= 1
             }
             memberSections = MemberSection.make(from: members)
-            let indexed = Dictionary(
-                members.map { ($0.id, $0) },
-                uniquingKeysWith: { _, newer in newer }
-            )
+            var indexed: [UserID: Member] = [:]
+            indexed.reserveCapacity(members.count)
+            for member in members {
+                indexed[member.id] = member
+            }
             if membersByID != indexed {
                 membersByID = indexed
             }
@@ -1082,7 +1095,7 @@ final class AppModel {
                 if conversationNewestRequest?.channelID == oldValue {
                     conversationNewestRequest = nil
                 }
-                messageCache[oldValue] = messages
+                storeCachedMessages(messages, for: oldValue)
                 lastTypingRequestAt[oldValue] = nil
                 _ = readState.updatePresentation(channelID: oldValue, isPresented: false)
                 readState.endForumVisit(channelID: oldValue)
@@ -1210,6 +1223,7 @@ final class AppModel {
     @ObservationIgnored private var messageNavigationRequestID: UInt64 = 0
     @ObservationIgnored private var conversationNewestRequestID: UInt64 = 0
     @ObservationIgnored private var messageCache: [ChannelID: [Message]] = [:]
+    @ObservationIgnored private var messageCacheOrder: [ChannelID] = []
     @ObservationIgnored private var hasMoreCache: [ChannelID: Bool] = [:]
     @ObservationIgnored private let discordNetworkDisabled: Bool
     @ObservationIgnored private let restoresStoredSession: Bool
@@ -1357,6 +1371,7 @@ final class AppModel {
         hasCompletedInitialMessageLoad = false
         hasCompletedInitialThreadLoad = false
         messageCache = [:]
+        messageCacheOrder = []
         hasMoreCache = [:]
         dismissAllProfiles(clearsCache: true)
         errorMessage = nil
@@ -1424,6 +1439,7 @@ final class AppModel {
         hasCompletedInitialMessageLoad = false
         hasCompletedInitialThreadLoad = false
         messageCache = [:]
+        messageCacheOrder = []
         hasMoreCache = [:]
         members = []
         dismissAllProfiles(clearsCache: true)
@@ -2388,7 +2404,7 @@ final class AppModel {
             return
         }
 
-        let cachedMessages = messageCache.removeValue(forKey: channelID) ?? []
+        let cachedMessages = takeCachedMessages(for: channelID)
         replaceSelectedMessages(with: cachedMessages)
         hasMoreMessages = hasMoreCache[channelID] ?? false
         // Cached rows are immediately presentable, but the newest-page
@@ -6456,7 +6472,35 @@ final class AppModel {
 
     private func cache(_ message: Message) {
         let current = messageCache[message.channelID] ?? []
-        messageCache[message.channelID] = Self.merging(current: current, fresh: [message])
+        storeCachedMessages(
+            Self.merging(current: current, fresh: [message]),
+            for: message.channelID
+        )
+    }
+
+    private func storeCachedMessages(
+        _ messages: [Message],
+        for channelID: ChannelID
+    ) {
+        let retained = ChannelMessageCachePolicy.retainedMessages(from: messages)
+        messageCache[channelID] = retained
+        messageCacheOrder.removeAll { $0 == channelID }
+        messageCacheOrder.append(channelID)
+        if retained.count < messages.count {
+            hasMoreCache[channelID] = true
+        }
+        while messageCacheOrder.count
+            > ChannelMessageCachePolicy.maximumChannelCount
+        {
+            let evicted = messageCacheOrder.removeFirst()
+            messageCache[evicted] = nil
+            hasMoreCache[evicted] = nil
+        }
+    }
+
+    private func takeCachedMessages(for channelID: ChannelID) -> [Message] {
+        messageCacheOrder.removeAll { $0 == channelID }
+        return messageCache.removeValue(forKey: channelID) ?? []
     }
 
     private func reconcileCachedMessageUpdate(_ message: Message) {

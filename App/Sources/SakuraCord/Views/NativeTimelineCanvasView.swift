@@ -1487,24 +1487,38 @@ private final class NativeTimelineAnimatedMedia {
 final class NativeTimelineMediaStore {
     static let shared = NativeTimelineMediaStore()
 
+    private struct CachedImage {
+        let image: NSImage
+        let cost: Int
+    }
+
     private struct PinnedImageReference {
         let image: NSImage
+        let cost: Int
         var ownerCount: Int
     }
 
-    private let cache: NSCache<NSString, NSImage> = {
-        let cache = NSCache<NSString, NSImage>()
-        cache.countLimit = 384
-        cache.totalCostLimit = 96 * 1_024 * 1_024
-        return cache
-    }()
+    private static let imageCacheCostLimit = 48 * 1_024 * 1_024
+    private static let imageCacheCountLimit = 192
+    private static let pinnedImageCostLimit = 32 * 1_024 * 1_024
+
+    // NSCache may discard every decoded image during ordinary memory pressure,
+    // even while a cached row bitmap is still on screen. Hovering that row
+    // switches to the direct painter, which then replaces the intact bitmap's
+    // images with placeholders. A small explicit LRU gives this renderer a
+    // predictable working set while preserving a hard decoded-pixel budget.
+    private var cachedImages: [NativeTimelineMediaKey: CachedImage] = [:]
+    private var imageCacheRecency: [NativeTimelineMediaKey] = []
+    private var imageCacheCost = 0
+    private var visibleKeysByOwner:
+        [UUID: Set<NativeTimelineMediaKey>] = [:]
     private var loading: Set<NativeTimelineMediaKey> = []
     private var subscribers:
         [NativeTimelineMediaKey: [NativeMessageTimelineItem.Identifier: () -> Void]] = [:]
     private let animatedCache: NSCache<NSString, NativeTimelineAnimatedMedia> = {
         let cache = NSCache<NSString, NativeTimelineAnimatedMedia>()
-        cache.countLimit = 64
-        cache.totalCostLimit = 96 * 1_024 * 1_024
+        cache.countLimit = 32
+        cache.totalCostLimit = 32 * 1_024 * 1_024
         return cache
     }()
     private var animatedLoading: Set<NativeTimelineMediaKey> = []
@@ -1519,12 +1533,15 @@ final class NativeTimelineMediaStore {
         [UUID: Set<NativeTimelineMediaKey>] = [:]
     private var pinnedImages:
         [NativeTimelineMediaKey: PinnedImageReference] = [:]
+    private var pinnedImageCost = 0
 
     func image(for key: NativeTimelineMediaKey) -> NSImage? {
         if let pinned = pinnedImages[key] {
             return pinned.image
         }
-        return cache.object(forKey: key.cacheKey)
+        guard let cached = cachedImages[key] else { return nil }
+        touchCachedImage(key)
+        return cached.image
     }
 
     func firstAnimatedFrame(
@@ -1591,17 +1608,32 @@ final class NativeTimelineMediaStore {
     func request(
         _ key: NativeTimelineMediaKey,
         subscriber: NativeMessageTimelineItem.Identifier,
+        priority: MediaLoadPriority = .visible,
         completion: @escaping () -> Void
     ) {
         guard image(for: key) == nil else { return }
         subscribers[key, default: [:]][subscriber] = completion
-        guard loading.insert(key).inserted else { return }
+        guard loading.insert(key).inserted else {
+            if priority == .visible {
+                Task {
+                    await SharedMediaDataLoader.shared.promotePendingLoad(
+                        for: key.url
+                    )
+                }
+            }
+            return
+        }
 
         Task { [weak self] in
             let image: NSImage?
             do {
-                let data = try await SharedMediaDataLoader.shared.data(for: key.url)
-                let decoded = await Task.detached(priority: .utility) {
+                let data = try await SharedMediaDataLoader.shared.data(
+                    for: key.url,
+                    priority: priority
+                )
+                let decodePriority: TaskPriority =
+                    priority == .visible ? .userInitiated : .utility
+                let decoded = await Task.detached(priority: decodePriority) {
                     NativeTimelineMediaDecoder.decode(
                         data,
                         maximumPixelDimension: key.maximumPixelDimension
@@ -1620,14 +1652,7 @@ final class NativeTimelineMediaStore {
             loading.remove(key)
             let completions = subscribers.removeValue(forKey: key)?.values ?? [:].values
             if let image {
-                let representation = image.representations.first
-                let width = representation?.pixelsWide ?? Int(image.size.width)
-                let height = representation?.pixelsHigh ?? Int(image.size.height)
-                cache.setObject(
-                    image,
-                    forKey: key.cacheKey,
-                    cost: max(1, width * height * 4)
-                )
+                cacheImage(image, for: key)
             }
             for completion in completions {
                 completion()
@@ -1639,52 +1664,154 @@ final class NativeTimelineMediaStore {
         for keys: Set<NativeTimelineMediaKey>,
         owner: UUID
     ) {
-        releasePinnedImages(owner: owner)
-        var loadedKeys: Set<NativeTimelineMediaKey> = []
-        for key in keys {
+        let previouslyLoadedKeys = pinnedKeysByOwner[owner] ?? []
+        var loadedKeys = previouslyLoadedKeys.intersection(keys)
+
+        for key in previouslyLoadedKeys.subtracting(keys) {
+            releasePinnedImage(for: key)
+        }
+        for key in keys.subtracting(loadedKeys) {
             if var pinned = pinnedImages[key] {
                 pinned.ownerCount += 1
                 pinnedImages[key] = pinned
                 loadedKeys.insert(key)
-            } else if let image = cache.object(forKey: key.cacheKey) {
+            } else if let image = cachedImages[key]?.image {
+                let cost = Self.estimatedCost(of: image)
+                guard pinnedImageCost + cost <= Self.pinnedImageCostLimit
+                else { continue }
                 pinnedImages[key] = PinnedImageReference(
                     image: image,
+                    cost: cost,
                     ownerCount: 1
                 )
+                pinnedImageCost += cost
                 loadedKeys.insert(key)
             }
         }
         if !loadedKeys.isEmpty {
             pinnedKeysByOwner[owner] = loadedKeys
+        } else {
+            pinnedKeysByOwner[owner] = nil
         }
+    }
+
+    func retainVisibleImages(
+        for keys: Set<NativeTimelineMediaKey>,
+        owner: UUID
+    ) {
+        if keys.isEmpty {
+            visibleKeysByOwner[owner] = nil
+        } else {
+            visibleKeysByOwner[owner] = keys
+        }
+        // A row-bitmap owner may be the final strong reference after its
+        // background LRU entry was trimmed. Promote that source back into the
+        // protected decoded working set before the row switches to live paint.
+        for key in keys where cachedImages[key] == nil {
+            if let pinned = pinnedImages[key] {
+                cacheImage(pinned.image, for: key)
+            }
+        }
+        evictCachedImagesIfNeeded()
+    }
+
+    func releaseVisibleImages(owner: UUID) {
+        visibleKeysByOwner[owner] = nil
+        evictCachedImagesIfNeeded()
     }
 
     func releasePinnedImages(owner: UUID) {
         guard let keys = pinnedKeysByOwner.removeValue(forKey: owner)
         else { return }
         for key in keys {
-            guard var pinned = pinnedImages[key] else { continue }
-            pinned.ownerCount -= 1
-            if pinned.ownerCount <= 0 {
-                pinnedImages[key] = nil
-            } else {
-                pinnedImages[key] = pinned
+            releasePinnedImage(for: key)
+        }
+    }
+
+    private func releasePinnedImage(for key: NativeTimelineMediaKey) {
+        guard var pinned = pinnedImages[key] else { return }
+        pinned.ownerCount -= 1
+        if pinned.ownerCount <= 0 {
+            pinnedImageCost -= pinned.cost
+            pinnedImages[key] = nil
+        } else {
+            pinnedImages[key] = pinned
+        }
+    }
+
+    private static func estimatedCost(of image: NSImage) -> Int {
+        let representation = image.representations.first
+        let width = representation?.pixelsWide ?? Int(image.size.width)
+        let height = representation?.pixelsHigh ?? Int(image.size.height)
+        return max(1, width * height * 4)
+    }
+
+    private func cacheImage(
+        _ image: NSImage,
+        for key: NativeTimelineMediaKey
+    ) {
+        let cost = Self.estimatedCost(of: image)
+        if let previous = cachedImages.updateValue(
+            CachedImage(image: image, cost: cost),
+            forKey: key
+        ) {
+            imageCacheCost -= previous.cost
+        }
+        imageCacheCost += cost
+        touchCachedImage(key)
+        evictCachedImagesIfNeeded()
+    }
+
+    private func touchCachedImage(_ key: NativeTimelineMediaKey) {
+        imageCacheRecency.removeAll { $0 == key }
+        imageCacheRecency.append(key)
+    }
+
+    private func evictCachedImagesIfNeeded() {
+        let visibleKeys = visibleKeysByOwner.values.reduce(
+            into: Set<NativeTimelineMediaKey>()
+        ) { $0.formUnion($1) }
+        while imageCacheCost > Self.imageCacheCostLimit
+            || cachedImages.count > Self.imageCacheCountLimit
+        {
+            guard let evictionIndex = imageCacheRecency.firstIndex(where: {
+                !visibleKeys.contains($0)
+            }) else {
+                // The visible viewport is intrinsically bounded. Preserve it
+                // intact even if an unusually dense gallery temporarily
+                // exceeds the background LRU budget.
+                return
+            }
+            let key = imageCacheRecency.remove(at: evictionIndex)
+            if let removed = cachedImages.removeValue(forKey: key) {
+                imageCacheCost -= removed.cost
             }
         }
     }
 
 #if DEBUG
+    var pinnedImageCostForTesting: Int {
+        pinnedImageCost
+    }
+
+    var pinnedImageCostLimitForTesting: Int {
+        Self.pinnedImageCostLimit
+    }
+
     func cacheImageForTesting(
         _ image: NSImage,
         for key: NativeTimelineMediaKey
     ) {
-        cache.setObject(image, forKey: key.cacheKey)
+        cacheImage(image, for: key)
     }
 
     func evictVolatileImageForTesting(
         for key: NativeTimelineMediaKey
     ) {
-        cache.removeObject(forKey: key.cacheKey)
+        imageCacheRecency.removeAll { $0 == key }
+        if let removed = cachedImages.removeValue(forKey: key) {
+            imageCacheCost -= removed.cost
+        }
     }
 #endif
 }
@@ -2327,7 +2454,7 @@ final class NativeTimelineCanvasView: NSView {
         let frame: CGRect
     }
 
-    private static let bitmapCostLimit = 32 * 1024 * 1024
+    private static let bitmapCostLimit = 24 * 1024 * 1024
     private var storage = NativeTimelineCanvasStorage()
     private var baseContentOriginY: CGFloat = 0
     private var contentOriginY: CGFloat = 0
@@ -2345,6 +2472,7 @@ final class NativeTimelineCanvasView: NSView {
     private var bitmapInsertionOrder: [NativeMessageTimelineItem.Identifier] = []
     private var bitmapEvictionIndex = 0
     private var bitmapCost = 0
+    private let visibleMediaPinOwner = UUID()
     private(set) var presentationCacheInvalidationCount = 0
     private var mentionPointerRegionCache:
         [NativeMessageTimelineItem.Identifier: [MentionPointerRegion]] = [:]
@@ -2454,6 +2582,9 @@ final class NativeTimelineCanvasView: NSView {
             NativeTimelineSpoilerOverlayPresentation] = [:]
     private var animatedMediaReconcileTask: Task<Void, Never>?
     private var animatedMediaScrollReconcileTask: Task<Void, Never>?
+    private var mediaInvalidationTask: Task<Void, Never>?
+    private var pendingMediaInvalidations:
+        Set<NativeMessageTimelineItem.Identifier> = []
     private let mediaViewerState = NativeTimelineMediaViewerState()
     private lazy var mediaViewerHost = NSHostingView(
         rootView: AnyView(
@@ -2892,6 +3023,15 @@ final class NativeTimelineCanvasView: NSView {
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow == nil {
+            mediaInvalidationTask?.cancel()
+            mediaInvalidationTask = nil
+            pendingMediaInvalidations.removeAll(keepingCapacity: false)
+            NativeTimelineMediaStore.shared.releaseVisibleImages(
+                owner: visibleMediaPinOwner
+            )
+            NativeTimelineMediaStore.shared.releasePinnedImages(
+                owner: visibleMediaPinOwner
+            )
             clearBitmapCache(keepingCapacity: false)
             bitmapInsertionOrder.removeAll(keepingCapacity: false)
             bitmapEvictionIndex = 0
@@ -2938,8 +3078,15 @@ final class NativeTimelineCanvasView: NSView {
     }
 
     deinit {
-        if let spoilerRevealObserverID {
-            MainActor.assumeIsolated {
+        MainActor.assumeIsolated {
+            mediaInvalidationTask?.cancel()
+            NativeTimelineMediaStore.shared.releaseVisibleImages(
+                owner: visibleMediaPinOwner
+            )
+            NativeTimelineMediaStore.shared.releasePinnedImages(
+                owner: visibleMediaPinOwner
+            )
+            if let spoilerRevealObserverID {
                 spoilerRevealStore.removeObserver(
                     spoilerRevealObserverID
                 )
@@ -3027,6 +3174,7 @@ final class NativeTimelineCanvasView: NSView {
             )
         }
         super.draw(dirtyRect)
+        refreshVisibleMediaPins()
         // This view is transparent and layer-backed. Core Graphics does not
         // guarantee that invalidating a region clears its previous backing
         // pixels before draw(_:). Clear first so bottom-origin changes cannot
@@ -3458,7 +3606,8 @@ final class NativeTimelineCanvasView: NSView {
                 // completion remains to invalidate that stale bitmap.
                 self.requestMedia(
                     for: self.items[index],
-                    at: index
+                    at: index,
+                    priority: .prefetch
                 )
                 _ = self.bitmap(
                     for: self.items[index],
@@ -3620,23 +3769,83 @@ final class NativeTimelineCanvasView: NSView {
 
     private func requestMedia(
         for item: NativeMessageTimelineItem,
-        at index: Int
+        at index: Int,
+        priority: MediaLoadPriority = .visible
     ) {
         let identifier = item.identifier
         for key in mediaKeys(for: item, at: index) {
             NativeTimelineMediaStore.shared.request(
                 key,
-                subscriber: identifier
+                subscriber: identifier,
+                priority: priority
             ) { [weak self] in
-                guard let self,
-                      let currentIndex = self.items.firstIndex(where: {
-                          $0.identifier == identifier
-                      })
-                else { return }
-                self.invalidateBitmap(identifier)
-                self.setNeedsDisplay(self.rowFrame(at: currentIndex))
+                self?.scheduleMediaInvalidation(identifier)
             }
         }
+    }
+
+    private func scheduleMediaInvalidation(
+        _ identifier: NativeMessageTimelineItem.Identifier
+    ) {
+        pendingMediaInvalidations.insert(identifier)
+        mediaInvalidationTask?.cancel()
+        mediaInvalidationTask = Task { @MainActor [weak self] in
+            do {
+                // Gallery tiles frequently finish in the same display frame.
+                // Collapse their row-wide bitmap rebuilds into one transaction.
+                try await Task.sleep(for: .milliseconds(16))
+            } catch {
+                return
+            }
+            guard let self else { return }
+            self.mediaInvalidationTask = nil
+            let identifiers = self.pendingMediaInvalidations
+            self.pendingMediaInvalidations.removeAll(keepingCapacity: true)
+            self.refreshVisibleMediaPins()
+            var dirtyRect = CGRect.null
+            for identifier in identifiers {
+                self.invalidateBitmap(identifier)
+                if let index = self.items.firstIndex(where: {
+                    $0.identifier == identifier
+                }) {
+                    dirtyRect = dirtyRect.union(self.rowFrame(at: index))
+                }
+            }
+            if !dirtyRect.isNull {
+                self.setNeedsDisplay(dirtyRect)
+            }
+        }
+    }
+
+    private func refreshVisibleMediaPins() {
+        let viewport =
+            enclosingScrollView?.documentVisibleRect ?? visibleRect
+        guard viewport.height > 0,
+              !items.isEmpty,
+              !layouts.isEmpty,
+              var index = rowIndex(at: max(0, viewport.minY))
+        else {
+            NativeTimelineMediaStore.shared.retainVisibleImages(
+                for: [],
+                owner: visibleMediaPinOwner
+            )
+            return
+        }
+
+        var keys: Set<NativeTimelineMediaKey> = []
+        while items.indices.contains(index),
+              layouts.indices.contains(index),
+              displayedRowOrigin(at: index) < viewport.maxY
+        {
+            if rowFrame(at: index).intersects(viewport) {
+                keys.formUnion(mediaKeys(for: items[index], at: index))
+            }
+            index += 1
+        }
+        NativeTimelineMediaStore.shared.retainVisibleImages(
+            for: keys,
+            owner: visibleMediaPinOwner
+        )
     }
 
     private func mediaKeys(
@@ -5762,6 +5971,10 @@ final class NativeTimelineCanvasView: NSView {
                 )
             }
 
+            let attachmentFillsFrame =
+                MediaGalleryImagePresentation.fillsFrame(
+                    itemCount: layout.attachmentRegions.count
+                )
             for region in layout.attachmentRegions
             where region.attachment.mediaKind == .animatedImage {
                 append(
@@ -5777,7 +5990,8 @@ final class NativeTimelineCanvasView: NSView {
                         MessageOutboxPresentation.mediaOpacity(
                             for: row.message.outboxState
                         )
-                    )
+                    ),
+                    fillsFrame: attachmentFillsFrame
                 )
             }
 
@@ -11174,6 +11388,10 @@ private enum NativeTimelineRowPainter {
                 )
             )
         )
+        let attachmentFillsFrame =
+            MediaGalleryImagePresentation.fillsFrame(
+                itemCount: layout.attachmentRegions.count
+            )
         for region in layout.attachmentRegions {
             let attachment = region.attachment
             let isConcealed =
@@ -11207,7 +11425,7 @@ private enum NativeTimelineRowPainter {
                         image,
                         in: region.frame,
                         cornerRadius: 8,
-                        fillsFrame: false
+                        fillsFrame: attachmentFillsFrame
                     )
                 }
             case .video:

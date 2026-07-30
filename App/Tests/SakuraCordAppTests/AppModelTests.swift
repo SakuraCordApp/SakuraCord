@@ -6,6 +6,45 @@ import Testing
 import UserNotifications
 @testable import SakuraCord
 
+@Test func `channel message cache keeps only the newest bounded history`() {
+    let channelID = ChannelID(rawValue: 9)
+    let author = User(
+        id: UserID(rawValue: 7),
+        username: "cache",
+        displayName: "Cache"
+    )
+    let messages = (0 ..< ChannelMessageCachePolicy.maximumMessageCountPerChannel + 25)
+        .map { index in
+            Message(
+                id: MessageID(rawValue: UInt64(index + 1)),
+                channelID: channelID,
+                author: author,
+                content: "Message \(index)",
+                timestamp: Date(timeIntervalSince1970: TimeInterval(index))
+            )
+        }
+    let retained = ChannelMessageCachePolicy.retainedMessages(from: messages)
+
+    #expect(
+        retained.count
+            == ChannelMessageCachePolicy.maximumMessageCountPerChannel
+    )
+    #expect(retained.first?.id == messages[messages.count - retained.count].id)
+    #expect(retained.last?.id == messages.last?.id)
+}
+
+@MainActor
+@Test func `member avatar decorations decode only at their rendered scale`() {
+    let avatar = DecoratedAvatarView(
+        name: "Member",
+        avatarURL: nil,
+        decorationURL: nil,
+        size: 34
+    )
+
+    #expect(avatar.decorationPixelDimension == 83)
+}
+
 @MainActor
 @Test func `native emoji catalog loads every fully qualified unicode 17 emoji`() {
     #expect(NativeEmojiCatalogDiagnostics.sourceEntryCount == 3944)

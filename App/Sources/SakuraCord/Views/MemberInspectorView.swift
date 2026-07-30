@@ -65,11 +65,9 @@ struct MemberInspectorView: View {
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
-                ForEach(items) { item in
-                    switch item {
-                    case let .header(section):
-                        MemberSectionHeader(section: section)
-                    case let .member(member):
+                ForEach(sections) { section in
+                    MemberSectionHeader(section: section)
+                    ForEach(section.members) { member in
                         MemberRow(
                             member: member,
                             isSelected:
@@ -94,12 +92,6 @@ struct MemberInspectorView: View {
         }
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.45))
     }
-
-    private var items: [MemberInspectorItem] {
-        sections.flatMap { section in
-            [.header(section)] + section.members.map(MemberInspectorItem.member)
-        }
-    }
 }
 
 struct MemberSection: Identifiable, Equatable {
@@ -114,17 +106,38 @@ struct MemberSection: Identifiable, Equatable {
     let members: [Member]
 
     static func make(from members: [Member]) -> [MemberSection] {
-        let onlineMembers = members.filter(\.isOnline)
-        let roleMembers = Dictionary(grouping: onlineMembers.filter { $0.isRoleCategory == true }) {
-            ID.role(name: $0.roleName, position: $0.rolePosition ?? 0)
+        var roleMembers: [ID: [Member]] = [:]
+        var ungroupedOnline: [Member] = []
+        var offlineMembers: [Member] = []
+        ungroupedOnline.reserveCapacity(members.count)
+        offlineMembers.reserveCapacity(members.count)
+
+        for member in members {
+            guard member.isOnline else {
+                offlineMembers.append(member)
+                continue
+            }
+            if member.isRoleCategory == true {
+                let id = ID.role(
+                    name: member.roleName,
+                    position: member.rolePosition ?? 0
+                )
+                roleMembers[id, default: []].append(member)
+            } else {
+                ungroupedOnline.append(member)
+            }
         }
 
         var sections = roleMembers.map { id, members in
-            let name = switch id {
-            case let .role(name, _): name
-            case .online, .offline: ""
+                let name = switch id {
+                case let .role(name, _): name
+                case .online, .offline: ""
             }
-            return MemberSection(id: id, title: name, members: sortedByName(members))
+            return MemberSection(
+                id: id,
+                title: name,
+                members: members.sorted(by: memberNameSort)
+            )
         }
         .sorted { lhs, rhs in
             let lhsPosition = lhs.members.first?.rolePosition ?? 0
@@ -135,39 +148,29 @@ struct MemberSection: Identifiable, Equatable {
             return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
         }
 
-        let ungroupedOnline = onlineMembers.filter { $0.isRoleCategory != true }
         if !ungroupedOnline.isEmpty {
-            sections.append(MemberSection(id: .online, title: "Online", members: sortedByName(ungroupedOnline)))
+            ungroupedOnline.sort(by: memberNameSort)
+            sections.append(MemberSection(
+                id: .online,
+                title: "Online",
+                members: ungroupedOnline
+            ))
         }
 
-        let offlineMembers = members.filter { !$0.isOnline }
         if !offlineMembers.isEmpty {
-            sections.append(MemberSection(id: .offline, title: "Offline", members: sortedByName(offlineMembers)))
+            offlineMembers.sort(by: memberNameSort)
+            sections.append(MemberSection(
+                id: .offline,
+                title: "Offline",
+                members: offlineMembers
+            ))
         }
         return sections
     }
 
-    private static func sortedByName(_ members: [Member]) -> [Member] {
-        members.sorted {
-            $0.user.displayName.localizedStandardCompare($1.user.displayName) == .orderedAscending
-        }
-    }
-}
-
-private enum MemberInspectorItem: Identifiable {
-    enum ID: Hashable {
-        case header(MemberSection.ID)
-        case member(UserID)
-    }
-
-    case header(MemberSection)
-    case member(Member)
-
-    var id: ID {
-        switch self {
-        case let .header(section): .header(section.id)
-        case let .member(member): .member(member.id)
-        }
+    private static func memberNameSort(_ lhs: Member, _ rhs: Member) -> Bool {
+        lhs.user.displayName.localizedStandardCompare(rhs.user.displayName)
+            == .orderedAscending
     }
 }
 
@@ -308,12 +311,19 @@ struct DecoratedAvatarView: View {
         ZStack {
             AvatarView(name: name, url: avatarURL, size: size)
             if let decorationURL {
-                AnimatedRemoteImage(url: decorationURL)
+                AnimatedRemoteImage(
+                    url: decorationURL,
+                    maximumPixelDimension: decorationPixelDimension
+                )
                     .frame(width: size * 1.22, height: size * 1.22)
                     .allowsHitTesting(false)
             }
         }
         .frame(width: size * 1.12, height: size * 1.12)
+    }
+
+    var decorationPixelDimension: Int {
+        max(1, Int((size * 1.22 * 2).rounded(.up)))
     }
 }
 
@@ -399,11 +409,12 @@ private struct NameplateBackground: View {
     @ViewBuilder
     private var staticAsset: some View {
         if let url = nameplate.staticURL {
-            AsyncImage(url: url) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
-                Color.clear
-            }
+            AnimatedRemoteImage(
+                url: url,
+                animates: false,
+                maximumPixelDimension: 512,
+                contentMode: .fill
+            )
         }
     }
 
@@ -430,11 +441,11 @@ private struct PrimaryGuildTag: View {
     var body: some View {
         HStack(spacing: 3) {
             if let badgeURL = identity.badgeURL {
-                AsyncImage(url: badgeURL) { image in
-                    image.resizable().scaledToFit()
-                } placeholder: {
-                    Color.clear
-                }
+                AnimatedRemoteImage(
+                    url: badgeURL,
+                    animates: false,
+                    maximumPixelDimension: 32
+                )
                 .frame(width: 14, height: 14)
             }
             Text(tag)

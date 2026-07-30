@@ -476,7 +476,14 @@ struct MediaGalleryView: View {
     var body: some View {
         MediaMosaicLayout(spacing: 4) {
             ForEach(items.enumerated(), id: \.element.id) { index, item in
-                MediaTile(item: item) { selection = index }
+                MediaTile(
+                    item: item,
+                    fillsFrame: MediaGalleryImagePresentation.fillsFrame(
+                        itemCount: items.count
+                    )
+                ) {
+                    selection = index
+                }
                     .layoutValue(key: MediaAspectRatioKey.self, value: item.aspectRatio)
                     .layoutValue(key: MediaIntrinsicSizeKey.self, value: item.intrinsicSize ?? .zero)
             }
@@ -612,8 +619,15 @@ nonisolated enum MediaGalleryPlan {
     }
 }
 
+nonisolated enum MediaGalleryImagePresentation {
+    static func fillsFrame(itemCount: Int) -> Bool {
+        itemCount > 1
+    }
+}
+
 private struct MediaTile: View {
     let item: RichMediaItem
+    let fillsFrame: Bool
     let open: () -> Void
     @State private var isRevealed = false
     @State private var isVisible = false
@@ -650,7 +664,8 @@ private struct MediaTile: View {
             AnimatedRemoteImage(
                 url: item.previewURL ?? item.url,
                 animates: isVisible && (!item.isSpoiler || isRevealed),
-                isLooping: animated
+                isLooping: animated,
+                contentMode: fillsFrame ? .fill : .fit
             )
         case .video:
             if item.autoplaysInline {
