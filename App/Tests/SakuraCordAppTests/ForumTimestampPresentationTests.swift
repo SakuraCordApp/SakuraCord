@@ -1,6 +1,40 @@
 import Foundation
+import SakuraCordModels
 @testable import SakuraCord
 import Testing
+
+@Test func `forum card message counter includes the starter post`() {
+    let starterOnly = ForumPost(
+        thread: MessageThreadSummary(
+            id: ChannelID(rawValue: 100),
+            name: "Starter only",
+            messageCount: 1
+        )
+    )
+    let activeThread = ForumPost(
+        thread: MessageThreadSummary(
+            id: ChannelID(rawValue: 101),
+            name: "Active thread",
+            messageCount: 12
+        )
+    )
+
+    #expect(starterOnly.replyCount == 0)
+    #expect(
+        ForumPostMessageCountPresentation.count(
+            threadMessageCount: starterOnly.thread.messageCount
+        ) == 1
+    )
+    #expect(activeThread.replyCount == 11)
+    #expect(
+        ForumPostMessageCountPresentation.count(
+            threadMessageCount: activeThread.thread.messageCount
+        ) == 12
+    )
+    #expect(
+        ForumPostMessageCountPresentation.count(threadMessageCount: -1) == 0
+    )
+}
 
 @Test func `forum timestamps use one rounded relative unit`() {
     let now = Date(timeIntervalSince1970: 2_000_000_000)

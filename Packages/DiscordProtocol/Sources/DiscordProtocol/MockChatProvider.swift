@@ -25,6 +25,23 @@ public actor MockChatProvider: ChatProvider {
     }
 
     public private(set) var acknowledgementRequests: [AcknowledgementRequest] = []
+    public struct ChannelNotificationRequest: Equatable, Sendable {
+        public var guildID: GuildID?
+        public var channelID: ChannelID
+        public var level: MessageNotificationLevel? = nil
+        public var isMuted: Bool? = nil
+        public var muteEndTime: Date? = nil
+    }
+
+    public private(set) var channelNotificationRequests: [ChannelNotificationRequest] = []
+    public struct ThreadNotificationRequest: Equatable, Sendable {
+        public var threadID: ChannelID
+        public var level: MessageNotificationLevel? = nil
+        public var isMuted: Bool? = nil
+        public var muteEndTime: Date? = nil
+    }
+
+    public private(set) var threadNotificationRequests: [ThreadNotificationRequest] = []
     private var forumQueriesByChannel: [ChannelID: [ForumPostQuery]] = [:]
 
     public init(
@@ -191,6 +208,36 @@ public actor MockChatProvider: ChatProvider {
             )
         )
         return ReadAcknowledgementResponse(token: "mock-ack-token")
+    }
+
+    public func updateChannelNotificationLevel(
+        guildID: GuildID?,
+        channelID: ChannelID,
+        level: MessageNotificationLevel
+    ) async throws {
+        channelNotificationRequests.append(
+            ChannelNotificationRequest(
+                guildID: guildID,
+                channelID: channelID,
+                level: level
+            )
+        )
+    }
+
+    public func updateChannelMute(
+        guildID: GuildID?,
+        channelID: ChannelID,
+        isMuted: Bool,
+        until: Date?
+    ) async throws {
+        channelNotificationRequests.append(
+            ChannelNotificationRequest(
+                guildID: guildID,
+                channelID: channelID,
+                isMuted: isMuted,
+                muteEndTime: until
+            )
+        )
     }
 
     public func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
@@ -513,7 +560,8 @@ public actor MockChatProvider: ChatProvider {
                 messageCount: 1, memberCount: 1, lastMessageID: message.id,
                 ownerID: currentUser.id, appliedTagIDs: selectedTags,
                 createdAt: message.timestamp, autoArchiveDuration: draft.autoArchiveDuration,
-                totalMessageSent: 1
+                totalMessageSent: 1,
+                notificationSettings: ThreadNotificationSettings()
             ),
             owner: currentUser, firstMessage: message, mostRecentMessage: message
         )
@@ -573,6 +621,56 @@ public actor MockChatProvider: ChatProvider {
         messagesByChannel[post.id] = nil
         continuation?.yield(
             .forumPostsChanged(channelID: parentID, posts: forumPostsByChannel[parentID] ?? []))
+    }
+
+    public func updateForumPostNotificationLevel(
+        _ post: ForumPost,
+        level: MessageNotificationLevel
+    ) async throws {
+        threadNotificationRequests.append(
+            ThreadNotificationRequest(threadID: post.id, level: level)
+        )
+        try updateForumPostNotificationSettings(post) {
+            $0.flags = $0.flags(setting: level)
+        }
+    }
+
+    public func updateForumPostMute(
+        _ post: ForumPost,
+        isMuted: Bool,
+        until: Date?
+    ) async throws {
+        threadNotificationRequests.append(
+            ThreadNotificationRequest(
+                threadID: post.id,
+                isMuted: isMuted,
+                muteEndTime: until
+            )
+        )
+        try updateForumPostNotificationSettings(post) {
+            $0.isMuted = isMuted
+            $0.muteConfiguration =
+                isMuted ? DiscordMuteConfiguration(endTime: until) : nil
+        }
+    }
+
+    private func updateForumPostNotificationSettings(
+        _ post: ForumPost,
+        mutation: (inout ThreadNotificationSettings) -> Void
+    ) throws {
+        guard let parentID = post.thread.parentID,
+              var posts = forumPostsByChannel[parentID],
+              let index = posts.firstIndex(where: { $0.id == post.id })
+        else { throw ChatProviderError.channelNotFound }
+        var settings =
+            posts[index].thread.notificationSettings
+            ?? ThreadNotificationSettings()
+        mutation(&settings)
+        posts[index].thread.notificationSettings = settings
+        forumPostsByChannel[parentID] = posts
+        continuation?.yield(
+            .forumPostsChanged(channelID: parentID, posts: posts)
+        )
     }
 
     public func sendTyping(in channelID: ChannelID) async throws {

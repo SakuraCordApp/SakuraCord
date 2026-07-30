@@ -150,12 +150,54 @@ import Testing
                     ]),
                 ])
             ]),
+            "members": .array([
+                .object([
+                    "id": .string("250"),
+                    "flags": .number(
+                        Double(ThreadNotificationSettings.onlyMentionsFlag)
+                    ),
+                    "muted": .bool(true),
+                    "mute_config": .object([
+                        "end_time": .string("2026-07-30T20:00:00.000Z")
+                    ]),
+                ])
+            ]),
         ])
     )
 
     #expect(
         await provider.cachedChannelForTesting(channelID: forum.id)?.lastMessageID
             == MessageID(rawValue: 250)
+    )
+    #expect(
+        await provider.cachedForumPostForTesting(
+            threadID: ChannelID(rawValue: 250)
+        )?.thread.notificationSettings?.notificationLevel == .onlyMentions
+    )
+    #expect(
+        await provider.cachedForumPostForTesting(
+            threadID: ChannelID(rawValue: 250)
+        )?.thread.notificationSettings?.isMuted == true
+    )
+
+    await provider.receiveGatewayDispatchForTesting(
+        name: "THREAD_MEMBER_UPDATE",
+        data: .object([
+            "id": .string("250"),
+            "flags": .number(Double(ThreadNotificationSettings.noMessagesFlag)),
+            "muted": .bool(false),
+            "mute_config": .null,
+        ])
+    )
+    #expect(
+        await provider.cachedForumPostForTesting(
+            threadID: ChannelID(rawValue: 250)
+        )?.thread.notificationSettings?.notificationLevel == .nothing
+    )
+    #expect(
+        await provider.cachedForumPostForTesting(
+            threadID: ChannelID(rawValue: 250)
+        )?.thread.notificationSettings?.isMuted == false
     )
     await provider.disconnect()
 }
@@ -500,6 +542,14 @@ import Testing
               }
             }
           ],
+          "members": [
+            {
+              "id": "100",
+              "user_id": "9",
+              "flags": 4,
+              "muted": false
+            }
+          ],
           "first_messages": [],
           "most_recent_messages": [],
           "has_more": false
@@ -513,6 +563,8 @@ import Testing
     #expect(post.thread.name == "media viewer")
     #expect(post.thread.isLocked)
     #expect(post.owner?.id == UserID(rawValue: 3))
+    #expect(post.thread.notificationSettings?.notificationLevel == .onlyMentions)
+    #expect(post.thread.notificationSettings?.isMuted == false)
 }
 
 @Test func `forum catalogue response decodes older posts and result metadata`() throws {
@@ -536,7 +588,17 @@ import Testing
               }
             }
           ],
-          "members": [],
+          "members": [
+            {
+              "id": "200",
+              "user_id": "9",
+              "flags": 2,
+              "muted": true,
+              "mute_config": {
+                "end_time": "2026-07-30T22:00:00.000Z"
+              }
+            }
+          ],
           "has_more": true,
           "total_results": 31
         }
@@ -553,6 +615,9 @@ import Testing
     #expect(post.thread.ownerID == UserID(rawValue: 3))
     #expect(post.owner == nil)
     #expect(post.thread.archiveTimestamp != nil)
+    #expect(post.thread.notificationSettings?.notificationLevel == .allMessages)
+    #expect(post.thread.notificationSettings?.isMuted == true)
+    #expect(post.thread.notificationSettings?.muteConfiguration?.endTime != nil)
 }
 
 @Test func `forum catalogue keeps valid posts when one sibling is malformed`() throws {

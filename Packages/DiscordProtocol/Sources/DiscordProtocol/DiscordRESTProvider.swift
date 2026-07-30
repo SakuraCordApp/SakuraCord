@@ -1048,6 +1048,89 @@ public actor DiscordRESTProvider: ChatProvider {
         publishForumPosts(parentID: parentID)
     }
 
+    public func updateForumPostNotificationLevel(
+        _ post: ForumPost,
+        level: MessageNotificationLevel
+    ) async throws {
+        var settings = try await joinedThreadNotificationSettings(for: post)
+        settings.flags = settings.flags(setting: level)
+        try await patchThreadNotificationSettings(
+            threadID: post.id,
+            body: ["flags": .number(Double(settings.flags))]
+        )
+        updateCachedThreadNotificationSettings(settings, for: post)
+    }
+
+    public func updateForumPostMute(
+        _ post: ForumPost,
+        isMuted: Bool,
+        until: Date?
+    ) async throws {
+        var settings = try await joinedThreadNotificationSettings(for: post)
+        var body: [String: JSONValue] = ["muted": .bool(isMuted)]
+        if isMuted, let until {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            body["mute_config"] = .object([
+                "end_time": .string(formatter.string(from: until)),
+            ])
+        } else {
+            body["mute_config"] = .null
+        }
+        try await patchThreadNotificationSettings(threadID: post.id, body: body)
+        settings.isMuted = isMuted
+        settings.muteConfiguration =
+            isMuted ? DiscordMuteConfiguration(endTime: until) : nil
+        updateCachedThreadNotificationSettings(settings, for: post)
+    }
+
+    private func joinedThreadNotificationSettings(
+        for post: ForumPost
+    ) async throws -> ThreadNotificationSettings {
+        if let cached = post.thread.parentID.flatMap({
+            cachedForumPosts[$0]?[post.id]?.thread.notificationSettings
+        }) ?? post.thread.notificationSettings {
+            return cached
+        }
+        // The current Discord client joins an unjoined thread once before it
+        // applies member-scoped notification settings.
+        try await requestEmpty(
+            "/channels/\(post.id)/thread-members/@me",
+            method: "POST",
+            query: [
+                URLQueryItem(
+                    name: "location",
+                    value: "Change Notification Settings"
+                )
+            ]
+        )
+        let joined = ThreadNotificationSettings()
+        updateCachedThreadNotificationSettings(joined, for: post)
+        return joined
+    }
+
+    private func patchThreadNotificationSettings(
+        threadID: ChannelID,
+        body: [String: JSONValue]
+    ) async throws {
+        try await requestEmpty(
+            "/channels/\(threadID)/thread-members/@me/settings",
+            method: "PATCH",
+            body: body
+        )
+    }
+
+    private func updateCachedThreadNotificationSettings(
+        _ settings: ThreadNotificationSettings,
+        for post: ForumPost
+    ) {
+        guard let parentID = post.thread.parentID else { return }
+        var cached = cachedForumPosts[parentID]?[post.id] ?? post
+        cached.thread.notificationSettings = settings
+        cachedForumPosts[parentID, default: [:]][post.id] = cached
+        publishForumPosts(parentID: parentID)
+    }
+
     nonisolated static func forumPostDeletionPath(postID: ChannelID) -> String {
         "/channels/\(postID)"
     }
@@ -1134,6 +1217,9 @@ public actor DiscordRESTProvider: ChatProvider {
         }
         merged.owner = incoming.owner ?? existing.owner
         merged.isUnread = existing.isUnread
+        if merged.thread.notificationSettings == nil {
+            merged.thread.notificationSettings = existing.thread.notificationSettings
+        }
         return merged
     }
 
@@ -1524,6 +1610,70 @@ public actor DiscordRESTProvider: ChatProvider {
         }
         guard !data.isEmpty else { return ReadAcknowledgementResponse(token: token) }
         return try JSONDecoder().decode(ReadAcknowledgementResponse.self, from: data)
+    }
+
+    public func updateChannelNotificationLevel(
+        guildID: GuildID?,
+        channelID: ChannelID,
+        level: MessageNotificationLevel
+    ) async throws {
+        try await updateChannelNotificationSettings(
+            guildID: guildID,
+            channelID: channelID,
+            override: [
+                "message_notifications": .number(Double(level.rawValue))
+            ]
+        )
+    }
+
+    public func updateChannelMute(
+        guildID: GuildID?,
+        channelID: ChannelID,
+        isMuted: Bool,
+        until: Date?
+    ) async throws {
+        var override: [String: JSONValue] = [
+            "muted": .bool(isMuted)
+        ]
+        if isMuted {
+            let muteConfiguration: JSONValue
+            if let until {
+                let formatter = ISO8601DateFormatter()
+                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                muteConfiguration = .object([
+                    "end_time": .string(formatter.string(from: until)),
+                ])
+            } else {
+                muteConfiguration = .null
+            }
+            override["mute_config"] = muteConfiguration
+        } else {
+            override["mute_config"] = .null
+        }
+        try await updateChannelNotificationSettings(
+            guildID: guildID,
+            channelID: channelID,
+            override: override
+        )
+    }
+
+    private func updateChannelNotificationSettings(
+        guildID: GuildID?,
+        channelID: ChannelID,
+        override: [String: JSONValue]
+    ) async throws {
+        // Discord's current client PATCHes a partial channel override keyed by
+        // channel ID. Keep this as a single, centrally scheduled mutation and
+        // rely on USER_GUILD_SETTINGS_UPDATE for authoritative reconciliation.
+        try await requestEmpty(
+            "/users/@me/guilds/\(guildID?.description ?? "@me")/settings",
+            method: "PATCH",
+            body: [
+                "channel_overrides": .object([
+                    channelID.description: .object(override)
+                ])
+            ]
+        )
     }
 
     public func supports(_ capability: ChatCapability) async -> Bool {
@@ -3067,13 +3217,36 @@ public actor DiscordRESTProvider: ChatProvider {
             else { return }
             cachedForumPosts[parentID]?[threadID] = nil
             publishForumPosts(parentID: parentID)
+        case "THREAD_MEMBER_UPDATE":
+            guard
+                let member = try? JSONDecoder().decode(ThreadMemberDTO.self, from: data),
+                member.userID == nil || member.userID.flatMap(UserID.init) == currentUser?.id,
+                let threadID = ChannelID(member.id)
+            else { return }
+            for (parentID, posts) in cachedForumPosts where posts[threadID] != nil {
+                cachedForumPosts[parentID]?[threadID]?.thread.notificationSettings =
+                    member.domain
+                publishForumPosts(parentID: parentID)
+                break
+            }
         case "THREAD_LIST_SYNC":
             guard let sync = try? JSONDecoder().decode(GatewayThreadListSyncDTO.self, from: data),
                   let guildID = GuildID(sync.guildID)
             else { return }
             let parents = Set(sync.channelIDs.compactMap(ChannelID.init))
+            let membersByThreadID = Dictionary(
+                sync.members.map { ($0.id, $0) },
+                uniquingKeysWith: { _, latest in latest }
+            )
+            let hydratedThreads = sync.threads.map { thread in
+                var thread = thread
+                if thread.member == nil {
+                    thread.member = membersByThreadID[thread.id]
+                }
+                return thread
+            }
             ingestForumThreads(
-                sync.threads, fallbackGuildID: guildID,
+                hydratedThreads, fallbackGuildID: guildID,
                 replacingParents: parents.isEmpty ? nil : parents,
                 advancesParentLatestThreadID: true
             )
@@ -3752,10 +3925,11 @@ extension DiscordRESTProvider {
     private func requestEmpty(
         _ path: String,
         method: String,
+        query: [URLQueryItem] = [],
         body: [String: JSONValue]? = nil
     ) async throws {
         let (_, response) = try await perform(
-            path, method: method, query: [], body: body, headers: [:])
+            path, method: method, query: query, body: body, headers: [:])
         guard (200 ..< 300).contains(response.statusCode) else {
             if response.statusCode == 401 {
                 authorizationValue = nil
@@ -5024,6 +5198,41 @@ private struct UserProfileDTO: Decodable {
     }
 }
 
+private struct ThreadMemberDTO: Decodable {
+    struct MuteConfigDTO: Decodable {
+        var endTime: String?
+
+        enum CodingKeys: String, CodingKey {
+            case endTime = "end_time"
+        }
+    }
+
+    var id: String
+    var userID: String?
+    var flags: UInt64?
+    var muted: Bool?
+    var muteConfig: MuteConfigDTO?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userID = "user_id"
+        case flags, muted
+        case muteConfig = "mute_config"
+    }
+
+    var domain: ThreadNotificationSettings {
+        ThreadNotificationSettings(
+            flags: flags ?? 0,
+            isMuted: muted ?? false,
+            muteConfiguration: muteConfig.map {
+                DiscordMuteConfiguration(
+                    endTime: $0.endTime.flatMap(DiscordDate.parse)
+                )
+            }
+        )
+    }
+}
+
 private struct GuildDTO: Decodable {
     var id: String
     var name: String
@@ -5148,6 +5357,7 @@ struct ChannelDTO: Decodable {
     var threadMetadata: ThreadMetadataDTO?
     var appliedTags: [String]?
     var flags: UInt64?
+    fileprivate var member: ThreadMemberDTO?
     var availableTags: [ForumTagDTO]?
     var defaultReactionEmoji: DefaultReactionDTO?
     var defaultSortOrder: Int?
@@ -5168,7 +5378,7 @@ struct ChannelDTO: Decodable {
         case lastMessageID = "last_message_id"
         case lastPinTimestamp = "last_pin_timestamp"
         case ownerID = "owner_id"
-        case owner, flags, message
+        case owner, flags, member, message
         case messageCount = "message_count"
         case memberCount = "member_count"
         case totalMessageSent = "total_message_sent"
@@ -5276,7 +5486,8 @@ struct ChannelDTO: Decodable {
                 archiveTimestamp: threadMetadata?.archiveTimestamp.flatMap(DiscordDate.parse),
                 createdAt: threadMetadata?.createTimestamp.flatMap(DiscordDate.parse),
                 autoArchiveDuration: threadMetadata?.autoArchiveDuration,
-                totalMessageSent: totalMessageSent ?? messageCount ?? 0
+                totalMessageSent: totalMessageSent ?? messageCount ?? 0,
+                notificationSettings: member?.domain
             ),
             owner: ownerUser ?? firstMessage?.author,
             firstMessage: firstMessage,
@@ -6373,11 +6584,12 @@ private struct GatewayThreadListSyncDTO: Decodable {
     var guildID: String
     var channelIDs: [String]
     var threads: [ChannelDTO]
+    var members: [ThreadMemberDTO]
 
     enum CodingKeys: String, CodingKey {
         case guildID = "guild_id"
         case channelIDs = "channel_ids"
-        case threads
+        case threads, members
     }
 
     init(from decoder: any Decoder) throws {
@@ -6387,6 +6599,10 @@ private struct GatewayThreadListSyncDTO: Decodable {
         threads =
             try values.decodeIfPresent(
                 LossyList<ChannelDTO>.self, forKey: .threads
+            )?.elements ?? []
+        members =
+            try values.decodeIfPresent(
+                LossyList<ThreadMemberDTO>.self, forKey: .members
             )?.elements ?? []
     }
 }
@@ -6990,12 +7206,13 @@ private struct ForumPostDataResponseDTO: Decodable {
 
 struct ForumThreadCatalogueResponseDTO: Decodable {
     var threads: [ChannelDTO]
+    fileprivate var members: [ThreadMemberDTO]
     var skippedThreadCount: Int
     var hasMore: Bool
     var totalResults: Int?
 
     enum CodingKeys: String, CodingKey {
-        case threads
+        case threads, members
         case hasMore = "has_more"
         case totalResults = "total_results"
     }
@@ -7007,24 +7224,40 @@ struct ForumThreadCatalogueResponseDTO: Decodable {
             forKey: .threads
         )
         threads = decodedThreads?.elements ?? []
+        members =
+            try values.decodeIfPresent(
+                LossyList<ThreadMemberDTO>.self,
+                forKey: .members
+            )?.elements ?? []
         skippedThreadCount = decodedThreads?.skippedCount ?? 0
         hasMore = try values.decodeIfPresent(Bool.self, forKey: .hasMore) ?? false
         totalResults = try values.decodeIfPresent(Int.self, forKey: .totalResults)
     }
 
     func posts(fallbackGuildID: GuildID?) -> [ForumPost] {
-        threads.compactMap { try? $0.forumPost(fallbackGuildID: fallbackGuildID) }
+        let membersByThreadID = Dictionary(
+            members.map { ($0.id, $0) },
+            uniquingKeysWith: { _, latest in latest }
+        )
+        return threads.compactMap { incoming in
+            var thread = incoming
+            if thread.member == nil {
+                thread.member = membersByThreadID[thread.id]
+            }
+            return try? thread.forumPost(fallbackGuildID: fallbackGuildID)
+        }
     }
 }
 
 struct ForumThreadSearchResponseDTO: Decodable {
     var threads: [ChannelDTO]
+    fileprivate var members: [ThreadMemberDTO]
     fileprivate var firstMessages: [MessageDTO]
     fileprivate var mostRecentMessages: [MessageDTO]
     var hasMore: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case threads
+        case threads, members
         case firstMessages = "first_messages"
         case mostRecentMessages = "most_recent_messages"
         case hasMore = "has_more"
@@ -7034,6 +7267,11 @@ struct ForumThreadSearchResponseDTO: Decodable {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         threads =
             try values.decodeIfPresent(LossyList<ChannelDTO>.self, forKey: .threads)?.elements ?? []
+        members =
+            try values.decodeIfPresent(
+                LossyList<ThreadMemberDTO>.self,
+                forKey: .members
+            )?.elements ?? []
         firstMessages =
             try values.decodeIfPresent(
                 LossyList<MessageDTO>.self, forKey: .firstMessages
@@ -7060,8 +7298,16 @@ struct ForumThreadSearchResponseDTO: Decodable {
             },
             uniquingKeysWith: { _, newer in newer }
         )
-        return threads.compactMap { dto in
-            guard var post = try? dto.forumPost(fallbackGuildID: fallbackGuildID) else {
+        let membersByThreadID = Dictionary(
+            members.map { ($0.id, $0) },
+            uniquingKeysWith: { _, latest in latest }
+        )
+        return threads.compactMap { incoming in
+            var thread = incoming
+            if thread.member == nil {
+                thread.member = membersByThreadID[thread.id]
+            }
+            guard var post = try? thread.forumPost(fallbackGuildID: fallbackGuildID) else {
                 return nil
             }
             post.firstMessage = post.firstMessage ?? firstByChannel[post.id]

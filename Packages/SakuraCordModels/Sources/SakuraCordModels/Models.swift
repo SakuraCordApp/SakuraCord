@@ -179,6 +179,46 @@ public struct DiscordMuteConfiguration: Codable, Hashable, Sendable {
     }
 }
 
+public struct ThreadNotificationSettings: Codable, Hashable, Sendable {
+    public static let hasInteractedFlag: UInt64 = 1 << 0
+    public static let allMessagesFlag: UInt64 = 1 << 1
+    public static let onlyMentionsFlag: UInt64 = 1 << 2
+    public static let noMessagesFlag: UInt64 = 1 << 3
+    public static let notificationFlagsMask =
+        allMessagesFlag | onlyMentionsFlag | noMessagesFlag
+
+    public var flags: UInt64
+    public var isMuted: Bool
+    public var muteConfiguration: DiscordMuteConfiguration?
+
+    public init(
+        flags: UInt64 = 0,
+        isMuted: Bool = false,
+        muteConfiguration: DiscordMuteConfiguration? = nil
+    ) {
+        self.flags = flags
+        self.isMuted = isMuted
+        self.muteConfiguration = muteConfiguration
+    }
+
+    public var notificationLevel: MessageNotificationLevel {
+        if flags & Self.allMessagesFlag != 0 { return .allMessages }
+        if flags & Self.onlyMentionsFlag != 0 { return .onlyMentions }
+        if flags & Self.noMessagesFlag != 0 { return .nothing }
+        return .inherit
+    }
+
+    public func flags(setting level: MessageNotificationLevel) -> UInt64 {
+        let retained = flags & ~Self.notificationFlagsMask
+        switch level {
+        case .allMessages: return retained | Self.allMessagesFlag
+        case .onlyMentions: return retained | Self.onlyMentionsFlag
+        case .nothing: return retained | Self.noMessagesFlag
+        case .inherit: return retained
+        }
+    }
+}
+
 public struct ChannelNotificationOverride: Codable, Hashable, Sendable {
     public var channelID: ChannelID
     public var messageNotifications: MessageNotificationLevel

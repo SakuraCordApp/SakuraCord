@@ -126,6 +126,214 @@ struct ProviderRequestContractTests {
         #expect(RateLimitURLProtocol.ackRequestCount == 4)
     }
 
+    @Test func `channel notification mutations use the current partial override route once`() async throws {
+        RateLimitURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RateLimitURLProtocol.self]
+        let provider = DiscordRESTProvider(
+            credentials: TestCredentialStore(),
+            handle: CredentialHandle(accountID: "1"),
+            session: URLSession(configuration: configuration)
+        )
+        let guildID = GuildID(rawValue: 100)
+        let channelID = ChannelID(rawValue: 200)
+
+        try await provider.updateChannelNotificationLevel(
+            guildID: guildID,
+            channelID: channelID,
+            level: .onlyMentions
+        )
+        #expect(RateLimitURLProtocol.channelNotificationRequestCount == 1)
+        #expect(RateLimitURLProtocol.channelNotificationMethod == "PATCH")
+        #expect(
+            RateLimitURLProtocol.channelNotificationPath
+                == "/api/v9/users/@me/guilds/100/settings"
+        )
+        var overrides =
+            RateLimitURLProtocol.channelNotificationBody?["channel_overrides"]
+                as? [String: Any]
+        var override = overrides?["200"] as? [String: Any]
+        #expect((override?["message_notifications"] as? NSNumber)?.intValue == 1)
+        #expect(override?["muted"] == nil)
+
+        let endTime = Date(timeIntervalSince1970: 1_785_420_000)
+        try await provider.updateChannelMute(
+            guildID: guildID,
+            channelID: channelID,
+            isMuted: true,
+            until: endTime
+        )
+        #expect(RateLimitURLProtocol.channelNotificationRequestCount == 2)
+        overrides =
+            RateLimitURLProtocol.channelNotificationBody?["channel_overrides"]
+                as? [String: Any]
+        override = overrides?["200"] as? [String: Any]
+        #expect(override?["muted"] as? Bool == true)
+        let muteConfig = override?["mute_config"] as? [String: Any]
+        #expect(muteConfig?["end_time"] as? String == "2026-07-30T14:00:00.000Z")
+
+        try await provider.updateChannelMute(
+            guildID: guildID,
+            channelID: channelID,
+            isMuted: false,
+            until: nil
+        )
+        #expect(RateLimitURLProtocol.channelNotificationRequestCount == 3)
+        overrides =
+            RateLimitURLProtocol.channelNotificationBody?["channel_overrides"]
+                as? [String: Any]
+        override = overrides?["200"] as? [String: Any]
+        #expect(override?["muted"] as? Bool == false)
+        #expect(override?.keys.contains("mute_config") == true)
+        #expect(override?["mute_config"] is NSNull)
+
+        RateLimitURLProtocol.channelNotificationStatus = 429
+        await #expect(throws: ChatProviderError.self) {
+            try await provider.updateChannelNotificationLevel(
+                guildID: guildID,
+                channelID: channelID,
+                level: .nothing
+            )
+        }
+        #expect(RateLimitURLProtocol.channelNotificationRequestCount == 4)
+    }
+
+    @Test func `direct message notification mutations use the private channel scope once`() async throws {
+        RateLimitURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RateLimitURLProtocol.self]
+        let provider = DiscordRESTProvider(
+            credentials: TestCredentialStore(),
+            handle: CredentialHandle(accountID: "1"),
+            session: URLSession(configuration: configuration)
+        )
+        let channelID = ChannelID(rawValue: 400)
+
+        try await provider.updateChannelMute(
+            guildID: nil,
+            channelID: channelID,
+            isMuted: true,
+            until: nil
+        )
+
+        #expect(RateLimitURLProtocol.channelNotificationRequestCount == 1)
+        #expect(RateLimitURLProtocol.channelNotificationMethod == "PATCH")
+        #expect(
+            RateLimitURLProtocol.channelNotificationPath
+                == "/api/v9/users/@me/guilds/@me/settings"
+        )
+        let overrides =
+            RateLimitURLProtocol.channelNotificationBody?["channel_overrides"]
+                as? [String: Any]
+        let override = overrides?["400"] as? [String: Any]
+        #expect(override?["muted"] as? Bool == true)
+        #expect(override?.keys.contains("mute_config") == true)
+        #expect(override?["mute_config"] is NSNull)
+    }
+
+    @Test func `forum post notification mutations use thread member settings and bounded join`() async throws {
+        RateLimitURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RateLimitURLProtocol.self]
+        let provider = DiscordRESTProvider(
+            credentials: TestCredentialStore(),
+            handle: CredentialHandle(accountID: "1"),
+            session: URLSession(configuration: configuration)
+        )
+        let joinedPostData = try #require(
+            """
+            {
+              "threads": [
+                {
+                  "id": "500",
+                  "guild_id": "100",
+                  "parent_id": "200",
+                  "type": 11,
+                  "name": "Joined post"
+                }
+              ],
+              "members": [
+                {
+                  "id": "500",
+                  "user_id": "1",
+                  "flags": 3,
+                  "muted": false
+                }
+              ],
+              "has_more": false
+            }
+            """.data(using: .utf8)
+        )
+        let joinedPostResponse = try JSONDecoder().decode(
+            ForumThreadCatalogueResponseDTO.self,
+            from: joinedPostData
+        )
+        let joinedPost = try #require(
+            joinedPostResponse.posts(fallbackGuildID: GuildID(rawValue: 100)).first
+        )
+        #expect(joinedPost.thread.notificationSettings?.notificationLevel == .allMessages)
+
+        try await provider.updateForumPostNotificationLevel(
+            joinedPost,
+            level: .onlyMentions
+        )
+        #expect(RateLimitURLProtocol.threadMemberMethods == ["PATCH"])
+        #expect(
+            RateLimitURLProtocol.threadMemberPaths
+                == ["/api/v9/channels/500/thread-members/@me/settings"]
+        )
+        #expect(
+            (RateLimitURLProtocol.threadMemberBodies.last?["flags"] as? NSNumber)?
+                .uint64Value
+                == ThreadNotificationSettings.hasInteractedFlag
+                    | ThreadNotificationSettings.onlyMentionsFlag
+        )
+
+        let unjoinedPost = ForumPost(
+            thread: MessageThreadSummary(
+                id: ChannelID(rawValue: 501),
+                guildID: GuildID(rawValue: 100),
+                parentID: ChannelID(rawValue: 200),
+                name: "Unjoined post"
+            )
+        )
+        let endTime = Date(timeIntervalSince1970: 1_785_420_000)
+        try await provider.updateForumPostMute(
+            unjoinedPost,
+            isMuted: true,
+            until: endTime
+        )
+        #expect(
+            Array(RateLimitURLProtocol.threadMemberMethods.suffix(2))
+                == ["POST", "PATCH"]
+        )
+        #expect(
+            Array(RateLimitURLProtocol.threadMemberPaths.suffix(2))
+                == [
+                    "/api/v9/channels/501/thread-members/@me",
+                    "/api/v9/channels/501/thread-members/@me/settings",
+                ]
+        )
+        #expect(
+            RateLimitURLProtocol.threadMemberJoinLocation
+                == "Change Notification Settings"
+        )
+        #expect(RateLimitURLProtocol.threadMemberBodies.last?["muted"] as? Bool == true)
+        let muteConfig =
+            RateLimitURLProtocol.threadMemberBodies.last?["mute_config"]
+                as? [String: Any]
+        #expect(muteConfig?["end_time"] as? String == "2026-07-30T14:00:00.000Z")
+
+        RateLimitURLProtocol.threadMemberStatus = 429
+        await #expect(throws: ChatProviderError.self) {
+            try await provider.updateForumPostNotificationLevel(
+                joinedPost,
+                level: .nothing
+            )
+        }
+        #expect(RateLimitURLProtocol.threadMemberMethods.count == 4)
+    }
+
     @Test func `reaction gateway dispatches decode every documented mutation variant`() async throws {
         RateLimitURLProtocol.reset()
         let configuration = URLSessionConfiguration.ephemeral
@@ -1358,6 +1566,16 @@ private final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var ackPath: String?
     nonisolated(unsafe) static var ackBody: [String: Any]?
     nonisolated(unsafe) static var ackStatus = 200
+    nonisolated(unsafe) static var channelNotificationRequestCount = 0
+    nonisolated(unsafe) static var channelNotificationMethod: String?
+    nonisolated(unsafe) static var channelNotificationPath: String?
+    nonisolated(unsafe) static var channelNotificationBody: [String: Any]?
+    nonisolated(unsafe) static var channelNotificationStatus = 200
+    nonisolated(unsafe) static var threadMemberMethods: [String] = []
+    nonisolated(unsafe) static var threadMemberPaths: [String] = []
+    nonisolated(unsafe) static var threadMemberBodies: [[String: Any]] = []
+    nonisolated(unsafe) static var threadMemberJoinLocation: String?
+    nonisolated(unsafe) static var threadMemberStatus = 204
     nonisolated(unsafe) static var reactionMethods: [String] = []
 
     static func reset() {
@@ -1397,6 +1615,16 @@ private final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
         ackPath = nil
         ackBody = nil
         ackStatus = 200
+        channelNotificationRequestCount = 0
+        channelNotificationMethod = nil
+        channelNotificationPath = nil
+        channelNotificationBody = nil
+        channelNotificationStatus = 200
+        threadMemberMethods = []
+        threadMemberPaths = []
+        threadMemberBodies = []
+        threadMemberJoinLocation = nil
+        threadMemberStatus = 204
         reactionMethods = []
     }
 
@@ -1501,6 +1729,45 @@ private final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
             json =
                 status == 200
                 ? #"{"token":"next-token"}"#
+                : #"{"retry_after":0.01,"global":false}"#
+        case "/api/v9/users/@me/guilds/100/settings",
+             "/api/v9/users/@me/guilds/@me/settings":
+            Self.channelNotificationRequestCount += 1
+            Self.channelNotificationMethod = request.httpMethod
+            Self.channelNotificationPath = path
+            Self.channelNotificationBody = Self.requestBody(request).flatMap {
+                try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
+            }
+            status = Self.channelNotificationStatus
+            json =
+                status == 200
+                ? #"{"channel_overrides":[]}"#
+                : #"{"retry_after":0.01,"global":false}"#
+        case "/api/v9/channels/500/thread-members/@me/settings",
+             "/api/v9/channels/501/thread-members/@me",
+             "/api/v9/channels/501/thread-members/@me/settings":
+            Self.threadMemberMethods.append(request.httpMethod ?? "")
+            Self.threadMemberPaths.append(path)
+            if let body = Self.requestBody(request),
+               let object =
+               try? JSONSerialization.jsonObject(with: body) as? [String: Any]
+            {
+                Self.threadMemberBodies.append(object)
+            } else {
+                Self.threadMemberBodies.append([:])
+            }
+            if path.hasSuffix("/thread-members/@me") {
+                let items = URLComponents(
+                    url: request.url!,
+                    resolvingAgainstBaseURL: false
+                )?.queryItems
+                Self.threadMemberJoinLocation =
+                    items?.first(where: { $0.name == "location" })?.value
+            }
+            status = Self.threadMemberStatus
+            json =
+                status == 204
+                ? ""
                 : #"{"retry_after":0.01,"global":false}"#
         case let path
             where path.hasPrefix("/api/v9/channels/200/messages/300/reactions/")

@@ -2,6 +2,7 @@ import SakuraCordModels
 import SwiftUI
 
 struct DirectMessageInboxView: View {
+    let model: AppModel
     let channels: [Channel]
     let membersByID: [UserID: Member]
     let privateCallsByChannel: [ChannelID: PrivateCall]
@@ -13,6 +14,7 @@ struct DirectMessageInboxView: View {
             Section {
                 ForEach(directMessages) { channel in
                     DirectMessageInboxRow(
+                        model: model,
                         channel: channel,
                         member: DirectMessageInboxPolicy.recipientMember(
                             for: channel,
@@ -84,6 +86,7 @@ nonisolated enum DirectMessageInboxPolicy {
 }
 
 private struct DirectMessageInboxRow: View {
+    let model: AppModel
     let channel: Channel
     let member: Member?
     let call: PrivateCall?
@@ -100,7 +103,16 @@ private struct DirectMessageInboxRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(channel.name)
-                    .fontWeight(channel.unreadCount > 0 ? .semibold : .regular)
+                    .fontWeight(
+                        channel.unreadCount > 0 && !isMuted
+                            ? .semibold
+                            : .regular
+                    )
+                    .foregroundStyle(
+                        isMuted
+                            ? Color.primary.opacity(0.35)
+                            : Color.primary
+                    )
                     .lineLimit(1)
                 if let callStatus =
                     DirectMessageInboxPolicy.callStatus(for: call)
@@ -143,6 +155,49 @@ private struct DirectMessageInboxRow: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityValue(accessibilityValue)
+        .overlay {
+            ChannelContextMenuBridge(
+                isSelected: model.selectedChannelID == channel.id,
+                isUnread: model.isChannelUnread(channel.id),
+                isMutationPending:
+                    model.isChannelNotificationMutationPending(channel.id),
+                directOverride: model.channelNotificationOverride(for: channel),
+                inheritedLevel:
+                    model.inheritedChannelNotificationLevel(for: channel),
+                inheritanceSource: .directMessages,
+                markRead: {
+                    model.markConversationRead(channelID: channel.id)
+                },
+                mute: { duration in
+                    model.setChannelMute(
+                        true,
+                        until: duration.endDate(),
+                        for: channel
+                    )
+                },
+                unmute: {
+                    model.setChannelMute(false, until: nil, for: channel)
+                },
+                setNotificationLevel: { level in
+                    model.setChannelNotificationLevel(level, for: channel)
+                },
+                copyChannelID: {
+                    ChannelContextMenuValue.copy(channel.id.description)
+                },
+                copyLink: {
+                    ChannelContextMenuValue.copy(
+                        ChannelContextMenuValue.link(
+                            guildID: nil,
+                            channelID: channel.id
+                        )
+                    )
+                }
+            )
+        }
+    }
+
+    private var isMuted: Bool {
+        model.isChannelMuted(channel)
     }
 
     private var accessibilityValue: String {

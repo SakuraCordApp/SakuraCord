@@ -1,0 +1,740 @@
+import AppKit
+import SakuraCordModels
+import SwiftUI
+
+nonisolated enum ChannelMuteDuration: CaseIterable, Equatable, Sendable {
+    case fifteenMinutes
+    case oneHour
+    case threeHours
+    case eightHours
+    case twentyFourHours
+    case indefinitely
+
+    var title: String {
+        switch self {
+        case .fifteenMinutes: "For 15 Minutes"
+        case .oneHour: "For 1 Hour"
+        case .threeHours: "For 3 Hours"
+        case .eightHours: "For 8 Hours"
+        case .twentyFourHours: "For 24 Hours"
+        case .indefinitely: "Until I Turn It Back On"
+        }
+    }
+
+    func endDate(from now: Date = .now) -> Date? {
+        let interval: TimeInterval
+        switch self {
+        case .fifteenMinutes: interval = 15 * 60
+        case .oneHour: interval = 60 * 60
+        case .threeHours: interval = 3 * 60 * 60
+        case .eightHours: interval = 8 * 60 * 60
+        case .twentyFourHours: interval = 24 * 60 * 60
+        case .indefinitely: return nil
+        }
+        return now.addingTimeInterval(interval)
+    }
+}
+
+nonisolated enum ChannelContextMenuValue {
+    static func link(guildID: GuildID?, channelID: ChannelID) -> String {
+        "https://discord.com/channels/\(guildID?.description ?? "@me")/\(channelID)"
+    }
+
+    @MainActor
+    static func copy(_ value: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+    }
+}
+
+nonisolated enum ChannelContextMenuSubtitle {
+    static func muteRemaining(
+        until endTime: Date?,
+        now: Date = .now
+    ) -> String? {
+        guard let endTime else { return nil }
+        let remaining = endTime.timeIntervalSince(now)
+        guard remaining > 0 else { return nil }
+        if remaining < 60 {
+            return "Less than a minute remaining"
+        }
+        if remaining < 60 * 60 {
+            let minutes = Int(ceil(remaining / 60))
+            return "\(minutes) \(minutes == 1 ? "minute" : "minutes") remaining"
+        }
+        let hours = Int(ceil(remaining / (60 * 60)))
+        return "\(hours) \(hours == 1 ? "hour" : "hours") remaining"
+    }
+
+    static func notificationSelection(
+        configured: MessageNotificationLevel,
+        inherited: MessageNotificationLevel
+    ) -> String {
+        (configured == .inherit ? inherited : configured).menuTitle
+    }
+}
+
+nonisolated enum ChannelNotificationInheritanceSource: Equatable, Sendable {
+    case category
+    case server
+    case directMessages
+
+    var menuTitle: String {
+        switch self {
+        case .category: "Use Category Default"
+        case .server: "Use Server Default"
+        case .directMessages: "Use Direct Message Default"
+        }
+    }
+}
+
+/// SwiftUI context menus can discard item images in the macOS 27 adaptation.
+/// This bridge uses the same AppKit symbol configuration as message menus.
+struct ChannelContextMenuBridge: NSViewRepresentable {
+    let isSelected: Bool
+    let isUnread: Bool
+    let isMutationPending: Bool
+    let directOverride: ChannelNotificationOverride?
+    let inheritedLevel: MessageNotificationLevel
+    let inheritanceSource: ChannelNotificationInheritanceSource
+    let markRead: () -> Void
+    let mute: (ChannelMuteDuration) -> Void
+    let unmute: () -> Void
+    let setNotificationLevel: (MessageNotificationLevel) -> Void
+    let copyChannelID: () -> Void
+    let copyLink: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            isUnread: isUnread,
+            isMutationPending: isMutationPending,
+            directOverride: directOverride,
+            inheritedLevel: inheritedLevel,
+            inheritanceSource: inheritanceSource,
+            markRead: markRead,
+            mute: mute,
+            unmute: unmute,
+            setNotificationLevel: setNotificationLevel,
+            copyChannelID: copyChannelID,
+            copyLink: copyLink
+        )
+    }
+
+    func makeNSView(context: Context) -> ChannelContextMenuHitView {
+        let view = ChannelContextMenuHitView()
+        view.menuProvider = { [weak coordinator = context.coordinator] in
+            coordinator?.makeMenu()
+        }
+        view.isSelected = isSelected
+        return view
+    }
+
+    func updateNSView(_ nsView: ChannelContextMenuHitView, context: Context) {
+        context.coordinator.update(
+            isUnread: isUnread,
+            isMutationPending: isMutationPending,
+            directOverride: directOverride,
+            inheritedLevel: inheritedLevel,
+            inheritanceSource: inheritanceSource,
+            markRead: markRead,
+            mute: mute,
+            unmute: unmute,
+            setNotificationLevel: setNotificationLevel,
+            copyChannelID: copyChannelID,
+            copyLink: copyLink
+        )
+        nsView.menuProvider = { [weak coordinator = context.coordinator] in
+            coordinator?.makeMenu()
+        }
+        nsView.isSelected = isSelected
+    }
+
+    static func dismantleNSView(
+        _ nsView: ChannelContextMenuHitView,
+        coordinator: Coordinator
+    ) {
+        nsView.uninstallFromNativeRow()
+    }
+
+    @MainActor
+    final class Coordinator: NSObject {
+        private var isUnread: Bool
+        private var isMutationPending: Bool
+        private var directOverride: ChannelNotificationOverride?
+        private var inheritedLevel: MessageNotificationLevel
+        private var inheritanceSource: ChannelNotificationInheritanceSource
+        private var markRead: () -> Void
+        private var mute: (ChannelMuteDuration) -> Void
+        private var unmute: () -> Void
+        private var setNotificationLevel: (MessageNotificationLevel) -> Void
+        private var copyChannelID: () -> Void
+        private var copyLink: () -> Void
+
+        init(
+            isUnread: Bool,
+            isMutationPending: Bool,
+            directOverride: ChannelNotificationOverride?,
+            inheritedLevel: MessageNotificationLevel,
+            inheritanceSource: ChannelNotificationInheritanceSource,
+            markRead: @escaping () -> Void,
+            mute: @escaping (ChannelMuteDuration) -> Void,
+            unmute: @escaping () -> Void,
+            setNotificationLevel: @escaping (MessageNotificationLevel) -> Void,
+            copyChannelID: @escaping () -> Void,
+            copyLink: @escaping () -> Void
+        ) {
+            self.isUnread = isUnread
+            self.isMutationPending = isMutationPending
+            self.directOverride = directOverride
+            self.inheritedLevel = inheritedLevel
+            self.inheritanceSource = inheritanceSource
+            self.markRead = markRead
+            self.mute = mute
+            self.unmute = unmute
+            self.setNotificationLevel = setNotificationLevel
+            self.copyChannelID = copyChannelID
+            self.copyLink = copyLink
+        }
+
+        func update(
+            isUnread: Bool,
+            isMutationPending: Bool,
+            directOverride: ChannelNotificationOverride?,
+            inheritedLevel: MessageNotificationLevel,
+            inheritanceSource: ChannelNotificationInheritanceSource,
+            markRead: @escaping () -> Void,
+            mute: @escaping (ChannelMuteDuration) -> Void,
+            unmute: @escaping () -> Void,
+            setNotificationLevel: @escaping (MessageNotificationLevel) -> Void,
+            copyChannelID: @escaping () -> Void,
+            copyLink: @escaping () -> Void
+        ) {
+            self.isUnread = isUnread
+            self.isMutationPending = isMutationPending
+            self.directOverride = directOverride
+            self.inheritedLevel = inheritedLevel
+            self.inheritanceSource = inheritanceSource
+            self.markRead = markRead
+            self.mute = mute
+            self.unmute = unmute
+            self.setNotificationLevel = setNotificationLevel
+            self.copyChannelID = copyChannelID
+            self.copyLink = copyLink
+        }
+
+        func makeMenu() -> NSMenu {
+            let menu = NSMenu()
+            menu.autoenablesItems = false
+
+            menu.addItem(
+                menuItem(
+                    "Mark as Read",
+                    systemImage: "envelope.open.fill",
+                    action: #selector(markReadFromMenu),
+                    isEnabled: isUnread
+                )
+            )
+            menu.addItem(.separator())
+
+            if isDirectlyMuted {
+                let unmuteItem = menuItem(
+                    "Unmute Channel",
+                    systemImage: "bell.fill",
+                    action: #selector(unmuteFromMenu),
+                    isEnabled: !isMutationPending
+                )
+                if let subtitle = ChannelContextMenuSubtitle.muteRemaining(
+                    until: directOverride?.muteConfiguration?.endTime
+                ) {
+                    unmuteItem.subtitle = subtitle
+                }
+                menu.addItem(unmuteItem)
+            } else {
+                let muteItem = menuItem(
+                    "Mute Channel",
+                    systemImage: "bell.slash.fill",
+                    action: nil,
+                    isEnabled: !isMutationPending
+                )
+                let muteMenu = NSMenu(title: "Mute Channel")
+                muteMenu.autoenablesItems = false
+                for (index, duration) in ChannelMuteDuration.allCases.enumerated() {
+                    let item = menuItem(
+                        duration.title,
+                        action: #selector(muteFromMenu(_:)),
+                        isEnabled: !isMutationPending
+                    )
+                    item.representedObject = NSNumber(value: index)
+                    muteMenu.addItem(item)
+                }
+                muteItem.submenu = muteMenu
+                menu.addItem(muteItem)
+            }
+
+            let notificationItem = menuItem(
+                "Notification Settings",
+                systemImage: "bell.badge.fill",
+                action: nil,
+                isEnabled: !isMutationPending
+            )
+            notificationItem.subtitle =
+                ChannelContextMenuSubtitle.notificationSelection(
+                    configured:
+                        directOverride?.messageNotifications ?? .inherit,
+                    inherited: inheritedLevel
+                )
+            notificationItem.submenu = notificationMenu()
+            menu.addItem(notificationItem)
+
+            menu.addItem(.separator())
+            menu.addItem(
+                menuItem(
+                    "Copy Channel ID",
+                    systemImage: "number.square.fill",
+                    action: #selector(copyChannelIDFromMenu)
+                )
+            )
+            menu.addItem(
+                menuItem(
+                    "Copy Link",
+                    systemImage: "link",
+                    action: #selector(copyLinkFromMenu)
+                )
+            )
+            return menu
+        }
+
+        private var isDirectlyMuted: Bool {
+            directOverride?.isMuted == true
+                && (directOverride?.muteConfiguration?.isActive() ?? true)
+        }
+
+        private func notificationMenu() -> NSMenu {
+            let menu = NSMenu(title: "Notification Settings")
+            menu.autoenablesItems = false
+            let selected = directOverride?.messageNotifications ?? .inherit
+            let levels: [MessageNotificationLevel] = [
+                .inherit, .allMessages, .onlyMentions, .nothing,
+            ]
+            for level in levels {
+                let title =
+                    if level == .inherit {
+                        inheritanceSource.menuTitle
+                    } else {
+                        level.menuTitle
+                    }
+                let item = menuItem(
+                    title,
+                    action: #selector(setNotificationFromMenu(_:)),
+                    isEnabled: !isMutationPending
+                )
+                item.state = selected == level ? .on : .off
+                item.representedObject = NSNumber(value: level.rawValue)
+                if level == .inherit {
+                    item.subtitle = inheritedLevel.menuTitle
+                }
+                menu.addItem(item)
+            }
+            return menu
+        }
+
+        private func menuItem(
+            _ title: String,
+            systemImage: String? = nil,
+            action: Selector?,
+            isEnabled: Bool = true
+        ) -> NSMenuItem {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = action == nil ? nil : self
+            item.isEnabled = isEnabled
+            if let systemImage {
+                ContextMenuItemSupport.configure(
+                    item,
+                    title: title,
+                    systemImage: systemImage
+                )
+            }
+            return item
+        }
+
+        @objc private func markReadFromMenu() {
+            markRead()
+        }
+
+        @objc private func muteFromMenu(_ sender: NSMenuItem) {
+            guard let index = (sender.representedObject as? NSNumber)?.intValue,
+                  ChannelMuteDuration.allCases.indices.contains(index)
+            else { return }
+            mute(ChannelMuteDuration.allCases[index])
+        }
+
+        @objc private func unmuteFromMenu() {
+            unmute()
+        }
+
+        @objc private func setNotificationFromMenu(_ sender: NSMenuItem) {
+            guard let rawValue = (sender.representedObject as? NSNumber)?.intValue,
+                  let level = MessageNotificationLevel(rawValue: rawValue)
+            else { return }
+            setNotificationLevel(level)
+        }
+
+        @objc private func copyChannelIDFromMenu() {
+            copyChannelID()
+        }
+
+        @objc private func copyLinkFromMenu() {
+            copyLink()
+        }
+    }
+}
+
+extension MessageNotificationLevel {
+    nonisolated var menuTitle: String {
+        switch self {
+        case .allMessages: "All Messages"
+        case .onlyMentions: "Only @mentions"
+        case .nothing: "Nothing"
+        case .inherit: "Default"
+        }
+    }
+}
+
+final class ChannelContextMenuHitView: NSView {
+    var menuProvider: (() -> NSMenu?)?
+    var isSelected = false {
+        didSet {
+            updateNativeHoverPresentation()
+        }
+    }
+
+    private weak var nativeRowView: NSTableRowView?
+    private let nativeHoverView = ChannelNativeHoverRowView()
+    private let interactionView = ChannelNativeRowInteractionView()
+    private var isHovering = false
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        interactionView.menuProvider = { [weak self] in
+            self?.menuProvider?()
+        }
+        interactionView.hoverChanged = { [weak self] hovering in
+            guard let self else { return }
+            isHovering = hovering
+            updateNativeHoverPresentation()
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        scheduleNativeRowInstallation()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            uninstallFromNativeRow()
+        } else {
+            scheduleNativeRowInstallation()
+        }
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    func uninstallFromNativeRow() {
+        interactionView.resetHoverTracking()
+        interactionView.removeFromSuperview()
+        nativeHoverView.removeFromSuperview()
+        nativeRowView = nil
+        isHovering = false
+    }
+
+    private func scheduleNativeRowInstallation() {
+        Task { @MainActor [weak self] in
+            await Task.yield()
+            self?.installIntoNativeRowIfNeeded()
+        }
+    }
+
+    private func installIntoNativeRowIfNeeded() {
+        guard window != nil,
+              let rowView = enclosingNativeRowView()
+        else { return }
+        guard nativeRowView !== rowView else {
+            synchronizeNativeRowFrames()
+            return
+        }
+
+        uninstallFromNativeRow()
+        nativeRowView = rowView
+        nativeHoverView.alphaValue = 0.18
+        synchronizeNativeHoverGeometry()
+        interactionView.frame = rowView.bounds
+        interactionView.autoresizingMask = [.width, .height]
+        rowView.addSubview(
+            nativeHoverView,
+            positioned: .below,
+            relativeTo: nil
+        )
+        rowView.addSubview(
+            interactionView,
+            positioned: .above,
+            relativeTo: nil
+        )
+        interactionView.refreshHoverTracking()
+        updateNativeHoverPresentation()
+    }
+
+    private func enclosingNativeRowView() -> NSTableRowView? {
+        var candidate = superview
+        while let view = candidate {
+            if let rowView = view as? NSTableRowView {
+                return rowView
+            }
+            candidate = view.superview
+        }
+        return nil
+    }
+
+    private func synchronizeNativeRowFrames() {
+        guard let nativeRowView else { return }
+        synchronizeNativeHoverGeometry()
+        interactionView.frame = nativeRowView.bounds
+    }
+
+    private func updateNativeHoverPresentation() {
+        nativeHoverView.showsHover = isHovering && !isSelected
+        guard nativeHoverView.showsHover else { return }
+        synchronizeNativeHoverGeometry()
+    }
+
+    private func synchronizeNativeHoverGeometry() {
+        guard let nativeRowView,
+              let selectionView = nativeSelectionView(near: nativeRowView)
+        else { return }
+
+        let selectionRow = selectionView.superview?.bounds ?? nativeRowView.bounds
+        let leadingInset = selectionView.frame.minX - selectionRow.minX
+        let trailingInset = selectionRow.maxX - selectionView.frame.maxX
+        nativeHoverView.frame = NSRect(
+            x: nativeRowView.bounds.minX + leadingInset,
+            y: nativeRowView.bounds.minY + selectionView.frame.minY,
+            width: max(
+                0,
+                nativeRowView.bounds.width - leadingInset - trailingInset
+            ),
+            height: selectionView.frame.height
+        )
+        nativeHoverView.material = selectionView.material
+        nativeHoverView.blendingMode = selectionView.blendingMode
+        nativeHoverView.state = selectionView.state
+        nativeHoverView.layer?.cornerRadius =
+            selectionView.layer?.cornerRadius ?? 0
+        nativeHoverView.layer?.cornerCurve =
+            selectionView.layer?.cornerCurve ?? .circular
+        nativeHoverView.layer?.maskedCorners =
+            selectionView.layer?.maskedCorners ?? []
+    }
+
+    private func nativeSelectionView(
+        near rowView: NSTableRowView
+    ) -> NSVisualEffectView? {
+        var candidate = rowView.superview
+        while let view = candidate {
+            if let tableView = view as? NSTableView {
+                for row in tableView.rows(in: tableView.visibleRect).integerRange {
+                    guard let visibleRow = tableView.rowView(
+                        atRow: row,
+                        makeIfNecessary: false
+                    ) else { continue }
+                    if let selectionView = visibleRow.subviews
+                        .compactMap({ $0 as? NSVisualEffectView })
+                        .first(where: {
+                            !($0 is ChannelNativeHoverRowView)
+                                && $0.material == .selection
+                        })
+                    {
+                        return selectionView
+                    }
+                }
+                return nil
+            }
+            candidate = view.superview
+        }
+        return nil
+    }
+}
+
+private final class ChannelNativeHoverRowView: NSVisualEffectView {
+    var showsHover = false {
+        didSet {
+            guard showsHover != oldValue else { return }
+            isHidden = !showsHover
+        }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        isHidden = true
+        wantsLayer = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    nonisolated override func accessibilityIsIgnored() -> Bool {
+        true
+    }
+}
+
+private extension NSRange {
+    var integerRange: Range<Int> {
+        location ..< NSMaxRange(self)
+    }
+}
+
+final class ChannelNativeRowInteractionView: NSView {
+    var menuProvider: (() -> NSMenu?)?
+    var hoverChanged: ((Bool) -> Void)?
+    var pointerLocationInWindowProvider: (() -> NSPoint?)?
+    private var rowTrackingArea: NSTrackingArea?
+    private weak var observedClipView: NSClipView?
+    private var reportedHover = false
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        refreshHoverTracking()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        refreshHoverTracking()
+    }
+
+    override func updateTrackingAreas() {
+        if let rowTrackingArea {
+            removeTrackingArea(rowTrackingArea)
+        }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [
+                .activeInKeyWindow,
+                .inVisibleRect,
+                .mouseEnteredAndExited,
+            ],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        rowTrackingArea = area
+        super.updateTrackingAreas()
+        synchronizeHoverWithCurrentPointer()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        synchronizeHover(atWindowPoint: event.locationInWindow)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        setReportedHover(false)
+    }
+
+    func refreshHoverTracking() {
+        updateClipViewObservation()
+        synchronizeHoverWithCurrentPointer()
+    }
+
+    func resetHoverTracking() {
+        stopObservingClipView()
+        setReportedHover(false)
+    }
+
+    func synchronizeHover(atWindowPoint point: NSPoint?) {
+        guard let point, window != nil else {
+            setReportedHover(false)
+            return
+        }
+        let localPoint = convert(point, from: nil)
+        setReportedHover(
+            bounds.contains(localPoint)
+                && !visibleRect.isEmpty
+                && visibleRect.contains(localPoint)
+        )
+    }
+
+    private func synchronizeHoverWithCurrentPointer() {
+        let point =
+            pointerLocationInWindowProvider?()
+            ?? window?.mouseLocationOutsideOfEventStream
+        synchronizeHover(atWindowPoint: point)
+    }
+
+    private func setReportedHover(_ hovering: Bool) {
+        guard reportedHover != hovering else { return }
+        reportedHover = hovering
+        hoverChanged?(hovering)
+    }
+
+    private func updateClipViewObservation() {
+        let clipView = window == nil ? nil : enclosingScrollView?.contentView
+        guard observedClipView !== clipView else { return }
+        stopObservingClipView()
+        guard let clipView else { return }
+        observedClipView = clipView
+        clipView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(clipViewBoundsDidChange(_:)),
+            name: NSView.boundsDidChangeNotification,
+            object: clipView,
+        )
+    }
+
+    private func stopObservingClipView() {
+        if let observedClipView {
+            NotificationCenter.default.removeObserver(
+                self,
+                name: NSView.boundsDidChangeNotification,
+                object: observedClipView
+            )
+        }
+        observedClipView = nil
+    }
+
+    @objc private func clipViewBoundsDidChange(_ notification: Notification) {
+        synchronizeHoverWithCurrentPointer()
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard bounds.contains(point),
+              let event = window?.currentEvent,
+              event.type == .rightMouseDown
+                || (
+                    event.type == .leftMouseDown
+                        && event.modifierFlags.contains(.control)
+                )
+        else { return nil }
+        return self
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        menuProvider?()
+    }
+
+    nonisolated override func accessibilityIsIgnored() -> Bool {
+        true
+    }
+}

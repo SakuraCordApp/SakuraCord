@@ -119,6 +119,19 @@ nonisolated enum NativeTimelineHoverHitTesting {
     }
 }
 
+nonisolated enum NativeTimelineMessageContextMenuHitTesting {
+    static func contains(
+        _ point: CGPoint,
+        rowOrigin: CGFloat,
+        highlightFrame: CGRect?
+    ) -> Bool {
+        NativeTimelineHoverHitTesting.contains(
+            CGPoint(x: point.x, y: point.y - rowOrigin),
+            in: highlightFrame
+        )
+    }
+}
+
 nonisolated enum NativeTimelineCompactTimestampHitTesting {
     static func contains(
         _ point: CGPoint,
@@ -144,6 +157,8 @@ nonisolated enum NativeTimelineMessageMenuAction: Equatable {
     case markUnread
     case editMessage
     case copyText
+    case copyLink
+    case copyMessageID
     case deleteMessage
 }
 
@@ -184,11 +199,6 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
                 systemImage: "arrowshape.turn.up.left"
             ))
         }
-        result.append(.action(
-            .markUnread,
-            title: "Mark Unread",
-            systemImage: "envelope.badge"
-        ))
         if canEdit {
             result.append(.action(
                 .editMessage,
@@ -197,9 +207,25 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
             ))
         }
         result.append(.action(
+            .markUnread,
+            title: "Mark Unread",
+            systemImage: "envelope.badge"
+        ))
+        result.append(.separator)
+        result.append(.action(
             .copyText,
             title: "Copy Text",
             systemImage: "doc.on.doc"
+        ))
+        result.append(.action(
+            .copyLink,
+            title: "Copy Link",
+            systemImage: "link"
+        ))
+        result.append(.action(
+            .copyMessageID,
+            title: "Copy Message ID",
+            systemImage: "number.square.fill"
         ))
         if canEdit {
             result.append(.separator)
@@ -807,6 +833,13 @@ private final class NativeTimelineReactionCountAnimationHost:
     NSHostingView<AnyView>
 {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+@MainActor
+private final class NativeTimelineActionCapsuleHost: NSHostingView<AnyView> {
+    override var safeAreaInsets: NSEdgeInsets {
+        NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+    }
 }
 
 @MainActor
@@ -7667,9 +7700,15 @@ final class NativeTimelineCanvasView: NSView {
     override func menu(for event: NSEvent) -> NSMenu? {
         let point = convert(event.locationInWindow, from: nil)
         guard let index = rowIndex(at: point.y),
+              layouts.indices.contains(index),
               case let .message(row, _, _) = items[index],
               let actions
         else { return nil }
+        guard NativeTimelineMessageContextMenuHitTesting.contains(
+            point,
+            rowOrigin: displayedRowOrigin(at: index),
+            highlightFrame: layouts[index].highlightFrame
+        ) else { return nil }
         let canEdit =
             row.message.author.id == model?.snapshot?.currentUser.id
         let menu = NSMenu()
@@ -7715,6 +7754,15 @@ final class NativeTimelineCanvasView: NSView {
             case .copyText:
                 handler = {
                     Self.copyText(row.message.content)
+                }
+            case .copyLink:
+                handler = { [weak self] in
+                    guard let self else { return }
+                    Self.copyText(self.messageLink(for: row.message))
+                }
+            case .copyMessageID:
+                handler = {
+                    Self.copyText(row.message.id.description)
                 }
             case .deleteMessage:
                 handler = { [weak self] in
@@ -8815,6 +8863,12 @@ final class NativeTimelineCanvasView: NSView {
             Self.copyText(self.messageLink(for: message))
             return true
         })
+        result.append(NSAccessibilityCustomAction(
+            name: "Copy Message ID"
+        ) {
+            Self.copyText(message.id.description)
+            return true
+        })
         if canEdit {
             result.append(NSAccessibilityCustomAction(
                 name: "Delete Message"
@@ -9179,7 +9233,10 @@ final class NativeTimelineCanvasView: NSView {
             },
             delete: { [weak self] in self?.confirmDelete(row.message) }
         )
-        let host = NSHostingView(rootView: AnyView(root))
+        // The canvas owns the capsule's exact document-coordinate frame.
+        // Nested thread timelines extend beneath their top toolbar, so this
+        // host must not inherit that container's safe-area displacement.
+        let host = NativeTimelineActionCapsuleHost(rootView: AnyView(root))
         host.setContentHuggingPriority(.required, for: .horizontal)
         host.setContentHuggingPriority(.required, for: .vertical)
         host.setContentCompressionResistancePriority(.required, for: .horizontal)
@@ -10009,33 +10066,12 @@ final class NativeTimelineCanvasView: NSView {
         item.target = target
         item.representedObject = target
         item.isEnabled = true
-        let baseConfiguration = NSImage.SymbolConfiguration(
-            pointSize: 13,
-            weight: .regular
+        ContextMenuItemSupport.configure(
+            item,
+            title: title,
+            systemImage: systemImage,
+            isDestructive: isDestructive
         )
-        let configuration = isDestructive
-            ? baseConfiguration.applying(
-                NSImage.SymbolConfiguration(
-                    paletteColors: [.systemRed]
-                )
-            )
-            : baseConfiguration
-        if let image = NSImage(
-            systemSymbolName: systemImage,
-            accessibilityDescription: title
-        )?.withSymbolConfiguration(configuration) {
-            image.isTemplate = !isDestructive
-            item.image = image
-        }
-        if #available(macOS 27.0, *) {
-            item.preferredImageVisibility = .visible
-        }
-        if isDestructive {
-            item.attributedTitle = NSAttributedString(
-                string: title,
-                attributes: [.foregroundColor: NSColor.systemRed]
-            )
-        }
         return item
     }
 

@@ -1059,7 +1059,7 @@ private struct ForumPostListFooter: View {
     var body: some View {
         HStack(spacing: 12) {
             ForumPostSummaryReactionPill(model: model, channel: channel, post: post)
-            ForumPostReplyCount(model: model, post: post)
+            ForumPostMessageCount(model: model, post: post)
             ForumTimestampLabel(
                 date: post.lastActivityAt,
                 exactPrefix: "Last activity",
@@ -1079,7 +1079,7 @@ private struct ForumPostGalleryFooter: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            ForumPostReplyCount(model: model, post: post)
+            ForumPostMessageCount(model: model, post: post)
             Spacer()
             ForumPostSummaryReactionPill(model: model, channel: channel, post: post)
         }
@@ -1088,14 +1088,14 @@ private struct ForumPostGalleryFooter: View {
     }
 }
 
-private struct ForumPostReplyCount: View {
+private struct ForumPostMessageCount: View {
     let model: AppModel
     let post: ForumPost
 
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "bubble.left.fill")
-            Text(post.replyCount.formatted())
+            Text(messageCount.formatted())
             if unreadCount > 0 {
                 Text("(\(unreadCount.formatted()) New)")
                     .fontWeight(.semibold)
@@ -1111,13 +1111,25 @@ private struct ForumPostReplyCount: View {
         model.forumUnreadMessageCount(post)
     }
 
+    private var messageCount: Int {
+        ForumPostMessageCountPresentation.count(
+            threadMessageCount: post.thread.messageCount
+        )
+    }
+
     private var accessibilityText: String {
-        let replies = post.replyCount == 1 ? "reply" : "replies"
+        let messages = messageCount == 1 ? "message" : "messages"
         guard unreadCount > 0 else {
-            return "\(post.replyCount) \(replies)"
+            return "\(messageCount) \(messages)"
         }
-        let messages = unreadCount == 1 ? "new message" : "new messages"
-        return "\(post.replyCount) \(replies), \(unreadCount) \(messages)"
+        let newMessages = unreadCount == 1 ? "new message" : "new messages"
+        return "\(messageCount) \(messages), \(unreadCount) \(newMessages)"
+    }
+}
+
+nonisolated enum ForumPostMessageCountPresentation {
+    static func count(threadMessageCount: Int) -> Int {
+        max(0, threadMessageCount)
     }
 }
 
@@ -1269,13 +1281,32 @@ private struct ForumPostCardChrome<Content: View>: View {
                     isArchived: post.thread.isArchived,
                     isLocked: post.thread.isLocked,
                     isPinned: post.thread.isPinned,
+                    isUnread: model.isForumPostUnread(post),
+                    isMutationPending:
+                        model.isForumNotificationMutationPending(post.id),
+                    notificationSettings: post.thread.notificationSettings,
+                    inheritedNotificationLevel:
+                        model.inheritedForumPostNotificationLevel(post),
                     requiresTag: channel.requiresForumTag,
                     canManage: canManage,
                     canArchive: canArchive,
                     canEditTags: canEditTags,
                     canDelete: canDelete,
-                    open: {
-                        model.open(post)
+                    markRead: {
+                        model.markConversationRead(channelID: post.id)
+                    },
+                    mute: { duration in
+                        model.setForumPostMute(
+                            true,
+                            until: duration.endDate(),
+                            for: post
+                        )
+                    },
+                    unmute: {
+                        model.setForumPostMute(false, until: nil, for: post)
+                    },
+                    setNotificationLevel: { level in
+                        model.setForumPostNotificationLevel(level, for: post)
                     },
                     copyLink: copyForumPostLink,
                     copyThreadID: {

@@ -140,6 +140,105 @@ struct AccountReadStateModelTests {
         #expect(!model.guildUnread(guildID))
     }
 
+    @Test func `forum post member settings control local reply notifications`() {
+        let threadID = ChannelID(rawValue: 201)
+        let model = AccountReadStateModel()
+        model.reset(accountID: "account")
+        model.setCurrentUserID(currentUser.id)
+        model.configure(
+            accountID: "account",
+            guilds: [
+                Guild(
+                    id: guildID,
+                    name: "Guild",
+                    defaultMessageNotifications: .allMessages
+                )
+            ],
+            channels: [
+                Channel(
+                    id: channelID,
+                    guildID: guildID,
+                    name: "forum",
+                    kind: .forum
+                )
+            ],
+            readStates: [],
+            notificationSettings: []
+        )
+        model.merge(
+            thread: MessageThreadSummary(
+                id: threadID,
+                guildID: guildID,
+                parentID: channelID,
+                name: "Post",
+                notificationSettings: ThreadNotificationSettings(
+                    flags: ThreadNotificationSettings.noMessagesFlag
+                )
+            )
+        )
+        let suppressedMention = model.receive(
+            Message(
+                id: MessageID(rawValue: 11),
+                channelID: threadID,
+                author: sender,
+                content: "Mention",
+                guildID: guildID,
+                mentionedUsers: [currentUser]
+            ),
+            currentUserID: currentUser.id
+        )
+        #expect(!suppressedMention.shouldNotify)
+
+        model.merge(
+            thread: MessageThreadSummary(
+                id: threadID,
+                guildID: guildID,
+                parentID: channelID,
+                name: "Post",
+                notificationSettings: ThreadNotificationSettings(
+                    flags: ThreadNotificationSettings.allMessagesFlag
+                )
+            )
+        )
+        #expect(
+            model.receive(
+                Message(
+                    id: MessageID(rawValue: 12),
+                    channelID: threadID,
+                    author: sender,
+                    content: "Ordinary reply",
+                    guildID: guildID
+                ),
+                currentUserID: currentUser.id
+            ).shouldNotify
+        )
+
+        model.merge(
+            thread: MessageThreadSummary(
+                id: threadID,
+                guildID: guildID,
+                parentID: channelID,
+                name: "Post",
+                notificationSettings: ThreadNotificationSettings(
+                    flags: ThreadNotificationSettings.allMessagesFlag,
+                    isMuted: true
+                )
+            )
+        )
+        #expect(
+            !model.receive(
+                Message(
+                    id: MessageID(rawValue: 13),
+                    channelID: threadID,
+                    author: sender,
+                    content: "Muted reply",
+                    guildID: guildID
+                ),
+                currentUserID: currentUser.id
+            ).shouldNotify
+        )
+    }
+
     @Test func `forum visit acknowledges new posts without clearing unread replies`() {
         let newPostID = ChannelID(rawValue: 300)
         let unreadPostID = ChannelID(rawValue: 240)
@@ -1048,6 +1147,12 @@ struct AccountReadStateModelTests {
     @Test func `channel and category overrides apply mute expiry and notification inheritance`() {
         let expired = DiscordMuteConfiguration(endTime: .distantPast)
         let active = DiscordMuteConfiguration(endTime: .distantFuture)
+        let channel = Channel(
+            id: channelID,
+            guildID: guildID,
+            name: "general",
+            categoryID: categoryID
+        )
         let model = makeModel(
             latest: 10,
             acknowledged: 10,
@@ -1064,6 +1169,7 @@ struct AccountReadStateModelTests {
                 ]
             )
         )
+        #expect(!model.isChannelMuted(channel))
         #expect(model.receive(message(id: 11), currentUserID: currentUser.id).shouldNotify)
 
         model.apply(
@@ -1080,6 +1186,7 @@ struct AccountReadStateModelTests {
                 ]
             )
         )
+        #expect(model.isChannelMuted(channel))
         #expect(!model.receive(message(id: 12), currentUserID: currentUser.id).shouldNotify)
     }
 

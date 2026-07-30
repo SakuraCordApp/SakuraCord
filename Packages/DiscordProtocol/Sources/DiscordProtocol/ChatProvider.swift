@@ -22,6 +22,15 @@ public protocol ChatProvider: Sendable {
     ) async throws -> ForumPost
     func updateForumPost(_ post: ForumPost, mutation: ForumPostMutation) async throws -> ForumPost
     func deleteForumPost(_ post: ForumPost) async throws
+    func updateForumPostNotificationLevel(
+        _ post: ForumPost,
+        level: MessageNotificationLevel
+    ) async throws
+    func updateForumPostMute(
+        _ post: ForumPost,
+        isMuted: Bool,
+        until: Date?
+    ) async throws
     func sendTyping(in channelID: ChannelID) async throws
     func send(_ draft: SendMessageDraft) async throws -> Message
     func send(_ draft: SendMessageDraft, progress: @escaping @Sendable (MessageSendProgress) -> Void)
@@ -59,6 +68,17 @@ public protocol ChatProvider: Sendable {
         flags: UInt64?,
         lastViewed: Int?
     ) async throws -> ReadAcknowledgementResponse
+    func updateChannelNotificationLevel(
+        guildID: GuildID?,
+        channelID: ChannelID,
+        level: MessageNotificationLevel
+    ) async throws
+    func updateChannelMute(
+        guildID: GuildID?,
+        channelID: ChannelID,
+        isMuted: Bool,
+        until: Date?
+    ) async throws
     func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws
     func setReaction(
         _ emoji: String,
@@ -206,6 +226,19 @@ public extension ChatProvider {
         try await acknowledge(channelID: channelID, messageID: messageID, token: token)
     }
 
+    func updateChannelNotificationLevel(
+        guildID: GuildID?,
+        channelID: ChannelID,
+        level: MessageNotificationLevel
+    ) async throws {}
+
+    func updateChannelMute(
+        guildID: GuildID?,
+        channelID: ChannelID,
+        isMuted: Bool,
+        until: Date?
+    ) async throws {}
+
     func forumPosts(in channelID: ChannelID, query: ForumPostQuery) async throws -> ForumPostPage {
         throw ChatProviderError.capabilityDisabled(.forums)
     }
@@ -226,6 +259,21 @@ public extension ChatProvider {
     }
 
     func deleteForumPost(_ post: ForumPost) async throws {
+        throw ChatProviderError.capabilityDisabled(.forums)
+    }
+
+    func updateForumPostNotificationLevel(
+        _ post: ForumPost,
+        level: MessageNotificationLevel
+    ) async throws {
+        throw ChatProviderError.capabilityDisabled(.forums)
+    }
+
+    func updateForumPostMute(
+        _ post: ForumPost,
+        isMuted: Bool,
+        until: Date?
+    ) async throws {
         throw ChatProviderError.capabilityDisabled(.forums)
     }
 

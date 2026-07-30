@@ -1016,19 +1016,30 @@ func `inline rich tokens inherit their enclosing spoiler`() {
                 systemImage: "arrowshape.turn.up.left"
             ),
             .action(
-                .markUnread,
-                title: "Mark Unread",
-                systemImage: "envelope.badge"
-            ),
-            .action(
                 .editMessage,
                 title: "Edit Message",
                 systemImage: "pencil"
             ),
             .action(
+                .markUnread,
+                title: "Mark Unread",
+                systemImage: "envelope.badge"
+            ),
+            .separator,
+            .action(
                 .copyText,
                 title: "Copy Text",
                 systemImage: "doc.on.doc"
+            ),
+            .action(
+                .copyLink,
+                title: "Copy Link",
+                systemImage: "link"
+            ),
+            .action(
+                .copyMessageID,
+                title: "Copy Message ID",
+                systemImage: "number.square.fill"
             ),
             .separator,
             .action(
@@ -1062,10 +1073,21 @@ func `inline rich tokens inherit their enclosing spoiler`() {
                 title: "Mark Unread",
                 systemImage: "envelope.badge"
             ),
+            .separator,
             .action(
                 .copyText,
                 title: "Copy Text",
                 systemImage: "doc.on.doc"
+            ),
+            .action(
+                .copyLink,
+                title: "Copy Link",
+                systemImage: "link"
+            ),
+            .action(
+                .copyMessageID,
+                title: "Copy Message ID",
+                systemImage: "number.square.fill"
             ),
         ]
     )
@@ -3202,6 +3224,16 @@ func `native timeline ordinary rows preserve compact geometry and center the ava
     #expect(NativeTimelineHoverHitTesting.pointerFrame(
         for: firstLayout.highlightFrame
     ) == CGRect(x: 0, y: 10, width: 620, height: 44))
+    #expect(!NativeTimelineMessageContextMenuHitTesting.contains(
+        CGPoint(x: 100, y: 9),
+        rowOrigin: 0,
+        highlightFrame: firstLayout.highlightFrame
+    ))
+    #expect(NativeTimelineMessageContextMenuHitTesting.contains(
+        CGPoint(x: 100, y: 10),
+        rowOrigin: 0,
+        highlightFrame: firstLayout.highlightFrame
+    ))
     #expect(firstLayout.avatarFrame?.minY == 12)
     #expect(firstLayout.contentFrame?.minY == 32)
     #expect(firstLayout.contentFrame?.height == 18)

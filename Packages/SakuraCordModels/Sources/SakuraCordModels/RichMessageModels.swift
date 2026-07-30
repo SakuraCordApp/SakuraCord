@@ -326,6 +326,7 @@ public struct MessageThreadSummary: Codable, Hashable, Sendable {
     public var createdAt: Date?
     public var autoArchiveDuration: Int?
     public var totalMessageSent: Int
+    public var notificationSettings: ThreadNotificationSettings?
 
     public init(
         id: ChannelID, guildID: GuildID? = nil, parentID: ChannelID? = nil, name: String,
@@ -333,7 +334,8 @@ public struct MessageThreadSummary: Codable, Hashable, Sendable {
         isArchived: Bool = false, isLocked: Bool = false,
         ownerID: UserID? = nil, appliedTagIDs: [ForumTagID] = [], flags: UInt64 = 0,
         archiveTimestamp: Date? = nil, createdAt: Date? = nil,
-        autoArchiveDuration: Int? = nil, totalMessageSent: Int = 0
+        autoArchiveDuration: Int? = nil, totalMessageSent: Int = 0,
+        notificationSettings: ThreadNotificationSettings? = nil
     ) {
         self.id = id
         self.guildID = guildID
@@ -351,6 +353,7 @@ public struct MessageThreadSummary: Codable, Hashable, Sendable {
         self.createdAt = createdAt
         self.autoArchiveDuration = autoArchiveDuration
         self.totalMessageSent = totalMessageSent
+        self.notificationSettings = notificationSettings
     }
 
     public var isPinned: Bool { flags & (1 << 1) != 0 }
@@ -359,6 +362,7 @@ public struct MessageThreadSummary: Codable, Hashable, Sendable {
         case id, guildID, parentID, name, messageCount, memberCount, lastMessageID
         case isArchived, isLocked, ownerID, appliedTagIDs, flags, archiveTimestamp
         case createdAt, autoArchiveDuration, totalMessageSent
+        case notificationSettings
     }
 
     public init(from decoder: any Decoder) throws {
@@ -379,6 +383,10 @@ public struct MessageThreadSummary: Codable, Hashable, Sendable {
         createdAt = try values.decodeIfPresent(Date.self, forKey: .createdAt)
         autoArchiveDuration = try values.decodeIfPresent(Int.self, forKey: .autoArchiveDuration)
         totalMessageSent = try values.decodeIfPresent(Int.self, forKey: .totalMessageSent) ?? 0
+        notificationSettings = try values.decodeIfPresent(
+            ThreadNotificationSettings.self,
+            forKey: .notificationSettings
+        )
     }
 }
 

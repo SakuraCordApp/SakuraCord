@@ -22,6 +22,7 @@ struct ChannelSidebarView: View {
         VStack(spacing: 0) {
             ZStack {
                 DirectMessageInboxView(
+                    model: voiceModel,
                     channels: directMessageChannels,
                     membersByID: voiceModel.membersByID,
                     privateCallsByChannel: voiceModel.privateCallsByChannel.filter {
@@ -39,6 +40,7 @@ struct ChannelSidebarView: View {
                         let groups = ChannelGroup.make(from: displayedChannels)
                         ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
                             ChannelGroupRows(
+                                model: voiceModel,
                                 group: group,
                                 addsTopSpacing: index == groups.startIndex,
                                 rulesChannelID: guild?.rulesChannelID,
@@ -222,6 +224,7 @@ private struct SidebarChromeSeparator: Shape {
 }
 
 private struct ChannelGroupRows: View {
+    let model: AppModel
     let group: ChannelGroup
     let addsTopSpacing: Bool
     let rulesChannelID: ChannelID?
@@ -231,6 +234,7 @@ private struct ChannelGroupRows: View {
     @SceneStorage private var isExpanded: Bool
 
     init(
+        model: AppModel,
         group: ChannelGroup,
         addsTopSpacing: Bool,
         rulesChannelID: ChannelID?,
@@ -238,6 +242,7 @@ private struct ChannelGroupRows: View {
         hiddenChannelIDs: Set<ChannelID>,
         voiceParticipantsByChannel: [ChannelID: [VoiceSidebarParticipant]]
     ) {
+        self.model = model
         self.group = group
         self.addsTopSpacing = addsTopSpacing
         self.rulesChannelID = rulesChannelID
@@ -253,6 +258,7 @@ private struct ChannelGroupRows: View {
                 ForEach(group.channels) { channel in
                     if channel.kind == .voice {
                         ChannelRow(
+                            model: model,
                             channel: channel,
                             rulesChannelID: rulesChannelID,
                             isVoiceConnected: activeVoiceChannelID == channel.id,
@@ -264,6 +270,7 @@ private struct ChannelGroupRows: View {
                         }
                     } else {
                         ChannelRow(
+                            model: model,
                             channel: channel,
                             rulesChannelID: rulesChannelID,
                             isHidden: hiddenChannelIDs.contains(channel.id)
@@ -505,6 +512,7 @@ private extension PresenceStatus {
 }
 
 private struct ChannelRow: View {
+    let model: AppModel
     let channel: Channel
     var rulesChannelID: ChannelID?
     var isVoiceConnected = false
@@ -518,15 +526,23 @@ private struct ChannelRow: View {
                 .opacity(channel.unreadCount > 0 ? 1 : 0)
                 .frame(width: 8)
             Image(systemName: systemImage)
-                .fontWeight(channel.unreadCount > 0 ? .medium : .regular)
+                .fontWeight(
+                    channel.unreadCount > 0 && !isMuted
+                        ? .medium
+                        : .regular
+                )
                 .foregroundStyle(
                     isVoiceConnected ? Color.green
-                        : channelForegroundStyle
+                        : channelIconForegroundStyle
                 )
                 .frame(width: 16)
             Text(channel.name)
-                .fontWeight(channel.unreadCount > 0 ? .medium : .regular)
-                .foregroundStyle(channelForegroundStyle)
+                .fontWeight(
+                    channel.unreadCount > 0 && !isMuted
+                        ? .medium
+                        : .regular
+                )
+                .foregroundStyle(channelNameForegroundStyle)
                 .lineLimit(1)
             Spacer()
             if isVoiceConnected {
@@ -550,6 +566,46 @@ private struct ChannelRow: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityValue(accessibilityValue)
+        .overlay {
+            ChannelContextMenuBridge(
+                isSelected: model.selectedChannelID == channel.id,
+                isUnread: model.isChannelUnread(channel.id),
+                isMutationPending:
+                    model.isChannelNotificationMutationPending(channel.id),
+                directOverride: model.channelNotificationOverride(for: channel),
+                inheritedLevel:
+                    model.inheritedChannelNotificationLevel(for: channel),
+                inheritanceSource:
+                    channel.categoryID == nil ? .server : .category,
+                markRead: {
+                    model.markConversationRead(channelID: channel.id)
+                },
+                mute: { duration in
+                    model.setChannelMute(
+                        true,
+                        until: duration.endDate(),
+                        for: channel
+                    )
+                },
+                unmute: {
+                    model.setChannelMute(false, until: nil, for: channel)
+                },
+                setNotificationLevel: { level in
+                    model.setChannelNotificationLevel(level, for: channel)
+                },
+                copyChannelID: {
+                    ChannelContextMenuValue.copy(channel.id.description)
+                },
+                copyLink: {
+                    ChannelContextMenuValue.copy(
+                        ChannelContextMenuValue.link(
+                            guildID: channel.guildID,
+                            channelID: channel.id
+                        )
+                    )
+                }
+            )
+        }
     }
 
     private var systemImage: String {
@@ -560,10 +616,26 @@ private struct ChannelRow: View {
         )
     }
 
-    private var channelForegroundStyle: Color {
-        channel.unreadCount > 0
+    private var isMuted: Bool {
+        model.isChannelMuted(channel)
+    }
+
+    private var channelIconForegroundStyle: Color {
+        if isMuted {
+            return .primary.opacity(0.32)
+        }
+        return channel.unreadCount > 0
             ? .primary
-            : .secondary.opacity(0.78)
+            : .primary.opacity(0.66)
+    }
+
+    private var channelNameForegroundStyle: Color {
+        if isMuted {
+            return .primary.opacity(0.35)
+        }
+        return channel.unreadCount > 0
+            ? .primary
+            : .primary.opacity(0.78)
     }
 
     private var accessibilityValue: String {

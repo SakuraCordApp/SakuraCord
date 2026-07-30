@@ -15,12 +15,19 @@ import Testing
         isArchived: false,
         isLocked: false,
         isPinned: false,
+        isUnread: true,
+        isMutationPending: false,
+        notificationSettings: nil,
+        inheritedNotificationLevel: .onlyMentions,
         requiresTag: false,
         canManage: false,
         canArchive: false,
         canEditTags: false,
         canDelete: false,
-        open: { opened = true },
+        markRead: { opened = true },
+        mute: { _ in },
+        unmute: {},
+        setNotificationLevel: { _ in },
         copyLink: { copiedLink = true },
         copyThreadID: { copiedThreadID = true },
         toggleTag: { _ in },
@@ -32,10 +39,47 @@ import Testing
 
     let coordinator = bridge.makeCoordinator()
     let menu = coordinator.makeMenu()
-    #expect(menu.items.map(\.title) == ["Open Post", "Copy Link", "Copy Thread ID"])
+    #expect(
+        menu.items.map { $0.isSeparatorItem ? nil : $0.title }
+            == [
+                "Mark as Read",
+                nil,
+                "Mute Post",
+                "Notification Settings",
+                nil,
+                "Copy Link",
+                "Copy Thread ID",
+            ]
+    )
+    #expect(
+        menu.items
+            .filter { !$0.isSeparatorItem }
+            .allSatisfy { $0.image != nil }
+    )
+    #expect(menu.item(withTitle: "Mark as Read")?.isEnabled == true)
+    #expect(
+        menu.item(withTitle: "Mute Post")?.submenu?.items
+            .allSatisfy { $0.image == nil } == true
+    )
+    #expect(
+        menu.item(withTitle: "Notification Settings")?.submenu?.items
+            .allSatisfy { $0.image == nil } == true
+    )
+    #expect(
+        menu.item(withTitle: "Notification Settings")?.submenu?.items.map(\.title)
+            == ["All Messages", "Only @mentions", "Nothing"]
+    )
+    #expect(
+        menu.item(withTitle: "Notification Settings")?.submenu?
+            .item(withTitle: "Only @mentions")?.state == .on
+    )
+    #expect(
+        menu.item(withTitle: "Notification Settings")?.subtitle
+            == "Only @mentions"
+    )
 
-    _ = menu.item(withTitle: "Open Post")?.target?.perform(
-        menu.item(withTitle: "Open Post")?.action
+    _ = menu.item(withTitle: "Mark as Read")?.target?.perform(
+        menu.item(withTitle: "Mark as Read")?.action
     )
     _ = menu.item(withTitle: "Copy Link")?.target?.perform(
         menu.item(withTitle: "Copy Link")?.action
@@ -58,12 +102,19 @@ import Testing
         isArchived: false,
         isLocked: false,
         isPinned: false,
+        isUnread: false,
+        isMutationPending: false,
+        notificationSettings: nil,
+        inheritedNotificationLevel: .onlyMentions,
         requiresTag: false,
         canManage: true,
         canArchive: true,
         canEditTags: true,
         canDelete: true,
-        open: {},
+        markRead: {},
+        mute: { _ in },
+        unmute: {},
+        setNotificationLevel: { _ in },
         copyLink: {},
         copyThreadID: {},
         toggleTag: { _ in },
@@ -77,18 +128,93 @@ import Testing
     #expect(
         items.map { $0.isSeparatorItem ? nil : $0.title }
             == [
-                "Open Post",
-                "Copy Link",
-                "Copy Thread ID",
+                "Mark as Read",
+                nil,
+                "Mute Post",
+                "Notification Settings",
                 nil,
                 "Tags",
                 "Close Post",
                 "Lock Post",
                 "Pin Post",
                 nil,
+                "Copy Link",
+                "Copy Thread ID",
+                nil,
                 "Delete Post",
             ]
     )
+    #expect(
+        items
+            .filter { !$0.isSeparatorItem }
+            .allSatisfy { $0.image != nil }
+    )
+    #expect(items.first?.isEnabled == false)
+    let destructiveColor =
+        items.first { $0.title == "Delete Post" }?
+        .attributedTitle?.attribute(
+            .foregroundColor,
+            at: 0,
+            effectiveRange: nil
+        ) as? NSColor
+    #expect(destructiveColor == .systemRed)
+}
+
+@MainActor
+@Test func `forum post menu exposes current mute and notification settings`() throws {
+    var didUnmute = false
+    var selectedLevel: MessageNotificationLevel?
+    let bridge = ForumPostContextMenuBridge(
+        tags: [],
+        appliedTagIDs: [],
+        customEmojiURLsByID: [:],
+        isArchived: false,
+        isLocked: false,
+        isPinned: false,
+        isUnread: true,
+        isMutationPending: false,
+        notificationSettings: ThreadNotificationSettings(
+            flags: ThreadNotificationSettings.allMessagesFlag,
+            isMuted: true,
+            muteConfiguration: DiscordMuteConfiguration(
+                endTime: Date.now.addingTimeInterval(90 * 60)
+            )
+        ),
+        inheritedNotificationLevel: .onlyMentions,
+        requiresTag: false,
+        canManage: false,
+        canArchive: false,
+        canEditTags: false,
+        canDelete: false,
+        markRead: {},
+        mute: { _ in },
+        unmute: { didUnmute = true },
+        setNotificationLevel: { selectedLevel = $0 },
+        copyLink: {},
+        copyThreadID: {},
+        toggleTag: { _ in },
+        toggleArchive: {},
+        toggleLock: {},
+        togglePin: {},
+        delete: {}
+    )
+
+    let coordinator = bridge.makeCoordinator()
+    let menu = coordinator.makeMenu()
+    let unmute = try #require(menu.item(withTitle: "Unmute Post"))
+    #expect(unmute.subtitle?.contains("hours remaining") == true)
+    #expect(menu.item(withTitle: "Notification Settings")?.subtitle == "All Messages")
+    let notificationMenu = try #require(
+        menu.item(withTitle: "Notification Settings")?.submenu
+    )
+    #expect(notificationMenu.item(withTitle: "All Messages")?.state == .on)
+    #expect(notificationMenu.item(withTitle: "Use Forum Default") == nil)
+
+    _ = unmute.target?.perform(unmute.action)
+    let nothing = try #require(notificationMenu.item(withTitle: "Nothing"))
+    _ = nothing.target?.perform(nothing.action, with: nothing)
+    #expect(didUnmute)
+    #expect(selectedLevel == .nothing)
 }
 
 @MainActor
@@ -106,12 +232,19 @@ import Testing
         isArchived: false,
         isLocked: false,
         isPinned: false,
+        isUnread: true,
+        isMutationPending: false,
+        notificationSettings: nil,
+        inheritedNotificationLevel: .onlyMentions,
         requiresTag: false,
         canManage: false,
         canArchive: true,
         canEditTags: true,
         canDelete: true,
-        open: {},
+        markRead: {},
+        mute: { _ in },
+        unmute: {},
+        setNotificationLevel: { _ in },
         copyLink: {},
         copyThreadID: {},
         toggleTag: { _ in },
@@ -140,12 +273,19 @@ import Testing
         isArchived: false,
         isLocked: false,
         isPinned: false,
+        isUnread: true,
+        isMutationPending: false,
+        notificationSettings: nil,
+        inheritedNotificationLevel: .onlyMentions,
         requiresTag: true,
         canManage: true,
         canArchive: true,
         canEditTags: true,
         canDelete: true,
-        open: {},
+        markRead: {},
+        mute: { _ in },
+        unmute: {},
+        setNotificationLevel: { _ in },
         copyLink: {},
         copyThreadID: {},
         toggleTag: { _ in },

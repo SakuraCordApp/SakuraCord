@@ -25,6 +25,7 @@ final class AccountReadStateModel {
         var pendingAcknowledgementID: MessageID?
         var flags: UInt64?
         var lastViewed: Int?
+        var threadNotificationSettings: ThreadNotificationSettings?
         var isAccessible: Bool
         var hasAuthoritativeReadState: Bool
 
@@ -155,6 +156,7 @@ final class AccountReadStateModel {
                 pendingAcknowledgementID: nil,
                 flags: nil,
                 lastViewed: nil,
+                threadNotificationSettings: nil,
                 isAccessible: true,
                 hasAuthoritativeReadState: false
             )
@@ -235,6 +237,56 @@ final class AccountReadStateModel {
 
     func apply(_ settings: GuildNotificationSettings) {
         settingsByGuild[settings.guildID] = settings
+    }
+
+    func notificationSettings(guildID: GuildID?) -> GuildNotificationSettings? {
+        settingsByGuild[guildID]
+    }
+
+    func notificationOverride(
+        channelID: ChannelID,
+        guildID: GuildID?
+    ) -> ChannelNotificationOverride? {
+        settingsByGuild[guildID]?.channelOverrides.last {
+            $0.channelID == channelID
+        }
+    }
+
+    func isChannelMuted(_ channel: Channel, at date: Date = .now) -> Bool {
+        guard !channel.isMuted else { return true }
+        let settings = settingsByGuild[channel.guildID]
+        let directOverride = settings?.channelOverrides.last {
+            $0.channelID == channel.id
+        }
+        let categoryOverride = channel.categoryID.flatMap { categoryID in
+            settings?.channelOverrides.last { $0.channelID == categoryID }
+        }
+        guard let override = directOverride ?? categoryOverride else {
+            return false
+        }
+        return override.isMuted
+            && (override.muteConfiguration?.isActive(at: date) ?? true)
+    }
+
+    func inheritedNotificationLevel(for channel: Channel) -> MessageNotificationLevel {
+        let guildSettings = settingsByGuild[channel.guildID]
+        let parentOverride = channel.categoryID.flatMap { parentID in
+            guildSettings?.channelOverrides.last { $0.channelID == parentID }
+        }
+        if let level = parentOverride?.messageNotifications,
+           level != .inherit
+        {
+            return level
+        }
+        let configuredGuildLevel = guildSettings?.messageNotifications ?? .inherit
+        if configuredGuildLevel != .inherit {
+            return configuredGuildLevel
+        }
+        if channel.guildID == nil {
+            return .allMessages
+        }
+        return channel.guildID.flatMap { defaultNotificationLevelByGuild[$0] }
+            ?? .onlyMentions
     }
 
     func updateCurrentUserRoles(_ roleIDs: Set<RoleID>, guildID: GuildID) {
@@ -408,6 +460,9 @@ final class AccountReadStateModel {
         entry.guildID = thread.guildID
         entry.parentID = thread.parentID
         entry.kind = .text
+        if let settings = thread.notificationSettings {
+            entry.threadNotificationSettings = settings
+        }
         entry.latestKnownMessageID = maximum(entry.latestKnownMessageID, thread.lastMessageID)
         if entry.hasAuthoritativeReadState {
             entry.latestUnreadMessageID = maximum(
@@ -790,6 +845,7 @@ final class AccountReadStateModel {
             pendingAcknowledgementID: nil,
             flags: nil,
             lastViewed: nil,
+            threadNotificationSettings: nil,
             isAccessible: true,
             hasAuthoritativeReadState: false
         )
@@ -874,7 +930,7 @@ final class AccountReadStateModel {
         let guildMuted =
             guildSettings?.isMuted == true
             && (guildSettings?.muteConfiguration?.isActive(at: now) ?? true)
-        let channelMuted =
+        let inheritedChannelMuted =
             override?.isMuted == true
             && (override?.muteConfiguration?.isActive(at: now) ?? true)
         let guildDefault =
@@ -885,10 +941,20 @@ final class AccountReadStateModel {
         let configuredGuildLevel = guildSettings?.messageNotifications ?? .inherit
         let inherited =
             configuredGuildLevel == .inherit ? guildDefault : configuredGuildLevel
-        let level =
+        let inheritedLevel =
             override?.messageNotifications == .inherit || override == nil
             ? inherited
             : override!.messageNotifications
+        let threadLevel =
+            entry.threadNotificationSettings?.notificationLevel ?? .inherit
+        let level =
+            threadLevel == .inherit ? inheritedLevel : threadLevel
+        let threadMuted =
+            entry.threadNotificationSettings?.isMuted == true
+            && (entry.threadNotificationSettings?.muteConfiguration?
+                .isActive(at: now) ?? true)
+        let channelMuted =
+            inheritedChannelMuted || threadMuted || threadLevel == .nothing
         let channelFlags = override?.flags ?? 0
         let guildFlags = guildSettings?.flags ?? 0
         let directFlags = directOverride?.flags ?? 0
