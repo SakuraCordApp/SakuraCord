@@ -866,7 +866,7 @@ private final class NativeTimelineActionCapsuleHost: NSHostingView<AnyView> {
 }
 
 @MainActor
-private final class NativeTimelineEditingHost: NSHostingView<AnyView> {
+final class NativeTimelineEditingHost: NSHostingView<AnyView> {
     var fittingHeightDidChange: ((CGFloat) -> Void)?
 
     private var lastReportedFittingHeight: CGFloat = 0
@@ -2386,20 +2386,8 @@ final class NativeTimelineCanvasView: NSView {
         let mediaPinOwner: UUID
     }
 
-    private enum ReactionPointerTarget: Equatable {
-        case reaction(messageID: MessageID, reactionID: String)
-        case add(messageID: MessageID)
-
-        var messageID: MessageID {
-            switch self {
-            case let .reaction(messageID, _), let .add(messageID):
-                messageID
-            }
-        }
-    }
-
     private struct ReactionPointerHit {
-        let target: ReactionPointerTarget
+        let target: NativeTimelineReactionPointerTarget
         let rowIndex: Int
         let message: Message
         let reaction: Reaction?
@@ -2464,12 +2452,6 @@ final class NativeTimelineCanvasView: NSView {
         let media: NativeTimelineMediaKey
     }
 
-    private struct TextSelectionGesture {
-        let itemIdentifier: NativeMessageTimelineItem.Identifier
-        let region: NativeTimelineTextRegion
-        let anchor: Int
-    }
-
     private struct TextCaretCandidate {
         let itemIdentifier: NativeMessageTimelineItem.Identifier
         let region: NativeTimelineTextRegion
@@ -2491,15 +2473,6 @@ final class NativeTimelineCanvasView: NSView {
         let characterIndex: Int
         let rawToken: String
         let frame: CGRect
-    }
-
-    private struct CodeBlockPointerTarget: Equatable {
-        let itemIdentifier: NativeMessageTimelineItem.Identifier
-        let region: NativeTimelineTextRegion
-        let rangeLocation: Int
-        let blockFrame: CGRect
-        let copyButtonFrame: CGRect
-        let content: String
     }
 
     private struct TextPointerHit {
@@ -2538,7 +2511,8 @@ final class NativeTimelineCanvasView: NSView {
     private var mentionPointerRegionCache:
         [NativeMessageTimelineItem.Identifier: [MentionPointerRegion]] = [:]
     private var codeBlockPointerRegionCache:
-        [NativeMessageTimelineItem.Identifier: [CodeBlockPointerTarget]] = [:]
+        [NativeMessageTimelineItem.Identifier:
+            [NativeTimelineCodeBlockPointerTarget]] = [:]
 
     private var items: [NativeMessageTimelineItem] { storage.items }
     private var layouts: [NativeTimelineRowLayout] { storage.layouts }
@@ -2551,65 +2525,31 @@ final class NativeTimelineCanvasView: NSView {
     var usesViewportSizedBacking = false
     var onDocumentSizeChange: ((NSSize) -> Void)?
 
-    private var hoveredRow: Int?
-    private var hoveredCompactTimestampRow: Int?
-    private var hoveredMention: NativeTimelineMentionHover?
-    private var hoveredTextSpoiler: NativeTimelineTextSpoilerHover?
-    private var hoveredCodeBlock: CodeBlockPointerTarget?
-    private var pressedCodeBlockCopyButton: CodeBlockPointerTarget?
-    private var hoveredComponentButton:
-        NativeTimelineComponentButtonTarget?
-    private var pressedComponentButton:
-        NativeTimelineComponentButtonTarget?
-    private var visualPressedComponentButton:
-        NativeTimelineComponentButtonTarget?
-    private var componentButtonPressProgress: CGFloat = 0
-    private var componentButtonPressAnimationTask: Task<Void, Never>?
-    private var componentButtonPressAnimationDestination: CGFloat?
-    private var pressedActivationTarget:
-        NativeTimelinePointerActivationTarget?
-    private var hoveredReaction: ReactionPointerTarget?
-    private var suppressesHoverPresentation = false
-    private var textSelection: NativeTimelineTextSelection?
-    private var textSelectionGesture: TextSelectionGesture?
-    private var didDragTextSelection = false
+    let pointer = NativeTimelinePointerState()
     private let beginningSelectionOverlay =
         NativeTimelineBeginningSelectionOverlay()
     private var spoilerRevealStore = NativeTimelineSpoilerRevealStore()
     private var spoilerRevealObserverID: UUID?
-    private var tracking: NSTrackingArea?
-    private var rowTrackingAreas: [NSTrackingArea] = []
-    private var prewarmTask: Task<Void, Never>?
     private var actionCapsuleHost: NSHostingView<AnyView>?
     private var actionCapsuleState: NativeTimelineActionCapsuleState?
     private var actionCapsuleMessageID: MessageID?
     private var actionCapsuleSize: NSSize?
-    private var editingRowHost: NativeTimelineEditingHost?
-    private weak var editingTextView: ComposerNSTextView?
-    private var editingMessageID: MessageID?
-    private var editingRowIndexCache: Int?
-    private var editingRowHeight: CGFloat?
-    private var editingOverlayLocalFrame: CGRect?
-    private var editingRowScrollSnapshot: NSImage?
+    let editing = NativeTimelineEditingSession()
     private var messageProfilePopover: NSPopover?
     private var componentChoicePopover: NSPopover?
     private let mentionPopoverCoordinator =
         StableAnchoredPopoverPresenter<AnyView>.Coordinator()
     private var activeMentionPopoverAnchor: StablePopoverAnchor?
-    private var accessibilityProxyRows:
-        [NativeMessageTimelineItem.Identifier:
-            NativeTimelineAccessibilityProxyView] = [:]
-    private var accessibilityProxyItems:
-        [NativeMessageTimelineItem.Identifier:
-            NativeMessageTimelineItem] = [:]
-    private var accessibilityProxyOrder:
-        [NativeMessageTimelineItem.Identifier] = []
+    private let accessibilityProxies =
+        NativeTimelineAccessibilityProxyStore<
+            NativeMessageTimelineItem.Identifier,
+            NativeMessageTimelineItem
+        >()
     private let reactionPickerSource = StableReactionPickerSourceView()
     private let reactionPickerCoordinator =
         StableReactionPickerPresenter<EmojiPickerView>.Coordinator()
     private let reactionHoverCoordinator =
         StableAnchoredPopoverPresenter<MessageReactionTooltip>.Coordinator()
-    private var reactionMouseMonitor: Any?
     private var visibleReactionCounts: [ReactionCountKey: Int] = [:]
     private var previouslyVisibleReactionMessageIDs: Set<MessageID> = []
     private var activeReactionCountAnimations:
@@ -2915,8 +2855,7 @@ final class NativeTimelineCanvasView: NSView {
     }
 
     func invalidatePresentationCaches() {
-        prewarmTask?.cancel()
-        prewarmTask = nil
+        pointer.cancelPrewarming()
         clearBitmapCache(keepingCapacity: true)
         bitmapInsertionOrder.removeAll(keepingCapacity: true)
         bitmapEvictionIndex = 0
@@ -2932,8 +2871,7 @@ final class NativeTimelineCanvasView: NSView {
         // position request has queued it but before that main-actor task gets
         // its first turn. Cancel it at the activity boundary so a cold bitmap
         // raster cannot block the first scrolling frames.
-        prewarmTask?.cancel()
-        prewarmTask = nil
+        pointer.cancelPrewarming()
         // Bounds changes arrive for every momentum-scroll tick. Repeating the
         // teardown work here used to restart the media timer on every tick,
         // which meant it could never fire until scrolling stopped.
@@ -2965,67 +2903,47 @@ final class NativeTimelineCanvasView: NSView {
         animatedMediaReconcileTask?.cancel()
         animatedMediaReconcileTask = nil
         scheduleAnimatedMediaScrollReconciliation()
-        let old = hoveredRow
-        hoveredRow = nil
-        let oldCompactTimestamp = hoveredCompactTimestampRow
-        hoveredCompactTimestampRow = nil
-        let oldMention = hoveredMention
-        hoveredMention = nil
-        let oldTextSpoiler = hoveredTextSpoiler
-        hoveredTextSpoiler = nil
-        let oldCodeBlock = hoveredCodeBlock
-        hoveredCodeBlock = nil
-        pressedCodeBlockCopyButton = nil
-        let oldComponentButton =
-            visualPressedComponentButton ?? hoveredComponentButton
-        hoveredComponentButton = nil
-        pressedComponentButton = nil
-        pressedActivationTarget = nil
-        visualPressedComponentButton = nil
-        componentButtonPressProgress = 0
-        componentButtonPressAnimationDestination = nil
-        componentButtonPressAnimationTask?.cancel()
-        componentButtonPressAnimationTask = nil
-        hoveredReaction = nil
+        let clearedTargets = pointer.clearHoverAndPressTargets()
         reactionHoverCoordinator.close()
         closeMessageProfilePopover()
         removeActionCapsule()
         freezeEditingRowForScroll()
         reconcileAccessibilityProxies()
-        if let old {
+        if let old = clearedTargets.row {
             setNeedsDisplay(rowFrame(at: old))
         }
-        if let oldCompactTimestamp, oldCompactTimestamp != old {
+        if let oldCompactTimestamp = clearedTargets.compactTimestampRow,
+           oldCompactTimestamp != clearedTargets.row {
             setNeedsDisplay(rowFrame(at: oldCompactTimestamp))
         }
-        if let oldMention,
+        if let oldMention = clearedTargets.mention,
            let oldMentionIndex = items.firstIndex(where: {
                $0.identifier == oldMention.itemIdentifier
            }),
-           oldMentionIndex != old,
-           oldMentionIndex != oldCompactTimestamp
+           oldMentionIndex != clearedTargets.row,
+           oldMentionIndex != clearedTargets.compactTimestampRow
         {
             setNeedsDisplay(rowFrame(at: oldMentionIndex))
         }
-        if let oldTextSpoiler,
+        if let oldTextSpoiler = clearedTargets.textSpoiler,
            let oldTextSpoilerIndex = items.firstIndex(where: {
                $0.identifier == oldTextSpoiler.itemIdentifier
            }),
-           oldTextSpoilerIndex != old,
-           oldTextSpoilerIndex != oldCompactTimestamp
+           oldTextSpoilerIndex != clearedTargets.row,
+           oldTextSpoilerIndex != clearedTargets.compactTimestampRow
         {
             setNeedsDisplay(rowFrame(at: oldTextSpoilerIndex))
         }
-        if let oldCodeBlock,
+        if let oldCodeBlock = clearedTargets.codeBlock,
            let oldCodeBlockIndex = items.firstIndex(where: {
                $0.identifier == oldCodeBlock.itemIdentifier
            }),
-           oldCodeBlockIndex != old,
-           oldCodeBlockIndex != oldCompactTimestamp
+           oldCodeBlockIndex != clearedTargets.row,
+           oldCodeBlockIndex != clearedTargets.compactTimestampRow
         {
             setNeedsDisplay(rowFrame(at: oldCodeBlockIndex))
         }
-        if let oldComponentButton {
+        if let oldComponentButton = clearedTargets.componentButton {
             invalidateComponentButton(oldComponentButton)
         }
     }
@@ -3126,19 +3044,7 @@ final class NativeTimelineCanvasView: NSView {
             closeComponentChoicePopover()
             closeMentionPopover()
             reactionPickerSource.frame = .zero
-            hoveredMention = nil
-            hoveredTextSpoiler = nil
-            hoveredCodeBlock = nil
-            pressedCodeBlockCopyButton = nil
-            hoveredComponentButton = nil
-            pressedComponentButton = nil
-            pressedActivationTarget = nil
-            visualPressedComponentButton = nil
-            componentButtonPressProgress = 0
-            componentButtonPressAnimationDestination = nil
-            componentButtonPressAnimationTask?.cancel()
-            componentButtonPressAnimationTask = nil
-            hoveredReaction = nil
+            pointer.clearHoverAndPressTargets()
             removeAccessibilityProxies()
             removeActionCapsule()
             endEditing(commit: nil)
@@ -3404,7 +3310,7 @@ final class NativeTimelineCanvasView: NSView {
     }
 
     private func drawCodeBlockCopyControl(
-        _ target: CodeBlockPointerTarget
+        _ target: NativeTimelineCodeBlockPointerTarget
     ) {
         let buttonFrame = target.copyButtonFrame
         let point = currentMouseLocationInCanvas()
@@ -4252,23 +4158,10 @@ final class NativeTimelineCanvasView: NSView {
 
     override func updateTrackingAreas() {
         guard !suppressesHoverPresentation else {
-            if let tracking {
-                removeTrackingArea(tracking)
-                self.tracking = nil
-            }
-            for area in rowTrackingAreas {
-                removeTrackingArea(area)
-            }
-            rowTrackingAreas.removeAll(keepingCapacity: true)
+            pointer.removeTrackingAreas(from: self)
             return
         }
-        if let tracking {
-            removeTrackingArea(tracking)
-        }
-        for area in rowTrackingAreas {
-            removeTrackingArea(area)
-        }
-        rowTrackingAreas.removeAll(keepingCapacity: true)
+        pointer.removeTrackingAreas(from: self)
         let tracking = NSTrackingArea(
             rect: .zero,
             options: [
@@ -4531,7 +4424,7 @@ final class NativeTimelineCanvasView: NSView {
             setTextSelection(nil)
             return
         }
-        textSelectionGesture = TextSelectionGesture(
+        textSelectionGesture = NativeTimelineTextSelectionGesture(
             itemIdentifier: candidate.itemIdentifier,
             region: candidate.region,
             anchor: candidate.caret
@@ -4920,8 +4813,8 @@ final class NativeTimelineCanvasView: NSView {
     }
 
     private func installReactionMouseMonitor() {
-        guard reactionMouseMonitor == nil else { return }
-        reactionMouseMonitor = NSEvent.addLocalMonitorForEvents(
+        guard pointer.reactionMouseMonitor == nil else { return }
+        pointer.reactionMouseMonitor = NSEvent.addLocalMonitorForEvents(
             matching: .leftMouseDown
         ) { [weak self] event in
             guard let self,
@@ -4939,9 +4832,7 @@ final class NativeTimelineCanvasView: NSView {
     }
 
     private func removeReactionMouseMonitor() {
-        guard let reactionMouseMonitor else { return }
-        NSEvent.removeMonitor(reactionMouseMonitor)
-        self.reactionMouseMonitor = nil
+        pointer.removeReactionMouseMonitor()
     }
 
     private func hoveredRowIndex(at point: CGPoint) -> Int? {
@@ -5151,7 +5042,7 @@ final class NativeTimelineCanvasView: NSView {
 
     private func codeBlockPointerHit(
         at point: CGPoint
-    ) -> CodeBlockPointerTarget? {
+    ) -> NativeTimelineCodeBlockPointerTarget? {
         guard let index = rowIndex(at: point.y) else { return nil }
         return codeBlockPointerTargets(at: index).first {
             $0.blockFrame.contains(point)
@@ -5160,7 +5051,7 @@ final class NativeTimelineCanvasView: NSView {
 
     private func codeBlockCopyButtonHit(
         at point: CGPoint
-    ) -> CodeBlockPointerTarget? {
+    ) -> NativeTimelineCodeBlockPointerTarget? {
         guard let index = rowIndex(at: point.y) else { return nil }
         return codeBlockPointerTargets(at: index).first {
             $0.copyButtonFrame.contains(point)
@@ -5169,7 +5060,7 @@ final class NativeTimelineCanvasView: NSView {
 
     private func codeBlockPointerTargets(
         at index: Int
-    ) -> [CodeBlockPointerTarget] {
+    ) -> [NativeTimelineCodeBlockPointerTarget] {
         guard items.indices.contains(index),
               layouts.indices.contains(index)
         else { return [] }
@@ -5187,7 +5078,7 @@ final class NativeTimelineCanvasView: NSView {
                 framesetter: selectable.framesetter,
                 frame: selectable.frame
             ).map { codeBlock in
-                CodeBlockPointerTarget(
+                NativeTimelineCodeBlockPointerTarget(
                     itemIdentifier: identifier,
                     region: selectable.region,
                     rangeLocation: codeBlock.range.location,
@@ -5452,7 +5343,7 @@ final class NativeTimelineCanvasView: NSView {
     }
 
     private func reactionPointerHit(
-        for target: ReactionPointerTarget
+        for target: NativeTimelineReactionPointerTarget
     ) -> ReactionPointerHit? {
         guard let index = rowIndex(for: target),
               items.indices.contains(index),
@@ -5486,7 +5377,7 @@ final class NativeTimelineCanvasView: NSView {
         }
     }
 
-    private func rowIndex(for target: ReactionPointerTarget) -> Int? {
+    private func rowIndex(for target: NativeTimelineReactionPointerTarget) -> Int? {
         if let hoveredRow,
            items.indices.contains(hoveredRow),
            items[hoveredRow].messageID == target.messageID
@@ -7879,9 +7770,7 @@ final class NativeTimelineCanvasView: NSView {
         var additionalChildren = (super.accessibilityChildren() ?? []).filter {
             child in
             guard let childView = child as? NSView else { return true }
-            return !accessibilityProxyRows.values.contains {
-                $0 === childView
-            }
+            return !accessibilityProxies.contains(childView)
         }
         if let editingRowHost,
            let hostIndex = additionalChildren.firstIndex(where: {
@@ -7890,7 +7779,7 @@ final class NativeTimelineCanvasView: NSView {
            let insertionIndex =
                NativeTimelineAccessibilityPolicy
                    .editingOverlayInsertionIndex(
-                       in: accessibilityProxyOrder,
+                       in: accessibilityProxies.order,
                        editingMessageID: editingMessageID
                    )
         {
@@ -7949,37 +7838,36 @@ final class NativeTimelineCanvasView: NSView {
             let frame = rowFrame(at: index)
             desired.insert(identifier)
             desiredOrder.append(identifier)
-            if accessibilityProxyItems[identifier] != item {
-                accessibilityProxyRows
-                    .removeValue(forKey: identifier)?
-                    .removeFromSuperview()
+            if accessibilityProxies.item(for: identifier) != item {
+                accessibilityProxies.remove(identifier)
                 let source = accessibilityRow(at: index)
                 let rowProxy = accessibilityProxy(
                     for: source,
                     canvasFrame: frame
                 )
                 addSubview(rowProxy)
-                accessibilityProxyRows[identifier] = rowProxy
-                accessibilityProxyItems[identifier] = item
-            } else if accessibilityProxyRows[identifier]?.frame != frame {
+                accessibilityProxies.install(
+                    rowProxy,
+                    item: item,
+                    for: identifier
+                )
+            } else if accessibilityProxies.row(for: identifier)?.frame
+                != frame {
                 // Child accessibility frames are relative to the row proxy.
                 // Prepending history or changing an earlier row's height only
                 // moves this row; rebuilding it would needlessly re-resolve
                 // mentions and Markdown for every buffered message.
-                accessibilityProxyRows[identifier]?.frame = frame
+                accessibilityProxies.row(for: identifier)?.frame = frame
             }
             index += 1
         }
-        let obsolete = accessibilityProxyRows.keys.filter {
+        let obsolete = accessibilityProxies.identifiers.filter {
             !desired.contains($0)
         }
         for identifier in obsolete {
-            accessibilityProxyRows
-                .removeValue(forKey: identifier)?
-                .removeFromSuperview()
-            accessibilityProxyItems.removeValue(forKey: identifier)
+            accessibilityProxies.remove(identifier)
         }
-        accessibilityProxyOrder = desiredOrder
+        accessibilityProxies.setOrder(desiredOrder)
     }
 
     private func accessibilityProxy(
@@ -8020,27 +7908,17 @@ final class NativeTimelineCanvasView: NSView {
     }
 
     private func accessibilityProxyRowsInTimelineOrder() -> [Any] {
-        accessibilityProxyOrder.compactMap {
-            accessibilityProxyRows[$0]
-        }
+        accessibilityProxies.orderedRows()
     }
 
     private func removeAccessibilityProxies() {
-        for proxy in accessibilityProxyRows.values {
-            proxy.removeFromSuperview()
-        }
-        accessibilityProxyRows.removeAll()
-        accessibilityProxyItems.removeAll()
-        accessibilityProxyOrder.removeAll()
+        accessibilityProxies.removeAll()
     }
 
     private func rebuildAccessibilityProxy(
         for identifier: NativeMessageTimelineItem.Identifier
     ) {
-        accessibilityProxyRows
-            .removeValue(forKey: identifier)?
-            .removeFromSuperview()
-        accessibilityProxyItems.removeValue(forKey: identifier)
+        accessibilityProxies.remove(identifier)
         reconcileAccessibilityProxies()
         NSAccessibility.post(
             element: self,
@@ -9163,7 +9041,7 @@ final class NativeTimelineCanvasView: NSView {
     }
 
     private func setHoveredCodeBlock(
-        _ value: CodeBlockPointerTarget?
+        _ value: NativeTimelineCodeBlockPointerTarget?
     ) {
         guard hoveredCodeBlock != value else { return }
         let oldIdentifier = hoveredCodeBlock?.itemIdentifier
@@ -9862,14 +9740,7 @@ final class NativeTimelineCanvasView: NSView {
         } else {
             delta = 0
         }
-        editingRowHost?.removeFromSuperview()
-        editingRowHost = nil
-        editingTextView = nil
-        editingMessageID = nil
-        editingRowIndexCache = nil
-        editingRowHeight = nil
-        editingOverlayLocalFrame = nil
-        editingRowScrollSnapshot = nil
+        editing.clear()
         mentionPointerRegionCache.removeAll(keepingCapacity: true)
         codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
         resizeForEditingChange(by: -delta)
