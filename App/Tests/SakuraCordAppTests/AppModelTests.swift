@@ -2142,6 +2142,83 @@ private func eventuallyOnMain(_ condition: @escaping @MainActor () -> Bool) asyn
     #expect(sounds.looping[.callRinging] == false)
 }
 
+@MainActor
+@Test func `concurrent private call actions stay within one request budget`() async throws {
+    let provider = PrivateCallActionTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let channel = try #require(
+        model.snapshot?.channels.first(where: {
+            $0.kind == .directMessage
+        })
+    )
+    let baselineCounts = await provider.counts()
+
+    let firstStart = Task {
+        await model.startPrivateCall(in: channel)
+    }
+    await provider.waitUntilRingabilityStarts()
+    #expect(model.isPrivateCallActionInFlight(in: channel.id))
+
+    let duplicateStarts = (0 ..< 4).map { _ in
+        Task {
+            await model.startPrivateCall(in: channel)
+        }
+    }
+    for duplicate in duplicateStarts {
+        await duplicate.value
+    }
+
+    let suspendedStartCounts = await provider.counts()
+    #expect(suspendedStartCounts.subscriptions == baselineCounts.subscriptions + 1)
+    #expect(suspendedStartCounts.ringabilityReads == 1)
+    #expect(suspendedStartCounts.voiceJoins == 0)
+    #expect(suspendedStartCounts.rings == 0)
+
+    await provider.releaseRingability()
+    await firstStart.value
+
+    let completedStartCounts = await provider.counts()
+    #expect(completedStartCounts.subscriptions == baselineCounts.subscriptions + 1)
+    #expect(completedStartCounts.ringabilityReads == 1)
+    #expect(completedStartCounts.voiceJoins == 1)
+    #expect(completedStartCounts.rings == 1)
+    #expect(!model.isPrivateCallActionInFlight(in: channel.id))
+
+    let currentUserID = try #require(model.snapshot?.currentUser.id)
+    let call = PrivateCall(
+        channelID: channel.id,
+        messageID: MessageID(rawValue: 88_803),
+        region: "rotterdam",
+        ongoingRings: [
+            PrivateCallRing(
+                recipientID: currentUserID,
+                senderID: channel.recipients[0].id
+            )
+        ]
+    )
+    let firstDecline = Task {
+        await model.declinePrivateCall(call)
+    }
+    await provider.waitUntilDeclineStarts()
+    #expect(model.isPrivateCallActionInFlight(in: channel.id))
+
+    let duplicateDeclines = (0 ..< 4).map { _ in
+        Task {
+            await model.declinePrivateCall(call)
+        }
+    }
+    for duplicate in duplicateDeclines {
+        await duplicate.value
+    }
+    #expect((await provider.counts()).declines == 1)
+
+    await provider.releaseDecline()
+    await firstDecline.value
+    #expect((await provider.counts()).declines == 1)
+    #expect(!model.isPrivateCallActionInFlight(in: channel.id))
+}
+
 private struct ReactionMutationRequest: Equatable, Sendable {
     var messageID: MessageID
     var emoji: String
@@ -3041,5 +3118,190 @@ private actor VoiceMigrationTestProvider: ChatProvider {
             token: token,
             endpoint: "mock.sakuracord.invalid"
         )
+    }
+}
+
+private struct PrivateCallActionRequestCounts: Equatable, Sendable {
+    var subscriptions = 0
+    var ringabilityReads = 0
+    var voiceJoins = 0
+    var rings = 0
+    var declines = 0
+}
+
+private actor PrivateCallActionTestProvider: ChatProvider {
+    private let currentUser = User(
+        id: UserID(rawValue: 88_810),
+        username: "call-tester",
+        displayName: "Call Tester"
+    )
+    private let recipient = User(
+        id: UserID(rawValue: 88_811),
+        username: "recipient",
+        displayName: "Recipient"
+    )
+    private var requestCounts = PrivateCallActionRequestCounts()
+    private var ringabilityContinuation: CheckedContinuation<Void, Never>?
+    private var declineContinuation: CheckedContinuation<Void, Never>?
+
+    private var channel: Channel {
+        Channel(
+            id: ChannelID(rawValue: 88_812),
+            guildID: nil,
+            name: "Recipient",
+            kind: .directMessage,
+            recipients: [recipient]
+        )
+    }
+
+    func bootstrap() async throws -> BootstrapSnapshot {
+        BootstrapSnapshot(
+            currentUser: currentUser,
+            guilds: [],
+            channels: [channel],
+            members: []
+        )
+    }
+
+    func channels(in guildID: GuildID?) async throws -> [Channel] {
+        [channel]
+    }
+
+    func members(in guildID: GuildID?) async throws -> [Member] {
+        []
+    }
+
+    func profile(
+        for userID: UserID,
+        in guildID: GuildID?
+    ) async throws -> UserProfile {
+        throw ChatProviderError.invalidRequest(
+            "Profiles are not part of this test."
+        )
+    }
+
+    func currentStatus() async -> PresenceStatus {
+        .online
+    }
+
+    func updateStatus(_ status: PresenceStatus) async throws {}
+
+    func messages(
+        in channelID: ChannelID,
+        before: MessageID?,
+        limit: Int
+    ) async throws -> MessagePage {
+        MessagePage(messages: [], hasMoreBefore: false)
+    }
+
+    func send(_ draft: SendMessageDraft) async throws -> Message {
+        throw ChatProviderError.invalidRequest(
+            "Sending is not part of this test."
+        )
+    }
+
+    func edit(
+        messageID: MessageID,
+        channelID: ChannelID,
+        content: String
+    ) async throws -> Message {
+        throw ChatProviderError.invalidRequest(
+            "Editing is not part of this test."
+        )
+    }
+
+    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
+
+    func toggleReaction(
+        _ emoji: String,
+        messageID: MessageID,
+        channelID: ChannelID
+    ) async throws {}
+
+    func subscribeToPrivateCall(channelID: ChannelID) async throws {
+        requestCounts.subscriptions += 1
+    }
+
+    func privateCallIsRingable(channelID: ChannelID) async throws -> Bool {
+        requestCounts.ringabilityReads += 1
+        await withCheckedContinuation { continuation in
+            ringabilityContinuation = continuation
+        }
+        return true
+    }
+
+    func joinVoice(
+        channelID: ChannelID,
+        guildID: GuildID?,
+        selfMute: Bool,
+        selfDeaf: Bool
+    ) async throws -> VoiceConnectionInfo {
+        requestCounts.voiceJoins += 1
+        return VoiceConnectionInfo(
+            serverID: channelID.description,
+            channelID: channelID,
+            guildID: nil,
+            userID: currentUser.id,
+            sessionID: "private-call-action-test",
+            token: "synthetic",
+            endpoint: "mock.sakuracord.invalid"
+        )
+    }
+
+    func ringPrivateCall(
+        channelID: ChannelID,
+        recipients: [UserID]?
+    ) async throws {
+        requestCounts.rings += 1
+    }
+
+    func stopRingingPrivateCall(
+        channelID: ChannelID,
+        recipients: [UserID]
+    ) async throws {
+        requestCounts.declines += 1
+        await withCheckedContinuation { continuation in
+            declineContinuation = continuation
+        }
+    }
+
+    func updateVoiceState(
+        channelID: ChannelID?,
+        guildID: GuildID?,
+        selfMute: Bool,
+        selfDeaf: Bool,
+        selfVideo: Bool
+    ) async throws {}
+
+    func eventStream() async -> AsyncStream<ClientEvent> {
+        AsyncStream { _ in }
+    }
+
+    func disconnect() async {}
+
+    func counts() -> PrivateCallActionRequestCounts {
+        requestCounts
+    }
+
+    func waitUntilRingabilityStarts() async {
+        while requestCounts.ringabilityReads == 0 {
+            await Task.yield()
+        }
+    }
+
+    func releaseRingability() {
+        ringabilityContinuation?.resume()
+        ringabilityContinuation = nil
+    }
+
+    func waitUntilDeclineStarts() async {
+        while requestCounts.declines == 0 {
+            await Task.yield()
+        }
+    }
+
+    func releaseDecline() {
+        declineContinuation?.resume()
+        declineContinuation = nil
     }
 }

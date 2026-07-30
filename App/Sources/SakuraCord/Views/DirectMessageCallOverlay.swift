@@ -167,6 +167,7 @@ private struct DirectMessageCallRegion: View {
             } else {
                 PrivateCallActionDock(
                     isIncoming: isIncoming,
+                    isDisabled: model.isPrivateCallActionInFlight(in: channel.id),
                     accept: {
                         guard let call else { return }
                         Task { await model.acceptPrivateCall(call) }
@@ -225,6 +226,7 @@ private struct DirectMessageCallRegion: View {
 
 private struct PrivateCallActionDock: View {
     let isIncoming: Bool
+    let isDisabled: Bool
     let accept: () -> Void
     let decline: () -> Void
     let join: () -> Void
@@ -256,6 +258,7 @@ private struct PrivateCallActionDock: View {
             }
         }
         .frame(maxWidth: .infinity)
+        .disabled(isDisabled)
     }
 }
 
@@ -296,6 +299,7 @@ struct IncomingPrivateCallOverlay: View {
                 IncomingPrivateCallCard(
                     channel: channel,
                     additionalCallCount: max(0, model.incomingPrivateCalls.count - 1),
+                    isDisabled: model.isPrivateCallActionInFlight(in: channel.id),
                     accept: {
                         Task { await model.acceptPrivateCall(call) }
                     },
@@ -316,6 +320,7 @@ struct IncomingPrivateCallOverlay: View {
 private struct IncomingPrivateCallCard: View {
     let channel: Channel
     let additionalCallCount: Int
+    let isDisabled: Bool
     let accept: () -> Void
     let decline: () -> Void
 
@@ -363,6 +368,7 @@ private struct IncomingPrivateCallCard: View {
                 }
             }
             .padding(.top, 10)
+            .disabled(isDisabled)
 
             if additionalCallCount > 0 {
                 Text("\(additionalCallCount) more incoming")

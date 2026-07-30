@@ -897,6 +897,7 @@ final class AppModel {
     private(set) var voiceErrorMessage: String?
     private(set) var voiceStates: [UserID: VoiceParticipantState] = [:]
     private(set) var privateCallsByChannel: [ChannelID: PrivateCall] = [:]
+    private(set) var privateCallActionChannelIDs: Set<ChannelID> = []
     private(set) var mediaDevices: MediaDeviceSnapshot = .empty
     private(set) var emojisByGuild: [GuildID: [DiscordEmoji]] = [:] {
         didSet { updateOrderedCustomEmojis() }
@@ -957,6 +958,10 @@ final class AppModel {
             return nil
         }
         return call
+    }
+
+    func isPrivateCallActionInFlight(in channelID: ChannelID) -> Bool {
+        privateCallActionChannelIDs.contains(channelID)
     }
     var selectedConversationAccess: ConversationAccess {
         guard let channel = selectedChannel else { return .checking }
@@ -1219,6 +1224,7 @@ final class AppModel {
     @ObservationIgnored private var voiceMigrationTask: Task<Void, Never>?
     @ObservationIgnored private var voiceSession: DiscordVoiceSession?
     @ObservationIgnored private var voiceMigrationGeneration = 0
+    @ObservationIgnored private var privateCallActionGeneration: UInt64 = 0
     @ObservationIgnored private var channelLoadGeneration = 0
     @ObservationIgnored private var messageNavigationRequestID: UInt64 = 0
     @ObservationIgnored private var conversationNewestRequestID: UInt64 = 0
@@ -4146,13 +4152,35 @@ final class AppModel {
               !channel.isOfficialSystemDirectMessage
         else { return }
 
+        await performPrivateCallAction(in: channel.id) { generation in
+            await self.startPrivateCall(
+                in: channel,
+                withVideo: withVideo,
+                generation: generation
+            )
+        }
+    }
+
+    private func startPrivateCall(
+        in channel: Channel,
+        withVideo: Bool,
+        generation: UInt64
+    ) async {
         if privateCall(in: channel.id) != nil {
-            await joinPrivateCall(in: channel, withVideo: withVideo)
+            await joinPrivateCall(
+                in: channel,
+                withVideo: withVideo,
+                generation: generation
+            )
             return
         }
 
         do {
             try await provider.subscribeToPrivateCall(channelID: channel.id)
+            guard isCurrentPrivateCallAction(
+                channelID: channel.id,
+                generation: generation
+            ) else { return }
             let shouldRing: Bool
             if channel.kind == .groupDirectMessage {
                 shouldRing = true
@@ -4161,29 +4189,54 @@ final class AppModel {
                     channelID: channel.id
                 )
             }
-            await joinVoice(channel)
-            guard activeVoiceChannel?.id == channel.id,
-                  voiceSessionState == .connected
-            else { return }
-            if withVideo, !isCameraEnabled {
-                await toggleCamera()
-            }
-            if shouldRing {
-                beginLocalOutgoingPrivateCallRing(channelID: channel.id)
-                do {
-                    try await provider.ringPrivateCall(
-                        channelID: channel.id,
-                        recipients: nil
-                    )
-                } catch {
-                    endLocalOutgoingPrivateCallRing(channelID: channel.id)
-                    // Joining succeeded and is not replayed. Surface the bounded
-                    // ring failure without turning it into a second call action.
-                    voiceErrorMessage = error.localizedDescription
-                    errorMessage = error.localizedDescription
-                }
-            }
+            guard isCurrentPrivateCallAction(
+                channelID: channel.id,
+                generation: generation
+            ) else { return }
+            await completePrivateCallStart(
+                in: channel,
+                withVideo: withVideo,
+                shouldRing: shouldRing,
+                generation: generation
+            )
         } catch {
+            voiceErrorMessage = error.localizedDescription
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func completePrivateCallStart(
+        in channel: Channel,
+        withVideo: Bool,
+        shouldRing: Bool,
+        generation: UInt64
+    ) async {
+        await joinVoice(channel)
+        guard isCurrentPrivateCallAction(
+            channelID: channel.id,
+            generation: generation
+        ),
+              activeVoiceChannel?.id == channel.id,
+              voiceSessionState == .connected
+        else { return }
+        if withVideo, !isCameraEnabled {
+            await toggleCamera()
+            guard isCurrentPrivateCallAction(
+                channelID: channel.id,
+                generation: generation
+            ) else { return }
+        }
+        guard shouldRing else { return }
+        beginLocalOutgoingPrivateCallRing(channelID: channel.id)
+        do {
+            try await provider.ringPrivateCall(
+                channelID: channel.id,
+                recipients: nil
+            )
+        } catch {
+            endLocalOutgoingPrivateCallRing(channelID: channel.id)
+            // Joining succeeded and is not replayed. Surface the bounded
+            // ring failure without turning it into a second call action.
             voiceErrorMessage = error.localizedDescription
             errorMessage = error.localizedDescription
         }
@@ -4193,10 +4246,33 @@ final class AppModel {
         guard channel.kind == .directMessage || channel.kind == .groupDirectMessage,
               !channel.isOfficialSystemDirectMessage
         else { return }
+
+        await performPrivateCallAction(in: channel.id) { generation in
+            await self.joinPrivateCall(
+                in: channel,
+                withVideo: withVideo,
+                generation: generation
+            )
+        }
+    }
+
+    private func joinPrivateCall(
+        in channel: Channel,
+        withVideo: Bool,
+        generation: UInt64
+    ) async {
         do {
             try await provider.subscribeToPrivateCall(channelID: channel.id)
+            guard isCurrentPrivateCallAction(
+                channelID: channel.id,
+                generation: generation
+            ) else { return }
             await joinVoice(channel)
-            if withVideo,
+            if isCurrentPrivateCallAction(
+                channelID: channel.id,
+                generation: generation
+            ),
+               withVideo,
                activeVoiceChannel?.id == channel.id,
                voiceSessionState == .connected,
                !isCameraEnabled
@@ -4213,20 +4289,45 @@ final class AppModel {
         guard let channel = snapshot?.channels.first(where: { $0.id == call.channelID })
                 ?? visibleChannels.first(where: { $0.id == call.channelID })
         else { return }
-        if selectedChannelID != channel.id {
-            selectedGuildID = nil
-            selectedChannelID = channel.id
+
+        await performPrivateCallAction(in: call.channelID) { generation in
+            if self.selectedChannelID != channel.id {
+                self.selectedGuildID = nil
+                self.selectedChannelID = channel.id
+            }
+            await self.joinPrivateCall(
+                in: channel,
+                withVideo: false,
+                generation: generation
+            )
         }
-        await joinPrivateCall(in: channel)
     }
 
     func declinePrivateCall(_ call: PrivateCall) async {
         guard let currentUserID = snapshot?.currentUser.id else { return }
+        await performPrivateCallAction(in: call.channelID) { generation in
+            await self.declinePrivateCall(
+                call,
+                currentUserID: currentUserID,
+                generation: generation
+            )
+        }
+    }
+
+    private func declinePrivateCall(
+        _ call: PrivateCall,
+        currentUserID: UserID,
+        generation: UInt64
+    ) async {
         do {
             try await provider.stopRingingPrivateCall(
                 channelID: call.channelID,
                 recipients: [currentUserID]
             )
+            guard isCurrentPrivateCallAction(
+                channelID: call.channelID,
+                generation: generation
+            ) else { return }
             if var updated = privateCallsByChannel[call.channelID] {
                 updated.ongoingRings.removeAll { $0.recipientID == currentUserID }
                 privateCallsByChannel[call.channelID] = updated
@@ -4236,6 +4337,35 @@ final class AppModel {
             voiceErrorMessage = error.localizedDescription
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func performPrivateCallAction(
+        in channelID: ChannelID,
+        operation: (UInt64) async -> Void
+    ) async {
+        guard privateCallActionChannelIDs.insert(channelID).inserted else {
+            return
+        }
+        let generation = privateCallActionGeneration
+        defer {
+            if generation == privateCallActionGeneration {
+                privateCallActionChannelIDs.remove(channelID)
+            }
+        }
+        await operation(generation)
+    }
+
+    private func isCurrentPrivateCallAction(
+        channelID: ChannelID,
+        generation: UInt64
+    ) -> Bool {
+        generation == privateCallActionGeneration
+            && privateCallActionChannelIDs.contains(channelID)
+    }
+
+    private func resetPrivateCallActions() {
+        privateCallActionGeneration &+= 1
+        privateCallActionChannelIDs = []
     }
 
     private func reconcilePrivateCallVoiceState(_ state: VoiceParticipantState) {
@@ -4286,6 +4416,7 @@ final class AppModel {
     }
 
     private func resetAppSounds() {
+        resetPrivateCallActions()
         for task in outgoingPrivateCallRingTimeoutTasks.values {
             task.cancel()
         }

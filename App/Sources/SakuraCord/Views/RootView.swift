@@ -303,7 +303,10 @@ private struct ChatRootView: View {
                         systemImage: "phone.fill"
                     )
                 }
-                .disabled(model.activeVoiceChannel?.id == channel.id)
+                .disabled(
+                    model.activeVoiceChannel?.id == channel.id
+                        || model.isPrivateCallActionInFlight(in: channel.id)
+                )
                 .help(
                     model.privateCall(in: channel.id) == nil
                         ? "Start Voice Call" : "Join Ongoing Call"
@@ -320,7 +323,10 @@ private struct ChatRootView: View {
                 } label: {
                     Label("Start Video Call", systemImage: "video.fill")
                 }
-                .disabled(model.activeVoiceChannel?.id == channel.id)
+                .disabled(
+                    model.activeVoiceChannel?.id == channel.id
+                        || model.isPrivateCallActionInFlight(in: channel.id)
+                )
                 .help(
                     model.privateCall(in: channel.id) == nil
                         ? "Start Video Call" : "Join Ongoing Call with Video"
