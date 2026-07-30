@@ -6195,6 +6195,7 @@ final class AppModel {
                 readState.merge(thread: thread)
             }
             updateServerRail(from: value)
+            refreshUnreadPresentation()
             selectGuild(selectedGuildID)
         case .guildChanged(let guild):
             guard var value = snapshot,
