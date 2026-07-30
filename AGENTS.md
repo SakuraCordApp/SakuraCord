@@ -116,22 +116,40 @@ UI-only work, local persistence, mock fixtures, tests, accessibility, styling,
 and mechanical refactors do not require fresh Discord protocol research when
 they leave the established network contract unchanged.
 
-New, high-risk, undocumented, uncertain, or materially changed production
-network behavior requires a complete comparison of:
+Every new or materially changed production REST request, Gateway path,
+authentication exchange, upload, or other communication with Discord requires
+a complete, current cross-reference of all of the following:
 
-1. the corresponding Paicord path;
-2. the corresponding Swiftcord v1 path;
-3. the exact behavior of a current clean, unmodified official Discord client;
-   and
-4. Discord's current public API, status-code, and rate-limit documentation
-   wherever those documents cover the behavior.
+1. Discord's current public API, Gateway, status-code, and rate-limit
+   documentation wherever those documents cover the behavior;
+2. the corresponding implementation in the current official production web
+   client bundle, including its route constants, action, state store, and
+   Gateway reconciliation path;
+3. the corresponding pinned Paicord path;
+4. the corresponding pinned Swiftcord v1 path; and
+5. the exact visible or sanitized protocol behavior of a current clean,
+   unmodified official Discord client when static sources leave a material
+   ambiguity.
+
+Paicord and Swiftcord are mandatory cross-references even when the official web
+bundle appears conclusive. Record explicitly when either reference has no
+corresponding implementation; absence is evidence, not permission to skip it.
+Treat the current official web bundle as the primary operational reference for
+normal-user client behavior that public documentation does not cover. Treat
+public documentation as the authority for supported API semantics, status
+codes, and rate limits. The minified bundle is dated first-party implementation
+evidence, not a promise of API stability.
 
 Trace the complete feature path: UI trigger, cache/state lookup, Gateway
 dependency, route or opcode, headers, request body, sequencing, request count,
 response decoding, errors, rate limits, retries, cancellation, invalidation,
-and reconciliation. Swiftcord v1 is a historical design reference; Paicord is
-the operational reference when current official evidence and SakuraCord's
-architecture do not support a deliberate difference.
+and reconciliation. Begin with the exact current first-party request and event
+shape, then resolve every mismatch against Paicord and Swiftcord. Swiftcord v1
+is a historical design reference and Paicord is a current compatibility
+reference; neither outranks contradictory current first-party evidence.
+Any SakuraCord difference must be deliberate, safer or architecturally
+necessary, documented with evidence, and covered by request-contract and
+request-budget tests.
 
 Capture only sanitized protocol shape. Never store or share credentials,
 authorization headers, cookies, message bodies, personal data, fingerprints,
@@ -174,8 +192,9 @@ triggered an account restriction.
 - Treat opening/creating a DM, loading an existing DM, and sending as distinct
   actions. Do not create or reopen a DM on every send.
 - Before materially changing DM creation or sending, recheck the current
-  official client, Paicord, Swiftcord v1, request ordering, body, nonce,
-  context, challenge handling, and Gateway reconciliation.
+  official web-client bundle, a clean official client, Paicord, Swiftcord v1,
+  request ordering, body, nonce, context, challenge handling, and Gateway
+  reconciliation.
 - Serialize duplicate open/create attempts and deduplicate sends. Never invent
   a second send after an ambiguous timeout.
 - Handle `40003`, `40004`, verification/challenge responses, and connection
@@ -224,9 +243,10 @@ Before asking permission for that exception:
    payload omission/null semantics, nonce/idempotency, request count and order,
    rate-limit bucket behavior, retries, challenge/restriction handling,
    response decoding, and Gateway reconciliation.
-3. Compare the applicable current Discord documentation, pinned Paicord and
-   Swiftcord paths, and a current clean official-client baseline proportionally
-   to the risk. Resolve any unexplained mismatch before live testing.
+3. Compare the applicable current Discord documentation, the current official
+   production web-client bundle, pinned Paicord and Swiftcord paths, and a
+   current clean official-client baseline proportionally to the risk. Resolve
+   every unexplained mismatch before live testing.
 4. Add or update mocked request-contract and request-budget tests when they can
    meaningfully exercise the relevant API contract. Do not add irrelevant
    offline fixture coverage merely to satisfy a testing ritual.

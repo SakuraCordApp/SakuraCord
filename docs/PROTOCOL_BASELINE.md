@@ -38,6 +38,32 @@ fingerprint, installation identifier, or unsanitized traffic is stored in this
 repository. Treat every build number and observed payload as a dated snapshot,
 not current official behavior.
 
+### Evidence priority for protocol changes
+
+Every new or materially changed production communication with Discord must be
+cross-referenced against all of these sources:
+
+1. current public Discord documentation where applicable;
+2. the current official production web-client bundle;
+3. the pinned Paicord implementation;
+4. the pinned Swiftcord v1 implementation; and
+5. a clean current official-client observation when the static sources leave a
+   material ambiguity.
+
+The official web bundle is the primary operational source for undocumented
+normal-user client behavior because it exposes first-party route constants,
+request construction, state ownership, and Gateway reconciliation. It remains
+minified, changeable, and unsupported as a public contract, so record its build
+or asset hash and observation date. Paicord and Swiftcord are mandatory
+cross-checks, not substitutes for first-party evidence; record explicitly when
+one has no comparable path. Public documentation remains authoritative for
+supported API semantics, status codes, and rate limits.
+
+Implement the exact current first-party request and event shape unless
+SakuraCord has a deliberate safety or architectural difference. Every
+difference must be explained with evidence and locked down by mocked
+request-contract and request-budget tests.
+
 ## Current production capability gates
 
 `DiscordRESTProvider.supports(_:)` is the authority:
@@ -303,6 +329,44 @@ new-post implementation.
   `entries` and `partial`; the legacy top-level array remains accepted. The
   separate `notification_settings.flags` bit 4 (`USE_NEW_NOTIFICATIONS`) is
   part of unread resolution and must not be inferred from guild settings.
+- A user-selected per-channel notification or mute change sends one immediate
+  `PATCH /users/@me/guilds/{guild_id_or_@me}/settings` through the central
+  transport. Guild channels use their guild ID, while direct and group-DM
+  channels use `@me`; Ready and Gateway settings represent that private-channel
+  scope with a null guild ID.
+  Its partial body contains only the selected channel in `channel_overrides`;
+  notification levels use Discord's `0` (all), `1` (mentions), `2` (nothing),
+  and `3` (inherit) values, while mute updates pair `muted` with a bounded
+  `mute_config.end_time` or `null` for a permanent mute. The mutation has one
+  attempt, is applied locally only after success, and is subsequently
+  reconciled by authoritative `USER_GUILD_SETTINGS_UPDATE` events. This
+  contract was statically rechecked on 2026-07-30 against Paicord revision
+  `694761c1938b73bb60bd58942674dfe73aab1135`, Swiftcord v1 revision
+  `14465d927ebe1ba34b3befa00f9365fad7b56eb9`, and Discord's clean public web
+  asset `web.b79b97dbe82a637e.js`. The pinned Paicord and Swiftcord revisions do
+  not implement the corresponding private-channel settings mutation; the
+  `@me` scope follows Discord's current public asset, which routes null or
+  `@me` user-guild settings through `USER_GUILD_SETTINGS(@me)` rather than the
+  bulk guild endpoint. No authenticated account action or traffic capture was
+  used.
+- Forum-post notification settings are current-user thread-member state, not
+  parent-forum channel overrides. Joined posts send one
+  `PATCH /channels/{thread_id}/thread-members/@me/settings`; an unjoined post
+  first sends one
+  `POST /channels/{thread_id}/thread-members/@me?location=Change%20Notification%20Settings`,
+  then the same single-attempt settings patch. Notification selection preserves
+  unrelated member flags while replacing bits `2` (all messages), `4` (mentions),
+  and `8` (nothing), with no selected bit meaning inherit. Mutes send `muted`
+  with a bounded `mute_config.end_time` or `null`. Inline thread members,
+  `THREAD_LIST_SYNC.members`, and `THREAD_MEMBER_UPDATE` reconcile the displayed
+  `flags`, `muted`, and `mute_config`. This contract was statically checked on
+  2026-07-30 against Discord's clean public web asset
+  `web.b79b97dbe82a637e.js`; Discord's public Gateway and thread documentation
+  confirms that sync members belong to the current user and that
+  `THREAD_MEMBER_UPDATE` carries that user's thread member, but does not
+  document the user-client settings patch. Pinned Paicord and Swiftcord v1 do
+  not implement these post notification controls. No authenticated request was
+  sent.
 - A conversation becomes locally read only after its initial history is
   loaded, the timeline has established its real initial position, the bottom
   edge of its newest message is inside the native viewport, and the main window
@@ -472,9 +536,10 @@ state path.
   request.
 
 Before materially changing DM creation or sending, recheck the current official
-client, Paicord, Swiftcord v1, request body, nonce, context, ordering, challenge
-behavior, and Gateway reconciliation. Keep incomplete paths capability-gated
-until request-contract and request-budget tests pass.
+web-client bundle, a clean official client, Paicord, Swiftcord v1, request body,
+nonce, context, ordering, challenge behavior, and Gateway reconciliation. Keep
+incomplete paths capability-gated until request-contract and request-budget
+tests pass.
 
 ## Verification and update rule
 
@@ -494,8 +559,9 @@ live override.
 
 When a production network contract changes:
 
-1. compare the current official client, Paicord, Swiftcord v1, and public
-   Discord documentation proportionally to risk;
+1. compare current public Discord documentation, the current official
+   production web-client bundle, pinned Paicord, pinned Swiftcord v1, and a
+   clean official client when static evidence is materially ambiguous;
 2. record route, headers, body, sequencing, request count, response/error
    behavior, rate limits, retries, cache effects, and reconciliation;
 3. state reference revisions/builds and observation dates;
