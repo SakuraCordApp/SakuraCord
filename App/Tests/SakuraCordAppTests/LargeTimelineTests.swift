@@ -5085,6 +5085,123 @@ func `native timeline stickers thread and reactions preserve previous geometry`(
     #expect(layout.addReactionFrame?.size == CGSize(width: 30, height: 28))
 }
 
+@MainActor @Test
+func `native timeline loads reactor avatars when reactions become visible`() {
+    let width: CGFloat = 520
+    let firstMessage = Message(
+        id: MessageID(rawValue: 41_001),
+        channelID: ChannelID(rawValue: 41_000),
+        author: User(
+            id: UserID(rawValue: 41_101),
+            username: "first.fixture",
+            displayName: "First Fixture"
+        ),
+        content: "First visible reaction",
+        reactions: [Reaction(emoji: "🔥", count: 2)]
+    )
+    let secondMessage = Message(
+        id: MessageID(rawValue: 41_002),
+        channelID: firstMessage.channelID,
+        author: User(
+            id: UserID(rawValue: 41_102),
+            username: "second.fixture",
+            displayName: "Second Fixture"
+        ),
+        content: "Second initially hidden reaction",
+        reactions: [Reaction(emoji: "✅", count: 3)]
+    )
+    let messages = [firstMessage, secondMessage]
+    let items = messages.map { message in
+        NativeMessageTimelineItem.message(
+            MessageRowPresentation(
+                message: message,
+                startsGroup: true,
+                startsDay: false,
+                replyPreview: nil,
+                isReplyAvailable: false
+            ),
+            isUnreadBoundary: false,
+            isHighlighted: false
+        )
+    }
+    let layouts = items.map {
+        NativeTimelineRowLayout.make(item: $0, width: width)
+    }
+    let storage = NativeTimelineCanvasStorage()
+    storage.items = items
+    storage.layouts = layouts
+    storage.rowOrigins = [0, layouts[0].height]
+    storage.contentHeight = layouts[0].height + layouts[1].height
+
+    let viewportHeight = max(1, layouts[0].height - 1)
+    let canvas = NativeTimelineCanvasView(
+        frame: CGRect(
+            x: 0,
+            y: 0,
+            width: width,
+            height: storage.contentHeight
+        )
+    )
+    let scrollView = NSScrollView(
+        frame: CGRect(x: 0, y: 0, width: width, height: viewportHeight)
+    )
+    scrollView.documentView = canvas
+    let window = NSWindow(
+        contentRect: scrollView.frame,
+        styleMask: .borderless,
+        backing: .buffered,
+        defer: false
+    )
+    window.contentView = scrollView
+    canvas.apply(
+        storage: storage,
+        model: AppModel(launchMode: .offlineTesting),
+        actions: NativeTimelineRowActions(
+            loadEarlier: {},
+            openReply: { _ in },
+            reply: nil,
+            retry: { _ in },
+            edit: { _, _ in },
+            markUnread: { _ in },
+            delete: { _ in },
+            react: { _, _ in },
+            openThread: { _ in },
+            submitComponent: { _, _, _, _ in }
+        ),
+        viewportWidth: width,
+        minimumHeight: viewportHeight,
+        bottomSpacerHeight: 0,
+        contentOriginY: 0
+    )
+    scrollView.tile()
+    scrollView.layoutSubtreeIfNeeded()
+    canvas.reconcileVisibleReactionPreviewLoadsForTesting()
+
+    #expect(canvas.hasVisibleReactionPreviewLoadForTesting(
+        messageID: firstMessage.id,
+        reactionID: firstMessage.reactions[0].id
+    ))
+    #expect(!canvas.hasVisibleReactionPreviewLoadForTesting(
+        messageID: secondMessage.id,
+        reactionID: secondMessage.reactions[0].id
+    ))
+
+    scrollView.contentView.scroll(
+        to: CGPoint(x: 0, y: layouts[0].height)
+    )
+    scrollView.reflectScrolledClipView(scrollView.contentView)
+    canvas.reconcileVisibleReactionPreviewLoadsForTesting()
+
+    #expect(!canvas.hasVisibleReactionPreviewLoadForTesting(
+        messageID: firstMessage.id,
+        reactionID: firstMessage.reactions[0].id
+    ))
+    #expect(canvas.hasVisibleReactionPreviewLoadForTesting(
+        messageID: secondMessage.id,
+        reactionID: secondMessage.reactions[0].id
+    ))
+}
+
 @Test
 func `first reaction mutation uses the pre-update canvas count as its animation baseline`() {
     #expect(

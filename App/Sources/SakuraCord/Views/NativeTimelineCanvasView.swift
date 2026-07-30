@@ -2355,6 +2355,11 @@ final class NativeTimelineCanvasView: NSView {
         let reactionID: String
     }
 
+    private struct ReactionPreviewLoadKey: Hashable {
+        let messageID: MessageID
+        let reactionID: String
+    }
+
     private struct ActiveReactionCountAnimation {
         let from: Int
         let to: Int
@@ -2559,6 +2564,10 @@ final class NativeTimelineCanvasView: NSView {
     private var reactionCountBaselineTask: Task<Void, Never>?
     private var pendingReactionCountSnapshot: ReactionCountSnapshot?
     private var hasCapturedVisibleReactionCounts = false
+    private var visibleReactionPreviewLoadKeys:
+        Set<ReactionPreviewLoadKey> = []
+    private var reactionPreviewLoadTasks:
+        [ReactionPreviewLoadKey: Task<Void, Never>] = [:]
     private var animatedMediaRows:
         [NativeMessageTimelineItem.Identifier: Set<NativeTimelineMediaKey>] = [:]
     private var inlineVideoRows:
@@ -2727,6 +2736,7 @@ final class NativeTimelineCanvasView: NSView {
             storedBeforeUpdate: reactionCountsBeforeUpdate
         )
         scheduleInitialReactionCountCapture()
+        reconcileVisibleReactionPreviewLoads()
         startVisibleInlineVideosImmediately()
         scheduleAnimatedMediaReconciliation()
         positionAnimatedMediaOverlays()
@@ -3023,6 +3033,7 @@ final class NativeTimelineCanvasView: NSView {
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow == nil {
+            cancelReactionPreviewLoads()
             mediaInvalidationTask?.cancel()
             mediaInvalidationTask = nil
             pendingMediaInvalidations.removeAll(keepingCapacity: false)
@@ -3080,6 +3091,7 @@ final class NativeTimelineCanvasView: NSView {
     deinit {
         MainActor.assumeIsolated {
             mediaInvalidationTask?.cancel()
+            cancelReactionPreviewLoads()
             NativeTimelineMediaStore.shared.releaseVisibleImages(
                 owner: visibleMediaPinOwner
             )
@@ -3175,6 +3187,7 @@ final class NativeTimelineCanvasView: NSView {
         }
         super.draw(dirtyRect)
         refreshVisibleMediaPins()
+        reconcileVisibleReactionPreviewLoads()
         // This view is transparent and layer-backed. Core Graphics does not
         // guarantee that invalidating a region clears its previous backing
         // pixels before draw(_:). Clear first so bottom-origin changes cannot
@@ -3782,6 +3795,73 @@ final class NativeTimelineCanvasView: NSView {
                 self?.scheduleMediaInvalidation(identifier)
             }
         }
+    }
+
+    private func reconcileVisibleReactionPreviewLoads() {
+        let viewport =
+            enclosingScrollView?.documentVisibleRect ?? visibleRect
+        guard window != nil,
+              viewport.width > 0,
+              viewport.height > 0,
+              !items.isEmpty,
+              !layouts.isEmpty,
+              var index = rowIndex(at: max(0, viewport.minY))
+        else {
+            cancelReactionPreviewLoads()
+            return
+        }
+
+        var desired:
+            [ReactionPreviewLoadKey: (reaction: Reaction, message: Message)] = [:]
+        while items.indices.contains(index),
+              layouts.indices.contains(index),
+              displayedRowOrigin(at: index) < viewport.maxY
+        {
+            if rowFrame(at: index).intersects(viewport),
+               case let .message(row, _, _) = items[index]
+            {
+                let reactions = layouts[index].reactionRegions.map(\.reaction)
+                for reaction in MessageReactionPresentation
+                    .previewLoadCandidates(fromPresented: reactions)
+                {
+                    let key = ReactionPreviewLoadKey(
+                        messageID: row.message.id,
+                        reactionID: reaction.id
+                    )
+                    desired[key] = (reaction, row.message)
+                }
+            }
+            index += 1
+        }
+
+        let obsolete = visibleReactionPreviewLoadKeys.subtracting(desired.keys)
+        for key in obsolete {
+            reactionPreviewLoadTasks.removeValue(forKey: key)?.cancel()
+            visibleReactionPreviewLoadKeys.remove(key)
+        }
+
+        for (key, input) in desired
+        where visibleReactionPreviewLoadKeys.insert(key).inserted
+        {
+            reactionPreviewLoadTasks[key] = Task { @MainActor [weak self] in
+                guard let self,
+                      self.visibleReactionPreviewLoadKeys.contains(key),
+                      let model = self.model
+                else { return }
+                await model.loadReactionReactors(
+                    input.reaction,
+                    on: input.message
+                )
+            }
+        }
+    }
+
+    private func cancelReactionPreviewLoads() {
+        for task in reactionPreviewLoadTasks.values {
+            task.cancel()
+        }
+        reactionPreviewLoadTasks.removeAll(keepingCapacity: true)
+        visibleReactionPreviewLoadKeys.removeAll(keepingCapacity: true)
     }
 
     private func scheduleMediaInvalidation(
@@ -9678,6 +9758,22 @@ final class NativeTimelineCanvasView: NSView {
     }
 
 #if DEBUG
+    func reconcileVisibleReactionPreviewLoadsForTesting() {
+        reconcileVisibleReactionPreviewLoads()
+    }
+
+    func hasVisibleReactionPreviewLoadForTesting(
+        messageID: MessageID,
+        reactionID: String
+    ) -> Bool {
+        visibleReactionPreviewLoadKeys.contains(
+            ReactionPreviewLoadKey(
+                messageID: messageID,
+                reactionID: reactionID
+            )
+        )
+    }
+
     var spoilerOverlayFramesForTesting:
         [NativeTimelineComponentRevealKey: CGRect]
     {
