@@ -357,12 +357,18 @@ nonisolated struct LinkedImagePresentation: Sendable {
 }
 
 nonisolated struct LinkedImageReference: Identifiable, Hashable, Sendable {
+    private static let trustedMediaHosts: Set<String> = [
+        "cdn.discordapp.com",
+        "media.discordapp.net"
+    ]
+
     let id: String
     let label: String
     let url: URL
 
     var isEmoji: Bool {
-        url.host == "cdn.discordapp.com" && url.path.hasPrefix("/emojis/")
+        url.host?.lowercased() == "cdn.discordapp.com"
+            && url.path.hasPrefix("/emojis/")
     }
 
     var linkedEmoji: EmojiReference? {
@@ -415,7 +421,7 @@ nonisolated struct LinkedImageReference: Identifiable, Hashable, Sendable {
     }
 
     var isSticker: Bool {
-        (url.host == "cdn.discordapp.com" || url.host == "media.discordapp.net")
+        Self.trustedMediaHosts.contains(url.host?.lowercased() ?? "")
             && url.path.hasPrefix("/stickers/")
     }
 
@@ -427,8 +433,19 @@ nonisolated struct LinkedImageReference: Identifiable, Hashable, Sendable {
 
     static func isSupported(_ url: URL) -> Bool {
         let imageExtensions = Set(["png", "jpg", "jpeg", "gif", "webp", "avif"])
+        guard url.scheme?.lowercased() == "https",
+              url.user == nil,
+              url.password == nil,
+              url.port == nil,
+              trustedMediaHosts.contains(url.host?.lowercased() ?? "")
+        else { return false }
         return imageExtensions.contains(url.pathExtension.lowercased())
-            || (url.host == "cdn.discordapp.com" && url.path.hasPrefix("/emojis/"))
+            || (isCanonicalEmojiURL(url))
+    }
+
+    private static func isCanonicalEmojiURL(_ url: URL) -> Bool {
+        url.host?.lowercased() == "cdn.discordapp.com"
+            && url.path.hasPrefix("/emojis/")
     }
 }
 

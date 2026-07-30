@@ -2845,7 +2845,7 @@ func `native timeline render plan preserves markdown inline emoji mentions and l
         channelID: ChannelID(rawValue: 3),
         author: author,
         content:
-            "# Heading\n**bold** <@4> <:wave:900000000000000101> [preview](https://example.com/image.png)"
+            "# Heading\n**bold** <@4> <:wave:900000000000000101> [preview](https://cdn.discordapp.com/attachments/3/4/image.png)"
     )
     let row = MessageRowPresentation(
         message: message,
@@ -2867,6 +2867,57 @@ func `native timeline render plan preserves markdown inline emoji mentions and l
     #expect(layout.linkedImageRegions.count == 1)
     #expect(layout.linkedImageRegions[0].reference.label == "preview")
     #expect(layout.contentFrame?.height ?? 0 > 22)
+}
+
+@MainActor @Test
+func `native timeline does not auto load third party linked images`() throws {
+    let content = "[invoice](https://tracking.example/view.png?recipient=unique)"
+    let presentation = LinkedImagePresentation(content: content)
+    let message = Message(
+        id: MessageID(rawValue: 12),
+        channelID: ChannelID(rawValue: 13),
+        author: User(
+            id: UserID(rawValue: 14),
+            username: "fixture",
+            displayName: "Fixture"
+        ),
+        content: content
+    )
+    let row = MessageRowPresentation(
+        message: message,
+        startsGroup: true,
+        startsDay: false,
+        replyPreview: nil,
+        isReplyAvailable: false
+    )
+    let layout = NativeTimelineRowLayout.make(
+        item: .message(row, isUnreadBoundary: false, isHighlighted: false),
+        width: 620
+    )
+
+    #expect(presentation.images.isEmpty)
+    #expect(presentation.visibleText == content)
+    #expect(layout.linkedImageRegions.isEmpty)
+    #expect(layout.attributedContent?.string.contains("invoice") == true)
+}
+
+@Test
+func `linked image trust rejects lookalike insecure and credential URLs`() throws {
+    let accepted = try #require(URL(
+        string: "https://cdn.discordapp.com/attachments/1/2/image.webp"
+    ))
+    let rejected = try [
+        #require(URL(string: "https://tracking.example/image.webp")),
+        #require(URL(string: "https://cdn.discordapp.com.example/image.webp")),
+        #require(URL(string: "http://cdn.discordapp.com/image.webp")),
+        #require(URL(string: "https://user@cdn.discordapp.com/image.webp")),
+        #require(URL(string: "https://cdn.discordapp.com:8443/image.webp"))
+    ]
+
+    #expect(LinkedImageReference.isSupported(accepted))
+    #expect(rejected.allSatisfy {
+        !LinkedImageReference.isSupported($0)
+    })
 }
 
 @MainActor @Test
