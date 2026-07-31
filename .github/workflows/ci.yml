@@ -67,17 +67,23 @@ jobs:
           SAKURACORD_ENABLE_UPDATES: 1
           SPARKLE_ED_PUBLIC_KEY: ${{ secrets.SPARKLE_ED_PUBLIC_KEY }}
         run: ./script/package_dmg.sh
-      - name: Generate GitHub release notes
+      - name: Prepare release notes
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh api --method POST \
-            "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
-            --raw-field "tag_name=$GITHUB_REF_NAME" \
-            --raw-field "target_commitish=$GITHUB_SHA" \
-            --jq .body > dist/release-notes.md
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release view "$GITHUB_REF_NAME" \
+              --json body --jq .body > dist/release-notes.md
+          fi
+          if ! grep -q '[^[:space:]]' dist/release-notes.md 2>/dev/null; then
+            gh api --method POST \
+              "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+              --raw-field "tag_name=$GITHUB_REF_NAME" \
+              --raw-field "target_commitish=$GITHUB_SHA" \
+              --jq .body > dist/release-notes.md
+          fi
           if ! grep -q '[^[:space:]]' dist/release-notes.md; then
-            echo "GitHub generated empty release notes." >&2
+            echo "Release notes are empty." >&2
             exit 1
           fi
       - name: Generate and validate signed Sparkle appcast
