@@ -159,6 +159,12 @@ actor GatewaySession {
         case cancelled
     }
 
+    private enum LifecycleDisposition {
+        case connect(isInitialConnection: Bool)
+        case finish
+        case returnImmediately
+    }
+
     nonisolated let events: AsyncStream<GatewaySessionEvent>
 
     private let configuration: Configuration
@@ -251,38 +257,16 @@ actor GatewaySession {
         var isInitialConnection = true
 
         lifecycle: while isActive(activeGeneration) {
-            switch nextOutcome {
-            case let .reconnectImmediately(preserveSession):
-                if !preserveSession {
-                    clearResumableState()
-                }
-                if isInitialConnection {
-                    isInitialConnection = false
-                } else {
-                    reconnectAttempts += 1
-                    guard reconnectAttempts <= configuration.maximumReconnectAttempts else { break lifecycle }
-                }
-            case let .reconnectAfterBackoff(preserveSession):
-                if !preserveSession {
-                    clearResumableState()
-                }
-                guard await waitForReconnectBackoff(generation: activeGeneration) else { break lifecycle }
-            case .invalidSessionDelay:
-                clearResumableState()
-                reconnectAttempts += 1
-                guard reconnectAttempts <= configuration.maximumReconnectAttempts else { break lifecycle }
-                transition(to: .backingOff(attempt: reconnectAttempts))
-                do {
-                    let unit = await random.unitInterval()
-                    try await clock.sleep(for: .seconds(1 + (max(0, min(unit, 0.999_999)) * 4)))
-                } catch { break lifecycle }
-            case let .terminal(authenticationFailed):
-                transition(to: .stopped)
-                eventContinuation.yield(.stateChanged(authenticationFailed ? .authenticationFailed : .disconnected))
-                lifecycleTask = nil
-                return
-            case .cancelled:
-                lifecycleTask = nil
+            switch await prepareForConnection(
+                after: nextOutcome,
+                generation: activeGeneration,
+                isInitialConnection: isInitialConnection
+            ) {
+            case let .connect(nextIsInitialConnection):
+                isInitialConnection = nextIsInitialConnection
+            case .finish:
+                break lifecycle
+            case .returnImmediately:
                 return
             }
 
@@ -296,6 +280,59 @@ actor GatewaySession {
                 transition(to: .disconnected)
                 eventContinuation.yield(.stateChanged(.disconnected))
             }
+        }
+    }
+
+    private func prepareForConnection(
+        after outcome: ConnectionOutcome,
+        generation activeGeneration: Int,
+        isInitialConnection: Bool
+    ) async -> LifecycleDisposition {
+        switch outcome {
+        case let .reconnectImmediately(preserveSession):
+            if !preserveSession {
+                clearResumableState()
+            }
+            if isInitialConnection {
+                return .connect(isInitialConnection: false)
+            }
+            reconnectAttempts += 1
+            guard reconnectAttempts <= configuration.maximumReconnectAttempts else {
+                return .finish
+            }
+            return .connect(isInitialConnection: false)
+        case let .reconnectAfterBackoff(preserveSession):
+            if !preserveSession {
+                clearResumableState()
+            }
+            guard await waitForReconnectBackoff(generation: activeGeneration) else {
+                return .finish
+            }
+            return .connect(isInitialConnection: isInitialConnection)
+        case .invalidSessionDelay:
+            clearResumableState()
+            reconnectAttempts += 1
+            guard reconnectAttempts <= configuration.maximumReconnectAttempts else {
+                return .finish
+            }
+            transition(to: .backingOff(attempt: reconnectAttempts))
+            do {
+                let unit = await random.unitInterval()
+                try await clock.sleep(for: .seconds(1 + (max(0, min(unit, 0.999_999)) * 4)))
+                return .connect(isInitialConnection: isInitialConnection)
+            } catch {
+                return .finish
+            }
+        case let .terminal(authenticationFailed):
+            transition(to: .stopped)
+            eventContinuation.yield(
+                .stateChanged(authenticationFailed ? .authenticationFailed : .disconnected)
+            )
+            lifecycleTask = nil
+            return .returnImmediately
+        case .cancelled:
+            lifecycleTask = nil
+            return .returnImmediately
         }
     }
 
@@ -386,27 +423,7 @@ actor GatewaySession {
 
         switch envelope.op {
         case 0:
-            guard let name = envelope.eventName, let data = envelope.data else {
-                throw GatewaySessionError.malformedPayload
-            }
-            eventContinuation.yield(.dispatch(name: name, data: data))
-            if name == "READY" {
-                guard case let .object(object) = data,
-                      case let .string(readySessionID)? = object["session_id"],
-                      case let .string(readyResumeURL)? = object["resume_gateway_url"]
-                else {
-                    throw GatewaySessionError.malformedPayload
-                }
-                sessionID = readySessionID
-                resumeGatewayURL = readyResumeURL
-                reconnectAttempts = 0
-                transition(to: .ready)
-                eventContinuation.yield(.stateChanged(.ready))
-            } else if name == "RESUMED" {
-                reconnectAttempts = 0
-                transition(to: .ready)
-                eventContinuation.yield(.stateChanged(.ready))
-            }
+            try processDispatch(envelope)
         case 1:
             try await sendHeartbeat(generation: activeGeneration, restartCadence: true)
         case 7:
@@ -417,43 +434,72 @@ actor GatewaySession {
             }
             return canResume ? .reconnectImmediately(preserveSession: true) : .invalidSessionDelay
         case 10:
-            guard handshakeSentGeneration != activeGeneration,
-                  case let .object(hello)? = envelope.data,
-                  case let .number(milliseconds)? = hello["heartbeat_interval"],
-                  milliseconds > 0
-            else {
-                if handshakeSentGeneration == activeGeneration {
-                    return nil
-                }
-                throw GatewaySessionError.malformedPayload
-            }
-            handshakeSentGeneration = activeGeneration
-            let interval = Duration.seconds(milliseconds / 1000)
-            heartbeatInterval = interval
-            let initialUnit = await random.unitInterval()
-            startHeartbeatLoop(
-                generation: activeGeneration,
-                initialDelay: scaled(interval, by: max(0, min(initialUnit, 0.999_999))),
-                interval: interval
-            )
-            if canResume {
-                transition(to: .resuming)
-                eventContinuation.yield(.stateChanged(.resuming))
-                try await sendResume()
-            } else {
-                transition(to: .identifying)
-                apiDiagnostics.recordGatewayData(
-                    direction: "request",
-                    data: configuration.identifyPayload
-                )
-                try await socket?.send(configuration.identifyPayload)
-            }
+            try await processHello(envelope, generation: activeGeneration)
         case 11:
             awaitingHeartbeatACK = false
         default:
             break
         }
         return nil
+    }
+
+    private func processDispatch(_ envelope: GatewayEnvelope) throws {
+        guard let name = envelope.eventName, let data = envelope.data else {
+            throw GatewaySessionError.malformedPayload
+        }
+        eventContinuation.yield(.dispatch(name: name, data: data))
+        if name == "READY" {
+            guard case let .object(object) = data,
+                  case let .string(readySessionID)? = object["session_id"],
+                  case let .string(readyResumeURL)? = object["resume_gateway_url"]
+            else {
+                throw GatewaySessionError.malformedPayload
+            }
+            sessionID = readySessionID
+            resumeGatewayURL = readyResumeURL
+            reconnectAttempts = 0
+            transition(to: .ready)
+            eventContinuation.yield(.stateChanged(.ready))
+        } else if name == "RESUMED" {
+            reconnectAttempts = 0
+            transition(to: .ready)
+            eventContinuation.yield(.stateChanged(.ready))
+        }
+    }
+
+    private func processHello(
+        _ envelope: GatewayEnvelope,
+        generation activeGeneration: Int
+    ) async throws {
+        guard handshakeSentGeneration != activeGeneration,
+              case let .object(hello)? = envelope.data,
+              case let .number(milliseconds)? = hello["heartbeat_interval"],
+              milliseconds > 0
+        else {
+            if handshakeSentGeneration == activeGeneration { return }
+            throw GatewaySessionError.malformedPayload
+        }
+        handshakeSentGeneration = activeGeneration
+        let interval = Duration.seconds(milliseconds / 1000)
+        heartbeatInterval = interval
+        let initialUnit = await random.unitInterval()
+        startHeartbeatLoop(
+            generation: activeGeneration,
+            initialDelay: scaled(interval, by: max(0, min(initialUnit, 0.999_999))),
+            interval: interval
+        )
+        if canResume {
+            transition(to: .resuming)
+            eventContinuation.yield(.stateChanged(.resuming))
+            try await sendResume()
+        } else {
+            transition(to: .identifying)
+            apiDiagnostics.recordGatewayData(
+                direction: "request",
+                data: configuration.identifyPayload
+            )
+            try await socket?.send(configuration.identifyPayload)
+        }
     }
 
     private var canResume: Bool {

@@ -45,7 +45,7 @@ func flattenedCommandIdentity() throws {
     #expect(command.rootCommandID == "200")
     #expect(command.displayName == "admin verify")
     #expect(command.executionName == "admin")
-    #expect(String(decoding: command.rootCommandJSON, as: UTF8.self).contains("\"id\":\"200\""))
+    #expect(String(data: command.rootCommandJSON, encoding: .utf8)?.contains("\"id\":\"200\"") == true)
 }
 
 @Test("command invocation retains typed snowflakes and attachment URLs")

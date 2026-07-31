@@ -235,128 +235,128 @@ public enum DiscordMarkdown {
         let output = NSMutableAttributedString()
 
         for (lineIndex, linePlan) in plan.lines.enumerated() {
-            if lineIndex > 0 {
-                let previousLine = plan.lines[lineIndex - 1]
-                if previousLine.runs.isEmpty {
-                    output.append(
-                        NSAttributedString(
-                            string: "\n",
-                            attributes: [
-                                .font: NSFont.systemFont(
-                                    ofSize: baseFontSize
-                                ),
-                                .foregroundColor: NSColor.labelColor,
-                                .paragraphStyle: blankParagraphStyle(),
-                            ]
-                        )
-                    )
-                } else {
-                    output.append(NSAttributedString(string: "\n"))
-                }
-            }
-
-            let line = NSMutableAttributedString()
-            for run in linePlan.runs {
-                let font = appKitFont(
-                    block: linePlan.block,
-                    traits: run.traits,
-                    baseFontSize: baseFontSize
-                )
-                var attributes: [NSAttributedString.Key: Any] = [
-                    .font: font,
-                    .foregroundColor: foregroundColor(
-                        block: linePlan.block,
-                        semanticColor: run.color
-                    ),
-                ]
-                if run.traits.contains(.underline) {
-                    attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
-                }
-                if run.traits.contains(.strikethrough) {
-                    attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
-                }
-                if run.traits.contains(.inlineCode) {
-                    attributes[.discordMarkdownInlineCode] =
-                        NSNumber(value: true)
-                }
-                if run.traits.contains(.listMarker) {
-                    attributes[.discordMarkdownListMarker] =
-                        NSNumber(value: true)
-                    attributes[.foregroundColor] = NSColor.clear
-                }
-                if let link = run.link {
-                    attributes[.link] = link
-                    attributes[.foregroundColor] = NSColor.linkColor
-                }
-                if run.traits.contains(.spoiler) {
-                    let spoilerColor =
-                        NSColor.secondaryLabelColor.withAlphaComponent(0.42)
-                    attributes[.backgroundColor] = spoilerColor
-                    attributes[.foregroundColor] = NSColor.clear
-                    attributes[.underlineColor] = NSColor.clear
-                    attributes[.strikethroughColor] = NSColor.clear
-                    attributes[.discordMarkdownSpoiler] =
-                        NSNumber(value: true)
-                }
-                line.append(
-                    NSAttributedString(
-                        string: run.text,
-                        attributes: attributes
-                    )
-                )
-            }
-
-            let startsCodeBlock =
-                isCodeBlock(linePlan)
-                && (
-                    lineIndex == plan.lines.startIndex
-                    || !isCodeBlock(plan.lines[lineIndex - 1])
-                )
-            let endsCodeBlock =
-                isCodeBlock(linePlan)
-                && (
-                    lineIndex == plan.lines.index(before: plan.lines.endIndex)
-                    || !isCodeBlock(plan.lines[lineIndex + 1])
-                )
-            let startsListBlock =
-                isListBlock(linePlan)
-                && (
-                    lineIndex == plan.lines.startIndex
-                    || !isSameListBlock(
-                        linePlan,
-                        plan.lines[lineIndex - 1]
-                    )
-                )
-            let startsInlineCodeLine =
-                lineIndex > plan.lines.startIndex
-                && !plan.lines[lineIndex - 1].runs.isEmpty
-                && isInlineCodeOnlyLine(linePlan)
-            let paragraph = paragraphStyle(
-                for: linePlan.block,
-                startsListBlock: startsListBlock,
-                startsInlineCodeLine: startsInlineCodeLine,
-                startsCodeBlock: startsCodeBlock,
-                endsCodeBlock: endsCodeBlock
+            appendLineSeparator(
+                to: output,
+                before: lineIndex,
+                plan: plan,
+                baseFontSize: baseFontSize
             )
-            let fullRange = NSRange(location: 0, length: line.length)
-            if fullRange.length > 0 {
-                line.addAttribute(
-                    .paragraphStyle,
-                    value: paragraph,
-                    range: fullRange
-                )
-                if let blockName = blockAttribute(for: linePlan.block) {
-                    line.addAttribute(
-                        .discordMarkdownBlock,
-                        value: blockName,
-                        range: fullRange
-                    )
-                }
-            }
-            output.append(line)
+            output.append(attributedLine(
+                linePlan,
+                index: lineIndex,
+                plan: plan,
+                baseFontSize: baseFontSize
+            ))
         }
 
         return NSAttributedString(attributedString: output)
+    }
+
+    private static func appendLineSeparator(
+        to output: NSMutableAttributedString,
+        before lineIndex: Int,
+        plan: AppKitPlan,
+        baseFontSize: CGFloat
+    ) {
+        guard lineIndex > 0 else { return }
+        let previousLine = plan.lines[lineIndex - 1]
+        if previousLine.runs.isEmpty {
+            output.append(
+                NSAttributedString(
+                    string: "\n",
+                    attributes: [
+                        .font: NSFont.systemFont(ofSize: baseFontSize),
+                        .foregroundColor: NSColor.labelColor,
+                        .paragraphStyle: blankParagraphStyle(),
+                    ]
+                )
+            )
+        } else {
+            output.append(NSAttributedString(string: "\n"))
+        }
+    }
+
+    private static func attributedLine(
+        _ linePlan: AppKitPlan.Line,
+        index lineIndex: Int,
+        plan: AppKitPlan,
+        baseFontSize: CGFloat
+    ) -> NSAttributedString {
+        let line = NSMutableAttributedString()
+        for run in linePlan.runs {
+            line.append(NSAttributedString(
+                string: run.text,
+                attributes: attributes(
+                    for: run,
+                    block: linePlan.block,
+                    baseFontSize: baseFontSize
+                )
+            ))
+        }
+        let startsCodeBlock = isCodeBlock(linePlan)
+            && (lineIndex == plan.lines.startIndex
+                || !isCodeBlock(plan.lines[lineIndex - 1]))
+        let endsCodeBlock = isCodeBlock(linePlan)
+            && (lineIndex == plan.lines.index(before: plan.lines.endIndex)
+                || !isCodeBlock(plan.lines[lineIndex + 1]))
+        let startsListBlock = isListBlock(linePlan)
+            && (lineIndex == plan.lines.startIndex
+                || !isSameListBlock(linePlan, plan.lines[lineIndex - 1]))
+        let startsInlineCodeLine = lineIndex > plan.lines.startIndex
+            && !plan.lines[lineIndex - 1].runs.isEmpty
+            && isInlineCodeOnlyLine(linePlan)
+        let paragraph = paragraphStyle(
+            for: linePlan.block,
+            startsListBlock: startsListBlock,
+            startsInlineCodeLine: startsInlineCodeLine,
+            startsCodeBlock: startsCodeBlock,
+            endsCodeBlock: endsCodeBlock
+        )
+        let fullRange = NSRange(location: 0, length: line.length)
+        if fullRange.length > 0 {
+            line.addAttribute(.paragraphStyle, value: paragraph, range: fullRange)
+            if let blockName = blockAttribute(for: linePlan.block) {
+                line.addAttribute(.discordMarkdownBlock, value: blockName, range: fullRange)
+            }
+        }
+        return line
+    }
+
+    private static func attributes(
+        for run: AppKitPlan.InlineRun,
+        block: AppKitPlan.Block,
+        baseFontSize: CGFloat
+    ) -> [NSAttributedString.Key: Any] {
+        var attributes: [NSAttributedString.Key: Any] = [
+            .font: appKitFont(block: block, traits: run.traits, baseFontSize: baseFontSize),
+            .foregroundColor: foregroundColor(block: block, semanticColor: run.color),
+        ]
+        if run.traits.contains(.underline) {
+            attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
+        }
+        if run.traits.contains(.strikethrough) {
+            attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+        }
+        if run.traits.contains(.inlineCode) {
+            attributes[.discordMarkdownInlineCode] = NSNumber(value: true)
+        }
+        if run.traits.contains(.listMarker) {
+            attributes[.discordMarkdownListMarker] = NSNumber(value: true)
+            attributes[.foregroundColor] = NSColor.clear
+        }
+        if let link = run.link {
+            attributes[.link] = link
+            attributes[.foregroundColor] = NSColor.linkColor
+        }
+        if run.traits.contains(.spoiler) {
+            let spoilerColor = NSColor.secondaryLabelColor.withAlphaComponent(0.42)
+            attributes[.backgroundColor] = spoilerColor
+            attributes[.foregroundColor] = NSColor.clear
+            attributes[.underlineColor] = NSColor.clear
+            attributes[.strikethroughColor] = NSColor.clear
+            attributes[.discordMarkdownSpoiler] = NSNumber(value: true)
+        }
+        return attributes
     }
 
     private static func planLine(_ source: String) -> AppKitPlan.Line {
@@ -554,33 +554,15 @@ public enum DiscordMarkdown {
                 }
             }
 
-            var matchedDelimiter = false
-            for delimiter in delimiters
-            where source[cursor...].hasPrefix(delimiter.marker) {
-                let contentStart = source.index(
-                    cursor,
-                    offsetBy: delimiter.marker.count
-                )
-                guard contentStart <= source.endIndex,
-                      let closingRange = source.range(
-                          of: delimiter.marker,
-                          range: contentStart ..< source.endIndex
-                      ),
-                      closingRange.lowerBound > contentStart
-                else { continue }
+            if let match = delimitedRuns(
+                in: source,
+                at: cursor,
+                inheritedTraits: inheritedTraits,
+                inheritedLink: inheritedLink
+            ) {
                 flushPlain()
-                result.append(
-                    contentsOf: inlineRuns(
-                        source[contentStart ..< closingRange.lowerBound],
-                        inheritedTraits: inheritedTraits.union(delimiter.traits),
-                        inheritedLink: inheritedLink
-                    )
-                )
-                cursor = closingRange.upperBound
-                matchedDelimiter = true
-                break
-            }
-            if matchedDelimiter {
+                result.append(contentsOf: match.runs)
+                cursor = match.endIndex
                 continue
             }
 
@@ -590,6 +572,37 @@ public enum DiscordMarkdown {
 
         flushPlain()
         return result
+    }
+
+    private static func delimitedRuns(
+        in source: Substring,
+        at cursor: String.Index,
+        inheritedTraits: AppKitPlan.InlineTraits,
+        inheritedLink: URL?
+    ) -> (runs: [AppKitPlan.InlineRun], endIndex: String.Index)? {
+        for delimiter in delimiters
+        where source[cursor...].hasPrefix(delimiter.marker) {
+            let contentStart = source.index(
+                cursor,
+                offsetBy: delimiter.marker.count
+            )
+            guard contentStart <= source.endIndex,
+                  let closingRange = source.range(
+                      of: delimiter.marker,
+                      range: contentStart ..< source.endIndex
+                  ),
+                  closingRange.lowerBound > contentStart
+            else { continue }
+            return (
+                inlineRuns(
+                    source[contentStart ..< closingRange.lowerBound],
+                    inheritedTraits: inheritedTraits.union(delimiter.traits),
+                    inheritedLink: inheritedLink
+                ),
+                closingRange.upperBound
+            )
+        }
+        return nil
     }
 
     private static func appendPlainRuns(

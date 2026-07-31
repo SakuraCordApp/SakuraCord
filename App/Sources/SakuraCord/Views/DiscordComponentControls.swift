@@ -87,14 +87,14 @@ enum ComponentUnicodeEmojiRenderer {
         var maximumX = -1
         var maximumY = -1
 
-        for y in 0 ..< bitmap.pixelsHigh {
-            let row = data.advanced(by: y * bitmap.bytesPerRow)
-            for x in 0 ..< bitmap.pixelsWide
-            where row[x * bytesPerPixel + alphaOffset] > alphaThreshold {
-                minimumX = min(minimumX, x)
-                minimumY = min(minimumY, y)
-                maximumX = max(maximumX, x)
-                maximumY = max(maximumY, y)
+        for rowIndex in 0 ..< bitmap.pixelsHigh {
+            let row = data.advanced(by: rowIndex * bitmap.bytesPerRow)
+            for columnIndex in 0 ..< bitmap.pixelsWide
+            where row[columnIndex * bytesPerPixel + alphaOffset] > alphaThreshold {
+                minimumX = min(minimumX, columnIndex)
+                minimumY = min(minimumY, rowIndex)
+                maximumX = max(maximumX, columnIndex)
+                maximumY = max(maximumY, rowIndex)
             }
         }
         guard maximumX >= minimumX, maximumY >= minimumY else { return nil }

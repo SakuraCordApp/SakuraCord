@@ -28,17 +28,17 @@ public actor MockChatProvider: ChatProvider {
     public struct ChannelNotificationRequest: Equatable, Sendable {
         public var guildID: GuildID?
         public var channelID: ChannelID
-        public var level: MessageNotificationLevel? = nil
-        public var isMuted: Bool? = nil
-        public var muteEndTime: Date? = nil
+        public var level: MessageNotificationLevel?
+        public var isMuted: Bool?
+        public var muteEndTime: Date?
     }
 
     public private(set) var channelNotificationRequests: [ChannelNotificationRequest] = []
     public struct ThreadNotificationRequest: Equatable, Sendable {
         public var threadID: ChannelID
-        public var level: MessageNotificationLevel? = nil
-        public var isMuted: Bool? = nil
-        public var muteEndTime: Date? = nil
+        public var level: MessageNotificationLevel?
+        public var isMuted: Bool?
+        public var muteEndTime: Date?
     }
 
     public private(set) var threadNotificationRequests: [ThreadNotificationRequest] = []
@@ -920,7 +920,10 @@ public actor MockChatProvider: ChatProvider {
         }
     }
 
-    public func applicationCommandCatalog(for target: ApplicationCommandIndexTarget) async throws
+}
+
+public extension MockChatProvider {
+    func applicationCommandCatalog(for target: ApplicationCommandIndexTarget) async throws
         -> ApplicationCommandCatalog
     {
         MockApplicationCommands.catalog(
@@ -933,7 +936,7 @@ public actor MockChatProvider: ChatProvider {
         )
     }
 
-    public func requestApplicationCommandAutocomplete(
+    func requestApplicationCommandAutocomplete(
         _ request: ApplicationCommandAutocompleteRequest
     ) async throws {
         _ = try ApplicationCommandPayloadBuilder.autocomplete(request)
@@ -948,7 +951,7 @@ public actor MockChatProvider: ChatProvider {
         )
     }
 
-    public func executeApplicationCommand(
+    func executeApplicationCommand(
         _ invocation: ApplicationCommandInvocation,
         progress: @escaping @Sendable (ApplicationCommandProgress) -> Void
     ) async throws {
@@ -995,7 +998,31 @@ public actor MockChatProvider: ChatProvider {
                     id: UserID(rawValue: 900_000_000_000_000_101), username: "verified",
                     displayName: application.name, isBot: true
                 )
-        var message = Message(
+        let message = commandResponseMessage(
+            for: invocation,
+            responseMode: responseMode,
+            application: application,
+            author: author
+        )
+        messagesByChannel[invocation.channelID, default: []].append(message)
+        continuation?.yield(.messageCreated(message))
+        continuation?.yield(.interaction(.succeeded(nonce: invocation.nonce)))
+        try await completeCommandResponse(
+            message,
+            invocation: invocation,
+            responseMode: responseMode,
+            application: application,
+            author: author
+        )
+    }
+
+    private func commandResponseMessage(
+        for invocation: ApplicationCommandInvocation,
+        responseMode: String?,
+        application: ApplicationCommandApplication,
+        author: User
+    ) -> Message {
+        Message(
             id: MessageID(rawValue: nextMessageID),
             channelID: invocation.channelID,
             author: author,
@@ -1035,9 +1062,16 @@ public actor MockChatProvider: ChatProvider {
             ],
             mentionedUsers: [currentUser]
         )
-        messagesByChannel[invocation.channelID, default: []].append(message)
-        continuation?.yield(.messageCreated(message))
-        continuation?.yield(.interaction(.succeeded(nonce: invocation.nonce)))
+    }
+
+    private func completeCommandResponse(
+        _ initialMessage: Message,
+        invocation: ApplicationCommandInvocation,
+        responseMode: String?,
+        application: ApplicationCommandApplication,
+        author: User
+    ) async throws {
+        var message = initialMessage
         if responseMode == "deferred" {
             try await Task.sleep(for: .milliseconds(120))
             message.content = "The deferred offline response completed successfully."
@@ -1065,7 +1099,7 @@ public actor MockChatProvider: ChatProvider {
         }
     }
 
-    public func submitComponentInteraction(_ submission: ComponentInteractionSubmission)
+    func submitComponentInteraction(_ submission: ComponentInteractionSubmission)
         async throws
     {
         if submission.customID == "offline-modal" {
@@ -1093,19 +1127,19 @@ public actor MockChatProvider: ChatProvider {
         }
     }
 
-    public func submitModal(_ submission: ModalSubmission, nonce: String) async throws {
+    func submitModal(_ submission: ModalSubmission, nonce: String) async throws {
         continuation?.yield(.interaction(.succeeded(nonce: nonce)))
     }
 
-    public func trendingGIFs() async throws -> [GIFSearchResult] {
+    func trendingGIFs() async throws -> [GIFSearchResult] {
         try Self.demoGIFs(query: "Trending")
     }
 
-    public func searchGIFs(query: String) async throws -> [GIFSearchResult] {
+    func searchGIFs(query: String) async throws -> [GIFSearchResult] {
         try Self.demoGIFs(query: query.isEmpty ? "GIF" : query)
     }
 
-    public func stickers(in guildID: GuildID) async throws -> [MessageSticker] {
+    func stickers(in guildID: GuildID) async throws -> [MessageSticker] {
         try [
             MessageSticker(
                 id: "demo-wave", name: "Wave", description: "Offline demo sticker",
@@ -1169,7 +1203,7 @@ public actor MockChatProvider: ChatProvider {
         )
     }
 
-    public func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws
+    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws
         -> Message
     {
         guard var messages = messagesByChannel[channelID],
@@ -1185,7 +1219,7 @@ public actor MockChatProvider: ChatProvider {
         return message
     }
 
-    public func delete(messageID: MessageID, channelID: ChannelID) async throws {
+    func delete(messageID: MessageID, channelID: ChannelID) async throws {
         guard var messages = messagesByChannel[channelID],
               let index = messages.firstIndex(where: { $0.id == messageID })
         else {
@@ -1196,7 +1230,7 @@ public actor MockChatProvider: ChatProvider {
         continuation?.yield(.messageDeleted(channelID: channelID, messageID: messageID))
     }
 
-    public func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID)
+    func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID)
         async throws
     {
         guard let message = messagesByChannel[channelID]?.first(where: { $0.id == messageID }) else {
@@ -1213,7 +1247,7 @@ public actor MockChatProvider: ChatProvider {
         )
     }
 
-    public func setReaction(
+    func setReaction(
         _ emoji: String,
         reacted: Bool,
         messageID: MessageID,
@@ -1262,7 +1296,7 @@ public actor MockChatProvider: ChatProvider {
         continuation?.yield(.messageUpdated(message))
     }
 
-    public func reactionReactors(
+    func reactionReactors(
         for emoji: String,
         messageID: MessageID,
         channelID: ChannelID,
@@ -1282,7 +1316,7 @@ public actor MockChatProvider: ChatProvider {
         return Array(reaction.reactors.prefix(5))
     }
 
-    public func joinVoice(
+    func joinVoice(
         channelID: ChannelID,
         guildID: GuildID?,
         selfMute: Bool,
@@ -1332,7 +1366,7 @@ public actor MockChatProvider: ChatProvider {
         )
     }
 
-    public func updateVoiceState(
+    func updateVoiceState(
         channelID: ChannelID?,
         guildID: GuildID?,
         selfMute: Bool,
@@ -1380,19 +1414,19 @@ public actor MockChatProvider: ChatProvider {
         }
     }
 
-    public func subscribeToPrivateCall(channelID: ChannelID) async throws {
+    func subscribeToPrivateCall(channelID: ChannelID) async throws {
         if let call = privateCallsByChannel[channelID] {
             continuation?.yield(.privateCallChanged(call))
         }
     }
 
-    public func privateCallIsRingable(channelID: ChannelID) async throws -> Bool {
+    func privateCallIsRingable(channelID: ChannelID) async throws -> Bool {
         snapshot.channels.contains {
             $0.id == channelID && $0.kind == .directMessage
         }
     }
 
-    public func ringPrivateCall(channelID: ChannelID, recipients: [UserID]?) async throws {
+    func ringPrivateCall(channelID: ChannelID, recipients: [UserID]?) async throws {
         guard let channel = snapshot.channels.first(where: { $0.id == channelID }),
               channel.kind == .directMessage || channel.kind == .groupDirectMessage
         else {
@@ -1414,7 +1448,7 @@ public actor MockChatProvider: ChatProvider {
         continuation?.yield(.privateCallChanged(call))
     }
 
-    public func stopRingingPrivateCall(channelID: ChannelID, recipients: [UserID]) async throws {
+    func stopRingingPrivateCall(channelID: ChannelID, recipients: [UserID]) async throws {
         guard var call = privateCallsByChannel[channelID] else { return }
         let targetIDs = Set(recipients)
         call.ongoingRings.removeAll { targetIDs.contains($0.recipientID) }
@@ -1422,7 +1456,7 @@ public actor MockChatProvider: ChatProvider {
         continuation?.yield(.privateCallChanged(call))
     }
 
-    public func eventStream() async -> AsyncStream<ClientEvent> {
+    func eventStream() async -> AsyncStream<ClientEvent> {
         let stream = AsyncStream<ClientEvent>.makeStream(bufferingPolicy: .bufferingNewest(500))
         continuation = stream.continuation
         for call in privateCallsByChannel.values {
@@ -1431,7 +1465,7 @@ public actor MockChatProvider: ChatProvider {
         return stream.stream
     }
 
-    public func disconnect() async {
+    func disconnect() async {
         continuation?.yield(.connectionChanged(.disconnected))
         continuation?.finish()
         continuation = nil

@@ -227,12 +227,14 @@ triggered an account restriction.
   claims, run `./script/build_and_run.sh package` and strict deep `codesign`
   verification. A successful compile is not shipped-app or visual proof.
 - Every agent must run `./script/install_git_hooks.sh` once in each fresh clone
-  before its first push and verify `git config --local --get core.hooksPath`
-  reports `.githooks`. The installer refuses to replace a different existing
-  hooks path; stop and report that conflict instead of bypassing it.
+  before its first commit or push and verify
+  `git config --local --get core.hooksPath` reports `.githooks`. The installer
+  refuses to replace a different existing hooks path; stop and report that
+  conflict instead of bypassing it.
 - Run `./script/code_quality.sh check` before reporting a change ready to push.
-  The versioned pre-push hook checks the committed ref tips and staged Swift
-  snapshot with that same pinned command; do not bypass it.
+  The versioned pre-commit hook checks the staged index, and pre-push checks the
+  committed ref tips and any staged Swift snapshot with that same pinned
+  command; do not bypass either hook.
 
 An authenticated test is an exception for a defect that genuinely depends on
 authenticated or server-issued state and cannot be reproduced faithfully in

@@ -122,6 +122,32 @@ nonisolated enum SystemMessagePresentation {
         currentUserID: UserID? = nil
     ) -> [TextRun] {
         let author = message.author.displayName
+        return switch message.type {
+        case .recipientAdd, .recipientRemove, .channelNameChange, .channelIconChange,
+             .channelPinnedMessage, .userJoin:
+            conversationTextRuns(for: message, author: author)
+        case .call:
+            callTextRuns(for: message, author: author, currentUserID: currentUserID)
+        case .guildBoost, .guildBoostTier1, .guildBoostTier2, .guildBoostTier3:
+            boostTextRuns(for: message, author: author)
+        case .channelFollowAdd, .threadCreated, .guildInviteReminder, .stageStart,
+             .stageEnd, .stageSpeaker, .stageTopic:
+            eventTextRuns(for: message, author: author)
+        default:
+            [
+                .secondary(
+                    message.content.isEmpty
+                        ? "Discord system message"
+                        : message.content
+                )
+            ]
+        }
+    }
+
+    private static func conversationTextRuns(
+        for message: Message,
+        author: String
+    ) -> [TextRun] {
         switch message.type {
         case .recipientAdd:
             let recipient = message.mentionedUsers.first?.displayName ?? "someone"
@@ -138,28 +164,6 @@ nonisolated enum SystemMessagePresentation {
                 .secondary(" removed "),
                 .emphasized(recipient),
                 .secondary(" from the group."),
-            ]
-        case .call:
-            guard let endedAt = message.call?.endedAt else {
-                return [
-                    .emphasized(author),
-                    .secondary(" started a call."),
-                ]
-            }
-            let duration = callDuration(
-                from: message.timestamp,
-                to: endedAt
-            )
-            if isMissedCall(message, currentUserID: currentUserID) {
-                return [
-                    .secondary("You missed a call from "),
-                    .emphasized(author),
-                    .secondary(" that lasted \(duration)."),
-                ]
-            }
-            return [
-                .emphasized(author),
-                .secondary(" started a call that lasted \(duration)."),
             ]
         case .channelNameChange:
             if message.content.isEmpty {
@@ -190,6 +194,41 @@ nonisolated enum SystemMessagePresentation {
                 .emphasized(author),
                 .secondary("!"),
             ]
+        default:
+            return []
+        }
+    }
+
+    private static func callTextRuns(
+        for message: Message,
+        author: String,
+        currentUserID: UserID?
+    ) -> [TextRun] {
+        guard let endedAt = message.call?.endedAt else {
+            return [
+                .emphasized(author),
+                .secondary(" started a call."),
+            ]
+        }
+        let duration = callDuration(from: message.timestamp, to: endedAt)
+        if isMissedCall(message, currentUserID: currentUserID) {
+            return [
+                .secondary("You missed a call from "),
+                .emphasized(author),
+                .secondary(" that lasted \(duration)."),
+            ]
+        }
+        return [
+            .emphasized(author),
+            .secondary(" started a call that lasted \(duration)."),
+        ]
+    }
+
+    private static func boostTextRuns(
+        for message: Message,
+        author: String
+    ) -> [TextRun] {
+        switch message.type {
         case .guildBoost:
             return [.emphasized(author), .secondary(" boosted the server!")]
         case .guildBoostTier1:
@@ -213,6 +252,16 @@ nonisolated enum SystemMessagePresentation {
                 .emphasized("Level 3"),
                 .secondary("!"),
             ]
+        default:
+            return []
+        }
+    }
+
+    private static func eventTextRuns(
+        for message: Message,
+        author: String
+    ) -> [TextRun] {
+        switch message.type {
         case .channelFollowAdd:
             return [
                 .emphasized(author),
@@ -245,13 +294,7 @@ nonisolated enum SystemMessagePresentation {
                 .emphasized(message.content),
             ]
         default:
-            return [
-                .secondary(
-                    message.content.isEmpty
-                        ? "Discord system message"
-                        : message.content
-                )
-            ]
+            return []
         }
     }
 
@@ -487,17 +530,22 @@ nonisolated enum MediaGalleryPlan {
             ]
         }
         var result: [CGRect] = []
-        var y: CGFloat = 0
+        var verticalOffset: CGFloat = 0
         for (rowIndex, columns) in rowCounts(for: count).enumerated() {
             let tileWidth = (width - spacing * CGFloat(columns - 1)) / CGFloat(columns)
             let hero = columns == 1 && (count == 7 || count == 10) && rowIndex == 0
             let height = hero ? min(240, max(150, width * 0.44)) : min(175, max(92, tileWidth * 0.72))
             for column in 0 ..< columns {
                 result.append(
-                    CGRect(x: CGFloat(column) * (tileWidth + spacing), y: y, width: tileWidth, height: height)
+                    CGRect(
+                        x: CGFloat(column) * (tileWidth + spacing),
+                        y: verticalOffset,
+                        width: tileWidth,
+                        height: height
+                    )
                 )
             }
-            y += height + spacing
+            verticalOffset += height + spacing
         }
         return result
     }

@@ -7,9 +7,9 @@ private let daveProtocolLogger = Logger(subsystem: "dev.sakuracord.SakuraCord", 
 public actor DaveSessionManager {
     // MARK: - Constants
 
-    private static let INIT_TRANSITION_ID: UInt16 = 0
-    private static let DISABLED_PROTOCOL_VERSION = 0
-    private static let MLS_NEW_GROUP_EXPECTED_EPOCH = "1"
+    private static let initialTransitionID: UInt16 = 0
+    private static let disabledProtocolVersion = 0
+    private static let mlsNewGroupExpectedEpoch = "1"
 
     /// Static property initializer to set up logging only once, even across multiple instances
     private static let setupLogging: Void = {
@@ -103,18 +103,18 @@ public actor DaveSessionManager {
     /// Opcode SELECT_PROTOCOL_ACK (1)
     public func selectProtocol(protocolVersion: UInt16) async {
         daveProtocolLogger.info("DAVE protocol selected; version=\(protocolVersion)")
-        if protocolVersion > Self.DISABLED_PROTOCOL_VERSION {
+        if protocolVersion > Self.disabledProtocolVersion {
             await prepareEpoch(
-                transitionId: Self.INIT_TRANSITION_ID,
-                epoch: Self.MLS_NEW_GROUP_EXPECTED_EPOCH,
+                transitionId: Self.initialTransitionID,
+                epoch: Self.mlsNewGroupExpectedEpoch,
                 protocolVersion: protocolVersion
             )
         } else {
             await prepareTransition(
-                transitionId: Self.INIT_TRANSITION_ID,
+                transitionId: Self.initialTransitionID,
                 protocolVersion: protocolVersion
             )
-            executeTransition(transitionId: Self.INIT_TRANSITION_ID)
+            executeTransition(transitionId: Self.initialTransitionID)
         }
     }
 
@@ -127,7 +127,7 @@ public actor DaveSessionManager {
             setupKeyRatchetForUser(userId: userId, protocolVersion: protocolVersion)
         }
 
-        if transitionId == Self.INIT_TRANSITION_ID {
+        if transitionId == Self.initialTransitionID {
             setupKeyRatchetForEncryptor(protocolVersion: protocolVersion)
         } else {
             preparedTransitions[transitionId] = protocolVersion
@@ -135,7 +135,7 @@ public actor DaveSessionManager {
 
         lastPreparedTransitionVersion = protocolVersion
 
-        if transitionId != Self.INIT_TRANSITION_ID {
+        if transitionId != Self.initialTransitionID {
             await delegate?.readyForTransition(transitionId: transitionId)
         }
     }
@@ -147,7 +147,7 @@ public actor DaveSessionManager {
             return
         }
 
-        if protocolVersion == Self.DISABLED_PROTOCOL_VERSION {
+        if protocolVersion == Self.disabledProtocolVersion {
             session.reset()
         }
 
@@ -166,7 +166,7 @@ public actor DaveSessionManager {
             "DAVE epoch preparation; id=\(transitionId), epoch=\(epoch, privacy: .public), version=\(protocolVersion)"
         )
 
-        if epoch == Self.MLS_NEW_GROUP_EXPECTED_EPOCH {
+        if epoch == Self.mlsNewGroupExpectedEpoch {
             session.initialize(version: protocolVersion, groupId: groupId, selfUserId: selfUserId)
             let keyPackage = session.getKeyPackage()
             daveProtocolLogger.info("DAVE key package generated; bytes=\(keyPackage.count)")
@@ -239,7 +239,7 @@ public actor DaveSessionManager {
     }
 
     private func setupKeyRatchetForEncryptor(protocolVersion: UInt16) {
-        if protocolVersion == Self.DISABLED_PROTOCOL_VERSION {
+        if protocolVersion == Self.disabledProtocolVersion {
             encryptor.setPassthroughMode(enabled: true)
             return
         }
@@ -253,7 +253,7 @@ public actor DaveSessionManager {
             return
         }
 
-        if protocolVersion == Self.DISABLED_PROTOCOL_VERSION {
+        if protocolVersion == Self.disabledProtocolVersion {
             decryptor.transitionToPassthroughMode(enabled: true)
             return
         }

@@ -261,9 +261,7 @@ private struct AdaptiveVoiceGrid: View {
             let verticalOrigin = (geometry.size.height - layout.gridSize.height) / 2
 
             ZStack(alignment: .topLeading) {
-                ForEach(Array(participants.enumerated()), id: \.element.id) {
-                    index,
-                    participant in
+                ForEach(Array(participants.enumerated()), id: \.element.id) { index, participant in
                     let row = index / layout.columns
                     let column = index % layout.columns
                     let itemsInRow = min(

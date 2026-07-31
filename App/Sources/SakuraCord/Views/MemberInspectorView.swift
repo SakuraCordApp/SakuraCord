@@ -95,13 +95,13 @@ struct MemberInspectorView: View {
 }
 
 struct MemberSection: Identifiable, Equatable {
-    enum ID: Hashable {
+    enum SectionIdentifier: Hashable {
         case role(name: String, position: Int)
         case online
         case offline
     }
 
-    let id: ID
+    let id: SectionIdentifier
     let title: String
     let colorHex: UInt32?
     let totalCount: Int
@@ -115,7 +115,7 @@ struct MemberSection: Identifiable, Equatable {
         if !groups.isEmpty {
             return makeServerOrderedSections(members: members, groups: groups, roles: roles)
         }
-        var roleMembers: [ID: [Member]] = [:]
+        var roleMembers: [SectionIdentifier: [Member]] = [:]
         var ungroupedOnline: [Member] = []
         var offlineMembers: [Member] = []
         ungroupedOnline.reserveCapacity(members.count)
@@ -127,7 +127,7 @@ struct MemberSection: Identifiable, Equatable {
                 continue
             }
             if member.isRoleCategory == true {
-                let id = ID.role(
+                let id = SectionIdentifier.role(
                     name: member.roleName,
                     position: member.rolePosition ?? 0
                 )
@@ -163,7 +163,7 @@ struct MemberSection: Identifiable, Equatable {
         return sections
     }
 
-    private static func makeRoleSections(_ roleMembers: [ID: [Member]]) -> [MemberSection] {
+    private static func makeRoleSections(_ roleMembers: [SectionIdentifier: [Member]]) -> [MemberSection] {
         return roleMembers.map { id, members in
             let name = switch id {
             case let .role(name, _): name

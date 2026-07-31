@@ -49,14 +49,14 @@ import Testing
     #expect(embed.autoplaysInline)
     #expect(!attachment.autoplaysInline)
     #expect(
-        !NativeTimelineInlineVideoPresentationPolicy
+        !TimelineInlineVideoPolicy
             .canvasOwnsLoadingSurface(
                 mediaIsVideo: true,
                 autoplaysInline: true
             )
     )
     #expect(
-        NativeTimelineInlineVideoPresentationPolicy
+        TimelineInlineVideoPolicy
             .canvasOwnsLoadingSurface(
                 mediaIsVideo: true,
                 autoplaysInline: false

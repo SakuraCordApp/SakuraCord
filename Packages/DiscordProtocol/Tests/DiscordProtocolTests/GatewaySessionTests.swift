@@ -370,7 +370,7 @@ private func makeGatewaySession(
     maximumReconnectAttempts: Int = 8,
     backoffCap: Duration = .seconds(60)
 ) -> GatewaySession {
-    let identify = try! JSONGatewayCodec().encode(GatewayEnvelope(op: 2, data: .object([
+    let identify = encodedGatewayData(GatewayEnvelope(op: 2, data: .object([
         "token": .string("test-token")
     ])))
     return GatewaySession(
@@ -394,7 +394,22 @@ private func envelope(
     eventName: String? = nil
 ) -> GatewaySocketMessage {
     let value = GatewayEnvelope(op: op, data: data, sequence: sequence, eventName: eventName)
-    return .text(String(decoding: try! JSONGatewayCodec().encode(value), as: UTF8.self))
+    return .text(encodedGatewayText(value))
+}
+
+private func encodedGatewayData(_ envelope: GatewayEnvelope) -> Data {
+    do {
+        return try JSONGatewayCodec().encode(envelope)
+    } catch {
+        preconditionFailure("Invalid test Gateway envelope: \(error)")
+    }
+}
+
+private func encodedGatewayText(_ envelope: GatewayEnvelope) -> String {
+    guard let text = String(data: encodedGatewayData(envelope), encoding: .utf8) else {
+        preconditionFailure("Gateway JSON encoder returned non-UTF-8 data")
+    }
+    return text
 }
 
 private func sentEnvelope(_ socket: FakeGatewaySocket, at index: Int) async throws -> GatewayEnvelope {

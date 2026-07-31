@@ -365,6 +365,13 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
         private var shouldPresent = false
         private var closesProgrammatically = false
         private var generation: UInt64 = 0
+        private var geometryObserverTokens: [NSObjectProtocol] = []
+
+        isolated deinit {
+            for token in geometryObserverTokens {
+                NotificationCenter.default.removeObserver(token)
+            }
+        }
 
         func update(
             anchor: StablePopoverAnchor,
@@ -516,7 +523,7 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
         }
 
         private func installGeometryTracking() {
-            NotificationCenter.default.removeObserver(self)
+            removeGeometryObservers()
             guard let sourceView = anchor?.sourceView else { return }
             if let sourceView = sourceView as? StablePopoverSourceView {
                 sourceView.geometryDidChange = { [weak self, weak sourceView] in
@@ -534,39 +541,35 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
             while let view = observedView {
                 view.postsFrameChangedNotifications = true
                 view.postsBoundsChangedNotifications = true
-                NotificationCenter.default.addObserver(
-                    self,
-                    selector: #selector(geometryNotification(_:)),
-                    name: NSView.frameDidChangeNotification,
-                    object: view
-                )
-                NotificationCenter.default.addObserver(
-                    self,
-                    selector: #selector(geometryNotification(_:)),
-                    name: NSView.boundsDidChangeNotification,
-                    object: view
-                )
+                observeGeometry(name: NSView.frameDidChangeNotification, object: view)
+                observeGeometry(name: NSView.boundsDidChangeNotification, object: view)
                 if view === sourceView.window?.contentView { break }
                 observedView = view.superview
             }
             if let window = sourceView.window {
-                NotificationCenter.default.addObserver(
-                    self,
-                    selector: #selector(geometryNotification(_:)),
-                    name: NSWindow.didResizeNotification,
-                    object: window
-                )
-                NotificationCenter.default.addObserver(
-                    self,
-                    selector: #selector(geometryNotification(_:)),
-                    name: NSWindow.didMoveNotification,
-                    object: window
-                )
+                observeGeometry(name: NSWindow.didResizeNotification, object: window)
+                observeGeometry(name: NSWindow.didMoveNotification, object: window)
             }
         }
 
-        @objc private func geometryNotification(_ notification: Notification) {
-            scheduleRefresh()
+        private func observeGeometry(name: Notification.Name, object: AnyObject) {
+            let token = NotificationCenter.default.addObserver(
+                forName: name,
+                object: object,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.scheduleRefresh()
+                }
+            }
+            geometryObserverTokens.append(token)
+        }
+
+        private func removeGeometryObservers() {
+            for token in geometryObserverTokens {
+                NotificationCenter.default.removeObserver(token)
+            }
+            geometryObserverTokens.removeAll()
         }
 
         private func scheduleRefresh() {
@@ -609,7 +612,7 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
             hostingController = nil
             anchorSnapshot = nil
             anchorTracker.detach()
-            NotificationCenter.default.removeObserver(self)
+            removeGeometryObservers()
             if let sourceView = anchor?.sourceView as? StablePopoverSourceView {
                 sourceView.geometryDidChange = nil
                 sourceView.hierarchyDidChange = nil

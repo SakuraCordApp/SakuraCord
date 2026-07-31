@@ -38,38 +38,39 @@ enum ConnectionBrand {
         "youtube": .init(light: "0fa530ba9c04ac32", dark: "0fa530ba9c04ac32")
     ]
 
+    private static let displayNames: [String: String] = [
+        "amazon-music": "Amazon Music",
+        "battlenet": "Battle.net",
+        "bluesky": "Bluesky",
+        "bungie": "Bungie.net",
+        "crunchyroll": "Crunchyroll",
+        "domain": "Domain",
+        "ebay": "eBay",
+        "epicgames": "Epic Games",
+        "facebook": "Facebook",
+        "github": "GitHub",
+        "instagram": "Instagram",
+        "leagueoflegends": "League of Legends",
+        "mastodon": "Mastodon",
+        "paypal": "PayPal",
+        "playstation": "PlayStation Network",
+        "reddit": "Reddit",
+        "roblox": "Roblox",
+        "riotgames": "Riot Games",
+        "soundcloud": "SoundCloud",
+        "spotify": "Spotify",
+        "steam": "Steam",
+        "tiktok": "TikTok",
+        "twitch": "Twitch",
+        "twitter": "X",
+        "xbox": "Xbox",
+        "youtube": "YouTube"
+    ]
+
     private static var imageCache: [String: NSImage] = [:]
 
     static func displayName(for type: String) -> String {
-        switch normalized(type) {
-        case "amazon-music": "Amazon Music"
-        case "battlenet": "Battle.net"
-        case "bluesky": "Bluesky"
-        case "bungie": "Bungie.net"
-        case "crunchyroll": "Crunchyroll"
-        case "domain": "Domain"
-        case "ebay": "eBay"
-        case "epicgames": "Epic Games"
-        case "facebook": "Facebook"
-        case "github": "GitHub"
-        case "instagram": "Instagram"
-        case "leagueoflegends": "League of Legends"
-        case "mastodon": "Mastodon"
-        case "paypal": "PayPal"
-        case "playstation": "PlayStation Network"
-        case "reddit": "Reddit"
-        case "roblox": "Roblox"
-        case "riotgames": "Riot Games"
-        case "soundcloud": "SoundCloud"
-        case "spotify": "Spotify"
-        case "steam": "Steam"
-        case "tiktok": "TikTok"
-        case "twitch": "Twitch"
-        case "twitter": "X"
-        case "xbox": "Xbox"
-        case "youtube": "YouTube"
-        default: type.localizedCapitalized
-        }
+        displayNames[normalized(type)] ?? type.localizedCapitalized
     }
 
     static func image(for type: String, colorScheme: ColorScheme) -> NSImage? {

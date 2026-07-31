@@ -323,11 +323,11 @@ struct ComposerView: View {
             )
         } else if hasActiveCommand {
             let suggestions = commandSuggestions
-            if (model.commandComposer.focusedOption == nil || isFocused),
+            if model.commandComposer.focusedOption == nil || isFocused,
                !isCommandSuggestionsDismissed,
-               (!suggestions.isEmpty
+               !suggestions.isEmpty
                    || model.commandComposer.isAutocompleteLoading
-                   || model.commandComposer.autocompleteError != nil)
+                   || model.commandComposer.autocompleteError != nil
             {
                 ApplicationCommandSuggestionPanel(
                     heading: commandSuggestionHeading,
@@ -348,8 +348,9 @@ struct ComposerView: View {
                         : "TEXT CHANNELS",
                     suggestions: suggestions,
                     selectedIndex: autocompleteIndex,
-                    highlight: { autocompleteIndex = $0 }
-                ) { acceptMentionAutocomplete($0, context: context) }
+                    highlight: { autocompleteIndex = $0 },
+                    select: { acceptMentionAutocomplete($0, context: context) }
+                )
             }
         } else if let context = autocompleteContext {
             let suggestions = emojiSuggestions(query: context.query)
@@ -357,8 +358,9 @@ struct ComposerView: View {
                 EmojiAutocompleteList(
                     suggestions: suggestions,
                     selectedIndex: autocompleteIndex,
-                    highlight: { autocompleteIndex = $0 }
-                ) { acceptAutocomplete($0, context: context) }
+                    highlight: { autocompleteIndex = $0 },
+                    select: { acceptAutocomplete($0, context: context) }
+                )
             }
         }
     }
@@ -515,8 +517,7 @@ struct ComposerView: View {
 
     private var composerMentionPresentations: [String: MentionPresentation] {
         let resolver = MessageMentionResolver(model: model)
-        return MessageDocumentCache.shared.document(for: draft).segments.reduce(into: [:]) {
-            values, segment in
+        return MessageDocumentCache.shared.document(for: draft).segments.reduce(into: [:]) { values, segment in
             if case let .mention(mention) = segment {
                 values[mention.rawToken] = resolver.presentation(mention)
             }
@@ -730,85 +731,105 @@ struct ComposerView: View {
 
     private func handleAutocomplete(_ command: ComposerAutocompleteCommand) -> Bool {
         if hasActiveCommand {
-            switch command {
-            case .previous:
-                guard !visibleCommandSuggestions.isEmpty else { return false }
-                commandSuggestionIndex = (
-                    commandSuggestionIndex - 1 + visibleCommandSuggestions.count
-                ) % visibleCommandSuggestions.count
-            case .next:
-                guard !visibleCommandSuggestions.isEmpty else { return false }
-                commandSuggestionIndex =
-                    (commandSuggestionIndex + 1) % visibleCommandSuggestions.count
-            case .accept:
-                if visibleCommandSuggestions.indices.contains(commandSuggestionIndex) {
-                    acceptCommandSuggestion(visibleCommandSuggestions[commandSuggestionIndex])
-                } else {
-                    submitComposer()
-                }
-            case .dismiss:
-                if !visibleCommandSuggestions.isEmpty
-                    || model.commandComposer.isAutocompleteLoading
-                    || model.commandComposer.autocompleteError != nil
-                {
-                    isCommandSuggestionsDismissed = true
-                } else {
-                    cancelCommand()
-                }
-            case .previousField:
-                model.commandComposer.moveOptionFocus(by: -1)
-            case .nextField:
-                focusNextCommandField()
-            case .advance:
-                if visibleCommandSuggestions.indices.contains(commandSuggestionIndex) {
-                    acceptCommandSuggestion(visibleCommandSuggestions[commandSuggestionIndex])
-                } else if model.commandComposer.focusedOption == nil {
-                    return true
-                } else {
-                    focusNextCommandField()
-                }
-            case .removeField:
-                guard let option = model.commandComposer.focusedOption,
-                      !option.isRequired
-                else { return false }
-                model.commandComposer.removeOptionalOption(option)
-            }
-            return true
+            return handleActiveCommandAutocomplete(command)
         }
         if conversation == .channel, model.commandComposer.isPickerPresented {
-            switch command {
-            case .previous: model.commandComposer.movePickerSelection(by: -1)
-            case .next: model.commandComposer.movePickerSelection(by: 1)
-            case .accept, .advance:
-                guard let id = model.commandComposer.selectedCommandID,
-                      let selected = model.commandComposer.commands.first(where: { $0.id == id })
-                else { return true }
-                activateCommand(selected)
-            case .dismiss: model.commandComposer.dismissPicker()
-            case .previousField, .nextField, .removeField: return true
-            }
-            return true
+            return handleCommandPickerAutocomplete(command)
         }
         if let context = mentionAutocompleteContext, !mentionAutocompleteSuggestions.isEmpty {
-            switch command {
-            case .previous:
-                autocompleteIndex = (autocompleteIndex - 1 + mentionAutocompleteSuggestions.count)
-                    % mentionAutocompleteSuggestions.count
-            case .next:
-                autocompleteIndex = (autocompleteIndex + 1) % mentionAutocompleteSuggestions.count
-            case .accept, .advance:
-                acceptMentionAutocomplete(
-                    mentionAutocompleteSuggestions[min(autocompleteIndex, mentionAutocompleteSuggestions.count - 1)],
-                    context: context
-                )
-            case .dismiss:
-                isAutocompleteDismissed = true
-            case .previousField, .nextField, .removeField:
-                return false
-            }
-            return true
+            return handleMentionAutocomplete(command, context: context)
         }
         guard let context = autocompleteContext, !autocompleteSuggestions.isEmpty else { return false }
+        return handleColonAutocomplete(command, context: context)
+    }
+
+    private func handleActiveCommandAutocomplete(_ command: ComposerAutocompleteCommand) -> Bool {
+        switch command {
+        case .previous:
+            guard !visibleCommandSuggestions.isEmpty else { return false }
+            commandSuggestionIndex = (
+                commandSuggestionIndex - 1 + visibleCommandSuggestions.count
+            ) % visibleCommandSuggestions.count
+        case .next:
+            guard !visibleCommandSuggestions.isEmpty else { return false }
+            commandSuggestionIndex =
+                (commandSuggestionIndex + 1) % visibleCommandSuggestions.count
+        case .accept:
+            if visibleCommandSuggestions.indices.contains(commandSuggestionIndex) {
+                acceptCommandSuggestion(visibleCommandSuggestions[commandSuggestionIndex])
+            } else {
+                submitComposer()
+            }
+        case .dismiss:
+            if !visibleCommandSuggestions.isEmpty
+                || model.commandComposer.isAutocompleteLoading
+                || model.commandComposer.autocompleteError != nil
+            {
+                isCommandSuggestionsDismissed = true
+            } else {
+                cancelCommand()
+            }
+        case .previousField:
+            model.commandComposer.moveOptionFocus(by: -1)
+        case .nextField:
+            focusNextCommandField()
+        case .advance:
+            if visibleCommandSuggestions.indices.contains(commandSuggestionIndex) {
+                acceptCommandSuggestion(visibleCommandSuggestions[commandSuggestionIndex])
+            } else if model.commandComposer.focusedOption != nil {
+                focusNextCommandField()
+            }
+        case .removeField:
+            guard let option = model.commandComposer.focusedOption,
+                  !option.isRequired
+            else { return false }
+            model.commandComposer.removeOptionalOption(option)
+        }
+        return true
+    }
+
+    private func handleCommandPickerAutocomplete(_ command: ComposerAutocompleteCommand) -> Bool {
+        switch command {
+        case .previous: model.commandComposer.movePickerSelection(by: -1)
+        case .next: model.commandComposer.movePickerSelection(by: 1)
+        case .accept, .advance:
+            guard let id = model.commandComposer.selectedCommandID,
+                  let selected = model.commandComposer.commands.first(where: { $0.id == id })
+            else { return true }
+            activateCommand(selected)
+        case .dismiss: model.commandComposer.dismissPicker()
+        case .previousField, .nextField, .removeField: return true
+        }
+        return true
+    }
+
+    private func handleMentionAutocomplete(
+        _ command: ComposerAutocompleteCommand,
+        context: MentionAutocompleteContext
+    ) -> Bool {
+        switch command {
+        case .previous:
+            autocompleteIndex = (autocompleteIndex - 1 + mentionAutocompleteSuggestions.count)
+                % mentionAutocompleteSuggestions.count
+        case .next:
+            autocompleteIndex = (autocompleteIndex + 1) % mentionAutocompleteSuggestions.count
+        case .accept, .advance:
+            acceptMentionAutocomplete(
+                mentionAutocompleteSuggestions[min(autocompleteIndex, mentionAutocompleteSuggestions.count - 1)],
+                context: context
+            )
+        case .dismiss:
+            isAutocompleteDismissed = true
+        case .previousField, .nextField, .removeField:
+            return false
+        }
+        return true
+    }
+
+    private func handleColonAutocomplete(
+        _ command: ComposerAutocompleteCommand,
+        context: ColonAutocompleteContext
+    ) -> Bool {
         switch command {
         case .previous:
             autocompleteIndex =
@@ -1073,8 +1094,8 @@ struct SlashCommandQuery {
 }
 
 struct ColonAutocompleteContext {
-    private static let expression = try! NSRegularExpression(
-        pattern: #"(?:^|\s)(:[A-Za-z0-9_+\-]*)$"#
+    private static let expression = RegularExpressionFactory.make(
+        #"(?:^|\s)(:[A-Za-z0-9_+\-]*)$"#
     )
 
     let query: String
@@ -1097,8 +1118,8 @@ struct ColonAutocompleteContext {
 }
 
 struct MentionAutocompleteContext {
-    private static let expression = try! NSRegularExpression(
-        pattern: #"(?:^|\s)([@#]([^\s@#]*))$"#
+    private static let expression = RegularExpressionFactory.make(
+        #"(?:^|\s)([@#]([^\s@#]*))$"#
     )
 
     enum Kind: Equatable { case member, channel }
@@ -1598,8 +1619,8 @@ enum MentionAutocompleteSuggestionFactory {
 }
 
 struct ClosedColonAutocompleteContext {
-    private static let expression = try! NSRegularExpression(
-        pattern: #"(?:^|\s)(:([A-Za-z0-9_+\-]{2,}):)$"#
+    private static let expression = RegularExpressionFactory.make(
+        #"(?:^|\s)(:([A-Za-z0-9_+\-]{2,}):)$"#
     )
 
     let query: String
@@ -1643,7 +1664,7 @@ struct ColonAutocompleteSuggestion: Identifiable {
 private enum DiscordEmojiAutocompleteRanking {
     static func boundaryExpression(query: String) -> NSRegularExpression {
         let escapedQuery = NSRegularExpression.escapedPattern(for: query.lowercased())
-        return try! NSRegularExpression(pattern: "(^|_|[A-Z])\(escapedQuery)s?([A-Z]|_|$)")
+        return RegularExpressionFactory.make("(^|_|[A-Z])\(escapedQuery)s?([A-Z]|_|$)")
     }
 
     /// Mirrors the public client's base name score. Favorites are composed ahead
@@ -1736,8 +1757,7 @@ enum ColonAutocompleteSuggestionFactory {
             duplicateCounts[normalizedName, default: 0] += 1
         }
         var duplicateOrdinals: [String: Int] = [:]
-        values.append(contentsOf: normalizedCustomEmojis.enumerated().compactMap {
-            index, element in
+        values.append(contentsOf: normalizedCustomEmojis.enumerated().compactMap { index, element in
             let (emoji, normalizedName) = element
             let ordinal = duplicateOrdinals[normalizedName, default: 0]
             duplicateOrdinals[normalizedName] = ordinal + 1
@@ -1967,153 +1987,5 @@ private struct MentionAutocompleteRow: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 28, height: 28)
         }
-    }
-}
-
-private struct EmojiAutocompleteRow: View {
-    let suggestion: ColonAutocompleteSuggestion
-    let isSelected: Bool
-    let select: () -> Void
-    let highlight: () -> Void
-
-    var body: some View {
-        Button(action: select) {
-            HStack(spacing: 9) {
-                if let url = suggestion.imageURL {
-                    AnimatedRemoteImage(url: url)
-                        .frame(width: 28, height: 28)
-                } else {
-                    Text(suggestion.value)
-                        .font(.title3)
-                        .frame(width: 28, height: 28)
-                }
-                Text(suggestion.detail)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Spacer(minLength: 10)
-                if let source = suggestion.source {
-                    Text(source)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-            .padding(.horizontal, 9)
-            .frame(height: 40)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .focusable(false)
-        .background {
-            ConcentricRectangle(
-                cornerRadius: 7,
-                style: .continuous
-            )
-            .fill(isSelected ? Color.primary.opacity(0.13) : .clear)
-        }
-        .clipShape(
-            ConcentricRectangle(
-                cornerRadius: 7,
-                style: .continuous
-            )
-        )
-        .onHover { hovering in
-            guard hovering else { return }
-            highlight()
-        }
-    }
-}
-
-struct UploadProgressView: View {
-    let progress: MessageSendProgress
-    var body: some View {
-        HStack(spacing: 8) {
-            switch progress {
-            case .preparing:
-                ProgressView()
-                Text("Preparing attachments…")
-            case let .reserving(files):
-                ProgressView()
-                Text("Reserving \(files) file\(files == 1 ? "" : "s")…")
-            case let .uploading(fileName, completed, total):
-                ProgressView(value: total > 0 ? Double(completed) / Double(total) : 0).frame(width: 90)
-                Text("Uploading \(fileName)…").lineLimit(1)
-            case .submitting:
-                ProgressView()
-                Text("Sending message…")
-            case .awaitingReconciliation:
-                Image(systemName: "clock")
-                Text("Waiting for confirmation — do not resend")
-            case .completed:
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                Text("Sent")
-            }
-        }
-        .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 6)
-    }
-}
-
-struct ComposerActionButton: View {
-    let systemImage: String
-    let help: String
-    var iconSize: CGFloat = 18
-    var iconWeight: Font.Weight = .medium
-    let action: () -> Void
-
-    @Environment(\.isEnabled) private var isEnabled
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .symbolVariant(.none)
-                .font(.system(size: iconSize, weight: iconWeight))
-                .foregroundStyle(.primary)
-                .frame(width: 36, height: 36)
-                .contentShape(buttonShape)
-        }
-        .buttonStyle(.plain)
-        .background(hoverColor, in: buttonShape)
-        .contentShape(buttonShape)
-        .onHover { isHovering = $0 }
-        .help(help)
-    }
-
-    private var buttonShape: ConcentricRectangle {
-        ConcentricRectangle(cornerRadius: 9, style: .continuous)
-    }
-
-    private var hoverColor: Color {
-        isHovering && isEnabled ? .primary.opacity(0.14) : .clear
-    }
-}
-
-struct ComposerSendButton: View {
-    let action: () -> Void
-
-    @Environment(\.isEnabled) private var isEnabled
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "paperplane.circle.fill")
-                .font(.system(size: 21, weight: .medium))
-                .foregroundStyle(isEnabled ? Color.white : Color.gray.opacity(0.62))
-                .frame(width: 36, height: 36)
-                .contentShape(buttonShape)
-        }
-        .buttonStyle(.plain)
-        .background(hoverColor, in: buttonShape)
-        .contentShape(buttonShape)
-        .onHover { isHovering = $0 }
-        .help("Send message")
-    }
-
-    private var buttonShape: ConcentricRectangle {
-        ConcentricRectangle(cornerRadius: 9, style: .continuous)
-    }
-
-    private var hoverColor: Color {
-        isHovering && isEnabled ? .primary.opacity(0.14) : .clear
     }
 }

@@ -395,76 +395,16 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
     private func handleGatewayEvent(_ event: VoiceGatewayServerEvent) async {
         do {
             switch event {
-            case let .ready(ready):
-                try await setupUDP(ready)
-            case let .sessionDescription(description):
-                try await handleSessionDescription(description)
-            case let .speaking(userID, ssrc, flags):
-                ssrcToUserID[ssrc] = userID
-                await dave.addUser(userId: userID)
-                var participant = participants[userID] ?? VoiceRemoteParticipant(userID: userID)
-                participant.audioSSRC = ssrc
-                participant.isSpeaking = flags & 1 != 0
-                participants[userID] = participant
-                if participant.isSpeaking {
-                    noteRemoteAudioActivity(userID: userID)
-                } else {
-                    lastRemoteAudioActivity[userID] = nil
-                }
-                eventContinuation.yield(.participantChanged(participant))
-            case let .clientsConnected(userIDs):
-                for userID in userIDs where userID != info.userID.description {
-                    await dave.addUser(userId: userID)
-                    if participants[userID] == nil {
-                        participants[userID] = VoiceRemoteParticipant(userID: userID)
-                    }
-                }
-            case let .clientDisconnected(userID):
-                await dave.removeUser(userId: userID)
-                participants[userID] = nil
-                lastRemoteAudioActivity[userID] = nil
-                ssrcToUserID = ssrcToUserID.filter { $0.value != userID }
-                eventContinuation.yield(.participantLeft(userID: userID))
-            case let .video(video):
-                await handleVideoState(video)
-            case let .videoSinkWants(wants, any):
-                if let videoSSRC {
-                    videoSendQuality = wants[videoSSRC] ?? any ?? 100
-                    voiceMediaLogger.info(
-                        "Video sink demand updated; quality=\(self.videoSendQuality), exact=\(wants[videoSSRC] != nil)"
-                    )
-                }
-            case let .davePrepareTransition(transitionID, protocolVersion):
-                await dave.prepareTransition(transitionId: transitionID, protocolVersion: protocolVersion)
-            case let .daveExecuteTransition(transitionID):
-                await dave.executeTransition(transitionId: transitionID)
-                await requestCurrentRemoteKeyframes(reason: "DAVE transition became usable")
-            case let .davePrepareEpoch(transitionID, epoch, protocolVersion):
-                await dave.prepareEpoch(
-                    transitionId: transitionID,
-                    epoch: String(epoch),
-                    protocolVersion: protocolVersion
-                )
-            case let .daveMLSExternalSender(data):
-                await dave.mlsExternalSenderPackage(externalSenderPackage: data)
-            case let .daveMLSProposals(data):
-                await dave.mlsProposals(proposals: data)
-            case let .daveMLSAnnounceCommit(transitionID, commit):
-                await dave.mlsPrepareCommitTransition(transitionId: transitionID, commit: commit)
-            case let .daveMLSWelcome(transitionID, welcome):
-                await dave.mlsWelcome(transitionId: transitionID, welcome: welcome)
-                await requestCurrentRemoteKeyframes(reason: "initial DAVE ratchets became usable")
-            case .resumed:
-                reconnectAttempts = 0
-                transition(to: .connected)
-            case .connectionClosed:
-                await reconnectGateway()
-            case let .heartbeatAcknowledged(nonce):
-                let now = UInt64(max(0, Date.now.timeIntervalSince1970 * 1000))
-                let latency = Int(clamping: now >= nonce ? now - nonce : 0)
-                eventContinuation.yield(.latencyUpdated(milliseconds: latency))
-            case .hello, .unknown:
-                break
+            case .ready, .sessionDescription:
+                try await handleConnectionEvent(event)
+            case .speaking, .clientsConnected, .clientDisconnected, .video, .videoSinkWants:
+                await handleParticipantEvent(event)
+            case .davePrepareTransition, .daveExecuteTransition, .davePrepareEpoch,
+                 .daveMLSExternalSender, .daveMLSProposals, .daveMLSAnnounceCommit,
+                 .daveMLSWelcome:
+                await handleDaveEvent(event)
+            case .resumed, .connectionClosed, .heartbeatAcknowledged, .hello, .unknown:
+                await handleLifecycleEvent(event)
             }
         } catch {
             eventContinuation.yield(.error(error.localizedDescription))
@@ -473,6 +413,102 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
                 connectContinuation = nil
                 transition(to: .failed)
             }
+        }
+    }
+
+    private func handleConnectionEvent(_ event: VoiceGatewayServerEvent) async throws {
+        switch event {
+        case let .ready(ready):
+            try await setupUDP(ready)
+        case let .sessionDescription(description):
+            try await handleSessionDescription(description)
+        default:
+            break
+        }
+    }
+
+    private func handleParticipantEvent(_ event: VoiceGatewayServerEvent) async {
+        switch event {
+        case let .speaking(userID, ssrc, flags):
+            ssrcToUserID[ssrc] = userID
+            await dave.addUser(userId: userID)
+            var participant = participants[userID] ?? VoiceRemoteParticipant(userID: userID)
+            participant.audioSSRC = ssrc
+            participant.isSpeaking = flags & 1 != 0
+            participants[userID] = participant
+            if participant.isSpeaking {
+                noteRemoteAudioActivity(userID: userID)
+            } else {
+                lastRemoteAudioActivity[userID] = nil
+            }
+            eventContinuation.yield(.participantChanged(participant))
+        case let .clientsConnected(userIDs):
+            for userID in userIDs where userID != info.userID.description {
+                await dave.addUser(userId: userID)
+                if participants[userID] == nil {
+                    participants[userID] = VoiceRemoteParticipant(userID: userID)
+                }
+            }
+        case let .clientDisconnected(userID):
+            await dave.removeUser(userId: userID)
+            participants[userID] = nil
+            lastRemoteAudioActivity[userID] = nil
+            ssrcToUserID = ssrcToUserID.filter { $0.value != userID }
+            eventContinuation.yield(.participantLeft(userID: userID))
+        case let .video(video):
+            await handleVideoState(video)
+        case let .videoSinkWants(wants, any):
+            if let videoSSRC {
+                videoSendQuality = wants[videoSSRC] ?? any ?? 100
+                voiceMediaLogger.info(
+                    "Video sink demand updated; quality=\(self.videoSendQuality), exact=\(wants[videoSSRC] != nil)"
+                )
+            }
+        default:
+            break
+        }
+    }
+
+    private func handleDaveEvent(_ event: VoiceGatewayServerEvent) async {
+        switch event {
+        case let .davePrepareTransition(transitionID, protocolVersion):
+            await dave.prepareTransition(transitionId: transitionID, protocolVersion: protocolVersion)
+        case let .daveExecuteTransition(transitionID):
+            await dave.executeTransition(transitionId: transitionID)
+            await requestCurrentRemoteKeyframes(reason: "DAVE transition became usable")
+        case let .davePrepareEpoch(transitionID, epoch, protocolVersion):
+            await dave.prepareEpoch(
+                transitionId: transitionID,
+                epoch: String(epoch),
+                protocolVersion: protocolVersion
+            )
+        case let .daveMLSExternalSender(data):
+            await dave.mlsExternalSenderPackage(externalSenderPackage: data)
+        case let .daveMLSProposals(data):
+            await dave.mlsProposals(proposals: data)
+        case let .daveMLSAnnounceCommit(transitionID, commit):
+            await dave.mlsPrepareCommitTransition(transitionId: transitionID, commit: commit)
+        case let .daveMLSWelcome(transitionID, welcome):
+            await dave.mlsWelcome(transitionId: transitionID, welcome: welcome)
+            await requestCurrentRemoteKeyframes(reason: "initial DAVE ratchets became usable")
+        default:
+            break
+        }
+    }
+
+    private func handleLifecycleEvent(_ event: VoiceGatewayServerEvent) async {
+        switch event {
+        case .resumed:
+            reconnectAttempts = 0
+            transition(to: .connected)
+        case .connectionClosed:
+            await reconnectGateway()
+        case let .heartbeatAcknowledged(nonce):
+            let now = UInt64(max(0, Date.now.timeIntervalSince1970 * 1000))
+            let latency = Int(clamping: now >= nonce ? now - nonce : 0)
+            eventContinuation.yield(.latencyUpdated(milliseconds: latency))
+        default:
+            break
         }
     }
 
@@ -553,7 +589,13 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         }
         cipher = try VoiceTransportCipher(mode: mode, key: description.secretKey)
         voiceMediaLogger.info(
-            "Voice session description accepted; mode=\(description.mode, privacy: .public), daveVersion=\(description.daveProtocolVersion), audioCodec=\(description.audioCodec ?? "unknown", privacy: .public), videoCodec=\(description.videoCodec ?? "unknown", privacy: .public), keyframeInterval=\(description.keyframeInterval ?? 0)"
+            """
+            Voice session description accepted; mode=\(description.mode, privacy: .public), \
+            daveVersion=\(description.daveProtocolVersion), \
+            audioCodec=\(description.audioCodec ?? "unknown", privacy: .public), \
+            videoCodec=\(description.videoCodec ?? "unknown", privacy: .public), \
+            keyframeInterval=\(description.keyframeInterval ?? 0)
+            """
         )
         await dave.selectProtocol(protocolVersion: description.daveProtocolVersion)
         eventContinuation.yield(.encryptionReady(protocolVersion: description.daveProtocolVersion))
@@ -1085,7 +1127,11 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
             any: 100
         )
         voiceMediaLogger.info(
-            "Remote video layers updated; count=\(activeStreams.count), audioSSRC=\(state.audioSSRC), videoSSRC=\(selectedStream?.ssrc ?? 0), selectedQuality=\(selectedStream?.quality ?? 0), selectedBitrate=\(selectedStream?.maxBitrate ?? 0)"
+            """
+            Remote video layers updated; count=\(activeStreams.count), audioSSRC=\(state.audioSSRC), \
+            videoSSRC=\(selectedStream?.ssrc ?? 0), selectedQuality=\(selectedStream?.quality ?? 0), \
+            selectedBitrate=\(selectedStream?.maxBitrate ?? 0)
+            """
         )
     }
 

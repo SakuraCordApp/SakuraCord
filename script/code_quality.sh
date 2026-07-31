@@ -16,7 +16,6 @@ SWIFTFORMAT_DIR="$TOOLS_DIR/swiftformat-$SWIFTFORMAT_VERSION"
 SWIFTLINT_DIR="$TOOLS_DIR/swiftlint-$SWIFTLINT_VERSION"
 SWIFTFORMAT_BIN="$SWIFTFORMAT_DIR/swiftformat"
 SWIFTLINT_BIN="$SWIFTLINT_DIR/swiftlint"
-SWIFTLINT_BASELINE="$ROOT_DIR/.swiftlint-baseline.json"
 
 usage() {
   cat >&2 <<'EOF'
@@ -96,10 +95,6 @@ run_check() {
   local -a source_paths=()
 
   bootstrap_tools
-  if [[ ! -f "$SWIFTLINT_BASELINE" ]]; then
-    echo "Missing checked-in SwiftLint baseline: $SWIFTLINT_BASELINE" >&2
-    return 1
-  fi
   cd "$ROOT_DIR"
   if [[ -d App ]]; then
     source_paths+=(App)
@@ -125,8 +120,7 @@ run_check() {
     --strict \
     --no-cache \
     --quiet \
-    --config "$ROOT_DIR/.swiftlint.yml" \
-    --baseline "$SWIFTLINT_BASELINE"; then
+    --config "$ROOT_DIR/.swiftlint.yml"; then
     status=1
   fi
 

@@ -291,7 +291,8 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
                 snapshot.retainedEstimatedByteCount,
             droppedEntryCount: snapshot.droppedEntryCount,
             redaction:
-                "Sensitive values are discarded before retention. Message content, names, usernames, profile text, credentials, cookies, challenge data, filenames, and URLs are not included. Snowflake IDs and protocol metadata may be included."
+                "Sensitive values are discarded before retention. Message content, names, usernames, profile text, credentials, cookies, "
+                    + "challenge data, filenames, and URLs are not included. Snowflake IDs and protocol metadata may be included."
         )
         var result = try encoder.encode(metadata)
         result.append(0x0A)

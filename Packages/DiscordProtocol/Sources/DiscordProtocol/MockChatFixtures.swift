@@ -2,7 +2,7 @@ import Foundation
 import SakuraCordModels
 
 struct MockChatFixture {
-    private struct TimelineFixtureInput {
+    fileprivate struct TimelineFixtureInput {
         let count: Int
         let now: Date
         let channelID: ChannelID
@@ -28,6 +28,371 @@ struct MockChatFixture {
         timelineMessageCount: Int? = nil,
         timelineIncludesAnimatedMedia: Bool = false
     ) -> Self {
+        MockFixtureAssembly(
+            now: now,
+            includesLongServerList: includesLongServerList,
+            timelineMessageCount: timelineMessageCount,
+            timelineIncludesAnimatedMedia: timelineIncludesAnimatedMedia
+        ).fixture
+    }
+
+    fileprivate static func demoAsset(_ name: String) -> URL? {
+        demoResource(name, extension: "png")
+    }
+
+    fileprivate static func demoResource(
+        _ name: String,
+        extension fileExtension: String
+    ) -> URL? {
+        Bundle.module.url(
+            forResource: name,
+            withExtension: fileExtension,
+            subdirectory: "DemoAssets"
+        ) ?? Bundle.module.url(forResource: name, withExtension: fileExtension)
+    }
+
+    private static let animatedDemoAssetURL: URL? = {
+        let encoded =
+            "R0lGODlhIAAgAPIHAAAAAFhl8lhl8lhl8lhl8lhl8lhl8v///"
+            + "yH/C05FVFNDQVBFMi4wAwEAAAAh+QQJAAAAACwAAAAAIAAgAA"
+            + "ADVwi63P4wykmrvTjrzbv/WyAMxiAEH1EYbGsUBEeQrjvE2lr"
+            + "XhRbsQBRGANwJMrRia5BR7pDOZYYYNRwxv6oQo1P2NDPlTdZ1"
+            + "wT4ikmkLarvf8Lh8Tt8kAAAh+QQJAAAAACwAAAAAIAAgAIIAAA"
+            + "DtQkXtQkXtQkXtQkXtQkXtQkX///8DVwi63P4wykmrvTjrzbv"
+            + "/4BMIgzEIwUcURusaBcER5fsOssbadqEFvGAKIwjyBJma0TXIL"
+            + "HnJJzNTlBqQGKB1iNktfRraEjfzvmKfUenEDbnf8Lh8Tp8nAA"
+            + "A7"
+        guard let data = Data(base64Encoded: encoded) else { return nil }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "sakuracord-animated-custom-emoji-fixture-v1.gif"
+            )
+        do {
+            try data.write(to: url, options: .atomic)
+            return url
+        } catch {
+            return nil
+        }
+    }()
+
+    fileprivate static func animatedDemoAsset() -> URL? {
+        animatedDemoAssetURL
+    }
+
+    fileprivate static func makeTimelinePerformanceMessages(
+        _ input: TimelineFixtureInput
+    ) -> [Message] {
+        guard input.count > 0, !input.users.isEmpty else { return [] }
+        let start = input.now.addingTimeInterval(-Double(input.count) * 35)
+        return (0 ..< input.count).map {
+            timelinePerformanceMessage(input, index: $0, start: start)
+        }
+    }
+
+    private static func timelinePerformanceMessage(
+        _ input: TimelineFixtureInput,
+        index: Int,
+        start: Date
+    ) -> Message {
+        let id = MessageID(rawValue: 5_000_000 + UInt64(index))
+        let author = input.users[index % input.users.count]
+        let animatedMediaKind = input.includesAnimatedMedia ? index % 12 : -1
+        let components = timelineComponents(index: index)
+        return Message(
+            id: id,
+            channelID: input.channelID,
+            author: author,
+            content: timelineContent(
+                index: index,
+                animatedMediaKind: animatedMediaKind,
+                animatedMediaURL: input.animatedMediaURL
+            ),
+            timestamp: start.addingTimeInterval(Double(index) * 35),
+            replyTo: index > 0 && index.isMultiple(of: 43)
+                ? MessageID(rawValue: id.rawValue - 1)
+                : nil,
+            attachments: timelineAttachments(
+                index: index,
+                mediaURL: input.mediaURL
+            ),
+            reactions: timelineReactions(index: index, users: input.users),
+            flags: components.isEmpty ? [] : [.isComponentsV2],
+            guildID: input.guildID,
+            embeds: timelineEmbeds(
+                index: index,
+                count: input.count,
+                animatedMediaKind: animatedMediaKind,
+                videoURL: input.videoURL
+            ),
+            components: components,
+            stickers: timelineStickers(
+                index: index,
+                animatedMediaKind: animatedMediaKind,
+                lottieURL: input.lottieURL
+            ),
+            mentionedUsers: index % 8 == 4 ? [input.users[1]] : []
+        )
+    }
+
+    private static func timelineContent(
+        index: Int,
+        animatedMediaKind: Int,
+        animatedMediaURL: URL?
+    ) -> String {
+        if animatedMediaKind == 2 {
+            return animatedMediaURL.map {
+                "[Animated raster benchmark](\($0.absoluteString))"
+            } ?? "Animated raster benchmark"
+        }
+        return switch index % 8 {
+        case 0:
+            "A compact timeline message \(index) keeps the common path representative."
+        case 1:
+            "Inline custom emoji <:aurora_glow:900000000000000101> and native emoji ✨ remain aligned with text."
+        case 2:
+            "**Markdown \(index)** includes [a link](https://example.com), `inline code`, and ~~strikethrough~~."
+        case 3:
+            "A deliberately longer message wraps across multiple lines so the benchmark exercises dynamic row heights without synthetic fixed-size cells. Pass \(index)."
+        case 4:
+            "Mention fixture <@2> and channel fixture <#211> keep attachment-backed tokens in the hot path."
+        case 5:
+            "First line for message \(index).\nSecond line exercises TextKit layout.\nThird line finishes the sample."
+        case 6:
+            "# Heading \(index)\nBody copy follows beneath the heading."
+        default:
+            "Reaction-heavy fixture \(index) 👍"
+        }
+    }
+
+    private static func timelineReactions(
+        index: Int,
+        users: [User]
+    ) -> [Reaction] {
+        guard index.isMultiple(of: 13) else { return [] }
+        return [
+            Reaction(
+                emoji: "✨",
+                count: 4,
+                reactors: users.prefix(4).map(ReactionReactor.init(user:))
+            ),
+            Reaction(emoji: "🔥", count: 2),
+        ]
+    }
+
+    private static func timelineAttachments(
+        index: Int,
+        mediaURL: URL?
+    ) -> [Attachment] {
+        guard index.isMultiple(of: 97), let mediaURL else { return [] }
+        return [
+            Attachment(
+                id: "timeline-\(index)",
+                filename: "timeline-\(index).png",
+                url: mediaURL,
+                mediaType: "image/png",
+                width: 720,
+                height: 420,
+                size: 120_000,
+                description: "Offline timeline benchmark image \(index)",
+                isSpoiler: index.isMultiple(of: 194)
+            )
+        ]
+    }
+
+    private static func timelineEmbeds(
+        index: Int,
+        count: Int,
+        animatedMediaKind: Int,
+        videoURL: URL?
+    ) -> [MessageEmbed] {
+        var embeds: [MessageEmbed] = index.isMultiple(of: 89)
+            ? [
+                MessageEmbed(
+                    title: "Benchmark embed \(index)",
+                    type: "rich",
+                    description: "A fixture-backed embed preserves card layout while scrolling.",
+                    color: 0x7C3AED,
+                    fields: [
+                        MessageEmbedField(
+                            id: 1,
+                            name: "Rows",
+                            value: count.formatted(),
+                            isInline: true
+                        ),
+                        MessageEmbedField(
+                            id: 2,
+                            name: "Mode",
+                            value: "Offline",
+                            isInline: true
+                        ),
+                    ]
+                )
+            ]
+            : []
+        if animatedMediaKind == 0, let videoURL {
+            embeds.append(
+                MessageEmbed(
+                    title: "Animated video benchmark \(index)",
+                    type: "gifv",
+                    video: MessageEmbedMedia(
+                        url: videoURL,
+                        width: 320,
+                        height: 180,
+                        description: "A looping benchmark video.",
+                        contentType: "video/mp4"
+                    ),
+                    provider: MessageEmbedProvider(
+                        name: "Offline media performance fixture"
+                    )
+                )
+            )
+        }
+        return embeds
+    }
+
+    private static func timelineStickers(
+        index: Int,
+        animatedMediaKind: Int,
+        lottieURL: URL?
+    ) -> [MessageSticker] {
+        guard animatedMediaKind == 1, let lottieURL else { return [] }
+        return [
+            MessageSticker(
+                id: "offline-lottie-\(index)",
+                name: "Pulse",
+                description: "Bundled Lottie sticker benchmark",
+                tags: "pulse,benchmark",
+                format: .lottie,
+                assetURL: lottieURL
+            )
+        ]
+    }
+
+    private static func timelineComponents(index: Int) -> [MessageComponent] {
+        guard index.isMultiple(of: 131) else { return [] }
+        return [
+            .container(
+                id: "timeline-component-\(index)",
+                accentColor: 0x5865F2,
+                spoiler: index.isMultiple(of: 262),
+                children: [
+                    .textDisplay(
+                        id: "timeline-text-\(index)",
+                        content: "## Components V2 fixture \(index)"
+                    ),
+                    .separator(
+                        id: "timeline-separator-\(index)",
+                        divider: true,
+                        spacing: 1
+                    ),
+                    .actionRow(
+                        id: "timeline-actions-\(index)",
+                        children: [
+                            .button(
+                                id: "timeline-button-\(index)",
+                                style: .primary,
+                                label: "Benchmark control",
+                                emoji: EmojiReference(name: "⚡️"),
+                                customID: "offline-timeline-\(index)",
+                                url: nil,
+                                skuID: nil,
+                                disabled: false
+                            )
+                        ]
+                    ),
+                ]
+            )
+        ]
+    }
+
+    fileprivate static func message(
+        _ id: UInt64,
+        _ channelID: UInt64,
+        _ author: User,
+        _ content: String,
+        _ timestamp: Date,
+        reactions: [Reaction] = []
+    ) -> Message {
+        Message(
+            id: MessageID(rawValue: id),
+            channelID: ChannelID(rawValue: channelID),
+            author: author,
+            content: content,
+            timestamp: timestamp,
+            reactions: reactions
+        )
+    }
+
+    fileprivate static func profile(
+        for user: User,
+        member: Member,
+        guilds: [Guild],
+        friends: [User]
+    ) -> UserProfile {
+        let details = switch user.id.rawValue {
+        case 1:
+            MockProfileDetails(
+                bio: "Native-app engineer who likes quiet interfaces, fast launch times, and tea that was forgotten on the desk.",
+                pronouns: "they/them", accent: 0x7C3AED, theme: [0x1E1B4B, 0x7C3AED], connection: "nova-labs"
+            )
+        case 2:
+            MockProfileDetails(
+                bio: "Product designer collecting delightful empty states and unusually specific keyboard shortcuts.",
+                pronouns: "she/her", accent: 0xF97316, theme: [0x431407, 0xF97316], connection: "maya-orbit"
+            )
+        case 3:
+            MockProfileDetails(
+                bio: "Audio engineer, amateur field recordist, and persistent advocate for sensible buffer sizes.",
+                pronouns: "he/him", accent: 0x0D9488, theme: [0x042F2E, 0x0D9488], connection: "theo-audio"
+            )
+        case 4:
+            MockProfileDetails(
+                bio: "QA engineer. Breaks layouts professionally and labels the reproduction steps recreationally.",
+                pronouns: "she/they", accent: 0x2563EB, theme: [0x172554, 0x2563EB], connection: "juniper-tests"
+            )
+        default:
+            MockProfileDetails(
+                bio: "Community moderator who writes kind guidelines and remembers where every useful thread lives.",
+                pronouns: "they/them", accent: 0xC026D3, theme: [0x4A044E, 0xC026D3], connection: "rowan-vale"
+            )
+        }
+        return UserProfile(
+            user: user,
+            displayName: member.user.displayName,
+            avatarURL: user.avatarURL,
+            bannerURL: guilds.first?.iconURL,
+            accentHex: details.accent,
+            themeHexes: details.theme,
+            bio: details.bio,
+            pronouns: details.pronouns,
+            badges: [
+                ProfileBadge(id: "active_developer", description: "Demo Contributor"),
+                ProfileBadge(id: "nitro", description: "Color Enthusiast")
+            ],
+            mutualGuilds: guilds.map { MutualGuild(id: $0.id, name: $0.name, iconURL: $0.iconURL) },
+            mutualFriends: Array(friends.prefix(3)),
+            mutualFriendsCount: friends.count,
+            roles: member.roles,
+            connectedAccounts: [
+                ConnectedAccount(
+                    accountID: details.connection, type: "github", name: details.connection, isVerified: true
+                )
+            ],
+            premiumSince: Calendar.current.date(byAdding: .year, value: -1, to: .now),
+            legacyUsername: "\(user.username)#0001",
+            status: member.status,
+            customStatus: member.customStatus
+        )
+    }
+}
+
+private struct MockFixtureAssembly {
+    let now: Date
+    let includesLongServerList: Bool
+    let timelineMessageCount: Int?
+    let timelineIncludesAnimatedMedia: Bool
+
+    var fixture: MockChatFixture {
         let auroraID = GuildID(rawValue: 100)
         let nativeLabID = GuildID(rawValue: 101)
         let textPermissions: UInt64 = (1 << 10) | (1 << 11) | (1 << 16) | (1 << 20)
@@ -498,7 +863,183 @@ struct MockChatFixture {
             name: "Rich message feedback", messageCount: 2, memberCount: 3,
             lastMessageID: MessageID(rawValue: 9012)
         )
-        var messages: [ChannelID: [Message]] = [
+        var messages = MockMessageFixtureBuilder(
+            auroraID: auroraID,
+            nativeLabID: nativeLabID,
+            base: base,
+            nova: nova,
+            maya: maya,
+            theo: theo,
+            juniper: juniper,
+            rowan: rowan,
+            verifiedApp: verifiedApp,
+            layoutAttachment: layoutAttachment,
+            galleryAttachments: galleryAttachments,
+            spoilerAttachment: spoilerAttachment,
+            spoilerAnimatedAttachment: spoilerAnimatedAttachment,
+            spoilerVideoAttachment: spoilerVideoAttachment,
+            spoilerFileAttachment: spoilerFileAttachment,
+            demoSticker: demoSticker,
+            lottieSticker: lottieSticker,
+            animatedFixtureLink: animatedFixtureLink,
+            videoFixture: videoFixture,
+            thread: thread
+        ).messages
+        if let timelineMessageCount {
+            messages[ChannelID(rawValue: 210)] = makeTimelinePerformanceMessages(.init(
+                count: timelineMessageCount,
+                now: now,
+                channelID: ChannelID(rawValue: 210),
+                guildID: auroraID,
+                users: [nova, maya, theo, juniper, rowan],
+                mediaURL: layoutAttachment?.url,
+                animatedMediaURL: animatedFixture,
+                videoURL: videoFixture,
+                lottieURL: lottieFixture,
+                includesAnimatedMedia: timelineIncludesAnimatedMedia
+            ))
+        }
+        for (index, guild) in longListGuilds.enumerated() {
+            let channelID = ChannelID(rawValue: UInt64(2000 + index))
+            messages[channelID] = [
+                message(
+                UInt64(6000 + index),
+                channelID.rawValue,
+                index.isMultiple(of: 2) ? nova : juniper,
+                "This synthetic conversation belongs to **\(guild.name)** and exists only to exercise long-list scrolling.",
+                base.addingTimeInterval(Double(1200 + index * 30))
+                )
+            ]
+        }
+
+        let snapshotChannels = channels.map { channel in
+            var channel = channel
+            channel.lastMessageID = messages[channel.id]?.last?.id ?? channel.lastMessageID
+            return channel
+        }
+        let readStates = snapshotChannels.compactMap { channel -> ChannelReadState? in
+            guard let latest = channel.lastMessageID else { return nil }
+            switch channel.id.rawValue {
+            case 210:
+                return ChannelReadState(
+                    channelID: channel.id,
+                    lastAcknowledgedMessageID: MessageID(rawValue: latest.rawValue - 1),
+                    mentionCount: 3
+                )
+            case 211, 300:
+                return ChannelReadState(
+                    channelID: channel.id,
+                    lastAcknowledgedMessageID: MessageID(rawValue: latest.rawValue - 1)
+                )
+            default:
+                return ChannelReadState(
+                    channelID: channel.id,
+                    lastAcknowledgedMessageID: latest
+                )
+            }
+        }
+        return MockChatFixture(
+            currentUser: nova,
+            snapshot: BootstrapSnapshot(
+                currentUser: nova,
+                guilds: guilds,
+                guildRailItems: guildRailItems,
+                channels: snapshotChannels,
+                members: auroraMembers,
+                readStates: readStates,
+                notificationSettings: [
+                    GuildNotificationSettings(
+                        guildID: auroraID,
+                        messageNotifications: .onlyMentions
+                    ),
+                    GuildNotificationSettings(
+                        guildID: nativeLabID,
+                        messageNotifications: .allMessages
+                    ),
+                ]
+            ),
+            membersByGuild: membersByGuild,
+            emojisByGuild: emojisByGuild,
+            messagesByChannel: messages,
+            profilesByUser: profiles
+        )
+    }
+
+    private func demoAsset(_ name: String) -> URL? {
+        MockChatFixture.demoAsset(name)
+    }
+
+    private func demoResource(_ name: String, extension fileExtension: String) -> URL? {
+        MockChatFixture.demoResource(name, extension: fileExtension)
+    }
+
+    private func animatedDemoAsset() -> URL? {
+        MockChatFixture.animatedDemoAsset()
+    }
+
+    private func makeTimelinePerformanceMessages(
+        _ input: MockChatFixture.TimelineFixtureInput
+    ) -> [Message] {
+        MockChatFixture.makeTimelinePerformanceMessages(input)
+    }
+
+    private func message(
+        _ id: UInt64,
+        _ channelID: UInt64,
+        _ author: User,
+        _ content: String,
+        _ timestamp: Date,
+        reactions: [Reaction] = []
+    ) -> Message {
+        MockChatFixture.message(
+            id,
+            channelID,
+            author,
+            content,
+            timestamp,
+            reactions: reactions
+        )
+    }
+
+    private func profile(
+        for user: User,
+        member: Member,
+        guilds: [Guild],
+        friends: [User]
+    ) -> UserProfile {
+        MockChatFixture.profile(
+            for: user,
+            member: member,
+            guilds: guilds,
+            friends: friends
+        )
+    }
+}
+
+private struct MockMessageFixtureBuilder {
+    let auroraID: GuildID
+    let nativeLabID: GuildID
+    let base: Date
+    let nova: User
+    let maya: User
+    let theo: User
+    let juniper: User
+    let rowan: User
+    let verifiedApp: User
+    let layoutAttachment: Attachment?
+    let galleryAttachments: [Attachment]
+    let spoilerAttachment: Attachment?
+    let spoilerAnimatedAttachment: Attachment?
+    let spoilerVideoAttachment: Attachment?
+    let spoilerFileAttachment: Attachment?
+    let demoSticker: MessageSticker?
+    let lottieSticker: MessageSticker
+    let animatedFixtureLink: String
+    let videoFixture: URL?
+    let thread: MessageThreadSummary
+
+    var messages: [ChannelID: [Message]] {
+        [
             ChannelID(rawValue: 200): [
                 message(
                     1001, 200, rowan,
@@ -1300,318 +1841,9 @@ struct MockChatFixture {
                 )
             ]
         ]
-        if let timelineMessageCount {
-            messages[ChannelID(rawValue: 210)] = makeTimelinePerformanceMessages(.init(
-                count: timelineMessageCount,
-                now: now,
-                channelID: ChannelID(rawValue: 210),
-                guildID: auroraID,
-                users: [nova, maya, theo, juniper, rowan],
-                mediaURL: layoutAttachment?.url,
-                animatedMediaURL: animatedFixture,
-                videoURL: videoFixture,
-                lottieURL: lottieFixture,
-                includesAnimatedMedia: timelineIncludesAnimatedMedia
-            ))
-        }
-        for (index, guild) in longListGuilds.enumerated() {
-            let channelID = ChannelID(rawValue: UInt64(2000 + index))
-            messages[channelID] = [
-                message(
-                UInt64(6000 + index),
-                channelID.rawValue,
-                index.isMultiple(of: 2) ? nova : juniper,
-                "This synthetic conversation belongs to **\(guild.name)** and exists only to exercise long-list scrolling.",
-                base.addingTimeInterval(Double(1200 + index * 30))
-                )
-            ]
-        }
-
-        let snapshotChannels = channels.map { channel in
-            var channel = channel
-            channel.lastMessageID = messages[channel.id]?.last?.id ?? channel.lastMessageID
-            return channel
-        }
-        let readStates = snapshotChannels.compactMap { channel -> ChannelReadState? in
-            guard let latest = channel.lastMessageID else { return nil }
-            switch channel.id.rawValue {
-            case 210:
-                return ChannelReadState(
-                    channelID: channel.id,
-                    lastAcknowledgedMessageID: MessageID(rawValue: latest.rawValue - 1),
-                    mentionCount: 3
-                )
-            case 211, 300:
-                return ChannelReadState(
-                    channelID: channel.id,
-                    lastAcknowledgedMessageID: MessageID(rawValue: latest.rawValue - 1)
-                )
-            default:
-                return ChannelReadState(
-                    channelID: channel.id,
-                    lastAcknowledgedMessageID: latest
-                )
-            }
-        }
-        return Self(
-            currentUser: nova,
-            snapshot: BootstrapSnapshot(
-                currentUser: nova,
-                guilds: guilds,
-                guildRailItems: guildRailItems,
-                channels: snapshotChannels,
-                members: auroraMembers,
-                readStates: readStates,
-                notificationSettings: [
-                    GuildNotificationSettings(
-                        guildID: auroraID,
-                        messageNotifications: .onlyMentions
-                    ),
-                    GuildNotificationSettings(
-                        guildID: nativeLabID,
-                        messageNotifications: .allMessages
-                    ),
-                ]
-            ),
-            membersByGuild: membersByGuild,
-            emojisByGuild: emojisByGuild,
-            messagesByChannel: messages,
-            profilesByUser: profiles
-        )
     }
 
-    private static func demoAsset(_ name: String) -> URL? {
-        demoResource(name, extension: "png")
-    }
-
-    private static func demoResource(
-        _ name: String,
-        extension fileExtension: String
-    ) -> URL? {
-        Bundle.module.url(
-            forResource: name,
-            withExtension: fileExtension,
-            subdirectory: "DemoAssets"
-        ) ?? Bundle.module.url(forResource: name, withExtension: fileExtension)
-    }
-
-    private static let animatedDemoAssetURL: URL? = {
-        let encoded =
-            "R0lGODlhIAAgAPIHAAAAAFhl8lhl8lhl8lhl8lhl8lhl8v///"
-            + "yH/C05FVFNDQVBFMi4wAwEAAAAh+QQJAAAAACwAAAAAIAAgAA"
-            + "ADVwi63P4wykmrvTjrzbv/WyAMxiAEH1EYbGsUBEeQrjvE2lr"
-            + "XhRbsQBRGANwJMrRia5BR7pDOZYYYNRwxv6oQo1P2NDPlTdZ1"
-            + "wT4ikmkLarvf8Lh8Tt8kAAAh+QQJAAAAACwAAAAAIAAgAIIAAA"
-            + "DtQkXtQkXtQkXtQkXtQkXtQkX///8DVwi63P4wykmrvTjrzbv"
-            + "/4BMIgzEIwUcURusaBcER5fsOssbadqEFvGAKIwjyBJma0TXIL"
-            + "HnJJzNTlBqQGKB1iNktfRraEjfzvmKfUenEDbnf8Lh8Tp8nAA"
-            + "A7"
-        guard let data = Data(base64Encoded: encoded) else { return nil }
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent(
-                "sakuracord-animated-custom-emoji-fixture-v1.gif"
-            )
-        do {
-            try data.write(to: url, options: .atomic)
-            return url
-        } catch {
-            return nil
-        }
-    }()
-
-    private static func animatedDemoAsset() -> URL? {
-        animatedDemoAssetURL
-    }
-
-    private static func makeTimelinePerformanceMessages(
-        _ input: TimelineFixtureInput
-    ) -> [Message] {
-        let count = input.count
-        let now = input.now
-        let channelID = input.channelID
-        let guildID = input.guildID
-        let users = input.users
-        let mediaURL = input.mediaURL
-        let animatedMediaURL = input.animatedMediaURL
-        let videoURL = input.videoURL
-        let lottieURL = input.lottieURL
-        let includesAnimatedMedia = input.includesAnimatedMedia
-        guard count > 0, !users.isEmpty else { return [] }
-        let firstID: UInt64 = 5_000_000
-        let start = now.addingTimeInterval(-Double(count) * 35)
-        return (0 ..< count).map { index in
-            let id = MessageID(rawValue: firstID + UInt64(index))
-            let author = users[index % users.count]
-            let animatedMediaKind =
-                includesAnimatedMedia ? index % 12 : -1
-            let content =
-                if animatedMediaKind == 2 {
-                    animatedMediaURL.map {
-                        "[Animated raster benchmark](\($0.absoluteString))"
-                    } ?? "Animated raster benchmark"
-                } else {
-                    switch index % 8 {
-                    case 0:
-                        "A compact timeline message \(index) keeps the common path representative."
-                    case 1:
-                        "Inline custom emoji <:aurora_glow:900000000000000101> and native emoji ✨ remain aligned with text."
-                    case 2:
-                        "**Markdown \(index)** includes [a link](https://example.com), `inline code`, and ~~strikethrough~~."
-                    case 3:
-                        "A deliberately longer message wraps across multiple lines so the benchmark exercises dynamic row heights without synthetic fixed-size cells. Pass \(index)."
-                    case 4:
-                        "Mention fixture <@2> and channel fixture <#211> keep attachment-backed tokens in the hot path."
-                    case 5:
-                        "First line for message \(index).\nSecond line exercises TextKit layout.\nThird line finishes the sample."
-                    case 6:
-                        "# Heading \(index)\nBody copy follows beneath the heading."
-                    default:
-                        "Reaction-heavy fixture \(index) 👍"
-                    }
-                }
-            let reactions =
-                index.isMultiple(of: 13)
-                    ? [
-                        Reaction(
-                            emoji: "✨",
-                            count: 4,
-                            reactors: users.prefix(4).map(ReactionReactor.init(user:))
-                        ),
-                        Reaction(emoji: "🔥", count: 2),
-                    ]
-                    : []
-            let attachments: [Attachment] =
-                if index.isMultiple(of: 97), let mediaURL {
-                    [
-                        Attachment(
-                            id: "timeline-\(index)",
-                            filename: "timeline-\(index).png",
-                            url: mediaURL,
-                            mediaType: "image/png",
-                            width: 720,
-                            height: 420,
-                            size: 120_000,
-                            description: "Offline timeline benchmark image \(index)",
-                            isSpoiler: index.isMultiple(of: 194)
-                        )
-                    ]
-                } else {
-                    []
-                }
-            var embeds: [MessageEmbed] =
-                index.isMultiple(of: 89)
-                    ? [
-                        MessageEmbed(
-                            title: "Benchmark embed \(index)",
-                            type: "rich",
-                            description: "A fixture-backed embed preserves card layout while scrolling.",
-                            color: 0x7C3AED,
-                            fields: [
-                                MessageEmbedField(
-                                    id: 1,
-                                    name: "Rows",
-                                    value: count.formatted(),
-                                    isInline: true
-                                ),
-                                MessageEmbedField(
-                                    id: 2,
-                                    name: "Mode",
-                                    value: "Offline",
-                                    isInline: true
-                                ),
-                            ]
-                        )
-                    ]
-                    : []
-            if animatedMediaKind == 0, let videoURL {
-                embeds.append(
-                    MessageEmbed(
-                        title: "Animated video benchmark \(index)",
-                        type: "gifv",
-                        video: MessageEmbedMedia(
-                            url: videoURL,
-                            width: 320,
-                            height: 180,
-                            description: "A looping benchmark video.",
-                            contentType: "video/mp4"
-                        ),
-                        provider: MessageEmbedProvider(
-                            name: "Offline media performance fixture"
-                        )
-                    )
-                )
-            }
-            let stickers: [MessageSticker] =
-                animatedMediaKind == 1 && lottieURL != nil
-                    ? [
-                        MessageSticker(
-                            id: "offline-lottie-\(index)",
-                            name: "Pulse",
-                            description: "Bundled Lottie sticker benchmark",
-                            tags: "pulse,benchmark",
-                            format: .lottie,
-                            assetURL: lottieURL
-                        ),
-                    ]
-                    : []
-            let components: [MessageComponent] =
-                index.isMultiple(of: 131)
-                    ? [
-                        .container(
-                            id: "timeline-component-\(index)",
-                            accentColor: 0x5865F2,
-                            spoiler: index.isMultiple(of: 262),
-                            children: [
-                                .textDisplay(
-                                    id: "timeline-text-\(index)",
-                                    content: "## Components V2 fixture \(index)"
-                                ),
-                                .separator(
-                                    id: "timeline-separator-\(index)",
-                                    divider: true,
-                                    spacing: 1
-                                ),
-                                .actionRow(
-                                    id: "timeline-actions-\(index)",
-                                    children: [
-                                        .button(
-                                            id: "timeline-button-\(index)",
-                                            style: .primary,
-                                            label: "Benchmark control",
-                                            emoji: EmojiReference(name: "⚡️"),
-                                            customID: "offline-timeline-\(index)",
-                                            url: nil,
-                                            skuID: nil,
-                                            disabled: false
-                                        )
-                                    ]
-                                ),
-                            ]
-                        )
-                    ]
-                    : []
-            return Message(
-                id: id,
-                channelID: channelID,
-                author: author,
-                content: content,
-                timestamp: start.addingTimeInterval(Double(index) * 35),
-                replyTo: index > 0 && index.isMultiple(of: 43)
-                    ? MessageID(rawValue: id.rawValue - 1)
-                    : nil,
-                attachments: attachments,
-                reactions: reactions,
-                flags: components.isEmpty ? [] : [.isComponentsV2],
-                guildID: guildID,
-                embeds: embeds,
-                components: components,
-                stickers: stickers,
-                mentionedUsers: index % 8 == 4 ? [users[1]] : []
-            )
-        }
-    }
-
-    private static func message(
+    private func message(
         _ id: UInt64,
         _ channelID: UInt64,
         _ author: User,
@@ -1629,67 +1861,19 @@ struct MockChatFixture {
         )
     }
 
-    private static func profile(
-        for user: User,
-        member: Member,
-        guilds: [Guild],
-        friends: [User]
-    ) -> UserProfile {
-        let details:
-            (bio: String, pronouns: String?, accent: UInt32, theme: [UInt32], connection: String) =
-                switch user.id.rawValue {
-                case 1:
-                    (
-                "Native-app engineer who likes quiet interfaces, fast launch times, and tea that was forgotten on the desk.",
-                "they/them", 0x7C3AED, [0x1E1B4B, 0x7C3AED], "nova-labs"
-            )
-                case 2:
-                    (
-                "Product designer collecting delightful empty states and unusually specific keyboard shortcuts.",
-                "she/her", 0xF97316, [0x431407, 0xF97316], "maya-orbit"
-            )
-                case 3:
-                    (
-                "Audio engineer, amateur field recordist, and persistent advocate for sensible buffer sizes.",
-                "he/him", 0x0D9488, [0x042F2E, 0x0D9488], "theo-audio"
-            )
-                case 4:
-                    (
-                "QA engineer. Breaks layouts professionally and labels the reproduction steps recreationally.",
-                "she/they", 0x2563EB, [0x172554, 0x2563EB], "juniper-tests"
-            )
-                default:
-                    (
-                "Community moderator who writes kind guidelines and remembers where every useful thread lives.",
-                "they/them", 0xC026D3, [0x4A044E, 0xC026D3], "rowan-vale"
-            )
-        }
-        return UserProfile(
-            user: user,
-            displayName: member.user.displayName,
-            avatarURL: user.avatarURL,
-            bannerURL: guilds.first?.iconURL,
-            accentHex: details.accent,
-            themeHexes: details.theme,
-            bio: details.bio,
-            pronouns: details.pronouns,
-            badges: [
-                ProfileBadge(id: "active_developer", description: "Demo Contributor"),
-                ProfileBadge(id: "nitro", description: "Color Enthusiast")
-            ],
-            mutualGuilds: guilds.map { MutualGuild(id: $0.id, name: $0.name, iconURL: $0.iconURL) },
-            mutualFriends: Array(friends.prefix(3)),
-            mutualFriendsCount: friends.count,
-            roles: member.roles,
-            connectedAccounts: [
-                ConnectedAccount(
-                    accountID: details.connection, type: "github", name: details.connection, isVerified: true
-                )
-            ],
-            premiumSince: Calendar.current.date(byAdding: .year, value: -1, to: .now),
-            legacyUsername: "\(user.username)#0001",
-            status: member.status,
-            customStatus: member.customStatus
-        )
+    private func demoAsset(_ name: String) -> URL? {
+        MockChatFixture.demoAsset(name)
     }
+
+    private func animatedDemoAsset() -> URL? {
+        MockChatFixture.animatedDemoAsset()
+    }
+}
+
+private struct MockProfileDetails {
+    let bio: String
+    let pronouns: String?
+    let accent: UInt32
+    let theme: [UInt32]
+    let connection: String
 }

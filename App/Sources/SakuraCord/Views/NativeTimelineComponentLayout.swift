@@ -328,31 +328,313 @@ private enum NodeBuilder {
     ) -> Node {
         let maximumWidth = max(1, maximumWidth)
         switch component {
+        case .actionRow:
+            return actionRowNode(
+                for: component,
+                message: message,
+                model: model,
+                maximumWidth: maximumWidth
+            )
+
+        case .button:
+            return buttonNode(
+                for: component,
+                message: message,
+                model: model,
+                maximumWidth: maximumWidth
+            )
+
+        case .select:
+            return selectNode(
+                for: component,
+                message: message,
+                model: model,
+                maximumWidth: maximumWidth
+            )
+
+        case .section:
+            return sectionNode(
+                for: component,
+                message: message,
+                model: model,
+                maximumWidth: maximumWidth
+            )
+
+        case let .textDisplay(id, content):
+            return textNode(
+                id: id,
+                content: content,
+                message: message,
+                model: model,
+                maximumWidth: maximumWidth
+            )
+
+        case let .thumbnail(id, media):
+            guard let item = resolve(
+                media,
+                componentID: id,
+                attachments: message.attachments
+            ) else {
+                return unsupportedNode(
+                    "Media unavailable",
+                    maximumWidth: maximumWidth
+                )
+            }
+            let size = min(80, maximumWidth)
+            return Node(
+                size: CGSize(width: size, height: size),
+                images: [
+                    .init(
+                        frame: CGRect(
+                            x: 0,
+                            y: 0,
+                            width: size,
+                            height: size
+                        ),
+                        componentID: id,
+                        displayURL: item.displayURL,
+                        openURL: item.openURL,
+                        description:
+                            item.description ?? item.title,
+                        isSpoiler: item.isSpoiler,
+                        cornerRadius: 8,
+                        maximumPixelDimension: 256
+                    )
+                ]
+            )
+
+        case .mediaGallery, .file:
+            return mediaNode(
+                for: component,
+                message: message,
+                maximumWidth: maximumWidth
+            )
+
+        case .separator, .container:
+            return containerNode(
+                for: component,
+                message: message,
+                model: model,
+                maximumWidth: maximumWidth
+            )
+
+        case let .unsupported(_, type, rawLabel):
+            return unsupportedNode(
+                rawLabel ?? "Unsupported component \(type)",
+                maximumWidth: maximumWidth
+            )
+        }
+    }
+
+    private static func textNode(
+        id: String,
+        content: String,
+        message: Message,
+        model: AppModel?,
+        maximumWidth: CGFloat
+    ) -> Node {
+        let box = richText(
+            content,
+            componentID: id,
+            message: message,
+            model: model,
+            emojiSize: 18
+        )
+        let width = min(maximumWidth, max(1, idealWidth(box)))
+        let height = measuredHeight(box, width: width)
+        return Node(
+            size: CGSize(width: width, height: height),
+            textRegions: [
+                .init(
+                    frame: CGRect(
+                        x: 0,
+                        y: 0,
+                        width: width,
+                        height: height
+                    ),
+                    text: box,
+                    isSelectable: true,
+                    contentID: id
+                )
+            ]
+        )
+    }
+
+    private static func actionRowNode(
+        for component: MessageComponent,
+        message: Message,
+        model: AppModel?,
+        maximumWidth: CGFloat
+    ) -> Node {
+        switch component {
         case let .actionRow(_, children):
             var result = Node()
-            var x: CGFloat = 0
+            var horizontalOffset: CGFloat = 0
             var maximumHeight: CGFloat = 0
             for child in children {
-                if x > 0 {
-                    x += 8
+                if horizontalOffset > 0 {
+                    horizontalOffset += 8
                 }
-                let remaining = max(1, maximumWidth - x)
+                let remaining = max(1, maximumWidth - horizontalOffset)
                 let childNode = node(
                     for: child,
                     message: message,
                     model: model,
                     maximumWidth: remaining
                 )
-                result.merge(childNode, at: CGPoint(x: x, y: 0))
-                x += childNode.size.width
+                result.merge(childNode, at: CGPoint(x: horizontalOffset, y: 0))
+                horizontalOffset += childNode.size.width
                 maximumHeight = max(maximumHeight, childNode.size.height)
             }
             result.size = CGSize(
-                width: min(maximumWidth, x),
+                width: min(maximumWidth, horizontalOffset),
                 height: maximumHeight
             )
             return result
 
+        default:
+            preconditionFailure("Unexpected action-row component")
+        }
+    }
+
+    private static func selectNode(
+        for component: MessageComponent,
+        message: Message,
+        model: AppModel?,
+        maximumWidth: CGFloat
+    ) -> Node {
+        switch component {
+        case let .select(
+            id,
+            kind,
+            customID,
+            rawPlaceholder,
+            _,
+            _,
+            disabled,
+            options,
+            _
+        ):
+            let placeholder = rawPlaceholder ?? "Select an option…"
+            let font = NSFont.systemFont(ofSize: 13)
+            let labelWidth = ceil(
+                (placeholder as NSString).size(
+                    withAttributes: [.font: font]
+                ).width
+            )
+            let width = min(
+                maximumWidth,
+                max(210, min(380, labelWidth + 76))
+            )
+            let isDisabled = !NativeTimelineComponentSelectPolicy.isEnabled(
+                kind: kind,
+                hasStaticOptions: !options.isEmpty,
+                supportsComponents:
+                    model?.supportsCapability(.components) == true,
+                supportsRemoteChoices:
+                    model?.supportsCapability(.remoteComponentChoices) == true,
+                interactionUnavailable:
+                    disabled
+                    || model?.isComponentPending(
+                        messageID: message.id,
+                        customID: customID
+                    ) == true
+            )
+            return Node(
+                size: CGSize(width: width, height: 38),
+                selects: [
+                    .init(
+                        frame: CGRect(
+                            x: 0,
+                            y: 0,
+                            width: width,
+                            height: 38
+                        ),
+                        componentID: id,
+                        kind: kind,
+                        customID: customID,
+                        placeholder: placeholder,
+                        options: options,
+                        isDisabled: isDisabled
+                    )
+                ]
+            )
+
+        default:
+            preconditionFailure("Unexpected select component")
+        }
+    }
+
+    private static func sectionNode(
+        for component: MessageComponent,
+        message: Message,
+        model: AppModel?,
+        maximumWidth: CGFloat
+    ) -> Node {
+        switch component {
+        case let .section(_, children, accessory):
+            guard let accessory else {
+                return vertical(
+                    children.map {
+                        node(
+                            for: $0,
+                            message: message,
+                            model: model,
+                            maximumWidth: maximumWidth
+                        )
+                    },
+                    spacing: 8
+                )
+            }
+            let accessoryNode = node(
+                for: accessory,
+                message: message,
+                model: model,
+                maximumWidth: min(180, maximumWidth)
+            )
+            let leftWidth = max(
+                1,
+                maximumWidth - accessoryNode.size.width - 8
+            )
+            let left = vertical(
+                children.map {
+                    node(
+                        for: $0,
+                        message: message,
+                        model: model,
+                        maximumWidth: leftWidth
+                    )
+                },
+                spacing: 8
+            )
+            var result = Node(
+                size: CGSize(
+                    width: maximumWidth,
+                    height: max(left.size.height, accessoryNode.size.height)
+                )
+            )
+            result.merge(left, at: .zero)
+            result.merge(
+                accessoryNode,
+                at: CGPoint(
+                    x: maximumWidth - accessoryNode.size.width,
+                    y: 0
+                )
+            )
+            return result
+
+        default:
+            preconditionFailure("Unexpected section component")
+        }
+    }
+
+    private static func buttonNode(
+        for component: MessageComponent,
+        message: Message,
+        model: AppModel?,
+        maximumWidth: CGFloat
+    ) -> Node {
+        switch component {
         case let .button(
             id,
             style,
@@ -420,174 +702,17 @@ private enum NodeBuilder {
                 ]
             )
 
-        case let .select(
-            id,
-            kind,
-            customID,
-            rawPlaceholder,
-            _,
-            _,
-            disabled,
-            options,
-            _
-        ):
-            let placeholder = rawPlaceholder ?? "Select an option…"
-            let font = NSFont.systemFont(ofSize: 13)
-            let labelWidth = ceil(
-                (placeholder as NSString).size(
-                    withAttributes: [.font: font]
-                ).width
-            )
-            let width = min(
-                maximumWidth,
-                max(210, min(380, labelWidth + 76))
-            )
-            let isDisabled = !NativeTimelineComponentSelectPolicy.isEnabled(
-                kind: kind,
-                hasStaticOptions: !options.isEmpty,
-                supportsComponents:
-                    model?.supportsCapability(.components) == true,
-                supportsRemoteChoices:
-                    model?.supportsCapability(.remoteComponentChoices) == true,
-                interactionUnavailable:
-                    disabled
-                    || model?.isComponentPending(
-                        messageID: message.id,
-                        customID: customID
-                    ) == true
-            )
-            return Node(
-                size: CGSize(width: width, height: 38),
-                selects: [
-                    .init(
-                        frame: CGRect(
-                            x: 0,
-                            y: 0,
-                            width: width,
-                            height: 38
-                        ),
-                        componentID: id,
-                        kind: kind,
-                        customID: customID,
-                        placeholder: placeholder,
-                        options: options,
-                        isDisabled: isDisabled
-                    )
-                ]
-            )
+        default:
+            preconditionFailure("Unexpected button component")
+        }
+    }
 
-        case let .section(_, children, accessory):
-            guard let accessory else {
-                return vertical(
-                    children.map {
-                        node(
-                            for: $0,
-                            message: message,
-                            model: model,
-                            maximumWidth: maximumWidth
-                        )
-                    },
-                    spacing: 8
-                )
-            }
-            let accessoryNode = node(
-                for: accessory,
-                message: message,
-                model: model,
-                maximumWidth: min(180, maximumWidth)
-            )
-            let leftWidth = max(
-                1,
-                maximumWidth - accessoryNode.size.width - 8
-            )
-            let left = vertical(
-                children.map {
-                    node(
-                        for: $0,
-                        message: message,
-                        model: model,
-                        maximumWidth: leftWidth
-                    )
-                },
-                spacing: 8
-            )
-            var result = Node(
-                size: CGSize(
-                    width: maximumWidth,
-                    height: max(left.size.height, accessoryNode.size.height)
-                )
-            )
-            result.merge(left, at: .zero)
-            result.merge(
-                accessoryNode,
-                at: CGPoint(
-                    x: maximumWidth - accessoryNode.size.width,
-                    y: 0
-                )
-            )
-            return result
-
-        case let .textDisplay(id, content):
-            let box = richText(
-                content,
-                componentID: id,
-                message: message,
-                model: model,
-                emojiSize: 18
-            )
-            let width = min(maximumWidth, max(1, idealWidth(box)))
-            let height = measuredHeight(box, width: width)
-            return Node(
-                size: CGSize(width: width, height: height),
-                textRegions: [
-                    .init(
-                        frame: CGRect(
-                            x: 0,
-                            y: 0,
-                            width: width,
-                            height: height
-                        ),
-                        text: box,
-                        isSelectable: true,
-                        contentID: id
-                    )
-                ]
-            )
-
-        case let .thumbnail(id, media):
-            guard let item = resolve(
-                media,
-                componentID: id,
-                attachments: message.attachments
-            ) else {
-                return unsupportedNode(
-                    "Media unavailable",
-                    maximumWidth: maximumWidth
-                )
-            }
-            let size = min(80, maximumWidth)
-            return Node(
-                size: CGSize(width: size, height: size),
-                images: [
-                    .init(
-                        frame: CGRect(
-                            x: 0,
-                            y: 0,
-                            width: size,
-                            height: size
-                        ),
-                        componentID: id,
-                        displayURL: item.displayURL,
-                        openURL: item.openURL,
-                        description:
-                            item.description ?? item.title,
-                        isSpoiler: item.isSpoiler,
-                        cornerRadius: 8,
-                        maximumPixelDimension: 256
-                    )
-                ]
-            )
-
+    private static func mediaNode(
+        for component: MessageComponent,
+        message: Message,
+        maximumWidth: CGFloat
+    ) -> Node {
+        switch component {
         case let .mediaGallery(_, items):
             let resolved = items.compactMap { item -> (
                 ComponentGalleryItem,
@@ -674,6 +799,18 @@ private enum NodeBuilder {
                 ]
             )
 
+        default:
+            preconditionFailure("Unexpected media component")
+        }
+    }
+
+    private static func containerNode(
+        for component: MessageComponent,
+        message: Message,
+        model: AppModel?,
+        maximumWidth: CGFloat
+    ) -> Node {
+        switch component {
         case let .separator(_, divider, spacing):
             let height: CGFloat = divider
                 ? (spacing == 2 ? 13 : 3)
@@ -755,27 +892,24 @@ private enum NodeBuilder {
             )
             return result
 
-        case let .unsupported(_, type, rawLabel):
-            return unsupportedNode(
-                rawLabel ?? "Unsupported component \(type)",
-                maximumWidth: maximumWidth
-            )
+        default:
+            preconditionFailure("Unexpected container component")
         }
     }
 
     static func vertical(_ children: [Node], spacing: CGFloat) -> Node {
         var result = Node()
-        var y: CGFloat = 0
+        var verticalOffset: CGFloat = 0
         var width: CGFloat = 0
         for child in children where child.size.height > 0 {
-            if y > 0 {
-                y += spacing
+            if verticalOffset > 0 {
+                verticalOffset += spacing
             }
-            result.merge(child, at: CGPoint(x: 0, y: y))
-            y += child.size.height
+            result.merge(child, at: CGPoint(x: 0, y: verticalOffset))
+            verticalOffset += child.size.height
             width = max(width, child.size.width)
         }
-        result.size = CGSize(width: width, height: y)
+        result.size = CGSize(width: width, height: verticalOffset)
         return result
     }
 

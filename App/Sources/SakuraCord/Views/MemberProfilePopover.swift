@@ -871,26 +871,26 @@ private struct ProfileRoleFlowLayout: Layout {
     private func layout(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, origins: [CGPoint]) {
         let availableWidth = proposal.width ?? .infinity
         var origins: [CGPoint] = []
-        var x: CGFloat = 0
-        var y: CGFloat = 0
+        var horizontalOffset: CGFloat = 0
+        var verticalOffset: CGFloat = 0
         var rowHeight: CGFloat = 0
         var usedWidth: CGFloat = 0
 
         for subview in subviews {
             let size = subview.sizeThatFits(.unspecified)
-            if x > 0, x + size.width > availableWidth {
-                x = 0
-                y += rowHeight + spacing
+            if horizontalOffset > 0, horizontalOffset + size.width > availableWidth {
+                horizontalOffset = 0
+                verticalOffset += rowHeight + spacing
                 rowHeight = 0
             }
-            origins.append(CGPoint(x: x, y: y))
-            x += size.width + spacing
+            origins.append(CGPoint(x: horizontalOffset, y: verticalOffset))
+            horizontalOffset += size.width + spacing
             rowHeight = max(rowHeight, size.height)
-            usedWidth = max(usedWidth, x - spacing)
+            usedWidth = max(usedWidth, horizontalOffset - spacing)
         }
 
         let width = availableWidth.isFinite ? availableWidth : usedWidth
-        return (CGSize(width: width, height: y + rowHeight), origins)
+        return (CGSize(width: width, height: verticalOffset + rowHeight), origins)
     }
 }
 

@@ -143,12 +143,13 @@ verification command above must print `.githooks`.
 The application package lives in `App/`, and the convenience workspace is
 `SakuraCord.xcworkspace`.
 
-The repository-managed pre-push hook checks the exact committed tips being
-pushed and any staged Swift snapshot before contacting the remote. It downloads
+The repository-managed pre-commit hook checks the exact staged index snapshot,
+and pre-push independently checks the committed tips being pushed plus any
+remaining staged Swift snapshot before contacting the remote. Both use
 checksum-verified SwiftFormat and SwiftLint binaries at the repository-pinned
-versions and caches them under the ignored `.build/` directory. Existing
-SwiftLint debt is recorded in `.swiftlint-baseline.json`; new violations are
-rejected without disabling the corresponding rules.
+versions, cached under the ignored `.build/` directory. Existing SwiftFormat
+drift and every SwiftLint violation are rejected under the checked-in strict
+policy.
 
 When you deliberately want to open the normal app:
 
@@ -176,10 +177,10 @@ work, screenshots, and fixture-driven development.
   | `./script/worktree_test.sh protocol` | Run the protocol package tests. |
   | `./script/worktree_test.sh app` | Run the application package tests. |
   | `./script/worktree_test.sh all` | Run the configured first-party package and application test matrix. |
-  | `./script/code_quality.sh check` | Run the complete pinned SwiftFormat and SwiftLint policy used by CI and pre-push. |
+  | `./script/code_quality.sh check` | Run the complete pinned SwiftFormat and SwiftLint policy used by CI and both Git hooks. |
   | `./script/code_quality.sh fix --staged` | Format only staged Swift files and re-stage them; refuses files with additional unstaged edits. |
   | `./script/code_quality.sh fix --files App/Sources/Example.swift` | Format only explicitly selected tracked Swift files. |
-  | `./script/test_code_quality.sh` | Verify committed/staged failures, file diagnostics, correction, and dirty-work preservation. |
+  | `./script/test_code_quality.sh` | Verify commit/push rejection, snapshot diagnostics, correction, and dirty-work preservation. |
   | `./script/ci.sh` | Run CI's code-quality check, credential scan, dependency resolution, and application build. |
 
 </details>

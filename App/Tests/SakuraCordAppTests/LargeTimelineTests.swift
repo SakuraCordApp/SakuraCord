@@ -939,20 +939,20 @@ func `hidden text spoilers stay private to accessibility until revealed`() {
     )
 
     #expect(
-        NativeTimelineTextAccessibilityPresentation.text(
+        TimelineTextAccessibility.text(
             value,
             revealedLocations: []
         ) == "before Spoiler after"
     )
     #expect(
-        NativeTimelineTextAccessibilityPresentation
+        TimelineTextAccessibility
             .hiddenSpoilerRanges(
                 in: value,
                 revealedLocations: []
             ) == [NSRange(location: 7, length: 6)]
     )
     #expect(
-        NativeTimelineTextAccessibilityPresentation.text(
+        TimelineTextAccessibility.text(
             value,
             revealedLocations: [7]
         ) == "before secret after"
@@ -991,7 +991,7 @@ func `inline rich tokens inherit their enclosing spoiler`() {
 
     #expect(spoilerRanges.count == 1)
     #expect(
-        NativeTimelineTextAccessibilityPresentation.text(
+        TimelineTextAccessibility.text(
             value,
             revealedLocations: []
         ) == "before Spoiler after"
@@ -3454,12 +3454,12 @@ func `native timeline ordinary rows preserve compact geometry and center the ava
     #expect(NativeTimelineHoverHitTesting.pointerFrame(
         for: firstLayout.highlightFrame
     ) == CGRect(x: 0, y: 10, width: 620, height: 44))
-    #expect(!NativeTimelineMessageContextMenuHitTesting.contains(
+    #expect(!TimelineContextMenuHitTesting.contains(
         CGPoint(x: 100, y: 9),
         rowOrigin: 0,
         highlightFrame: firstLayout.highlightFrame
     ))
-    #expect(NativeTimelineMessageContextMenuHitTesting.contains(
+    #expect(TimelineContextMenuHitTesting.contains(
         CGPoint(x: 100, y: 10),
         rowOrigin: 0,
         highlightFrame: firstLayout.highlightFrame
@@ -4646,25 +4646,25 @@ func `native component button preserves legacy hover press and activation behavi
         componentID: "second"
     )
     #expect(
-        NativeTimelineComponentButtonActivationPolicy.activates(
+        TimelineButtonActivationPolicy.activates(
             pressed: first,
             released: first
         )
     )
     #expect(
-        !NativeTimelineComponentButtonActivationPolicy.activates(
+        !TimelineButtonActivationPolicy.activates(
             pressed: first,
             released: second
         )
     )
     #expect(
-        !NativeTimelineComponentButtonActivationPolicy.activates(
+        !TimelineButtonActivationPolicy.activates(
             pressed: first,
             released: nil
         )
     )
     #expect(
-        !NativeTimelineComponentButtonActivationPolicy.activates(
+        !TimelineButtonActivationPolicy.activates(
             pressed: nil,
             released: first
         )

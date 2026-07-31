@@ -131,30 +131,11 @@ final class ApplicationCommandComposerModel {
         }
         switch (option.type, value) {
         case (.string, let .string(text)):
-            if let minimum = option.minimumLength, text.count < minimum {
-                return "Use at least \(minimum) characters."
-            }
-            if let maximum = option.maximumLength, text.count > maximum {
-                return "Use at most \(maximum) characters."
-            }
+            return stringValidationError(text, option: option)
         case (.integer, let .integer(number)):
-            if number < -9_007_199_254_740_991 || number > 9_007_199_254_740_991 {
-                return "This number is outside Discord's safe integer range."
-            }
-            if let minimum = option.minimumValue, Double(number) < minimum {
-                return "Enter \(minimum) or greater."
-            }
-            if let maximum = option.maximumValue, Double(number) > maximum {
-                return "Enter \(maximum) or less."
-            }
+            return integerValidationError(number, option: option)
         case (.number, let .number(number)):
-            if !number.isFinite { return "Enter a finite number." }
-            if let minimum = option.minimumValue, number < minimum {
-                return "Enter \(minimum) or greater."
-            }
-            if let maximum = option.maximumValue, number > maximum {
-                return "Enter \(maximum) or less."
-            }
+            return numberValidationError(number, option: option)
         case (.attachment, let .attachment(url)):
             if !FileManager.default.fileExists(atPath: url.path) {
                 return "The selected file is no longer available."
@@ -164,6 +145,50 @@ final class ApplicationCommandComposerModel {
             break
         default:
             return "This option has an unsupported value."
+        }
+        return nil
+    }
+
+    private func stringValidationError(
+        _ text: String,
+        option: ApplicationCommandOption
+    ) -> String? {
+        if let minimum = option.minimumLength, text.count < minimum {
+            return "Use at least \(minimum) characters."
+        }
+        if let maximum = option.maximumLength, text.count > maximum {
+            return "Use at most \(maximum) characters."
+        }
+        return nil
+    }
+
+    private func integerValidationError(
+        _ number: Int64,
+        option: ApplicationCommandOption
+    ) -> String? {
+        if number < -9_007_199_254_740_991 || number > 9_007_199_254_740_991 {
+            return "This number is outside Discord's safe integer range."
+        }
+        return numericBoundsValidationError(Double(number), option: option)
+    }
+
+    private func numberValidationError(
+        _ number: Double,
+        option: ApplicationCommandOption
+    ) -> String? {
+        guard number.isFinite else { return "Enter a finite number." }
+        return numericBoundsValidationError(number, option: option)
+    }
+
+    private func numericBoundsValidationError(
+        _ number: Double,
+        option: ApplicationCommandOption
+    ) -> String? {
+        if let minimum = option.minimumValue, number < minimum {
+            return "Enter \(minimum) or greater."
+        }
+        if let maximum = option.maximumValue, number > maximum {
+            return "Enter \(maximum) or less."
         }
         return nil
     }
@@ -197,10 +222,8 @@ final class ApplicationCommandComposerModel {
         var applicationsByID: [String: ApplicationCommandApplication] = [:]
         var commandsByID: [String: ApplicationCommand] = [:]
         for catalog in catalogs {
-            for application in catalog.applications {
-                if applicationsByID[application.id] == nil {
-                    applicationsByID[application.id] = application
-                }
+            for application in catalog.applications where applicationsByID[application.id] == nil {
+                applicationsByID[application.id] = application
             }
             for command in catalog.commands where command.type == .chatInput
                 && (channel == nil || ApplicationCommandAvailability.isAvailable(

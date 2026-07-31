@@ -76,8 +76,7 @@ public final class VoiceVideoEngine: NSObject, AVCaptureVideoDataOutputSampleBuf
             throw VoiceVideoError.cameraUnavailable
         }
         let input: AVCaptureDeviceInput
-        do { input = try AVCaptureDeviceInput(device: camera) }
-        catch { throw VoiceVideoError.cameraInputUnavailable }
+        do { input = try AVCaptureDeviceInput(device: camera) } catch { throw VoiceVideoError.cameraInputUnavailable }
 
         // AVCaptureSession forbids startRunning while a configuration transaction
         // is open. Keep the complete transaction and startup on one serial queue;

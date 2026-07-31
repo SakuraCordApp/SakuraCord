@@ -757,22 +757,22 @@ enum DiscordQRCodeRenderer {
         context.setFillColor(plum)
 
         let finderOrigins = detectedFinderOrigins(in: modules, count: moduleCount)
-        func isDisplayedDataModule(x: Int, y: Int) -> Bool {
-            guard (0 ..< moduleCount).contains(x), (0 ..< moduleCount).contains(y) else { return false }
-            let sourceY = moduleCount - 1 - y
-            guard isDark(modules, count: moduleCount, x: x, y: sourceY) else { return false }
-            return !finderOrigins.contains(where: { finderContains($0, x: x, y: sourceY) })
+        func isDisplayedDataModule(x column: Int, y row: Int) -> Bool {
+            guard (0 ..< moduleCount).contains(column), (0 ..< moduleCount).contains(row) else { return false }
+            let sourceRow = moduleCount - 1 - row
+            guard isDark(modules, count: moduleCount, x: column, y: sourceRow) else { return false }
+            return !finderOrigins.contains(where: { finderContains($0, x: column, y: sourceRow) })
         }
-        for y in 0 ..< moduleCount {
-            for x in 0 ..< moduleCount where isDisplayedDataModule(x: x, y: y) {
+        for row in 0 ..< moduleCount {
+            for column in 0 ..< moduleCount where isDisplayedDataModule(x: column, y: row) {
                 drawDataModule(
                     context: context,
-                    x: x,
-                    y: y,
-                    connectsLeft: isDisplayedDataModule(x: x - 1, y: y),
-                    connectsRight: isDisplayedDataModule(x: x + 1, y: y),
-                    connectsAbove: isDisplayedDataModule(x: x, y: y + 1),
-                    connectsBelow: isDisplayedDataModule(x: x, y: y - 1)
+                    x: column,
+                    y: row,
+                    connectsLeft: isDisplayedDataModule(x: column - 1, y: row),
+                    connectsRight: isDisplayedDataModule(x: column + 1, y: row),
+                    connectsAbove: isDisplayedDataModule(x: column, y: row + 1),
+                    connectsBelow: isDisplayedDataModule(x: column, y: row - 1)
                 )
             }
         }
@@ -804,8 +804,8 @@ enum DiscordQRCodeRenderer {
         return pixels
     }
 
-    private static func isDark(_ modules: [UInt8], count: Int, x: Int, y: Int) -> Bool {
-        modules[(y * count + x) * 4] < 128
+    private static func isDark(_ modules: [UInt8], count: Int, x column: Int, y row: Int) -> Bool {
+        modules[(row * count + column) * 4] < 128
     }
 
     private static func detectedFinderOrigins(in modules: [UInt8], count: Int) -> [CGPoint] {
@@ -817,11 +817,11 @@ enum DiscordQRCodeRenderer {
     private static func matchesFinder(in modules: [UInt8], count: Int, origin: CGPoint) -> Bool {
         let originX = Int(origin.x)
         let originY = Int(origin.y)
-        for y in 0 ..< 7 {
-            for x in 0 ..< 7 {
-                let expectedDark = x == 0 || x == 6 || y == 0 || y == 6
-                    || ((2 ... 4).contains(x) && (2 ... 4).contains(y))
-                if isDark(modules, count: count, x: originX + x, y: originY + y) != expectedDark {
+        for row in 0 ..< 7 {
+            for column in 0 ..< 7 {
+                let expectedDark = column == 0 || column == 6 || row == 0 || row == 6
+                    || ((2 ... 4).contains(column) && (2 ... 4).contains(row))
+                if isDark(modules, count: count, x: originX + column, y: originY + row) != expectedDark {
                     return false
                 }
             }
@@ -829,16 +829,16 @@ enum DiscordQRCodeRenderer {
         return true
     }
 
-    private static func finderContains(_ origin: CGPoint, x: Int, y: Int) -> Bool {
+    private static func finderContains(_ origin: CGPoint, x column: Int, y row: Int) -> Bool {
         let originX = Int(origin.x)
         let originY = Int(origin.y)
-        return (originX ..< (originX + 7)).contains(x) && (originY ..< (originY + 7)).contains(y)
+        return (originX ..< (originX + 7)).contains(column) && (originY ..< (originY + 7)).contains(row)
     }
 
     private static func drawDataModule(
         context: CGContext,
-        x: Int,
-        y: Int,
+        x column: Int,
+        y row: Int,
         connectsLeft: Bool,
         connectsRight: Bool,
         connectsAbove: Bool,
@@ -846,8 +846,8 @@ enum DiscordQRCodeRenderer {
     ) {
         let unit = CGFloat(moduleScale)
         let rect = CGRect(
-            x: CGFloat(x + quietZone) * unit,
-            y: CGFloat(y + quietZone) * unit,
+            x: CGFloat(column + quietZone) * unit,
+            y: CGFloat(row + quietZone) * unit,
             width: unit,
             height: unit
         )
@@ -901,12 +901,12 @@ enum DiscordQRCodeRenderer {
         plum: CGColor
     ) {
         let unit = CGFloat(moduleScale)
-        let x = (origin.x + CGFloat(quietZone)) * unit
-        let y = (origin.y + CGFloat(quietZone)) * unit
+        let horizontalPosition = (origin.x + CGFloat(quietZone)) * unit
+        let verticalPosition = (origin.y + CGFloat(quietZone)) * unit
 
         context.setFillColor(plum)
         context.addPath(CGPath(
-            roundedRect: CGRect(x: x, y: y, width: 7 * unit, height: 7 * unit),
+            roundedRect: CGRect(x: horizontalPosition, y: verticalPosition, width: 7 * unit, height: 7 * unit),
             cornerWidth: 1.45 * unit,
             cornerHeight: 1.45 * unit,
             transform: nil
@@ -916,7 +916,12 @@ enum DiscordQRCodeRenderer {
         context.saveGState()
         context.setBlendMode(.clear)
         context.addPath(CGPath(
-            roundedRect: CGRect(x: x + unit, y: y + unit, width: 5 * unit, height: 5 * unit),
+            roundedRect: CGRect(
+                x: horizontalPosition + unit,
+                y: verticalPosition + unit,
+                width: 5 * unit,
+                height: 5 * unit
+            ),
             cornerWidth: unit,
             cornerHeight: unit,
             transform: nil
@@ -926,7 +931,12 @@ enum DiscordQRCodeRenderer {
 
         context.setFillColor(plum)
         context.addPath(CGPath(
-            roundedRect: CGRect(x: x + 2 * unit, y: y + 2 * unit, width: 3 * unit, height: 3 * unit),
+            roundedRect: CGRect(
+                x: horizontalPosition + 2 * unit,
+                y: verticalPosition + 2 * unit,
+                width: 3 * unit,
+                height: 3 * unit
+            ),
             cornerWidth: 0.7 * unit,
             cornerHeight: 0.7 * unit,
             transform: nil

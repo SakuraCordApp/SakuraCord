@@ -223,12 +223,12 @@ private enum SakuraPetal {
         let baseX = seed * max(canvasSize.width, 1)
         let sway = sin(elapsed * (0.45 + secondarySeed * 0.25) + seed * 12) * (22 + seed * 34)
         let width = max(canvasSize.width, 1)
-        let x = wrapped(baseX + sway, limit: width)
-        let y = -30 + progress * (canvasSize.height + 60)
+        let horizontalPosition = wrapped(baseX + sway, limit: width)
+        let verticalPosition = -30 + progress * (canvasSize.height + 60)
         let depth = 0.45 + secondarySeed * 0.75
 
         return Motion(
-            position: CGPoint(x: x, y: y),
+            position: CGPoint(x: horizontalPosition, y: verticalPosition),
             rotation: .radians(elapsed * (0.3 + seed * 0.75) + secondarySeed * .pi * 2),
             scale: depth,
             opacity: 0.18 + seed * 0.38,

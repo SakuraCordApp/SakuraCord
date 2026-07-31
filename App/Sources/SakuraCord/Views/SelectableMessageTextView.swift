@@ -447,8 +447,7 @@ final class RichMessageNSTextView: NSTextView {
         layoutManager.ensureLayout(for: textContainer)
         let glyphRange = layoutManager.glyphRange(for: textContainer)
         var usedBounds = CGRect.null
-        layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) {
-            _, usedRect, _, lineGlyphRange, _ in
+        layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { _, usedRect, _, lineGlyphRange, _ in
             guard lineGlyphRange.length > 0 else { return }
             usedBounds = usedBounds.union(usedRect)
         }
@@ -499,14 +498,16 @@ final class RichMessageNSTextView: NSTextView {
     }
 
     override func cursorUpdate(with event: NSEvent) {
-        mentionAttachment(at: convert(event.locationInWindow, from: nil)) == nil
-            ? NSCursor.iBeam.set()
-            : NSCursor.pointingHand.set()
+        if mentionAttachment(at: convert(event.locationInWindow, from: nil)) == nil {
+            NSCursor.iBeam.set()
+        } else {
+            NSCursor.pointingHand.set()
+        }
     }
 
     override func mouseDown(with event: NSEvent) {
         claimSelectionOwnership()
-        if event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty,
+        if event.modifierFlags.isDisjoint(with: [.command, .shift, .option, .control]),
            let (index, attachment) = mentionAttachment(at: convert(event.locationInWindow, from: nil))
         {
             let rawToken = attachment.presentation.rawToken

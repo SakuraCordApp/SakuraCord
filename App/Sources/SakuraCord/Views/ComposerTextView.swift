@@ -21,8 +21,8 @@ enum ComposerAutocompleteCommand {
 }
 
 enum ComposerEmojiAttributedText {
-    static let expression = try! NSRegularExpression(
-        pattern: #"<a?:[A-Za-z0-9_]+:[0-9]+>|"# + RenderedMention.tokenPattern
+    static let expression = RegularExpressionFactory.make(
+        #"<a?:[A-Za-z0-9_]+:[0-9]+>|"# + RenderedMention.tokenPattern
     )
 
     static func make(
@@ -121,8 +121,7 @@ enum ComposerEmojiAttributedText {
         mentionPresentations: [String: MentionPresentation]
     ) -> Bool {
         var isCurrent = true
-        value.enumerateAttributes(in: NSRange(location: 0, length: value.length)) {
-            attributes, _, stop in
+        value.enumerateAttributes(in: NSRange(location: 0, length: value.length)) { attributes, _, stop in
             guard let token = attributes[.discordMentionToken] as? String,
                   let mention = RenderedMention(rawToken: token)
             else { return }
@@ -471,8 +470,8 @@ struct ComposerTextView: NSViewRepresentable {
 
         private func attachmentCount(in value: NSAttributedString) -> Int {
             var count = 0
-            value.enumerateAttribute(.attachment, in: NSRange(location: 0, length: value.length)) {
-                attachment, _, _ in if attachment != nil {
+            value.enumerateAttribute(.attachment, in: NSRange(location: 0, length: value.length)) { attachment, _, _ in
+                if attachment != nil {
                     count += 1
                 }
             }
@@ -644,12 +643,12 @@ final class ComposerNSTextView: NSTextView {
     override func keyDown(with event: NSEvent) {
         let textNavigationModifiers: NSEvent.ModifierFlags = [.shift, .command, .option, .control]
         let usesTextNavigationModifier = !event.modifierFlags
-            .intersection(textNavigationModifiers).isEmpty
+            .isDisjoint(with: textNavigationModifiers)
         let autocompleteCommand: ComposerAutocompleteCommand? =
             switch event.keyCode {
             case 126 where !usesTextNavigationModifier: .previous
             case 125 where !usesTextNavigationModifier: .next
-            case 48 where event.modifierFlags.intersection([.command, .option, .control]).isEmpty:
+            case 48 where event.modifierFlags.isDisjoint(with: [.command, .option, .control]):
                 event.modifierFlags.contains(.shift) ? .previousField : .advance
             case 36, 76: .accept
             case 53: .dismiss
@@ -675,7 +674,7 @@ final class ComposerNSTextView: NSTextView {
 
     private func shouldLeaveField(backward: Bool, event: NSEvent) -> Bool {
         let disallowed: NSEvent.ModifierFlags = [.shift, .command, .option, .control]
-        guard event.modifierFlags.intersection(disallowed).isEmpty,
+        guard event.modifierFlags.isDisjoint(with: disallowed),
               selectedRange().length == 0
         else { return false }
         return backward
@@ -770,7 +769,7 @@ final class ComposerUnfocusedTypingMonitor {
         modifierFlags: NSEvent.ModifierFlags
     ) -> Bool {
         let disallowed: NSEvent.ModifierFlags = [.command, .control, .function]
-        guard modifierFlags.intersection(disallowed).isEmpty,
+        guard modifierFlags.isDisjoint(with: disallowed),
               let characters,
               !characters.isEmpty
         else { return false }

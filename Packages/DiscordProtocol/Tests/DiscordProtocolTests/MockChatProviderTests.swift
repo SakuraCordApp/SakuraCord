@@ -107,45 +107,59 @@ import Testing
     let provider = MockChatProvider()
     let snapshot = try await provider.bootstrap()
 
+    try await verifyGuildFixtures(provider: provider, snapshot: snapshot)
+    try await verifyMemberFixtures(provider: provider)
+    try await verifyChannelFixtures(provider: provider, snapshot: snapshot)
+    try await verifyShowcaseFixtures(provider: provider, snapshot: snapshot)
+}
+
+private func verifyGuildFixtures(
+    provider: MockChatProvider,
+    snapshot: BootstrapSnapshot
+) async throws {
     #expect(snapshot.currentUser.displayName == "Nova Chen")
     #expect(snapshot.guilds.count == 2)
     #expect(snapshot.guilds.allSatisfy { $0.iconURL?.isFileURL == true })
-    #expect(
-        snapshot.guilds.allSatisfy { guild in
-            guild.iconURL.map { FileManager.default.fileExists(atPath: $0.path) } == true
-        })
-
+    #expect(snapshot.guilds.allSatisfy { guild in
+        guild.iconURL.map { FileManager.default.fileExists(atPath: $0.path) } == true
+    })
     for guild in snapshot.guilds {
         let emojis = try await provider.emojis(in: guild.id)
         #expect(!emojis.isEmpty)
         #expect(emojis.allSatisfy { $0.guildID == guild.id })
         #expect(emojis.allSatisfy { $0.imageURL?.isFileURL == true })
-        #expect(
-            emojis.allSatisfy { emoji in
-                emoji.imageURL.map { FileManager.default.fileExists(atPath: $0.path) } == true
-            })
+        #expect(emojis.allSatisfy { emoji in
+            emoji.imageURL.map { FileManager.default.fileExists(atPath: $0.path) } == true
+        })
     }
+}
 
-    let members = try await provider.members(in: GuildID(rawValue: 100))
+private func verifyMemberFixtures(provider: MockChatProvider) async throws {
+    let guildID = GuildID(rawValue: 100)
+    let members = try await provider.members(in: guildID)
     #expect(members.count == 5)
     let searchedMembers = try await provider.searchMembers(
-        in: GuildID(rawValue: 100), query: "maya", limit: 25
+        in: guildID, query: "maya", limit: 25
     )
     #expect(searchedMembers.map(\.user.displayName) == ["Maya • Orbit"])
     #expect(members.allSatisfy { $0.user.avatarURL?.isFileURL == true })
     for member in members {
-        let profile = try await provider.profile(for: member.user.id, in: GuildID(rawValue: 100))
+        let profile = try await provider.profile(for: member.user.id, in: guildID)
         #expect(profile.bio?.isEmpty == false)
         #expect(profile.pronouns?.isEmpty == false)
         #expect(!profile.roles.isEmpty)
     }
+}
 
+private func verifyChannelFixtures(
+    provider: MockChatProvider,
+    snapshot: BootstrapSnapshot
+) async throws {
     for rawChannelID: UInt64 in [200, 210, 211, 212, 300, 301, 302, 400, 401] {
         let channelID = ChannelID(rawValue: rawChannelID)
         let page = try await provider.messages(in: channelID, before: nil, limit: 50)
         #expect(!page.messages.isEmpty)
     }
-
     let groupDM = try #require(snapshot.channels.first {
         $0.id == ChannelID(rawValue: 401)
     })
@@ -155,13 +169,18 @@ import Testing
         UserID(rawValue: 3),
         UserID(rawValue: 4),
     ])
-
     let threadID = ChannelID(rawValue: 901)
     let threadPage = try await provider.messages(in: threadID, before: nil, limit: 50)
     #expect(
-        threadPage.messages.map(\.id) == [MessageID(rawValue: 9011), MessageID(rawValue: 9012)])
+        threadPage.messages.map(\.id) == [MessageID(rawValue: 9011), MessageID(rawValue: 9012)]
+    )
     #expect(threadPage.messages.allSatisfy { $0.channelID == threadID })
+}
 
+private func verifyShowcaseFixtures(
+    provider: MockChatProvider,
+    snapshot: BootstrapSnapshot
+) async throws {
     let showcase = try await provider.messages(
         in: ChannelID(rawValue: 301),
         before: nil,
@@ -172,9 +191,7 @@ import Testing
     })
     #expect(spoilerFixture.attachments.first?.isSpoiler == true)
     #expect(spoilerFixture.components.contains {
-        guard case let .container(_, _, spoiler, _) = $0 else {
-            return false
-        }
+        guard case let .container(_, _, spoiler, _) = $0 else { return false }
         return spoiler
     })
     let independentSpoilers = try #require(showcase.messages.first {
@@ -187,69 +204,17 @@ import Testing
             == [.image, .animatedImage, .video, .file]
     )
     #expect(independentSpoilers.components.contains {
-        guard case let .mediaGallery(_, items) = $0 else {
-            return false
-        }
-        return items.count == 2
-            && items.allSatisfy { $0.media.isSpoiler }
+        guard case let .mediaGallery(_, items) = $0 else { return false }
+        return items.count == 2 && items.allSatisfy { $0.media.isSpoiler }
     })
     #expect(independentSpoilers.components.contains {
-        guard case let .file(_, media) = $0 else {
-            return false
-        }
+        guard case let .file(_, media) = $0 else { return false }
         return media.isSpoiler
     })
-    let animatedFixture = try #require(showcase.messages.first {
-        $0.id == MessageID(rawValue: 3107)
-    })
-    #expect(
-        animatedFixture.content.contains(
-            "<a:animated_fixture:900000000000000203>"
-        )
+    try verifyAnimatedAndCommandFixtures(
+        messages: showcase.messages,
+        currentUserID: snapshot.currentUser.id
     )
-    #expect(
-        animatedFixture.reactions.first?.emojiReference.isAnimated == true
-    )
-    let commandFixture = try #require(showcase.messages.first {
-        $0.id == MessageID(rawValue: 3108)
-    })
-    #expect(commandFixture.type == .chatInputCommand)
-    #expect(commandFixture.flags.contains(.ephemeral))
-    #expect(commandFixture.interactionMetadata?.displayName == "inspect")
-    #expect(commandFixture.interactionMetadata?.user?.id == snapshot.currentUser.id)
-    let systemFixture = try #require(showcase.messages.first {
-        $0.id == MessageID(rawValue: 3109)
-    })
-    #expect(systemFixture.type == .channelPinnedMessage)
-    #expect(systemFixture.type.hasGeneratedContent)
-    let loadingFixture = try #require(showcase.messages.first {
-        $0.id == MessageID(rawValue: 3110)
-    })
-    #expect(loadingFixture.type == .chatInputCommand)
-    #expect(loadingFixture.flags.contains(.loading))
-    #expect(loadingFixture.interactionMetadata?.displayName == "compare")
-    let replyMentionFixture = try #require(showcase.messages.first {
-        $0.id == MessageID(rawValue: 3113)
-    })
-    #expect(replyMentionFixture.replyTo == MessageID(rawValue: 3112))
-    #expect(
-        replyMentionFixture.mentionedUsers.contains {
-            $0.id == snapshot.currentUser.id
-        }
-    )
-    let suppressedEmbedFixture = try #require(showcase.messages.first {
-        $0.id == MessageID(rawValue: 3114)
-    })
-    #expect(suppressedEmbedFixture.flags.contains(.suppressEmbeds))
-    #expect(suppressedEmbedFixture.embeds.count == 1)
-    #expect(
-        suppressedEmbedFixture.content
-            == "https://example.com/suppressed-preview"
-    )
-    let failedFixture = try #require(showcase.messages.first {
-        $0.id == MessageID(rawValue: 3111)
-    })
-    #expect(failedFixture.outboxState == .failed)
     let animatedEmoji = try #require(
         try await provider.emojis(in: GuildID(rawValue: 101)).first {
             $0.id == "900000000000000203"
@@ -257,6 +222,38 @@ import Testing
     )
     #expect(animatedEmoji.assetURL?.isFileURL == true)
     #expect(animatedEmoji.assetURL?.pathExtension == "gif")
+}
+
+private func verifyAnimatedAndCommandFixtures(
+    messages: [Message],
+    currentUserID: UserID
+) throws {
+    let animatedFixture = try #require(messages.first {
+        $0.id == MessageID(rawValue: 3107)
+    })
+    #expect(animatedFixture.content.contains("<a:animated_fixture:900000000000000203>"))
+    #expect(animatedFixture.reactions.first?.emojiReference.isAnimated == true)
+    let commandFixture = try #require(messages.first { $0.id == MessageID(rawValue: 3108) })
+    #expect(commandFixture.type == .chatInputCommand)
+    #expect(commandFixture.flags.contains(.ephemeral))
+    #expect(commandFixture.interactionMetadata?.displayName == "inspect")
+    #expect(commandFixture.interactionMetadata?.user?.id == currentUserID)
+    let systemFixture = try #require(messages.first { $0.id == MessageID(rawValue: 3109) })
+    #expect(systemFixture.type == .channelPinnedMessage)
+    #expect(systemFixture.type.hasGeneratedContent)
+    let loadingFixture = try #require(messages.first { $0.id == MessageID(rawValue: 3110) })
+    #expect(loadingFixture.type == .chatInputCommand)
+    #expect(loadingFixture.flags.contains(.loading))
+    #expect(loadingFixture.interactionMetadata?.displayName == "compare")
+    let replyMentionFixture = try #require(messages.first { $0.id == MessageID(rawValue: 3113) })
+    #expect(replyMentionFixture.replyTo == MessageID(rawValue: 3112))
+    #expect(replyMentionFixture.mentionedUsers.contains { $0.id == currentUserID })
+    let suppressedEmbedFixture = try #require(messages.first { $0.id == MessageID(rawValue: 3114) })
+    #expect(suppressedEmbedFixture.flags.contains(.suppressEmbeds))
+    #expect(suppressedEmbedFixture.embeds.count == 1)
+    #expect(suppressedEmbedFixture.content == "https://example.com/suppressed-preview")
+    let failedFixture = try #require(messages.first { $0.id == MessageID(rawValue: 3111) })
+    #expect(failedFixture.outboxState == .failed)
 }
 
 @Test func `mock long server list fixture provides scrollable guild and emoji rails`() async throws

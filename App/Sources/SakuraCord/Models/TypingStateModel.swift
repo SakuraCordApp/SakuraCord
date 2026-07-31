@@ -32,8 +32,7 @@ final class TypingStateModel {
         expiryTasks[key]?.cancel()
         let expiry = expiry
         expiryTasks[key] = Task { [weak self] in
-            do { try await Task.sleep(for: expiry) }
-            catch { return }
+            do { try await Task.sleep(for: expiry) } catch { return }
             self?.expire(key, generation: generation)
         }
         revision &+= 1

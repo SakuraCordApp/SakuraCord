@@ -19,7 +19,7 @@ Repository-wide agent rules live in [AGENTS.md](../AGENTS.md).
 ## Developer and agent bootstrap
 
 Every fresh clone must install the repository-managed Git hooks before its
-first push:
+first commit or push:
 
 ```sh
 ./script/install_git_hooks.sh
@@ -29,7 +29,7 @@ git config --local --get core.hooksPath
 The second command must print `.githooks`. This setup applies to developers and
 coding agents. The installer is safe to rerun, but deliberately refuses to
 replace a different existing hooks path; integrate that hook configuration
-explicitly instead of bypassing the repository pre-push check.
+explicitly instead of bypassing the repository pre-commit and pre-push checks.
 
 Before a change is considered ready to push, run:
 
@@ -38,7 +38,8 @@ Before a change is considered ready to push, run:
 ```
 
 That command is the pinned SwiftFormat and SwiftLint path shared by local
-development, the pre-push hook, and CI.
+development, both Git hooks, and CI. Pre-commit validates the exact staged
+index snapshot; pre-push independently validates the committed ref tips.
 
 ## Roadmap
 

@@ -89,7 +89,13 @@ import Testing
     #expect(h264["payload_type"] as? Int == 105)
     #expect(h264["rtx_payload_type"] as? Int == 106)
 
-    let video = try VoiceGatewayCodec.decodeJSON(Data(#"{"op":12,"d":{"user_id":"55","audio_ssrc":11,"video_ssrc":12,"rtx_ssrc":13,"streams":[{"type":"video","rid":"100","ssrc":12,"rtx_ssrc":13,"active":true,"quality":100,"max_framerate":30,"max_resolution":{"type":"fixed","width":1280,"height":720}}]},"seq":9}"#.utf8))
+    let video = try VoiceGatewayCodec.decodeJSON(Data(
+        #"""
+        {"op":12,"d":{"user_id":"55","audio_ssrc":11,"video_ssrc":12,"rtx_ssrc":13,
+        "streams":[{"type":"video","rid":"100","ssrc":12,"rtx_ssrc":13,"active":true,
+        "quality":100,"max_framerate":30,"max_resolution":{"type":"fixed","width":1280,"height":720}}]},"seq":9}
+        """#.utf8
+    ))
     guard case let .video(state) = video.event else {
         Issue.record("Expected a video event")
         return

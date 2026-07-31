@@ -17,8 +17,8 @@ import Testing
       }
     }
     """#.utf8))
-    let user = DiscordTypingEventResolver.resolve(
-        payload,
+    let user = DiscordTypingEventResolver.resolve(.init(
+        typing: payload,
         userID: UserID(rawValue: 2),
         currentUser: nil,
         currentStatus: .online,
@@ -26,7 +26,7 @@ import Testing
         cachedChannels: [],
         cachedMessages: [],
         cachedGuildRoles: [:]
-    )
+    ))
     #expect(user?.displayName == "Guild Alex")
 }
 
@@ -35,8 +35,8 @@ import Testing
     {"channel_id":"400","user_id":"3","timestamp":1784100000,
      "user":{"id":"3","username":"sam","global_name":"Sam"}}
     """#.utf8))
-    let partialUser = DiscordTypingEventResolver.resolve(
-        partial,
+    let partialUser = DiscordTypingEventResolver.resolve(.init(
+        typing: partial,
         userID: UserID(rawValue: 3),
         currentUser: nil,
         currentStatus: .online,
@@ -44,7 +44,7 @@ import Testing
         cachedChannels: [],
         cachedMessages: [],
         cachedGuildRoles: [:]
-    )
+    ))
     #expect(partialUser?.displayName == "Sam")
 
     let idOnly = try JSONDecoder().decode(
@@ -59,8 +59,8 @@ import Testing
         kind: .groupDirectMessage,
         recipients: [recipient]
     )
-    let cached = DiscordTypingEventResolver.resolve(
-        idOnly,
+    let cached = DiscordTypingEventResolver.resolve(.init(
+        typing: idOnly,
         userID: recipient.id,
         currentUser: nil,
         currentStatus: .online,
@@ -68,7 +68,7 @@ import Testing
         cachedChannels: [groupDM],
         cachedMessages: [],
         cachedGuildRoles: [:]
-    )
+    ))
     #expect(cached == recipient)
 }
 
@@ -79,8 +79,8 @@ import Testing
     )
     let cachedUser = User(id: UserID(rawValue: 5), username: "cached", displayName: "Cached Member")
     let member = Member(user: cachedUser, roleName: "Member", status: .online)
-    let fromGuild = DiscordTypingEventResolver.resolve(
-        payload,
+    let fromGuild = DiscordTypingEventResolver.resolve(.init(
+        typing: payload,
         userID: cachedUser.id,
         currentUser: nil,
         currentStatus: .online,
@@ -88,7 +88,7 @@ import Testing
         cachedChannels: [],
         cachedMessages: [],
         cachedGuildRoles: [:]
-    )
+    ))
     #expect(fromGuild == cachedUser)
 
     let message = Message(
@@ -97,8 +97,8 @@ import Testing
         author: cachedUser,
         content: "cached"
     )
-    let fromMessage = DiscordTypingEventResolver.resolve(
-        payload,
+    let fromMessage = DiscordTypingEventResolver.resolve(.init(
+        typing: payload,
         userID: cachedUser.id,
         currentUser: nil,
         currentStatus: .online,
@@ -106,11 +106,11 @@ import Testing
         cachedChannels: [],
         cachedMessages: [message],
         cachedGuildRoles: [:]
-    )
+    ))
     #expect(fromMessage == cachedUser)
 
-    #expect(DiscordTypingEventResolver.resolve(
-        payload,
+    #expect(DiscordTypingEventResolver.resolve(.init(
+        typing: payload,
         userID: cachedUser.id,
         currentUser: nil,
         currentStatus: .online,
@@ -118,5 +118,5 @@ import Testing
         cachedChannels: [],
         cachedMessages: [],
         cachedGuildRoles: [:]
-    ) == nil)
+    )) == nil)
 }

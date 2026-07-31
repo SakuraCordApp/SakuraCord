@@ -5,7 +5,7 @@ import Testing
 @Test func `snowflakes round trip as strings`() throws {
     let id = ChannelID(rawValue: 123_456_789_012_345_678)
     let data = try JSONEncoder().encode(id)
-    #expect(String(decoding: data, as: UTF8.self) == "\"123456789012345678\"")
+    #expect(String(data: data, encoding: .utf8) == "\"123456789012345678\"")
     #expect(try JSONDecoder().decode(ChannelID.self, from: data) == id)
 }
 
@@ -36,8 +36,11 @@ import Testing
 
 @Test func `legacy cached messages decode with rich content defaults`() throws {
     let data = Data(
-        #"{"id":"100","channelID":"200","author":{"id":"1","username":"legacy","displayName":"Legacy","avatarURL":null,"isBot":false},"content":"hello","timestamp":0,"attachments":[],"reactions":[],"outboxState":"confirmed"}"#
-            .utf8
+        #"""
+        {"id":"100","channelID":"200",
+        "author":{"id":"1","username":"legacy","displayName":"Legacy","avatarURL":null,"isBot":false},
+        "content":"hello","timestamp":0,"attachments":[],"reactions":[],"outboxState":"confirmed"}
+        """#.utf8
     )
     let message = try JSONDecoder().decode(Message.self, from: data)
 

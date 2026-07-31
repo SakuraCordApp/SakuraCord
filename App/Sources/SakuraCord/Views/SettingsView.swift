@@ -208,7 +208,9 @@ struct SettingsView: View {
                     }
 
                     Text(
-                        "Exports retained Discord REST, attachment, authentication, and Gateway request/response metadata from this app session. Message text, names, usernames, profile text, credentials, cookies, challenge data, filenames, and URLs are discarded before logging. Message, user, channel, and server IDs may be included."
+                        "Exports retained Discord REST, attachment, authentication, and Gateway request/response metadata from this app session. "
+                            + "Message text, names, usernames, profile text, credentials, cookies, challenge data, filenames, and URLs are discarded before logging. "
+                            + "Message, user, channel, and server IDs may be included."
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)

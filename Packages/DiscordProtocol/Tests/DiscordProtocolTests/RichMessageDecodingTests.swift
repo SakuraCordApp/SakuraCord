@@ -75,20 +75,30 @@ import Testing
           "mentions":[{"id":"2","username":"mentioned","global_name":"Mentioned User","member":{"nick":"Server Nick","avatar":null,"roles":[]}}],
           "timestamp":"2026-07-17T10:00:00.000Z",
           "attachments":[
-            {"id":"1","filename":"photo.png","title":"Photo","description":"A blue square","url":"https://cdn.example/photo.png","proxy_url":"https://proxy.example/photo.png","content_type":"image/png","width":800,"height":600,"size":12,"placeholder":"abc","placeholder_version":1},
+            {"id":"1","filename":"photo.png","title":"Photo","description":"A blue square",
+             "url":"https://cdn.example/photo.png","proxy_url":"https://proxy.example/photo.png",
+             "content_type":"image/png","width":800,"height":600,"size":12,
+             "placeholder":"abc","placeholder_version":1},
             {"id":false}
           ],
           "embeds":[
-            {"title":"Preview","description":"**Rich** description","url":"https://example.com","color":5793266,"fields":[{"name":"One","value":"Value","inline":true}],"image":{"url":"attachment://photo.png","width":800,"height":600}},
+            {"title":"Preview","description":"**Rich** description","url":"https://example.com",
+             "color":5793266,"fields":[{"name":"One","value":"Value","inline":true}],
+             "image":{"url":"attachment://photo.png","width":800,"height":600}},
             false
           ],
           "components":[
             {"type":17,"id":1,"accent_color":5793266,"components":[
               {"type":10,"id":2,"content":"Component text"},
               {"type":2,"id":3,"style":5,"label":"Open","emoji":{"id":"216154654256398347","name":"mmLol","animated":false},"url":"https://example.com"},
-              {"type":9,"id":5,"components":[{"type":10,"id":6,"content":"With thumbnail"}],"accessory":{"type":11,"id":7,"media":{"url":"attachment://photo.png"},"description":"Preview art","spoiler":true}},
+              {"type":9,"id":5,"components":[{"type":10,"id":6,"content":"With thumbnail"}],
+               "accessory":{"type":11,"id":7,"media":{"url":"attachment://photo.png"},
+               "description":"Preview art","spoiler":true}},
               {"type":13,"id":8,"file":{"url":"attachment://photo.png"},"spoiler":true},
-              {"type":12,"id":9,"items":[{"media":{"url":"https://cdn.example/banner.png","proxy_url":"https://proxy.example/banner.png","width":1200,"height":200,"content_type":"image/png","placeholder":"thumbhash","placeholder_version":1,"flags":1},"description":"Wide banner"}]},
+              {"type":12,"id":9,"items":[{"media":{"url":"https://cdn.example/banner.png",
+               "proxy_url":"https://proxy.example/banner.png","width":1200,"height":200,
+               "content_type":"image/png","placeholder":"thumbhash","placeholder_version":1,"flags":1},
+               "description":"Wide banner"}]},
               {"type":999,"id":4}
             ]},
             false
@@ -152,7 +162,11 @@ import Testing
 
 @Test func `welcome messages and standard lottie stickers retain renderable metadata`() throws {
     let data = Data(
-        #"{"id":"101","channel_id":"200","type":7,"author":{"id":"1","username":"new-user","global_name":"New User"},"content":"","sticker_items":[{"id":"749054660769218631","name":"Wave","format_type":3}]}"#.utf8
+        #"""
+        {"id":"101","channel_id":"200","type":7,
+        "author":{"id":"1","username":"new-user","global_name":"New User"},
+        "content":"","sticker_items":[{"id":"749054660769218631","name":"Wave","format_type":3}]}
+        """#.utf8
     )
     let message = try RichMessageFixtureDecoder.decodeMessage(from: data)
     #expect(message.type == .userJoin)

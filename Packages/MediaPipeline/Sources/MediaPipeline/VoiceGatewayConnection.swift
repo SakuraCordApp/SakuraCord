@@ -165,38 +165,8 @@ public actor VoiceGatewayConnection {
                 return
             }
 
-            switch message {
-            case let .data(data):
-                diagnostics.record(.response, data: data)
-            case let .string(string):
-                diagnostics.record(.response, data: Data(string.utf8))
-            @unknown default:
-                break
-            }
-
             do {
-                let sequenced: SequencedVoiceGatewayEvent = switch message {
-                case let .data(data): try VoiceGatewayCodec.decodeBinary(data)
-                case let .string(string): try VoiceGatewayCodec.decodeJSON(Data(string.utf8))
-                @unknown default: throw VoiceGatewayCodecError.malformedPayload
-                }
-                if let sequence = sequenced.sequence {
-                    lastSequence = Int(sequence)
-                }
-                if sequenced.event.isDiagnosticMilestone {
-                    voiceGatewayLogger.info(
-                        "Voice gateway event; name=\(sequenced.event.diagnosticName, privacy: .public), sequence=\(sequenced.sequence.map(String.init) ?? "none", privacy: .public)"
-                    )
-                }
-                switch sequenced.event {
-                case let .hello(interval):
-                    startHeartbeat(intervalMilliseconds: interval)
-                case .heartbeatAcknowledged:
-                    lastHeartbeatAcknowledged = true
-                default:
-                    break
-                }
-                continuation.yield(sequenced)
+                try handle(message)
             } catch {
                 if let sequence = Self.sequence(in: message) {
                     lastSequence = Int(sequence)
@@ -206,6 +176,38 @@ public actor VoiceGatewayConnection {
                 )
             }
         }
+    }
+
+    private func handle(_ message: URLSessionWebSocketTask.Message) throws {
+        let sequenced: SequencedVoiceGatewayEvent
+        switch message {
+        case let .data(data):
+            diagnostics.record(.response, data: data)
+            sequenced = try VoiceGatewayCodec.decodeBinary(data)
+        case let .string(string):
+            let data = Data(string.utf8)
+            diagnostics.record(.response, data: data)
+            sequenced = try VoiceGatewayCodec.decodeJSON(data)
+        @unknown default:
+            throw VoiceGatewayCodecError.malformedPayload
+        }
+        if let sequence = sequenced.sequence {
+            lastSequence = Int(sequence)
+        }
+        if sequenced.event.isDiagnosticMilestone {
+            voiceGatewayLogger.info(
+                "Voice gateway event; name=\(sequenced.event.diagnosticName, privacy: .public), sequence=\(sequenced.sequence.map(String.init) ?? "none", privacy: .public)"
+            )
+        }
+        switch sequenced.event {
+        case let .hello(interval):
+            startHeartbeat(intervalMilliseconds: interval)
+        case .heartbeatAcknowledged:
+            lastHeartbeatAcknowledged = true
+        default:
+            break
+        }
+        continuation.yield(sequenced)
     }
 
     private static func sequence(in message: URLSessionWebSocketTask.Message) -> UInt16? {

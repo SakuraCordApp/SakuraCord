@@ -8,8 +8,7 @@ extension NSTextView {
         for selectedValue in selectedRanges {
             let selectedRange = selectedValue.rangeValue
             guard selectedRange.length > 0 else { continue }
-            attributedString().enumerateAttribute(.attachment, in: selectedRange) {
-                value, range, _ in
+            attributedString().enumerateAttribute(.attachment, in: selectedRange) { value, range, _ in
                 guard value is NSTextAttachment else { return }
                 let glyphRange = layoutManager.glyphRange(
                     forCharacterRange: range,

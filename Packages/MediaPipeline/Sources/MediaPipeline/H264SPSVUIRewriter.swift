@@ -24,49 +24,15 @@ enum H264SPSVUIRewriter {
         var reader = BitReader(data: removeEmulationPrevention(Data(nalUnit.dropFirst())))
         var writer = BitWriter()
 
-        guard let profileIDC = reader.readBits(8) else { return nil }
-        writer.writeBits(profileIDC, count: 8)
-        guard let constraints = reader.readBits(8) else { return nil }
-        writer.writeBits(constraints, count: 8)
-        guard let levelIDC = reader.readBits(8) else { return nil }
-        writer.writeBits(levelIDC, count: 8)
-        guard copyUE(from: &reader, to: &writer) != nil else { return nil }
+        guard let profileIDC = copyHeader(from: &reader, to: &writer) else { return nil }
 
         // SakuraCord deliberately emits constrained Baseline. Refuse to rewrite a
         // high-profile SPS unless its extra syntax is explicitly supported.
         let highProfiles: Set<UInt64> = [100, 110, 122, 244, 44, 83, 86, 118, 128, 138, 144]
         guard !highProfiles.contains(profileIDC) else { return nil }
-
-        guard copyUE(from: &reader, to: &writer) != nil else { return nil } // log2_max_frame_num_minus4
-        guard let picOrderCountType = copyUE(from: &reader, to: &writer) else { return nil }
-        if picOrderCountType == 0 {
-            guard copyUE(from: &reader, to: &writer) != nil else { return nil }
-        } else if picOrderCountType == 1 {
-            guard copyBits(1, from: &reader, to: &writer) else { return nil }
-            guard copySE(from: &reader, to: &writer), copySE(from: &reader, to: &writer) else { return nil }
-            guard let cycleCount = copyUE(from: &reader, to: &writer) else { return nil }
-            for _ in 0 ..< cycleCount {
-                guard copySE(from: &reader, to: &writer) else { return nil }
-            }
-        }
-
-        guard let maxReferenceFrames = copyUE(from: &reader, to: &writer) else { return nil }
-        guard copyBits(1, from: &reader, to: &writer) else { return nil } // gaps_in_frame_num_value_allowed_flag
-        guard copyUE(from: &reader, to: &writer) != nil else { return nil } // width
-        guard copyUE(from: &reader, to: &writer) != nil else { return nil } // height
-        guard let frameOnly = reader.readBits(1) else { return nil }
-        writer.writeBits(frameOnly, count: 1)
-        if frameOnly == 0, !copyBits(1, from: &reader, to: &writer) {
-            return nil
-        }
-        guard copyBits(1, from: &reader, to: &writer) else { return nil } // direct_8x8_inference_flag
-        guard let cropping = reader.readBits(1) else { return nil }
-        writer.writeBits(cropping, count: 1)
-        if cropping != 0 {
-            for _ in 0 ..< 4 {
-                guard copyUE(from: &reader, to: &writer) != nil else { return nil }
-            }
-        }
+        guard copyPictureOrderSyntax(from: &reader, to: &writer),
+              let maxReferenceFrames = copyFrameDescription(from: &reader, to: &writer)
+        else { return nil }
 
         // Replace any existing VUI. The fields before this point define the
         // coded picture and remain byte-for-byte equivalent at the bit level.
@@ -88,6 +54,68 @@ enum H264SPSVUIRewriter {
         var rewritten = Data([nalHeader])
         rewritten.append(addEmulationPrevention(rbsp))
         return rewritten
+    }
+
+    private static func copyHeader(
+        from reader: inout BitReader,
+        to writer: inout BitWriter
+    ) -> UInt64? {
+        guard let profileIDC = reader.readBits(8) else { return nil }
+        writer.writeBits(profileIDC, count: 8)
+        guard let constraints = reader.readBits(8) else { return nil }
+        writer.writeBits(constraints, count: 8)
+        guard let levelIDC = reader.readBits(8) else { return nil }
+        writer.writeBits(levelIDC, count: 8)
+        guard copyUE(from: &reader, to: &writer) != nil else { return nil }
+        return profileIDC
+    }
+
+    private static func copyPictureOrderSyntax(
+        from reader: inout BitReader,
+        to writer: inout BitWriter
+    ) -> Bool {
+        guard copyUE(from: &reader, to: &writer) != nil,
+              let picOrderCountType = copyUE(from: &reader, to: &writer)
+        else { return false }
+        if picOrderCountType == 0 {
+            return copyUE(from: &reader, to: &writer) != nil
+        }
+        guard picOrderCountType == 1 else { return true }
+        guard copyBits(1, from: &reader, to: &writer),
+              copySE(from: &reader, to: &writer),
+              copySE(from: &reader, to: &writer),
+              let cycleCount = copyUE(from: &reader, to: &writer)
+        else { return false }
+        for _ in 0 ..< cycleCount {
+            guard copySE(from: &reader, to: &writer) else { return false }
+        }
+        return true
+    }
+
+    private static func copyFrameDescription(
+        from reader: inout BitReader,
+        to writer: inout BitWriter
+    ) -> UInt64? {
+        guard let maxReferenceFrames = copyUE(from: &reader, to: &writer),
+              copyBits(1, from: &reader, to: &writer),
+              copyUE(from: &reader, to: &writer) != nil,
+              copyUE(from: &reader, to: &writer) != nil,
+              let frameOnly = reader.readBits(1)
+        else { return nil }
+        writer.writeBits(frameOnly, count: 1)
+        if frameOnly == 0, !copyBits(1, from: &reader, to: &writer) {
+            return nil
+        }
+        guard copyBits(1, from: &reader, to: &writer),
+              let cropping = reader.readBits(1)
+        else { return nil }
+        writer.writeBits(cropping, count: 1)
+        if cropping != 0 {
+            for _ in 0 ..< 4 {
+                guard copyUE(from: &reader, to: &writer) != nil else { return nil }
+            }
+        }
+        return maxReferenceFrames
     }
 
     @discardableResult

@@ -103,8 +103,7 @@ public final class VoiceAudioEngine {
         }
         guard let device else { throw VoiceAudioEngineError.inputUnavailable }
         let input: AVCaptureDeviceInput
-        do { input = try AVCaptureDeviceInput(device: device) }
-        catch { throw VoiceAudioEngineError.inputUnavailable }
+        do { input = try AVCaptureDeviceInput(device: device) } catch { throw VoiceAudioEngineError.inputUnavailable }
 
         captureSession.beginConfiguration()
         defer { captureSession.commitConfiguration() }
@@ -286,8 +285,7 @@ private final class AudioCaptureBridge: NSObject, AVCaptureAudioDataOutputSample
             frameCount: Int32(frameCount),
             into: buffer.mutableAudioBufferList
         ) == noErr else { return }
-        do { try configure(inputFormat: format) }
-        catch { return }
+        do { try configure(inputFormat: format) } catch { return }
         process(buffer)
     }
 

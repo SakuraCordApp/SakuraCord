@@ -230,8 +230,8 @@ struct NativeTimelineEditingMessageContent: View {
                             reaction,
                             on: message
                         )
-                    }
-                ) {
+                    },
+                    addReactionControl: {
                     ReactionActionMenu(
                         model: model,
                         guildID: message.guildID,
@@ -241,7 +241,8 @@ struct NativeTimelineEditingMessageContent: View {
                         react: react
                     )
                     .id("reaction-picker-\(message.id)-inline")
-                }
+                    }
+                )
             }
             if message.flags.contains(.ephemeral) {
                 HStack(spacing: 4) {
@@ -529,10 +530,9 @@ private struct InlineMessageEditor: View {
                 EmojiAutocompleteList(
                     suggestions: suggestions,
                     selectedIndex: autocompleteIndex,
-                    highlight: { autocompleteIndex = $0 }
-                ) {
-                    accept($0, context: context)
-                }
+                    highlight: { autocompleteIndex = $0 },
+                    select: { accept($0, context: context) }
+                )
             }
             ComposerTextView(
                 text: text,

@@ -28,7 +28,9 @@ public struct DiscordClientMetadata: Sendable {
         let chromeVersion = "138.0.7204.251"
         let webKitVersion = "537.36"
         let osVersion = osVersion ?? Self.kernelVersion()
-        userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/\(webKitVersion) (KHTML, like Gecko) discord/\(baseline.desktopVersion) Chrome/\(chromeVersion) Electron/\(baseline.electronVersion) Safari/\(webKitVersion)"
+        userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/\(webKitVersion) "
+            + "(KHTML, like Gecko) discord/\(baseline.desktopVersion) Chrome/\(chromeVersion) "
+            + "Electron/\(baseline.electronVersion) Safari/\(webKitVersion)"
         self.fingerprint = fingerprint?.isEmpty == false ? fingerprint : nil
         properties = [
             "os": .string("Mac OS X"),

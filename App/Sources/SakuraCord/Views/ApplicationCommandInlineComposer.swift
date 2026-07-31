@@ -157,8 +157,8 @@ enum ApplicationCommandSuggestionFactory {
             }
         case .channel:
             return channels.compactMap { channel in
-                guard (option.channelTypes.isEmpty
-                        || option.channelTypes.contains(channel.discordCommandType)),
+                guard option.channelTypes.isEmpty
+                        || option.channelTypes.contains(channel.discordCommandType),
                       matches(channel.name, channel.category, query: query)
                 else { return nil }
                 return ApplicationCommandSuggestion(
@@ -169,50 +169,12 @@ enum ApplicationCommandSuggestionFactory {
                 )
             }
         case .role, .mentionable:
-            var values = roles
-                .filter { matches($0.name, query: query) }
-                .sorted { $0.position > $1.position }
-                .map { role in
-                    ApplicationCommandSuggestion(
-                        id: "role:\(role.id)", title: "@\(role.name)",
-                        leadingVisual: .role(
-                            colorHex: role.colorHex,
-                            iconURL: role.iconURL,
-                            unicodeEmoji: role.unicodeEmoji
-                        ),
-                        action: .value(
-                            option.type == .mentionable
-                                ? .mentionable(role.id.description) : .role(role.id),
-                            displayText: "@\(role.name)"
-                        )
-                    )
-                }
-            if option.type == .mentionable {
-                values.insert(
-                    contentsOf: members.compactMap { member in
-                        guard matches(
-                            member.user.displayName, member.user.username, query: query
-                        ) else { return nil }
-                        return ApplicationCommandSuggestion(
-                            id: "mentionable-user:\(member.user.id)",
-                            title: member.user.displayName,
-                            trailingText: "@\(member.user.username)",
-                            leadingVisual: .user(
-                                name: member.user.displayName,
-                                avatarURL: member.guildAvatarURL ?? member.user.avatarURL,
-                                decorationURL: member.user.avatarDecorationURL,
-                                status: member.status
-                            ),
-                            action: .value(
-                                .mentionable(member.user.id.description),
-                                displayText: "@\(member.user.displayName)"
-                            )
-                        )
-                    },
-                    at: 0
-                )
-            }
-            return values
+            return roleSuggestions(
+                for: option,
+                query: query,
+                members: members,
+                roles: roles
+            )
         case .attachment:
             return [
                 ApplicationCommandSuggestion(
@@ -224,6 +186,57 @@ enum ApplicationCommandSuggestionFactory {
         default:
             return []
         }
+    }
+
+    private static func roleSuggestions(
+        for option: ApplicationCommandOption,
+        query: String,
+        members: [Member],
+        roles: [GuildRole]
+    ) -> [ApplicationCommandSuggestion] {
+        var values = roles
+            .filter { matches($0.name, query: query) }
+            .sorted { $0.position > $1.position }
+            .map { role in
+                ApplicationCommandSuggestion(
+                    id: "role:\(role.id)", title: "@\(role.name)",
+                    leadingVisual: .role(
+                        colorHex: role.colorHex,
+                        iconURL: role.iconURL,
+                        unicodeEmoji: role.unicodeEmoji
+                    ),
+                    action: .value(
+                        option.type == .mentionable
+                            ? .mentionable(role.id.description) : .role(role.id),
+                        displayText: "@\(role.name)"
+                    )
+                )
+            }
+        guard option.type == .mentionable else { return values }
+        values.insert(
+            contentsOf: members.compactMap { member in
+                guard matches(
+                    member.user.displayName, member.user.username, query: query
+                ) else { return nil }
+                return ApplicationCommandSuggestion(
+                    id: "mentionable-user:\(member.user.id)",
+                    title: member.user.displayName,
+                    trailingText: "@\(member.user.username)",
+                    leadingVisual: .user(
+                        name: member.user.displayName,
+                        avatarURL: member.guildAvatarURL ?? member.user.avatarURL,
+                        decorationURL: member.user.avatarDecorationURL,
+                        status: member.status
+                    ),
+                    action: .value(
+                        .mentionable(member.user.id.description),
+                        displayText: "@\(member.user.displayName)"
+                    )
+                )
+            },
+            at: 0
+        )
+        return values
     }
 
     private static func choiceSuggestion(
@@ -783,8 +796,7 @@ enum ApplicationCommandEditorTextMap {
         in text: NSAttributedString
     ) -> NSRange? {
         var result: NSRange?
-        text.enumerateAttributes(in: NSRange(location: 0, length: text.length)) {
-            attributes, range, _ in
+        text.enumerateAttributes(in: NSRange(location: 0, length: text.length)) { attributes, range, _ in
             guard attributes[.applicationCommandOptionID] as? String == optionID,
                   attributes[.applicationCommandFieldPart] as? String == part
             else { return }
@@ -1155,28 +1167,12 @@ private struct ApplicationCommandStructuredTextView: NSViewRepresentable {
             })?.1,
                let commandTextView = textView as? ApplicationCommandNSTextView
             {
-                var attributes = valueAttributes(for: first, in: textView)
-                let renderedValue: String
-                if immediateValue.isEmpty {
-                    renderedValue = first.segment.option.isRequired ? "Required" : "Optional"
-                    attributes[.applicationCommandPlaceholder] = true
-                    attributes[.foregroundColor] = NSColor.tertiaryLabelColor
-                } else {
-                    renderedValue = immediateValue
-                    attributes[.applicationCommandPlaceholder] = nil
-                    attributes[.foregroundColor] = NSColor.labelColor
-                }
-                isApplyingDocument = true
-                commandTextView.textStorage?.replaceCharacters(
-                    in: first.valueRange,
-                    with: NSAttributedString(string: renderedValue, attributes: attributes)
+                applyImmediateValue(
+                    immediateValue,
+                    to: commandTextView,
+                    segment: first,
+                    caretOffset: caretOffset
                 )
-                commandTextView.setSelectedRange(NSRange(
-                    location: first.valueRange.location + min(caretOffset, renderedValue.utf16.count),
-                    length: 0
-                ))
-                commandTextView.typingAttributes = attributes
-                isApplyingDocument = false
             }
             if parent.focusedOptionID != first.segment.option.id {
                 parent.onFocusOption(first.segment.option.id)
@@ -1185,6 +1181,36 @@ private struct ApplicationCommandStructuredTextView: NSViewRepresentable {
                 parent.onTextChange(live.segment.option, updated)
             }
             return false
+        }
+
+        private func applyImmediateValue(
+            _ value: String,
+            to textView: ApplicationCommandNSTextView,
+            segment: LiveSegment,
+            caretOffset: Int
+        ) {
+            var attributes = valueAttributes(for: segment, in: textView)
+            let renderedValue: String
+            if value.isEmpty {
+                renderedValue = segment.segment.option.isRequired ? "Required" : "Optional"
+                attributes[.applicationCommandPlaceholder] = true
+                attributes[.foregroundColor] = NSColor.tertiaryLabelColor
+            } else {
+                renderedValue = value
+                attributes[.applicationCommandPlaceholder] = nil
+                attributes[.foregroundColor] = NSColor.labelColor
+            }
+            isApplyingDocument = true
+            textView.textStorage?.replaceCharacters(
+                in: segment.valueRange,
+                with: NSAttributedString(string: renderedValue, attributes: attributes)
+            )
+            textView.setSelectedRange(NSRange(
+                location: segment.valueRange.location + min(caretOffset, renderedValue.utf16.count),
+                length: 0
+            ))
+            textView.typingAttributes = attributes
+            isApplyingDocument = false
         }
 
         private struct LiveSegment {
@@ -1378,7 +1404,7 @@ final class ApplicationCommandNSTextView: NSTextView {
 
     override func keyDown(with event: NSEvent) {
         let navigationModifiers: NSEvent.ModifierFlags = [.shift, .command, .option, .control]
-        let plainNavigation = event.modifierFlags.intersection(navigationModifiers).isEmpty
+        let plainNavigation = event.modifierFlags.isDisjoint(with: navigationModifiers)
         if plainNavigation, event.keyCode == 124, movePastProtectedLabelIfNeeded() {
             return
         }
@@ -1393,7 +1419,7 @@ final class ApplicationCommandNSTextView: NSTextView {
         let command: ComposerAutocompleteCommand? = switch event.keyCode {
         case 126 where plainNavigation: .previous
         case 125 where plainNavigation: .next
-        case 48 where event.modifierFlags.intersection([.command, .option, .control]).isEmpty:
+        case 48 where event.modifierFlags.isDisjoint(with: [.command, .option, .control]):
             event.modifierFlags.contains(.shift) ? .previousField : .advance
         case 36, 76: .accept
         case 53: .dismiss

@@ -228,8 +228,7 @@ private struct ChatRootView: View {
             Text(model.errorMessage ?? "Unknown error")
         }
         .onReceive(NotificationCenter.default.publisher(for: .sakuracordToggleInspector)) { _ in model.showInspector.toggle() }
-        .onReceive(NotificationCenter.default.publisher(for: .sakuracordNotificationDeepLink)) {
-            notification in
+        .onReceive(NotificationCenter.default.publisher(for: .sakuracordNotificationDeepLink)) { notification in
             guard let link = notification.object as? NotificationDeepLink else { return }
             Task { await model.navigate(from: link) }
         }
@@ -375,10 +374,10 @@ private struct ChatRootView: View {
         return model.isComposerDropEligible(proposed) ? proposed : nil
     }
 
-    private func proposedComposerDestination(atX x: CGFloat) -> MessageComposerDestination {
+    private func proposedComposerDestination(atX horizontalPosition: CGFloat) -> MessageComposerDestination {
         if model.openThread != nil, supplementaryPaneFrame != .zero {
             let localThreadLeadingEdge = supplementaryPaneFrame.minX - workspaceFrame.minX
-            return x >= localThreadLeadingEdge ? .thread : .channel
+            return horizontalPosition >= localThreadLeadingEdge ? .thread : .channel
         }
         return .channel
     }
@@ -629,7 +628,7 @@ private struct SupplementaryToolbarPresentation {
 private struct ConversationToolbarLabel: View {
     let title: String
     let systemImage: String
-    var subtitle: String? = nil
+    var subtitle: String?
 
     var body: some View {
         HStack(spacing: 8) {

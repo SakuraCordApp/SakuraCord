@@ -524,7 +524,7 @@ import Testing
 }
 
 @Test func `forum search response keeps locked threads with partial owners`() throws {
-    let data = try #require(
+    let data = Data(
         """
         {
           "threads": [
@@ -554,7 +554,7 @@ import Testing
           "most_recent_messages": [],
           "has_more": false
         }
-        """.data(using: .utf8)
+        """.utf8
     )
 
     let response = try JSONDecoder().decode(ForumThreadSearchResponseDTO.self, from: data)
@@ -568,7 +568,7 @@ import Testing
 }
 
 @Test func `forum catalogue response decodes older posts and result metadata`() throws {
-    let data = try #require(
+    let data = Data(
         """
         {
           "threads": [
@@ -602,7 +602,7 @@ import Testing
           "has_more": true,
           "total_results": 31
         }
-        """.data(using: .utf8)
+        """.utf8
     )
 
     let response = try JSONDecoder().decode(ForumThreadCatalogueResponseDTO.self, from: data)
@@ -621,7 +621,7 @@ import Testing
 }
 
 @Test func `forum catalogue keeps valid posts when one sibling is malformed`() throws {
-    let data = try #require(
+    let data = Data(
         """
         {
           "threads": [
@@ -641,7 +641,7 @@ import Testing
           ],
           "has_more": false
         }
-        """.data(using: .utf8)
+        """.utf8
     )
 
     let response = try JSONDecoder().decode(ForumThreadCatalogueResponseDTO.self, from: data)
@@ -971,11 +971,11 @@ private final class ForumPostDeletionURLProtocol: URLProtocol, @unchecked Sendab
         hadBody = false
     }
 
-    override class func canInit(with request: URLRequest) -> Bool {
+    override static func canInit(with request: URLRequest) -> Bool {
         true
     }
 
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+    override static func canonicalRequest(for request: URLRequest) -> URLRequest {
         request
     }
 
@@ -1018,11 +1018,11 @@ private final class ForumThreadResolutionURLProtocol: URLProtocol, @unchecked Se
         hadBody = false
     }
 
-    override class func canInit(with request: URLRequest) -> Bool {
+    override static func canInit(with request: URLRequest) -> Bool {
         true
     }
 
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+    override static func canonicalRequest(for request: URLRequest) -> URLRequest {
         request
     }
 
@@ -1085,11 +1085,11 @@ private final class ForumPostCreationURLProtocol: URLProtocol, @unchecked Sendab
         body = nil
     }
 
-    override class func canInit(with request: URLRequest) -> Bool {
+    override static func canInit(with request: URLRequest) -> Bool {
         true
     }
 
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+    override static func canonicalRequest(for request: URLRequest) -> URLRequest {
         request
     }
 
@@ -1180,11 +1180,11 @@ private final class ForumInitialLoadURLProtocol: URLProtocol, @unchecked Sendabl
         previewRequestCount = 0
     }
 
-    override class func canInit(with request: URLRequest) -> Bool {
+    override static func canInit(with request: URLRequest) -> Bool {
         true
     }
 
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+    override static func canonicalRequest(for request: URLRequest) -> URLRequest {
         request
     }
 
@@ -1254,11 +1254,11 @@ private final class ForumPageScopedPreviewURLProtocol: URLProtocol, @unchecked S
         requestedThreadIDs = []
     }
 
-    override class func canInit(with request: URLRequest) -> Bool {
+    override static func canInit(with request: URLRequest) -> Bool {
         true
     }
 
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+    override static func canonicalRequest(for request: URLRequest) -> URLRequest {
         request
     }
 

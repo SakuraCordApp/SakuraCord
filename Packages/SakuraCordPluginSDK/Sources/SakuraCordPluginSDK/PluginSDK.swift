@@ -10,7 +10,16 @@ public struct PluginManifest: Codable, Hashable, Sendable {
     public var capabilities: Set<PluginCapability>
     public var networkOrigins: Set<String>
 
-    public init(id: String, name: String, publisher: String, version: String, minimumHostVersion: String, entryComponent: String, capabilities: Set<PluginCapability>, networkOrigins: Set<String> = []) {
+    public init(
+        id: String,
+        name: String,
+        publisher: String,
+        version: String,
+        minimumHostVersion: String,
+        entryComponent: String,
+        capabilities: Set<PluginCapability>,
+        networkOrigins: Set<String> = []
+    ) {
         self.id = id
         self.name = name
         self.publisher = publisher

@@ -22,115 +22,132 @@ struct MessageMentionResolver {
 
     func presentation(_ mention: RenderedMention) -> MentionPresentation {
         switch mention.kind {
-        case .user:
-            guard let userID = UserID(mention.id) else {
-                return MentionPresentation.fallback(for: mention)
-            }
-            let member = model.membersByID[userID]
-                ?? model.knownMentionMembers[userID]
-            let value = user(userID)
-            let topColor = member.flatMap {
-                MessageAuthorPresentation.topRoleColor(in: $0.roles)
-            }
-            return MentionPresentation(
-                rawToken: mention.rawToken,
-                label: "@\(member?.user.displayName ?? value?.displayName ?? "unknown-user")",
-                target: .user(userID),
-                avatarURL: member?.guildAvatarURL ?? value?.avatarURL,
-                colorHex: topColor
+        case .user: userPresentation(mention)
+        case .role: rolePresentation(mention)
+        case .channel: channelPresentation(mention)
+        case .channelLink: channelLinkPresentation(mention)
+        case .message: messagePresentation(mention)
+        }
+    }
+
+    private func userPresentation(_ mention: RenderedMention) -> MentionPresentation {
+        guard let userID = UserID(mention.id) else {
+            return MentionPresentation.fallback(for: mention)
+        }
+        let member = model.membersByID[userID]
+            ?? model.knownMentionMembers[userID]
+        let value = user(userID)
+        let topColor = member.flatMap {
+            MessageAuthorPresentation.topRoleColor(in: $0.roles)
+        }
+        return MentionPresentation(
+            rawToken: mention.rawToken,
+            label: "@\(member?.user.displayName ?? value?.displayName ?? "unknown-user")",
+            target: .user(userID),
+            avatarURL: member?.guildAvatarURL ?? value?.avatarURL,
+            colorHex: topColor
+        )
+    }
+
+    private func rolePresentation(_ mention: RenderedMention) -> MentionPresentation {
+        guard let roleID = RoleID(mention.id) else {
+            return MentionPresentation.fallback(for: mention)
+        }
+        let role = model.guildRoles.first { $0.id == roleID }
+            ?? model.members.lazy.flatMap(\.roles).first { $0.id == roleID }
+        return MentionPresentation(
+            rawToken: mention.rawToken,
+            label: "@\(role?.name ?? "unknown-role")",
+            target: .role(roleID),
+            colorHex: role?.colorHex
+        )
+    }
+
+    private func channelPresentation(_ mention: RenderedMention) -> MentionPresentation {
+        guard let channelID = ChannelID(mention.id) else {
+            return MentionPresentation.fallback(for: mention)
+        }
+        let channel = channel(channelID)
+        let guildName = channel?.guildID.flatMap { model.serverRailGuildsByID[$0]?.name }
+        let label = if crossesGuild(targetGuildID: channel?.guildID),
+                       let guildName,
+                       let channel
+        {
+            "\(guildName) / \(channel.name)"
+        } else {
+            channel?.name ?? "unknown-channel"
+        }
+        return MentionPresentation(
+            rawToken: mention.rawToken,
+            label: label,
+            target: .channel(channelID),
+            systemImage: ChannelIconPresentation.systemImage(
+                for: channel?.kind ?? .unknown,
+                isHidden: false
             )
-        case .role:
-            guard let roleID = RoleID(mention.id) else {
-                return MentionPresentation.fallback(for: mention)
-            }
-            let role = model.guildRoles.first { $0.id == roleID }
-                ?? model.members.lazy.flatMap(\.roles).first { $0.id == roleID }
-            return MentionPresentation(
-                rawToken: mention.rawToken,
-                label: "@\(role?.name ?? "unknown-role")",
-                target: .role(roleID),
-                colorHex: role?.colorHex
-            )
-        case .channel:
-            guard let channelID = ChannelID(mention.id) else {
-                return MentionPresentation.fallback(for: mention)
-            }
-            let channel = channel(channelID)
-            let crossesGuild = crossesGuild(targetGuildID: channel?.guildID)
-            let guildName = channel?.guildID.flatMap { model.serverRailGuildsByID[$0]?.name }
-            let label = if crossesGuild, let guildName, let channel {
+        )
+    }
+
+    private func channelLinkPresentation(_ mention: RenderedMention) -> MentionPresentation {
+        guard let channelID = ChannelID(mention.id) else {
+            return MentionPresentation.fallback(for: mention)
+        }
+        let guildID = mention.messageGuildID.flatMap(GuildID.init)
+        if let channel = channel(channelID) {
+            let guildName = channel.guildID.flatMap { model.serverRailGuildsByID[$0]?.name }
+            let label = if crossesGuild(targetGuildID: channel.guildID), let guildName {
                 "\(guildName) / \(channel.name)"
             } else {
-                channel?.name ?? "unknown-channel"
+                channel.name
             }
             return MentionPresentation(
                 rawToken: mention.rawToken,
                 label: label,
                 target: .channel(channelID),
                 systemImage: ChannelIconPresentation.systemImage(
-                    for: channel?.kind ?? .unknown,
+                    for: channel.kind,
                     isHidden: false
                 )
             )
-        case .channelLink:
-            guard let channelID = ChannelID(mention.id) else {
-                return MentionPresentation.fallback(for: mention)
-            }
-            let guildID = mention.messageGuildID.flatMap(GuildID.init)
-            if let channel = channel(channelID) {
-                let guildName = channel.guildID.flatMap { model.serverRailGuildsByID[$0]?.name }
-                let label = if crossesGuild(targetGuildID: channel.guildID), let guildName {
-                    "\(guildName) / \(channel.name)"
-                } else {
-                    channel.name
-                }
-                return MentionPresentation(
-                    rawToken: mention.rawToken,
-                    label: label,
-                    target: .channel(channelID),
-                    systemImage: ChannelIconPresentation.systemImage(
-                        for: channel.kind,
-                        isHidden: false
-                    )
-                )
-            }
-            let post = model.forumCataloguePosts.first { $0.id == channelID }
-                ?? model.forumPosts.first { $0.id == channelID }
-            return MentionPresentation(
-                rawToken: mention.rawToken,
-                label: post?.thread.name ?? "unknown-post",
-                target: .linkedChannel(guildID: guildID, channelID: channelID),
-                systemImage: ChannelIconPresentation.forumPostSystemImage
-            )
-        case .message:
-            guard let rawChannelID = mention.messageChannelID,
-                  let channelID = ChannelID(rawChannelID),
-                  let messageID = MessageID(mention.id)
-            else {
-                return MentionPresentation.fallback(for: mention)
-            }
-            let guildID = mention.messageGuildID.flatMap(GuildID.init)
-            let channel = channel(channelID)
-            let guildName = guildID.flatMap { model.serverRailGuildsByID[$0]?.name }
-            let channelLabel = if crossesGuild(targetGuildID: guildID),
-                                  let guildName,
-                                  let channel
-            {
-                "\(guildName) / \(channel.name) ›"
-            } else {
-                "\(channel?.name ?? "unknown-channel") ›"
-            }
-            return MentionPresentation(
-                rawToken: mention.rawToken,
-                label: channelLabel,
-                target: .message(
-                    guildID: guildID,
-                    channelID: channelID,
-                    messageID: messageID
-                ),
-                systemImage: "bubble.left.fill"
-            )
         }
+        let post = model.forumCataloguePosts.first { $0.id == channelID }
+            ?? model.forumPosts.first { $0.id == channelID }
+        return MentionPresentation(
+            rawToken: mention.rawToken,
+            label: post?.thread.name ?? "unknown-post",
+            target: .linkedChannel(guildID: guildID, channelID: channelID),
+            systemImage: ChannelIconPresentation.forumPostSystemImage
+        )
+    }
+
+    private func messagePresentation(_ mention: RenderedMention) -> MentionPresentation {
+        guard let rawChannelID = mention.messageChannelID,
+              let channelID = ChannelID(rawChannelID),
+              let messageID = MessageID(mention.id)
+        else {
+            return MentionPresentation.fallback(for: mention)
+        }
+        let guildID = mention.messageGuildID.flatMap(GuildID.init)
+        let channel = channel(channelID)
+        let guildName = guildID.flatMap { model.serverRailGuildsByID[$0]?.name }
+        let channelLabel = if crossesGuild(targetGuildID: guildID),
+                              let guildName,
+                              let channel
+        {
+            "\(guildName) / \(channel.name) ›"
+        } else {
+            "\(channel?.name ?? "unknown-channel") ›"
+        }
+        return MentionPresentation(
+            rawToken: mention.rawToken,
+            label: channelLabel,
+            target: .message(
+                guildID: guildID,
+                channelID: channelID,
+                messageID: messageID
+            ),
+            systemImage: "bubble.left.fill"
+        )
     }
 
     private func channel(_ channelID: ChannelID) -> Channel? {
@@ -285,8 +302,8 @@ private struct AnchoredMentionPopoverLayer: View {
 }
 
 nonisolated struct LinkedImagePresentation: Sendable {
-    private static let expression = try! NSRegularExpression(
-        pattern: #"\[([^\]]+)\]\((https://[^\s)]+)\)"#
+    private static let expression = RegularExpressionFactory.make(
+        #"\[([^\]]+)\]\((https://[^\s)]+)\)"#
     )
 
     let visibleText: String
@@ -295,8 +312,7 @@ nonisolated struct LinkedImagePresentation: Sendable {
 
     init(content: String) {
         let sourceRange = NSRange(content.startIndex ..< content.endIndex, in: content)
-        let references = Self.expression.matches(in: content, range: sourceRange).compactMap {
-            match -> (NSRange, LinkedImageReference)? in
+        let references = Self.expression.matches(in: content, range: sourceRange).compactMap { match -> (NSRange, LinkedImageReference)? in
             guard let labelRange = Range(match.range(at: 1), in: content),
                   let urlRange = Range(match.range(at: 2), in: content),
                   let url = URL(string: String(content[urlRange])),
@@ -450,6 +466,12 @@ nonisolated struct LinkedImageReference: Identifiable, Hashable, Sendable {
 }
 
 struct EmojiWrappingLayout: Layout {
+    private struct LayoutResult {
+        let size: CGSize
+        let positions: [CGPoint]
+        let sizes: [CGSize]
+    }
+
     let horizontalSpacing: CGFloat
     let verticalSpacing: CGFloat
 
@@ -472,9 +494,7 @@ struct EmojiWrappingLayout: Layout {
         }
     }
 
-    private func layout(proposal: ProposedViewSize, subviews: Subviews) -> (
-        size: CGSize, positions: [CGPoint], sizes: [CGSize]
-    ) {
+    private func layout(proposal: ProposedViewSize, subviews: Subviews) -> LayoutResult {
         let maximumWidth = proposal.width ?? 640
         let sizes = subviews.map {
             $0.sizeThatFits(ProposedViewSize(width: maximumWidth, height: nil))
@@ -485,10 +505,10 @@ struct EmojiWrappingLayout: Layout {
             horizontalSpacing: horizontalSpacing,
             verticalSpacing: verticalSpacing
         )
-        return (
-            CGSize(width: proposal.width ?? plan.size.width, height: plan.size.height),
-            plan.frames.map(\.origin),
-            plan.frames.map(\.size)
+        return LayoutResult(
+            size: CGSize(width: proposal.width ?? plan.size.width, height: plan.size.height),
+            positions: plan.frames.map(\.origin),
+            sizes: plan.frames.map(\.size)
         )
     }
 }
@@ -501,8 +521,8 @@ nonisolated enum InlineWrappingLayoutPlan {
 
         let widthLimit = max(1, maximumWidth)
         var frames: [CGRect] = []
-        var x: CGFloat = 0
-        var y: CGFloat = 0
+        var horizontalOffset: CGFloat = 0
+        var verticalOffset: CGFloat = 0
         var lineHeight: CGFloat = 0
         var usedWidth: CGFloat = 0
 
@@ -511,17 +531,17 @@ nonisolated enum InlineWrappingLayoutPlan {
                 width: min(widthLimit, max(0, proposedSize.width)),
                 height: max(0, proposedSize.height)
             )
-            if x > 0, x + size.width > widthLimit {
-                x = 0
-                y += lineHeight + verticalSpacing
+            if horizontalOffset > 0, horizontalOffset + size.width > widthLimit {
+                horizontalOffset = 0
+                verticalOffset += lineHeight + verticalSpacing
                 lineHeight = 0
             }
-            frames.append(CGRect(origin: CGPoint(x: x, y: y), size: size))
-            usedWidth = max(usedWidth, x + size.width)
-            x += size.width + horizontalSpacing
+            frames.append(CGRect(origin: CGPoint(x: horizontalOffset, y: verticalOffset), size: size))
+            usedWidth = max(usedWidth, horizontalOffset + size.width)
+            horizontalOffset += size.width + horizontalSpacing
             lineHeight = max(lineHeight, size.height)
         }
 
-        return (CGSize(width: usedWidth, height: y + lineHeight), frames)
+        return (CGSize(width: usedWidth, height: verticalOffset + lineHeight), frames)
     }
 }

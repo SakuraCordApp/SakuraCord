@@ -2,7 +2,6 @@
 set -euo pipefail
 
 ROOT_DIR="$(git rev-parse --show-toplevel)"
-TOOLS_DIR="$ROOT_DIR/.build/code-quality-tools"
 SNAPSHOT_PARENT="$ROOT_DIR/.build/pre-push-snapshots"
 mkdir -p "$SNAPSHOT_PARENT"
 TEMP_ROOT="$(mktemp -d "$SNAPSHOT_PARENT/run.XXXXXX")"
@@ -19,10 +18,9 @@ check_snapshot() {
   local snapshot_root="$1"
   local label="$2"
 
-  echo "Pre-push code quality: $label"
-  SAKURACORD_CODE_QUALITY_ROOT="$snapshot_root" \
-    SAKURACORD_CODE_QUALITY_TOOLS_DIR="$TOOLS_DIR" \
-    "$ROOT_DIR/script/code_quality.sh" check
+  "$ROOT_DIR/script/check_code_quality_snapshot.sh" \
+    "$snapshot_root" \
+    "Pre-push code quality: $label"
 }
 
 check_commit() {

@@ -34,34 +34,7 @@ struct ForumPostContextMenuBridge: NSViewRepresentable {
     let delete: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(
-            tags: tags,
-            appliedTagIDs: appliedTagIDs,
-            customEmojiURLsByID: customEmojiURLsByID,
-            isArchived: isArchived,
-            isLocked: isLocked,
-            isPinned: isPinned,
-            isUnread: isUnread,
-            isMutationPending: isMutationPending,
-            notificationSettings: notificationSettings,
-            inheritedNotificationLevel: inheritedNotificationLevel,
-            requiresTag: requiresTag,
-            canManage: canManage,
-            canArchive: canArchive,
-            canEditTags: canEditTags,
-            canDelete: canDelete,
-            markRead: markRead,
-            mute: mute,
-            unmute: unmute,
-            setNotificationLevel: setNotificationLevel,
-            copyLink: copyLink,
-            copyThreadID: copyThreadID,
-            toggleTag: toggleTag,
-            toggleArchive: toggleArchive,
-            toggleLock: toggleLock,
-            togglePin: togglePin,
-            delete: delete
-        )
+        Coordinator(from: self)
     }
 
     func makeNSView(context: Context) -> ForumPostContextMenuHitView {
@@ -73,34 +46,7 @@ struct ForumPostContextMenuBridge: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: ForumPostContextMenuHitView, context: Context) {
-        context.coordinator.update(
-            tags: tags,
-            appliedTagIDs: appliedTagIDs,
-            customEmojiURLsByID: customEmojiURLsByID,
-            isArchived: isArchived,
-            isLocked: isLocked,
-            isPinned: isPinned,
-            isUnread: isUnread,
-            isMutationPending: isMutationPending,
-            notificationSettings: notificationSettings,
-            inheritedNotificationLevel: inheritedNotificationLevel,
-            requiresTag: requiresTag,
-            canManage: canManage,
-            canArchive: canArchive,
-            canEditTags: canEditTags,
-            canDelete: canDelete,
-            markRead: markRead,
-            mute: mute,
-            unmute: unmute,
-            setNotificationLevel: setNotificationLevel,
-            copyLink: copyLink,
-            copyThreadID: copyThreadID,
-            toggleTag: toggleTag,
-            toggleArchive: toggleArchive,
-            toggleLock: toggleLock,
-            togglePin: togglePin,
-            delete: delete
-        )
+        context.coordinator.update(from: self)
         nsView.menuProvider = { [weak coordinator = context.coordinator] in
             coordinator?.makeMenu()
         }
@@ -137,60 +83,33 @@ struct ForumPostContextMenuBridge: NSViewRepresentable {
         private var customTagImages: [ForumTagID: NSImage] = [:]
         private var imageTasks: [ForumTagID: Task<Void, Never>] = [:]
 
-        init(
-            tags: [ForumTag],
-            appliedTagIDs: [ForumTagID],
-            customEmojiURLsByID: [String: URL],
-            isArchived: Bool,
-            isLocked: Bool,
-            isPinned: Bool,
-            isUnread: Bool,
-            isMutationPending: Bool,
-            notificationSettings: ThreadNotificationSettings?,
-            inheritedNotificationLevel: MessageNotificationLevel,
-            requiresTag: Bool,
-            canManage: Bool,
-            canArchive: Bool,
-            canEditTags: Bool,
-            canDelete: Bool,
-            markRead: @escaping () -> Void,
-            mute: @escaping (ChannelMuteDuration) -> Void,
-            unmute: @escaping () -> Void,
-            setNotificationLevel: @escaping (MessageNotificationLevel) -> Void,
-            copyLink: @escaping () -> Void,
-            copyThreadID: @escaping () -> Void,
-            toggleTag: @escaping (ForumTagID) -> Void,
-            toggleArchive: @escaping () -> Void,
-            toggleLock: @escaping () -> Void,
-            togglePin: @escaping () -> Void,
-            delete: @escaping () -> Void
-        ) {
-            self.tags = tags
-            self.appliedTagIDs = appliedTagIDs
-            self.customEmojiURLsByID = customEmojiURLsByID
-            self.isArchived = isArchived
-            self.isLocked = isLocked
-            self.isPinned = isPinned
-            self.isUnread = isUnread
-            self.isMutationPending = isMutationPending
-            self.notificationSettings = notificationSettings
-            self.inheritedNotificationLevel = inheritedNotificationLevel
-            self.requiresTag = requiresTag
-            self.canManage = canManage
-            self.canArchive = canArchive
-            self.canEditTags = canEditTags
-            self.canDelete = canDelete
-            self.markRead = markRead
-            self.mute = mute
-            self.unmute = unmute
-            self.setNotificationLevel = setNotificationLevel
-            self.copyLink = copyLink
-            self.copyThreadID = copyThreadID
-            self.toggleTag = toggleTag
-            self.toggleArchive = toggleArchive
-            self.toggleLock = toggleLock
-            self.togglePin = togglePin
-            self.delete = delete
+        init(from bridge: ForumPostContextMenuBridge) {
+            tags = bridge.tags
+            appliedTagIDs = bridge.appliedTagIDs
+            customEmojiURLsByID = bridge.customEmojiURLsByID
+            isArchived = bridge.isArchived
+            isLocked = bridge.isLocked
+            isPinned = bridge.isPinned
+            isUnread = bridge.isUnread
+            isMutationPending = bridge.isMutationPending
+            notificationSettings = bridge.notificationSettings
+            inheritedNotificationLevel = bridge.inheritedNotificationLevel
+            requiresTag = bridge.requiresTag
+            canManage = bridge.canManage
+            canArchive = bridge.canArchive
+            canEditTags = bridge.canEditTags
+            canDelete = bridge.canDelete
+            markRead = bridge.markRead
+            mute = bridge.mute
+            unmute = bridge.unmute
+            setNotificationLevel = bridge.setNotificationLevel
+            copyLink = bridge.copyLink
+            copyThreadID = bridge.copyThreadID
+            toggleTag = bridge.toggleTag
+            toggleArchive = bridge.toggleArchive
+            toggleLock = bridge.toggleLock
+            togglePin = bridge.togglePin
+            delete = bridge.delete
             super.init()
         }
 
@@ -198,60 +117,33 @@ struct ForumPostContextMenuBridge: NSViewRepresentable {
             for task in imageTasks.values { task.cancel() }
         }
 
-        func update(
-            tags: [ForumTag],
-            appliedTagIDs: [ForumTagID],
-            customEmojiURLsByID: [String: URL],
-            isArchived: Bool,
-            isLocked: Bool,
-            isPinned: Bool,
-            isUnread: Bool,
-            isMutationPending: Bool,
-            notificationSettings: ThreadNotificationSettings?,
-            inheritedNotificationLevel: MessageNotificationLevel,
-            requiresTag: Bool,
-            canManage: Bool,
-            canArchive: Bool,
-            canEditTags: Bool,
-            canDelete: Bool,
-            markRead: @escaping () -> Void,
-            mute: @escaping (ChannelMuteDuration) -> Void,
-            unmute: @escaping () -> Void,
-            setNotificationLevel: @escaping (MessageNotificationLevel) -> Void,
-            copyLink: @escaping () -> Void,
-            copyThreadID: @escaping () -> Void,
-            toggleTag: @escaping (ForumTagID) -> Void,
-            toggleArchive: @escaping () -> Void,
-            toggleLock: @escaping () -> Void,
-            togglePin: @escaping () -> Void,
-            delete: @escaping () -> Void
-        ) {
-            self.tags = tags
-            self.appliedTagIDs = appliedTagIDs
-            self.customEmojiURLsByID = customEmojiURLsByID
-            self.isArchived = isArchived
-            self.isLocked = isLocked
-            self.isPinned = isPinned
-            self.isUnread = isUnread
-            self.isMutationPending = isMutationPending
-            self.notificationSettings = notificationSettings
-            self.inheritedNotificationLevel = inheritedNotificationLevel
-            self.requiresTag = requiresTag
-            self.canManage = canManage
-            self.canArchive = canArchive
-            self.canEditTags = canEditTags
-            self.canDelete = canDelete
-            self.markRead = markRead
-            self.mute = mute
-            self.unmute = unmute
-            self.setNotificationLevel = setNotificationLevel
-            self.copyLink = copyLink
-            self.copyThreadID = copyThreadID
-            self.toggleTag = toggleTag
-            self.toggleArchive = toggleArchive
-            self.toggleLock = toggleLock
-            self.togglePin = togglePin
-            self.delete = delete
+        func update(from bridge: ForumPostContextMenuBridge) {
+            tags = bridge.tags
+            appliedTagIDs = bridge.appliedTagIDs
+            customEmojiURLsByID = bridge.customEmojiURLsByID
+            isArchived = bridge.isArchived
+            isLocked = bridge.isLocked
+            isPinned = bridge.isPinned
+            isUnread = bridge.isUnread
+            isMutationPending = bridge.isMutationPending
+            notificationSettings = bridge.notificationSettings
+            inheritedNotificationLevel = bridge.inheritedNotificationLevel
+            requiresTag = bridge.requiresTag
+            canManage = bridge.canManage
+            canArchive = bridge.canArchive
+            canEditTags = bridge.canEditTags
+            canDelete = bridge.canDelete
+            markRead = bridge.markRead
+            mute = bridge.mute
+            unmute = bridge.unmute
+            setNotificationLevel = bridge.setNotificationLevel
+            copyLink = bridge.copyLink
+            copyThreadID = bridge.copyThreadID
+            toggleTag = bridge.toggleTag
+            toggleArchive = bridge.toggleArchive
+            toggleLock = bridge.toggleLock
+            togglePin = bridge.togglePin
+            delete = bridge.delete
         }
 
         func makeMenu() -> NSMenu {
@@ -268,6 +160,13 @@ struct ForumPostContextMenuBridge: NSViewRepresentable {
             )
             menu.addItem(.separator())
 
+            addMuteItems(to: menu)
+            addManagementItems(to: menu)
+            addCopyAndDeleteItems(to: menu)
+            return menu
+        }
+
+        private func addMuteItems(to menu: NSMenu) {
             if isDirectlyMuted {
                 let unmuteItem = menuItem(
                     "Unmute Post",
@@ -317,33 +216,13 @@ struct ForumPostContextMenuBridge: NSViewRepresentable {
             notificationItem.submenu = notificationMenu()
             menu.addItem(notificationItem)
             menu.addItem(.separator())
+        }
 
+        private func addManagementItems(to menu: NSMenu) {
             if canEditTags || canArchive || canManage {
                 if canEditTags {
                     preloadCustomTagImages()
-                    let tagsItem = menuItem("Tags", systemImage: "tag.fill", action: nil)
-                    let tagsMenu = NSMenu(title: "Tags")
-                    tagsMenu.autoenablesItems = false
-                    for tag in tags {
-                        let item = NSMenuItem(
-                            title: tag.name,
-                            action: #selector(toggleTagFromMenu(_:)),
-                            keyEquivalent: ""
-                        )
-                        item.target = self
-                        let isApplied = appliedTagIDs.contains(tag.id)
-                        let wouldRemoveRequiredLastTag =
-                            requiresTag && isApplied && appliedTagIDs.count == 1
-                        item.isEnabled = (canManage || !tag.isModerated)
-                            && !wouldRemoveRequiredLastTag
-                        item.state = isApplied ? .on : .off
-                        item.representedObject = NSNumber(value: tag.id.rawValue)
-                        item.image = menuImage(for: tag)
-                        forceVisibleImage(for: item)
-                        tagsMenu.addItem(item)
-                    }
-                    tagsItem.submenu = tagsMenu
-                    menu.addItem(tagsItem)
+                    menu.addItem(tagsMenuItem())
                 }
                 if canArchive {
                     menu.addItem(
@@ -374,7 +253,35 @@ struct ForumPostContextMenuBridge: NSViewRepresentable {
                 }
                 menu.addItem(.separator())
             }
+        }
 
+        private func tagsMenuItem() -> NSMenuItem {
+            let tagsItem = menuItem("Tags", systemImage: "tag.fill", action: nil)
+            let tagsMenu = NSMenu(title: "Tags")
+            tagsMenu.autoenablesItems = false
+            for tag in tags {
+                let item = NSMenuItem(
+                    title: tag.name,
+                    action: #selector(toggleTagFromMenu(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                let isApplied = appliedTagIDs.contains(tag.id)
+                let wouldRemoveRequiredLastTag =
+                    requiresTag && isApplied && appliedTagIDs.count == 1
+                item.isEnabled = (canManage || !tag.isModerated)
+                    && !wouldRemoveRequiredLastTag
+                item.state = isApplied ? .on : .off
+                item.representedObject = NSNumber(value: tag.id.rawValue)
+                item.image = menuImage(for: tag)
+                forceVisibleImage(for: item)
+                tagsMenu.addItem(item)
+            }
+            tagsItem.submenu = tagsMenu
+            return tagsItem
+        }
+
+        private func addCopyAndDeleteItems(to menu: NSMenu) {
             menu.addItem(
                 menuItem(
                     "Copy Link",
@@ -401,7 +308,6 @@ struct ForumPostContextMenuBridge: NSViewRepresentable {
                     )
                 )
             }
-            return menu
         }
 
         private func preloadCustomTagImages() {

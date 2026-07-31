@@ -80,7 +80,7 @@ func commandIndexDecodingAndFlattening() throws {
     #expect(command.options[1].maximumValue == 5)
     #expect(command.options[1].choices.first?.value == .integer(1))
     #expect(command.options[2].type.rawValue == 42)
-    #expect(String(decoding: command.rootCommandJSON, as: UTF8.self).contains("future_root_field"))
+    #expect(String(data: command.rootCommandJSON, encoding: .utf8)?.contains("future_root_field") == true)
 }
 
 @Test("command index decoder localizes display fields while preserving execution names")

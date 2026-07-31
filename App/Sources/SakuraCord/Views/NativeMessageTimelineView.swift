@@ -3,614 +3,6 @@ import OSLog
 import SakuraCordModels
 import SwiftUI
 
-@MainActor
-private final class NativeTimelineDisplayLinkTicker: NSObject {
-    private var displayLink: CADisplayLink?
-    private var tick: (() -> Void)?
-
-    func start(on view: NSView, tick: @escaping () -> Void) {
-        stop()
-        self.tick = tick
-        let displayLink = view.displayLink(
-            target: self,
-            selector: #selector(displayLinkDidFire(_:))
-        )
-        self.displayLink = displayLink
-        displayLink.add(to: .main, forMode: .common)
-    }
-
-    func stop() {
-        displayLink?.invalidate()
-        displayLink = nil
-        tick = nil
-    }
-
-    @objc
-    private func displayLinkDidFire(_ displayLink: CADisplayLink) {
-        tick?()
-    }
-}
-
-nonisolated enum NativeTimelineBenchmarkStartupPolicy {
-    static let minimumPresentedFrames = 2
-    static let quietInterval: TimeInterval = 0.100
-
-    static func isReady(
-        completedTicks: Int,
-        uptime: TimeInterval,
-        lastDelayedTickUptime: TimeInterval
-    ) -> Bool {
-        completedTicks >= minimumPresentedFrames
-            && uptime >= lastDelayedTickUptime + quietInterval
-    }
-}
-
-struct MessageTimelineScrollRequest: Equatable {
-    enum Target: Equatable {
-        case bottom
-        case message(MessageID, anchor: UnitPoint)
-    }
-
-    let id = UUID()
-    let target: Target
-}
-
-nonisolated enum TimelineInitialPositionPolicy {
-    /// Keep the unread divider in the upper third of the viewport so the
-    /// reader sees both prior context and the unread run that follows.
-    static let unreadViewportAnchor = UnitPoint(x: 0.5, y: 0.28)
-    /// When the acknowledged boundary is older than the loaded page, begin at
-    /// that page's oldest row. Earlier unread pages remain above the reader.
-    static let unresolvedUnreadViewportAnchor = UnitPoint.top
-
-    static func target(
-        firstUnreadMessageID: MessageID?,
-        hasExactUnreadBoundary: Bool,
-        prefersNewest: Bool
-    ) -> MessageTimelineScrollRequest.Target {
-        guard !prefersNewest,
-              let firstUnreadMessageID
-        else {
-            return .bottom
-        }
-        return .message(
-            firstUnreadMessageID,
-            anchor:
-                hasExactUnreadBoundary
-                ? unreadViewportAnchor
-                : unresolvedUnreadViewportAnchor
-        )
-    }
-
-    static func targetWhenReady(
-        hasCompletedInitialLoad: Bool,
-        firstUnreadMessageID: MessageID?,
-        hasExactUnreadBoundary: Bool,
-        prefersNewest: Bool
-    ) -> MessageTimelineScrollRequest.Target? {
-        guard hasCompletedInitialLoad else { return nil }
-        return target(
-            firstUnreadMessageID: firstUnreadMessageID,
-            hasExactUnreadBoundary: hasExactUnreadBoundary,
-            prefersNewest: prefersNewest
-        )
-    }
-}
-
-nonisolated enum TimelineEarlierHistoryLoadingPolicy {
-    static func shouldLoad(
-        isNearTop: Bool,
-        allowsAutomaticLoading: Bool,
-        hasMoreMessages: Bool,
-        isLoading: Bool,
-        hasUnresolvedUnreadBoundary: Bool,
-        hasUserScrollIntent: Bool
-    ) -> Bool {
-        guard isNearTop,
-              allowsAutomaticLoading,
-              hasMoreMessages,
-              !isLoading
-        else {
-            return false
-        }
-        return !hasUnresolvedUnreadBoundary || hasUserScrollIntent
-    }
-}
-
-enum NativeTimelineConversation: Equatable {
-    case channel(ChannelID?)
-    case thread(ChannelID?)
-
-    var id: ChannelID? {
-        switch self {
-        case let .channel(id), let .thread(id):
-            id
-        }
-    }
-
-    var supportsReply: Bool {
-        switch self {
-        case .channel:
-            true
-        case .thread:
-            false
-        }
-    }
-
-    var loaderKind: NativeTimelineLoaderKind {
-        switch self {
-        case .channel:
-            .messages
-        case .thread:
-            .replies
-        }
-    }
-
-    @MainActor
-    func rows(in model: AppModel) -> [MessageRowPresentation] {
-        switch self {
-        case .channel:
-            model.messageRows
-        case .thread:
-            model.threadMessageRows
-        }
-    }
-
-    @MainActor
-    func rowsRevision(in model: AppModel) -> UInt64 {
-        switch self {
-        case .channel:
-            model.messageRowsRevision
-        case .thread:
-            model.threadMessageRowsRevision
-        }
-    }
-
-    @MainActor
-    func rowsUpdateHint(in model: AppModel) -> MessageRowsUpdateHint? {
-        switch self {
-        case .channel:
-            model.messageRowsUpdateHint
-        case .thread:
-            model.threadMessageRowsUpdateHint
-        }
-    }
-
-    @MainActor
-    func rowsUpdateJournal(in model: AppModel) -> MessageRowsUpdateJournal {
-        switch self {
-        case .channel:
-            model.messageRowsUpdateJournal
-        case .thread:
-            model.threadMessageRowsUpdateJournal
-        }
-    }
-}
-
-nonisolated enum NativeTimelineLoaderKind: Equatable {
-    case messages
-    case replies
-
-    var loadingLabel: String {
-        switch self {
-        case .messages:
-            "Loading earlier messages…"
-        case .replies:
-            "Loading earlier replies…"
-        }
-    }
-}
-
-nonisolated struct NativeTimelineHistorySkeletonPresentation: Equatable {
-    let frame: CGRect
-    let kind: NativeTimelineLoaderKind
-    let conversationID: ChannelID?
-}
-
-enum NativeTimelineBeginning: Equatable {
-    case channel(Channel, rulesChannelID: ChannelID?)
-    case thread(
-        id: ChannelID,
-        title: String,
-        starterName: String?,
-        startedAt: Date?
-    )
-
-    var id: ChannelID {
-        switch self {
-        case let .channel(channel, _):
-            channel.id
-        case let .thread(id, _, _, _):
-            id
-        }
-    }
-
-    var title: String {
-        switch self {
-        case let .channel(channel, _):
-            switch channel.kind {
-            case .directMessage, .groupDirectMessage:
-                "Beginning of your conversation with \(channel.name)"
-            case .voice:
-                "Welcome to \(channel.name)!"
-            default:
-                "Welcome to #\(channel.name)!"
-            }
-        case let .thread(_, title, _, _):
-            title
-        }
-    }
-
-    var description: String {
-        switch self {
-        case let .channel(channel, _):
-            if let topic = channel.topic?.trimmingCharacters(
-                in: .whitespacesAndNewlines
-            ), !topic.isEmpty {
-                return topic
-            }
-            switch channel.kind {
-            case .directMessage, .groupDirectMessage:
-                return "This is the beginning of your direct message history."
-            case .voice:
-                return "This is the start of the \(channel.name) voice channel chat."
-            default:
-                return "This is the start of the #\(channel.name) channel."
-            }
-        case let .thread(_, _, starterName?, _):
-            return "Started by \(starterName)"
-        case .thread:
-            return "This is the start of the thread."
-        }
-    }
-
-    var isDescriptionSelectable: Bool {
-        switch self {
-        case .channel:
-            true
-        case let .thread(_, _, starterName, _):
-            starterName != nil
-        }
-    }
-
-    var symbolName: String {
-        switch self {
-        case let .channel(channel, rulesChannelID):
-            if rulesChannelID == channel.id {
-                return "newspaper.fill"
-            }
-            switch channel.kind {
-            case .directMessage:
-                return "person.fill"
-            case .groupDirectMessage:
-                return "person.2.fill"
-            case .announcement:
-                return "megaphone.fill"
-            case .forum:
-                return "bubble.left.and.bubble.right.fill"
-            case .voice:
-                return "bubble.left.fill"
-            default:
-                return "number"
-            }
-        case .thread:
-            return "bubble.left.and.bubble.right.fill"
-        }
-    }
-
-    var startedAt: Date? {
-        guard case let .thread(_, _, _, startedAt) = self else { return nil }
-        return startedAt
-    }
-
-}
-
-enum NativeMessageTimelineItem: Equatable {
-    nonisolated enum Identifier: Hashable {
-        case beginning(ChannelID)
-        case loader
-        case message(MessageID)
-    }
-
-    case beginning(NativeTimelineBeginning)
-    case loader(isLoading: Bool, kind: NativeTimelineLoaderKind)
-    case message(
-        MessageRowPresentation,
-        isUnreadBoundary: Bool,
-        isHighlighted: Bool
-    )
-
-    var messageID: MessageID? {
-        guard case let .message(row, _, _) = self else { return nil }
-        return row.id
-    }
-
-    var messageRow: MessageRowPresentation? {
-        guard case let .message(row, _, _) = self else { return nil }
-        return row
-    }
-
-    var identifier: Identifier {
-        switch self {
-        case let .beginning(beginning):
-            .beginning(beginning.id)
-        case .loader:
-            .loader
-        case let .message(row, _, _):
-            .message(row.id)
-        }
-    }
-}
-
-nonisolated enum NativeTimelineAutomaticHistoryPolicy {
-    static func shouldReevaluateAfterUpdate(
-        wasLoadingEarlier: Bool,
-        isLoadingEarlier: Bool,
-        previousRowCount: Int,
-        currentRowCount: Int
-    ) -> Bool {
-        wasLoadingEarlier
-            && !isLoadingEarlier
-            && currentRowCount > previousRowCount
-    }
-}
-
-nonisolated enum NativeTimelineReadBoundaryPolicy {
-    static func hasReachedNewestMessageBoundary(
-        newestMessageMaximumY: CGFloat,
-        viewportMinimumY: CGFloat,
-        viewportMaximumY: CGFloat,
-        tolerance: CGFloat = 0.5
-    ) -> Bool {
-        newestMessageMaximumY >= viewportMinimumY - tolerance
-            && newestMessageMaximumY <= viewportMaximumY + tolerance
-    }
-}
-
-nonisolated enum NativeTimelineInitialPlacementPolicy {
-    /// If the exact unread run and the footer both fit in the viewport, the
-    /// newest message is the useful initial anchor. Keeping the first unread
-    /// row at the contextual 28% anchor in this case leaves a pointless
-    /// scroll range below content the reader can already see and makes the
-    /// timeline disagree with its own read-boundary state.
-    static func exactUnreadRunFitsAtBottom(
-        unreadMinimumY: CGFloat,
-        newestMaximumY: CGFloat,
-        viewportHeight: CGFloat,
-        bottomInset: CGFloat,
-        tolerance: CGFloat = 0.5
-    ) -> Bool {
-        let unreadRunHeight = max(0, newestMaximumY - unreadMinimumY)
-        return unreadRunHeight + max(0, bottomInset)
-            <= max(0, viewportHeight) + max(0, tolerance)
-    }
-}
-
-nonisolated enum NativeTimelineEarlierLoaderPolicy {
-    static func includesLoader(
-        hasMoreMessages: Bool,
-        isLoadingEarlier: Bool
-    ) -> Bool {
-        hasMoreMessages || isLoadingEarlier
-    }
-}
-
-nonisolated enum NativeMessageTimelineLayoutPolicy {
-    struct LeadingHistoryReserveUpdate: Equatable {
-        let reserve: CGFloat
-        let grew: Bool
-    }
-
-    static func consumingLeadingHistoryReserve(
-        _ currentReserve: CGFloat,
-        prependedHeight: CGFloat,
-        chunk: CGFloat
-    ) -> LeadingHistoryReserveUpdate {
-        let currentReserve = max(0, currentReserve)
-        let prependedHeight = max(0, prependedHeight)
-        let chunk = max(1, chunk)
-        guard prependedHeight > 0 else {
-            return LeadingHistoryReserveUpdate(
-                reserve: currentReserve,
-                grew: false
-            )
-        }
-        if currentReserve >= prependedHeight {
-            return LeadingHistoryReserveUpdate(
-                reserve: currentReserve - prependedHeight,
-                grew: false
-            )
-        }
-        let shortage = prependedHeight - currentReserve
-        let addedChunks = max(1, ceil(shortage / chunk))
-        return LeadingHistoryReserveUpdate(
-            reserve:
-                currentReserve
-                + addedChunks * chunk
-                - prependedHeight,
-            grew: true
-        )
-    }
-
-    /// Keep one bounded page of provisional geometry above the oldest loaded
-    /// row. It is large enough for a fast gesture to continue naturally while
-    /// an authenticated request is in flight, without turning a slow request
-    /// into an unbounded chain of speculative history loads.
-    static func provisionalHistoryDepth(
-        reserve: CGFloat,
-        viewportHeight: CGFloat
-    ) -> CGFloat {
-        min(
-            max(0, reserve),
-            max(8_000, max(1, viewportHeight) * 8)
-        )
-    }
-
-    static func provisionalHistoryMinimumY(
-        reserve: CGFloat,
-        viewportHeight: CGFloat,
-        allowsProvisionalHistory: Bool
-    ) -> CGFloat {
-        let reserve = max(0, reserve)
-        guard allowsProvisionalHistory else { return reserve }
-        return max(
-            0,
-            reserve
-                - provisionalHistoryDepth(
-                    reserve: reserve,
-                    viewportHeight: viewportHeight
-                )
-        )
-    }
-
-    static func showsHistorySkeleton(
-        hasMoreMessages: Bool,
-        isLoadingEarlier: Bool,
-        followsMaterializedHistoryBoundary: Bool
-    ) -> Bool {
-        hasMoreMessages
-            && (
-                isLoadingEarlier
-                    || followsMaterializedHistoryBoundary
-            )
-    }
-
-    static func insertionIndexes<ID: Hashable>(
-        preserving oldIdentifiers: [ID],
-        in newIdentifiers: [ID]
-    ) -> IndexSet? {
-        guard newIdentifiers.count >= oldIdentifiers.count else { return nil }
-        var oldIndex = oldIdentifiers.startIndex
-        var insertions = IndexSet()
-        for (newIndex, identifier) in newIdentifiers.enumerated() {
-            if oldIndex < oldIdentifiers.endIndex,
-               identifier == oldIdentifiers[oldIndex]
-            {
-                oldIndex += 1
-            } else {
-                insertions.insert(newIndex)
-            }
-        }
-        return oldIndex == oldIdentifiers.endIndex ? insertions : nil
-    }
-
-    static func removalIndexes<ID: Hashable>(
-        preserving newIdentifiers: [ID],
-        in oldIdentifiers: [ID]
-    ) -> IndexSet? {
-        insertionIndexes(
-            preserving: newIdentifiers,
-            in: oldIdentifiers
-        )
-    }
-
-    static func acceptsRowSnapshot(
-        itemsAreEmpty: Bool,
-        conversationChanged: Bool,
-        publishedRevision: UInt64,
-        appliedRevision: UInt64
-    ) -> Bool {
-        itemsAreEmpty
-            || conversationChanged
-            || publishedRevision != appliedRevision
-    }
-
-    static func requiresFirstMessageBoundaryRebuild(
-        from oldStartsDayOverride: Bool?,
-        to newStartsDayOverride: Bool?
-    ) -> Bool {
-        // A thread beginning can replace its loading item without advancing
-        // the row revision. Rebuild so the already-realized first row gives
-        // the beginning ownership of its same-day separator immediately.
-        oldStartsDayOverride != newStartsDayOverride
-    }
-
-    static func shortContentTopInset(
-        viewportHeight: CGFloat,
-        contentHeight: CGFloat,
-        bottomInset: CGFloat,
-        verticalPadding: CGFloat
-    ) -> CGFloat {
-        verticalPadding
-            + max(
-                0,
-                viewportHeight - contentHeight - bottomInset - verticalPadding
-            )
-    }
-
-    static func showsVerticalScroller(
-        contentHeight: CGFloat,
-        viewportHeight: CGFloat,
-        bottomInset: CGFloat,
-        verticalPadding: CGFloat
-    ) -> Bool {
-        contentHeight
-            + bottomInset
-            + verticalPadding
-            > viewportHeight + 0.5
-    }
-
-    static func clampedDocumentY(
-        proposedY: CGFloat,
-        contentHeight: CGFloat,
-        viewportHeight: CGFloat,
-        bottomInset: CGFloat
-    ) -> CGFloat {
-        let maximumY = max(0, contentHeight - viewportHeight + bottomInset)
-        return min(max(0, proposedY), maximumY)
-    }
-
-    static func documentHeight(
-        contentOriginY: CGFloat,
-        contentHeight: CGFloat,
-        bottomInset: CGFloat,
-        viewportHeight: CGFloat
-    ) -> CGFloat {
-        max(
-            viewportHeight,
-            contentOriginY + contentHeight + bottomInset
-        )
-    }
-
-    static func isAtTrueBottom(
-        documentHeight: CGFloat,
-        visibleMaximumY: CGFloat,
-        tolerance: CGFloat = 1.5
-    ) -> Bool {
-        max(0, documentHeight - visibleMaximumY)
-            <= max(0, tolerance)
-    }
-
-    /// The previous LazyVStack renderer top-pinned the first intersecting
-    /// message when a width change reflowed a row that began above the
-    /// viewport. Preserve that behavior instead of keeping an arbitrary point
-    /// inside a tall media-heavy row.
-    static func widthChangeAnchorOffset(
-        from rawOffsetFromViewportTop: CGFloat
-    ) -> CGFloat {
-        max(
-            ChatDetailLayoutPolicy.timelineWidthReflowTopInset,
-            rawOffsetFromViewportTop
-        )
-    }
-
-    /// When the viewport grows, the former SwiftUI renderer retained the
-    /// first message whose beginning was actually visible. Anchoring a
-    /// partially clipped media row instead would reveal content that was
-    /// above the viewport before the expansion.
-    static func prefersVisibleMessageBeginning(
-        from oldWidth: CGFloat,
-        to newWidth: CGFloat
-    ) -> Bool {
-        newWidth > oldWidth
-    }
-}
-
-@MainActor
-final class NativeTimelineDocumentView: NSView {
-    override var isFlipped: Bool { true }
-}
-
 struct NativeMessageTimelineView: NSViewRepresentable {
     let model: AppModel
     let conversation: NativeTimelineConversation
@@ -677,19 +69,19 @@ struct NativeMessageTimelineView: NSViewRepresentable {
         self.onUserScrollEnded = onUserScrollEnded
     }
 
-    fileprivate var rowsRevision: UInt64 {
+    var rowsRevision: UInt64 {
         conversation.rowsRevision(in: model)
     }
 
-    fileprivate var presentationRevision: UInt64 {
+    var presentationRevision: UInt64 {
         model.timelinePresentationRevision
     }
 
-    fileprivate var rowsUpdateHint: MessageRowsUpdateHint? {
+    var rowsUpdateHint: MessageRowsUpdateHint? {
         conversation.rowsUpdateHint(in: model)
     }
 
-    fileprivate var rowsUpdateJournal: MessageRowsUpdateJournal {
+    var rowsUpdateJournal: MessageRowsUpdateJournal {
         conversation.rowsUpdateJournal(in: model)
     }
 
@@ -710,9 +102,12 @@ struct NativeMessageTimelineView: NSViewRepresentable {
         scrollView.documentView = nil
     }
 
-    @MainActor
-    final class Coordinator: NSObject {
-        private struct VisibleAnchor {
+    typealias Coordinator = NativeMessageTimelineCoordinator
+}
+
+@MainActor
+final class NativeMessageTimelineCoordinator: NSObject {
+        struct VisibleAnchor {
             let messageID: MessageID
             let offsetFromViewportTop: CGFloat
 
@@ -730,93 +125,95 @@ struct NativeMessageTimelineView: NSViewRepresentable {
 
         /// Start the next bounded history request before a fast gesture can
         /// consume the current headroom and visually pin at the loaded top.
-        private static let prefetchDistance: CGFloat = 8_000
-        private static let leadingHistoryReserveChunk: CGFloat = 65_536
-        private static let performanceSignposter = OSSignposter(
+        static let prefetchDistance: CGFloat = 8_000
+        static let leadingHistoryReserveChunk: CGFloat = 65_536
+        static let performanceSignposter = OSSignposter(
             subsystem: "dev.sakuracord.SakuraCord",
             category: "PointsOfInterest"
         )
-        private static let performanceLogger = Logger(
+        static let performanceLogger = Logger(
             subsystem: "dev.sakuracord.SakuraCord",
             category: "TimelinePerformance"
         )
-        private static let readStateLogger = Logger(
+        static let readStateLogger = Logger(
             subsystem: "dev.sakuracord.SakuraCord",
             category: "UnreadState"
         )
 
-        private var parent: NativeMessageTimelineView
-        private var actions: NativeTimelineRowActions
-        private let storage = NativeTimelineCanvasStorage()
-        private var items: [NativeMessageTimelineItem] {
+        var parent: NativeMessageTimelineView
+        var actions: NativeTimelineRowActions
+        let storage = NativeTimelineCanvasStorage()
+        var items: [NativeMessageTimelineItem] {
             _read { yield storage.items }
             _modify { yield &storage.items }
         }
-        private var layouts: [NativeTimelineRowLayout] {
+        var layouts: [NativeTimelineRowLayout] {
             _read { yield storage.layouts }
             _modify { yield &storage.layouts }
         }
-        private var rowHeights: [CGFloat] {
+        var rowHeights: [CGFloat] {
             _read { yield storage.rowHeights }
             _modify { yield &storage.rowHeights }
         }
-        private var rowOrigins: [CGFloat] {
+        var rowOrigins: [CGFloat] {
             _read { yield storage.rowOrigins }
             _modify { yield &storage.rowOrigins }
         }
-        private var contentHeight: CGFloat {
+        var contentHeight: CGFloat {
             get { storage.contentHeight }
             set { storage.contentHeight = newValue }
         }
-        private var rowCount = 0
-        private var messageIDs: [MessageID] = []
-        private var firstRowID: MessageID?
-        private var lastRowID: MessageID?
-        private var rowsRevision: UInt64 = 0
-        private var presentationRevision: UInt64 = 0
-        private var layoutWidth: CGFloat = 0
-        private var didMutateItems = false
-        private var dirtyItemIndexes = IndexSet()
-        private var requiresVisibleRedraw = false
-        private var requiresAnchorRestore = false
-        private var requiresFullOriginRebuild = false
-        private var appendedLayoutCount = 0
-        private var didPrependItems = false
-        private var leadingHistoryReserve: CGFloat = 0
-        private var followsMaterializedHistoryBoundary = false
-        private var performanceUpdatePath = "none"
-        private var performanceFallbackReason = "none"
-        private var lastPerformanceUpdateDuration = 0.0
-        private var lastLoggedPerformanceFallbackReason: String?
+        var rowCount = 0
+        var messageIDs: [MessageID] = []
+        var firstRowID: MessageID?
+        var lastRowID: MessageID?
+        var rowsRevision: UInt64 = 0
+        var presentationRevision: UInt64 = 0
+        var layoutWidth: CGFloat = 0
+        var didMutateItems = false
+        var dirtyItemIndexes = IndexSet()
+        var requiresVisibleRedraw = false
+        var requiresAnchorRestore = false
+        var requiresFullOriginRebuild = false
+        var appendedLayoutCount = 0
+        var didPrependItems = false
+        var leadingHistoryReserve: CGFloat = 0
+        var followsMaterializedHistoryBoundary = false
+        var performanceUpdatePath = "none"
+        var performanceFallbackReason = "none"
+        var lastPerformanceUpdateDuration = 0.0
+        var lastLoggedPerformanceFallbackReason: String?
 
-        private weak var canvas: NativeTimelineCanvasView?
-        private weak var documentView: NativeTimelineDocumentView?
-        private weak var scrollView: NSScrollView?
-        private var observations: [NSObjectProtocol] = []
-        private var lastScrollRequestID: UUID?
-        private var lastReportedState: TimelineScrollState?
-        private var scrollStateCallbackGeneration: UInt64 = 0
-        private var lastReportedScrollActivity: Bool?
-        private var scrollActivityCallbackGeneration: UInt64 = 0
-        private var initialPositionCallbackGeneration: UInt64 = 0
-        private var initialPositionConversation:
+        weak var canvas: NativeTimelineCanvasView?
+        weak var documentView: NativeTimelineDocumentView?
+        weak var scrollView: NSScrollView?
+        var observations: [NSObjectProtocol] = []
+        var lastScrollRequestID: UUID?
+        var lastReportedState: TimelineScrollState?
+        var scrollStateCallbackGeneration: UInt64 = 0
+        var lastReportedScrollActivity: Bool?
+        var scrollActivityCallbackGeneration: UInt64 = 0
+        var initialPositionCallbackGeneration: UInt64 = 0
+        var initialPositionConversation:
             NativeTimelineConversation?
-        private var lastViewportSize = CGSize.zero
-        private var isApplyingUpdate = false
-        private var scrollIdleTask: Task<Void, Never>?
-        private var lastScrollActivityUptime = 0.0
-        private var performanceAutoScrollTask: Task<Void, Never>?
-        private var performanceDisplayLinkTicker:
+        var lastViewportSize = CGSize.zero
+        var isApplyingUpdate = false
+        var scrollIdleTask: Task<Void, Never>?
+        var lastScrollActivityUptime = 0.0
+        var performanceAutoScrollTask: Task<Void, Never>?
+        var performanceDisplayLinkTicker:
             NativeTimelineDisplayLinkTicker?
-        private var performanceBenchmarkFinish: (() -> Void)?
-        private var didStartPerformanceAutoScroll = false
-        private var isPreparingOrRunningPerformanceBenchmark = false
+        var performanceBenchmarkFinish: (() -> Void)?
+        var didStartPerformanceAutoScroll = false
+        var isPreparingOrRunningPerformanceBenchmark = false
 
         init(parent: NativeMessageTimelineView) {
             self.parent = parent
             actions = Self.makeActions(from: parent)
         }
+}
 
+extension NativeMessageTimelineCoordinator {
         func makeScrollView() -> NSScrollView {
             let canvas = NativeTimelineCanvasView(frame: .zero)
             canvas.usesViewportSizedBacking = true
@@ -856,7 +253,10 @@ struct NativeMessageTimelineView: NSViewRepresentable {
             return scrollView
         }
 
-        func update(parent: NativeMessageTimelineView, scrollView: NSScrollView) {
+        var timelineUpdateOperation:
+            (NativeMessageTimelineView, NSScrollView) -> Void
+        {
+            { [self] parent, scrollView in
             guard let canvas else { return }
             let conversationChanged =
                 parent.conversation != self.parent.conversation
@@ -984,7 +384,13 @@ struct NativeMessageTimelineView: NSViewRepresentable {
                         lastLoggedPerformanceFallbackReason =
                             performanceFallbackReason
                         Self.performanceLogger.notice(
-                            "SakuraCord timeline fallback: \(self.performanceFallbackReason, privacy: .public); coordinator \(String(describing: ObjectIdentifier(self)), privacy: .public); items \(fallbackItemCount); old rows \(fallbackOldRowCount); new rows \(newRows.count); old revision \(self.rowsRevision); new revision \(parent.rowsRevision); old leading \(fallbackOldLeadingCount); new leading \(self.makeLeadingItems(from: parent).count)"
+                            """
+                            SakuraCord timeline fallback: \(self.performanceFallbackReason, privacy: .public); \
+                            coordinator \(String(describing: ObjectIdentifier(self)), privacy: .public); \
+                            items \(fallbackItemCount); old rows \(fallbackOldRowCount); new rows \(newRows.count); \
+                            old revision \(self.rowsRevision); new revision \(parent.rowsRevision); \
+                            old leading \(fallbackOldLeadingCount); new leading \(self.makeLeadingItems(from: parent).count)
+                            """
                         )
                     }
                 }
@@ -1085,7 +491,7 @@ struct NativeMessageTimelineView: NSViewRepresentable {
                 restore(reserveCollapseAnchor)
             }
             if wasNearBottom,
-               (bottomInsetChanged || (didMutateItems && !didPrependItems))
+               bottomInsetChanged || (didMutateItems && !didPrependItems)
             {
                 scroll(
                     toDocumentY: .greatestFiniteMagnitude,
@@ -1127,7 +533,12 @@ struct NativeMessageTimelineView: NSViewRepresentable {
             )
             startPerformanceAutoScrollIfNeeded()
             isApplyingUpdate = false
-            lastViewportSize = scrollView.contentView.bounds.size
+                lastViewportSize = scrollView.contentView.bounds.size
+            }
+        }
+
+        func update(parent: NativeMessageTimelineView, scrollView: NSScrollView) {
+            timelineUpdateOperation(parent, scrollView)
         }
 
         func stopObserving() {
@@ -1218,7 +629,7 @@ struct NativeMessageTimelineView: NSViewRepresentable {
         }
 #endif
 
-        private static func makeActions(
+        static func makeActions(
             from parent: NativeMessageTimelineView
         ) -> NativeTimelineRowActions {
             NativeTimelineRowActions(
@@ -1251,12 +662,7 @@ struct NativeMessageTimelineView: NSViewRepresentable {
                 openThread: { [weak model = parent.model] thread in
                     model?.open(thread)
                 },
-                submitComponent: {
-                    [weak model = parent.model]
-                    message,
-                    customID,
-                    kind,
-                    values in
+                submitComponent: { [weak model = parent.model] message, customID, kind, values in
                     guard let model else { return }
                     Task {
                         await model.submitComponent(
@@ -1270,7 +676,7 @@ struct NativeMessageTimelineView: NSViewRepresentable {
             )
         }
 
-        private func rebuildAll(
+        func rebuildAll(
             from parent: NativeMessageTimelineView,
             rows: [MessageRowPresentation],
             width: CGFloat,
@@ -1294,12 +700,15 @@ struct NativeMessageTimelineView: NSViewRepresentable {
             }
         }
 
-        private func applyFastUpdate(
-            from oldParent: NativeMessageTimelineView,
-            to newParent: NativeMessageTimelineView,
-            rows newRows: [MessageRowPresentation],
-            width: CGFloat
-        ) -> Bool {
+        var fastUpdateOperation:
+            (
+                NativeMessageTimelineView,
+                NativeMessageTimelineView,
+                [MessageRowPresentation],
+                CGFloat
+            ) -> Bool
+        {
+            { [self] oldParent, newParent, newRows, width in
             guard oldParent.conversation == newParent.conversation else {
                 performanceFallbackReason = "conversation-changed"
                 return false
@@ -1592,15 +1001,28 @@ struct NativeMessageTimelineView: NSViewRepresentable {
                 : prefixCount > 0
                 ? "prepend"
                 : "append"
-            return true
+                return true
+            }
         }
 
-        private func applyJournalUpdate(
+        func applyFastUpdate(
             from oldParent: NativeMessageTimelineView,
             to newParent: NativeMessageTimelineView,
             rows newRows: [MessageRowPresentation],
             width: CGFloat
         ) -> Bool {
+            fastUpdateOperation(oldParent, newParent, newRows, width)
+        }
+
+        var journalUpdateOperation:
+            (
+                NativeMessageTimelineView,
+                NativeMessageTimelineView,
+                [MessageRowPresentation],
+                CGFloat
+            ) -> Bool
+        {
+            { [self] oldParent, newParent, newRows, width in
             guard oldParent.conversation == newParent.conversation,
                   newParent.rowsRevision > rowsRevision
             else { return false }
@@ -1814,1110 +1236,16 @@ struct NativeMessageTimelineView: NSViewRepresentable {
             requiresAnchorRestore = true
             requiresFullOriginRebuild = true
             performanceUpdatePath = "bounded-journal-merge"
-            return true
+                return true
+            }
         }
 
-        private func replaceItem(
-            at index: Int,
-            with item: NativeMessageTimelineItem,
+        func applyJournalUpdate(
+            from oldParent: NativeMessageTimelineView,
+            to newParent: NativeMessageTimelineView,
+            rows newRows: [MessageRowPresentation],
             width: CGFloat
-        ) {
-            guard items.indices.contains(index), layouts.indices.contains(index) else {
-                return
-            }
-            guard items[index] != item else { return }
-            let previousHeight = layouts[index].height
-            let updatedLayout = layout(for: item, width: width)
-            items[index] = item
-            layouts[index] = updatedLayout
-            rowHeights[index] = updatedLayout.height
-            didMutateItems = true
-            dirtyItemIndexes.insert(index)
-            if abs(previousHeight - updatedLayout.height) >= 0.5 {
-                requiresFullOriginRebuild = true
-                if itemAffectsVisibleCoordinates(at: index) {
-                    requiresVisibleRedraw = true
-                    requiresAnchorRestore = true
-                }
-            }
-        }
-
-        private func itemAffectsVisibleCoordinates(at index: Int) -> Bool {
-            guard let scrollView,
-                  rowOrigins.indices.contains(index)
-            else { return true }
-            let viewport = scrollView.contentView.bounds
-            let documentOrigin =
-                contentOriginY(viewportHeight: viewport.height)
-                    + rowOrigins[index]
-            return documentOrigin < viewport.maxY
-        }
-
-        private func layout(
-            for item: NativeMessageTimelineItem,
-            width: CGFloat
-        ) -> NativeTimelineRowLayout {
-            NativeTimelineRowLayout.make(
-                item: item,
-                width: width,
-                model: parent.model
-            )
-        }
-
-        private func rebuildOrigins() {
-            rowOrigins = Array(repeating: 0, count: rowHeights.count)
-            var y: CGFloat = 0
-            rowHeights.withUnsafeBufferPointer { buffer in
-                for index in buffer.indices {
-                    rowOrigins[index] = y
-                    y += buffer[index]
-                }
-            }
-            contentHeight = y
-        }
-
-        private func appendOrigins(count: Int) {
-            guard count > 0, count <= rowHeights.count else { return }
-            rowOrigins.reserveCapacity(rowHeights.count)
-            var y = contentHeight
-            for index in rowHeights.count - count ..< rowHeights.count {
-                rowOrigins.append(y)
-                y += rowHeights[index]
-            }
-            contentHeight = y
-        }
-
-        private func applySnapshot(
-            to canvas: NativeTimelineCanvasView,
-            in scrollView: NSScrollView
-        ) {
-            let viewportHeight = max(1, scrollView.contentView.bounds.height)
-            updateDocumentSize(
-                NSSize(
-                    width: layoutWidth,
-                    height: effectiveContentHeight
-                )
-            )
-            canvas.apply(
-                storage: storage,
-                model: parent.model,
-                actions: actions,
-                viewportWidth: layoutWidth,
-                minimumHeight: viewportHeight,
-                bottomSpacerHeight: bottomInset,
-                contentOriginY: contentOriginY(
-                    viewportHeight: viewportHeight
-                ),
-                historySkeleton:
-                    historySkeletonPresentation(
-                        viewportHeight: viewportHeight
-                    )
-            )
-        }
-
-        private func updateDocumentSize(_ proposedSize: NSSize) {
-            guard let documentView, let scrollView else { return }
-            let preservesEstablishedPosition =
-                !isApplyingUpdate
-                && initialPositionConversation == parent.conversation
-            let wasNearBottom =
-                preservesEstablishedPosition
-                && (
-                    lastReportedState?.isNearBottom
-                        ?? scrollState().isNearBottom
-                )
-            let anchor =
-                preservesEstablishedPosition && !wasNearBottom
-                ? visibleAnchor()
-                : nil
-            if preservesEstablishedPosition {
-                isApplyingUpdate = true
-            }
-            let viewport = scrollView.contentView.bounds
-            let size = NSSize(
-                width: max(1, max(proposedSize.width, viewport.width)),
-                height: max(1, max(proposedSize.height, viewport.height))
-            )
-            if documentView.frame.size != size {
-                documentView.setFrameSize(size)
-            }
-            let showsVerticalScroller =
-                size.height > viewport.height + 0.5
-            if scrollView.hasVerticalScroller
-                != showsVerticalScroller
-            {
-                scrollView.hasVerticalScroller =
-                    showsVerticalScroller
-            }
-            positionViewportCanvas()
-            guard preservesEstablishedPosition else { return }
-            if wasNearBottom {
-                scroll(
-                    toDocumentY: .greatestFiniteMagnitude,
-                    scrollView: scrollView
-                )
-            } else if let anchor {
-                restore(anchor)
-            }
-            isApplyingUpdate = false
-            reportScrollState(force: true)
-        }
-
-        private func positionViewportCanvas() {
-            guard let documentView, let canvas, let scrollView else {
-                return
-            }
-            let viewport = scrollView.contentView.bounds
-            let documentSize = documentView.frame.size
-            let overscan: CGFloat = 320
-            let canvasHeight = min(
-                max(1, documentSize.height),
-                max(1, viewport.height + overscan * 2)
-            )
-            let maximumOriginY = max(0, documentSize.height - canvasHeight)
-            let originY = min(
-                maximumOriginY,
-                max(0, viewport.minY - overscan)
-            )
-            let frame = NSRect(
-                x: 0,
-                y: originY,
-                width: max(1, viewport.width),
-                height: canvasHeight
-            )
-            let bounds = NSRect(
-                x: 0,
-                y: originY,
-                width: frame.width,
-                height: frame.height
-            )
-            canvas.installViewportGeometry(frame: frame, bounds: bounds)
-        }
-
-        @discardableResult
-        private func clampToMaterializedHistoryBoundary() -> Bool {
-            guard parent.hasMoreMessages,
-                  leadingHistoryReserve > 0,
-                  let scrollView
-            else {
-                followsMaterializedHistoryBoundary = false
-                return false
-            }
-            let clipView = scrollView.contentView
-            if !isApplyingUpdate,
-               clipView.bounds.minY > leadingHistoryReserve + 1
-            {
-                followsMaterializedHistoryBoundary = false
-            }
-            let attemptedProvisionalHistory =
-                clipView.bounds.minY < leadingHistoryReserve - 0.5
-            if attemptedProvisionalHistory {
-                followsMaterializedHistoryBoundary = true
-            }
-            let minimumY = provisionalHistoryMinimumY(
-                viewportHeight: clipView.bounds.height
-            )
-            guard clipView.bounds.minY < minimumY - 0.5 else {
-                return attemptedProvisionalHistory
-            }
-            clipView.scroll(
-                to: NSPoint(
-                    x: clipView.bounds.minX,
-                    y: minimumY
-                )
-            )
-            scrollView.reflectScrolledClipView(clipView)
-            return true
-        }
-
-        private var allowsProvisionalHistory: Bool {
-            parent.isLoadingEarlier
-                || followsMaterializedHistoryBoundary
-        }
-
-        private func provisionalHistoryMinimumY(
-            viewportHeight: CGFloat
-        ) -> CGFloat {
-            NativeMessageTimelineLayoutPolicy
-                .provisionalHistoryMinimumY(
-                    reserve: leadingHistoryReserve,
-                    viewportHeight: viewportHeight,
-                    allowsProvisionalHistory:
-                        parent.hasMoreMessages
-                        && allowsProvisionalHistory
-                )
-        }
-
-        private func historySkeletonPresentation(
-            viewportHeight: CGFloat
-        ) -> NativeTimelineHistorySkeletonPresentation? {
-            guard NativeMessageTimelineLayoutPolicy.showsHistorySkeleton(
-                hasMoreMessages: parent.hasMoreMessages,
-                isLoadingEarlier: parent.isLoadingEarlier,
-                followsMaterializedHistoryBoundary:
-                    followsMaterializedHistoryBoundary
-            ),
-                  leadingHistoryReserve > 0
-            else {
-                return nil
-            }
-            let minimumY =
-                NativeMessageTimelineLayoutPolicy
-                .provisionalHistoryMinimumY(
-                    reserve: leadingHistoryReserve,
-                    viewportHeight: viewportHeight,
-                    allowsProvisionalHistory: true
-                )
-            let maximumY = contentOriginY(
-                viewportHeight: viewportHeight
-            )
-            guard maximumY > minimumY else { return nil }
-            return NativeTimelineHistorySkeletonPresentation(
-                frame: CGRect(
-                    x: 0,
-                    y: minimumY,
-                    width: max(1, layoutWidth),
-                    height: maximumY - minimumY
-                ),
-                kind: parent.conversation.loaderKind,
-                conversationID: parent.conversation.id
-            )
-        }
-
-        private func updateHistorySkeletonPresentation() {
-            guard let canvas, let scrollView else { return }
-            canvas.updateHistorySkeleton(
-                historySkeletonPresentation(
-                    viewportHeight:
-                        max(1, scrollView.contentView.bounds.height)
-                )
-            )
-        }
-
-        @discardableResult
-        private func reconcileViewportGeometryIfNeeded(
-            proposedWidth: CGFloat? = nil
         ) -> Bool {
-            guard let canvas, let scrollView else { return false }
-            let viewportSize = scrollView.contentView.bounds.size
-            let width = max(
-                220,
-                (proposedWidth ?? viewportSize.width).rounded()
-            )
-            let sizeChanged =
-                abs(viewportSize.width - lastViewportSize.width) >= 0.5
-                || abs(viewportSize.height - lastViewportSize.height) >= 0.5
-            let widthChanged = abs(width - layoutWidth) >= 1
-            guard sizeChanged || widthChanged else { return false }
-            lastViewportSize = viewportSize
-            guard !isApplyingUpdate else { return true }
-
-            let preservesEstablishedPosition =
-                initialPositionConversation == parent.conversation
-            let wasNearBottom =
-                preservesEstablishedPosition
-                && (
-                    lastReportedState?.isNearBottom
-                        ?? scrollState().isNearBottom
-                )
-            let visiblePosition =
-                preservesEstablishedPosition && !wasNearBottom
-                ? visibleAnchor(
-                    preferringVisibleMessageBeginning:
-                        widthChanged
-                        && NativeMessageTimelineLayoutPolicy
-                        .prefersVisibleMessageBeginning(
-                            from: layoutWidth,
-                            to: width
-                        )
-                )
-                : nil
-            let anchor =
-                widthChanged
-                ? visiblePosition?.topPinnedForWidthChange
-                : visiblePosition
-
-            isApplyingUpdate = true
-            if widthChanged {
-                layoutWidth = width
-                layouts = items.map { layout(for: $0, width: width) }
-                rowHeights = layouts.map(\.height)
-                rebuildOrigins()
-                applySnapshot(to: canvas, in: scrollView)
-                canvas.invalidateVisibleContent()
-            }
-            updateInsets()
-            updateHistorySkeletonPresentation()
-            if wasNearBottom {
-                scroll(
-                    toDocumentY: .greatestFiniteMagnitude,
-                    scrollView: scrollView
-                )
-            } else if let anchor {
-                restore(anchor)
-            }
-            positionViewportCanvas()
-            let establishedInitialPosition =
-                applyInitialPositionIfNeeded()
-            applyScrollRequestIfNeeded()
-            if establishedInitialPosition {
-                publishInitialPosition(scrollState())
-            }
-            isApplyingUpdate = false
-            reportScrollState(force: true)
-            return true
+            journalUpdateOperation(oldParent, newParent, newRows, width)
         }
-
-        private func relayoutForWidthChange(_ proposedWidth: CGFloat) {
-            _ = reconcileViewportGeometryIfNeeded(
-                proposedWidth: proposedWidth
-            )
-        }
-
-        private func makeItems(
-            from parent: NativeMessageTimelineView,
-            rows: [MessageRowPresentation]
-        ) -> [NativeMessageTimelineItem] {
-            var result = makeLeadingItems(from: parent)
-            result.reserveCapacity(rows.count + 2)
-            result.append(contentsOf: rows.map {
-                messageItem($0, from: parent)
-            })
-            return result
-        }
-
-        private func makeLeadingItems(
-            from parent: NativeMessageTimelineView
-        ) -> [NativeMessageTimelineItem] {
-            var result: [NativeMessageTimelineItem] = []
-            result.reserveCapacity(2)
-            if let beginning = parent.beginning {
-                result.append(.beginning(beginning))
-            }
-            if NativeTimelineEarlierLoaderPolicy.includesLoader(
-                hasMoreMessages: parent.hasMoreMessages,
-                isLoadingEarlier: parent.isLoadingEarlier
-            ) {
-                result.append(
-                    .loader(
-                        // Automatic pagination stays silent while idle, but a
-                        // slow in-flight page must remain visible. The loader
-                        // layout is zero-height when idle, preserving document
-                        // geometry between requests.
-                        isLoading: parent.isLoadingEarlier,
-                        kind: parent.conversation.loaderKind
-                    )
-                )
-            }
-            return result
-        }
-
-        private func messageItem(
-            _ row: MessageRowPresentation,
-            from parent: NativeMessageTimelineView
-        ) -> NativeMessageTimelineItem {
-            let resolvedRow: MessageRowPresentation
-            if let startsDay = parent.firstMessageStartsDayOverride,
-               parent.conversation.rows(in: parent.model).first?.id == row.id,
-               startsDay != row.startsDay
-            {
-                resolvedRow = MessageRowPresentation(
-                    message: row.message,
-                    startsGroup: row.startsGroup,
-                    startsDay: startsDay,
-                    replyPreview: row.replyPreview,
-                    isReplyAvailable: row.isReplyAvailable,
-                    textPlan: row.textPlan
-                )
-            } else {
-                resolvedRow = row
-            }
-            return .message(
-                resolvedRow,
-                isUnreadBoundary: parent.unreadMessageID == row.id,
-                isHighlighted: parent.highlightedMessageID == row.id
-            )
-        }
-
-        private func beginObserving(_ scrollView: NSScrollView) {
-            stopObserving()
-            let center = NotificationCenter.default
-            observations = [
-                center.addObserver(
-                    forName: NSView.boundsDidChangeNotification,
-                    object: scrollView.contentView,
-                    queue: .main
-                ) { [weak self] _ in
-                    MainActor.assumeIsolated {
-                        guard let self else { return }
-                        if self.reconcileViewportGeometryIfNeeded() {
-                            return
-                        }
-                        let didClamp =
-                            self.clampToMaterializedHistoryBoundary()
-                        self.positionViewportCanvas()
-                        self.updateHistorySkeletonPresentation()
-                        guard !self.isApplyingUpdate else { return }
-                        self.canvas?.dismissHoverPresentationForScroll()
-                        self.noteScrollActivity()
-                        // Once the clip view is pinned to the loaded-history
-                        // boundary, its logical near-top state no longer
-                        // changes. A further upward wheel delta can still
-                        // briefly move into the reserved coordinates before
-                        // this clamp restores it. Force that attempted
-                        // crossing through the callback so a completed or
-                        // failed slow request cannot leave pagination
-                        // permanently stuck at the current oldest row.
-                        self.reportScrollState(force: didClamp)
-                    }
-                },
-                center.addObserver(
-                    forName: NSView.frameDidChangeNotification,
-                    object: scrollView.contentView,
-                    queue: .main
-                ) { [weak self] _ in
-                    MainActor.assumeIsolated {
-                        _ = self?.reconcileViewportGeometryIfNeeded()
-                    }
-                },
-                center.addObserver(
-                    forName: NSScrollView.willStartLiveScrollNotification,
-                    object: scrollView,
-                    queue: .main
-                ) { [weak self] _ in
-                    MainActor.assumeIsolated {
-                        guard let self else { return }
-                        self.canvas?.dismissHoverPresentationForScroll()
-                        self.noteScrollActivity()
-                        if self.scrollState().isNearTop {
-                            // Trackpad gestures may begin while AppKit is
-                            // already constrained at the materialized top and
-                            // therefore produce no bounds notification at all.
-                            // Re-arm automatic pagination from the gesture
-                            // itself in that case.
-                            self.reportScrollState(force: true)
-                        }
-                        self.parent.onUserScrollBegan()
-                    }
-                },
-                center.addObserver(
-                    forName: NSScrollView.didEndLiveScrollNotification,
-                    object: scrollView,
-                    queue: .main
-                ) { [weak self] _ in
-                    MainActor.assumeIsolated {
-                        guard let self else { return }
-                        self.finishScrollActivity()
-                        self.parent.onUserScrollEnded(self.scrollState())
-                    }
-                },
-                center.addObserver(
-                    forName: .sakuracordMessageRowsDidChange,
-                    object: parent.model,
-                    queue: .main
-                ) { [weak self] _ in
-                    MainActor.assumeIsolated {
-                        guard let self,
-                              !self.isApplyingUpdate,
-                              let scrollView = self.scrollView
-                        else { return }
-                        self.update(
-                            parent: self.parent,
-                            scrollView: scrollView
-                        )
-                    }
-                },
-            ]
-        }
-
-        private func noteScrollActivity() {
-            lastScrollActivityUptime = ProcessInfo.processInfo.systemUptime
-            publishScrollActivity(true)
-            // Programmatic benchmark scrolling is continuous even if the main
-            // thread misses a display-link callback. Never interpret that gap
-            // as scroll idle: re-enabling hover here installs tracking areas,
-            // synchronizes the stationary pointer, and can turn one delayed
-            // frame into a much larger feedback-loop stall.
-            if isPreparingOrRunningPerformanceBenchmark {
-                scrollIdleTask?.cancel()
-                scrollIdleTask = nil
-                return
-            }
-            guard scrollIdleTask == nil else { return }
-            scrollIdleTask = Task { @MainActor [weak self] in
-                while let self, !Task.isCancelled {
-                    let remaining =
-                        self.lastScrollActivityUptime + 0.350
-                        - ProcessInfo.processInfo.systemUptime
-                    if remaining <= 0 {
-                        self.finishScrollActivity()
-                        return
-                    }
-                    do {
-                        try await Task.sleep(
-                            for: .milliseconds(max(1, Int(ceil(remaining * 1_000))))
-                        )
-                    } catch {
-                        return
-                    }
-                }
-            }
-        }
-
-        private func finishScrollActivity() {
-            guard !isPreparingOrRunningPerformanceBenchmark else { return }
-            scrollIdleTask?.cancel()
-            scrollIdleTask = nil
-            publishScrollActivity(false)
-            if let canvas, let scrollView {
-                canvas.allowHoverPresentationAfterScroll()
-                canvas.prewarmRows(
-                    above: scrollView.contentView.bounds,
-                    count: 48
-                )
-            }
-        }
-
-        private func updateInsets() {
-            guard let scrollView, let canvas else { return }
-            let viewportHeight = scrollView.contentView.bounds.height
-            canvas.updateContentOriginY(
-                contentOriginY(viewportHeight: viewportHeight),
-                minimumHeight: max(1, viewportHeight),
-                bottomSpacerHeight: bottomInset
-            )
-            let contentInsets = scrollView.contentInsets
-            if contentInsets.top != 0
-                || contentInsets.left != 0
-                || contentInsets.bottom != 0
-                || contentInsets.right != 0
-            {
-                scrollView.contentInsets = NSEdgeInsets()
-            }
-            let showsVerticalScroller =
-                scrollableDocumentHeight > viewportHeight + 0.5
-            if scrollView.hasVerticalScroller != showsVerticalScroller {
-                scrollView.hasVerticalScroller = showsVerticalScroller
-            }
-        }
-
-        private var bottomInset: CGFloat {
-            parent.bottomContentInset
-                + ChatDetailLayoutPolicy.timelineBottomPadding
-        }
-
-        private func contentOriginY(viewportHeight: CGFloat) -> CGFloat {
-            leadingHistoryReserve
-                + NativeMessageTimelineLayoutPolicy.shortContentTopInset(
-                    viewportHeight: viewportHeight,
-                    contentHeight: contentHeight,
-                    bottomInset: bottomInset,
-                    verticalPadding:
-                        ChatDetailLayoutPolicy.timelineTopPadding
-                )
-        }
-
-        private var effectiveContentHeight: CGFloat {
-            let viewportHeight =
-                scrollView?.contentView.bounds.height ?? 0
-            return NativeMessageTimelineLayoutPolicy.documentHeight(
-                contentOriginY: contentOriginY(
-                    viewportHeight: viewportHeight
-                ),
-                contentHeight: contentHeight,
-                bottomInset: bottomInset,
-                viewportHeight: viewportHeight
-            )
-        }
-
-        private var scrollableDocumentHeight: CGFloat {
-            documentView?.frame.height ?? effectiveContentHeight
-        }
-
-        private func visibleAnchor(
-            preferringVisibleMessageBeginning: Bool = false
-        ) -> VisibleAnchor? {
-            guard let canvas, let scrollView,
-                  let result =
-                    canvas.firstVisibleMessage(
-                        in: scrollView.contentView.bounds,
-                        preferringVisibleOrigin:
-                            preferringVisibleMessageBeginning
-                    )
-            else { return nil }
-            return VisibleAnchor(
-                messageID: result.0,
-                offsetFromViewportTop: result.1
-            )
-        }
-
-        private func restore(_ anchor: VisibleAnchor) {
-            guard let index = items.firstIndex(where: {
-                $0.messageID == anchor.messageID
-            }), rowOrigins.indices.contains(index),
-            let scrollView
-            else { return }
-            scroll(
-                toDocumentY:
-                    contentOriginY(
-                        viewportHeight: scrollView.contentView.bounds.height
-                    )
-                    + rowOrigins[index]
-                    - anchor.offsetFromViewportTop,
-                scrollView: scrollView
-            )
-        }
-
-        @discardableResult
-        private func applyInitialPositionIfNeeded() -> Bool {
-            guard initialPositionConversation != parent.conversation,
-                  let target = parent.initialScrollTarget,
-                  let scrollView,
-                  scrollView.contentView.bounds.width > 1,
-                  scrollView.contentView.bounds.height > 1,
-                  scroll(
-                    to: resolvedInitialScrollTarget(
-                        target,
-                        viewportHeight: scrollView.contentView.bounds.height
-                    ),
-                    in: scrollView
-                  )
-            else {
-                return false
-            }
-            initialPositionConversation = parent.conversation
-            return true
-        }
-
-        private func resolvedInitialScrollTarget(
-            _ target: MessageTimelineScrollRequest.Target,
-            viewportHeight: CGFloat
-        ) -> MessageTimelineScrollRequest.Target {
-            guard case let .message(messageID, _) = target,
-                  parent.unreadMessageID == messageID,
-                  let unreadIndex = items.firstIndex(where: {
-                      $0.messageID == messageID
-                  }),
-                  let newestIndex = items.lastIndex(where: {
-                      $0.messageID != nil
-                  }),
-                  rowOrigins.indices.contains(unreadIndex),
-                  rowOrigins.indices.contains(newestIndex),
-                  layouts.indices.contains(newestIndex)
-            else {
-                return target
-            }
-            let fitsAtBottom = NativeTimelineInitialPlacementPolicy
-                .exactUnreadRunFitsAtBottom(
-                    unreadMinimumY: rowOrigins[unreadIndex],
-                    newestMaximumY:
-                        rowOrigins[newestIndex]
-                        + layouts[newestIndex].height,
-                    viewportHeight: viewportHeight,
-                    bottomInset: bottomInset
-                )
-            let conversationID = parent.conversation.id?.rawValue ?? 0
-            Self.readStateLogger.debug(
-                "Unread placement c=\(conversationID, privacy: .public) first=\(messageID.rawValue, privacy: .public) bottom=\(fitsAtBottom, privacy: .public)"
-            )
-            return fitsAtBottom ? .bottom : target
-        }
-
-        private func applyScrollRequestIfNeeded() {
-            guard let request = parent.scrollRequest,
-                  request.id != lastScrollRequestID,
-                  let scrollView
-            else { return }
-            guard scroll(to: request.target, in: scrollView) else {
-                return
-            }
-            lastScrollRequestID = request.id
-        }
-
-        @discardableResult
-        private func scroll(
-            to target: MessageTimelineScrollRequest.Target,
-            in scrollView: NSScrollView
-        ) -> Bool {
-            let viewportHeight = scrollView.contentView.bounds.height
-            switch target {
-            case .bottom:
-                scroll(toDocumentY: .greatestFiniteMagnitude, scrollView: scrollView)
-            case let .message(messageID, anchor):
-                guard let index = items.firstIndex(where: {
-                    $0.messageID == messageID
-                }) else { return false }
-                let rowY =
-                    contentOriginY(viewportHeight: viewportHeight)
-                    + rowOrigins[index]
-                let rowHeight = layouts[index].height
-                scroll(
-                    toDocumentY:
-                        rowY - (viewportHeight - rowHeight) * anchor.y,
-                    scrollView: scrollView
-                )
-            }
-            if let canvas {
-                canvas.prewarmRows(
-                    above: scrollView.contentView.bounds,
-                    count: 48
-                )
-            }
-            return true
-        }
-
-        private func scroll(
-            toDocumentY targetY: CGFloat,
-            scrollView: NSScrollView
-        ) {
-            let clampedY = NativeMessageTimelineLayoutPolicy.clampedDocumentY(
-                proposedY: targetY,
-                contentHeight: scrollableDocumentHeight,
-                viewportHeight: scrollView.contentView.bounds.height,
-                bottomInset: 0
-            )
-            let minimumY =
-                parent.hasMoreMessages
-                ? provisionalHistoryMinimumY(
-                    viewportHeight:
-                        scrollView.contentView.bounds.height
-                )
-                : 0
-            scrollView.contentView.scroll(
-                to: NSPoint(x: 0, y: max(minimumY, clampedY))
-            )
-            scrollView.reflectScrolledClipView(scrollView.contentView)
-            positionViewportCanvas()
-        }
-
-        private func reportScrollState(force: Bool = false) {
-            let state = scrollState()
-            guard force || state != lastReportedState else { return }
-            lastReportedState = state
-            scrollStateCallbackGeneration &+= 1
-            let generation = scrollStateCallbackGeneration
-            let callback = parent.onScrollStateChange
-            Task { @MainActor [weak self] in
-                await Task.yield()
-                guard self?.scrollStateCallbackGeneration == generation else {
-                    return
-                }
-                callback(state)
-            }
-        }
-
-        private func publishScrollActivity(_ isActive: Bool) {
-            guard lastReportedScrollActivity != isActive else { return }
-            lastReportedScrollActivity = isActive
-            scrollActivityCallbackGeneration &+= 1
-            let generation = scrollActivityCallbackGeneration
-            let callback = parent.onScrollActivityChange
-            Task { @MainActor [weak self] in
-                await Task.yield()
-                guard self?.scrollActivityCallbackGeneration == generation else {
-                    return
-                }
-                callback(isActive)
-            }
-        }
-
-        private func publishInitialPosition(_ state: TimelineScrollState) {
-            initialPositionCallbackGeneration &+= 1
-            let generation = initialPositionCallbackGeneration
-            let conversation = parent.conversation
-            let callback = parent.onInitialPositionEstablished
-            Task { @MainActor [weak self] in
-                await Task.yield()
-                guard let self,
-                      self.initialPositionCallbackGeneration == generation,
-                      self.parent.conversation == conversation
-                else {
-                    return
-                }
-                callback(state)
-            }
-        }
-
-        private func scrollState() -> TimelineScrollState {
-            guard let scrollView else {
-                return TimelineScrollState(isNearTop: true, isNearBottom: true)
-            }
-            let visibleRect = scrollView.contentView.bounds
-            let hasEstablishedInitialPosition =
-                initialPositionConversation == parent.conversation
-            return TimelineScrollState(
-                isNearTop:
-                    visibleRect.minY - leadingHistoryReserve
-                    < Self.prefetchDistance,
-                isNearBottom:
-                    NativeMessageTimelineLayoutPolicy.isAtTrueBottom(
-                        documentHeight: scrollableDocumentHeight,
-                        visibleMaximumY: visibleRect.maxY
-                    ),
-                contentFitsViewport:
-                    !NativeMessageTimelineLayoutPolicy.showsVerticalScroller(
-                        contentHeight: contentHeight,
-                        viewportHeight: visibleRect.height,
-                        bottomInset: bottomInset,
-                        verticalPadding:
-                            ChatDetailLayoutPolicy.timelineTopPadding
-                    ),
-                hasEstablishedInitialPosition:
-                    hasEstablishedInitialPosition,
-                hasReachedNewestMessageBoundary:
-                    hasEstablishedInitialPosition
-                    && hasReachedNewestMessageBoundary(in: visibleRect)
-            )
-        }
-
-        private func hasReachedNewestMessageBoundary(
-            in visibleRect: CGRect
-        ) -> Bool {
-            guard let newestIndex = items.lastIndex(where: {
-                $0.messageID != nil
-            }),
-                rowOrigins.indices.contains(newestIndex),
-                layouts.indices.contains(newestIndex)
-            else {
-                return false
-            }
-            let newestMessageMaximumY =
-                contentOriginY(viewportHeight: visibleRect.height)
-                + rowOrigins[newestIndex]
-                + layouts[newestIndex].height
-            // This is the semantic read boundary: the bottom edge of the
-            // newest message has entered the viewport. Composer/footer space
-            // is irrelevant, and no fuzzy "near bottom" threshold is used.
-            return NativeTimelineReadBoundaryPolicy
-                .hasReachedNewestMessageBoundary(
-                    newestMessageMaximumY: newestMessageMaximumY,
-                    viewportMinimumY: visibleRect.minY,
-                    viewportMaximumY: visibleRect.maxY
-                )
-        }
-
-        private func startPerformanceAutoScrollIfNeeded() {
-            guard parent.runsPerformanceAutoScroll,
-                  !didStartPerformanceAutoScroll,
-                  items.count >= 100,
-                  let canvas
-            else { return }
-            didStartPerformanceAutoScroll = true
-            isPreparingOrRunningPerformanceBenchmark = true
-            let handoffDisplayLinkTicker =
-                NativeTimelineDisplayLinkTicker()
-            var previousHandoffTickUptime =
-                ProcessInfo.processInfo.systemUptime
-            var maximumHandoffTickInterval = 0.0
-            var delayedHandoffTicks = 0
-            var completedHandoffTicks = 0
-            var handoffPhase = "initial-render"
-            let handoffStartUptime = ProcessInfo.processInfo.systemUptime
-            var lastDelayedHandoffUptime = handoffStartUptime
-            handoffDisplayLinkTicker.start(on: canvas) {
-                let uptime = ProcessInfo.processInfo.systemUptime
-                let interval = uptime - previousHandoffTickUptime
-                previousHandoffTickUptime = uptime
-                completedHandoffTicks += 1
-                maximumHandoffTickInterval = max(
-                    maximumHandoffTickInterval,
-                    interval
-                )
-                if interval > 0.033 {
-                    delayedHandoffTicks += 1
-                    lastDelayedHandoffUptime = uptime
-                    Self.performanceLogger.notice(
-                        "SakuraCord delayed benchmark startup tick: \(interval * 1_000, format: .fixed(precision: 2), privacy: .public) ms; phase \(handoffPhase, privacy: .public)"
-                    )
-                }
-            }
-            // Benchmark launch used to spend its warm-up interval as an
-            // ordinary interactive timeline. That installed tracking and
-            // accessibility proxies beneath a stationary pointer, then
-            // tore them down on the first measured scroll frame. Besides
-            // producing a visible hover/highlight phase, the transition
-            // made the beginning of every run materially colder than the
-            // rest. Enter the scrolling presentation before warm-up.
-            //
-            // Do not eagerly rasterize rows here. During active scrolling
-            // the canvas deliberately paints uncached rows directly; a
-            // prewarm would defeat that fallback and make the first cold
-            // AppKit/CoreText bitmap block the main thread before motion.
-            canvas.dismissHoverPresentationForScroll()
-            noteScrollActivity()
-            handoffPhase = "launch-stabilization"
-            performanceAutoScrollTask = Task { @MainActor [weak self] in
-                do {
-                    // A fixed delay can expire before AppKit has presented even
-                    // one timeline frame. Starting in that state leaves the
-                    // ordinary hover/tracking presentation installed and the
-                    // bottom overlay clipped until the first real display
-                    // transaction arrives. Gate on frames actually delivered
-                    // by this view, then require a brief responsive interval.
-                    let startupDeadline =
-                        ProcessInfo.processInfo.systemUptime + 3
-                    while !NativeTimelineBenchmarkStartupPolicy.isReady(
-                        completedTicks: completedHandoffTicks,
-                        uptime: ProcessInfo.processInfo.systemUptime,
-                        lastDelayedTickUptime: lastDelayedHandoffUptime
-                    ),
-                        ProcessInfo.processInfo.systemUptime < startupDeadline
-                    {
-                        try await Task.sleep(for: .milliseconds(16))
-                    }
-                } catch {
-                    handoffDisplayLinkTicker.stop()
-                    return
-                }
-                guard let self,
-                      let scrollView = self.scrollView,
-                      let canvas = self.canvas
-                else { return }
-                // The bottom spacer deliberately keeps the newest message
-                // above the floating composer. Starting the benchmark at that
-                // exact edge made its first frames look clipped at a hard
-                // footer line; only after consuming the spacer did rows travel
-                // beneath the overlay like the rest of the run. Move past the
-                // spacer before telemetry and live-arrival stress begin.
-                handoffPhase = "position-shift"
-                let initialRect = scrollView.contentView.bounds
-                scroll(
-                    toDocumentY:
-                        initialRect.minY
-                        - bottomInset
-                        - min(160, initialRect.height * 0.25),
-                    scrollView: scrollView
-                )
-                handoffPhase = "settling"
-                let ticksBeforePositionShift = completedHandoffTicks
-                let positionShiftDeadline =
-                    ProcessInfo.processInfo.systemUptime + 0.250
-                do {
-                    // Do not switch to measured motion until AppKit has
-                    // presented the position shift that moves rows beneath the
-                    // floating composer.
-                    while completedHandoffTicks <= ticksBeforePositionShift,
-                          ProcessInfo.processInfo.systemUptime
-                            < positionShiftDeadline
-                    {
-                        try await Task.sleep(for: .milliseconds(8))
-                    }
-                } catch {
-                    handoffDisplayLinkTicker.stop()
-                    return
-                }
-                handoffDisplayLinkTicker.stop()
-                Self.performanceLogger.notice(
-                    "SakuraCord timeline benchmark startup: max handoff tick \(maximumHandoffTickInterval * 1_000, format: .fixed(precision: 2), privacy: .public) ms; max canvas draw \(canvas.maximumDrawDuration * 1_000, format: .fixed(precision: 2), privacy: .public) ms; max row raster \(canvas.maximumRowRasterDuration * 1_000, format: .fixed(precision: 2), privacy: .public) ms over \(completedHandoffTicks, privacy: .public) ticks (\(delayedHandoffTicks, privacy: .public) above 33 ms)"
-                )
-                canvas.resetDrawTelemetry()
-                let signpost = Self.performanceSignposter.beginInterval(
-                    "MessageTimelineAutoScrollBenchmark"
-                )
-                var previousTickUptime = ProcessInfo.processInfo.systemUptime
-                var maximumTickInterval = 0.0
-                var maximumScrollWork = 0.0
-                var completedTicks = 0
-                var delayedTicks = 0
-                var maximumTickItemCount = items.count
-                var maximumTickDocumentY = 0.0
-                var historyStarvedTicks = 0
-                var consecutiveHistoryStarvedTicks = 0
-                var maximumHistoryStarvedTicks = 0
-                let displayLinkTicker = NativeTimelineDisplayLinkTicker()
-                self.performanceDisplayLinkTicker = displayLinkTicker
-                var didFinish = false
-                let finish: () -> Void = {
-                    [weak self, weak canvas, weak displayLinkTicker] in
-                    guard !didFinish else { return }
-                    didFinish = true
-                    displayLinkTicker?.stop()
-                    Self.performanceSignposter.endInterval(
-                        "MessageTimelineAutoScrollBenchmark",
-                        signpost
-                    )
-                    let summary = String(
-                        format:
-                            "SakuraCord timeline benchmark: max main-thread tick interval %.2f ms; max scroll work %.2f ms; max canvas draw %.2f ms; max row raster %.2f ms (height %.0f) over %d ticks (%d above 33 ms; max at %d items, y %.0f); history-starved %d ticks (max %d consecutive)",
-                        maximumTickInterval * 1_000,
-                        maximumScrollWork * 1_000,
-                        (canvas?.maximumDrawDuration ?? 0) * 1_000,
-                        (canvas?.maximumRowRasterDuration ?? 0) * 1_000,
-                        canvas?.maximumRowRasterHeight ?? 0,
-                        completedTicks,
-                        delayedTicks,
-                        maximumTickItemCount,
-                        maximumTickDocumentY,
-                        historyStarvedTicks,
-                        maximumHistoryStarvedTicks
-                    )
-                    Self.performanceLogger.notice(
-                        "\(summary, privacy: .public)"
-                    )
-                    self?.isPreparingOrRunningPerformanceBenchmark = false
-                    self?.performanceDisplayLinkTicker = nil
-                    self?.performanceBenchmarkFinish = nil
-                    self?.finishScrollActivity()
-                }
-                self.performanceBenchmarkFinish = finish
-                displayLinkTicker.start(on: canvas) {
-                    [weak self, weak scrollView] in
-                    guard let self, let scrollView else {
-                        finish()
-                        return
-                    }
-                    let tickUptime = ProcessInfo.processInfo.systemUptime
-                    let tickInterval = tickUptime - previousTickUptime
-                    previousTickUptime = tickUptime
-                    completedTicks += 1
-                    let visibleRect = scrollView.contentView.bounds
-                    if tickInterval > 0.033 {
-                        delayedTicks += 1
-                    }
-                    if tickInterval > maximumTickInterval {
-                        maximumTickInterval = tickInterval
-                        maximumTickItemCount = items.count
-                        maximumTickDocumentY = visibleRect.minY
-                    }
-                    if tickInterval >= 0.080 {
-                        Self.performanceLogger.notice(
-                            "SakuraCord delayed timeline tick: \(tickInterval * 1_000, format: .fixed(precision: 2), privacy: .public) ms; last update \(self.performanceUpdatePath, privacy: .public) \(self.lastPerformanceUpdateDuration, format: .fixed(precision: 2), privacy: .public) ms; items \(self.items.count, privacy: .public); revision \(self.rowsRevision, privacy: .public)"
-                        )
-                    }
-                    if items.count >= 500,
-                       visibleRect.minY - leadingHistoryReserve <= 160
-                    {
-                        finish()
-                        return
-                    }
-                    let workStart = ProcessInfo.processInfo.systemUptime
-                    scroll(
-                        toDocumentY: visibleRect.minY - 160,
-                        scrollView: scrollView
-                    )
-                    let didAdvance =
-                        scrollView.contentView.bounds.minY
-                        < visibleRect.minY - 0.5
-                    if !didAdvance, parent.hasMoreMessages {
-                        historyStarvedTicks += 1
-                        consecutiveHistoryStarvedTicks += 1
-                        maximumHistoryStarvedTicks = max(
-                            maximumHistoryStarvedTicks,
-                            consecutiveHistoryStarvedTicks
-                        )
-                    } else {
-                        consecutiveHistoryStarvedTicks = 0
-                    }
-                    maximumScrollWork = max(
-                        maximumScrollWork,
-                        ProcessInfo.processInfo.systemUptime - workStart
-                    )
-                    if completedTicks >= 1_200 {
-                        finish()
-                    }
-                }
-                NativeTimelinePerformanceBenchmarkGate.shared.begin()
-            }
-        }
-    }
 }

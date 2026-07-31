@@ -105,19 +105,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
     let copyLink: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(
-            isUnread: isUnread,
-            isMutationPending: isMutationPending,
-            directOverride: directOverride,
-            inheritedLevel: inheritedLevel,
-            inheritanceSource: inheritanceSource,
-            markRead: markRead,
-            mute: mute,
-            unmute: unmute,
-            setNotificationLevel: setNotificationLevel,
-            copyChannelID: copyChannelID,
-            copyLink: copyLink
-        )
+        Coordinator(from: self)
     }
 
     func makeNSView(context: Context) -> ChannelContextMenuHitView {
@@ -130,19 +118,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: ChannelContextMenuHitView, context: Context) {
-        context.coordinator.update(
-            isUnread: isUnread,
-            isMutationPending: isMutationPending,
-            directOverride: directOverride,
-            inheritedLevel: inheritedLevel,
-            inheritanceSource: inheritanceSource,
-            markRead: markRead,
-            mute: mute,
-            unmute: unmute,
-            setNotificationLevel: setNotificationLevel,
-            copyChannelID: copyChannelID,
-            copyLink: copyLink
-        )
+        context.coordinator.update(from: self)
         nsView.menuProvider = { [weak coordinator = context.coordinator] in
             coordinator?.makeMenu()
         }
@@ -170,56 +146,32 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
         private var copyChannelID: () -> Void
         private var copyLink: () -> Void
 
-        init(
-            isUnread: Bool,
-            isMutationPending: Bool,
-            directOverride: ChannelNotificationOverride?,
-            inheritedLevel: MessageNotificationLevel,
-            inheritanceSource: ChannelNotificationInheritanceSource,
-            markRead: @escaping () -> Void,
-            mute: @escaping (ChannelMuteDuration) -> Void,
-            unmute: @escaping () -> Void,
-            setNotificationLevel: @escaping (MessageNotificationLevel) -> Void,
-            copyChannelID: @escaping () -> Void,
-            copyLink: @escaping () -> Void
-        ) {
-            self.isUnread = isUnread
-            self.isMutationPending = isMutationPending
-            self.directOverride = directOverride
-            self.inheritedLevel = inheritedLevel
-            self.inheritanceSource = inheritanceSource
-            self.markRead = markRead
-            self.mute = mute
-            self.unmute = unmute
-            self.setNotificationLevel = setNotificationLevel
-            self.copyChannelID = copyChannelID
-            self.copyLink = copyLink
+        init(from bridge: ChannelContextMenuBridge) {
+            isUnread = bridge.isUnread
+            isMutationPending = bridge.isMutationPending
+            directOverride = bridge.directOverride
+            inheritedLevel = bridge.inheritedLevel
+            inheritanceSource = bridge.inheritanceSource
+            markRead = bridge.markRead
+            mute = bridge.mute
+            unmute = bridge.unmute
+            setNotificationLevel = bridge.setNotificationLevel
+            copyChannelID = bridge.copyChannelID
+            copyLink = bridge.copyLink
         }
 
-        func update(
-            isUnread: Bool,
-            isMutationPending: Bool,
-            directOverride: ChannelNotificationOverride?,
-            inheritedLevel: MessageNotificationLevel,
-            inheritanceSource: ChannelNotificationInheritanceSource,
-            markRead: @escaping () -> Void,
-            mute: @escaping (ChannelMuteDuration) -> Void,
-            unmute: @escaping () -> Void,
-            setNotificationLevel: @escaping (MessageNotificationLevel) -> Void,
-            copyChannelID: @escaping () -> Void,
-            copyLink: @escaping () -> Void
-        ) {
-            self.isUnread = isUnread
-            self.isMutationPending = isMutationPending
-            self.directOverride = directOverride
-            self.inheritedLevel = inheritedLevel
-            self.inheritanceSource = inheritanceSource
-            self.markRead = markRead
-            self.mute = mute
-            self.unmute = unmute
-            self.setNotificationLevel = setNotificationLevel
-            self.copyChannelID = copyChannelID
-            self.copyLink = copyLink
+        func update(from bridge: ChannelContextMenuBridge) {
+            isUnread = bridge.isUnread
+            isMutationPending = bridge.isMutationPending
+            directOverride = bridge.directOverride
+            inheritedLevel = bridge.inheritedLevel
+            inheritanceSource = bridge.inheritanceSource
+            markRead = bridge.markRead
+            mute = bridge.mute
+            unmute = bridge.unmute
+            setNotificationLevel = bridge.setNotificationLevel
+            copyChannelID = bridge.copyChannelID
+            copyLink = bridge.copyLink
         }
 
         func makeMenu() -> NSMenu {

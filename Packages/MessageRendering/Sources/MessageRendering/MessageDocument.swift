@@ -1,8 +1,18 @@
 import Foundation
 
+private enum MessageRegularExpression {
+    static func make(_ pattern: String) -> NSRegularExpression {
+        do {
+            return try NSRegularExpression(pattern: pattern)
+        } catch {
+            preconditionFailure("Invalid checked-in regular expression: \(error)")
+        }
+    }
+}
+
 public struct RenderedEmoji: Codable, Hashable, Sendable {
-    private static let tokenExpression = try! NSRegularExpression(
-        pattern: #"^<(a?):([A-Za-z0-9_]+):([0-9]+)>$"#
+    private static let tokenExpression = MessageRegularExpression.make(
+        #"^<(a?):([A-Za-z0-9_]+):([0-9]+)>$"#
     )
 
     public var id: String
@@ -32,8 +42,8 @@ public struct RenderedEmoji: Codable, Hashable, Sendable {
 }
 
 public struct RenderedMention: Codable, Hashable, Sendable {
-    private static let tokenExpression = try! NSRegularExpression(
-        pattern: #"^<(@!?|@&|#)([0-9]+)>$"#
+    private static let tokenExpression = MessageRegularExpression.make(
+        #"^<(@!?|@&|#)([0-9]+)>$"#
     )
 
     public enum Kind: String, Codable, Hashable, Sendable {
@@ -92,8 +102,8 @@ public struct RenderedMention: Codable, Hashable, Sendable {
 }
 
 public struct MessageDocument: Hashable, Sendable {
-    private static let tokenExpression = try! NSRegularExpression(
-        pattern: #"<a?:[A-Za-z0-9_]+:[0-9]+>|"# + RenderedMention.tokenPattern
+    private static let tokenExpression = MessageRegularExpression.make(
+        #"<a?:[A-Za-z0-9_]+:[0-9]+>|"# + RenderedMention.tokenPattern
     )
 
     public static let maximumJumboEmojiCount = 27

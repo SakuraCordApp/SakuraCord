@@ -634,7 +634,10 @@ struct LoopingRemoteWebMedia: NSViewRepresentable {
         <style>
         html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}
         body{position:relative}
-        #plate{position:absolute;inset:0;background:\(backgroundCSS);mask-image:linear-gradient(to right,transparent 0%,transparent 42%,rgba(0,0,0,.18) 52%,rgba(0,0,0,.72) 66%,#000 76%);-webkit-mask-image:linear-gradient(to right,transparent 0%,transparent 42%,rgba(0,0,0,.18) 52%,rgba(0,0,0,.72) 66%,#000 76%);mask-size:100% 100%;-webkit-mask-size:100% 100%;mask-repeat:no-repeat;-webkit-mask-repeat:no-repeat}
+        #plate{position:absolute;inset:0;background:\(backgroundCSS);\
+        mask-image:linear-gradient(to right,transparent 0%,transparent 42%,rgba(0,0,0,.18) 52%,rgba(0,0,0,.72) 66%,#000 76%);\
+        -webkit-mask-image:linear-gradient(to right,transparent 0%,transparent 42%,rgba(0,0,0,.18) 52%,rgba(0,0,0,.72) 66%,#000 76%);\
+        mask-size:100% 100%;-webkit-mask-size:100% 100%;mask-repeat:no-repeat;-webkit-mask-repeat:no-repeat}
         #plate img,#plate video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
         video{mix-blend-mode:screen;pointer-events:none;background:transparent}
         </style>

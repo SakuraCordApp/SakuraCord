@@ -77,7 +77,7 @@ nonisolated private final class NativeTimelineRunMetrics: @unchecked Sendable {
     }
 }
 
-nonisolated private enum NativeTimelineRunDelegate {
+nonisolated enum NativeTimelineRunDelegate {
     static func make(
         width: CGFloat,
         height: CGFloat,
@@ -498,12 +498,13 @@ struct NativeTimelineRowLayout {
         )
     }
 
-    private static func message(
-        _ row: MessageRowPresentation,
-        isUnreadBoundary: Bool,
-        width: CGFloat,
-        model: AppModel?
-    ) -> Self {
+    private struct MessageBuilder {
+        let row: MessageRowPresentation
+        let isUnreadBoundary: Bool
+        let width: CGFloat
+        let model: AppModel?
+
+        var layout: NativeTimelineRowLayout {
         let message = row.message
         let horizontalInset: CGFloat = 14
         let avatarWidth: CGFloat = 38
@@ -550,27 +551,27 @@ struct NativeTimelineRowLayout {
             highlightTopInset: highlightInsets.top
         )
         let highlightMinY = prefixHeight + externalTopSeparation
-        var y = highlightMinY + highlightInsets.top
+        var verticalOffset = highlightMinY + highlightInsets.top
 
         var replyFrame: CGRect?
         if row.replyPreview != nil {
             replyFrame = CGRect(
                 x: horizontalInset,
-                y: y,
+                y: verticalOffset,
                 width: width - horizontalInset * 2,
                 height: 20
             )
-            y += 20
+            verticalOffset += 20
         }
 
         var commandInvocationRegion: CommandInvocationRegion?
         if message.type == .chatInputCommand {
-            commandInvocationRegion = commandInvocation(
+            commandInvocationRegion = NativeTimelineRowLayout.commandInvocation(
                 message,
-                origin: CGPoint(x: horizontalInset, y: y),
+                origin: CGPoint(x: horizontalInset, y: verticalOffset),
                 maximumWidth: width - horizontalInset * 2
             )
-            y += MessageRowLayoutMetrics.commandInvocationHeight
+            verticalOffset += MessageRowLayoutMetrics.commandInvocationHeight
         }
 
         var avatarFrame: CGRect?
@@ -590,17 +591,17 @@ struct NativeTimelineRowLayout {
             )
             let authorWidth = min(
                 ordinaryContentWidth,
-                measuredTextWidth(author.displayName, font: authorFont)
+                NativeTimelineRowLayout.measuredTextWidth(author.displayName, font: authorFont)
             )
             avatarFrame = CGRect(
                 x: horizontalInset,
-                y: y,
+                y: verticalOffset,
                 width: avatarWidth,
                 height: avatarWidth
             )
             authorFrame = CGRect(
                 x: contentX,
-                y: y,
+                y: verticalOffset,
                 width: authorWidth,
                 height: MessageRowLayoutMetrics.authorLineHeight
             )
@@ -611,7 +612,7 @@ struct NativeTimelineRowLayout {
                     ofSize: NSFont.preferredFont(forTextStyle: .caption2).pointSize,
                     weight: .bold
                 )
-                let badgeWidth = measuredTextWidth(
+                let badgeWidth = NativeTimelineRowLayout.measuredTextWidth(
                     "APP",
                     font: badgeFont
                 ) + 8
@@ -620,7 +621,7 @@ struct NativeTimelineRowLayout {
                     // Discord gives the application badge enough vertical
                     // weight to read as a badge, while keeping it centered
                     // inside the fixed author line.
-                    y: y + 1,
+                    y: verticalOffset + 1,
                     width: badgeWidth,
                     height: 14
                 )
@@ -629,13 +630,13 @@ struct NativeTimelineRowLayout {
             headerX += 7
             let timestampFont = NSFont.preferredFont(forTextStyle: .caption1)
             let timestamp = NativeTimelineTimestamp.text(for: message.timestamp)
-            let timestampWidth = measuredTextWidth(
+            let timestampWidth = NativeTimelineRowLayout.measuredTextWidth(
                 timestamp,
                 font: timestampFont
             )
             timestampFrame = CGRect(
                 x: headerX,
-                y: y + 3,
+                y: verticalOffset + 3,
                 width: min(timestampWidth, max(0, contentX + contentWidth - headerX)),
                 height: 13
             )
@@ -645,9 +646,9 @@ struct NativeTimelineRowLayout {
                 let editedFont = NSFont.preferredFont(forTextStyle: .caption2)
                 editedFrame = CGRect(
                     x: headerX,
-                    y: y + 4,
+                    y: verticalOffset + 4,
                     width: min(
-                        measuredTextWidth("(edited)", font: editedFont),
+                        NativeTimelineRowLayout.measuredTextWidth("(edited)", font: editedFont),
                         max(0, contentX + contentWidth - headerX)
                     ),
                     height: 11
@@ -658,7 +659,7 @@ struct NativeTimelineRowLayout {
                 headerX += 7
                 loadingIndicatorFrame = CGRect(
                     x: headerX,
-                    y: y + 2,
+                    y: verticalOffset + 2,
                     width: min(
                         12,
                         max(
@@ -669,14 +670,14 @@ struct NativeTimelineRowLayout {
                     height: 12
                 )
             }
-            y += MessageRowLayoutMetrics.authorLineHeight
+            verticalOffset += MessageRowLayoutMetrics.authorLineHeight
                 + MessageRowLayoutMetrics.authorToContentSpacing(
                     isCommandResponse: message.type == .chatInputCommand
                 )
         } else if !isGenerated {
             compactTimestampFrame = CGRect(
                 x: horizontalInset,
-                y: y,
+                y: verticalOffset,
                 width: avatarWidth,
                 height: MessageRowLayoutMetrics.compactContentHeight
             )
@@ -686,7 +687,7 @@ struct NativeTimelineRowLayout {
         if isGenerated {
             systemIconFrame = CGRect(
                 x: horizontalInset + 36,
-                y: y,
+                y: verticalOffset,
                 width: 16,
                 height: MessageRowLayoutMetrics.compactContentHeight
             )
@@ -713,21 +714,21 @@ struct NativeTimelineRowLayout {
                     model: model
                 )
         if let attributedContent = contentPresentation.attributedContent {
-            let textHeight = measuredTextHeight(
+            let textHeight = NativeTimelineRowLayout.measuredTextHeight(
                 contentPresentation.framesetter,
                 value: attributedContent,
                 length: attributedContent.length,
                 width: contentWidth
             )
-            contentFrame = CGRect(x: contentX, y: y, width: contentWidth, height: textHeight)
-            y += textHeight
+            contentFrame = CGRect(x: contentX, y: verticalOffset, width: contentWidth, height: textHeight)
+            verticalOffset += textHeight
             hasRichContent = true
         }
 
         var linkedImageRegions: [LinkedImageRegion] = []
         if !contentPresentation.linkedImages.isEmpty {
             if hasRichContent {
-                y += 6
+                verticalOffset += 6
             }
             let plan = InlineWrappingLayoutPlan.frames(
                 sizes: contentPresentation.linkedImages.map { $0.displaySize },
@@ -740,18 +741,18 @@ struct NativeTimelineRowLayout {
                 plan.frames
             ).map { reference, frame in
                 LinkedImageRegion(
-                    frame: frame.offsetBy(dx: contentX, dy: y),
+                    frame: frame.offsetBy(dx: contentX, dy: verticalOffset),
                     reference: reference
                 )
             }
-            y += plan.size.height
+            verticalOffset += plan.size.height
             hasRichContent = true
         }
 
         var attachmentRegions: [AttachmentRegion] = []
         if !usesComponentsV2, !message.attachments.isEmpty {
             if hasRichContent {
-                y += 8
+                verticalOffset += 8
             }
             let galleryWidth = min(500, max(180, contentWidth))
             let galleryFrames = MediaGalleryPlan.frames(
@@ -783,11 +784,11 @@ struct NativeTimelineRowLayout {
                 galleryFrames
             ).map { attachment, frame in
                 AttachmentRegion(
-                    frame: frame.offsetBy(dx: contentX, dy: y),
+                    frame: frame.offsetBy(dx: contentX, dy: verticalOffset),
                     attachment: attachment
                 )
             }
-            y += galleryFrames.map(\.maxY).max() ?? 0
+            verticalOffset += galleryFrames.map(\.maxY).max() ?? 0
             hasRichContent = true
         }
 
@@ -797,7 +798,7 @@ struct NativeTimelineRowLayout {
                 MessageEmbedPresentation.visibleEmbeds(for: message)
             embedRegions.reserveCapacity(visibleEmbeds.count)
             for embed in visibleEmbeds {
-                let embedY = y + (hasRichContent ? 8 : 0)
+                let embedY = verticalOffset + (hasRichContent ? 8 : 0)
                 guard let region = NativeTimelineEmbedLayout.make(
                     embed: embed,
                     message: message,
@@ -807,14 +808,14 @@ struct NativeTimelineRowLayout {
                     maximumWidth: min(contentWidth, 520)
                 ) else { continue }
                 embedRegions.append(region)
-                y = region.frame.maxY
+                verticalOffset = region.frame.maxY
                 hasRichContent = true
             }
         }
         let embedFrames = embedRegions.map(\.frame)
 
         var componentLayouts: [NativeTimelineComponentLayout] = []
-        let componentY = y + (hasRichContent ? 8 : 0)
+        let componentY = verticalOffset + (hasRichContent ? 8 : 0)
         if let componentLayout = NativeTimelineComponentLayout.make(
             message: message,
             model: model,
@@ -822,7 +823,7 @@ struct NativeTimelineRowLayout {
             maximumWidth: min(contentWidth, 520)
         ) {
             componentLayouts.append(componentLayout)
-            y = componentLayout.frame.maxY
+            verticalOffset = componentLayout.frame.maxY
             hasRichContent = true
         }
         let componentFrames = componentLayouts.map(\.frame)
@@ -830,7 +831,7 @@ struct NativeTimelineRowLayout {
         var stickerFrames: [CGRect] = []
         if !message.stickers.isEmpty {
             if hasRichContent {
-                y += 8
+                verticalOffset += 8
             }
             let size = min(contentWidth, 112)
             var stickerX = contentX
@@ -840,31 +841,31 @@ struct NativeTimelineRowLayout {
                    stickerX > contentX
                 {
                     stickerX = contentX
-                    y += rowHeight + 8
+                    verticalOffset += rowHeight + 8
                     rowHeight = 0
                 }
                 stickerFrames.append(
-                    CGRect(x: stickerX, y: y, width: size, height: size)
+                    CGRect(x: stickerX, y: verticalOffset, width: size, height: size)
                 )
                 stickerX += size + 8
                 rowHeight = max(rowHeight, size)
             }
-            y += rowHeight
+            verticalOffset += rowHeight
             hasRichContent = true
         }
 
         var threadFrame: CGRect?
         if message.thread != nil {
             if hasRichContent {
-                y += 8
+                verticalOffset += 8
             }
             threadFrame = CGRect(
                 x: contentX,
-                y: y,
+                y: verticalOffset,
                 width: min(contentWidth, 500),
                 height: 48
             )
-            y += 48
+            verticalOffset += 48
             hasRichContent = true
         }
 
@@ -875,7 +876,7 @@ struct NativeTimelineRowLayout {
         )
         if !presentedReactions.isEmpty {
             if hasRichContent {
-                y += 4
+                verticalOffset += 4
             }
             let sizes = presentedReactions.map(reactionSize)
                 + [CGSize(
@@ -892,27 +893,27 @@ struct NativeTimelineRowLayout {
                 presentedReactions,
                 wrapping.frames.prefix(presentedReactions.count)
             ).map { reaction, frame in
-                reactionRegion(
+                NativeTimelineRowLayout.reactionRegion(
                     reaction,
-                    frame: frame.offsetBy(dx: contentX, dy: y)
+                    frame: frame.offsetBy(dx: contentX, dy: verticalOffset)
                 )
             }
             if let frame = wrapping.frames.last {
-                addReactionFrame = frame.offsetBy(dx: contentX, dy: y)
+                addReactionFrame = frame.offsetBy(dx: contentX, dy: verticalOffset)
             }
-            y += wrapping.size.height
+            verticalOffset += wrapping.size.height
         }
 
         var ephemeralRegion: EphemeralRegion?
         if message.flags.contains(.ephemeral) {
             if hasRichContent || !presentedReactions.isEmpty {
-                y += 4
+                verticalOffset += 4
             }
-            ephemeralRegion = ephemeral(
-                origin: CGPoint(x: contentX, y: y),
+            ephemeralRegion = NativeTimelineRowLayout.ephemeral(
+                origin: CGPoint(x: contentX, y: verticalOffset),
                 maximumWidth: contentWidth
             )
-            y += 15
+            verticalOffset += 15
         }
 
         var failedFrame: CGRect?
@@ -921,19 +922,19 @@ struct NativeTimelineRowLayout {
                 || !presentedReactions.isEmpty
                 || ephemeralRegion != nil
             {
-                y += 4
+                verticalOffset += 4
             }
             failedFrame = CGRect(
                 x: contentX,
-                y: y,
+                y: verticalOffset,
                 width: contentWidth,
                 height: 14
             )
-            y += 14
+            verticalOffset += 14
         }
 
         let visibleContentMaxY = max(
-            y,
+            verticalOffset,
             avatarFrame?.maxY ?? 0,
             authorFrame?.maxY ?? 0
         )
@@ -955,7 +956,7 @@ struct NativeTimelineRowLayout {
             height: max(0, rowHeight - highlightMinY)
         )
 
-        return Self(
+        return NativeTimelineRowLayout(
             height: rowHeight,
             loaderLayout: nil,
             beginningLayout: nil,
@@ -988,13 +989,29 @@ struct NativeTimelineRowLayout {
             ephemeralRegion: ephemeralRegion,
             failedFrame: failedFrame
         )
+        }
     }
 
-    private static func commandInvocation(
-        _ message: Message,
-        origin: CGPoint,
-        maximumWidth: CGFloat
-    ) -> CommandInvocationRegion {
+    private static func message(
+        _ row: MessageRowPresentation,
+        isUnreadBoundary: Bool,
+        width: CGFloat,
+        model: AppModel?
+    ) -> Self {
+        MessageBuilder(
+            row: row,
+            isUnreadBoundary: isUnreadBoundary,
+            width: width,
+            model: model
+        ).layout
+    }
+
+    private struct CommandInvocationBuilder {
+        let message: Message
+        let origin: CGPoint
+        let maximumWidth: CGFloat
+
+        var region: CommandInvocationRegion {
         let user = message.interactionMetadata?.user
         let userLabel = user?.displayName ?? "Someone"
         let commandLabel = message.interactionMetadata?.displayName ?? "command"
@@ -1026,10 +1043,10 @@ struct NativeTimelineRowLayout {
             width: 30,
             height: MessageRowLayoutMetrics.commandInvocationHeight
         )
-        var x = connectorFrame.maxX + 5
+        var horizontalOffset = connectorFrame.maxX + 5
         let avatarFrame = user.map { _ in
             CGRect(
-                x: x,
+                x: horizontalOffset,
                 y: origin.y
                     + MessageRowLayoutMetrics.commandInvocationContentInset,
                 width: 14,
@@ -1038,48 +1055,48 @@ struct NativeTimelineRowLayout {
         }
         let fallbackAvatarFrame = user == nil
             ? CGRect(
-                x: x,
+                x: horizontalOffset,
                 y: origin.y
                     + MessageRowLayoutMetrics.commandInvocationContentInset,
                 width: 14,
                 height: 14
             )
             : nil
-        x += 14 + 5
+        horizontalOffset += 14 + 5
         let availableMaxX = frame.maxX - 48
         let userWidth = min(
-            measuredTextWidth(userLabel, font: userFont),
-            max(0, availableMaxX - x)
+            NativeTimelineRowLayout.measuredTextWidth(userLabel, font: userFont),
+            max(0, availableMaxX - horizontalOffset)
         )
         let userFrame = CGRect(
-            x: x,
+            x: horizontalOffset,
             y: origin.y + 3,
             width: userWidth,
             height: 14
         )
-        x = userFrame.maxX + 5
+        horizontalOffset = userFrame.maxX + 5
         let usedWidth = min(
-            measuredTextWidth("used", font: captionFont),
-            max(0, availableMaxX - x)
+            NativeTimelineRowLayout.measuredTextWidth("used", font: captionFont),
+            max(0, availableMaxX - horizontalOffset)
         )
         let usedFrame = CGRect(
-            x: x,
+            x: horizontalOffset,
             y: origin.y + 2,
             width: usedWidth,
             height: 16
         )
-        x = usedFrame.maxX + 5
+        horizontalOffset = usedFrame.maxX + 5
         let symbolWidth: CGFloat = 10
-        let naturalCommandWidth = measuredTextWidth(
+        let naturalCommandWidth = NativeTimelineRowLayout.measuredTextWidth(
             commandLabel,
             font: commandFont
         )
         let pillWidth = min(
             6 + symbolWidth + 3 + naturalCommandWidth + 6,
-            max(0, availableMaxX - x)
+            max(0, availableMaxX - horizontalOffset)
         )
         let pillFrame = CGRect(
-            x: x,
+            x: horizontalOffset,
             y: origin.y + 2,
             width: pillWidth,
             height: 16
@@ -1113,6 +1130,19 @@ struct NativeTimelineRowLayout {
             commandSymbolFrame: commandSymbolFrame,
             commandFrame: commandFrame
         )
+        }
+    }
+
+    private static func commandInvocation(
+        _ message: Message,
+        origin: CGPoint,
+        maximumWidth: CGFloat
+    ) -> CommandInvocationRegion {
+        CommandInvocationBuilder(
+            message: message,
+            origin: origin,
+            maximumWidth: maximumWidth
+        ).region
     }
 
     private static func ephemeral(
@@ -1124,37 +1154,37 @@ struct NativeTimelineRowLayout {
             origin: origin,
             size: CGSize(width: maximumWidth, height: 15)
         )
-        var x = origin.x
-        let eyeFrame = CGRect(x: x, y: origin.y + 1, width: 13, height: 13)
-        x = eyeFrame.maxX + 4
+        var horizontalOffset = origin.x
+        let eyeFrame = CGRect(x: horizontalOffset, y: origin.y + 1, width: 13, height: 13)
+        horizontalOffset = eyeFrame.maxX + 4
         let visibilityWidth = min(
             measuredTextWidth("Only you can see this", font: font),
-            max(0, frame.maxX - x)
+            max(0, frame.maxX - horizontalOffset)
         )
         let visibilityFrame = CGRect(
-            x: x,
+            x: horizontalOffset,
             y: origin.y,
             width: visibilityWidth,
             height: 15
         )
-        x = visibilityFrame.maxX + 4
+        horizontalOffset = visibilityFrame.maxX + 4
         let bulletWidth = min(
             measuredTextWidth("•", font: font),
-            max(0, frame.maxX - x)
+            max(0, frame.maxX - horizontalOffset)
         )
         let bulletFrame = CGRect(
-            x: x,
+            x: horizontalOffset,
             y: origin.y,
             width: bulletWidth,
             height: 15
         )
-        x = bulletFrame.maxX + 4
+        horizontalOffset = bulletFrame.maxX + 4
         let dismissFrame = CGRect(
-            x: x,
+            x: horizontalOffset,
             y: origin.y,
             width: min(
                 measuredTextWidth("Dismiss message", font: font),
-                max(0, frame.maxX - x)
+                max(0, frame.maxX - horizontalOffset)
             ),
             height: 15
         )
@@ -1217,18 +1247,18 @@ struct NativeTimelineRowLayout {
         _ reaction: Reaction,
         frame: CGRect
     ) -> ReactionRegion {
-        var x = frame.minX + 6
+        var horizontalOffset = frame.minX + 6
         let emojiFrame = CGRect(
-            x: x,
+            x: horizontalOffset,
             y: frame.midY - MessageReactionMetrics.emojiSize / 2,
             width: MessageReactionMetrics.emojiSize,
             height: MessageReactionMetrics.emojiSize
         )
-        x = emojiFrame.maxX
+        horizontalOffset = emojiFrame.maxX
 
         var countFrame: CGRect?
         if reaction.count > 0 {
-            x += 4
+            horizontalOffset += 4
             let countWidth = measuredTextWidth(
                 String(reaction.count),
                 font: .monospacedDigitSystemFont(
@@ -1239,22 +1269,22 @@ struct NativeTimelineRowLayout {
                 )
             )
             countFrame = CGRect(
-                x: x,
+                x: horizontalOffset,
                 y: frame.minY,
                 width: countWidth,
                 height: frame.height
             )
-            x += countWidth
+            horizontalOffset += countWidth
         }
 
         let plan = MessageReactionPresentation.previewPlan(for: reaction)
         var avatars: [ReactionRegion.AvatarRegion] = []
         var overflowFrame: CGRect?
         if !plan.isEmpty {
-            x += 4
+            horizontalOffset += 4
             for (index, reactor) in plan.reactors.enumerated() {
                 let avatarFrame = CGRect(
-                    x: x + CGFloat(index) * 11,
+                    x: horizontalOffset + CGFloat(index) * 11,
                     y: frame.midY - MessageReactionMetrics.avatarSize / 2,
                     width: MessageReactionMetrics.avatarSize,
                     height: MessageReactionMetrics.avatarSize
@@ -1262,19 +1292,19 @@ struct NativeTimelineRowLayout {
                 avatars.append(.init(frame: avatarFrame, reactor: reactor))
             }
             if !plan.reactors.isEmpty {
-                x += MessageReactionMetrics.avatarSize
+                horizontalOffset += MessageReactionMetrics.avatarSize
                     + CGFloat(plan.reactors.count - 1) * 11
             }
             if plan.overflowCount > 0 {
                 if !plan.reactors.isEmpty {
-                    x += 2
+                    horizontalOffset += 2
                 }
                 overflowFrame = CGRect(
-                    x: x,
+                    x: horizontalOffset,
                     y: frame.minY,
                     width: max(
                         MessageReactionMetrics.avatarSize,
-                        frame.maxX - 6 - x
+                        frame.maxX - 6 - horizontalOffset
                     ),
                     height: frame.height
                 )
@@ -1323,1025 +1353,6 @@ struct NativeTimelineRowLayout {
         )
         let line = CTLineCreateWithAttributedString(attributed)
         return ceil(CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil)))
-    }
-
-}
-
-@MainActor
-private enum NativeTimelineTextPresentation {
-    struct Value {
-        let attributedContent: NSAttributedString?
-        let framesetter: CTFramesetter
-        let linkedImages: [LinkedImageReference]
-    }
-
-    static var empty: Value {
-        Value(
-            attributedContent: nil,
-            framesetter: CTFramesetterCreateWithAttributedString(
-                NSAttributedString()
-            ),
-            linkedImages: []
-        )
-    }
-
-    static func make(
-        message: Message,
-        plan: NativeTimelineTextPlan,
-        model: AppModel?
-    ) -> Value {
-        guard let prepared = plan.preparedText else {
-            return Value(
-                attributedContent: nil,
-                framesetter: CTFramesetterCreateWithAttributedString(
-                    NSAttributedString()
-                ),
-                linkedImages: plan.linkedImages
-            )
-        }
-
-        if let preparedBox = plan.attributedText {
-            return Value(
-                attributedContent: preparedBox.value,
-                framesetter: preparedBox.framesetter,
-                linkedImages: plan.linkedImages
-            )
-        }
-
-        let resolver = model.map { MessageMentionResolver(model: $0, message: message) }
-        let mentions = prepared.tokens.reduce(into: [String: MentionPresentation]()) {
-            values,
-            token in
-            guard case let .mention(mention) = token else { return }
-            values[mention.rawToken] =
-                resolver?.presentation(mention)
-                ?? MentionPresentation.fallback(for: mention)
-        }
-        let emojiSize: CGFloat = prepared.isEmojiOnly ? 48 : 22
-        let cacheKey = NativeTimelineResolvedTextCache.Key(
-            messageID: message.id,
-            scope: "message",
-            prepared: prepared,
-            emojiSize: emojiSize,
-            baseFontSize: plan.baseFontSize,
-            mentions: mentions.values.sorted {
-                $0.rawToken < $1.rawToken
-            }
-        )
-        let box = NativeTimelineResolvedTextCache.shared.box(
-            for: cacheKey
-        ) {
-            NativeTimelineAttributedTextBox(
-                NativeTimelineCoreText.make(
-                    prepared: prepared,
-                    emojiSize: emojiSize,
-                    baseFontSize: plan.baseFontSize,
-                    mentionPresentations: mentions
-                )
-            )
-        }
-        return Value(
-            attributedContent: box.value,
-            framesetter: box.framesetter,
-            linkedImages: plan.linkedImages
-        )
-    }
-}
-
-final class NativeTimelineResolvedTextCache {
-    struct Key: Hashable {
-        let messageID: MessageID
-        let scope: String
-        let prepared: RichMessageAttributedText.Prepared
-        let emojiSize: CGFloat
-        let baseFontSize: CGFloat
-        let mentions: [MentionPresentation]
-    }
-
-    static let shared = NativeTimelineResolvedTextCache()
-
-    private let entryLimit = 2_000
-    private var entries: [Key: NativeTimelineAttributedTextBox] = [:]
-    private var insertionOrder: [Key] = []
-    private var evictionIndex = 0
-
-    private init() {
-        entries.reserveCapacity(entryLimit)
-        insertionOrder.reserveCapacity(entryLimit + 512)
-    }
-
-    func box(
-        for key: Key,
-        make: () -> NativeTimelineAttributedTextBox
-    ) -> NativeTimelineAttributedTextBox {
-        if let cached = entries[key] {
-            return cached
-        }
-        let box = make()
-        entries[key] = box
-        insertionOrder.append(key)
-        while entries.count > entryLimit,
-              evictionIndex < insertionOrder.count
-        {
-            let oldest = insertionOrder[evictionIndex]
-            evictionIndex += 1
-            entries.removeValue(forKey: oldest)
-        }
-        if evictionIndex > 1_024,
-           evictionIndex * 2 > insertionOrder.count
-        {
-            insertionOrder.removeFirst(evictionIndex)
-            evictionIndex = 0
-        }
-        return box
-    }
-}
-
-enum NativeTimelineCoreText {
-    private static let runDelegateKey = NSAttributedString.Key(
-        rawValue: kCTRunDelegateAttributeName as String
-    )
-
-    static func make(
-        prepared: RichMessageAttributedText.Prepared,
-        emojiSize: CGFloat,
-        baseFontSize: CGFloat? = nil,
-        mentionPresentations: [String: MentionPresentation]
-    ) -> NSAttributedString {
-        let resolvedBaseFontSize =
-            prepared.isEmojiOnly
-                ? emojiSize
-                : baseFontSize ?? 15
-        let baseFont = NSFont.systemFont(ofSize: resolvedBaseFontSize)
-        let output = NSMutableAttributedString(
-            attributedString: DiscordMarkdown.appKitAttributed(
-                prepared.markdownPlan,
-                baseFontSize: resolvedBaseFontSize
-            )
-        )
-        let fullRange = NSRange(location: 0, length: output.length)
-        let placeholderRanges = ranges(of: "\u{FFFC}", in: output.string)
-        for (range, token) in zip(
-            placeholderRanges.reversed(),
-            prepared.tokens.reversed()
-        ) {
-            var inlineAttributes = output.attributes(
-                at: range.location,
-                effectiveRange: nil
-            )
-            let replacement: NSAttributedString
-            switch token {
-            case let .customEmoji(emoji):
-                inlineAttributes[.discordEmojiToken] = emoji.rawToken
-                replacement = inlineRun(
-                    width: emojiSize,
-                    height: emojiSize,
-                    baselineOffset: ComposerEmojiAttributedText
-                        .attachmentOriginY(font: baseFont, size: emojiSize),
-                    attributes: inlineAttributes
-                )
-            case let .mention(mention):
-                let presentation =
-                    mentionPresentations[mention.rawToken]
-                    ?? MentionPresentation.fallback(for: mention)
-                let metrics = mentionMetrics(
-                    presentation: presentation,
-                    font: baseFont
-                )
-                inlineAttributes[.discordMentionToken] =
-                    presentation.rawToken
-                inlineAttributes[.nativeTimelineMention] =
-                    NativeTimelineMentionBox(presentation)
-                replacement = inlineRun(
-                    width: metrics.width,
-                    height: metrics.height,
-                    baselineOffset: ComposerEmojiAttributedText
-                        .attachmentOriginY(
-                            font: baseFont,
-                            size: metrics.height
-                        ),
-                    attributes: inlineAttributes
-                )
-            }
-            output.replaceCharacters(in: range, with: replacement)
-        }
-        output.enumerateAttribute(.link, in: fullRange) {
-            value, range, _ in
-            guard value != nil else { return }
-            output.addAttributes(
-                [
-                    .foregroundColor: NSColor.linkColor,
-                    .underlineStyle: 0,
-                ],
-                range: range
-            )
-        }
-        normalizeParagraphMetrics(in: output)
-        return output
-    }
-
-    private static func normalizeParagraphMetrics(
-        in output: NSMutableAttributedString
-    ) {
-        guard output.length > 0 else { return }
-        let source = output.string as NSString
-        var location = 0
-        while location < output.length {
-            let paragraphRange = source.paragraphRange(
-                for: NSRange(location: location, length: 0)
-            )
-            var lineHeight: CGFloat = 0
-            var containsInlineRun = false
-            output.enumerateAttributes(
-                in: paragraphRange,
-                options: []
-            ) { attributes, _, _ in
-                if attributes[runDelegateKey] != nil {
-                    containsInlineRun = true
-                }
-                guard let font = attributes[.font] as? NSFont else {
-                    return
-                }
-                lineHeight = max(
-                    lineHeight,
-                    ceil(font.ascender - font.descender + font.leading)
-                )
-            }
-            let existing = output.attribute(
-                .paragraphStyle,
-                at: paragraphRange.location,
-                effectiveRange: nil
-            ) as? NSParagraphStyle
-            let style = (existing?.mutableCopy()
-                as? NSMutableParagraphStyle)
-                ?? NSMutableParagraphStyle()
-            // NSTextView's usedRect follows the typographic line bounds and
-            // does not count the shared markdown style's trailing point.
-            // CoreText otherwise rounds up the font bounding box and counts
-            // that point once per line.
-            style.lineSpacing = 0
-            if !containsInlineRun, lineHeight > 0 {
-                style.minimumLineHeight = lineHeight
-                style.maximumLineHeight = lineHeight
-            }
-            output.addAttribute(
-                .paragraphStyle,
-                value: style,
-                range: paragraphRange
-            )
-            location = NSMaxRange(paragraphRange)
-        }
-    }
-
-    private static func inlineRun(
-        width: CGFloat,
-        height: CGFloat,
-        baselineOffset: CGFloat,
-        attributes: [NSAttributedString.Key: Any]
-    ) -> NSAttributedString {
-        var attributes = attributes
-        attributes[runDelegateKey] = NativeTimelineRunDelegate.make(
-            width: width,
-            height: height,
-            baselineOffset: baselineOffset
-        )
-        return NSAttributedString(
-            string: "\u{FFFC}",
-            attributes: attributes
-        )
-    }
-
-    private static func mentionMetrics(
-        presentation: MentionPresentation,
-        font: NSFont
-    ) -> (width: CGFloat, height: CGFloat) {
-        let labelFont = NSFont.systemFont(
-            ofSize: font.pointSize,
-            weight: .semibold
-        )
-        let labelWidth = ceil(
-            (presentation.label as NSString).size(
-                withAttributes: [.font: labelFont]
-            ).width
-        )
-        let height = max(21, ceil(font.pointSize + 6))
-        let showsAvatar = if case .user = presentation.target { true } else { false }
-        let showsLeadingIcon = presentation.systemImage != nil
-        let avatarSize = height - 6
-        let iconSize = height - 7
-        let width = ceil(
-            12 + labelWidth
-                + (showsAvatar ? avatarSize + 4 : 0)
-                + (showsLeadingIcon ? iconSize + 4 : 0)
-        )
-        return (width, height)
-    }
-
-    private static func ranges(
-        of value: String,
-        in source: String
-    ) -> [NSRange] {
-        let source = source as NSString
-        var result: [NSRange] = []
-        var searchRange = NSRange(location: 0, length: source.length)
-        while searchRange.length > 0 {
-            let range = source.range(
-                of: value,
-                options: [],
-                range: searchRange
-            )
-            guard range.location != NSNotFound else { break }
-            result.append(range)
-            let nextLocation = NSMaxRange(range)
-            searchRange = NSRange(
-                location: nextLocation,
-                length: source.length - nextLocation
-            )
-        }
-        return result
-    }
-}
-
-private enum NativeTimelineEmbedLayout {
-    private struct PreparedField {
-        let field: MessageEmbedField
-        let name: NativeTimelineAttributedTextBox
-        let value: NativeTimelineAttributedTextBox
-    }
-
-    static func make(
-        embed: MessageEmbed,
-        message: Message,
-        model: AppModel?,
-        attachments: [Attachment],
-        origin: CGPoint,
-        maximumWidth: CGFloat
-    ) -> NativeTimelineRowLayout.EmbedRegion? {
-        switch MessageEmbedPresentation.kind(for: embed) {
-        case .hidden:
-            return nil
-        case .bareMedia:
-            guard let media = embed.image ?? embed.video,
-                  let url = resolvedURL(media, attachments: attachments)
-            else { return nil }
-            let size = mediaSize(
-                media,
-                maximumWidth: min(maximumWidth, 500),
-                maximumHeight: 350
-            )
-            let frame = CGRect(origin: origin, size: size)
-            return .init(
-                embedID: embed.id,
-                kind: .bareMedia,
-                frame: frame,
-                textRegions: [],
-                imageRegions: [],
-                mediaFrame: frame,
-                mediaURL: url,
-                mediaIsVideo: embed.video != nil,
-                mediaAutoplaysInline: embed.type?.lowercased() == "gifv",
-                accentColor: nil
-            )
-        case .card:
-            let cardPadding: CGFloat = 12
-            let stripeWidth: CGFloat = 4
-            let innerChrome = stripeWidth + cardPadding * 2
-            let maximumContentWidth = max(80, maximumWidth - innerChrome)
-
-            let author = embed.author.map {
-                plainTextBox(
-                    $0.name,
-                    font: .systemFont(ofSize: 11, weight: .semibold),
-                    color: $0.url == nil ? .labelColor : .linkColor,
-                    link: $0.url
-                )
-            }
-            let title = embed.title.map {
-                plainTextBox(
-                    $0,
-                    font: .systemFont(ofSize: 13, weight: .semibold),
-                    color: embed.url == nil ? .labelColor : .linkColor,
-                    link: embed.url
-                )
-            }
-            let description = embed.description.map {
-                resolvedTextBox(
-                    prepared: RichMessageAttributedText.prepare(source: $0),
-                    scope: "description",
-                    emojiSize: 18,
-                    embed: embed,
-                    message: message,
-                    model: model
-                )
-            }
-            let fields = embed.fields.enumerated().map { index, field in
-                PreparedField(
-                    field: field,
-                    name: plainTextBox(
-                        field.name,
-                        font: .systemFont(ofSize: 11, weight: .bold),
-                        color: .labelColor
-                    ),
-                    value: resolvedTextBox(
-                        prepared: RichMessageAttributedText.prepare(
-                            source: field.value
-                        ),
-                        scope: "field:\(index)",
-                        emojiSize: 16,
-                        embed: embed,
-                        message: message,
-                        model: model
-                    )
-                )
-            }
-            let provider = embed.provider?.name.map {
-                plainTextBox(
-                    $0,
-                    font: .systemFont(ofSize: 11),
-                    color: .secondaryLabelColor
-                )
-            }
-            let footerText = footerText(
-                footer: embed.footer,
-                timestamp: embed.timestamp
-            )
-            let footer = footerText.map {
-                plainTextBox(
-                    $0,
-                    font: .systemFont(ofSize: 11),
-                    color: .secondaryLabelColor
-                )
-            }
-
-            let thumbnailURL = embed.thumbnail.flatMap {
-                resolvedURL($0, attachments: attachments)
-            }
-            let thumbnailSize: CGFloat = thumbnailURL == nil ? 0 : 80
-            // The legacy HStack contains text, a zero-minimum Spacer, and the
-            // thumbnail. SwiftUI applies its 12-point spacing on both sides
-            // of that spacer even when the spacer collapses to zero.
-            let thumbnailAllowance: CGFloat =
-                thumbnailSize > 0 ? thumbnailSize + 24 : 0
-
-            let naturalTextWidth = textColumnIdealWidth(
-                author: author,
-                authorHasIcon:
-                    (embed.author?.proxyIconURL ?? embed.author?.iconURL) != nil,
-                title: title,
-                description: description,
-                fields: fields,
-                provider: provider
-            )
-            let naturalTopWidth = naturalTextWidth + thumbnailAllowance
-            let mainMedia = embed.image ?? embed.video
-            let naturalMediaSize = mainMedia.map {
-                mediaSize(
-                    $0,
-                    maximumWidth: maximumContentWidth,
-                    maximumHeight: 350
-                )
-            }
-            let naturalFooterWidth = footer.map {
-                idealWidth($0)
-                    + ((embed.footer?.proxyIconURL ?? embed.footer?.iconURL) == nil
-                        ? 0 : 23)
-            } ?? 0
-            let naturalContentWidth = max(
-                naturalTopWidth,
-                naturalMediaSize?.width ?? 0,
-                naturalFooterWidth,
-                92
-            )
-            let width = min(
-                maximumWidth,
-                max(120, ceil(naturalContentWidth + innerChrome))
-            )
-            let contentX = origin.x + stripeWidth + cardPadding
-            let contentWidth = max(80, width - innerChrome)
-            let textWidth = max(40, contentWidth - thumbnailAllowance)
-            var textRegions: [NativeTimelineRowLayout.EmbedRegion.TextRegion] = []
-            var imageRegions: [NativeTimelineRowLayout.EmbedRegion.ImageRegion] = []
-
-            var textY = origin.y + cardPadding
-            var hasTextSection = false
-            func appendText(
-                _ box: NativeTimelineAttributedTextBox?,
-                x: CGFloat = contentX,
-                width: CGFloat = textWidth,
-                spacing: CGFloat = 7,
-                isSelectable: Bool = false
-            ) {
-                guard let box else { return }
-                if hasTextSection {
-                    textY += spacing
-                }
-                let height = measuredHeight(box, width: width)
-                textRegions.append(
-                    .init(
-                        frame: CGRect(
-                            x: x,
-                            y: textY,
-                            width: width,
-                            height: height
-                        ),
-                        text: box,
-                        isSelectable: isSelectable
-                    )
-                )
-                textY += height
-                hasTextSection = true
-            }
-
-            if let author {
-                if let iconURL = embed.author?.proxyIconURL
-                    ?? embed.author?.iconURL
-                {
-                    if hasTextSection {
-                        textY += 7
-                    }
-                    let lineHeight = max(20, measuredHeight(
-                        author,
-                        width: max(20, textWidth - 26)
-                    ))
-                    imageRegions.append(
-                        .init(
-                            frame: CGRect(
-                                x: contentX,
-                                y: textY + (lineHeight - 20) / 2,
-                                width: 20,
-                                height: 20
-                            ),
-                            url: iconURL,
-                            cornerRadius: 10,
-                            fallbackSystemImage: "person.crop.circle",
-                            maximumPixelDimension: 64
-                        )
-                    )
-                    let authorHeight = measuredHeight(
-                        author,
-                        width: max(20, textWidth - 26)
-                    )
-                    textRegions.append(
-                        .init(
-                            frame: CGRect(
-                                x: contentX + 26,
-                                y: textY + (lineHeight - authorHeight) / 2,
-                                width: max(20, textWidth - 26),
-                                height: authorHeight
-                            ),
-                            text: author,
-                            isSelectable: false
-                        )
-                    )
-                    textY += lineHeight
-                    hasTextSection = true
-                } else {
-                    appendText(author)
-                }
-            }
-            appendText(title)
-            appendText(description, isSelectable: true)
-
-            if !fields.isEmpty {
-                if hasTextSection {
-                    textY += 7
-                }
-                layoutFields(
-                    fields,
-                    x: contentX,
-                    y: &textY,
-                    width: textWidth,
-                    into: &textRegions
-                )
-                hasTextSection = true
-            }
-            appendText(provider)
-
-            let textHeight = hasTextSection
-                ? textY - (origin.y + cardPadding)
-                : 0
-            let topHeight = max(textHeight, thumbnailSize)
-
-            if let thumbnailURL {
-                imageRegions.append(
-                    .init(
-                        frame: CGRect(
-                            x: origin.x + width - cardPadding - thumbnailSize,
-                            y: origin.y + cardPadding,
-                            width: thumbnailSize,
-                            height: thumbnailSize
-                        ),
-                        url: thumbnailURL,
-                        cornerRadius: 6,
-                        fallbackSystemImage: "photo",
-                        maximumPixelDimension: 256
-                    )
-                )
-            }
-
-            let mediaURL = mainMedia.flatMap {
-                resolvedURL($0, attachments: attachments)
-            }
-            let mediaSize = mainMedia.flatMap { media -> CGSize? in
-                guard mediaURL != nil else { return nil }
-                return self.mediaSize(
-                    media,
-                    maximumWidth: min(contentWidth, 500),
-                    maximumHeight: 350
-                )
-            }
-            let mediaGap: CGFloat =
-                mediaSize == nil ? 0 : (topHeight > 0 ? 9 : 0)
-            let mediaFrame = mediaSize.map {
-                CGRect(
-                    x: contentX,
-                    y: origin.y + cardPadding + topHeight + mediaGap,
-                    width: $0.width,
-                    height: $0.height
-                )
-            }
-
-            var bottomY =
-                origin.y + cardPadding + topHeight + mediaGap
-                + (mediaSize?.height ?? 0)
-            if let footer {
-                if topHeight > 0 || mediaSize != nil {
-                    bottomY += 9
-                }
-                let footerIconURL =
-                    embed.footer?.proxyIconURL ?? embed.footer?.iconURL
-                let footerTextX = contentX + (footerIconURL == nil ? 0 : 23)
-                let footerTextWidth = max(
-                    30,
-                    contentWidth - (footerIconURL == nil ? 0 : 23)
-                )
-                let footerTextHeight = measuredHeight(
-                    footer,
-                    width: footerTextWidth
-                )
-                let footerHeight = max(
-                    footerTextHeight,
-                    footerIconURL == nil ? 0 : 18
-                )
-                if let footerIconURL {
-                    imageRegions.append(
-                        .init(
-                            frame: CGRect(
-                                x: contentX,
-                                y: bottomY + (footerHeight - 18) / 2,
-                                width: 18,
-                                height: 18
-                            ),
-                            url: footerIconURL,
-                            cornerRadius: 9,
-                            fallbackSystemImage: "photo.circle",
-                            maximumPixelDimension: 64
-                        )
-                    )
-                }
-                textRegions.append(
-                    .init(
-                        frame: CGRect(
-                            x: footerTextX,
-                            y: bottomY + (footerHeight - footerTextHeight) / 2,
-                            width: footerTextWidth,
-                            height: footerTextHeight
-                        ),
-                        text: footer,
-                        isSelectable: false
-                    )
-                )
-                bottomY += footerHeight
-            }
-            let cardHeight = bottomY - origin.y + cardPadding
-            let frame = CGRect(
-                x: origin.x,
-                y: origin.y,
-                width: width,
-                height: max(58, cardHeight)
-            )
-            return .init(
-                embedID: embed.id,
-                kind: .card,
-                frame: frame,
-                textRegions: textRegions,
-                imageRegions: imageRegions,
-                mediaFrame: mediaFrame,
-                mediaURL: mediaURL,
-                mediaIsVideo: embed.video != nil,
-                mediaAutoplaysInline: false,
-                accentColor: embed.color
-            )
-        }
-    }
-
-    private static func resolvedTextBox(
-        prepared: RichMessageAttributedText.Prepared,
-        scope: String,
-        emojiSize: CGFloat,
-        embed: MessageEmbed,
-        message: Message,
-        model: AppModel?
-    ) -> NativeTimelineAttributedTextBox {
-        let resolver = model.map {
-            MessageMentionResolver(model: $0, message: message)
-        }
-        let mentions = prepared.tokens.reduce(
-            into: [String: MentionPresentation]()
-        ) { result, token in
-            guard case let .mention(mention) = token else { return }
-            result[mention.rawToken] =
-                resolver?.presentation(mention)
-                ?? MentionPresentation.fallback(for: mention)
-        }
-        let key = NativeTimelineResolvedTextCache.Key(
-            messageID: message.id,
-            scope: "embed:\(embed.id):\(scope)",
-            prepared: prepared,
-            emojiSize: emojiSize,
-            baseFontSize: 15,
-            mentions: mentions.values.sorted {
-                $0.rawToken < $1.rawToken
-            }
-        )
-        return NativeTimelineResolvedTextCache.shared.box(for: key) {
-            NativeTimelineAttributedTextBox(
-                NativeTimelineCoreText.make(
-                    prepared: prepared,
-                    emojiSize: emojiSize,
-                    mentionPresentations: mentions
-                ),
-                layoutHeightAdjustment: 1
-            )
-        }
-    }
-
-    private static func plainTextBox(
-        _ value: String,
-        font: NSFont,
-        color: NSColor,
-        link: URL? = nil
-    ) -> NativeTimelineAttributedTextBox {
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineBreakMode = .byWordWrapping
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: color,
-            .paragraphStyle: paragraph,
-        ]
-        let output = NSMutableAttributedString(
-            string: value,
-            attributes: attributes
-        )
-        if let link {
-            output.addAttribute(
-                .link,
-                value: link,
-                range: NSRange(location: 0, length: output.length)
-            )
-        }
-        return NativeTimelineAttributedTextBox(output)
-    }
-
-    private static func textColumnIdealWidth(
-        author: NativeTimelineAttributedTextBox?,
-        authorHasIcon: Bool,
-        title: NativeTimelineAttributedTextBox?,
-        description: NativeTimelineAttributedTextBox?,
-        fields: [PreparedField],
-        provider: NativeTimelineAttributedTextBox?
-    ) -> CGFloat {
-        var width = max(
-            author.map(idealWidth) ?? 0,
-            title.map(idealWidth) ?? 0,
-            description.map(idealWidth) ?? 0,
-            provider.map(idealWidth) ?? 0
-        )
-        if author != nil, authorHasIcon {
-            width = max(width, (author.map(idealWidth) ?? 0) + 26)
-        }
-        for row in fieldRows(fields) {
-            if row.count == 1, row[0].field.isInline == false {
-                width = max(
-                    width,
-                    max(idealWidth(row[0].name), idealWidth(row[0].value))
-                )
-            } else {
-                let fieldsWidth = row.reduce(CGFloat.zero) {
-                    $0 + max(idealWidth($1.name), idealWidth($1.value))
-                }
-                width = max(
-                    width,
-                    fieldsWidth + CGFloat(max(0, row.count - 1)) * 14
-                )
-            }
-        }
-        return width
-    }
-
-    private static func layoutFields(
-        _ fields: [PreparedField],
-        x: CGFloat,
-        y: inout CGFloat,
-        width: CGFloat,
-        into regions: inout [
-            NativeTimelineRowLayout.EmbedRegion.TextRegion
-        ]
-    ) {
-        let columnGap: CGFloat = 14
-        let rowGap: CGFloat = 8
-        let rows = fieldRows(fields)
-        for (rowIndex, row) in rows.enumerated() {
-            if rowIndex > 0 {
-                y += rowGap
-            }
-            let inlineColumnCount = max(1, min(3, row.count))
-            let columnWidth = max(
-                20,
-                (
-                    width
-                        - columnGap * CGFloat(inlineColumnCount - 1)
-                ) / CGFloat(inlineColumnCount)
-            )
-            var rowHeight: CGFloat = 0
-            for (columnIndex, field) in row.enumerated() {
-                let spansAllColumns =
-                    row.count == 1 && field.field.isInline == false
-                let fieldWidth = spansAllColumns ? width : columnWidth
-                let fieldX = spansAllColumns
-                    ? x
-                    : x + CGFloat(columnIndex) * (columnWidth + columnGap)
-                let nameHeight = measuredHeight(
-                    field.name,
-                    width: fieldWidth
-                )
-                let valueHeight = measuredHeight(
-                    field.value,
-                    width: fieldWidth
-                )
-                regions.append(
-                    .init(
-                        frame: CGRect(
-                            x: fieldX,
-                            y: y,
-                            width: fieldWidth,
-                            height: nameHeight
-                        ),
-                        text: field.name,
-                        isSelectable: false
-                    )
-                )
-                regions.append(
-                    .init(
-                        frame: CGRect(
-                            x: fieldX,
-                            y: y + nameHeight + 2,
-                            width: fieldWidth,
-                            height: valueHeight
-                        ),
-                        text: field.value,
-                        isSelectable: true
-                    )
-                )
-                rowHeight = max(rowHeight, nameHeight + 2 + valueHeight)
-            }
-            y += rowHeight
-        }
-    }
-
-    private static func fieldRows(
-        _ fields: [PreparedField]
-    ) -> [[PreparedField]] {
-        var rows: [[PreparedField]] = []
-        var inline: [PreparedField] = []
-        func flushInline() {
-            while !inline.isEmpty {
-                let count = min(3, inline.count)
-                rows.append(Array(inline.prefix(count)))
-                inline.removeFirst(count)
-            }
-        }
-        for field in fields {
-            if field.field.isInline {
-                inline.append(field)
-                if inline.count == 3 {
-                    flushInline()
-                }
-            } else {
-                flushInline()
-                rows.append([field])
-            }
-        }
-        flushInline()
-        return rows
-    }
-
-    private static func footerText(
-        footer: MessageEmbedFooter?,
-        timestamp: Date?
-    ) -> String? {
-        var values: [String] = []
-        if let footer {
-            values.append(footer.text)
-        }
-        if let timestamp {
-            values.append(
-                timestamp.formatted(date: .omitted, time: .shortened)
-            )
-        }
-        guard !values.isEmpty else { return nil }
-        return values.joined(separator: " • ")
-    }
-
-    private static func idealWidth(
-        _ box: NativeTimelineAttributedTextBox
-    ) -> CGFloat {
-        let size = CTFramesetterSuggestFrameSizeWithConstraints(
-            box.framesetter,
-            CFRange(location: 0, length: box.value.length),
-            nil,
-            CGSize(width: 10_000, height: 10_000),
-            nil
-        )
-        return max(1, ceil(size.width))
-    }
-
-    private static func measuredHeight(
-        _ box: NativeTimelineAttributedTextBox,
-        width: CGFloat
-    ) -> CGFloat {
-        let size = CTFramesetterSuggestFrameSizeWithConstraints(
-            box.framesetter,
-            CFRange(location: 0, length: box.value.length),
-            nil,
-            CGSize(width: max(1, width), height: 10_000),
-            nil
-        )
-        // TextKit reports the used fragment height before SwiftUI rounds the
-        // composed stack. Rounding every CoreText leaf upward makes a rich
-        // embed progressively taller than the previous renderer, especially
-        // across its title, description, field grid, and footer.
-        return max(
-            1,
-            floor(size.height) - box.layoutHeightAdjustment
-                + NativeTimelineMarkdownChromeMetrics
-                    .trailingVisualOverflow(in: box.value)
-        )
-    }
-
-    private static func mediaSize(
-        _ media: MessageEmbedMedia,
-        maximumWidth: CGFloat,
-        maximumHeight: CGFloat
-    ) -> CGSize {
-        let width = min(500, max(180, maximumWidth))
-        if let rawWidth = media.width,
-           let rawHeight = media.height,
-           rawWidth > 0,
-           rawHeight > 0
-        {
-            let source = CGSize(
-                width: CGFloat(rawWidth),
-                height: CGFloat(rawHeight)
-            )
-            let scale = min(
-                1,
-                width / source.width,
-                maximumHeight / source.height
-            )
-            return CGSize(
-                width: source.width * scale,
-                height: source.height * scale
-            )
-        }
-        let ratio = max(
-            0.2,
-            min(
-                12,
-                CGFloat(media.width ?? 16) / CGFloat(media.height ?? 9)
-            )
-        )
-        let fittedWidth = min(width, maximumHeight * ratio)
-        let fittedHeight = min(maximumHeight, fittedWidth / ratio)
-        return CGSize(
-            width: fittedWidth,
-            height: max(80, fittedHeight)
-        )
-    }
-
-    private static func resolvedURL(
-        _ media: MessageEmbedMedia,
-        attachments: [Attachment]
-    ) -> URL? {
-        let candidate = media.proxyURL ?? media.url
-        guard let candidate else { return nil }
-        guard candidate.scheme?.lowercased() == "attachment" else {
-            return candidate
-        }
-        let filename = candidate.host ?? candidate.path
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        return attachments.first { $0.filename == filename }
-            .map { $0.proxyURL ?? $0.url }
     }
 
 }

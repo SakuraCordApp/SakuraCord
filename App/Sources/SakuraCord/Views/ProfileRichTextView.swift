@@ -49,8 +49,8 @@ struct ProfileStatusTextView: View {
 }
 
 private struct EmojiDescriptor: Hashable {
-    private static let expression = try! NSRegularExpression(
-        pattern: #"<(a?):([A-Za-z0-9_~]+):([0-9]+)>"#
+    private static let expression = RegularExpressionFactory.make(
+        #"<(a?):([A-Za-z0-9_~]+):([0-9]+)>"#
     )
 
     let rawToken: String
@@ -194,11 +194,11 @@ private struct ProfileTextRepresentable: NSViewRepresentable {
 }
 
 enum ProfileInlineAttributedText {
-    private static let emojiExpression = try! NSRegularExpression(
-        pattern: #"<(a?):([A-Za-z0-9_~]+):([0-9]+)>"#
+    private static let emojiExpression = RegularExpressionFactory.make(
+        #"<(a?):([A-Za-z0-9_~]+):([0-9]+)>"#
     )
-    private static let linkExpression = try! NSRegularExpression(
-        pattern: #"https?://[^\s<>]+"#,
+    private static let linkExpression = RegularExpressionFactory.make(
+        #"https?://[^\s<>]+"#,
         options: .caseInsensitive
     )
 

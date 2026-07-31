@@ -630,11 +630,11 @@ private final class DirectMessageURLProtocol:
         ringStatus = 204
     }
 
-    override class func canInit(with request: URLRequest) -> Bool {
+    override static func canInit(with request: URLRequest) -> Bool {
         true
     }
 
-    override class func canonicalRequest(
+    override static func canonicalRequest(
         for request: URLRequest
     ) -> URLRequest {
         request

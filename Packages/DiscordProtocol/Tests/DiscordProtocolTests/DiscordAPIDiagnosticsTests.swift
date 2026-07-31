@@ -64,7 +64,7 @@ import Testing
     #expect(!text.contains("private-cookie"))
 }
 
-@Test func `Gateway diagnostics redact identify credentials and dispatch content`() throws {
+@Test func `gateway diagnostics redact identify credentials and dispatch content`() throws {
     let store = DiscordAPIDiagnosticStore(maximumEntries: 10)
     store.recordGateway(
         direction: "request",

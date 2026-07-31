@@ -2,6 +2,33 @@ import Foundation
 import SakuraCordModels
 
 struct ApplicationCommandIndexDecoder {
+    private struct ApplicationBotDTO: Decodable {
+        var id: String
+        var username: String
+        var globalName: String?
+        var avatar: String?
+        var bot: Bool?
+
+        enum CodingKeys: String, CodingKey {
+            case id, username, avatar, bot
+            case globalName = "global_name"
+        }
+
+        var domain: User? {
+            guard let id = UserID(id) else { return nil }
+            let avatarURL = avatar.flatMap { hash in
+                URL(
+                    string:
+                    "https://cdn.discordapp.com/avatars/\(id)/\(hash).webp?size=64&animated=\(hash.hasPrefix("a_") ? "true" : "false")"
+                )
+            }
+            return User(
+                id: id, username: username, displayName: globalName ?? username,
+                avatarURL: avatarURL, isBot: bot ?? true
+            )
+        }
+    }
+
     private struct Envelope: Decodable {
         var applications: [JSONValue]
         var applicationCommands: [JSONValue]
@@ -44,38 +71,11 @@ struct ApplicationCommandIndexDecoder {
     }
 
     private struct ApplicationDTO: Decodable {
-        struct BotDTO: Decodable {
-            var id: String
-            var username: String
-            var globalName: String?
-            var avatar: String?
-            var bot: Bool?
-
-            enum CodingKeys: String, CodingKey {
-                case id, username, avatar, bot
-                case globalName = "global_name"
-            }
-
-            var domain: User? {
-                guard let id = UserID(id) else { return nil }
-                let avatarURL = avatar.flatMap { hash in
-                    URL(
-                        string:
-                        "https://cdn.discordapp.com/avatars/\(id)/\(hash).webp?size=64&animated=\(hash.hasPrefix("a_") ? "true" : "false")"
-                    )
-                }
-                return User(
-                    id: id, username: username, displayName: globalName ?? username,
-                    avatarURL: avatarURL, isBot: bot ?? true
-                )
-            }
-        }
-
         var id: String
         var name: String
         var description: String?
         var icon: String?
-        var bot: BotDTO?
+        var bot: ApplicationBotDTO?
 
         var domain: ApplicationCommandApplication {
             let iconURL = icon.flatMap { hash in

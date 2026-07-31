@@ -156,46 +156,13 @@ enum ApplicationCommandPayloadBuilder {
     ) throws -> JSONValue {
         switch (option.type, argument) {
         case (.string, let .string(value)):
-            if let minimum = option.minimumLength, value.count < minimum {
-                throw ChatProviderError.invalidRequest(
-                    "\(option.displayName) needs at least \(minimum) characters."
-                )
-            }
-            if let maximum = option.maximumLength, value.count > maximum {
-                throw ChatProviderError.invalidRequest(
-                    "\(option.displayName) allows at most \(maximum) characters."
-                )
-            }
-            if !option.choices.isEmpty,
-               !option.choices.contains(where: { $0.value == .string(value) })
-            {
-                throw ChatProviderError.invalidRequest("Select one of \(option.displayName)'s choices.")
-            }
-            return .string(value)
+            return try stringValue(value, option: option)
         case (.integer, let .integer(value)):
-            guard value >= -maximumSafeInteger, value <= maximumSafeInteger else {
-                throw ChatProviderError.invalidRequest(
-                    "\(option.displayName) is outside Discord's safe integer range."
-                )
-            }
-            let number = Double(value)
-            try validateNumber(number, for: option)
-            if !option.choices.isEmpty,
-               !option.choices.contains(where: { $0.value == .integer(value) })
-            {
-                throw ChatProviderError.invalidRequest("Select one of \(option.displayName)'s choices.")
-            }
-            return .number(number)
+            return try integerValue(value, option: option)
         case (.boolean, let .boolean(value)):
             return .bool(value)
         case (.number, let .number(value)) where value.isFinite:
-            try validateNumber(value, for: option)
-            if !option.choices.isEmpty,
-               !option.choices.contains(where: { $0.value == .number(value) })
-            {
-                throw ChatProviderError.invalidRequest("Select one of \(option.displayName)'s choices.")
-            }
-            return .number(value)
+            return try numberValue(value, option: option)
         case (.user, let .user(value)):
             return .string(value.description)
         case (.channel, let .channel(value)):
@@ -217,6 +184,60 @@ enum ApplicationCommandPayloadBuilder {
             }
             throw ChatProviderError.invalidRequest("\(option.displayName) has an invalid value.")
         }
+    }
+
+    private static func stringValue(
+        _ value: String,
+        option: ApplicationCommandOption
+    ) throws -> JSONValue {
+        if let minimum = option.minimumLength, value.count < minimum {
+            throw ChatProviderError.invalidRequest(
+                "\(option.displayName) needs at least \(minimum) characters."
+            )
+        }
+        if let maximum = option.maximumLength, value.count > maximum {
+            throw ChatProviderError.invalidRequest(
+                "\(option.displayName) allows at most \(maximum) characters."
+            )
+        }
+        if !option.choices.isEmpty,
+           !option.choices.contains(where: { $0.value == .string(value) })
+        {
+            throw ChatProviderError.invalidRequest("Select one of \(option.displayName)'s choices.")
+        }
+        return .string(value)
+    }
+
+    private static func integerValue(
+        _ value: Int64,
+        option: ApplicationCommandOption
+    ) throws -> JSONValue {
+        guard value >= -maximumSafeInteger, value <= maximumSafeInteger else {
+            throw ChatProviderError.invalidRequest(
+                "\(option.displayName) is outside Discord's safe integer range."
+            )
+        }
+        let number = Double(value)
+        try validateNumber(number, for: option)
+        if !option.choices.isEmpty,
+           !option.choices.contains(where: { $0.value == .integer(value) })
+        {
+            throw ChatProviderError.invalidRequest("Select one of \(option.displayName)'s choices.")
+        }
+        return .number(number)
+    }
+
+    private static func numberValue(
+        _ value: Double,
+        option: ApplicationCommandOption
+    ) throws -> JSONValue {
+        try validateNumber(value, for: option)
+        if !option.choices.isEmpty,
+           !option.choices.contains(where: { $0.value == .number(value) })
+        {
+            throw ChatProviderError.invalidRequest("Select one of \(option.displayName)'s choices.")
+        }
+        return .number(value)
     }
 
     private static func validateNumber(
