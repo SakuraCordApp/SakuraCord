@@ -138,25 +138,58 @@ nonisolated enum ConversationPermissionResolver {
         guard var permissions = basePermissions else { return nil }
         if permissions & DiscordPermissionBits.administrator != 0 { return .max }
 
-        let overwrites = channel.permissionOverwrites ?? []
-        apply(
-            overwrites.filter { $0.type == 0 && $0.id == guild.id.description },
-            to: &permissions
-        )
+        guard let overwrites = channel.permissionOverwrites, !overwrites.isEmpty else {
+            return permissions
+        }
 
-        let roleOverwriteIDs = Set(
-            overwrites.lazy.filter { $0.type == 0 && $0.id != guild.id.description }.map(\.id)
-        )
-        if !hasCurrentRoleIdentity, !roleOverwriteIDs.isEmpty { return nil }
-        let currentRoleIDs = Set(roleIDs.map(\.description))
-        apply(
-            overwrites.filter { $0.type == 0 && currentRoleIDs.contains($0.id) },
-            to: &permissions
-        )
-        apply(
-            overwrites.filter { $0.type == 1 && $0.id == currentUserID.description },
-            to: &permissions
-        )
+        // The account-wide unread refresh resolves every channel, so this runs
+        // thousands of times per pass. It used to make four filtering passes
+        // over the overwrites, re-render `guild.id` as a string once per
+        // overwrite inside the filter predicates, and build a `Set` of role-id
+        // strings per channel. Bucket the overwrites in a single pass and
+        // compare snowflakes numerically instead, which allocates nothing.
+        let guildRawID = guild.id.rawValue
+        let currentUserRawID = currentUserID.rawValue
+        var everyoneAllow: UInt64 = 0
+        var everyoneDeny: UInt64 = 0
+        var roleAllow: UInt64 = 0
+        var roleDeny: UInt64 = 0
+        var memberAllow: UInt64 = 0
+        var memberDeny: UInt64 = 0
+        var hasRoleOverwrite = false
+        for overwrite in overwrites {
+            guard let rawID = UInt64(overwrite.id) else { continue }
+            switch overwrite.type {
+            case 0:
+                if rawID == guildRawID {
+                    everyoneAllow |= overwrite.allow
+                    everyoneDeny |= overwrite.deny
+                } else {
+                    hasRoleOverwrite = true
+                }
+                // Membership is tested independently of the @everyone match:
+                // when the @everyone role id reaches `roleIDs`, its overwrite
+                // joins the role bucket too, so its allows survive a role deny
+                // in the same pass. Keep that, rather than quietly changing
+                // which channels resolve as visible.
+                guard roleIDs.contains(RoleID(rawValue: rawID)) else { continue }
+                roleAllow |= overwrite.allow
+                roleDeny |= overwrite.deny
+            case 1 where rawID == currentUserRawID:
+                memberAllow |= overwrite.allow
+                memberDeny |= overwrite.deny
+            default:
+                continue
+            }
+        }
+        if !hasCurrentRoleIdentity, hasRoleOverwrite { return nil }
+        // @everyone, then the member's roles, then the member overwrite.
+        permissions &= ~everyoneDeny
+        permissions |= everyoneAllow
+        permissions &= ~roleDeny
+        permissions |= roleAllow
+        permissions &= ~memberDeny
+        permissions |= memberAllow
         return permissions
     }
 
@@ -200,19 +233,17 @@ nonisolated enum ConversationPermissionResolver {
         roleIDs: Set<RoleID>,
         roles: [GuildRole]
     ) -> UInt64? {
-        let applicableRoles = roles.filter { $0.id.description == guildID.description || roleIDs.contains($0.id) }
-        guard !applicableRoles.isEmpty else { return nil }
-        return applicableRoles.reduce(0) { $0 | ($1.permissions ?? 0) }
-    }
-
-    private static func apply(
-        _ overwrites: [ChannelPermissionOverwrite],
-        to permissions: inout UInt64
-    ) {
-        let deny = overwrites.reduce(0) { $0 | $1.deny }
-        let allow = overwrites.reduce(0) { $0 | $1.allow }
-        permissions &= ~deny
-        permissions |= allow
+        // @everyone shares the guild's id. Match it numerically rather than
+        // rendering both snowflakes as strings for every role of every channel.
+        var permissions: UInt64 = 0
+        var didMatchRole = false
+        for role in roles
+        where role.id.rawValue == guildID.rawValue || roleIDs.contains(role.id) {
+            didMatchRole = true
+            permissions |= role.permissions ?? 0
+        }
+        guard didMatchRole else { return nil }
+        return permissions
     }
 }
 

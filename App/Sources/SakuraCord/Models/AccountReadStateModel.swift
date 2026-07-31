@@ -294,14 +294,47 @@ final class AccountReadStateModel {
     }
 
     func setAccessible(_ isAccessible: Bool, channelID: ChannelID) {
-        var value = entry(for: channelID)
-        value.isAccessible = isAccessible
-        entries[channelID] = value
-        for childID in entries.values.lazy.filter({ $0.parentID == channelID }).map(\.channelID) {
-            var child = entry(for: childID)
-            child.isAccessible = isAccessible
-            entries[childID] = child
+        applyAccessibility([channelID: isAccessible])
+    }
+
+    /// Applies resolved channel accessibility and propagates each value to the
+    /// threads and forum posts hanging off that channel.
+    ///
+    /// A channel present in `resolved` keeps its own value. Entries absent from
+    /// it — threads, forum posts, and channels still resolving — inherit from
+    /// their parent when the parent resolved.
+    ///
+    /// The account-wide reconcile runs on every unread refresh, so this walks
+    /// the entry table a fixed number of times instead of rescanning it once
+    /// per channel to find that channel's children, which was quadratic in the
+    /// entry count. It also writes back only when a value actually changed:
+    /// `entries` is observed, so an assignment that changes nothing still
+    /// invalidates every view reading unread state and schedules another pass.
+    func applyAccessibility(_ resolved: [ChannelID: Bool]) {
+        guard !resolved.isEmpty else { return }
+        var updated = entries
+        var didChange = false
+        for (channelID, isAccessible) in resolved {
+            if let existing = updated[channelID] {
+                guard existing.isAccessible != isAccessible else { continue }
+                updated[channelID]?.isAccessible = isAccessible
+            } else {
+                var value = entry(for: channelID)
+                value.isAccessible = isAccessible
+                updated[channelID] = value
+            }
+            didChange = true
         }
+        for (channelID, value) in entries where resolved[channelID] == nil {
+            guard let parentID = value.parentID,
+                  let inherited = resolved[parentID],
+                  value.isAccessible != inherited
+            else { continue }
+            updated[channelID]?.isAccessible = inherited
+            didChange = true
+        }
+        guard didChange else { return }
+        entries = updated
     }
 
     @discardableResult

@@ -5635,7 +5635,18 @@ final class AppModel {
             )
             return
         }
-        reconcileChannelAccessibility(value.channels)
+        // Resolving conversation access walks the guild's roles and the
+        // channel's permission overwrites. It ran once per channel to
+        // reconcile read-state accessibility and then a second time to filter
+        // the sidebar. Nothing between the two reads changes the inputs, so
+        // resolve each channel once and share the result.
+        var accessByChannelID = [ChannelID: ConversationAccess](
+            minimumCapacity: value.channels.count
+        )
+        for channel in value.channels {
+            accessByChannelID[channel.id] = conversationAccess(for: channel)
+        }
+        reconcileChannelAccessibility(accessByChannelID)
         let projectedChannels = value.channels.map { channel in
             var channel = channel
             channel.unreadCount =
@@ -5669,11 +5680,11 @@ final class AppModel {
         let selectedGuildChannels: [Channel]
         if let selectedGuildID {
             selectedGuildChannels = projectedChannels.filter {
-                $0.guildID == selectedGuildID && conversationAccess(for: $0) != .hidden
+                $0.guildID == selectedGuildID && accessByChannelID[$0.id] != .hidden
             }
         } else {
             selectedGuildChannels = projectedChannels.filter {
-                $0.guildID == nil && conversationAccess(for: $0) != .hidden
+                $0.guildID == nil && accessByChannelID[$0.id] != .hidden
             }
         }
         if selectedGuildChannels != visibleChannels {
@@ -5700,17 +5711,26 @@ final class AppModel {
         )
     }
 
-    private func reconcileChannelAccessibility(_ channels: [Channel]) {
-        for channel in channels {
-            switch conversationAccess(for: channel) {
+    private func reconcileChannelAccessibility(
+        _ accessByChannelID: [ChannelID: ConversationAccess]
+    ) {
+        var resolved = [ChannelID: Bool](
+            minimumCapacity: accessByChannelID.count
+        )
+        for (channelID, access) in accessByChannelID {
+            switch access {
             case .hidden:
-                readState.setAccessible(false, channelID: channel.id)
+                resolved[channelID] = false
             case .readable:
-                readState.setAccessible(true, channelID: channel.id)
+                resolved[channelID] = true
             case .checking:
+                // Still resolving: leave the stored value, and let the
+                // channel's threads keep theirs rather than inheriting a
+                // guess.
                 break
             }
         }
+        readState.applyAccessibility(resolved)
     }
 
     private func deliverNativeNotification(for message: Message) {
