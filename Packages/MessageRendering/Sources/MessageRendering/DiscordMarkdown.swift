@@ -523,6 +523,19 @@ public enum DiscordMarkdown {
                 continue
             }
 
+            if inheritedLink == nil,
+               let autolink = angleBracketAutolink(
+                   in: source,
+                   at: cursor,
+                   traits: inheritedTraits
+               )
+            {
+                flushPlain()
+                result.append(autolink.run)
+                cursor = autolink.endIndex
+                continue
+            }
+
             if source[cursor] == "[",
                let labelEnd = source[cursor...].firstIndex(of: "]")
             {
@@ -572,6 +585,32 @@ public enum DiscordMarkdown {
 
         flushPlain()
         return result
+    }
+
+    private static func angleBracketAutolink(
+        in source: Substring,
+        at cursor: String.Index,
+        traits: AppKitPlan.InlineTraits
+    ) -> (run: AppKitPlan.InlineRun, endIndex: String.Index)? {
+        guard source[cursor] == "<",
+              let close = source[source.index(after: cursor)...]
+                .firstIndex(of: ">"),
+              let url = MessageLinkPolicy.allowedURL(
+                  from: String(source[cursor ... close])
+              )
+        else { return nil }
+
+        return (
+            AppKitPlan.InlineRun(
+                text: String(
+                    source[source.index(after: cursor) ..< close]
+                ),
+                traits: traits,
+                link: url,
+                color: nil
+            ),
+            source.index(after: close)
+        )
     }
 
     private static func delimitedRuns(

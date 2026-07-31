@@ -22,10 +22,22 @@ public enum MessageLinkPolicy {
     }
 
     public static func allowedURL(from rawValue: String) -> URL? {
-        guard let url = URL(string: rawValue),
+        let value = angleBracketDestinationContent(from: rawValue) ?? rawValue
+        guard let url = URL(string: value),
               destination(for: url) != nil
         else { return nil }
         return url
+    }
+
+    private static func angleBracketDestinationContent(
+        from rawValue: String
+    ) -> String? {
+        guard rawValue.first == "<", rawValue.last == ">" else { return nil }
+        let value = rawValue.dropFirst().dropLast()
+        guard !value.isEmpty,
+              !value.contains(where: { $0.isWhitespace || $0 == "<" || $0 == ">" })
+        else { return nil }
+        return String(value)
     }
 
     private static func discordChannelDestination(

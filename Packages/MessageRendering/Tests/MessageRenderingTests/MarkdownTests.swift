@@ -8,6 +8,59 @@ import Testing
     #expect(String(value.characters) == "Hello native client")
 }
 
+@Test func `angle bracket masked links match discord rendering`() throws {
+    let source =
+        "[portfolio](<https://exyron.dev>) and [docs](<https://example.com/docs>)"
+    let expectedText = "portfolio and docs"
+    let expectedURLs = try [
+        #require(URL(string: "https://exyron.dev")),
+        #require(URL(string: "https://example.com/docs"))
+    ]
+
+    let swiftUIValue = DiscordMarkdown.attributed(source)
+    #expect(String(swiftUIValue.characters) == expectedText)
+
+    let appKitValue = DiscordMarkdown.appKitAttributed(source)
+    #expect(appKitValue.string == expectedText)
+    let string = appKitValue.string as NSString
+    #expect(
+        appKitValue.attribute(
+            .link,
+            at: string.range(of: "portfolio").location,
+            effectiveRange: nil
+        ) as? URL == expectedURLs[0]
+    )
+    #expect(
+        appKitValue.attribute(
+            .link,
+            at: string.range(of: "docs").location,
+            effectiveRange: nil
+        ) as? URL == expectedURLs[1]
+    )
+}
+
+@Test func `bare angle bracket autolinks match discord rendering`() throws {
+    let source = "what if i do just <https://exyron.dev/>"
+    let expectedURL = try #require(URL(string: "https://exyron.dev/"))
+    let expectedText = "what if i do just https://exyron.dev/"
+
+    let swiftUIValue = DiscordMarkdown.attributed(source)
+    #expect(String(swiftUIValue.characters) == expectedText)
+
+    let appKitValue = DiscordMarkdown.appKitAttributed(source)
+    #expect(appKitValue.string == expectedText)
+    let linkRange = (appKitValue.string as NSString).range(
+        of: "https://exyron.dev/"
+    )
+    #expect(
+        appKitValue.attribute(
+            .link,
+            at: linkRange.location,
+            effectiveRange: nil
+        ) as? URL == expectedURL
+    )
+}
+
 @Test func `message link policy permits web links and classifies Discord channels`() throws {
     let webURL = try #require(URL(string: "https://example.com/docs"))
     let channelURL = try #require(
@@ -42,6 +95,21 @@ import Testing
     )
     #expect(
         rendered.attribute(.link, at: 0, effectiveRange: nil) == nil
+    )
+
+    let angleBracketRendered = DiscordMarkdown.appKitAttributed(
+        "[safe-looking label](<file:///Users/example/private.txt>)"
+    )
+    #expect(
+        angleBracketRendered.attribute(.link, at: 0, effectiveRange: nil) == nil
+    )
+
+    let unsafeAutolink = DiscordMarkdown.appKitAttributed(
+        "<file:///Users/example/private.txt>"
+    )
+    #expect(unsafeAutolink.string == "<file:///Users/example/private.txt>")
+    #expect(
+        unsafeAutolink.attribute(.link, at: 0, effectiveRange: nil) == nil
     )
 }
 
