@@ -103,9 +103,18 @@ struct MemberSection: Identifiable, Equatable {
 
     let id: ID
     let title: String
+    let colorHex: UInt32?
+    let totalCount: Int
     let members: [Member]
 
-    static func make(from members: [Member]) -> [MemberSection] {
+    static func make(
+        from members: [Member],
+        groups: [GuildMemberListGroup] = [],
+        roles: [GuildRole] = []
+    ) -> [MemberSection] {
+        if !groups.isEmpty {
+            return makeServerOrderedSections(members: members, groups: groups, roles: roles)
+        }
         var roleMembers: [ID: [Member]] = [:]
         var ungroupedOnline: [Member] = []
         var offlineMembers: [Member] = []
@@ -128,14 +137,47 @@ struct MemberSection: Identifiable, Equatable {
             }
         }
 
-        var sections = roleMembers.map { id, members in
-                let name = switch id {
-                case let .role(name, _): name
-                case .online, .offline: ""
+        var sections = makeRoleSections(roleMembers)
+
+        if !ungroupedOnline.isEmpty {
+            ungroupedOnline.sort(by: memberNameSort)
+            sections.append(MemberSection(
+                id: .online,
+                title: "Online",
+                colorHex: nil,
+                totalCount: ungroupedOnline.count,
+                members: ungroupedOnline
+            ))
+        }
+
+        if !offlineMembers.isEmpty {
+            offlineMembers.sort(by: memberNameSort)
+            sections.append(MemberSection(
+                id: .offline,
+                title: "Offline",
+                colorHex: nil,
+                totalCount: offlineMembers.count,
+                members: offlineMembers
+            ))
+        }
+        return sections
+    }
+
+    private static func makeRoleSections(_ roleMembers: [ID: [Member]]) -> [MemberSection] {
+        return roleMembers.map { id, members in
+            let name = switch id {
+            case let .role(name, _): name
+            case .online, .offline: ""
             }
             return MemberSection(
                 id: id,
                 title: name,
+                colorHex: members.lazy.compactMap { member in
+                    member.roles.first {
+                        $0.name == member.roleName && $0.position == member.rolePosition
+                    }?.colorHex
+                }.first,
+                totalCount: members.count,
                 members: members.sorted(by: memberNameSort)
             )
         }
@@ -147,25 +189,39 @@ struct MemberSection: Identifiable, Equatable {
             }
             return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
         }
+    }
 
-        if !ungroupedOnline.isEmpty {
-            ungroupedOnline.sort(by: memberNameSort)
-            sections.append(MemberSection(
-                id: .online,
-                title: "Online",
-                members: ungroupedOnline
-            ))
+    private static func makeServerOrderedSections(
+        members: [Member],
+        groups: [GuildMemberListGroup],
+        roles: [GuildRole]
+    ) -> [MemberSection] {
+        let rolesByID = Dictionary(uniqueKeysWithValues: roles.map { ($0.id, $0) })
+        let membersByGroup = Dictionary(grouping: members) { member in
+            member.roleID?.description ?? (member.isOnline ? "online" : "offline")
         }
-
-        if !offlineMembers.isEmpty {
-            offlineMembers.sort(by: memberNameSort)
-            sections.append(MemberSection(
-                id: .offline,
-                title: "Offline",
-                members: offlineMembers
-            ))
+        return groups.compactMap { group in
+            let loadedMembers = membersByGroup[group.id] ?? []
+            if group.id == "online" || group.id == "offline" {
+                return MemberSection(
+                    id: group.id == "online" ? .online : .offline,
+                    title: group.id == "online" ? "Online" : "Offline",
+                    colorHex: nil,
+                    totalCount: group.count,
+                    members: loadedMembers
+                )
+            }
+            guard let roleID = RoleID(group.id) else { return nil }
+            let role = rolesByID[roleID]
+            let title = role?.name ?? loadedMembers.first?.roleName ?? "Members"
+            return MemberSection(
+                id: .role(name: title, position: role?.position ?? 0),
+                title: title,
+                colorHex: role?.colorHex,
+                totalCount: group.count,
+                members: loadedMembers
+            )
         }
-        return sections
     }
 
     private static func memberNameSort(_ lhs: Member, _ rhs: Member) -> Bool {
@@ -178,13 +234,13 @@ private struct MemberSectionHeader: View {
     let section: MemberSection
 
     var body: some View {
-        Text("\(section.title) — \(section.members.count)")
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(.secondary)
+        Text("\(section.title) — \(section.totalCount)")
+            .font(.body.weight(.semibold))
+            .foregroundStyle(section.colorHex.map(Color.init(hex:)) ?? .secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 7)
-            .padding(.top, 9)
-            .padding(.bottom, 3)
+            .padding(.horizontal, 10)
+            .padding(.top, 12)
+            .padding(.bottom, 5)
     }
 }
 

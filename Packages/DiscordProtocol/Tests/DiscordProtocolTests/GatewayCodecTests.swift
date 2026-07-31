@@ -268,6 +268,18 @@ import Testing
     #expect(channels["200"] as? [[Int]] == [[0, 99]])
 }
 
+@Test func `guild member list update retains authoritative group counts and order`() throws {
+    let payloadText =
+        #"{"guild_id":"100","ops":[],"member_count":500,"online_count":388,"groups":["# +
+        #"{"id":"20","count":1},{"id":"10","count":2},{"id":"online","count":388}]}"#
+    let payload = Data(payloadText.utf8)
+
+    let update = try JSONDecoder().decode(GuildMemberListUpdateDTO.self, from: payload)
+
+    #expect(update.groups?.map(\.id) == ["20", "10", "online"])
+    #expect(update.groups?.map(\.count) == [1, 2, 388])
+}
+
 @Test func `voice state update uses gateway opcode four and explicit null to leave`() throws {
     let join = DiscordGatewayPayloadFactory.voiceStateUpdate(
         guildID: GuildID(rawValue: 100),
@@ -561,6 +573,41 @@ import Testing
     #expect(search.map(\.user.username) == ["updated-first", "third"])
 }
 
+@Test func `message history member resolution prioritizes authors deduplicates and stays bounded`() {
+    func user(_ id: UInt64) -> User {
+        User(
+            id: UserID(rawValue: id),
+            username: "user-\(id)",
+            displayName: "User \(id)"
+        )
+    }
+
+    var messages = (1 ... 100).map { rawID in
+        Message(
+            id: MessageID(rawValue: UInt64(rawID)),
+            channelID: ChannelID(rawValue: 200),
+            author: user(UInt64(rawID)),
+            content: ""
+        )
+    }
+    messages[0].mentionedUsers = [user(1_000), user(1_001), user(1_002)]
+
+    let missing = DiscordMessageMemberHydration.missingUserIDs(
+        in: messages,
+        cached: [UserID(rawValue: 1)],
+        requested: [UserID(rawValue: 2)]
+    )
+
+    #expect(missing.count == 100)
+    #expect(missing.prefix(3) == [
+        UserID(rawValue: 3), UserID(rawValue: 4), UserID(rawValue: 5)
+    ])
+    #expect(missing.contains(UserID(rawValue: 100)))
+    #expect(missing.contains(UserID(rawValue: 1_000)))
+    #expect(missing.contains(UserID(rawValue: 1_001)))
+    #expect(!missing.contains(UserID(rawValue: 1_002)))
+}
+
 @Test func `ready and guild emoji updates decode complete custom emoji catalogs`() throws {
     let readyData = Data(#"""
     {
@@ -645,18 +692,54 @@ import Testing
     #expect(decoded.elements == [Item(required: "one"), Item(required: "two")])
     #expect(decoded.skippedCount == 1)
 }
-@Test func `role member resolver requests exact user ids without presences`() throws {
+@Test func `role member resolver requests exact user ids without presences or nonce`() throws {
     let payload = DiscordGatewayPayloadFactory.requestMembers(
         guildID: GuildID(rawValue: 10),
-        userIDs: [UserID(rawValue: 20), UserID(rawValue: 30)],
-        nonce: "role-members"
+        userIDs: [UserID(rawValue: 20), UserID(rawValue: 30)]
     )
     #expect(payload["op"] as? Int == 8)
     let data = try #require(payload["d"] as? [String: Any])
     #expect(data["guild_id"] as? String == "10")
     #expect(data["user_ids"] as? [String] == ["20", "30"])
     #expect(data["presences"] as? Bool == false)
-    #expect(data["nonce"] as? String == "role-members")
+    #expect(data["nonce"] == nil)
+}
+
+@Test func `role member resolver routes nonce-less chunks by guild and returned user ids`() {
+    let requests = [
+        DiscordPendingMemberRequestDescriptor(
+            id: "first",
+            guildID: GuildID(rawValue: 10),
+            requestedUserIDs: Set([UserID(rawValue: 20), UserID(rawValue: 30)])
+        ),
+        DiscordPendingMemberRequestDescriptor(
+            id: "other-guild",
+            guildID: GuildID(rawValue: 11),
+            requestedUserIDs: Set([UserID(rawValue: 20), UserID(rawValue: 30)])
+        )
+    ]
+
+    #expect(
+        DiscordMemberChunkRouting.pendingRequestID(
+            guildID: GuildID(rawValue: 10),
+            responseUserIDs: [UserID(rawValue: 20), UserID(rawValue: 30)],
+            requests: requests
+        ) == "first"
+    )
+    #expect(
+        DiscordMemberChunkRouting.pendingRequestID(
+            guildID: GuildID(rawValue: 10),
+            responseUserIDs: [UserID(rawValue: 20)],
+            requests: requests
+        ) == "first"
+    )
+    #expect(
+        DiscordMemberChunkRouting.pendingRequestID(
+            guildID: GuildID(rawValue: 12),
+            responseUserIDs: [UserID(rawValue: 20)],
+            requests: requests
+        ) == nil
+    )
 }
 
 @Test func `member mention search requests query with official gateway shape`() throws {

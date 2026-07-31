@@ -3,6 +3,44 @@ import Foundation
 import SakuraCordModels
 import Testing
 
+@Test func `enhanced role primary color takes precedence over legacy color`() throws {
+    let data = Data(
+        #"""
+        {
+          "id":"10","name":"Orange","position":2,"hoist":true,"color":16777215,
+          "colors":{"primary_color":16753920,"secondary_color":null,"tertiary_color":null}
+        }
+        """#.utf8
+    )
+    let role = try JSONDecoder().decode(GuildRoleDTO.self, from: data).domain
+
+    #expect(role?.colorHex == 0xFFA500)
+}
+
+@Test func `role color falls back to legacy field when enhanced color is absent`() throws {
+    let data = Data(
+        #"{"id":"10","name":"Orange","position":2,"hoist":true,"color":16753920}"#.utf8
+    )
+    let role = try JSONDecoder().decode(GuildRoleDTO.self, from: data).domain
+
+    #expect(role?.colorHex == 0xFFA500)
+}
+
+@Test func `partial message member merge does not erase known role ids`() {
+    let existing = MessageGuildMember(
+        nickname: "Guild Name",
+        roleIDs: [RoleID(rawValue: 10)],
+        avatarURL: URL(string: "https://cdn.discordapp.com/avatar.webp")
+    )
+    let merged = MessageGuildMember.merging(
+        incoming: MessageGuildMember(),
+        existing: existing
+    )
+
+    #expect(merged == existing)
+    #expect(MessageGuildMember.merging(incoming: nil, existing: existing) == existing)
+}
+
 @Test func `channel decoder retains hidden channel timestamps`() throws {
     let lastMessageID = ClientNonce.make(
         now: Date(timeIntervalSince1970: 1_784_158_980.123)
@@ -121,6 +159,32 @@ import Testing
     #expect(message.type.hasGeneratedContent)
     #expect(message.stickers.first?.format == .lottie)
     #expect(message.stickers.first?.mediaURL?.absoluteString.hasSuffix(".json") == true)
+}
+
+@Test func `reply preview retains referenced guild member roles`() throws {
+    let data = Data(
+        #"""
+        {
+          "id":"101","channel_id":"200","guild_id":"300","type":0,
+          "author":{"id":"1","username":"replying","global_name":"Replying User"},
+          "content":"Reply","timestamp":"2026-07-17T10:00:00.000Z",
+          "message_reference":{"message_id":"100"},
+          "referenced_message":{
+            "id":"100",
+            "author":{"id":"2","username":"original","global_name":"Original User"},
+            "member":{"nick":"Guild Original","roles":["10","11"],"avatar":null},
+            "content":"Original"
+          }
+        }
+        """#.utf8
+    )
+
+    let message = try RichMessageFixtureDecoder.decodeMessage(from: data)
+    #expect(message.replyPreview?.author.displayName == "Guild Original")
+    #expect(
+        message.replyPreview?.guildMember?.roleIDs
+            == [RoleID(rawValue: 10), RoleID(rawValue: 11)]
+    )
 }
 
 @Test func `partial update changes present rich fields and preserves absent fields`() throws {

@@ -287,6 +287,68 @@ implementation records.
 
 - Community rules-channel presentation uses the guild's authoritative
   `rules_channel_id`, not a channel name or UI heuristic, and adds no request.
+- Role-color presentation uses the enhanced role-colors object's
+  `primary_color`, falling back to the deprecated top-level `color` field for
+  compatibility. This was rechecked on 31 July 2026 against Discord's public
+  guild-resource documentation and public web asset
+  `web.505415119e321976.js`; the web client writes both fields and reads the
+  enhanced colors for role presentation. Pinned Paicord revision
+  `694761c1938b73bb60bd58942674dfe73aab1135` and Swiftcord v1 revision
+  `14465d927ebe1ba34b3befa00f9365fad7b56eb9` model only the legacy field.
+  Decoding or displaying either form adds no request.
+- Chat author presentation retains per-guild role and member stores across
+  channel selection. A virtualized member-list range cannot evict members
+  outside that range, while an authoritative update replaces the stored role
+  list so a removed role cannot leave a stale color behind. This matches
+  Paicord's `GuildStore`/`MessageAuthor` ownership. When a guild history page
+  contains an author absent from that store, SakuraCord performs at most one
+  Gateway opcode 8 request for at most 100 unique user IDs, with authors
+  prioritized before mentions and `presences: false`. The request deliberately omits `nonce`, as
+  do Discord's current `requestGuildMembers` implementation and pinned
+  Paicord; the response is reconciled against its guild plus the union of
+  returned member IDs and `not_found` IDs. IDs already cached or requested in
+  the current Gateway session are omitted. The same bounded lookup also runs
+  after locally persisted rows are merged, matching the official web client's
+  `LOCAL_MESSAGES_LOADED` branch instead of limiting hydration to
+  `LOAD_MESSAGES_SUCCESS`. Reply authors share that request budget. The
+  returned raw role IDs are retained on both the member and history message so
+  later virtualized member-list ranges cannot evict the author's role data.
+  This was rechecked on 31 July 2026 against Discord's public Request Guild
+  Members contract, current public web asset `web.505415119e321976.js` module
+  `860071`, and pinned Paicord
+  `ChannelStore.fetchMessages`/`GuildStore.requestMembers`. Discord's client
+  requests missing history authors and mentions through a deduplicating member
+  requester; Paicord performs the same post-history lookup. Pinned Swiftcord v1
+  has no corresponding missing-author hydration path. A cache-disabled CDP
+  recheck against Discord stable desktop host `0.0.402` on 31 July 2026 found
+  that fresh
+  `GET /channels/{channel_id}/messages?limit=...` responses were HTTP 200 reads
+  with no request body, no `guild_id`, and no `member` object on any returned
+  message. The freshly restarted official client nevertheless rendered a
+  sampled author's non-default role color from its initial compressed Gateway
+  member state; it did not need a subsequent opcode 8 request for that sampled
+  author. SakuraCord therefore treats Gateway membership as authoritative,
+  marks it usable in the validated `READY` dispatch before bootstrap can
+  resume, and removes failed author IDs from the request-deduplication set so a
+  connection-timing failure cannot permanently suppress their later lookup.
+  An authenticated, sanitized SakuraCord trace in the Swiftcord `#general`
+  channel on 31 July 2026 exposed the prior defect precisely: Discord returned
+  valid chunks containing 6 and 11 requested members with no nonce, while the
+  client rejected them and timed out. The old client had sent a hyphenated UUID
+  nonce (36 bytes); Discord's public contract caps nonces at 32 bytes and states
+  that an invalid nonce is ignored and omitted from the response. The current
+  implementation removes that invalid field, matches the first-party and
+  Paicord request shape, and reconciles the observed nonce-less response by
+  guild plus the returned and `not_found` user IDs.
+- The channel member inspector keeps the official client's single initial
+  `0...99` member-list range and treats `GUILD_MEMBER_LIST_UPDATE.groups` as
+  the authority for group order and counts. Loaded member rows retain their
+  Gateway order; SakuraCord does not infer totals from the virtualized slice.
+  This was rechecked on 31 July 2026 against public web asset
+  `web.505415119e321976.js` and pinned Paicord's member-list store. Discord's
+  public Gateway documentation does not describe opcode 37 or this dispatch;
+  Swiftcord v1 has no corresponding implementation. The change adds no
+  request and preserves the existing one-payload subscription budget.
 - Hidden-channel metadata and effective access are derived from cached guild,
   role, member, and permission-overwrite data. Displaying the last-message
   snowflake time or allowed overwrite identities does not load hidden content.

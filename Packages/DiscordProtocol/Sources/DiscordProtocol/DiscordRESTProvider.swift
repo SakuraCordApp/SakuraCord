@@ -73,11 +73,13 @@ public actor DiscordRESTProvider: ChatProvider {
     private var cachedMembers: [GuildID: [Member]] = [:]
     private var cachedPrivateMembersByID: [UserID: Member] = [:]
     private var cachedMemberListItems: [GuildID: [GuildMemberListUpdateDTO.Item?]] = [:]
+    private var cachedMemberListGroups: [GuildID: [GuildMemberListGroup]] = [:]
     private var cachedGatewayUsersByID: [String: UserDTO] = [:]
     private var cachedGuildRoles: [GuildID: [GuildRoleDTO]] = [:]
     private var pendingMemberSearchRequests: [String: PendingMemberSearchRequest] = [:]
     private var pendingMemberSearchRequestByGuild: [GuildID: String] = [:]
     private var pendingRoleMemberRequests: [String: PendingRoleMemberRequest] = [:]
+    private var requestedHistoryMemberIDs: [GuildID: Set<UserID>] = [:]
     private var cachedGuilds: [GuildID: Guild] = [:]
     private var cachedGuildRailItems: [GuildRailItem] = []
     private var cachedProfiles: [ProfileCacheKey: UserProfile] = [:]
@@ -246,6 +248,10 @@ public actor DiscordRESTProvider: ChatProvider {
     }
 
     private func finishInitialGatewaySnapshot(_ snapshot: InitialGatewaySnapshot) {
+        // GatewaySession emits READY dispatch before its `.ready` state event.
+        // Bootstrap resumes here, so immediate channel loads must already be
+        // allowed to resolve missing message authors through the Gateway.
+        gatewayReady = true
         initialGatewaySnapshot = snapshot
         initialGatewaySnapshotContinuation?.resume(returning: snapshot)
         initialGatewaySnapshotContinuation = nil
@@ -460,7 +466,7 @@ public actor DiscordRESTProvider: ChatProvider {
         if gatewayReady {
             await attemptMemberSubscription(guildID: guildID)
         }
-        return cachedMembers[guildID] ?? []
+        return orderedMemberListMembers(guildID: guildID) ?? cachedMembers[guildID] ?? []
     }
 
     public func roles(in guildID: GuildID) async throws -> [GuildRole] {
@@ -554,6 +560,24 @@ public actor DiscordRESTProvider: ChatProvider {
             totalCount: validIDs.count,
             isTruncated: validIDs.count > maximumDisplayedMembers
         )
+    }
+
+    public func resolveMembers(in guildID: GuildID, userIDs: [UserID]) async throws -> [Member] {
+        var seen: Set<UserID> = []
+        let requested = Array(userIDs.filter { seen.insert($0).inserted }.prefix(100))
+        guard !requested.isEmpty else { return [] }
+
+        let cachedByID = Dictionary(
+            uniqueKeysWithValues: (cachedMembers[guildID] ?? []).map { ($0.id, $0) }
+        )
+        let missing = requested.filter { cachedByID[$0] == nil }
+        if !missing.isEmpty {
+            try await requestMembersByID(missing, guildID: guildID)
+        }
+        let resolvedByID = Dictionary(
+            uniqueKeysWithValues: (cachedMembers[guildID] ?? []).map { ($0.id, $0) }
+        )
+        return requested.compactMap { resolvedByID[$0] }
     }
 
     public func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
@@ -723,13 +747,62 @@ public actor DiscordRESTProvider: ChatProvider {
                 "Skipped \(payload.skippedCount) unsupported message payloads in channel \(channelID)"
             )
         }
-        let values = payload.elements.compactMap { try? $0.domain() }.sorted {
+        var values = payload.elements.compactMap { try? $0.domain() }.sorted {
             $0.timestamp < $1.timestamp
         }
-        for message in values {
-            cachedMessages[message.id] = message
+        await hydrateHistoryMembers(&values, channelID: channelID)
+        for index in values.indices {
+            if let existing = cachedMessages[values[index].id] {
+                values[index].guildMember = MessageGuildMember.merging(
+                    incoming: values[index].guildMember,
+                    existing: existing.guildMember
+                )
+            }
+            cachedMessages[values[index].id] = values[index]
         }
         return MessagePage(messages: values, hasMoreBefore: values.count == min(max(limit, 1), 100))
+    }
+
+    private func hydrateHistoryMembers(_ values: inout [Message], channelID: ChannelID) async {
+        if let guildID = cachedChannels.values.lazy.flatMap(\.self).first(where: {
+            $0.id == channelID
+        })?.guildID {
+            for index in values.indices where values[index].guildID == nil {
+                values[index].guildID = guildID
+            }
+
+            let requested = requestedHistoryMemberIDs[guildID] ?? []
+            let cached = Set((cachedMembers[guildID] ?? []).map(\.id))
+            let missing = DiscordMessageMemberHydration.missingUserIDs(
+                in: values,
+                cached: cached,
+                requested: requested
+            )
+            if !missing.isEmpty {
+                requestedHistoryMemberIDs[guildID, default: []].formUnion(missing)
+                do {
+                    try await requestMembersByID(missing, guildID: guildID)
+                } catch {
+                    requestedHistoryMemberIDs[guildID]?.subtract(missing)
+                    if requestedHistoryMemberIDs[guildID]?.isEmpty == true {
+                        requestedHistoryMemberIDs[guildID] = nil
+                    }
+                    gatewayLogger.warning(
+                        "History member lookup failed; count=\(missing.count), error=\(error.localizedDescription, privacy: .public)"
+                    )
+                }
+            }
+
+            let membersByID = Dictionary(
+                uniqueKeysWithValues: (cachedMembers[guildID] ?? []).map { ($0.id, $0) }
+            )
+            for index in values.indices {
+                DiscordMessageMemberHydration.hydrate(
+                    message: &values[index],
+                    membersByID: membersByID
+                )
+            }
+        }
     }
 
     public func forumPosts(in channelID: ChannelID, query: ForumPostQuery) async throws
@@ -2547,18 +2620,9 @@ public actor DiscordRESTProvider: ChatProvider {
         }
         applicationCommandCatalogTasks = [:]
         cachedApplicationCommandCatalogs = [:]
-        for task in autocompleteTimeoutTasks.values {
-            task.cancel()
-        }
-        autocompleteTimeoutTasks = [:]
-        pendingAutocompleteTypes = [:]
-        pendingModalContexts = [:]
-        for request in pendingMemberSearchRequests.values {
-            request.timeoutTask.cancel()
-            request.continuation.resume(throwing: CancellationError())
-        }
-        pendingMemberSearchRequests = [:]
-        pendingMemberSearchRequestByGuild = [:]
+        cancelPendingInteractionRequests()
+        cancelPendingMemberRequests(error: CancellationError())
+        requestedHistoryMemberIDs = [:]
         voiceNegotiationTimeoutTask?.cancel()
         if let pendingVoiceNegotiation {
             pendingVoiceNegotiation.continuation.resume(throwing: CancellationError())
@@ -2762,15 +2826,17 @@ public actor DiscordRESTProvider: ChatProvider {
                 "Discord Gateway is not ready to resolve role members.")
         }
         for batch in userIDs.chunked(into: 100) {
-            let nonce = UUID().uuidString.lowercased()
+            // Local continuation identity only; this value is never sent to Discord.
+            let requestID = UUID().uuidString.lowercased()
             let members = try await withCheckedThrowingContinuation {
                 (continuation: CheckedContinuation<[Member], any Error>) in
                 let timeout = Task { [weak self] in
                     try? await Task.sleep(for: .seconds(8))
-                    await self?.timeoutRoleMemberRequest(nonce: nonce)
+                    await self?.timeoutRoleMemberRequest(requestID: requestID)
                 }
-                pendingRoleMemberRequests[nonce] = PendingRoleMemberRequest(
+                pendingRoleMemberRequests[requestID] = PendingRoleMemberRequest(
                     guildID: guildID,
+                    requestedUserIDs: Set(batch),
                     members: [],
                     receivedChunks: [],
                     continuation: continuation,
@@ -2781,12 +2847,11 @@ public actor DiscordRESTProvider: ChatProvider {
                         try await self?.sendGateway(
                             DiscordGatewayPayloadFactory.requestMembers(
                                 guildID: guildID,
-                                userIDs: batch,
-                                nonce: nonce
+                                userIDs: batch
                             )
                         )
                     } catch {
-                        await self?.failRoleMemberRequest(nonce: nonce, error: error)
+                        await self?.failRoleMemberRequest(requestID: requestID, error: error)
                     }
                 }
             }
@@ -2800,8 +2865,25 @@ public actor DiscordRESTProvider: ChatProvider {
         )
     }
 
-    private func timeoutRoleMemberRequest(nonce: String) {
-        guard let request = pendingRoleMemberRequests.removeValue(forKey: nonce) else { return }
+    private func pendingRoleMemberRequestID(
+        guildID: GuildID,
+        responseUserIDs: Set<UserID>
+    ) -> String? {
+        DiscordMemberChunkRouting.pendingRequestID(
+            guildID: guildID,
+            responseUserIDs: responseUserIDs,
+            requests: pendingRoleMemberRequests.map {
+                DiscordPendingMemberRequestDescriptor(
+                    id: $0.key,
+                    guildID: $0.value.guildID,
+                    requestedUserIDs: $0.value.requestedUserIDs
+                )
+            }
+        )
+    }
+
+    private func timeoutRoleMemberRequest(requestID: String) {
+        guard let request = pendingRoleMemberRequests.removeValue(forKey: requestID) else { return }
         request.continuation.resume(
             throwing: ChatProviderError.invalidRequest(
                 "Discord did not finish resolving role members.")
@@ -2833,10 +2915,39 @@ public actor DiscordRESTProvider: ChatProvider {
         return request
     }
 
-    private func failRoleMemberRequest(nonce: String, error: any Error) {
-        guard let request = pendingRoleMemberRequests.removeValue(forKey: nonce) else { return }
+    private func failRoleMemberRequest(requestID: String, error: any Error) {
+        guard let request = pendingRoleMemberRequests.removeValue(forKey: requestID) else { return }
         request.timeoutTask.cancel()
         request.continuation.resume(throwing: error)
+    }
+
+    private func cancelPendingRoleMemberRequests(error: any Error) {
+        let requests = Array(pendingRoleMemberRequests.values)
+        pendingRoleMemberRequests = [:]
+        for request in requests {
+            request.timeoutTask.cancel()
+            request.continuation.resume(throwing: error)
+        }
+    }
+
+    private func cancelPendingMemberRequests(error: any Error) {
+        let searches = Array(pendingMemberSearchRequests.values)
+        pendingMemberSearchRequests = [:]
+        pendingMemberSearchRequestByGuild = [:]
+        for search in searches {
+            search.timeoutTask.cancel()
+            search.continuation.resume(throwing: error)
+        }
+        cancelPendingRoleMemberRequests(error: error)
+    }
+
+    private func cancelPendingInteractionRequests() {
+        for task in autocompleteTimeoutTasks.values {
+            task.cancel()
+        }
+        autocompleteTimeoutTasks = [:]
+        pendingAutocompleteTypes = [:]
+        pendingModalContexts = [:]
     }
 
     private func publishEmojiCollection(
@@ -2882,7 +2993,11 @@ public actor DiscordRESTProvider: ChatProvider {
                let ready = try? JSONDecoder().decode(GatewayReadyGuildsDTO.self, from: data)
             {
                 privateCallsByChannel = [:]
+                cancelPendingRoleMemberRequests(error: CancellationError())
                 cachedMembers = [:]
+                cachedMemberListItems = [:]
+                cachedMemberListGroups = [:]
+                requestedHistoryMemberIDs = [:]
                 cachedPrivateMembersByID = [:]
                 cachedGatewayUsersByID = Dictionary(
                     ready.users.map { ($0.id, $0) },
@@ -3510,26 +3625,22 @@ public actor DiscordRESTProvider: ChatProvider {
                 gatewayLogger.info("Member-list range synchronized; items=\(syncItemCount)")
             }
             applyMemberListOperations(update.ops, guildID: guildID)
-            var seen = Set<UserID>()
-            let members = (cachedMemberListItems[guildID] ?? []).compactMap { item -> Member? in
-                guard let memberDTO = item?.member,
-                      let member = try? memberDTO.domain(
-                          currentUserID: currentUser?.id,
-                          currentStatus: presenceStatus,
-                          presence: item?.presence,
-                          guildRoles: cachedGuildRoles[guildID] ?? [],
-                          guildID: guildID
-                      ),
-                      seen.insert(member.id).inserted
-                else { return nil }
-                return member
+            if let groups = update.groups {
+                cachedMemberListGroups[guildID] = groups.map {
+                    GuildMemberListGroup(id: $0.id, count: $0.count)
+                }
             }
+            let members = decodedMemberListMembers(guildID: guildID)
             cachedMembers[guildID] = DiscordMemberStoreOrdering.merging(
                 existing: cachedMembers[guildID] ?? [], updates: members
             )
             if guildID == pendingMemberGuildID {
                 continuation?.yield(
-                    .membersChanged(guildID: guildID, members: cachedMembers[guildID] ?? [])
+                    .membersChanged(
+                        guildID: guildID,
+                        members: orderedMemberListMembers(guildID: guildID) ?? members,
+                        groups: cachedMemberListGroups[guildID] ?? []
+                    )
                 )
             }
         case "GUILD_MEMBERS_CHUNK":
@@ -3537,29 +3648,32 @@ public actor DiscordRESTProvider: ChatProvider {
                 let chunk = try? JSONDecoder().decode(GatewayGuildMembersChunkDTO.self, from: data),
                 let guildID = GuildID(chunk.guildID)
             else { return }
-            gatewayLogger.info(
-                "Received member chunk; members=\(chunk.members.count), chunks=\(chunk.chunkCount), nonce=\(chunk.nonce != nil), pendingSearch=\(self.pendingMemberSearchRequestByGuild[guildID] != nil)"
+            let decodedMembers = chunk.members.compactMap {
+                try? $0.domain(
+                    currentUserID: currentUser?.id,
+                    currentStatus: presenceStatus,
+                    guildRoles: cachedGuildRoles[guildID] ?? [],
+                    guildID: guildID
+                )
+            }
+            mergeResolvedMembers(decodedMembers, guildID: guildID)
+            let responseUserIDs = Set(decodedMembers.map(\.id)).union(
+                (chunk.notFound ?? []).compactMap(UserID.init)
             )
-            if let nonce = chunk.nonce,
-               var request = pendingRoleMemberRequests[nonce],
-               request.guildID == guildID
+            if let requestID = pendingRoleMemberRequestID(
+                guildID: guildID,
+                responseUserIDs: responseUserIDs
+            ),
+               var request = pendingRoleMemberRequests[requestID]
             {
-                request.members.append(
-                    contentsOf: chunk.members.compactMap {
-                        try? $0.domain(
-                            currentUserID: currentUser?.id,
-                            currentStatus: presenceStatus,
-                            guildRoles: cachedGuildRoles[guildID] ?? [],
-                            guildID: guildID
-                        )
-                    })
+                request.members.append(contentsOf: decodedMembers)
                 request.receivedChunks.insert(chunk.chunkIndex)
                 if request.receivedChunks.count >= max(1, chunk.chunkCount) {
-                    pendingRoleMemberRequests[nonce] = nil
+                    pendingRoleMemberRequests[requestID] = nil
                     request.timeoutTask.cancel()
                     request.continuation.resume(returning: request.members)
                 } else {
-                    pendingRoleMemberRequests[nonce] = request
+                    pendingRoleMemberRequests[requestID] = request
                 }
                 return
             }
@@ -3569,15 +3683,7 @@ public actor DiscordRESTProvider: ChatProvider {
             else {
                 return
             }
-            search.members.append(
-                contentsOf: chunk.members.compactMap {
-                    try? $0.domain(
-                        currentUserID: currentUser?.id,
-                        currentStatus: presenceStatus,
-                        guildRoles: cachedGuildRoles[guildID] ?? [],
-                        guildID: guildID
-                    )
-                })
+            search.members.append(contentsOf: decodedMembers)
             search.receivedChunks.insert(chunk.chunkIndex)
             if search.receivedChunks.count >= max(1, chunk.chunkCount) {
                 _ = removeMemberSearchRequest(requestID: requestID)
@@ -3616,7 +3722,13 @@ public actor DiscordRESTProvider: ChatProvider {
             }
             cachedMembers[guildID] = members
             if guildID == pendingMemberGuildID {
-                continuation?.yield(.membersChanged(guildID: guildID, members: members))
+                continuation?.yield(
+                    .membersChanged(
+                        guildID: guildID,
+                        members: orderedMemberListMembers(guildID: guildID) ?? members,
+                        groups: cachedMemberListGroups[guildID] ?? []
+                    )
+                )
             }
         case "VOICE_STATE_UPDATE":
             guard let state = try? JSONDecoder().decode(VoiceStateUpdateDTO.self, from: data),
@@ -3834,6 +3946,34 @@ extension DiscordRESTProvider {
         voiceNegotiationTimeoutTask?.cancel()
         pendingVoiceNegotiation = nil
         pending.continuation.resume(throwing: error)
+    }
+
+    private func decodedMemberListMembers(guildID: GuildID) -> [Member] {
+        var seen = Set<UserID>()
+        return (cachedMemberListItems[guildID] ?? []).compactMap { item -> Member? in
+            guard let memberDTO = item?.member,
+                  let member = try? memberDTO.domain(
+                      currentUserID: currentUser?.id,
+                      currentStatus: presenceStatus,
+                      presence: item?.presence,
+                      guildRoles: cachedGuildRoles[guildID] ?? [],
+                      guildID: guildID
+                  ),
+                  seen.insert(member.id).inserted
+            else { return nil }
+            return member
+        }
+    }
+
+    private func orderedMemberListMembers(guildID: GuildID) -> [Member]? {
+        guard cachedMemberListItems[guildID] != nil else { return nil }
+        let cachedByID = Dictionary(
+            (cachedMembers[guildID] ?? []).map { ($0.id, $0) },
+            uniquingKeysWith: { _, newer in newer }
+        )
+        return decodedMemberListMembers(guildID: guildID).map {
+            cachedByID[$0.id] ?? $0
+        }
     }
 
     private func applyMemberListOperations(
@@ -5547,13 +5687,7 @@ struct GuildMemberDTO: Decodable {
         if let nick, !nick.isEmpty {
             domainUser.displayName = nick
         }
-        let guildAvatarURL: URL? = avatar.flatMap { avatarHash in
-            guard let guildID else { return nil }
-            return URL(
-                string:
-                "https://cdn.discordapp.com/guilds/\(guildID)/users/\(domainUser.id)/avatars/\(avatarHash).webp?size=128&animated=\(avatarHash.hasPrefix("a_") ? "true" : "false")"
-            )
-        }
+        let guildAvatarURL = guildAvatarURL(guildID: guildID, userID: domainUser.id)
         if let guildAvatarURL {
             domainUser.avatarURL = guildAvatarURL
         }
@@ -5583,14 +5717,32 @@ struct GuildMemberDTO: Decodable {
             user: domainUser,
             roleName: categoryRole?.name ?? "Member",
             status: status,
+            roleID: categoryRole.flatMap { RoleID($0.id) },
             rolePosition: categoryRole?.position,
             isRoleCategory: categoryRole != nil,
+            roleIDs: (roles ?? []).compactMap(RoleID.init),
             roles: domainRoles,
             guildAvatarURL: guildAvatarURL,
             globalDisplayName: globalDisplayName,
             activityText: activities.first(where: { $0.type != 4 })?.displayText ?? customStatus,
             customStatus: customStatus
         )
+    }
+
+    private func guildAvatarURL(guildID: GuildID?, userID: UserID) -> URL? {
+        guard let avatar, let guildID else { return nil }
+        return URL(
+            string:
+            "https://cdn.discordapp.com/guilds/\(guildID)/users/\(userID)/avatars/\(avatar).webp?size=128&animated=\(avatar.hasPrefix("a_") ? "true" : "false")"
+        )
+    }
+}
+
+private struct GuildRoleColorsDTO: Decodable {
+    var primaryColor: UInt32?
+
+    enum CodingKeys: String, CodingKey {
+        case primaryColor = "primary_color"
     }
 }
 
@@ -5600,18 +5752,21 @@ struct GuildRoleDTO: Decodable {
     var position: Int
     var hoist: Bool
     var color: UInt32?
+    private var colors: GuildRoleColorsDTO?
     var icon: String?
     var unicodeEmoji: String?
     var mentionable: Bool?
     var permissions: String?
     enum CodingKeys: String, CodingKey {
-        case id, name, position, hoist, color, icon
+        case id, name, position, hoist, color, colors, icon
         case unicodeEmoji = "unicode_emoji"
         case mentionable, permissions
     }
 
     var domain: GuildRole? {
         guard let id = RoleID(id) else { return nil }
+        let colorHex = colors?.primaryColor.flatMap { $0 == 0 ? nil : $0 }
+            ?? color.flatMap { $0 == 0 ? nil : $0 }
         let iconURL = icon.flatMap {
             URL(string: "https://cdn.discordapp.com/role-icons/\(id)/\($0).png?size=32")
         }
@@ -5619,7 +5774,7 @@ struct GuildRoleDTO: Decodable {
             id: id,
             name: name,
             position: position,
-            colorHex: color.flatMap { $0 == 0 ? nil : $0 },
+            colorHex: colorHex,
             iconURL: iconURL,
             unicodeEmoji: unicodeEmoji,
             isMentionable: mentionable ?? false,
@@ -5633,14 +5788,14 @@ private struct GatewayGuildMembersChunkDTO: Decodable {
     var members: [GuildMemberDTO]
     var chunkIndex: Int
     var chunkCount: Int
-    var nonce: String?
+    var notFound: [String]?
 
     enum CodingKeys: String, CodingKey {
         case guildID = "guild_id"
         case members
         case chunkIndex = "chunk_index"
         case chunkCount = "chunk_count"
-        case nonce
+        case notFound = "not_found"
     }
 }
 
@@ -5879,7 +6034,12 @@ private struct MessageUpdateDTO: Decodable {
     }
 }
 
-private struct GuildMemberListUpdateDTO: Decodable {
+struct GuildMemberListUpdateDTO: Decodable {
+    struct Group: Decodable {
+        var id: String
+        var count: Int
+    }
+
     struct Operation: Decodable {
         var op: String
         var range: [Int]?
@@ -5895,9 +6055,11 @@ private struct GuildMemberListUpdateDTO: Decodable {
 
     var guildID: String
     var ops: [Operation]
+    var groups: [Group]?
     enum CodingKeys: String, CodingKey {
         case guildID = "guild_id"
         case ops
+        case groups
     }
 }
 
@@ -5919,15 +6081,14 @@ enum DiscordGatewayPayloadFactory {
         ]
     }
 
-    static func requestMembers(guildID: GuildID, userIDs: [UserID], nonce: String) -> [String: Any] {
+    static func requestMembers(guildID: GuildID, userIDs: [UserID]) -> [String: Any] {
         [
             "op": 8,
             "d": [
                 "guild_id": guildID.description,
                 "user_ids": userIDs.map(\.description),
-                "presences": false,
-                "nonce": nonce,
-            ] as [String: Any],
+                "presences": false
+            ] as [String: Any]
         ]
     }
 
@@ -6028,6 +6189,7 @@ private struct PrivateCallDeleteDTO: Decodable {
 
 private struct PendingRoleMemberRequest {
     var guildID: GuildID
+    var requestedUserIDs: Set<UserID>
     var members: [Member]
     var receivedChunks: Set<Int>
     var continuation: CheckedContinuation<[Member], any Error>
@@ -6041,6 +6203,30 @@ private struct PendingMemberSearchRequest {
     var receivedChunks: Set<Int>
     var continuation: CheckedContinuation<[Member], any Error>
     var timeoutTask: Task<Void, Never>
+}
+
+enum DiscordMemberChunkRouting {
+    static func pendingRequestID(
+        guildID: GuildID,
+        responseUserIDs: Set<UserID>,
+        requests: [DiscordPendingMemberRequestDescriptor]
+    ) -> String? {
+        let guildRequests = requests.filter { $0.guildID == guildID }
+        guard !responseUserIDs.isEmpty else { return nil }
+
+        // Discord currently omits the request nonce from user-ID member chunks.
+        // Prefer an exact ID-set match, then accept a subset for chunked replies.
+        return guildRequests.first { $0.requestedUserIDs == responseUserIDs }?.id
+            ?? guildRequests.first {
+                $0.requestedUserIDs.isSuperset(of: responseUserIDs)
+            }?.id
+    }
+}
+
+struct DiscordPendingMemberRequestDescriptor {
+    var id: String
+    var guildID: GuildID
+    var requestedUserIDs: Set<UserID>
 }
 
 enum DiscordMemberStoreOrdering {
@@ -6063,6 +6249,60 @@ enum DiscordMemberStoreOrdering {
     ) -> [Member] {
         let matchingIDs = Set(response.map(\.id))
         return Array(store.lazy.filter { matchingIDs.contains($0.id) }.prefix(max(0, limit)))
+    }
+}
+
+enum DiscordMessageMemberHydration {
+    /// A history page contains at most 100 messages. Authors are prioritized so
+    /// resolving a page needs at most one bounded Gateway member request; any
+    /// remaining capacity mirrors Discord and Paicord by including mentions.
+    static let maximumUserIDsPerHistoryPage = 100
+
+    static func missingUserIDs(
+        in messages: [Message],
+        cached: Set<UserID>,
+        requested: Set<UserID>
+    ) -> [UserID] {
+        var seen = cached.union(requested)
+        var result: [UserID] = []
+
+        func append(_ userID: UserID) {
+            guard result.count < maximumUserIDsPerHistoryPage, seen.insert(userID).inserted else {
+                return
+            }
+            result.append(userID)
+        }
+
+        for message in messages {
+            append(message.author.id)
+            if let replyAuthorID = message.replyPreview?.author.id {
+                append(replyAuthorID)
+            }
+        }
+        for message in messages {
+            for user in message.mentionedUsers {
+                append(user.id)
+            }
+        }
+        return result
+    }
+
+    static func hydrate(message: inout Message, membersByID: [UserID: Member]) {
+        if let member = membersByID[message.author.id] {
+            message.guildMember = MessageGuildMember.merging(
+                incoming: MessageGuildMember(member: member),
+                existing: message.guildMember
+            )
+        }
+        if var preview = message.replyPreview,
+           let member = membersByID[preview.author.id]
+        {
+            preview.guildMember = MessageGuildMember.merging(
+                incoming: MessageGuildMember(member: member),
+                existing: preview.guildMember
+            )
+            message.replyPreview = preview
+        }
     }
 }
 
@@ -7071,11 +7311,17 @@ private struct MessageDTO: Decodable {
             guard let messageID = MessageID(id), let author, var user = try? author.domain() else {
                 return nil
             }
-            if let member = member?.domain(guildID: guildID, userID: user.id) {
-                user.displayName = member.nickname ?? user.displayName
-                user.avatarURL = member.avatarURL ?? user.avatarURL
+            let guildMember = member?.domain(guildID: guildID, userID: user.id)
+            if let guildMember {
+                user.displayName = guildMember.nickname ?? user.displayName
+                user.avatarURL = guildMember.avatarURL ?? user.avatarURL
             }
-            return MessageReplyPreview(messageID: messageID, author: user, content: content ?? "")
+            return MessageReplyPreview(
+                messageID: messageID,
+                author: user,
+                guildMember: guildMember,
+                content: content ?? ""
+            )
         }
     }
 

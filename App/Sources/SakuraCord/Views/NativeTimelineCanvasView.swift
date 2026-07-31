@@ -3921,7 +3921,10 @@ final class NativeTimelineCanvasView: NSView {
         if let url = message.interactionMetadata?.user?.avatarURL {
             keys.append(.avatar(url))
         }
-        if let key = NativeTimelineReplyMediaPolicy.avatarKey(
+        if let preview = row.replyPreview,
+           let url = model?.authorPresentation(for: preview).user.avatarURL {
+            keys.append(.avatar(url))
+        } else if let key = NativeTimelineReplyMediaPolicy.avatarKey(
             for: row.replyPreview
         ) {
             keys.append(key)
@@ -11836,28 +11839,11 @@ private enum NativeTimelineRowPainter {
         let avatarFrame =
             NativeTimelineAvatarPresentation
                 .replyAvatarFrame(in: frame)
-        avatar(
-            name: preview.author.displayName,
-            url: preview.author.avatarURL,
-            in: avatarFrame
-        )
-
-        let authorFont = NativeTimelineReplyMetrics.authorFont
-        let authorWidth = NativeTimelineReplyMetrics.textWidth(
-            preview.author.displayName,
-            font: authorFont
-        )
-        let authorFrame = CGRect(
-            x: avatarFrame.maxX + 5,
-            y: frame.minY,
-            width: min(authorWidth, max(0, frame.maxX - avatarFrame.maxX - 5)),
-            height: 20
-        )
-        text(
-            preview.author.displayName,
-            in: authorFrame,
-            font: authorFont,
-            color: .labelColor
+        let authorFrame = replyAuthor(
+            preview: preview,
+            frame: frame,
+            avatarFrame: avatarFrame,
+            model: model
         )
 
         let summary: String
@@ -11882,6 +11868,41 @@ private enum NativeTimelineRowPainter {
             font: NativeTimelineReplyMetrics.summaryFont,
             color: .secondaryLabelColor
         )
+    }
+
+    private static func replyAuthor(
+        preview: MessageReplyPreview,
+        frame: CGRect,
+        avatarFrame: CGRect,
+        model: AppModel?
+    ) -> CGRect {
+        let presentation = model?.authorPresentation(for: preview)
+        let author = presentation?.user ?? preview.author
+        avatar(
+            name: author.displayName,
+            url: author.avatarURL,
+            in: avatarFrame
+        )
+        let font = NativeTimelineReplyMetrics.authorFont
+        let width = NativeTimelineReplyMetrics.textWidth(
+            author.displayName,
+            font: font
+        )
+        let authorFrame = CGRect(
+            x: avatarFrame.maxX + 5,
+            y: frame.minY,
+            width: min(width, max(0, frame.maxX - avatarFrame.maxX - 5)),
+            height: 20
+        )
+        text(
+            author.displayName,
+            in: authorFrame,
+            font: font,
+            color: author.isBot
+                ? .controlAccentColor
+                : roleColor(presentation?.roleColorHex) ?? .labelColor
+        )
+        return authorFrame
     }
 
     private static func replyConnector(in connectorFrame: CGRect) {

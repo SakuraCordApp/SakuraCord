@@ -600,6 +600,61 @@ enum MessageRowsUpdateRecordBuilder {
     }
 }
 
+nonisolated enum LocalHistoryMemberResolution {
+    static let maximumUserCount = 100
+
+    static func userIDs(in messages: [Message], known: Set<UserID>) -> [UserID] {
+        var seen = known
+        var result: [UserID] = []
+
+        func append(_ userID: UserID) {
+            guard result.count < maximumUserCount, seen.insert(userID).inserted else { return }
+            result.append(userID)
+        }
+
+        // Prefer the newest visible authors when a long local cache contains
+        // more unique people than one bounded Gateway member request permits.
+        for message in messages.reversed() {
+            append(message.author.id)
+            if let replyAuthorID = message.replyPreview?.author.id {
+                append(replyAuthorID)
+            }
+        }
+        for message in messages.reversed() {
+            for user in message.mentionedUsers {
+                append(user.id)
+            }
+        }
+        return result
+    }
+
+    static func hydrating(
+        _ messages: [Message],
+        with membersByID: [UserID: Member]
+    ) -> [Message] {
+        messages.map { original in
+            var message = original
+            if let member = membersByID[message.author.id] {
+                message.guildMember = MessageGuildMember.merging(
+                    incoming: MessageGuildMember(member: member),
+                    existing: message.guildMember
+                )
+            }
+            if var preview = message.replyPreview,
+               let member = membersByID[preview.author.id]
+            {
+                preview.guildMember = MessageGuildMember.merging(
+                    incoming: MessageGuildMember(member: member),
+                    existing: preview.guildMember
+                )
+                message.replyPreview = preview
+            }
+            return message
+        }
+    }
+
+}
+
 nonisolated enum ChannelMessageCachePolicy {
     static let maximumChannelCount = 8
     static let maximumMessageCountPerChannel = 250
@@ -722,15 +777,9 @@ final class AppModel {
     private(set) var unreadDividerMessageIDs: [ChannelID: MessageID] = [:]
     private(set) var members: [Member] = [] {
         didSet {
-            if oldValue != members {
-                timelinePresentationRevision &+= 1
-            }
-            memberSections = MemberSection.make(from: members)
-            var indexed: [UserID: Member] = [:]
-            indexed.reserveCapacity(members.count)
-            for member in members {
-                indexed[member.id] = member
-            }
+            let presentationChanged = oldValue != members
+            rebuildMemberSections()
+            let indexed = mergedMemberStore(with: members)
             if membersByID != indexed {
                 membersByID = indexed
             }
@@ -743,26 +792,42 @@ final class AppModel {
                 readState.updateCurrentUserRoles(roleIDs, guildID: guildID)
             }
             refreshUnreadPresentation()
+            if presentationChanged {
+                invalidateTimelinePresentation()
+            }
         }
     }
 
     private(set) var membersByID: [UserID: Member] = [:]
+    @ObservationIgnored private var membersByGuildID: [GuildID: [UserID: Member]] = [:]
     private(set) var memberSections: [MemberSection] = []
-    private(set) var guildRoles: [GuildRole] = [] {
+    private(set) var memberListGroups: [GuildMemberListGroup] = [] {
         didSet {
-            if oldValue != guildRoles {
-                timelinePresentationRevision &+= 1
+            if oldValue != memberListGroups {
+                rebuildMemberSections()
             }
-            refreshUnreadPresentation()
         }
     }
+    private(set) var guildRoles: [GuildRole] = [] {
+        didSet {
+            let presentationChanged = oldValue != guildRoles
+            if presentationChanged {
+                rebuildMemberSections()
+            }
+            refreshUnreadPresentation()
+            if presentationChanged {
+                invalidateTimelinePresentation()
+            }
+        }
+    }
+    @ObservationIgnored private var guildRolesByGuildID: [GuildID: [GuildRole]] = [:]
     private(set) var commandMemberResults: [Member] = []
     private(set) var mentionMemberResults: [Member] = []
     private(set) var mentionAutocompleteMembers: [Member] = []
     private(set) var knownMentionMembers: [UserID: Member] = [:] {
         didSet {
             if oldValue != knownMentionMembers {
-                timelinePresentationRevision &+= 1
+                invalidateTimelinePresentation()
             }
         }
     }
@@ -1592,6 +1657,40 @@ final class AppModel {
         }
     }
 
+    private func rebuildMemberSections() {
+        memberSections = MemberSection.make(
+            from: members,
+            groups: memberListGroups,
+            roles: guildRoles
+        )
+    }
+
+    private func mergedMemberStore(with updates: [Member]) -> [UserID: Member] {
+        guard let guildID = selectedGuildID else {
+            return Dictionary(
+                updates.map { ($0.id, $0) },
+                uniquingKeysWith: { _, newer in newer }
+            )
+        }
+        let merged = MemberStoreMerge.merging(
+            existing: membersByGuildID[guildID] ?? [:],
+            updates: updates
+        )
+        membersByGuildID[guildID] = merged
+        return merged
+    }
+
+    private func applyGuildRoles(_ roles: [GuildRole], to guildID: GuildID) {
+        // Every guild has at least @everyone. An empty result is incomplete
+        // state, so retain the last Gateway/REST catalog like Paicord's
+        // per-guild role store instead of blanking every message author.
+        guard !roles.isEmpty else { return }
+        guildRolesByGuildID[guildID] = roles
+        if selectedGuildID == guildID {
+            guildRoles = roles
+        }
+    }
+
     var directMessageInspectorSections: [MemberSection] {
         guard let channel = selectedChannel, channel.guildID == nil else {
             return memberSections
@@ -1780,7 +1879,10 @@ final class AppModel {
     private func activateGuild(_ guildID: GuildID?) async {
         dismissAllProfiles()
         selectedGuildID = guildID
-        guildRoles = []
+        memberListGroups = []
+        guildRoles = guildID.flatMap { guildRolesByGuildID[$0] } ?? []
+        membersByID = guildID.flatMap { membersByGuildID[$0] } ?? [:]
+        members = []
         mentionAutocompleteMembers = []
         var channels =
             snapshot?.channels.filter { channel in
@@ -1933,7 +2035,9 @@ final class AppModel {
                 // as autocomplete's candidate store.
                 mentionAutocompleteMembers = value
                 if let guildID {
-                    guildRoles = (try? await provider.roles(in: guildID)) ?? []
+                    if let roles = try? await provider.roles(in: guildID) {
+                        applyGuildRoles(roles, to: guildID)
+                    }
                 } else {
                     guildRoles = []
                 }
@@ -1944,7 +2048,9 @@ final class AppModel {
                         [Member(user: $0.currentUser, roleName: "You", status: currentStatus)]
                     }
                     ?? []
-                guildRoles = []
+                if guildID == nil {
+                    guildRoles = []
+                }
             }
         }
     }
@@ -2474,15 +2580,15 @@ final class AppModel {
             if merged != messages {
                 replaceSelectedMessages(with: merged)
             }
-            hasMoreMessages = page.hasMoreBefore
-            hasMoreCache[channelID] = hasMoreMessages
-            messageLoadError = nil
-            messageLoadErrorIsEarlierPage = false
-            isLoadingMessages = false
-            hasCompletedInitialMessageLoad = true
-            preserveUnreadDividerIfNeeded(channelID: channelID)
-            reportConversationHistoryLoaded(channelID: channelID)
-            try await database?.save(messages: page.messages)
+            await resolveSelectedHistoryMembers(
+                channelID: channelID,
+                generation: generation
+            )
+            guard isCurrentLoad(channelID, generation: generation) else { return }
+            try await finishSelectedChannelLoad(
+                channelID: channelID,
+                hasMoreBefore: page.hasMoreBefore
+            )
         } catch is CancellationError {
             return
         } catch {
@@ -2491,6 +2597,63 @@ final class AppModel {
             messageLoadErrorIsEarlierPage = false
             isLoadingMessages = false
             hasCompletedInitialMessageLoad = true
+        }
+    }
+
+    private func finishSelectedChannelLoad(
+        channelID: ChannelID,
+        hasMoreBefore: Bool
+    ) async throws {
+        hasMoreMessages = hasMoreBefore
+        hasMoreCache[channelID] = hasMoreBefore
+        messageLoadError = nil
+        messageLoadErrorIsEarlierPage = false
+        isLoadingMessages = false
+        hasCompletedInitialMessageLoad = true
+        preserveUnreadDividerIfNeeded(channelID: channelID)
+        reportConversationHistoryLoaded(channelID: channelID)
+        try await database?.save(messages: messages)
+    }
+
+    private func resolveSelectedHistoryMembers(
+        channelID: ChannelID,
+        generation: Int
+    ) async {
+        guard let guildID = selectedChannel?.guildID,
+              selectedChannel?.id == channelID
+        else { return }
+
+        let requested = LocalHistoryMemberResolution.userIDs(
+            in: messages,
+            known: Set(membersByID.keys)
+        )
+        guard !requested.isEmpty else { return }
+
+        do {
+            let resolved = try await provider.resolveMembers(
+                in: guildID,
+                userIDs: requested
+            )
+            guard isCurrentLoad(channelID, generation: generation), !resolved.isEmpty else {
+                return
+            }
+            let indexed = mergedMemberStore(with: resolved)
+            if membersByID != indexed {
+                membersByID = indexed
+                invalidateTimelinePresentation()
+            }
+            let hydrated = LocalHistoryMemberResolution.hydrating(
+                messages,
+                with: indexed
+            )
+            if hydrated != messages {
+                replaceSelectedMessages(with: hydrated)
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            // Message history remains usable when Discord cannot resolve a
+            // member. A later channel load retries unresolved authors.
         }
     }
 
@@ -3011,7 +3174,7 @@ final class AppModel {
                 guard !Task.isCancelled, mentionMemberSearchQuery == key,
                       selectedGuildID == guildID
                 else { return }
-                if let roles { guildRoles = roles }
+                if let roles { applyGuildRoles(roles, to: guildID) }
                 mentionMemberSearchCache[key] = MentionMemberSearchCacheEntry(
                     members: results,
                     storedAt: Date()
@@ -3357,7 +3520,7 @@ final class AppModel {
         guard validateAttachmentCount(attachments) else { return false }
         let replyTo = replyingTo?.id
         let replyPreview = replyingTo.map {
-            MessageReplyPreview(messageID: $0.id, author: $0.author, content: $0.content)
+            MessageReplyPreview(message: $0)
         }
         return await sendChannelMessage(
             channelID: channelID,
@@ -4784,6 +4947,16 @@ final class AppModel {
         )
     }
 
+    func authorPresentation(
+        for replyPreview: MessageReplyPreview
+    ) -> MessageAuthorPresentation {
+        MessageAuthorPresentation.resolve(
+            replyPreview: replyPreview,
+            member: membersByID[replyPreview.author.id],
+            roles: guildRoles
+        )
+    }
+
     private func presentProfile(
         for member: Member,
         destination: ProfilePresentationDestination
@@ -4949,6 +5122,10 @@ final class AppModel {
             var resolved = message
             let matchingID = message.nonce.flatMap { idByNonce[$0] }
             if let existing = byID[message.id] ?? matchingID.flatMap({ byID[$0] }) {
+                resolved.guildMember = MessageGuildMember.merging(
+                    incoming: resolved.guildMember,
+                    existing: existing.guildMember
+                )
                 resolved.replyTo = resolved.replyTo ?? existing.replyTo
                 resolved.replyPreview = resolved.replyPreview ?? existing.replyPreview
             }
@@ -6066,7 +6243,7 @@ final class AppModel {
             applyForumPresentation()
             forumNextOffset = page.nextOffset
             hasMoreForumPosts = page.hasMore
-        case .membersChanged(let guildID, let value):
+        case .membersChanged(let guildID, let value, let groups):
             if let currentUserID = snapshot?.currentUser.id,
                let currentMember = value.first(where: { $0.id == currentUserID })
             {
@@ -6076,6 +6253,7 @@ final class AppModel {
                 refreshUnreadPresentation()
             }
             guard guildID == selectedGuildID else { return }
+            memberListGroups = groups
             members = value
             if mentionAutocompleteMembers.isEmpty {
                 // A guild activation can finish before Discord's lazy member
@@ -6454,6 +6632,14 @@ final class AppModel {
         )
     }
 
+    private func invalidateTimelinePresentation() {
+        timelinePresentationRevision &+= 1
+        NotificationCenter.default.post(
+            name: .sakuracordMessageRowsDidChange,
+            object: self
+        )
+    }
+
     private func requestUnreadPresentationRefresh() {
         guard !liveScrollingConversationIDs.isEmpty else {
             refreshUnreadPresentation()
@@ -6658,11 +6844,7 @@ final class AppModel {
                                 messages[$0]
                             }
                     ).map {
-                        MessageReplyPreview(
-                            messageID: $0.id,
-                            author: $0.author,
-                            content: $0.content
-                        )
+                        MessageReplyPreview(message: $0)
                     }
                 } ?? message.replyPreview
             let isReplyAvailable =
@@ -6954,6 +7136,19 @@ final class AppModel {
     }
 }
 
+nonisolated enum MemberStoreMerge {
+    static func merging(
+        existing: [UserID: Member],
+        updates: [Member]
+    ) -> [UserID: Member] {
+        var result = existing
+        for member in updates {
+            result[member.id] = member
+        }
+        return result
+    }
+}
+
 private actor OfflineCredentialStore: CredentialStore {
     func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
         throw ChatProviderError.invalidRequest(
@@ -7167,11 +7362,7 @@ nonisolated enum MessageGrouping {
         let replyPreview =
             message.replyTo.flatMap { messageID -> MessageReplyPreview? in
                 if let referenced = messagesByID[messageID] {
-                    return MessageReplyPreview(
-                        messageID: referenced.id,
-                        author: referenced.author,
-                        content: referenced.content
-                    )
+                    return MessageReplyPreview(message: referenced)
                 }
                 return message.replyPreview
             }
@@ -7295,11 +7486,7 @@ nonisolated enum MessageGrouping {
             let priorRow = rows[index]
             let replyPreview: MessageReplyPreview?
             if message.replyTo == changedID, let replacement {
-                replyPreview = MessageReplyPreview(
-                    messageID: replacement.id,
-                    author: replacement.author,
-                    content: replacement.content
-                )
+                replyPreview = MessageReplyPreview(message: replacement)
             } else {
                 replyPreview = message.replyPreview ?? priorRow.replyPreview
             }
@@ -7401,11 +7588,7 @@ nonisolated enum MessageGrouping {
             let referenced = message.replyTo.flatMap { insertedByID[$0] }
             let replyPreview =
                 referenced.map {
-                    MessageReplyPreview(
-                        messageID: $0.id,
-                        author: $0.author,
-                        content: $0.content
-                    )
+                    MessageReplyPreview(message: $0)
                 } ?? row.replyPreview
             let startsGroup =
                 index == 0
@@ -7573,7 +7756,7 @@ nonisolated enum MessageGrouping {
         let message = messages[index]
         let replyPreview = message.replyTo.flatMap { id in
             messagesByID[id].map {
-                MessageReplyPreview(messageID: $0.id, author: $0.author, content: $0.content)
+                MessageReplyPreview(message: $0)
             } ?? message.replyPreview
         }
         guard index > 0 else {

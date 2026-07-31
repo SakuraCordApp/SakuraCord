@@ -237,24 +237,60 @@ nonisolated struct MessageAuthorPresentation: Equatable {
         member: Member?,
         roles: [GuildRole]
     ) -> Self {
+        resolve(
+            user: message.author,
+            guildMember: message.guildMember,
+            member: member,
+            roles: roles
+        )
+    }
+
+    static func resolve(
+        replyPreview: MessageReplyPreview,
+        member: Member?,
+        roles: [GuildRole]
+    ) -> Self {
+        resolve(
+            user: replyPreview.author,
+            guildMember: replyPreview.guildMember,
+            member: member,
+            roles: roles
+        )
+    }
+
+    private static func resolve(
+        user originalUser: User,
+        guildMember: MessageGuildMember?,
+        member: Member?,
+        roles: [GuildRole]
+    ) -> Self {
         if let member {
+            let roleIDs = Set(member.roleIDs)
             return Self(
                 user: member.user,
                 roleColorHex: topRoleColor(in: member.roles)
+                    ?? topRoleColor(in: roles.filter { roleIDs.contains($0.id) })
             )
         }
 
-        var user = message.author
-        if let messageMember = message.guildMember {
-            user.displayName = messageMember.nickname ?? user.displayName
-            user.avatarURL = messageMember.avatarURL ?? user.avatarURL
-            let roleIDs = Set(messageMember.roleIDs)
-            return Self(
-                user: user,
-                roleColorHex: topRoleColor(in: roles.filter { roleIDs.contains($0.id) })
-            )
+        var user = originalUser
+        if let guildMember {
+            user.displayName = guildMember.nickname ?? user.displayName
+            user.avatarURL = guildMember.avatarURL ?? user.avatarURL
         }
-        return Self(user: user, roleColorHex: nil)
+        return Self(
+            user: user,
+            roleColorHex: roleColor(for: guildMember, roles: roles)
+        )
+    }
+
+    private static func roleColor(
+        for guildMember: MessageGuildMember?,
+        roles: [GuildRole]
+    ) -> UInt32? {
+        guard let guildMember else { return nil }
+        let roleIDs = Set(guildMember.roleIDs)
+        return topRoleColor(in: roles.filter { roleIDs.contains($0.id) })
     }
 
     static func topRoleColor(in roles: [GuildRole]) -> UInt32? {

@@ -399,6 +399,74 @@ import Testing
     #expect(presentation.roleColorHex == 0x654321)
 }
 
+@Test func `reply preview uses referenced member role color before member cache loads`() {
+    let role = GuildRole(
+        id: RoleID(rawValue: 10), name: "Role", position: 5, colorHex: 0x654321
+    )
+    let preview = MessageReplyPreview(
+        messageID: MessageID(rawValue: 20),
+        author: User(id: UserID(rawValue: 1), username: "global", displayName: "Global"),
+        guildMember: MessageGuildMember(nickname: "Payload Nick", roleIDs: [role.id]),
+        content: "Hello"
+    )
+
+    let presentation = MessageAuthorPresentation.resolve(
+        replyPreview: preview,
+        member: nil,
+        roles: [role]
+    )
+    #expect(presentation.user.displayName == "Payload Nick")
+    #expect(presentation.roleColorHex == 0x654321)
+}
+
+@Test func `authoritative member without colored role ignores stale message role IDs`() {
+    let coloredRole = GuildRole(
+        id: RoleID(rawValue: 10), name: "Role", position: 5, colorHex: 0x654321
+    )
+    let user = User(id: UserID(rawValue: 1), username: "global", displayName: "Global")
+    let member = Member(user: user, roleName: "Member", isOnline: true)
+    let message = Message(
+        id: MessageID(rawValue: 20),
+        channelID: ChannelID(rawValue: 30),
+        author: user,
+        guildMember: MessageGuildMember(roleIDs: [coloredRole.id]),
+        content: "Hello"
+    )
+
+    let presentation = MessageAuthorPresentation.resolve(
+        message: message,
+        member: member,
+        roles: [coloredRole]
+    )
+    #expect(presentation.roleColorHex == nil)
+}
+
+@Test func `authoritative raw member role IDs resolve against guild role catalog`() {
+    let coloredRole = GuildRole(
+        id: RoleID(rawValue: 10), name: "Role", position: 5, colorHex: 0x654321
+    )
+    let user = User(id: UserID(rawValue: 1), username: "global", displayName: "Global")
+    let member = Member(
+        user: user,
+        roleName: "Member",
+        isOnline: true,
+        roleIDs: [coloredRole.id]
+    )
+    let message = Message(
+        id: MessageID(rawValue: 20),
+        channelID: ChannelID(rawValue: 30),
+        author: user,
+        content: "Hello"
+    )
+
+    let presentation = MessageAuthorPresentation.resolve(
+        message: message,
+        member: member,
+        roles: [coloredRole]
+    )
+    #expect(presentation.roleColorHex == coloredRole.colorHex)
+}
+
 @Test func `conversation beginnings appear only at the oldest loaded boundary`() {
     #expect(
         ConversationBeginningPolicy.showsBeginning(

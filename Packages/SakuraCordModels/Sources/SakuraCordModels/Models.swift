@@ -1034,12 +1034,28 @@ public enum OutboxState: String, Codable, Hashable, Sendable {
 public struct MessageReplyPreview: Codable, Hashable, Sendable {
     public var messageID: MessageID
     public var author: User
+    public var guildMember: MessageGuildMember?
     public var content: String
 
-    public init(messageID: MessageID, author: User, content: String) {
+    public init(
+        messageID: MessageID,
+        author: User,
+        guildMember: MessageGuildMember? = nil,
+        content: String
+    ) {
         self.messageID = messageID
         self.author = author
+        self.guildMember = guildMember
         self.content = content
+    }
+
+    public init(message: Message) {
+        self.init(
+            messageID: message.id,
+            author: message.author,
+            guildMember: message.guildMember,
+            content: message.content
+        )
     }
 }
 
@@ -1052,6 +1068,32 @@ public struct MessageGuildMember: Codable, Hashable, Sendable {
         self.nickname = nickname
         self.roleIDs = roleIDs
         self.avatarURL = avatarURL
+    }
+
+    public init(member: Member) {
+        self.init(
+            nickname: member.globalDisplayName == member.user.displayName
+                ? nil
+                : member.user.displayName,
+            roleIDs: member.roleIDs.isEmpty ? member.roles.map(\.id) : member.roleIDs,
+            avatarURL: member.guildAvatarURL
+        )
+    }
+
+    /// Matches Paicord's partial-member merge: an update that omits member
+    /// fields must not erase values already learned from an earlier payload.
+    public static func merging(
+        incoming: MessageGuildMember?,
+        existing: MessageGuildMember?
+    ) -> MessageGuildMember? {
+        guard var incoming else { return existing }
+        guard let existing else { return incoming }
+        incoming.nickname = incoming.nickname ?? existing.nickname
+        incoming.avatarURL = incoming.avatarURL ?? existing.avatarURL
+        if incoming.roleIDs.isEmpty, !existing.roleIDs.isEmpty {
+            incoming.roleIDs = existing.roleIDs
+        }
+        return incoming
     }
 }
 
@@ -1311,9 +1353,13 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
 
     public var user: User
     public var roleName: String
+    public var roleID: RoleID?
     public var rolePosition: Int?
     public var isRoleCategory: Bool?
     public var status: PresenceStatus
+    /// Raw guild role membership retained even when the role catalogue has not
+    /// arrived yet. `roles` contains the corresponding resolved role objects.
+    public var roleIDs: [RoleID]
     public var roles: [GuildRole]
     public var guildAvatarURL: URL?
     /// The account-wide display name before `user.displayName` is replaced by
@@ -1330,8 +1376,10 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
         user: User,
         roleName: String,
         isOnline: Bool,
+        roleID: RoleID? = nil,
         rolePosition: Int? = nil,
         isRoleCategory: Bool? = nil,
+        roleIDs: [RoleID] = [],
         roles: [GuildRole] = [],
         guildAvatarURL: URL? = nil,
         globalDisplayName: String? = nil,
@@ -1340,9 +1388,11 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
     ) {
         self.user = user
         self.roleName = roleName
+        self.roleID = roleID
         self.rolePosition = rolePosition
         self.isRoleCategory = isRoleCategory
         status = isOnline ? .online : .offline
+        self.roleIDs = roleIDs
         self.roles = roles
         self.guildAvatarURL = guildAvatarURL
         self.globalDisplayName = globalDisplayName
@@ -1354,8 +1404,10 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
         user: User,
         roleName: String,
         status: PresenceStatus,
+        roleID: RoleID? = nil,
         rolePosition: Int? = nil,
         isRoleCategory: Bool? = nil,
+        roleIDs: [RoleID] = [],
         roles: [GuildRole] = [],
         guildAvatarURL: URL? = nil,
         globalDisplayName: String? = nil,
@@ -1364,9 +1416,11 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
     ) {
         self.user = user
         self.roleName = roleName
+        self.roleID = roleID
         self.rolePosition = rolePosition
         self.isRoleCategory = isRoleCategory
         self.status = status
+        self.roleIDs = roleIDs
         self.roles = roles
         self.guildAvatarURL = guildAvatarURL
         self.globalDisplayName = globalDisplayName
@@ -1375,7 +1429,8 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case user, roleName, rolePosition, isRoleCategory, status, roles, guildAvatarURL,
+        case user, roleName, roleID, rolePosition, isRoleCategory, status, roleIDs, roles,
+             guildAvatarURL,
              globalDisplayName, activityText, customStatus
     }
 
@@ -1383,14 +1438,26 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         user = try container.decode(User.self, forKey: .user)
         roleName = try container.decodeIfPresent(String.self, forKey: .roleName) ?? "Member"
+        roleID = try container.decodeIfPresent(RoleID.self, forKey: .roleID)
         rolePosition = try container.decodeIfPresent(Int.self, forKey: .rolePosition)
         isRoleCategory = try container.decodeIfPresent(Bool.self, forKey: .isRoleCategory)
         status = try container.decodeIfPresent(PresenceStatus.self, forKey: .status) ?? .offline
+        roleIDs = try container.decodeIfPresent([RoleID].self, forKey: .roleIDs) ?? []
         roles = try container.decodeIfPresent([GuildRole].self, forKey: .roles) ?? []
         guildAvatarURL = try container.decodeIfPresent(URL.self, forKey: .guildAvatarURL)
         globalDisplayName = try container.decodeIfPresent(String.self, forKey: .globalDisplayName)
         activityText = try container.decodeIfPresent(String.self, forKey: .activityText)
         customStatus = try container.decodeIfPresent(String.self, forKey: .customStatus)
+    }
+}
+
+public struct GuildMemberListGroup: Identifiable, Codable, Hashable, Sendable {
+    public let id: String
+    public var count: Int
+
+    public init(id: String, count: Int) {
+        self.id = id
+        self.count = max(0, count)
     }
 }
 
@@ -1893,7 +1960,11 @@ public enum ClientEvent: Equatable, Sendable {
     case forumPostsChanged(channelID: ChannelID, posts: [ForumPost])
     case forumPostPreviewsChanged(channelID: ChannelID, posts: [ForumPost])
     case forumPageLoaded(channelID: ChannelID, query: ForumPostQuery, page: ForumPostPage)
-    case membersChanged(guildID: GuildID, members: [Member])
+    case membersChanged(
+        guildID: GuildID,
+        members: [Member],
+        groups: [GuildMemberListGroup]
+    )
     case privateMembersChanged([Member])
     case currentUserRolesChanged(guildID: GuildID, roleIDs: [RoleID])
     case emojisChanged(guildID: GuildID, emojis: [DiscordEmoji])

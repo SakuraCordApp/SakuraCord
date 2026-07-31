@@ -711,7 +711,7 @@ public actor MockChatProvider: ChatProvider {
         }
         let replyPreview = draft.replyTo.flatMap { messageID in
             messagesByChannel[draft.channelID]?.first(where: { $0.id == messageID }).map {
-                MessageReplyPreview(messageID: $0.id, author: $0.author, content: $0.content)
+                MessageReplyPreview(message: $0)
             }
         }
         let message = Message(

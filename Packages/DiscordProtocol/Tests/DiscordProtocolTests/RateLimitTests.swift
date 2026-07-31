@@ -1087,12 +1087,58 @@ struct ProviderRequestContractTests {
         let roles = try await provider.roles(in: GuildID(rawValue: 100))
         #expect(roles.first { $0.id == RoleID(rawValue: 100) }?.permissions == 1024)
 
+        let history = Task {
+            try await provider.messages(in: ChannelID(rawValue: 200), before: nil, limit: 50)
+        }
+        #expect(await eventually { await socket.sentPayload(opcode: 8) != nil })
+        let historyGatewayData = try #require(await socket.sentPayload(opcode: 8))
+        let historyGatewayPayload = try #require(
+            JSONSerialization.jsonObject(with: historyGatewayData) as? [String: Any]
+        )
+        let historyRequest = try #require(historyGatewayPayload["d"] as? [String: Any])
+        #expect(historyRequest["guild_id"] as? String == "100")
+        #expect(historyRequest["user_ids"] as? [String] == ["4"])
+        #expect(historyRequest["presences"] as? Bool == false)
+        #expect(historyRequest["nonce"] == nil)
+        await socket.push(gatewayMessage(
+            op: 0,
+            data: .object([
+                "guild_id": .string("100"),
+                "members": .array([
+                    .object([
+                        "user": .object([
+                            "id": .string("4"),
+                            "username": .string("history-author"),
+                            "global_name": .string("History Author"),
+                            "avatar": .null
+                        ]),
+                        "nick": .string("Colored Author"),
+                        "roles": .array([.string("101")])
+                    ])
+                ]),
+                "chunk_index": .number(0),
+                "chunk_count": .number(1)
+            ]),
+            sequence: 2,
+            eventName: "GUILD_MEMBERS_CHUNK"
+        ))
+        let historyPage = try await history.value
+        let historyMessage = try #require(historyPage.messages.first)
+        #expect(historyMessage.guildID == GuildID(rawValue: 100))
+        #expect(historyMessage.guildMember?.nickname == "Colored Author")
+        #expect(historyMessage.guildMember?.roleIDs == [RoleID(rawValue: 101)])
+        let historyMemberRequests = await socket.sentPayloadCount(opcode: 8)
+        _ = try await provider.messages(in: ChannelID(rawValue: 200), before: nil, limit: 50)
+        #expect(await socket.sentPayloadCount(opcode: 8) == historyMemberRequests)
+
         let memberSearch = Task {
             try await provider.searchMembers(
                 in: GuildID(rawValue: 100), query: "maya", limit: 25
             )
         }
-        #expect(await eventually { await socket.sentPayload(opcode: 8) != nil })
+        #expect(await eventually {
+            await socket.sentPayloadCount(opcode: 8) > historyMemberRequests
+        })
         let gatewayData = try #require(await socket.sentPayload(opcode: 8))
         let gatewayPayload = try #require(
             JSONSerialization.jsonObject(with: gatewayData) as? [String: Any]
@@ -1415,6 +1461,16 @@ private actor ReadyGatewaySocket: GatewaySocket {
 
     func sentPayload(opcode: Int) -> Data? {
         sentPayloads.last { data in
+            guard
+                let object = try? JSONSerialization.jsonObject(with: data)
+                    as? [String: Any]
+            else { return false }
+            return (object["op"] as? NSNumber)?.intValue == opcode
+        }
+    }
+
+    func sentPayloadCount(opcode: Int) -> Int {
+        sentPayloads.count { data in
             guard
                 let object = try? JSONSerialization.jsonObject(with: data)
                     as? [String: Any]
@@ -1780,12 +1836,34 @@ private final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
             status = 200
             json = "{}"
         case "/api/v9/channels/200/messages":
-            Self.messageRequestCount += 1
             Self.messageMethod = request.httpMethod
             Self.messagePath = path
             Self.messageContextProperties = request.value(forHTTPHeaderField: "X-Context-Properties")
             Self.messageSuperProperties = request.value(forHTTPHeaderField: "X-Super-Properties")
             Self.messageUserAgent = request.value(forHTTPHeaderField: "User-Agent")
+            if request.httpMethod == "GET" {
+                status = 200
+                json = #"""
+                [{
+                  "id":"350",
+                  "channel_id":"200",
+                  "author":{
+                    "id":"4",
+                    "username":"history-author",
+                    "global_name":"History Author",
+                    "avatar":null
+                  },
+                  "content":"history",
+                  "timestamp":"2026-07-11T19:00:00.000Z",
+                  "edited_timestamp":null,
+                  "attachments":[],
+                  "reactions":[],
+                  "mentions":[]
+                }]
+                """#
+                break
+            }
+            Self.messageRequestCount += 1
             let body = Self.requestBody(request).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
             Self.sentMessageBody = body
             Self.sentNonce = body?["nonce"] as? String

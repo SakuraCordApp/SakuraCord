@@ -262,6 +262,47 @@ import UserNotifications
     )
 }
 
+@Test func `local history member resolution prioritizes newest unknown authors and stays bounded`() {
+    let channelID = ChannelID(rawValue: 76_000)
+    let messages = (1 ... 120).map { rawID in
+        let id = UInt64(rawID)
+        return Message(
+            id: MessageID(rawValue: id),
+            channelID: channelID,
+            author: User(
+                id: UserID(rawValue: id),
+                username: "user-\(id)",
+                displayName: "User \(id)"
+            ),
+            content: ""
+        )
+    }
+
+    let requested = LocalHistoryMemberResolution.userIDs(
+        in: messages,
+        known: [UserID(rawValue: 120)]
+    )
+
+    #expect(requested.count == LocalHistoryMemberResolution.maximumUserCount)
+    #expect(requested.first == UserID(rawValue: 119))
+    #expect(requested.last == UserID(rawValue: 20))
+    #expect(!requested.contains(UserID(rawValue: 120)))
+    #expect(!requested.contains(UserID(rawValue: 19)))
+}
+
+@MainActor
+@Test func `guild history resolves missing authors into the timeline member store`() async throws {
+    let provider = LocalHistoryMemberTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+
+    await model.start()
+
+    #expect(await eventuallyOnMain {
+        model.authorPresentation(for: model.messages[0]).roleColorHex == 0xFF7900
+    })
+    #expect(await provider.resolutionRequests() == [[UserID(rawValue: 76_101)]])
+}
+
 @MainActor
 @Test func `snapshot refresh preserves the account unread notification mode`() async throws {
     let provider = MockChatProvider()
@@ -1540,14 +1581,26 @@ private actor CredentialAccessProbeStore: CredentialStore {
             roleName: "Moderator",
             status: .online,
             rolePosition: 10,
-            isRoleCategory: true
+            isRoleCategory: true,
+            roles: [
+                GuildRole(
+                    id: RoleID(rawValue: 10), name: "Moderator", position: 10,
+                    colorHex: 0xFF8800
+                ),
+            ]
         ),
         Member(
             user: User(id: UserID(rawValue: 2), username: "amy", displayName: "Amy"),
             roleName: "Moderator",
             status: .idle,
             rolePosition: 10,
-            isRoleCategory: true
+            isRoleCategory: true,
+            roles: [
+                GuildRole(
+                    id: RoleID(rawValue: 10), name: "Moderator", position: 10,
+                    colorHex: 0xFF8800
+                ),
+            ]
         ),
         Member(
             user: User(id: UserID(rawValue: 3), username: "sam", displayName: "Sam"),
@@ -1565,8 +1618,92 @@ private actor CredentialAccessProbeStore: CredentialStore {
 
     let sections = MemberSection.make(from: members)
     #expect(sections.map(\.title) == ["Moderator", "Online", "Offline"])
+    #expect(sections.map(\.colorHex) == [0xFF8800, nil, nil])
+    #expect(sections.map(\.totalCount) == [2, 1, 1])
     #expect(sections[0].members.map(\.user.displayName) == ["Amy", "Zed"])
     #expect(sections[2].members.map(\.user.displayName) == ["Offline"])
+}
+
+@MainActor
+@Test func `member sections preserve gateway group and member order with authoritative counts`() {
+    let role = GuildRole(
+        id: RoleID(rawValue: 10), name: "Moderator", position: 10,
+        colorHex: 0xFF8800
+    )
+    let members = [
+        Member(
+            user: User(id: UserID(rawValue: 1), username: "zed", displayName: "Zed"),
+            roleName: role.name,
+            status: .online,
+            roleID: role.id,
+            rolePosition: role.position,
+            isRoleCategory: true,
+            roles: [role]
+        ),
+        Member(
+            user: User(id: UserID(rawValue: 2), username: "amy", displayName: "Amy"),
+            roleName: role.name,
+            status: .online,
+            roleID: role.id,
+            rolePosition: role.position,
+            isRoleCategory: true,
+            roles: [role]
+        ),
+        Member(
+            user: User(id: UserID(rawValue: 3), username: "sam", displayName: "Sam"),
+            roleName: "Member",
+            status: .online
+        ),
+    ]
+
+    let sections = MemberSection.make(
+        from: members,
+        groups: [
+            GuildMemberListGroup(id: role.id.description, count: 2),
+            GuildMemberListGroup(id: "online", count: 388),
+        ],
+        roles: [role]
+    )
+
+    #expect(sections.map(\.title) == ["Moderator", "Online"])
+    #expect(sections.map(\.totalCount) == [2, 388])
+    #expect(sections[0].members.map(\.user.displayName) == ["Zed", "Amy"])
+    #expect(sections[1].members.map(\.user.displayName) == ["Sam"])
+}
+
+@Test func `member store merge retains members outside latest range and replaces updates`() {
+    let orangeRole = GuildRole(
+        id: RoleID(rawValue: 10), name: "Orange", position: 10,
+        colorHex: 0xFF8800
+    )
+    let existing = Member(
+        user: User(id: UserID(rawValue: 1), username: "first", displayName: "First"),
+        roleName: orangeRole.name,
+        status: .online,
+        roleID: orangeRole.id,
+        rolePosition: orangeRole.position,
+        isRoleCategory: true,
+        roles: [orangeRole]
+    )
+    let replacement = Member(
+        user: existing.user,
+        roleName: "Member",
+        status: .idle
+    )
+    let other = Member(
+        user: User(id: UserID(rawValue: 2), username: "other", displayName: "Other"),
+        roleName: "Member",
+        status: .online
+    )
+
+    let merged = MemberStoreMerge.merging(
+        existing: [existing.id: existing],
+        updates: [replacement, other]
+    )
+
+    #expect(merged.count == 2)
+    #expect(merged[existing.id] == replacement)
+    #expect(merged[other.id] == other)
 }
 
 @MainActor
@@ -2533,6 +2670,102 @@ private actor ChannelLoadTestProvider: ChatProvider {
     func maximumConcurrentReactorRequestCount() -> Int {
         maximumActiveReactorRequests
     }
+}
+
+private actor LocalHistoryMemberTestProvider: ChatProvider {
+    private let guild = Guild(id: GuildID(rawValue: 76_000), name: "History Guild")
+    private let currentUser = User(
+        id: UserID(rawValue: 76_001),
+        username: "current",
+        displayName: "Current"
+    )
+    private let author = User(
+        id: UserID(rawValue: 76_101),
+        username: "cached-author",
+        displayName: "Cached Author"
+    )
+    private let channel = Channel(
+        id: ChannelID(rawValue: 76_002),
+        guildID: GuildID(rawValue: 76_000),
+        name: "general"
+    )
+    private let role = GuildRole(
+        id: RoleID(rawValue: 76_200),
+        name: "Orange",
+        position: 10,
+        colorHex: 0xFF7900
+    )
+    private var requests: [[UserID]] = []
+
+    func bootstrap() async throws -> BootstrapSnapshot {
+        BootstrapSnapshot(currentUser: currentUser, guilds: [guild], channels: [channel], members: [])
+    }
+
+    func channels(in guildID: GuildID?) async throws -> [Channel] {
+        guildID == guild.id ? [channel] : []
+    }
+
+    func members(in guildID: GuildID?) async throws -> [Member] { [] }
+
+    func resolveMembers(in guildID: GuildID, userIDs: [UserID]) async throws -> [Member] {
+        requests.append(userIDs)
+        guard guildID == guild.id, userIDs.contains(author.id) else { return [] }
+        return [
+            Member(
+                user: author,
+                roleName: role.name,
+                status: .offline,
+                roleID: role.id,
+                rolePosition: role.position,
+                isRoleCategory: true,
+                roleIDs: [role.id],
+                roles: [role]
+            )
+        ]
+    }
+
+    func roles(in guildID: GuildID) async throws -> [GuildRole] {
+        guildID == guild.id ? [role] : []
+    }
+
+    func currentStatus() async -> PresenceStatus { .online }
+    func updateStatus(_ status: PresenceStatus) async throws {}
+
+    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
+        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
+    }
+
+    func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
+        -> MessagePage
+    {
+        MessagePage(
+            messages: [
+                Message(
+                    id: MessageID(rawValue: 76_300),
+                    channelID: channel.id,
+                    author: author,
+                    content: "Cached history",
+                    guildID: guild.id
+                )
+            ],
+            hasMoreBefore: false
+        )
+    }
+
+    func send(_ draft: SendMessageDraft) async throws -> Message {
+        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
+    }
+
+    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message {
+        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
+    }
+
+    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
+    func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws {}
+    func eventStream() async -> AsyncStream<ClientEvent> { AsyncStream { $0.finish() } }
+    func disconnect() async {}
+
+    func resolutionRequests() -> [[UserID]] { requests }
 }
 
 private actor StartupUnreadTestProvider: ChatProvider {

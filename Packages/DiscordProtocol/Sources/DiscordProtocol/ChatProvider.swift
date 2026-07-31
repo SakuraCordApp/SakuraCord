@@ -5,6 +5,7 @@ public protocol ChatProvider: Sendable {
     func bootstrap() async throws -> BootstrapSnapshot
     func channels(in guildID: GuildID?) async throws -> [Channel]
     func members(in guildID: GuildID?) async throws -> [Member]
+    func resolveMembers(in guildID: GuildID, userIDs: [UserID]) async throws -> [Member]
     func searchMembers(in guildID: GuildID, query: String, limit: Int) async throws -> [Member]
     func roles(in guildID: GuildID) async throws -> [GuildRole]
     func members(withRole roleID: RoleID, in guildID: GuildID) async throws -> RoleMemberResult
@@ -114,6 +115,11 @@ public protocol ChatProvider: Sendable {
 }
 
 public extension ChatProvider {
+    func resolveMembers(in guildID: GuildID, userIDs: [UserID]) async throws -> [Member] {
+        let requested = Set(userIDs.prefix(100))
+        return try await members(in: guildID).filter { requested.contains($0.id) }
+    }
+
     func searchMembers(in guildID: GuildID, query: String, limit: Int) async throws -> [Member] {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return [] }
