@@ -961,6 +961,7 @@ struct ProviderRequestContractTests {
                 "manual": .bool(true),
                 "flags": .number(3),
                 "last_viewed": .number(4_222),
+                "version": .number(73)
             ]),
             sequence: 7,
             eventName: "MESSAGE_ACK"
@@ -973,7 +974,8 @@ struct ProviderRequestContractTests {
                     mentionCount: 2,
                     isManual: true,
                     flags: 3,
-                    lastViewed: 4_222
+                    lastViewed: 4_222,
+                    version: 73
                 )
         )
 
@@ -1289,6 +1291,7 @@ struct ProviderRequestContractTests {
                     ])
                 ]),
                 "read_state": .object([
+                    "version": .number(61),
                     "entries": .array([
                         .object([
                             "id": .string("200"),
@@ -1342,6 +1345,7 @@ struct ProviderRequestContractTests {
         #expect(channel.lastMessageID == MessageID(rawValue: 300))
         #expect(readState.lastAcknowledgedMessageID == MessageID(rawValue: 250))
         #expect(readState.mentionCount == 2)
+        #expect(readState.version == 61)
         #expect(settings.messageNotifications == .onlyMentions)
         #expect(!settings.isMuted)
         #expect(settings.flags == 2048)

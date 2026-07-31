@@ -279,6 +279,7 @@ public struct ChannelReadState: Codable, Hashable, Sendable {
     public var isManual: Bool
     public var flags: UInt64?
     public var lastViewed: Int?
+    public var version: Int?
 
     public init(
         channelID: ChannelID,
@@ -286,7 +287,8 @@ public struct ChannelReadState: Codable, Hashable, Sendable {
         mentionCount: Int = 0,
         isManual: Bool = false,
         flags: UInt64? = nil,
-        lastViewed: Int? = nil
+        lastViewed: Int? = nil,
+        version: Int? = nil
     ) {
         self.channelID = channelID
         self.lastAcknowledgedMessageID = lastAcknowledgedMessageID
@@ -294,6 +296,7 @@ public struct ChannelReadState: Codable, Hashable, Sendable {
         self.isManual = isManual
         self.flags = flags
         self.lastViewed = lastViewed
+        self.version = version
     }
 }
 
@@ -1951,7 +1954,7 @@ public enum ClientEvent: Equatable, Sendable {
     case messageUpdated(Message)
     case messageReactionUpdated(MessageReactionUpdate)
     case messageDeleted(channelID: ChannelID, messageID: MessageID)
-    case readStateSnapshot([ChannelReadState])
+    case readStateSnapshot([ChannelReadState], version: Int? = nil)
     case readStateChanged(ChannelReadState)
     case notificationModeChanged(usesNewNotifications: Bool)
     case notificationSettingsChanged(GuildNotificationSettings)

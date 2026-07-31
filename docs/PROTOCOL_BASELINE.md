@@ -370,10 +370,23 @@ in the evidence snapshot still applies; no authenticated traffic was
 intercepted for this recheck. Paicord and Swiftcord v1 have no comparable forum
 new-post implementation.
 
+The read-state transport and reconciliation path was rechecked again on
+2026-07-31 against clean public web asset `web.c01c1db6d97b320d.js`, the same
+pinned Paicord and Swiftcord revisions, and Discord's public Gateway,
+message, status-code, and rate-limit documentation. The public documentation
+does not describe the user-client acknowledgement route or `MESSAGE_ACK`
+dispatch. The web asset and Paicord both carry a version on Ready read state
+and `MESSAGE_ACK`; Swiftcord v1 has no comparable acknowledgement mutation or
+Gateway reconciliation path. No authenticated account action or traffic
+capture was used for this recheck.
+
 - Account-scoped channel read state combines Ready `read_state` with each
   channel's authoritative `last_message_id`. Message and acknowledgement
   snowflakes are compared numerically, and live `MESSAGE_CREATE` and
-  `MESSAGE_ACK` events update the same monotonic model. Read states for channels
+  `MESSAGE_ACK` events update the same monotonic model. A successfully loaded
+  newest history page also advances the known latest-message boundary, so a
+  stale channel object cannot make an opened conversation acknowledge an older
+  message than the one actually displayed. Read states for channels
   without effective `VIEW_CHANNEL` and `READ_MESSAGE_HISTORY` access are
   excluded from channel, guild, folder, and Dock-badge presentation.
   A channel, thread, or forum post omitted from Ready's channel read-state
@@ -471,16 +484,29 @@ new-post implementation.
   `last_viewed` day relative to Discord's epoch, plus the latest server-issued
   `token` when present. Requests are serialized across the account, coalesced
   per channel, and have one attempt. A `429`, timeout, challenge, restriction,
-  or ambiguous failure is not retried automatically; a failed optimistic local
-  transition is reverted to its preceding authoritative boundary.
+  or ambiguous failure is not retried automatically. Each optimistic mutation
+  records its own preceding boundary and counters; a definite failure reverts
+  only that mutation, while an earlier accepted acknowledgement remains the
+  rollback floor for a later mutation.
 - Marking a message and everything after it unread moves the boundary to the
   preceding snowflake through the same route with `manual: true`, the
   recalculated `mention_count`, and the latest acknowledgement `token` when
   Discord supplied one. A remote `MESSAGE_ACK` carrying `manual: true` may
   therefore move the boundary backward; ordinary acknowledgements remain
-  monotonic. A reconnecting Ready snapshot cannot regress a newer ordinary
-  `MESSAGE_ACK`; any unsent optimistic acknowledgement is rolled back before
-  that comparison.
+  monotonic. Ready read state and `MESSAGE_ACK` versions are retained and
+  compared before merging, and an older version is ignored. Equal or newer
+  ordinary state still cannot regress the effective boundary. A reconnecting
+  Ready snapshot or transient connection state cannot cancel or erase queued,
+  in-flight, or accepted optimistic intent; only a definite request failure or
+  an account reset can remove it. A matching server event confirms the pending
+  intent, while a stale snapshot is overlaid by it. The acknowledgement token
+  follows the same account-scoped lifecycle and is not discarded by a Ready
+  refresh.
+- Discord's accepted acknowledgement and the later versioned Ready read state
+  are the durable source across app launches. SakuraCord does not maintain a
+  second locally persisted read boundary. A fresh launch rebuilds the same
+  effective state from the server snapshot, with later versioned Gateway
+  events reconciled through the single account read-state model.
 - Message mention decisions use decoded user IDs, role IDs, the
   `mention_everyone` field, current-user guild roles, and authoritative reply
   mention metadata. Message text is never parsed to invent a mention.

@@ -207,6 +207,28 @@ public actor MockChatProvider: ChatProvider {
                 lastViewed: lastViewed
             )
         )
+        let version = (snapshot.readStates.compactMap(\.version).max() ?? 0) + 1
+        let existing = snapshot.readStates.first { $0.channelID == channelID }
+        let latestMessageID = snapshot.channels.first { $0.id == channelID }?.lastMessageID
+        let acknowledgedMessageID = manual
+            ? messageID
+            : max(existing?.lastAcknowledgedMessageID ?? messageID, messageID)
+        let clearsKnownMessages = latestMessageID.map { messageID >= $0 } ?? true
+        let updated = ChannelReadState(
+            channelID: channelID,
+            lastAcknowledgedMessageID: acknowledgedMessageID,
+            mentionCount: mentionCount ?? (clearsKnownMessages ? 0 : existing?.mentionCount ?? 0),
+            isManual: manual,
+            flags: flags ?? existing?.flags,
+            lastViewed: lastViewed ?? existing?.lastViewed,
+            version: version
+        )
+        if let index = snapshot.readStates.firstIndex(where: { $0.channelID == channelID }) {
+            snapshot.readStates[index] = updated
+        } else {
+            snapshot.readStates.append(updated)
+        }
+        continuation?.yield(.readStateChanged(updated))
         return ReadAcknowledgementResponse(token: "mock-ack-token")
     }
 

@@ -75,6 +75,7 @@ final class AccountReadStateModel {
 
     private struct PendingRollback: Sendable {
         var messageID: MessageID
+        var predecessorMessageID: MessageID?
         var lastAcknowledgedMessageID: MessageID?
         var mentionCount: Int
         var unreadMessageCount: Int
@@ -85,10 +86,11 @@ final class AccountReadStateModel {
     private(set) var settingsByGuild: [GuildID?: GuildNotificationSettings] = [:]
     private(set) var presentations: [ChannelID: Presentation] = [:]
     private(set) var acknowledgementToken: String?
+    private(set) var readStateVersion: Int?
     private var channelByID: [ChannelID: Channel] = [:]
     private var defaultNotificationLevelByGuild: [GuildID: MessageNotificationLevel] = [:]
     private var currentUserRoleIDsByGuild: [GuildID: Set<RoleID>] = [:]
-    private var pendingRollbacks: [ChannelID: PendingRollback] = [:]
+    private var pendingRollbacks: [ChannelID: [MessageID: PendingRollback]] = [:]
     private var forumSelectionAcknowledgementBoundary: [ChannelID: MessageID] = [:]
     private var forumPostArchivedByID: [ChannelID: Bool] = [:]
     private var usesNewNotifications = true
@@ -99,6 +101,7 @@ final class AccountReadStateModel {
         settingsByGuild.removeAll()
         presentations.removeAll()
         acknowledgementToken = nil
+        readStateVersion = nil
         channelByID.removeAll()
         defaultNotificationLevelByGuild.removeAll()
         currentUserRoleIDsByGuild.removeAll()
@@ -125,6 +128,9 @@ final class AccountReadStateModel {
         for state in readStates {
             applyRemote(state)
         }
+        seedOmittedReadBoundaries(
+            channelIDs: Set(channels.map(\.id)).subtracting(readStates.map(\.channelID))
+        )
         for settings in notificationSettings {
             apply(settings)
         }
@@ -306,12 +312,21 @@ final class AccountReadStateModel {
 
     @discardableResult
     func applyRemote(_ state: ChannelReadState) -> Bool {
+        if let version = state.version,
+           let readStateVersion,
+           version < readStateVersion
+        {
+            return false
+        }
         var entry = entry(for: state.channelID)
         if let existing = entry.lastAcknowledgedMessageID,
            let incoming = state.lastAcknowledgedMessageID,
            incoming < existing,
            !state.isManual
         {
+            if let version = state.version {
+                readStateVersion = max(readStateVersion ?? version, version)
+            }
             return false
         }
         if state.isManual {
@@ -331,25 +346,28 @@ final class AccountReadStateModel {
         entry.unreadMessageCount = entry.isUnread
             ? max(1, entry.unreadMessageCount)
             : 0
-        if let pending = entry.pendingAcknowledgementID,
-           let acknowledged = entry.lastAcknowledgedMessageID,
-           acknowledged >= pending
-        {
+        let confirmsPending = entry.pendingAcknowledgementID.map { pending in
+            entry.lastAcknowledgedMessageID.map { acknowledged in
+                state.isManual ? acknowledged == pending : acknowledged >= pending
+            } ?? false
+        } ?? false
+        if confirmsPending {
             entry.pendingAcknowledgementID = nil
+            pendingRollbacks[state.channelID] = nil
         }
         entries[state.channelID] = entry
+        if let version = state.version {
+            readStateVersion = max(readStateVersion ?? version, version)
+        }
         return true
     }
 
-    func replaceReadStates(_ states: [ChannelReadState]) {
-        for (channelID, rollback) in pendingRollbacks {
-            var value = entry(for: channelID)
-            guard value.pendingAcknowledgementID == rollback.messageID else { continue }
-            value.lastAcknowledgedMessageID = rollback.lastAcknowledgedMessageID
-            value.mentionCount = rollback.mentionCount
-            value.unreadMessageCount = rollback.unreadMessageCount
-            value.pendingAcknowledgementID = nil
-            entries[channelID] = value
+    func replaceReadStates(_ states: [ChannelReadState], version: Int? = nil) {
+        let snapshotVersion = version ?? states.compactMap(\.version).max()
+        if let snapshotVersion,
+           let readStateVersion,
+           snapshotVersion < readStateVersion {
+            return
         }
         let previousEntries = entries
         let latestStateByChannel = Dictionary(
@@ -357,48 +375,113 @@ final class AccountReadStateModel {
             uniquingKeysWith: { _, latest in latest }
         )
         entries.removeAll(keepingCapacity: true)
-        acknowledgementToken = nil
-        pendingRollbacks.removeAll(keepingCapacity: true)
         merge(channels: Array(channelByID.values))
         for state in latestStateByChannel.values {
             applyRemote(state)
         }
         for channelID in Array(entries.keys) {
             guard let previous = previousEntries[channelID] else { continue }
-            var value = entry(for: channelID)
-            value.latestKnownMessageID = maximum(
-                value.latestKnownMessageID, previous.latestKnownMessageID
+            entries[channelID] = reconciledSnapshotEntry(
+                channelID: channelID,
+                previous: previous,
+                remote: latestStateByChannel[channelID]
             )
-            if value.hasAuthoritativeReadState {
-                value.latestUnreadMessageID = maximum(
-                    value.latestUnreadMessageID, previous.latestKnownMessageID
-                )
-            }
-            value.guildID = value.guildID ?? previous.guildID
-            value.parentID = value.parentID ?? previous.parentID
-            if channelByID[channelID] == nil {
-                value.kind = previous.kind
-            }
-            value.isAccessible = previous.isAccessible
-            if let state = latestStateByChannel[channelID],
-               !state.isManual,
-               let previousAcknowledged = previous.lastAcknowledgedMessageID,
-               state.lastAcknowledgedMessageID.map({ $0 < previousAcknowledged }) ?? true
-            {
-                value.lastAcknowledgedMessageID = previousAcknowledged
-                value.mentionCount = previous.mentionCount
-                value.unreadMessageCount = previous.unreadMessageCount
-                value.flags = previous.flags
-                value.lastViewed = previous.lastViewed
-            } else if value.isUnread {
-                value.unreadMessageCount = max(
-                    max(value.unreadMessageCount, previous.unreadMessageCount), 1
-                )
-            } else {
-                value.unreadMessageCount = 0
-            }
-            entries[channelID] = value
         }
+        for (channelID, previous) in previousEntries {
+            overlayPendingAcknowledgement(
+                channelID: channelID,
+                previous: previous,
+                remote: latestStateByChannel[channelID]
+            )
+        }
+        if let snapshotVersion {
+            readStateVersion = max(readStateVersion ?? snapshotVersion, snapshotVersion)
+        }
+    }
+
+    private func reconciledSnapshotEntry(
+        channelID: ChannelID,
+        previous: Entry,
+        remote: ChannelReadState?
+    ) -> Entry {
+        var value = entry(for: channelID)
+        value.latestKnownMessageID = maximum(
+            value.latestKnownMessageID, previous.latestKnownMessageID
+        )
+        if value.hasAuthoritativeReadState {
+            value.latestUnreadMessageID = maximum(
+                value.latestUnreadMessageID, previous.latestKnownMessageID
+            )
+        }
+        value.guildID = value.guildID ?? previous.guildID
+        value.parentID = value.parentID ?? previous.parentID
+        if channelByID[channelID] == nil { value.kind = previous.kind }
+        value.isAccessible = previous.isAccessible
+        if let remote,
+           !remote.isManual,
+           let previousAcknowledged = previous.lastAcknowledgedMessageID,
+           remote.lastAcknowledgedMessageID.map({ $0 < previousAcknowledged }) ?? true {
+            value.lastAcknowledgedMessageID = previousAcknowledged
+            value.mentionCount = previous.mentionCount
+            value.unreadMessageCount = previous.unreadMessageCount
+            value.flags = previous.flags
+            value.lastViewed = previous.lastViewed
+        } else if remote == nil, let latestKnownMessageID = value.latestKnownMessageID {
+            value.lastAcknowledgedMessageID = latestKnownMessageID
+            value.mentionCount = 0
+            value.unreadMessageCount = 0
+        } else {
+            value.unreadMessageCount = value.isUnread
+                ? max(max(value.unreadMessageCount, previous.unreadMessageCount), 1)
+                : 0
+        }
+        return value
+    }
+
+    private func overlayPendingAcknowledgement(
+        channelID: ChannelID,
+        previous: Entry,
+        remote: ChannelReadState?
+    ) {
+        guard let pending = previous.pendingAcknowledgementID,
+              pendingRollbacks[channelID]?[pending] != nil
+        else { return }
+        let confirmsPending = remote?.lastAcknowledgedMessageID.map { acknowledged in
+            remote?.isManual == true ? acknowledged == pending : acknowledged >= pending
+        } ?? false
+        if confirmsPending {
+            pendingRollbacks[channelID] = nil
+            return
+        }
+        var value = entries[channelID] ?? previous
+        value.latestKnownMessageID = maximum(
+            value.latestKnownMessageID, previous.latestKnownMessageID
+        )
+        value.latestUnreadMessageID = maximum(
+            value.latestUnreadMessageID, previous.latestUnreadMessageID
+        )
+        value.lastAcknowledgedMessageID = previous.lastAcknowledgedMessageID
+        value.mentionCount = previous.mentionCount
+        value.unreadMessageCount = previous.unreadMessageCount
+        value.pendingAcknowledgementID = pending
+        value.flags = previous.flags
+        value.lastViewed = previous.lastViewed
+        value.hasAuthoritativeReadState = previous.hasAuthoritativeReadState
+            || value.hasAuthoritativeReadState
+        entries[channelID] = value
+    }
+
+    func observeLoadedMessages(channelID: ChannelID, messages: [Message]) {
+        guard let newest = messages.max(by: { $0.id < $1.id }) else { return }
+        var entry = entry(for: channelID)
+        entry.latestKnownMessageID = maximum(entry.latestKnownMessageID, newest.id)
+        if entry.hasAuthoritativeReadState {
+            entry.latestUnreadMessageID = maximum(entry.latestUnreadMessageID, newest.id)
+            entry.unreadMessageCount = entry.isUnread
+                ? max(1, entry.unreadMessageCount)
+                : 0
+        }
+        entries[channelID] = entry
     }
 
     func receive(
@@ -504,11 +587,27 @@ final class AccountReadStateModel {
             ?? forumPost.firstMessage?.id
         guard let latestMessageID else { return }
         var entry = entry(for: forumPost.id)
+        let hadNoAcknowledgedBoundary = entry.lastAcknowledgedMessageID == nil
+        if entry.lastAcknowledgedMessageID == nil {
+            let firstUnreadMessageID = forumPost.firstMessage?.id ?? latestMessageID
+            entry.lastAcknowledgedMessageID = MessageID(
+                rawValue: firstUnreadMessageID.rawValue == 0
+                    ? 0
+                    : firstUnreadMessageID.rawValue - 1
+            )
+        }
         entry.latestKnownMessageID = maximum(entry.latestKnownMessageID, latestMessageID)
         entry.latestUnreadMessageID = maximum(entry.latestUnreadMessageID, latestMessageID)
-        let allRepliesAreAfterAcknowledgement =
-            entry.lastAcknowledgedMessageID == nil
-            || entry.lastAcknowledgedMessageID == forumPost.firstMessage?.id
+        let allRepliesAreAfterAcknowledgement: Bool
+        if hadNoAcknowledgedBoundary {
+            allRepliesAreAfterAcknowledgement = true
+        } else if let acknowledged = entry.lastAcknowledgedMessageID,
+           let firstMessageID = forumPost.firstMessage?.id
+        {
+            allRepliesAreAfterAcknowledgement = acknowledged <= firstMessageID
+        } else {
+            allRepliesAreAfterAcknowledgement = entry.lastAcknowledgedMessageID == nil
+        }
         let catalogueUnreadCount =
             allRepliesAreAfterAcknowledgement ? max(1, forumPost.replyCount) : 1
         entry.unreadMessageCount = max(catalogueUnreadCount, entry.unreadMessageCount)
@@ -590,16 +689,10 @@ final class AccountReadStateModel {
 
     func markAcknowledgementPending(channelID: ChannelID, messageID: MessageID) {
         var entry = entry(for: channelID)
-        if let rollback = pendingRollbacks[channelID] {
-            pendingRollbacks[channelID] = PendingRollback(
-                messageID: max(rollback.messageID, messageID),
-                lastAcknowledgedMessageID: rollback.lastAcknowledgedMessageID,
-                mentionCount: rollback.mentionCount,
-                unreadMessageCount: rollback.unreadMessageCount
-            )
-        } else {
-            pendingRollbacks[channelID] = PendingRollback(
+        if pendingRollbacks[channelID]?[messageID] == nil {
+            pendingRollbacks[channelID, default: [:]][messageID] = PendingRollback(
                 messageID: messageID,
+                predecessorMessageID: entry.pendingAcknowledgementID,
                 lastAcknowledgedMessageID: entry.lastAcknowledgedMessageID,
                 mentionCount: entry.mentionCount,
                 unreadMessageCount: entry.unreadMessageCount
@@ -620,11 +713,19 @@ final class AccountReadStateModel {
         mentionCount: Int
     ) {
         var entry = entry(for: channelID)
-        pendingRollbacks[channelID] = PendingRollback(
-            messageID: messageID,
-            lastAcknowledgedMessageID: entry.lastAcknowledgedMessageID,
-            mentionCount: entry.mentionCount,
-            unreadMessageCount: entry.unreadMessageCount
+        pendingRollbacks[channelID] = Dictionary(
+            uniqueKeysWithValues: [
+                (
+                    messageID,
+                    PendingRollback(
+                        messageID: messageID,
+                        predecessorMessageID: nil,
+                        lastAcknowledgedMessageID: entry.lastAcknowledgedMessageID,
+                        mentionCount: entry.mentionCount,
+                        unreadMessageCount: entry.unreadMessageCount
+                    )
+                )
+            ]
         )
         entry.lastAcknowledgedMessageID = messageID
         entry.pendingAcknowledgementID = messageID
@@ -655,6 +756,12 @@ final class AccountReadStateModel {
         if entry.pendingAcknowledgementID == messageID {
             entry.pendingAcknowledgementID = nil
             pendingRollbacks[channelID] = nil
+        } else {
+            discardPendingRollback(
+                channelID: channelID,
+                messageID: messageID,
+                succeeded: true
+            )
         }
         entries[channelID] = entry
     }
@@ -662,16 +769,59 @@ final class AccountReadStateModel {
     func failAcknowledgement(channelID: ChannelID, messageID: MessageID) {
         var entry = entry(for: channelID)
         if entry.pendingAcknowledgementID == messageID,
-           let rollback = pendingRollbacks[channelID],
-           rollback.messageID == messageID
+           let rollback = pendingRollbacks[channelID]?[messageID]
         {
             entry.lastAcknowledgedMessageID = rollback.lastAcknowledgedMessageID
             entry.mentionCount = rollback.mentionCount
             entry.unreadMessageCount = rollback.unreadMessageCount
-            entry.pendingAcknowledgementID = nil
-            pendingRollbacks[channelID] = nil
+            entry.pendingAcknowledgementID = rollback.predecessorMessageID
+            pendingRollbacks[channelID]?[messageID] = nil
+            if pendingRollbacks[channelID]?.isEmpty == true {
+                pendingRollbacks[channelID] = nil
+            }
+        } else {
+            discardPendingRollback(
+                channelID: channelID,
+                messageID: messageID,
+                succeeded: false
+            )
         }
         entries[channelID] = entry
+    }
+
+    private func discardPendingRollback(
+        channelID: ChannelID,
+        messageID: MessageID,
+        succeeded: Bool
+    ) {
+        guard let discarded = pendingRollbacks[channelID]?[messageID] else { return }
+        let childID = pendingRollbacks[channelID]?.values.first {
+            $0.predecessorMessageID == messageID
+        }?.messageID
+        if let childID, var child = pendingRollbacks[channelID]?[childID] {
+            child.predecessorMessageID = discarded.predecessorMessageID
+            if !succeeded {
+                child.lastAcknowledgedMessageID = discarded.lastAcknowledgedMessageID
+                child.mentionCount += discarded.mentionCount
+                child.unreadMessageCount += discarded.unreadMessageCount
+            }
+            pendingRollbacks[channelID]?[childID] = child
+        }
+        pendingRollbacks[channelID]?[messageID] = nil
+        if pendingRollbacks[channelID]?.isEmpty == true {
+            pendingRollbacks[channelID] = nil
+        }
+    }
+
+    private func seedOmittedReadBoundaries(channelIDs: Set<ChannelID>) {
+        for channelID in channelIDs {
+            var value = entry(for: channelID)
+            guard let latestKnownMessageID = value.latestKnownMessageID else { continue }
+            value.lastAcknowledgedMessageID = latestKnownMessageID
+            value.mentionCount = 0
+            value.unreadMessageCount = 0
+            entries[channelID] = value
+        }
     }
 
     func unread(channelID: ChannelID, now: Date = .now) -> Bool {

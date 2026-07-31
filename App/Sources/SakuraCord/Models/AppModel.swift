@@ -2610,6 +2610,7 @@ final class AppModel {
         messageLoadErrorIsEarlierPage = false
         isLoadingMessages = false
         hasCompletedInitialMessageLoad = true
+        readState.observeLoadedMessages(channelID: channelID, messages: messages)
         preserveUnreadDividerIfNeeded(channelID: channelID)
         reportConversationHistoryLoaded(channelID: channelID)
         try await database?.save(messages: messages)
@@ -2807,6 +2808,10 @@ final class AppModel {
                 threadErrorScope = nil
                 isLoadingThread = false
                 hasCompletedInitialThreadLoad = true
+                readState.observeLoadedMessages(
+                    channelID: thread.id,
+                    messages: threadMessages
+                )
                 reportConversationHistoryLoaded(channelID: thread.id)
                 try await database?.save(messages: page.messages)
             } catch is CancellationError {
@@ -5250,11 +5255,23 @@ final class AppModel {
     ) {
         guard channelID == selectedChannelID || channelID == openThread?.id else { return }
         preserveUnreadDividerIfNeeded(channelID: channelID)
-        if let target = readState.updatePresentation(
+        let previousBoundary =
+            readState.presentations[channelID]?.hasReachedReadBoundary
+        let target = readState.updatePresentation(
             channelID: channelID,
             isPresented: true,
             hasReachedReadBoundary: hasReachedReadBoundary
-        ) {
+        )
+        if previousBoundary != hasReachedReadBoundary {
+            let eligible = readState.presentations[channelID]?.canAcknowledge == true
+            let channel = channelID.rawValue
+            let reached = hasReachedReadBoundary
+            let targetID = target?.rawValue ?? 0
+            Self.unreadDiagnosticsLogger.debug(
+                "Timeline bound c=\(channel, privacy: .public) r=\(reached, privacy: .public) e=\(eligible, privacy: .public) m=\(targetID, privacy: .public)"
+            )
+        }
+        if let target {
             scheduleAcknowledgement(channelID: channelID, messageID: target)
         }
     }
@@ -5265,12 +5282,20 @@ final class AppModel {
     ) {
         guard channelID == selectedChannelID || channelID == openThread?.id else { return }
         preserveUnreadDividerIfNeeded(channelID: channelID)
-        if let target = readState.updatePresentation(
+        let target = readState.updatePresentation(
             channelID: channelID,
             isPresented: true,
             initialPositionEstablished: true,
             hasReachedReadBoundary: hasReachedReadBoundary
-        ) {
+        )
+        let eligible = readState.presentations[channelID]?.canAcknowledge == true
+        let channel = channelID.rawValue
+        let reached = hasReachedReadBoundary
+        let targetID = target?.rawValue ?? 0
+        Self.unreadDiagnosticsLogger.debug(
+            "Timeline initial c=\(channel, privacy: .public) r=\(reached, privacy: .public) e=\(eligible, privacy: .public) m=\(targetID, privacy: .public)"
+        )
+        if let target {
             scheduleAcknowledgement(channelID: channelID, messageID: target)
         }
     }
@@ -5672,6 +5697,9 @@ final class AppModel {
         }
         acknowledgementTasks[channelID]?.cancel()
         readState.markAcknowledgementPending(channelID: channelID, messageID: messageID)
+        Self.unreadDiagnosticsLogger.info(
+            "Read acknowledgement scheduled; channel=\(channelID.rawValue, privacy: .public), target=\(messageID.rawValue, privacy: .public)"
+        )
         refreshUnreadPresentation()
         cancelNativeNotifications(channelID: channelID)
         let debounce = readAcknowledgementTiming.debounce
@@ -5735,6 +5763,7 @@ final class AppModel {
                 continue
             }
             do {
+                logReadAcknowledgementSending(channelID: channelID, mutation: mutation)
                 let response = try await provider.acknowledge(
                     channelID: channelID,
                     messageID: mutation.messageID,
@@ -5750,6 +5779,7 @@ final class AppModel {
                     messageID: mutation.messageID,
                     token: response.token
                 )
+                logReadAcknowledgementAccepted(channelID: channelID, mutation: mutation)
             } catch is CancellationError {
                 return
             } catch {
@@ -5758,6 +5788,7 @@ final class AppModel {
                     channelID: channelID,
                     messageID: mutation.messageID
                 )
+                logReadAcknowledgementFailed(channelID: channelID, mutation: mutation)
                 refreshUnreadPresentation()
                 if mutation.manual {
                     errorMessage = "Discord did not accept the read-state update."
@@ -5767,6 +5798,39 @@ final class AppModel {
         if generation == acknowledgementGeneration {
             acknowledgementProcessorTask = nil
         }
+    }
+
+    private func logReadAcknowledgementSending(
+        channelID: ChannelID,
+        mutation: ReadStateMutation
+    ) {
+        let channel = channelID.rawValue
+        let message = mutation.messageID.rawValue
+        Self.unreadDiagnosticsLogger.info(
+            "Read ack send c=\(channel, privacy: .public) m=\(message, privacy: .public) manual=\(mutation.manual, privacy: .public)"
+        )
+    }
+
+    private func logReadAcknowledgementAccepted(
+        channelID: ChannelID,
+        mutation: ReadStateMutation
+    ) {
+        let channel = channelID.rawValue
+        let message = mutation.messageID.rawValue
+        Self.unreadDiagnosticsLogger.info(
+            "Read ack accepted c=\(channel, privacy: .public) m=\(message, privacy: .public)"
+        )
+    }
+
+    private func logReadAcknowledgementFailed(
+        channelID: ChannelID,
+        mutation: ReadStateMutation
+    ) {
+        let channel = channelID.rawValue
+        let message = mutation.messageID.rawValue
+        Self.unreadDiagnosticsLogger.error(
+            "Read ack failed c=\(channel, privacy: .public) m=\(message, privacy: .public) manual=\(mutation.manual, privacy: .public)"
+        )
     }
 
     private func readStateMutation(
@@ -6051,7 +6115,6 @@ final class AppModel {
             if state != .ready {
                 stopLocalTyping(clearThrottle: true)
                 typingState.clearAll()
-                resetAcknowledgementWork()
             } else if let channel = selectedChannel,
                       channel.kind == .directMessage || channel.kind == .groupDirectMessage
             {
@@ -6141,9 +6204,16 @@ final class AppModel {
             } else {
                 messageCache[channelID]?.removeAll { $0.id == messageID }
             }
-        case .readStateSnapshot(let states):
-            resetAcknowledgementWork()
-            readState.replaceReadStates(states)
+        case .readStateSnapshot(let states, let version):
+            let incomingVersion = version ?? states.compactMap(\.version).max()
+            let incomingVersionDescription = incomingVersion.map(String.init) ?? "none"
+            let pendingCount = readState.entries.values.count {
+                $0.pendingAcknowledgementID != nil
+            }
+            Self.unreadDiagnosticsLogger.info(
+                "Read-state snapshot received; states=\(states.count), version=\(incomingVersionDescription, privacy: .public), pending=\(pendingCount)"
+            )
+            readState.replaceReadStates(states, version: incomingVersion)
             if let selectedChannelID {
                 _ = readState.updatePresentation(
                     channelID: selectedChannelID,
@@ -6169,6 +6239,13 @@ final class AppModel {
                 if !readState.unread(channelID: state.channelID) {
                     cancelNativeNotifications(channelID: state.channelID)
                 }
+            } else {
+                let messageID = state.lastAcknowledgedMessageID?.rawValue ?? 0
+                let channelID = state.channelID.rawValue
+                let versionDescription = state.version.map(String.init) ?? "none"
+                Self.unreadDiagnosticsLogger.info(
+                    "Read event ignored c=\(channelID, privacy: .public) m=\(messageID, privacy: .public) v=\(versionDescription, privacy: .public)"
+                )
             }
         case .notificationModeChanged(let usesNewNotifications):
             readState.updateNotificationMode(

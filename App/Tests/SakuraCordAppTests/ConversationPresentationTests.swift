@@ -574,6 +574,25 @@ import Testing
     )
 }
 
+@Test func `exact unread run placement includes the footer in its fit decision`() {
+    #expect(
+        NativeTimelineInitialPlacementPolicy.exactUnreadRunFitsAtBottom(
+            unreadMinimumY: 1_200,
+            newestMaximumY: 1_800,
+            viewportHeight: 700,
+            bottomInset: 76
+        )
+    )
+    #expect(
+        !NativeTimelineInitialPlacementPolicy.exactUnreadRunFitsAtBottom(
+            unreadMinimumY: 1_200,
+            newestMaximumY: 1_825,
+            viewportHeight: 700,
+            bottomInset: 76
+        )
+    )
+}
+
 @Test func `thread beginning does not duplicate a same-day first reply separator`() {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!

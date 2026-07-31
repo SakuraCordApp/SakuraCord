@@ -54,6 +54,7 @@ struct AccountReadStateModelTests {
 
         #expect(model.entries[channelID]?.latestKnownMessageID == MessageID(rawValue: 10))
         #expect(model.entries[channelID]?.latestUnreadMessageID == nil)
+        #expect(model.entries[channelID]?.lastAcknowledgedMessageID == MessageID(rawValue: 10))
         #expect(!model.unread(channelID: channelID))
         #expect(!model.guildUnread(guildID))
 
@@ -99,6 +100,7 @@ struct AccountReadStateModelTests {
 
         #expect(model.entries[threadID]?.latestKnownMessageID == MessageID(rawValue: 10))
         #expect(model.entries[threadID]?.latestUnreadMessageID == nil)
+        #expect(model.entries[threadID]?.lastAcknowledgedMessageID == nil)
         #expect(!model.unread(channelID: threadID))
         #expect(!model.guildUnread(guildID))
 
@@ -792,6 +794,173 @@ struct AccountReadStateModelTests {
         #expect(model.entries[channelID]?.lastAcknowledgedMessageID == MessageID(rawValue: 12))
         #expect(model.mentions(channelID: channelID) == 2)
         #expect(model.unread(channelID: channelID))
+    }
+
+    @Test func `versioned read state rejects out of order ordinary and manual events`() {
+        let model = makeModel(latest: 20, acknowledged: 10, mentions: 3)
+        #expect(model.applyRemote(
+            ChannelReadState(
+                channelID: channelID,
+                lastAcknowledgedMessageID: MessageID(rawValue: 18),
+                mentionCount: 1,
+                version: 12
+            )
+        ))
+        #expect(!model.applyRemote(
+            ChannelReadState(
+                channelID: channelID,
+                lastAcknowledgedMessageID: MessageID(rawValue: 8),
+                mentionCount: 4,
+                isManual: true,
+                version: 11
+            )
+        ))
+        #expect(model.entries[channelID]?.lastAcknowledgedMessageID == MessageID(rawValue: 18))
+        #expect(model.mentions(channelID: channelID) == 1)
+
+        #expect(model.applyRemote(
+            ChannelReadState(
+                channelID: channelID,
+                lastAcknowledgedMessageID: MessageID(rawValue: 15),
+                mentionCount: 2,
+                isManual: true,
+                version: 13
+            )
+        ))
+        #expect(model.entries[channelID]?.lastAcknowledgedMessageID == MessageID(rawValue: 15))
+        #expect(model.mentions(channelID: channelID) == 2)
+
+        #expect(!model.applyRemote(
+            ChannelReadState(
+                channelID: channelID,
+                lastAcknowledgedMessageID: MessageID(rawValue: 9),
+                mentionCount: 5,
+                version: 15
+            )
+        ))
+        #expect(!model.applyRemote(
+            ChannelReadState(
+                channelID: channelID,
+                lastAcknowledgedMessageID: MessageID(rawValue: 6),
+                mentionCount: 6,
+                isManual: true,
+                version: 14
+            )
+        ))
+        #expect(model.entries[channelID]?.lastAcknowledgedMessageID == MessageID(rawValue: 15))
+        #expect(model.readStateVersion == 15)
+    }
+
+    @Test func `stale snapshot preserves an optimistic mark read and acknowledgement token`() {
+        let model = makeModel(latest: 12, acknowledged: 10, mentions: 1)
+        model.completeAcknowledgement(
+            channelID: channelID,
+            messageID: MessageID(rawValue: 10),
+            token: "latest-token"
+        )
+        model.markAcknowledgementPending(
+            channelID: channelID,
+            messageID: MessageID(rawValue: 12)
+        )
+
+        model.replaceReadStates([
+            ChannelReadState(
+                channelID: channelID,
+                lastAcknowledgedMessageID: MessageID(rawValue: 10),
+                mentionCount: 1,
+                version: 7
+            )
+        ])
+
+        #expect(model.entries[channelID]?.lastAcknowledgedMessageID == MessageID(rawValue: 12))
+        #expect(model.entries[channelID]?.pendingAcknowledgementID == MessageID(rawValue: 12))
+        #expect(model.mentions(channelID: channelID) == 0)
+        #expect(!model.unread(channelID: channelID))
+        #expect(model.acknowledgementToken == "latest-token")
+    }
+
+    @Test func `later acknowledgement failure preserves an earlier accepted boundary`() {
+        let model = makeModel(latest: 12, acknowledged: 10, mentions: 2)
+        model.markAcknowledgementPending(
+            channelID: channelID,
+            messageID: MessageID(rawValue: 12)
+        )
+        #expect(model.receive(
+            message(id: 13, mentionedUsers: [currentUser]),
+            currentUserID: currentUser.id
+        ).accepted)
+        model.markAcknowledgementPending(
+            channelID: channelID,
+            messageID: MessageID(rawValue: 13)
+        )
+
+        model.completeAcknowledgement(
+            channelID: channelID,
+            messageID: MessageID(rawValue: 12),
+            token: "accepted-12"
+        )
+        model.failAcknowledgement(
+            channelID: channelID,
+            messageID: MessageID(rawValue: 13)
+        )
+
+        #expect(model.entries[channelID]?.lastAcknowledgedMessageID == MessageID(rawValue: 12))
+        #expect(model.entries[channelID]?.pendingAcknowledgementID == nil)
+        #expect(model.mentions(channelID: channelID) == 1)
+        #expect(model.unreadMessageCount(channelID: channelID) == 1)
+        #expect(model.unread(channelID: channelID))
+        #expect(model.acknowledgementToken == "accepted-12")
+    }
+
+    @Test func `overlapping failures restore every unread contribution exactly once`() {
+        let model = makeModel(latest: 12, acknowledged: 10, mentions: 2)
+        model.markAcknowledgementPending(
+            channelID: channelID,
+            messageID: MessageID(rawValue: 12)
+        )
+        #expect(model.receive(
+            message(id: 13, mentionedUsers: [currentUser]),
+            currentUserID: currentUser.id
+        ).accepted)
+        model.markAcknowledgementPending(
+            channelID: channelID,
+            messageID: MessageID(rawValue: 13)
+        )
+
+        model.failAcknowledgement(
+            channelID: channelID,
+            messageID: MessageID(rawValue: 12)
+        )
+        model.failAcknowledgement(
+            channelID: channelID,
+            messageID: MessageID(rawValue: 13)
+        )
+
+        #expect(model.entries[channelID]?.lastAcknowledgedMessageID == MessageID(rawValue: 10))
+        #expect(model.entries[channelID]?.pendingAcknowledgementID == nil)
+        #expect(model.mentions(channelID: channelID) == 3)
+        #expect(model.unreadMessageCount(channelID: channelID) == 2)
+        #expect(model.unread(channelID: channelID))
+    }
+
+    @Test func `loaded newest history becomes the acknowledgement target`() {
+        let model = makeModel(latest: 10, acknowledged: 10)
+        model.observeLoadedMessages(
+            channelID: channelID,
+            messages: [message(id: 11), message(id: 12)]
+        )
+        #expect(model.entries[channelID]?.latestKnownMessageID == MessageID(rawValue: 12))
+        #expect(model.unread(channelID: channelID))
+        #expect(
+            model.updatePresentation(
+                channelID: channelID,
+                isPresented: true,
+                initialHistoryLoaded: true,
+                initialPositionEstablished: true,
+                windowIsActive: true,
+                hasReachedReadBoundary: true
+            ) == MessageID(rawValue: 12)
+        )
     }
 
     @Test func `timeline unread summary grows as older unread pages load`() throws {
@@ -1704,7 +1873,14 @@ struct AccountReadStateModelTests {
         channelID: channelID,
         hasReachedReadBoundary: true
     )
-    try? await Task.sleep(for: .milliseconds(40))
+    for _ in 0 ..< 500 {
+        if await provider.acknowledgementRequests.count == 1,
+           model.readState.acknowledgementToken == "mock-ack-token"
+        {
+            break
+        }
+        try? await Task.sleep(for: .milliseconds(1))
+    }
 
     let requests = await provider.acknowledgementRequests
     #expect(requests.count == 1)
@@ -1778,6 +1954,142 @@ struct AccountReadStateModelTests {
     #expect(request.channelID == channelID)
     #expect(request.messageID == newest.id)
     #expect(!request.manual)
+}
+
+@MainActor
+@Test func `opening acknowledgement survives a gateway reconnect before transport`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(
+        launchMode: .offlineTesting,
+        provider: provider,
+        readAcknowledgementTiming: .init(debounce: .milliseconds(30))
+    )
+    await model.start()
+    let channelID = ChannelID(rawValue: 210)
+    model.selectedChannelID = channelID
+    #expect(await eventually { !model.isLoadingMessages && model.selectedChannelID == channelID })
+    model.reportMainWindowActive(true)
+    model.reportTimelineInitialPosition(
+        channelID: channelID,
+        hasReachedReadBoundary: true
+    )
+
+    await provider.emit(.connectionChanged(.connecting))
+    await provider.emit(.connectionChanged(.ready))
+
+    for _ in 0 ..< 500 {
+        if await provider.acknowledgementRequests.count == 1 { break }
+        try? await Task.sleep(for: .milliseconds(1))
+    }
+    #expect(await provider.acknowledgementRequests.count == 1)
+    let request = try #require(await provider.acknowledgementRequests.first)
+    #expect(request.channelID == channelID)
+    #expect(request.messageID == model.readState.entries[channelID]?.latestKnownMessageID)
+}
+
+@MainActor
+@Test func `rapid channel switching preserves both qualified acknowledgements`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(
+        launchMode: .offlineTesting,
+        provider: provider,
+        readAcknowledgementTiming: .init(debounce: .milliseconds(30))
+    )
+    await model.start()
+    model.reportMainWindowActive(true)
+
+    let firstChannelID = ChannelID(rawValue: 210)
+    model.selectedChannelID = firstChannelID
+    #expect(await eventually {
+        !model.isLoadingMessages && model.selectedChannelID == firstChannelID
+    })
+    model.reportTimelineInitialPosition(
+        channelID: firstChannelID,
+        hasReachedReadBoundary: true
+    )
+
+    let secondChannelID = ChannelID(rawValue: 211)
+    model.selectedChannelID = secondChannelID
+    #expect(await eventually {
+        !model.isLoadingMessages && model.selectedChannelID == secondChannelID
+    })
+    model.reportTimelineInitialPosition(
+        channelID: secondChannelID,
+        hasReachedReadBoundary: true
+    )
+
+    for _ in 0 ..< 500 {
+        if await provider.acknowledgementRequests.count == 2 { break }
+        try? await Task.sleep(for: .milliseconds(1))
+    }
+    let requests = await provider.acknowledgementRequests
+    #expect(requests.count == 2)
+    #expect(Set(requests.map(\.channelID)) == Set([firstChannelID, secondChannelID]))
+    for request in requests {
+        #expect(request.messageID == model.readState.entries[request.channelID]?.latestKnownMessageID)
+    }
+}
+
+@MainActor
+@Test func `mark read survives a stale snapshot before transport`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(
+        launchMode: .offlineTesting,
+        provider: provider,
+        readAcknowledgementTiming: .init(debounce: .milliseconds(30))
+    )
+    await model.start()
+    let channelID = ChannelID(rawValue: 210)
+    model.selectedChannelID = channelID
+    #expect(await eventually { !model.isLoadingMessages && model.selectedChannelID == channelID })
+    let oldBoundary = model.readState.entries[channelID]?.lastAcknowledgedMessageID
+
+    model.markConversationRead(channelID: channelID)
+    await provider.emit(.readStateSnapshot([
+        ChannelReadState(
+            channelID: channelID,
+            lastAcknowledgedMessageID: oldBoundary,
+            mentionCount: 3,
+            version: 41
+        )
+    ]))
+
+    #expect(await eventually { model.readState.readStateVersion == 41 })
+    #expect(!model.isChannelUnread(channelID))
+    #expect(model.channelMentionCount(channelID) == 0)
+    for _ in 0 ..< 500 {
+        if await provider.acknowledgementRequests.count == 1 { break }
+        try? await Task.sleep(for: .milliseconds(1))
+    }
+    #expect(await provider.acknowledgementRequests.count == 1)
+}
+
+@MainActor
+@Test func `accepted mark read survives a fresh bootstrap`() async throws {
+    let provider = MockChatProvider()
+    let firstLaunch = AppModel(launchMode: .offlineTesting, provider: provider)
+    await firstLaunch.start()
+    let channelID = ChannelID(rawValue: 210)
+    let target = try #require(firstLaunch.readState.entries[channelID]?.latestKnownMessageID)
+
+    firstLaunch.markConversationRead(channelID: channelID)
+    for _ in 0 ..< 500 {
+        if await provider.acknowledgementRequests.count == 1 { break }
+        try? await Task.sleep(for: .milliseconds(1))
+    }
+    #expect(await provider.acknowledgementRequests.count == 1)
+    #expect(await eventually {
+        firstLaunch.readState.entries[channelID]?.pendingAcknowledgementID == nil
+    })
+    await provider.disconnect()
+
+    let relaunched = AppModel(launchMode: .offlineTesting, provider: provider)
+    await relaunched.start()
+
+    #expect(relaunched.readState.entries[channelID]?.lastAcknowledgedMessageID == target)
+    #expect(relaunched.readState.entries[channelID]?.pendingAcknowledgementID == nil)
+    #expect(!relaunched.isChannelUnread(channelID))
+    #expect(relaunched.channelMentionCount(channelID) == 0)
 }
 
 @MainActor

@@ -367,6 +367,25 @@ nonisolated enum NativeTimelineReadBoundaryPolicy {
     }
 }
 
+nonisolated enum NativeTimelineInitialPlacementPolicy {
+    /// If the exact unread run and the footer both fit in the viewport, the
+    /// newest message is the useful initial anchor. Keeping the first unread
+    /// row at the contextual 28% anchor in this case leaves a pointless
+    /// scroll range below content the reader can already see and makes the
+    /// timeline disagree with its own read-boundary state.
+    static func exactUnreadRunFitsAtBottom(
+        unreadMinimumY: CGFloat,
+        newestMaximumY: CGFloat,
+        viewportHeight: CGFloat,
+        bottomInset: CGFloat,
+        tolerance: CGFloat = 0.5
+    ) -> Bool {
+        let unreadRunHeight = max(0, newestMaximumY - unreadMinimumY)
+        return unreadRunHeight + max(0, bottomInset)
+            <= max(0, viewportHeight) + max(0, tolerance)
+    }
+}
+
 nonisolated enum NativeTimelineEarlierLoaderPolicy {
     static func includesLoader(
         hasMoreMessages: Bool,
@@ -720,6 +739,10 @@ struct NativeMessageTimelineView: NSViewRepresentable {
         private static let performanceLogger = Logger(
             subsystem: "dev.sakuracord.SakuraCord",
             category: "TimelinePerformance"
+        )
+        private static let readStateLogger = Logger(
+            subsystem: "dev.sakuracord.SakuraCord",
+            category: "UnreadState"
         )
 
         private var parent: NativeMessageTimelineView
@@ -2452,12 +2475,52 @@ struct NativeMessageTimelineView: NSViewRepresentable {
                   let scrollView,
                   scrollView.contentView.bounds.width > 1,
                   scrollView.contentView.bounds.height > 1,
-                  scroll(to: target, in: scrollView)
+                  scroll(
+                    to: resolvedInitialScrollTarget(
+                        target,
+                        viewportHeight: scrollView.contentView.bounds.height
+                    ),
+                    in: scrollView
+                  )
             else {
                 return false
             }
             initialPositionConversation = parent.conversation
             return true
+        }
+
+        private func resolvedInitialScrollTarget(
+            _ target: MessageTimelineScrollRequest.Target,
+            viewportHeight: CGFloat
+        ) -> MessageTimelineScrollRequest.Target {
+            guard case let .message(messageID, _) = target,
+                  parent.unreadMessageID == messageID,
+                  let unreadIndex = items.firstIndex(where: {
+                      $0.messageID == messageID
+                  }),
+                  let newestIndex = items.lastIndex(where: {
+                      $0.messageID != nil
+                  }),
+                  rowOrigins.indices.contains(unreadIndex),
+                  rowOrigins.indices.contains(newestIndex),
+                  layouts.indices.contains(newestIndex)
+            else {
+                return target
+            }
+            let fitsAtBottom = NativeTimelineInitialPlacementPolicy
+                .exactUnreadRunFitsAtBottom(
+                    unreadMinimumY: rowOrigins[unreadIndex],
+                    newestMaximumY:
+                        rowOrigins[newestIndex]
+                        + layouts[newestIndex].height,
+                    viewportHeight: viewportHeight,
+                    bottomInset: bottomInset
+                )
+            let conversationID = parent.conversation.id?.rawValue ?? 0
+            Self.readStateLogger.debug(
+                "Unread placement c=\(conversationID, privacy: .public) first=\(messageID.rawValue, privacy: .public) bottom=\(fitsAtBottom, privacy: .public)"
+            )
+            return fitsAtBottom ? .bottom : target
         }
 
         private func applyScrollRequestIfNeeded() {

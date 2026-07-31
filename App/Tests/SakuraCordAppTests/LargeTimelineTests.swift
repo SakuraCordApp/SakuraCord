@@ -2519,6 +2519,165 @@ func `short timeline is bottom aligned on its first frame and stays there while 
 }
 
 @MainActor @Test
+func `fitting exact unread run opens at true bottom and reports newest boundary`() async throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    await model.start()
+    let deadline = ContinuousClock.now + .seconds(1)
+    while model.messages.count < 9,
+          ContinuousClock.now < deadline
+    {
+        try await Task.sleep(for: .milliseconds(2))
+    }
+    let conversationID = try #require(model.selectedChannelID)
+    let unreadMessage = try #require(
+        model.messages.dropLast(2).last
+    )
+    let newestMessage = try #require(model.messages.last)
+    var initialStates: [TimelineScrollState] = []
+    let timeline = NativeMessageTimelineView(
+        model: model,
+        conversation: .channel(conversationID),
+        beginning: nil,
+        firstMessageStartsDayOverride: nil,
+        hasMoreMessages: false,
+        isLoadingEarlier: false,
+        bottomContentInset: 76,
+        unreadMessageID: unreadMessage.id,
+        highlightedMessageID: nil,
+        initialScrollTarget: .message(
+            unreadMessage.id,
+            anchor: TimelineInitialPositionPolicy.unreadViewportAnchor
+        ),
+        scrollRequest: nil,
+        runsPerformanceAutoScroll: false,
+        loadEarlier: {},
+        openReply: { _ in },
+        onScrollActivityChange: { _ in },
+        onScrollStateChange: { _ in },
+        onInitialPositionEstablished: { initialStates.append($0) },
+        onUserScrollBegan: {},
+        onUserScrollEnded: { _ in }
+    )
+    let coordinator = timeline.makeCoordinator()
+    let scrollView = coordinator.makeScrollView()
+    scrollView.frame = CGRect(x: 0, y: 0, width: 820, height: 700)
+    scrollView.tile()
+    scrollView.layoutSubtreeIfNeeded()
+    coordinator.update(parent: timeline, scrollView: scrollView)
+    coordinator.reconcileViewportGeometryForTesting()
+    for _ in 0 ..< 4 {
+        await Task.yield()
+    }
+
+    let unreadOffset = try #require(
+        coordinator.messageOffsetFromViewportTopForTesting(unreadMessage.id)
+    )
+    let newestOffset = try #require(
+        coordinator.messageOffsetFromViewportTopForTesting(newestMessage.id)
+    )
+    let newestHeight = try #require(
+        coordinator.messageHeightForTesting(newestMessage.id)
+    )
+    #expect(
+        newestOffset + newestHeight - unreadOffset + 76
+            <= scrollView.contentView.bounds.height + 0.5
+    )
+    #expect(
+        coordinator.contentHeightForTesting + 76
+            > scrollView.contentView.bounds.height
+    )
+    #expect(coordinator.scrollStateForTesting.isNearBottom)
+    #expect(
+        coordinator.scrollStateForTesting
+            .hasReachedNewestMessageBoundary
+    )
+    #expect(initialStates.last?.isNearBottom == true)
+    #expect(
+        initialStates.last?.hasReachedNewestMessageBoundary
+            == true
+    )
+    coordinator.stopObserving()
+}
+
+@MainActor @Test
+func `scrolling a tall unread timeline to bottom publishes the read boundary`() async throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    await model.start()
+    let deadline = ContinuousClock.now + .seconds(1)
+    while model.messages.count < 9,
+          ContinuousClock.now < deadline
+    {
+        try await Task.sleep(for: .milliseconds(2))
+    }
+    let conversationID = try #require(model.selectedChannelID)
+    let unreadMessage = try #require(
+        model.messages.dropFirst(4).dropLast(4).first
+    )
+    var reportedStates: [TimelineScrollState] = []
+    func timeline(
+        scrollRequest: MessageTimelineScrollRequest?
+    ) -> NativeMessageTimelineView {
+        NativeMessageTimelineView(
+            model: model,
+            conversation: .channel(conversationID),
+            beginning: nil,
+            firstMessageStartsDayOverride: nil,
+            hasMoreMessages: false,
+            isLoadingEarlier: false,
+            bottomContentInset: 76,
+            unreadMessageID: unreadMessage.id,
+            highlightedMessageID: nil,
+            initialScrollTarget: .message(
+                unreadMessage.id,
+                anchor: TimelineInitialPositionPolicy.unreadViewportAnchor
+            ),
+            scrollRequest: scrollRequest,
+            runsPerformanceAutoScroll: false,
+            loadEarlier: {},
+            openReply: { _ in },
+            onScrollActivityChange: { _ in },
+            onScrollStateChange: { reportedStates.append($0) },
+            onUserScrollBegan: {},
+            onUserScrollEnded: { _ in }
+        )
+    }
+    let initialTimeline = timeline(scrollRequest: nil)
+    let coordinator = initialTimeline.makeCoordinator()
+    let scrollView = coordinator.makeScrollView()
+    scrollView.frame = CGRect(x: 0, y: 0, width: 820, height: 500)
+    scrollView.tile()
+    scrollView.layoutSubtreeIfNeeded()
+    coordinator.update(parent: initialTimeline, scrollView: scrollView)
+    coordinator.reconcileViewportGeometryForTesting()
+    #expect(
+        !coordinator.scrollStateForTesting
+            .hasReachedNewestMessageBoundary
+    )
+
+    coordinator.update(
+        parent: timeline(
+            scrollRequest: MessageTimelineScrollRequest(target: .bottom)
+        ),
+        scrollView: scrollView
+    )
+    for _ in 0 ..< 4 {
+        await Task.yield()
+    }
+
+    #expect(coordinator.scrollStateForTesting.isNearBottom)
+    #expect(
+        coordinator.scrollStateForTesting
+            .hasReachedNewestMessageBoundary
+    )
+    #expect(reportedStates.last?.isNearBottom == true)
+    #expect(
+        reportedStates.last?.hasReachedNewestMessageBoundary
+            == true
+    )
+    coordinator.stopObserving()
+}
+
+@MainActor @Test
 func `media rich timeline establishes unread context before display and preserves it while resizing`() async throws {
     let model = AppModel(launchMode: .offlineTesting)
     await model.start()

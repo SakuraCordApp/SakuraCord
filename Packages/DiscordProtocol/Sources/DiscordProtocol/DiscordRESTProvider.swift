@@ -3016,7 +3016,8 @@ public actor DiscordRESTProvider: ChatProvider {
                             lastAcknowledgedMessageID: entry.lastMessageID.flatMap(MessageID.init),
                             mentionCount: entry.mentionCount ?? 0,
                             flags: entry.flags,
-                            lastViewed: entry.lastViewed
+                            lastViewed: entry.lastViewed,
+                            version: ready.readState.version
                         )
                     }
                     .sorted { $0.channelID.rawValue < $1.channelID.rawValue }
@@ -3061,7 +3062,10 @@ public actor DiscordRESTProvider: ChatProvider {
                     )
                 )
                 continuation?.yield(
-                    .readStateSnapshot(readyReadStates)
+                    .readStateSnapshot(
+                        readyReadStates,
+                        version: ready.readState.version
+                    )
                 )
                 for settings in readyNotificationSettings {
                     continuation?.yield(.notificationSettingsChanged(settings))
@@ -3381,7 +3385,8 @@ public actor DiscordRESTProvider: ChatProvider {
                         mentionCount: ack.mentionCount ?? 0,
                         isManual: ack.manual ?? false,
                         flags: ack.flags,
-                        lastViewed: ack.lastViewed
+                        lastViewed: ack.lastViewed,
+                        version: ack.version
                     )
                 )
             )
@@ -6693,6 +6698,7 @@ struct GatewayReadStateDTO: Decodable {
     }
 
     var entries: [Entry]
+    var version: Int?
     var channelEntriesByID: [ChannelID: Entry] {
         Dictionary(
             entries.compactMap { entry in
@@ -6703,15 +6709,19 @@ struct GatewayReadStateDTO: Decodable {
         )
     }
 
-    init(entries: [Entry]) { self.entries = entries }
+    init(entries: [Entry]) {
+        self.entries = entries
+        version = nil
+    }
 
     init(from decoder: any Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         entries =
             (try? values.decode(LossyList<Entry>.self, forKey: .entries))?.elements ?? []
+        version = try? values.decode(Int.self, forKey: .version)
     }
 
-    private enum CodingKeys: String, CodingKey { case entries }
+    private enum CodingKeys: String, CodingKey { case entries, version }
 }
 
 struct ReadyMergedMemberDTO: Decodable {
@@ -6805,6 +6815,7 @@ private struct GatewayMessageAckDTO: Decodable {
     var manual: Bool?
     var flags: UInt64?
     var lastViewed: Int?
+    var version: Int?
 
     enum CodingKeys: String, CodingKey {
         case channelID = "channel_id"
@@ -6813,6 +6824,7 @@ private struct GatewayMessageAckDTO: Decodable {
         case manual
         case flags
         case lastViewed = "last_viewed"
+        case version
     }
 }
 
