@@ -137,7 +137,7 @@ Developer ID signing and notarization are not currently part of the release
 workflow.
 
 Tag releases enable the canonical Sparkle configuration, generate a signed
-`appcast.xml` from the same `SakuraCord vX.Y.Z.dmg`, and validate the feed signature,
+`appcast.xml` from the same `SakuraCord.vX.Y.Z.dmg`, and validate the feed signature,
 archive signature, bundle metadata, and nested code signatures before staging
 both files on a draft GitHub Release and publishing them together. The workflow
 refuses to replace assets on an already published tag. Sparkle signing keys

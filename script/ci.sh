@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 "$ROOT_DIR/script/code_quality.sh" check
+"$ROOT_DIR/script/test_release_metadata.sh"
 
 CREDENTIAL_PATTERN='(Authorization:[[:space:]]*(Bot|Bearer)?[[:space:]]*[A-Za-z0-9._-]{24,}|mfa\.[A-Za-z0-9_-]{20,})'
 if command -v rg >/dev/null 2>&1; then

@@ -36,7 +36,7 @@ jobs:
           echo "SAKURACORD_VERSION=$version" >> "$GITHUB_ENV"
           echo "SAKURACORD_BUILD_NUMBER=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
           echo "SAKURACORD_RELEASE_TAG=$GITHUB_REF_NAME" >> "$GITHUB_ENV"
-          echo "SAKURACORD_DMG_PATH=dist/SakuraCord v$version.dmg" >> "$GITHUB_ENV"
+          echo "SAKURACORD_DMG_PATH=dist/SakuraCord.v$version.dmg" >> "$GITHUB_ENV"
       - name: Validate Sparkle release secrets
         env:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
@@ -110,3 +110,19 @@ jobs:
           gh release edit "$GITHUB_REF_NAME" \
             --notes-file dist/release-notes.md \
             --draft=false
+      - name: Verify published release assets
+        run: |
+          published_appcast="$RUNNER_TEMP/published-appcast.xml"
+          published_dmg="$RUNNER_TEMP/published.dmg"
+          release_prefix="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME"
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 \
+            --output "$published_appcast" "$release_prefix/appcast.xml"
+          cmp dist/appcast.xml "$published_appcast"
+          enclosure_url="$(
+            xmllint --xpath \
+              'string((//*[local-name()="enclosure"])[1]/@url)' \
+              "$published_appcast"
+          )"
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 \
+            --output "$published_dmg" "$enclosure_url"
+          cmp "$SAKURACORD_DMG_PATH" "$published_dmg"

@@ -32,13 +32,10 @@ sakuracord_release_dmg_name() {
     return 2
   fi
 
-  printf 'SakuraCord v%s.dmg\n' "$version"
+  printf 'SakuraCord.v%s.dmg\n' "$version"
 }
 
 sakuracord_release_dmg_url_name() {
   local version="$1"
-  local filename
-
-  filename="$(sakuracord_release_dmg_name "$version")"
-  printf '%s\n' "${filename// /%20}"
+  sakuracord_release_dmg_name "$version"
 }

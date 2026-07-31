@@ -222,7 +222,7 @@ Version tags drive the release workflow. A tag matching `vMAJOR.MINOR.PATCH`
 builds the app, verifies its nested signatures, packages the DMG, generates and
 verifies a Sparkle-signed appcast, and publishes both files through GitHub
 Actions. The packaged app and native About panel use that release version, and
-the downloadable archive is named `SakuraCord vMAJOR.MINOR.PATCH.dmg`.
+the downloadable archive is named `SakuraCord.vMAJOR.MINOR.PATCH.dmg`.
 
 ```sh
 git tag v0.1.0
