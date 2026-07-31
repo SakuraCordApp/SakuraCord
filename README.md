@@ -1,29 +1,18 @@
 <div align="center">
-  <img src="Brand/Icons/Apple-App-Icon/SakuraCord-Apple-App-Icon-256.png" width="168" height="168" alt="SakuraCord app icon">
+  <img src="Brand/Banners/SakuraCord-README-Header.svg" width="1200" alt="SakuraCord">
 
-  <h1>SakuraCord</h1>
-
-  <p><strong>Discord, at home on the Mac.</strong></p>
   <p>A fast, native Discord client shaped around SwiftUI, macOS, and the way desktop chat should feel.</p>
 
   <p>
-    <a href="https://github.com/SakuraCordApp/SakuraCord/releases/latest">
-      <img width="137" height="28" alt="Latest release" src="https://img.shields.io/github/v/release/SakuraCordApp/SakuraCord?display_name=tag&sort=semver&style=flat&label=Release&labelColor=555&color=D9578B">
-    </a>
-    <a href="https://discord.gg/hWNwFXkUTP">
-      <img width="195" height="28" alt="Discord community" src="https://img.shields.io/badge/Discord-community-5865F2?style=flat&logo=discord&logoColor=white">
-    </a>
-    <a href="https://roadmap.sakuracord.app">
-      <img width="167" height="28" alt="Public roadmap" src="https://img.shields.io/badge/Public-roadmap-D9578B?style=flat&logo=target&logoColor=white">
-    </a>
+    <a href="https://github.com/SakuraCordApp/SakuraCord/releases/latest"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/github/release/SakuraCordApp/SakuraCord.svg?label=Release&amp;mode=dark&amp;size=sm"><img alt="Latest release" src="https://shieldcn.dev/github/release/SakuraCordApp/SakuraCord.svg?label=Release&amp;mode=light&amp;size=sm"></picture></a>
+    <a href="https://discord.gg/hWNwFXkUTP"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/discord/online-members/hWNwFXkUTP.svg?variant=branded&amp;mode=dark&amp;size=sm"><img alt="Discord online members" src="https://shieldcn.dev/discord/online-members/hWNwFXkUTP.svg?variant=branded&amp;mode=light&amp;size=sm"></picture></a>
+    <a href="https://roadmap.sakuracord.app"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/Roadmap-D9578B.svg?logo=ri%3AFaMap&amp;logoColor=white&amp;mode=dark&amp;size=sm"><img alt="Roadmap" src="https://shieldcn.dev/badge/Roadmap-D9578B.svg?logo=ri%3AFaMap&amp;logoColor=white&amp;mode=light&amp;size=sm"></picture></a>
   </p>
 
   <p>
-    <a href="https://github.com/SakuraCordApp/SakuraCord/actions/workflows/ci.yml">
-      <img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/SakuraCordApp/SakuraCord/ci.yml?branch=main&style=flat&label=Build">
-    </a>
-    <img alt="macOS 27" src="https://img.shields.io/badge/macOS-27-000000?style=flat&logo=apple&logoColor=white">
-    <img alt="Swift 6.4" src="https://img.shields.io/badge/Swift-6.4-F05138?style=flat&logo=swift&logoColor=white">
+    <a href="https://github.com/SakuraCordApp/SakuraCord/actions/workflows/ci.yml"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/github/ci/SakuraCordApp/SakuraCord.svg?workflow=ci.yml&amp;branch=main&amp;label=Build&amp;variant=secondary&amp;mode=dark&amp;size=xs"><img alt="Build status" src="https://shieldcn.dev/github/ci/SakuraCordApp/SakuraCord.svg?workflow=ci.yml&amp;branch=main&amp;label=Build&amp;variant=secondary&amp;mode=light&amp;size=xs"></picture></a>
+    <a href="#build-from-source"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/macOS-27-18181B.svg?logo=apple&amp;mode=dark&amp;size=xs"><img alt="Requires macOS 27" src="https://shieldcn.dev/badge/macOS-27-18181B.svg?logo=apple&amp;mode=light&amp;size=xs"></picture></a>
+    <a href="https://www.swift.org"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/Swift-6.4-F05138.svg?logo=swift&amp;mode=dark&amp;size=xs"><img alt="Built with Swift 6.4" src="https://shieldcn.dev/badge/Swift-6.4-F05138.svg?logo=swift&amp;mode=light&amp;size=xs"></picture></a>
   </p>
 
   <p>
@@ -32,8 +21,6 @@
     <a href="#build-from-source">Build from source</a>
     ·
     <a href="docs/README.md">Documentation</a>
-    ·
-    <a href="https://roadmap.sakuracord.app">Roadmap</a>
   </p>
 </div>
 
@@ -56,21 +43,21 @@ Mac app.
       Liquid Glass presentation.
     </td>
     <td width="50%" valign="top">
-      <h3>💬 The whole conversation</h3>
-      Servers, channels, DMs, forums, threads, rich messages, reactions,
-      mentions, and drafts.
+      <h3>💬 Native conversations</h3>
+      Guild text and announcement channels, DMs and group DMs, voice-channel
+      chat, threads, and forum-post conversations share one native timeline.
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
       <h3>🎙️ Voice and video</h3>
-      Native device controls, Opus audio, H.264 video, voice-server migration,
-      and DAVE support.
+      Native device controls, guild voice, direct-message calls, Opus audio,
+      H.264 video, voice-server migration, and DAVE support.
     </td>
     <td width="50%" valign="top">
       <h3>✨ Rich Discord content</h3>
-      Embeds, Components V2, stickers, uploads, custom emoji, slash commands,
-      forum posts, and media previews.
+      Embeds, Components V2, modals, stickers, GIFs, uploads, custom emoji,
+      slash commands, and media previews where Discord capability gates allow.
     </td>
   </tr>
   <tr>
@@ -81,8 +68,8 @@ Mac app.
     </td>
     <td width="50%" valign="top">
       <h3>🧪 Built to be testable</h3>
-      A network-disabled demo environment, rich synthetic fixtures, and
-      deterministic protocol coverage make development possible without a live
+      Network-disabled fixtures, deterministic protocol coverage, performance
+      scenes, and sanitized diagnostics support development without a live
       account.
     </td>
   </tr>
@@ -92,7 +79,7 @@ Mac app.
 
 Download the
 [latest versioned SakuraCord DMG](https://github.com/SakuraCordApp/SakuraCord/releases/latest)
-directly, or browse its notes and checksums on
+directly, or browse its release notes and assets on
 [GitHub Releases](https://github.com/SakuraCordApp/SakuraCord/releases/latest).
 
 | | |
@@ -100,7 +87,7 @@ directly, or browse its notes and checksums on
 | **Current release** | [Latest GitHub release](https://github.com/SakuraCordApp/SakuraCord/releases/latest) |
 | **System requirement** | macOS 27 or newer |
 | **Package** | [Download the latest versioned DMG](https://github.com/SakuraCordApp/SakuraCord/releases/latest) |
-| **Update channel** | Signed GitHub Releases, checked automatically every six hours or manually through **Check for Updates…** |
+| **Update channel** | Sparkle-signed feed hosted on GitHub Releases; production builds check every six hours or through **Check for Updates…** |
 
 Open the DMG and move SakuraCord into Applications. Current release artifacts
 are ad-hoc signed rather than notarized, so macOS may require approval from
@@ -112,35 +99,23 @@ clients, so compatibility can change as Discord evolves.
 
 ## Where the project stands
 
-<table>
-  <tr>
-    <td width="50%" valign="top">
-      <h3>✅ What's Done</h3>
-      <ul>
-        <li><strong>Native macOS foundation</strong></li>
-        <li><strong>Everyday chat</strong></li>
-        <li><strong>Rich content</strong></li>
-        <li><strong>Voice and camera</strong></li>
-        <li><strong>Account and local data</strong></li>
-        <li><strong>Offline development</strong></li>
-      </ul>
-    </td>
-    <td width="50%" valign="top">
-      <h3>🌱 Coming Soon</h3>
-      <ul>
-        <li><strong>Chat and media polish</strong></li>
-        <li><strong>Complete DMs and notifications</strong></li>
-        <li><strong>Screen sharing and call reliability</strong></li>
-        <li><strong>More personal control</strong></li>
-        <li><strong>Independent windows</strong></li>
-        <li><strong>Server administration</strong></li>
-      </ul>
-    </td>
-  </tr>
-</table>
+The current source implements the core native-client path without claiming
+complete parity with Discord:
 
-See the [public roadmap](https://roadmap.sakuracord.app) for live status,
-accepted community requests, and the work beyond this short overview.
+| Area | Current implementation |
+| --- | --- |
+| **Navigation and conversations** | Server and channel navigation with guild text and announcement channels, DMs and group DMs, voice-channel chat, threads, and forum-post conversations. |
+| **Messages** | Paginated history, sending, editing, deleting, replies, attachments, drafts, reactions, typing state, read state, and unread navigation. |
+| **Discord content** | Embeds, custom emoji, stickers, GIF search, slash commands and autocomplete, Components V2, dynamic component choices, and interaction modals. Availability is capability-gated where Discord requires it. |
+| **Voice, video, and media** | Native guild voice and video, direct-message calls, device selection, Opus and H.264 transport, DAVE integration, media previews, playback, and a bounded on-device media cache. |
+| **macOS integration** | Native windows, menus, settings, notifications and sounds, notification deep links, Keychain-backed credentials, and account-scoped local persistence. |
+| **Development and support** | Network-disabled fixtures, focused performance scenes, deterministic protocol tests, and an exportable bounded diagnostics log that sanitizes sensitive content. |
+
+Some Discord features and administration surfaces are still intentionally
+absent or incomplete. The plugin SDK and separately signed plugin-host target
+are scaffolding only: the host does not currently load plugins. See the
+[public roadmap](https://roadmap.sakuracord.app) for the live status of planned,
+active, completed, and community-requested work.
 
 ## Build from source
 
@@ -156,12 +131,14 @@ Clone the repository and start in the offline demo:
 git clone https://github.com/SakuraCordApp/SakuraCord.git
 cd SakuraCord
 ./script/install_git_hooks.sh
+git config --local --get core.hooksPath
 ./script/build_and_run.sh --offline
 ```
 
 Installing the repository hooks is a required one-time setup step for every
 fresh clone, including clones used by coding agents. The installer is
-idempotent and refuses to overwrite a different existing Git hooks path.
+idempotent and refuses to overwrite a different existing Git hooks path. The
+verification command above must print `.githooks`.
 
 The application package lives in `App/`, and the convenience workspace is
 `SakuraCord.xcworkspace`.
@@ -192,38 +169,50 @@ work, screenshots, and fixture-driven development.
   | --- | --- |
   | `./script/build_and_run.sh --offline-long-server-list` | Open the extended server-rail fixture. |
   | `./script/build_and_run.sh --offline-forum-performance` | Open the large forum fixture. |
-  | `./script/build_and_run.sh --verify` | Package, launch offline, and verify the scoped process. |
-  | `./script/build_and_run.sh package` | Stage a signed debug app without launching it. |
+  | `./script/build_and_run.sh --offline-chat-performance` | Open the large native-timeline fixture. |
+  | `./script/build_and_run.sh --offline-incoming-private-call` | Open the incoming direct-message call fixture. |
+  | `./script/build_and_run.sh --verify` | Build the app bundle, launch it offline, and verify the scoped process. |
+  | `./script/build_and_run.sh package` | Stage an ad-hoc signed debug app without launching it. |
   | `./script/worktree_test.sh protocol` | Run the protocol package tests. |
   | `./script/worktree_test.sh app` | Run the application package tests. |
-  | `./script/worktree_test.sh all` | Run the repository test matrix. |
+  | `./script/worktree_test.sh all` | Run the configured first-party package and application test matrix. |
   | `./script/code_quality.sh check` | Run the complete pinned SwiftFormat and SwiftLint policy used by CI and pre-push. |
   | `./script/code_quality.sh fix --staged` | Format only staged Swift files and re-stage them; refuses files with additional unstaged edits. |
   | `./script/code_quality.sh fix --files App/Sources/Example.swift` | Format only explicitly selected tracked Swift files. |
   | `./script/test_code_quality.sh` | Verify committed/staged failures, file diagnostics, correction, and dirty-work preservation. |
-  | `./script/ci.sh` | Run the same build entrypoint used by CI. |
+  | `./script/ci.sh` | Run CI's code-quality check, credential scan, dependency resolution, and application build. |
 
 </details>
 
 ## Inside the project
 
 ```text
-App/                  macOS application, UI, resources, and packaging
+App/                         macOS app, AppKit bridges, state, settings,
+                             packaging, and the inert plugin-host executable
 Packages/
-  DiscordProtocol/    REST, Gateway, authentication, fixtures, and models
-  MessagingCore/      message composition and shared chat behavior
-  MessageRendering/   Markdown, embeds, components, and presentation
-  MediaPipeline/      media loading, caching, and playback
-  VoiceMedia/         native voice and video transport
-  SakuraCordPluginSDK permission-model plugin API
-docs/                 canonical architecture, protocol, and workflow guides
-script/               build, package, test, and worktree entrypoints
+  SakuraCordModels/          domain values, messages, commands, interactions,
+                             and provider events
+  DiscordProtocol/          provider contract, REST, Gateway, authentication,
+                             scheduling, and offline fixtures
+  SakuraCordPersistence/    account-scoped GRDB storage, migrations, drafts,
+                             messages, and non-credential cache state
+  MessageRendering/         Discord Markdown parsing and attributed-content
+                             planning
+  MediaPipeline/            media caching plus native voice/video signaling,
+                             transport, capture, playback, Opus, H.264, and DAVE
+  SakuraCordPluginSDK/      plugin manifest, capability, and permission contracts
+  DaveKit/                  Swift wrapper over the vendored libdave/MLS code
+Brand/                      canonical logos, banners, and brand metadata
+Config/                     application entitlements
+docs/                       canonical architecture, protocol, and workflow guides
+script/                     build, package, quality, test, and worktree entrypoints
 ```
 
-Start with the [documentation index](docs/README.md), then use the
-[architecture guide](docs/ARCHITECTURE.md) or
-[protocol baseline](docs/PROTOCOL_BASELINE.md) for deeper work. Concurrent
-contributors should read the
+SwiftPM manifests are the build source of truth; `SakuraCord.xcworkspace` is a
+convenience entry point. Start with the [documentation index](docs/README.md),
+then use the [architecture guide](docs/ARCHITECTURE.md) or
+[protocol baseline](docs/PROTOCOL_BASELINE.md) for deeper work. Contributors
+using actual linked checkouts should read the
 [linked-worktree workflow](docs/PARALLEL_WORKTREES.md) before starting parallel
 builds.
 
@@ -278,11 +267,11 @@ running and after launch when a check is overdue. Users can change automatic
 checking and downloading in **Settings → General**, and those preferences
 persist through Sparkle across launches. A new release opens Sparkle's standard
 update alert with the complete GitHub-generated release notes. Installation is
-manual by default, and the alert lets the user opt into automatically
-downloading and installing future updates. The GitHub Release and signed
-appcast receive the same generated Markdown body so their changelogs cannot
-drift. Sparkle's standard UI reports no-update, network, download, signature,
-and installation failures without crashing SakuraCord.
+manual by default; users may opt into automatic downloading, while Sparkle
+still verifies the signed update before installation. The GitHub Release and
+signed appcast receive the same generated Markdown body so their changelogs
+cannot drift. Sparkle's standard UI reports no-update, network, download,
+signature, and installation failures without crashing SakuraCord.
 
 Current artifacts remain ad-hoc signed and are not notarized. Sparkle's EdDSA
 signature authenticates the update archive and signed feed, but it does not
@@ -305,8 +294,10 @@ ship a manual-download migration rather than weakening validation.
 Before proposing a change:
 
 ```sh
-./script/worktree_test.sh all
 git diff --check
+./script/code_quality.sh check
+./script/worktree_test.sh all
+./script/ci.sh
 ```
 
 Never commit credentials, cookie exports, authorization headers, account

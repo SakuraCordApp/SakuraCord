@@ -1,7 +1,17 @@
-# SakuraCord gradient banners
+# SakuraCord banners
 
-These are text-free, opaque RGB PNGs using the vertical SakuraCord gradient
-defined in `Brand/brand.json`.
+The platform and generic templates are text-free, opaque RGB PNGs using the
+vertical SakuraCord gradient defined in `Brand/brand.json`.
+
+## README header
+
+| Filename | Size | Intended use |
+|---|---:|---|
+| `SakuraCord-README-Header.svg` | 1200 × 220 | Repository README hero |
+
+The README hero is a self-contained ShieldCN-generated SVG using the canonical
+white Discord vector, transparent SakuraCord flower, and gradient colors from
+`Brand/brand.json`.
 
 ## Platform templates
 
