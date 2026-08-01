@@ -267,12 +267,16 @@ Canonical releases check the signed feed every six hours while SakuraCord is
 running and after launch when a check is overdue. Users can change automatic
 checking and downloading in **Settings → General**, and those preferences
 persist through Sparkle across launches. A new release opens Sparkle's standard
-update alert with the complete GitHub-generated release notes. Installation is
+update alert with the complete current GitHub Release notes. Installation is
 manual by default; users may opt into automatic downloading, while Sparkle
-still verifies the signed update before installation. The GitHub Release and
-signed appcast receive the same generated Markdown body so their changelogs
-cannot drift. Sparkle's standard UI reports no-update, network, download,
-signature, and installation failures without crashing SakuraCord.
+still verifies the signed update before installation. When post-publish
+automation edits a GitHub Release body, the release-edit workflow downloads the
+unchanged DMG, regenerates and verifies its signed appcast with that current
+Markdown body, and replaces only the appcast asset. Per-tag concurrency keeps
+that refresh from racing the original release publication. The same workflow
+can be dispatched manually with a release tag to repair an older feed. Sparkle's
+standard UI reports no-update, network, download, signature, and installation
+failures without crashing SakuraCord.
 
 Current artifacts remain ad-hoc signed and are not notarized. Sparkle's EdDSA
 signature authenticates the update archive and signed feed, but it does not
