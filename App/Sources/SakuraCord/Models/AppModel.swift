@@ -12,6 +12,11 @@ import SakuraCordPersistence
 import UniformTypeIdentifiers
 import UserNotifications
 
+enum ServerRailNavigationDestination: Equatable {
+    case directMessages
+    case guild(GuildID)
+}
+
 @Observable
 final class AppModel {
     enum ThreadErrorScope {

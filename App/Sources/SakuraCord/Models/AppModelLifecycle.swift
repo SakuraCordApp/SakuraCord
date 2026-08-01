@@ -303,6 +303,35 @@ extension AppModel {
         }
     }
 
+    func navigationDestination(for shortcutNumber: Int) -> ServerRailNavigationDestination? {
+        guard (1 ... 9).contains(shortcutNumber) else { return nil }
+        if shortcutNumber == 1 {
+            return .directMessages
+        }
+
+        let guildIDs = serverRailItems.flatMap { item -> [GuildID] in
+            switch item {
+            case .guild(let guildID): [guildID]
+            case .folder(let folder): folder.guildIDs
+            }
+        }
+        let visibleGuildIDs = guildIDs.filter { serverRailGuildsByID[$0] != nil }
+        let guildIndex = shortcutNumber - 2
+        guard visibleGuildIDs.indices.contains(guildIndex) else { return nil }
+        return .guild(visibleGuildIDs[guildIndex])
+    }
+
+    func navigateUsingShortcut(_ shortcutNumber: Int) {
+        switch navigationDestination(for: shortcutNumber) {
+        case .directMessages:
+            selectGuild(nil)
+        case .guild(let guildID):
+            selectGuild(guildID)
+        case nil:
+            break
+        }
+    }
+
     func rebuildMemberSections() {
         memberSections = MemberSection.make(
             from: members,

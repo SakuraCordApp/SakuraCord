@@ -7,6 +7,43 @@ import Testing
 import UserNotifications
 @testable import SakuraCord
 
+@MainActor
+@Test func `numbered navigation maps and selects direct messages and eight servers in rail order`() async {
+    let model = AppModel(launchMode: .offlineTesting)
+    let guilds = (1 ... 10).map {
+        Guild(id: GuildID(rawValue: UInt64($0)), name: "Server \($0)")
+    }
+    model.serverRailGuildsByID = Dictionary(
+        uniqueKeysWithValues: guilds.map { ($0.id, $0) }
+    )
+    model.serverRailItems = [
+        .guild(guilds[0].id),
+        .folder(GuildFolder(id: 1, guildIDs: guilds[1 ... 3].map(\.id))),
+        .guild(GuildID(rawValue: 999)),
+        .folder(GuildFolder(id: 2, guildIDs: guilds[4 ... 7].map(\.id))),
+        .guild(guilds[8].id),
+        .guild(guilds[9].id),
+    ]
+
+    #expect(model.navigationDestination(for: 1) == .directMessages)
+    for shortcutNumber in 2 ... 9 {
+        #expect(
+            model.navigationDestination(for: shortcutNumber)
+                == .guild(guilds[shortcutNumber - 2].id)
+        )
+    }
+    #expect(model.navigationDestination(for: 0) == nil)
+    #expect(model.navigationDestination(for: 10) == nil)
+
+    model.navigateUsingShortcut(9)
+    await model.guildActivationTask?.value
+    #expect(model.selectedGuildID == guilds[7].id)
+
+    model.navigateUsingShortcut(1)
+    await model.guildActivationTask?.value
+    #expect(model.selectedGuildID == nil)
+}
+
 @Test func `channel message cache keeps only the newest bounded history`() {
     let channelID = ChannelID(rawValue: 9)
     let author = User(

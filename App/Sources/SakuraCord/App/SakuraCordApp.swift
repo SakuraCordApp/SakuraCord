@@ -109,7 +109,10 @@ struct SakuraCordApp: App {
         .windowBackgroundDragBehavior(.disabled)
         .commands {
             SidebarCommands()
-            SakuraCordCommands(updateController: appDelegate.updateController)
+            SakuraCordCommands(
+                model: model,
+                updateController: appDelegate.updateController
+            )
         }
 
         Settings {
