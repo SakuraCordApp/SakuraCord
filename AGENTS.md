@@ -215,9 +215,7 @@ triggered an account restriction.
 ## Testing and live-account rules
 
 - Default to mocked transports, sanitized fixtures, deterministic clocks, and
-  synthetic accounts/guilds. Automated tests must run with Discord networking
-  disabled. Offline coverage remains required for every behavior that can be
-  represented faithfully without authenticated server state.
+  synthetic accounts/guilds. Offline coverage remains required for every behavior that can be represented faithfully without authenticated server state.
 - Add request-contract tests for method, route, query, headers, body,
   status/error handling, rate-limit behavior, retries, and mutation nonce when
   any of those change.
@@ -235,49 +233,6 @@ triggered an account restriction.
   The versioned pre-commit hook checks the staged index, and pre-push checks the
   committed ref tips and any staged Swift snapshot with that same pinned
   command; do not bypass either hook.
-
-An authenticated test is an exception for a defect that genuinely depends on
-authenticated or server-issued state and cannot be reproduced faithfully in
-offline mode—for example account-specific Ready data, permissions, remote
-settings, Gateway sequencing, or a server response. Do not request a live test
-merely because creating a fixture is inconvenient.
-
-Before asking permission for that exception:
-
-1. Establish from the issue and code path that the trigger is inherently
-   authenticated or server-side. Do not require an offline reproduction,
-   offline attempt, or fixture when offline data cannot exercise that trigger.
-2. Re-audit the exact production path end to end: UI trigger, cached state,
-   REST route or Gateway opcode, API version, headers and their provenance,
-   payload omission/null semantics, nonce/idempotency, request count and order,
-   rate-limit bucket behavior, retries, challenge/restriction handling,
-   response decoding, and Gateway reconciliation.
-3. Compare the applicable current Discord documentation, the current official
-   production web-client bundle, pinned Paicord and Swiftcord paths, and a
-   current clean official-client baseline proportionally to the risk. Resolve
-   every unexplained mismatch before live testing.
-4. Add or update mocked request-contract and request-budget tests when they can
-   meaningfully exercise the relevant API contract. Do not add irrelevant
-   offline fixture coverage merely to satisfy a testing ritual.
-5. Present the user with the exact manual action, expected request/event
-   sequence, maximum request count, account risk, sanitized evidence to collect,
-   and immediate stop conditions; then ask for fresh permission for that
-   specific authenticated test.
-
-After permission:
-
-- Run only the approved action, once, from the canonical main checkout and exact
-  packaged app path. Never set the linked-worktree live override for an agent
-  test.
-- Use an account whose loss is acceptable. Keep the interaction user-visible;
-  do not automate account actions or continue an unattended loop.
-- Do not expand the test beyond the approved feature or reuse permission for a
-  follow-up attempt.
-- Stop immediately on an unexpected request, request count, status, payload,
-  challenge, restriction, malformed response, or Gateway event. A challenge may
-  be completed only by the user within the reviewed flow.
-- Preserve only sanitized diagnostics and report live, packaged-app, offline,
-  and automated-test evidence separately.
 
 ## Documentation rules
 
