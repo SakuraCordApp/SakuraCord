@@ -639,6 +639,39 @@ struct AccountReadStateModelTests {
         )
     }
 
+    @Test func `accessibility batches propagate once and preserve directly resolved entries`() {
+        let model = makeModel(latest: 12, acknowledged: 10)
+        let inheritedThreadID = ChannelID(rawValue: 201)
+        let directlyResolvedThreadID = ChannelID(rawValue: 202)
+        for threadID in [inheritedThreadID, directlyResolvedThreadID] {
+            model.merge(
+                thread: MessageThreadSummary(
+                    id: threadID,
+                    guildID: guildID,
+                    parentID: channelID,
+                    name: "Private post"
+                )
+            )
+        }
+
+        #expect(
+            model.applyAccessibility([
+                channelID: false,
+                directlyResolvedThreadID: true,
+            ])
+        )
+        #expect(model.entries[channelID]?.isAccessible == false)
+        #expect(model.entries[inheritedThreadID]?.isAccessible == false)
+        #expect(model.entries[directlyResolvedThreadID]?.isAccessible == true)
+
+        #expect(
+            !model.applyAccessibility([
+                channelID: false,
+                directlyResolvedThreadID: true,
+            ])
+        )
+    }
+
     @Test func `ordinary voice and guild resource traffic is excluded from unread aggregates`() {
         let voiceID = ChannelID(rawValue: 210)
         let resourceID = ChannelID(rawValue: 220)

@@ -117,6 +117,150 @@ import Testing
     )
 }
 
+@Test func `permission resolver preserves everyone overwrite precedence in the role bucket`() {
+    let guildID = GuildID(rawValue: 100)
+    let userID = UserID(rawValue: 1)
+    let deniedRoleID = RoleID(rawValue: 10)
+    let base = DiscordPermissionBits.readMessageHistory
+    let guild = Guild(
+        id: guildID,
+        name: "Guild",
+        currentUserPermissions: base
+    )
+    let channel = Channel(
+        id: ChannelID(rawValue: 200),
+        guildID: guildID,
+        name: "private",
+        permissionOverwrites: [
+            ChannelPermissionOverwrite(
+                id: deniedRoleID.description,
+                type: 0,
+                deny: DiscordPermissionBits.viewChannel
+            ),
+            ChannelPermissionOverwrite(
+                id: guildID.description,
+                type: 0,
+                allow: DiscordPermissionBits.viewChannel
+            ),
+        ]
+    )
+
+    let effective = ConversationPermissionResolver.effectivePermissions(
+        guild: guild,
+        channel: channel,
+        currentUserID: userID,
+        currentMember: nil,
+        roles: [],
+        currentRoleIDs: [
+            RoleID(rawValue: guildID.rawValue),
+            deniedRoleID,
+        ]
+    )
+
+    #expect(
+        ConversationPermissionResolver.channelAccess(effectivePermissions: effective)
+            == .readable(canSend: false)
+    )
+}
+
+@Test func `permission resolver keeps malformed role identity unresolved`() {
+    let guild = Guild(
+        id: GuildID(rawValue: 100),
+        name: "Guild",
+        currentUserPermissions: DiscordPermissionBits.readMessageHistory
+    )
+    let channel = Channel(
+        id: ChannelID(rawValue: 200),
+        guildID: guild.id,
+        name: "private",
+        permissionOverwrites: [
+            ChannelPermissionOverwrite(
+                id: "not-a-snowflake",
+                type: 0,
+                allow: DiscordPermissionBits.viewChannel
+            )
+        ]
+    )
+
+    let effective = ConversationPermissionResolver.effectivePermissions(
+        guild: guild,
+        channel: channel,
+        currentUserID: UserID(rawValue: 1),
+        currentMember: nil,
+        roles: []
+    )
+
+    #expect(effective == nil)
+}
+
+@Test(arguments: ["000100", "+100"])
+func `permission resolver ignores noncanonical numeric role ids`(_ overwriteID: String) {
+    let guild = Guild(
+        id: GuildID(rawValue: 100),
+        name: "Guild",
+        currentUserPermissions: DiscordPermissionBits.readMessageHistory
+    )
+    let channel = Channel(
+        id: ChannelID(rawValue: 200),
+        guildID: guild.id,
+        name: "private",
+        permissionOverwrites: [
+            ChannelPermissionOverwrite(
+                id: overwriteID,
+                type: 0,
+                allow: DiscordPermissionBits.viewChannel
+            )
+        ]
+    )
+
+    let effective = ConversationPermissionResolver.effectivePermissions(
+        guild: guild,
+        channel: channel,
+        currentUserID: UserID(rawValue: 1),
+        currentMember: nil,
+        roles: [],
+        currentRoleIDs: []
+    )
+
+    #expect(
+        ConversationPermissionResolver.channelAccess(effectivePermissions: effective) == .hidden
+    )
+}
+
+@Test(arguments: ["000001", "+1"])
+func `permission resolver ignores noncanonical numeric member ids`(_ overwriteID: String) {
+    let guild = Guild(
+        id: GuildID(rawValue: 100),
+        name: "Guild",
+        currentUserPermissions: DiscordPermissionBits.readMessageHistory
+    )
+    let channel = Channel(
+        id: ChannelID(rawValue: 200),
+        guildID: guild.id,
+        name: "private",
+        permissionOverwrites: [
+            ChannelPermissionOverwrite(
+                id: overwriteID,
+                type: 1,
+                allow: DiscordPermissionBits.viewChannel
+            )
+        ]
+    )
+
+    let effective = ConversationPermissionResolver.effectivePermissions(
+        guild: guild,
+        channel: channel,
+        currentUserID: UserID(rawValue: 1),
+        currentMember: nil,
+        roles: [],
+        currentRoleIDs: []
+    )
+
+    #expect(
+        ConversationPermissionResolver.channelAccess(effectivePermissions: effective) == .hidden
+    )
+}
+
 @Test func `channel access distinguishes read only and hidden channels`() {
     let readable = DiscordPermissionBits.viewChannel | DiscordPermissionBits.readMessageHistory
     #expect(

@@ -135,29 +135,84 @@ nonisolated enum ConversationPermissionResolver {
             roleIDs: roleIDs,
             roles: roles
         )
-        guard var permissions = basePermissions else { return nil }
+        guard let permissions = basePermissions else { return nil }
         if permissions & DiscordPermissionBits.administrator != 0 { return .max }
 
-        let overwrites = channel.permissionOverwrites ?? []
-        apply(
-            overwrites.filter { $0.type == 0 && $0.id == guild.id.description },
-            to: &permissions
+        guard let overwrites = channel.permissionOverwrites, !overwrites.isEmpty else {
+            return permissions
+        }
+        let mask = OverwriteMask(
+            overwrites,
+            guildRawID: guild.id.rawValue,
+            currentUserRawID: currentUserID.rawValue,
+            roleIDs: roleIDs
         )
+        if !hasCurrentRoleIdentity, mask.hasRoleOverwrite { return nil }
+        return mask.applied(to: permissions)
+    }
 
-        let roleOverwriteIDs = Set(
-            overwrites.lazy.filter { $0.type == 0 && $0.id != guild.id.description }.map(\.id)
-        )
-        if !hasCurrentRoleIdentity, !roleOverwriteIDs.isEmpty { return nil }
-        let currentRoleIDs = Set(roleIDs.map(\.description))
-        apply(
-            overwrites.filter { $0.type == 0 && currentRoleIDs.contains($0.id) },
-            to: &permissions
-        )
-        apply(
-            overwrites.filter { $0.type == 1 && $0.id == currentUserID.description },
-            to: &permissions
-        )
-        return permissions
+    /// Buckets permission overwrites in one pass without intermediate arrays or
+    /// role-ID sets, in Discord's application order: @everyone, roles, member.
+    private struct OverwriteMask {
+        private var everyoneAllow: UInt64 = 0
+        private var everyoneDeny: UInt64 = 0
+        private var roleAllow: UInt64 = 0
+        private var roleDeny: UInt64 = 0
+        private var memberAllow: UInt64 = 0
+        private var memberDeny: UInt64 = 0
+        private(set) var hasRoleOverwrite = false
+
+        init(
+            _ overwrites: [ChannelPermissionOverwrite],
+            guildRawID: UInt64,
+            currentUserRawID: UInt64,
+            roleIDs: Set<RoleID>
+        ) {
+            for overwrite in overwrites {
+                switch overwrite.type {
+                case 0:
+                    guard let rawID = Self.canonicalRawID(overwrite.id) else {
+                        hasRoleOverwrite = true
+                        continue
+                    }
+                    if rawID == guildRawID {
+                        everyoneAllow |= overwrite.allow
+                        everyoneDeny |= overwrite.deny
+                    } else {
+                        hasRoleOverwrite = true
+                    }
+                    guard roleIDs.contains(RoleID(rawValue: rawID)) else { continue }
+                    roleAllow |= overwrite.allow
+                    roleDeny |= overwrite.deny
+                case 1:
+                    guard Self.canonicalRawID(overwrite.id) == currentUserRawID else {
+                        continue
+                    }
+                    memberAllow |= overwrite.allow
+                    memberDeny |= overwrite.deny
+                default:
+                    continue
+                }
+            }
+        }
+
+        private static func canonicalRawID(_ value: String) -> UInt64? {
+            guard let rawID = UInt64(value), value == rawID.description else {
+                return nil
+            }
+            return rawID
+        }
+
+        func applied(to permissions: UInt64) -> UInt64 {
+            var value = permissions
+            value &= ~everyoneDeny
+            value |= everyoneAllow
+            value &= ~roleDeny
+            value |= roleAllow
+            value &= ~memberDeny
+            value |= memberAllow
+            return value
+        }
     }
 
     static func channelAccess(effectivePermissions: UInt64?) -> ConversationAccess {
@@ -200,19 +255,15 @@ nonisolated enum ConversationPermissionResolver {
         roleIDs: Set<RoleID>,
         roles: [GuildRole]
     ) -> UInt64? {
-        let applicableRoles = roles.filter { $0.id.description == guildID.description || roleIDs.contains($0.id) }
-        guard !applicableRoles.isEmpty else { return nil }
-        return applicableRoles.reduce(0) { $0 | ($1.permissions ?? 0) }
-    }
-
-    private static func apply(
-        _ overwrites: [ChannelPermissionOverwrite],
-        to permissions: inout UInt64
-    ) {
-        let deny = overwrites.reduce(0) { $0 | $1.deny }
-        let allow = overwrites.reduce(0) { $0 | $1.allow }
-        permissions &= ~deny
-        permissions |= allow
+        var permissions: UInt64 = 0
+        var didMatchRole = false
+        for role in roles
+        where role.id.rawValue == guildID.rawValue || roleIDs.contains(role.id) {
+            didMatchRole = true
+            permissions |= role.permissions ?? 0
+        }
+        guard didMatchRole else { return nil }
+        return permissions
     }
 }
 

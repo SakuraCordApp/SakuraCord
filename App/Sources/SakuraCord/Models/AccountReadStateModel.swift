@@ -300,14 +300,44 @@ final class AccountReadStateModel {
     }
 
     func setAccessible(_ isAccessible: Bool, channelID: ChannelID) {
-        var value = entry(for: channelID)
-        value.isAccessible = isAccessible
-        entries[channelID] = value
-        for childID in entries.values.lazy.filter({ $0.parentID == channelID }).map(\.channelID) {
-            var child = entry(for: childID)
-            child.isAccessible = isAccessible
-            entries[childID] = child
+        applyAccessibility([channelID: isAccessible])
+    }
+
+    /// Applies resolved channel accessibility and propagates each value to the
+    /// threads and forum posts hanging off that channel.
+    ///
+    /// A channel present in `resolved` keeps its own value. Entries absent from
+    /// it inherit from their parent when that parent resolved. The account-wide
+    /// reconcile runs on every unread refresh, so it must walk the entry table
+    /// a fixed number of times rather than rescan it once per channel. It also
+    /// publishes only when a value changed because `entries` is observable.
+    @discardableResult
+    func applyAccessibility(_ resolved: [ChannelID: Bool]) -> Bool {
+        guard !resolved.isEmpty else { return false }
+        var updated = entries
+        var didChange = false
+        for (channelID, isAccessible) in resolved {
+            if let existing = updated[channelID] {
+                guard existing.isAccessible != isAccessible else { continue }
+                updated[channelID]?.isAccessible = isAccessible
+            } else {
+                var value = entry(for: channelID)
+                value.isAccessible = isAccessible
+                updated[channelID] = value
+            }
+            didChange = true
         }
+        for (channelID, value) in entries where resolved[channelID] == nil {
+            guard let parentID = value.parentID,
+                  let inherited = resolved[parentID],
+                  value.isAccessible != inherited
+            else { continue }
+            updated[channelID]?.isAccessible = inherited
+            didChange = true
+        }
+        guard didChange else { return false }
+        entries = updated
+        return true
     }
 
     @discardableResult

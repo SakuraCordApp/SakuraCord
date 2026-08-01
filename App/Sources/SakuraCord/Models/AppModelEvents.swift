@@ -89,7 +89,27 @@ extension AppModel {
             )
             return
         }
-        reconcileChannelAccessibility(value.channels)
+        // Permission resolution walks guild roles and channel overwrites. Resolve
+        // once per channel and share the result with unread and sidebar projection.
+        var accessByChannelID = [ChannelID: ConversationAccess](
+            minimumCapacity: value.channels.count
+        )
+        var accessibilityByChannelID = [ChannelID: Bool](
+            minimumCapacity: value.channels.count
+        )
+        for channel in value.channels {
+            let access = conversationAccess(for: channel)
+            accessByChannelID[channel.id] = access
+            switch access {
+            case .hidden:
+                accessibilityByChannelID[channel.id] = false
+            case .readable:
+                accessibilityByChannelID[channel.id] = true
+            case .checking:
+                break
+            }
+        }
+        readState.applyAccessibility(accessibilityByChannelID)
         let projectedChannels = value.channels.map { channel in
             var channel = channel
             channel.unreadCount =
@@ -123,11 +143,11 @@ extension AppModel {
         let selectedGuildChannels: [Channel]
         if let selectedGuildID {
             selectedGuildChannels = projectedChannels.filter {
-                $0.guildID == selectedGuildID && conversationAccess(for: $0) != .hidden
+                $0.guildID == selectedGuildID && accessByChannelID[$0.id] != .hidden
             }
         } else {
             selectedGuildChannels = projectedChannels.filter {
-                $0.guildID == nil && conversationAccess(for: $0) != .hidden
+                $0.guildID == nil && accessByChannelID[$0.id] != .hidden
             }
         }
         if selectedGuildChannels != visibleChannels {
@@ -152,19 +172,6 @@ extension AppModel {
             readState.totalMentions,
             enabled: notificationPreferences.showsDockBadge
         )
-    }
-
-    func reconcileChannelAccessibility(_ channels: [Channel]) {
-        for channel in channels {
-            switch conversationAccess(for: channel) {
-            case .hidden:
-                readState.setAccessible(false, channelID: channel.id)
-            case .readable:
-                readState.setAccessible(true, channelID: channel.id)
-            case .checking:
-                break
-            }
-        }
     }
 
     func deliverNativeNotification(for message: Message) {
