@@ -4,6 +4,7 @@ import SwiftUI
 struct MessageTimelineView: View {
     let model: AppModel
     let bottomContentInset: CGFloat
+    var editRequest: MessageTimelineEditRequest?
     private let runsPerformanceAutoScroll =
         AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments)
         .runsChatPerformanceAutoScroll
@@ -43,6 +44,7 @@ struct MessageTimelineView: View {
             highlightedMessageID: highlightedMessageID,
             initialScrollTarget: initialScrollTarget,
             scrollRequest: scrollRequest,
+            editRequest: editRequest,
             runsPerformanceAutoScroll: runsPerformanceAutoScroll,
             loadEarlier: loadEarlier,
             openReply: openReply,

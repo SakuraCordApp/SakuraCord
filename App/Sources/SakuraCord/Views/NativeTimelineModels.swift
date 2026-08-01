@@ -55,6 +55,11 @@ struct MessageTimelineScrollRequest: Equatable {
     let target: Target
 }
 
+struct MessageTimelineEditRequest: Equatable {
+    let id = UUID()
+    let messageID: MessageID
+}
+
 nonisolated enum TimelineInitialPositionPolicy {
     /// Keep the unread divider in the upper third of the viewport so the
     /// reader sees both prior context and the unread run that follows.

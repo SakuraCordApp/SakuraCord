@@ -159,6 +159,183 @@ import Testing
     ) == .inputMethod)
 }
 
+@Test func `up arrow edit target skips newer messages from other users`() {
+    let currentUser = User(
+        id: UserID(rawValue: 1),
+        username: "current",
+        displayName: "Current"
+    )
+    let otherUser = User(
+        id: UserID(rawValue: 2),
+        username: "other",
+        displayName: "Other"
+    )
+    let channelID = ChannelID(rawValue: 10)
+    let messages = [
+        Message(
+            id: MessageID(rawValue: 100),
+            channelID: channelID,
+            author: currentUser,
+            content: "older current-user message",
+            timestamp: Date(timeIntervalSince1970: 100)
+        ),
+        Message(
+            id: MessageID(rawValue: 101),
+            channelID: channelID,
+            author: currentUser,
+            content: "latest current-user message",
+            timestamp: Date(timeIntervalSince1970: 101)
+        ),
+        Message(
+            id: MessageID(rawValue: 102),
+            channelID: channelID,
+            author: otherUser,
+            content: "newer message from someone else",
+            timestamp: Date(timeIntervalSince1970: 102)
+        )
+    ]
+
+    #expect(
+        ComposerLatestMessageEditingPolicy.messageID(
+            in: messages,
+            currentUserID: currentUser.id
+        ) == MessageID(rawValue: 101)
+    )
+    #expect(
+        ComposerLatestMessageEditingPolicy.messageID(
+            in: messages,
+            currentUserID: nil
+        ) == nil
+    )
+    #expect(
+        ComposerLatestMessageEditingPolicy.messageID(
+            in: Array(messages.suffix(1)),
+            currentUserID: currentUser.id
+        ) == nil
+    )
+}
+
+@MainActor
+@Test func `plain up arrow in an empty composer requests latest message editing`() throws {
+    let textView = ComposerNSTextView()
+    let window = NSWindow(
+        contentRect: CGRect(x: 0, y: 0, width: 320, height: 80),
+        styleMask: [.borderless],
+        backing: .buffered,
+        defer: false
+    )
+    window.contentView = textView
+    #expect(window.makeFirstResponder(textView))
+    #expect(window.firstResponder === textView)
+    var editRequestCount = 0
+    textView.onAutocompleteCommand = { _ in false }
+    textView.onEditLatestMessage = {
+        editRequestCount += 1
+        return true
+    }
+
+    textView.keyDown(with: try upArrowKeyEvent())
+    #expect(editRequestCount == 1)
+    #expect(window.firstResponder !== textView)
+    #expect(!ComposerLatestMessageEditingPolicy.shouldRequest(
+        keyCode: 126,
+        modifierFlags: [],
+        composerIsEmpty: false
+    ))
+    #expect(!ComposerLatestMessageEditingPolicy.shouldRequest(
+        keyCode: 126,
+        modifierFlags: [.shift],
+        composerIsEmpty: true
+    ))
+}
+
+@MainActor
+@Test func `timeline edit request rechecks current user ownership`() async throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    await model.start()
+    let currentUser = try #require(model.snapshot?.currentUser)
+    let otherUser = User(
+        id: UserID(rawValue: currentUser.id.rawValue + 1),
+        username: "other",
+        displayName: "Other"
+    )
+    let channelID = ChannelID(rawValue: 12_345)
+    let messages = [
+        Message(
+            id: MessageID(rawValue: 20_001),
+            channelID: channelID,
+            author: currentUser,
+            content: "editable",
+            timestamp: Date(timeIntervalSince1970: 20_001)
+        ),
+        Message(
+            id: MessageID(rawValue: 20_002),
+            channelID: channelID,
+            author: otherUser,
+            content: "not editable",
+            timestamp: Date(timeIntervalSince1970: 20_002)
+        )
+    ]
+    let items = MessageGrouping.rows(for: messages).map {
+        NativeMessageTimelineItem.message(
+            $0,
+            isUnreadBoundary: false,
+            isHighlighted: false
+        )
+    }
+    let layouts = items.map {
+        NativeTimelineRowLayout.make(item: $0, width: 560)
+    }
+    let storage = NativeTimelineCanvasStorage()
+    storage.items = items
+    storage.layouts = layouts
+    storage.rowOrigins = layouts.dropLast().reduce(into: [CGFloat(0)]) {
+        $0.append(($0.last ?? 0) + $1.height)
+    }
+    storage.contentHeight = layouts.reduce(0) { $0 + $1.height }
+    let canvas = NativeTimelineCanvasView(
+        frame: CGRect(
+            x: 0,
+            y: 0,
+            width: 560,
+            height: storage.contentHeight
+        )
+    )
+    canvas.apply(
+        storage: storage,
+        model: model,
+        actions: NativeTimelineRowActions(
+            loadEarlier: {},
+            openReply: { _ in },
+            reply: nil,
+            retry: { _ in },
+            edit: { _, _ in },
+            markUnread: { _ in },
+            delete: { _ in },
+            react: { _, _ in },
+            openThread: { _ in },
+            submitComponent: { _, _, _, _ in }
+        ),
+        viewportWidth: 560,
+        minimumHeight: storage.contentHeight,
+        bottomSpacerHeight: 0,
+        contentOriginY: 0
+    )
+
+    #expect(
+        !canvas.beginEditingCurrentUserMessage(
+            MessageID(rawValue: 20_002)
+        )
+    )
+    #expect(canvas.editingMessageID == nil)
+    #expect(
+        canvas.beginEditingCurrentUserMessage(
+            MessageID(rawValue: 20_001)
+        )
+    )
+    #expect(canvas.editingMessageID == MessageID(rawValue: 20_001))
+}
+
 @Test func `message edit submission trims edges and rejects empty input`() {
     #expect(MessageEditInputPolicy.submission(from: "") == nil)
     #expect(MessageEditInputPolicy.submission(from: " \n\t ") == nil)
@@ -1278,6 +1455,56 @@ import Testing
 }
 
 @MainActor
+@Test func `unfocused plain up arrow is consumed before sidebar navigation`() {
+    var editRequestCount = 0
+    let requestEdit = {
+        editRequestCount += 1
+        return true
+    }
+
+    #expect(ComposerUnfocusedTypingMonitor.handleEditLatestMessage(
+        keyCode: 126,
+        modifierFlags: [],
+        composerIsEmpty: true,
+        onEditLatestMessage: requestEdit
+    ))
+    #expect(editRequestCount == 1)
+    #expect(ComposerUnfocusedTypingMonitor.handleEditLatestMessage(
+        keyCode: 126,
+        modifierFlags: [.function, .numericPad],
+        composerIsEmpty: true,
+        onEditLatestMessage: requestEdit
+    ))
+    #expect(editRequestCount == 2)
+    #expect(!ComposerUnfocusedTypingMonitor.handleEditLatestMessage(
+        keyCode: 126,
+        modifierFlags: [.shift],
+        composerIsEmpty: true,
+        onEditLatestMessage: requestEdit
+    ))
+    #expect(!ComposerUnfocusedTypingMonitor.handleEditLatestMessage(
+        keyCode: 126,
+        modifierFlags: [],
+        composerIsEmpty: false,
+        onEditLatestMessage: requestEdit
+    ))
+    #expect(!ComposerUnfocusedTypingMonitor.handleEditLatestMessage(
+        keyCode: 125,
+        modifierFlags: [],
+        composerIsEmpty: true,
+        onEditLatestMessage: requestEdit
+    ))
+    #expect(editRequestCount == 2)
+
+    #expect(ComposerUnfocusedTypingMonitor.handleEditLatestMessage(
+        keyCode: 126,
+        modifierFlags: [],
+        composerIsEmpty: true,
+        onEditLatestMessage: { false }
+    ))
+}
+
+@MainActor
 @Test func `escape is consumed by the native composer after autocomplete declines it`() throws {
     let textView = ComposerNSTextView()
     var escapeCount = 0
@@ -1331,6 +1558,26 @@ private func escapeKeyEvent() throws -> NSEvent {
         charactersIgnoringModifiers: "\u{1B}",
         isARepeat: false,
         keyCode: 53
+    ))
+}
+
+@MainActor
+private func upArrowKeyEvent(
+    modifiers: NSEvent.ModifierFlags = []
+) throws -> NSEvent {
+    try #require(NSEvent.keyEvent(
+        with: .keyDown,
+        location: .zero,
+        modifierFlags: modifiers,
+        timestamp: 0,
+        windowNumber: 0,
+        context: nil,
+        characters: String(NSEvent.SpecialKey.upArrow.unicodeScalar),
+        charactersIgnoringModifiers: String(
+            NSEvent.SpecialKey.upArrow.unicodeScalar
+        ),
+        isARepeat: false,
+        keyCode: 126
     ))
 }
 

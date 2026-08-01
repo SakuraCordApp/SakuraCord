@@ -20,6 +20,46 @@ enum ComposerAutocompleteCommand {
     case removeField
 }
 
+nonisolated enum ComposerLatestMessageEditingPolicy {
+    static func shouldRequest(
+        keyCode: UInt16,
+        modifierFlags: NSEvent.ModifierFlags,
+        composerIsEmpty: Bool
+    ) -> Bool {
+        let disallowed: NSEvent.ModifierFlags = [
+            .shift, .command, .option, .control,
+        ]
+        return keyCode == 126
+            && modifierFlags.isDisjoint(with: disallowed)
+            && composerIsEmpty
+    }
+
+    static func messageID(
+        in messages: [Message],
+        currentUserID: UserID?
+    ) -> MessageID? {
+        guard let currentUserID else { return nil }
+        return messages.last(where: {
+            $0.author.id == currentUserID
+        })?.id
+    }
+}
+
+extension ComposerView {
+    func editLatestMessage() -> Bool {
+        let messages = switch conversation {
+        case .channel: model.messages
+        case .thread: model.threadMessages
+        }
+        guard let messageID = ComposerLatestMessageEditingPolicy.messageID(
+            in: messages,
+            currentUserID: model.snapshot?.currentUser.id
+        ) else { return false }
+        onEditMessage(messageID)
+        return true
+    }
+}
+
 enum ComposerEmojiAttributedText {
     static let expression = RegularExpressionFactory.make(
         #"<a?:[A-Za-z0-9_]+:[0-9]+>|"# + RenderedMention.tokenPattern
@@ -200,6 +240,7 @@ struct ComposerTextView: NSViewRepresentable {
     let onTextChange: (String) -> Void
     let onSubmit: () -> Void
     var onEscape: () -> Void = {}
+    var onEditLatestMessage: () -> Bool = { false }
     var onAutocompleteCommand: (ComposerAutocompleteCommand) -> Bool = { _ in false }
     var capturesUnfocusedTyping = false
     var maximumHeight: CGFloat = 150
@@ -256,6 +297,9 @@ struct ComposerTextView: NSViewRepresentable {
         textView.onEscape = { [weak coordinator = context.coordinator] in
             coordinator?.parent.onEscape()
         }
+        textView.onEditLatestMessage = { [weak coordinator = context.coordinator] in
+            coordinator?.parent.onEditLatestMessage() ?? false
+        }
         textView.capturesUnfocusedTyping = capturesUnfocusedTyping
 
         let scrollView = NSScrollView()
@@ -282,6 +326,9 @@ struct ComposerTextView: NSViewRepresentable {
         }
         textView.onEscape = { [weak coordinator = context.coordinator] in
             coordinator?.parent.onEscape()
+        }
+        textView.onEditLatestMessage = { [weak coordinator = context.coordinator] in
+            coordinator?.parent.onEditLatestMessage() ?? false
         }
         textView.capturesUnfocusedTyping = capturesUnfocusedTyping
         textView.setAccessibilityLabel(placeholder)
@@ -585,6 +632,7 @@ final class ComposerEmojiImageStore {
 final class ComposerNSTextView: NSTextView {
     var onReturn: ((NSEvent) -> Bool)?
     var onEscape: (() -> Void)?
+    var onEditLatestMessage: (() -> Bool)?
     var onAutocompleteCommand: ((ComposerAutocompleteCommand) -> Bool)?
     var plainTypingAttributes: [NSAttributedString.Key: Any] = [:]
     var capturesUnfocusedTyping = false {
@@ -593,6 +641,7 @@ final class ComposerNSTextView: NSTextView {
                 with: self,
                 enabled: capturesUnfocusedTyping,
                 onUnfocusedReturn: unfocusedReturnHandler,
+                onEditLatestMessage: unfocusedEditLatestMessageHandler,
                 onEscape: escapeHandler
             )
         }
@@ -602,6 +651,12 @@ final class ComposerNSTextView: NSTextView {
     private var unfocusedReturnHandler: (NSEvent) -> Bool {
         { [weak self] event in
             self?.onReturn?(event) ?? false
+        }
+    }
+
+    private var unfocusedEditLatestMessageHandler: () -> Bool {
+        { [weak self] in
+            self?.onEditLatestMessage?() ?? false
         }
     }
 
@@ -621,6 +676,7 @@ final class ComposerNSTextView: NSTextView {
             with: self,
             enabled: capturesUnfocusedTyping,
             onUnfocusedReturn: unfocusedReturnHandler,
+            onEditLatestMessage: unfocusedEditLatestMessageHandler,
             onEscape: escapeHandler
         )
     }
@@ -659,6 +715,18 @@ final class ComposerNSTextView: NSTextView {
             default: nil
             }
         if let autocompleteCommand, onAutocompleteCommand?(autocompleteCommand) == true {
+            return
+        }
+        if ComposerLatestMessageEditingPolicy.shouldRequest(
+            keyCode: event.keyCode,
+            modifierFlags: event.modifierFlags,
+            composerIsEmpty: string.isEmpty
+        ),
+           onEditLatestMessage?() == true
+        {
+            if window?.firstResponder === self {
+                window?.makeFirstResponder(nil)
+            }
             return
         }
         if event.keyCode == 53 {
@@ -705,6 +773,7 @@ final class ComposerUnfocusedTypingMonitor {
     private weak var textView: NSTextView?
     private var eventMonitor: Any?
     private var onUnfocusedReturn: ((NSEvent) -> Bool)?
+    private var onEditLatestMessage: (() -> Bool)?
     private var onEscape: (() -> Void)?
 
     isolated deinit {
@@ -717,10 +786,12 @@ final class ComposerUnfocusedTypingMonitor {
         with textView: NSTextView,
         enabled: Bool,
         onUnfocusedReturn: ((NSEvent) -> Bool)? = nil,
+        onEditLatestMessage: (() -> Bool)? = nil,
         onEscape: (() -> Void)? = nil
     ) {
         self.textView = textView
         self.onUnfocusedReturn = onUnfocusedReturn
+        self.onEditLatestMessage = onEditLatestMessage
         self.onEscape = onEscape
         guard enabled, textView.window != nil
         else {
@@ -740,6 +811,14 @@ final class ComposerUnfocusedTypingMonitor {
 
             if Self.shouldOfferReturn(event.keyCode) {
                 return self.onUnfocusedReturn?(event) == true ? nil : event
+            }
+            if Self.handleEditLatestMessage(
+                keyCode: event.keyCode,
+                modifierFlags: event.modifierFlags,
+                composerIsEmpty: textView.string.isEmpty,
+                onEditLatestMessage: self.onEditLatestMessage
+            ) {
+                return nil
             }
             if Self.handleEscape(
                 keyCode: event.keyCode,
@@ -784,6 +863,22 @@ final class ComposerUnfocusedTypingMonitor {
     ) -> Bool {
         guard shouldOfferEscape(keyCode) else { return false }
         onEscape?()
+        return true
+    }
+
+    static func handleEditLatestMessage(
+        keyCode: UInt16,
+        modifierFlags: NSEvent.ModifierFlags,
+        composerIsEmpty: Bool,
+        onEditLatestMessage: (() -> Bool)?
+    ) -> Bool {
+        guard ComposerLatestMessageEditingPolicy.shouldRequest(
+            keyCode: keyCode,
+            modifierFlags: modifierFlags,
+            composerIsEmpty: composerIsEmpty
+        )
+        else { return false }
+        _ = onEditLatestMessage?()
         return true
     }
 

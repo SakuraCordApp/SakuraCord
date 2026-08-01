@@ -55,6 +55,7 @@ struct ThreadConversationView: View {
     let model: AppModel
     @State private var floatingFooterHeight: CGFloat =
         ChatDetailLayoutPolicy.defaultFloatingFooterHeight
+    @State private var editRequest: MessageTimelineEditRequest?
 
     var body: some View {
         SupplementaryConversationPane {
@@ -66,12 +67,22 @@ struct ThreadConversationView: View {
                         model: model,
                         bottomContentInset: ChatDetailLayoutPolicy.bottomContentInset(
                             measuredFooterHeight: floatingFooterHeight
-                        )
+                        ),
+                        editRequest: editRequest
                     )
                     .overlay(alignment: .bottom) {
-                        ThreadConversationFooter(model: model, thread: thread) { height in
-                            floatingFooterHeight = height
-                        }
+                        ThreadConversationFooter(
+                            model: model,
+                            thread: thread,
+                            footerHeightChanged: { height in
+                                floatingFooterHeight = height
+                            },
+                            onEditMessage: { messageID in
+                                editRequest = MessageTimelineEditRequest(
+                                    messageID: messageID
+                                )
+                            }
+                        )
                     }
                 }
             }
@@ -83,6 +94,7 @@ private struct ThreadConversationFooter: View {
     let model: AppModel
     let thread: MessageThreadSummary
     let footerHeightChanged: (CGFloat) -> Void
+    let onEditMessage: (MessageID) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -111,7 +123,11 @@ private struct ThreadConversationFooter: View {
                     action: { updateForumPost(.archived(false)) }
                 )
             }
-            ThreadConversationComposer(model: model, thread: thread)
+            ThreadConversationComposer(
+                model: model,
+                thread: thread,
+                onEditMessage: onEditMessage
+            )
         }
         .onGeometryChange(for: CGFloat.self) { proxy in
             proxy.size.height
@@ -148,6 +164,7 @@ private struct ThreadConversationFooter: View {
 private struct ThreadConversationComposer: View {
     let model: AppModel
     let thread: MessageThreadSummary
+    let onEditMessage: (MessageID) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -158,7 +175,8 @@ private struct ThreadConversationComposer: View {
                 ComposerView(
                     model: model,
                     channelName: thread.name,
-                    conversation: .thread
+                    conversation: .thread,
+                    onEditMessage: onEditMessage
                 )
             case .readable(canSend: false):
                 if !thread.isLocked {
@@ -239,6 +257,7 @@ private struct ThreadUnavailableView: View {
 private struct ThreadMessageTimelineView: View {
     let model: AppModel
     let bottomContentInset: CGFloat
+    let editRequest: MessageTimelineEditRequest?
     @State private var isNearBottom = false
     @State private var hasEstablishedInitialPosition = false
     @State private var hasUserRequestedEarlierHistory = false
@@ -263,6 +282,7 @@ private struct ThreadMessageTimelineView: View {
             highlightedMessageID: nil,
             initialScrollTarget: initialScrollTarget,
             scrollRequest: scrollRequest,
+            editRequest: editRequest,
             runsPerformanceAutoScroll: false,
             loadEarlier: loadEarlier,
             openReply: openReply,

@@ -15,6 +15,7 @@ struct NativeMessageTimelineView: NSViewRepresentable {
     let highlightedMessageID: MessageID?
     let initialScrollTarget: MessageTimelineScrollRequest.Target?
     let scrollRequest: MessageTimelineScrollRequest?
+    let editRequest: MessageTimelineEditRequest?
     let runsPerformanceAutoScroll: Bool
     let loadEarlier: () -> Void
     let openReply: (MessageID) -> Void
@@ -36,6 +37,7 @@ struct NativeMessageTimelineView: NSViewRepresentable {
         highlightedMessageID: MessageID?,
         initialScrollTarget: MessageTimelineScrollRequest.Target? = nil,
         scrollRequest: MessageTimelineScrollRequest?,
+        editRequest: MessageTimelineEditRequest? = nil,
         runsPerformanceAutoScroll: Bool,
         loadEarlier: @escaping () -> Void,
         openReply: @escaping (MessageID) -> Void,
@@ -58,6 +60,7 @@ struct NativeMessageTimelineView: NSViewRepresentable {
         self.highlightedMessageID = highlightedMessageID
         self.initialScrollTarget = initialScrollTarget
         self.scrollRequest = scrollRequest
+        self.editRequest = editRequest
         self.runsPerformanceAutoScroll = runsPerformanceAutoScroll
         self.loadEarlier = loadEarlier
         self.openReply = openReply
@@ -189,6 +192,7 @@ final class NativeMessageTimelineCoordinator: NSObject {
         weak var scrollView: NSScrollView?
         var observations: [NSObjectProtocol] = []
         var lastScrollRequestID: UUID?
+        var lastEditRequestID: UUID?
         var lastReportedState: TimelineScrollState?
         var scrollStateCallbackGeneration: UInt64 = 0
         var lastReportedScrollActivity: Bool?
@@ -518,6 +522,7 @@ extension NativeMessageTimelineCoordinator {
             let establishedInitialPosition =
                 applyInitialPositionIfNeeded()
             applyScrollRequestIfNeeded()
+            applyEditRequestIfNeeded()
             if establishedInitialPosition {
                 publishInitialPosition(scrollState())
             }

@@ -5,6 +5,7 @@ struct ChatDetailView: View {
     let model: AppModel
     @State private var floatingFooterHeight: CGFloat =
         ChatDetailLayoutPolicy.defaultFloatingFooterHeight
+    @State private var editRequest: MessageTimelineEditRequest?
 
     var body: some View {
         if let channel = model.selectedChannel {
@@ -24,13 +25,19 @@ struct ChatDetailView: View {
                     model: model,
                     bottomContentInset: ChatDetailLayoutPolicy.bottomContentInset(
                         measuredFooterHeight: floatingFooterHeight
-                    )
+                    ),
+                    editRequest: editRequest
                 )
                 .overlay(alignment: .bottom) {
                     ChatDetailFooter(
                         model: model,
                         channel: channel,
-                        access: model.selectedConversationAccess
+                        access: model.selectedConversationAccess,
+                        onEditMessage: { messageID in
+                            editRequest = MessageTimelineEditRequest(
+                                messageID: messageID
+                            )
+                        }
                     )
                     .onGeometryChange(for: CGFloat.self) { proxy in
                         proxy.size.height
@@ -49,6 +56,7 @@ private struct ChatDetailFooter: View {
     let model: AppModel
     let channel: Channel
     let access: ConversationAccess
+    let onEditMessage: (MessageID) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -57,7 +65,11 @@ private struct ChatDetailFooter: View {
                 DisabledComposerView(message: "Checking channel permissions…")
             case .readable(canSend: true):
                 TypingIndicatorView(typingState: model.typingState, channelID: channel.id)
-                ComposerView(model: model, channelName: channel.name)
+                ComposerView(
+                    model: model,
+                    channelName: channel.name,
+                    onEditMessage: onEditMessage
+                )
             case .readable(canSend: false):
                 DisabledComposerView(
                     message: channel.isOfficialSystemDirectMessage

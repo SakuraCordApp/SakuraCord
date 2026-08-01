@@ -64,6 +64,7 @@ struct ComposerView: View {
     let model: AppModel
     let channelName: String
     var conversation: Conversation = .channel
+    var onEditMessage: (MessageID) -> Void = { _ in }
     @State private var showFileImporter = false
     @State private var showEmojiPicker = false
     @State private var isFocused = false
@@ -156,6 +157,7 @@ struct ComposerView: View {
                                     onTextChange: updateDraft,
                                     onSubmit: send,
                                     onEscape: handleEscapeCommand,
+                                    onEditLatestMessage: editLatestMessage,
                                     onAutocompleteCommand: handleAutocomplete,
                                     capturesUnfocusedTyping: true,
                                     selection: $draftSelection,

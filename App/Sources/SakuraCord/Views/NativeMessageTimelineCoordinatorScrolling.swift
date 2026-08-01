@@ -347,6 +347,7 @@ extension NativeMessageTimelineCoordinator {
             let establishedInitialPosition =
                 applyInitialPositionIfNeeded()
             applyScrollRequestIfNeeded()
+            applyEditRequestIfNeeded()
             if establishedInitialPosition {
                 publishInitialPosition(scrollState())
             }

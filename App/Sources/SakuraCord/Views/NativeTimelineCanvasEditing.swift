@@ -662,6 +662,20 @@ extension NativeTimelineCanvasView {
         }
     }
 
+    @discardableResult
+    func beginEditingCurrentUserMessage(_ messageID: MessageID) -> Bool {
+        guard editingMessageID == nil,
+              let currentUserID = model?.snapshot?.currentUser.id,
+              let index = items.firstIndex(where: {
+                  $0.messageID == messageID
+              }),
+              case let .message(row, _, _) = items[index],
+              row.message.author.id == currentUserID
+        else { return false }
+        beginEditing(row: row, at: index)
+        return editingMessageID == messageID
+    }
+
     func reconcileEditingRow() {
         guard let messageID = editingMessageID else { return }
         if let index = editingRowIndexCache,
@@ -1052,5 +1066,22 @@ extension NativeTimelineCanvasView {
             guard response == .alertFirstButtonReturn else { return }
             actions.delete(message)
         }
+    }
+}
+
+extension NativeMessageTimelineCoordinator {
+    func applyEditRequestIfNeeded() {
+        guard let request = parent.editRequest,
+              request.id != lastEditRequestID,
+              let canvas
+        else { return }
+        lastEditRequestID = request.id
+        guard canvas.beginEditingCurrentUserMessage(request.messageID),
+              let scrollView
+        else { return }
+        _ = scroll(
+            to: .message(request.messageID, anchor: .center),
+            in: scrollView
+        )
     }
 }
