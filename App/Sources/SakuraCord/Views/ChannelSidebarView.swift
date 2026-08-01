@@ -83,11 +83,15 @@ struct ChannelSidebarView: View {
     }
 
     private var hiddenChannelIDs: Set<ChannelID> {
-        []
+        Set(
+            channels.lazy
+                .filter { voiceModel.conversationAccess(for: $0) == .hidden }
+                .map(\.id)
+        )
     }
 
     private var displayedChannels: [Channel] {
-        channels.filter { voiceModel.conversationAccess(for: $0) != .hidden }
+        channels
     }
 
     private var directMessageChannels: [Channel] {

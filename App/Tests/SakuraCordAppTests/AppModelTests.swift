@@ -257,7 +257,7 @@ import UserNotifications
 }
 
 @MainActor
-@Test func `inaccessible private channels are absent from presentation and unread state`() async {
+@Test func `inaccessible private channels remain visible but are excluded from unread state`() async {
     let model = AppModel(launchMode: .offlineTesting)
     await model.start()
     let privateChannelID = ChannelID(rawValue: 215)
@@ -265,9 +265,17 @@ import UserNotifications
     #expect(await eventuallyOnMain {
         model.readState.entries[privateChannelID]?.isAccessible == false
     })
-    #expect(!model.visibleChannels.contains(where: { $0.id == privateChannelID }))
+    let privateChannel = model.visibleChannels.first { $0.id == privateChannelID }
+    #expect(privateChannel != nil)
+    #expect(privateChannel.map(model.conversationAccess(for:)) == .hidden)
     #expect(!model.isChannelUnread(privateChannelID))
     #expect(model.channelMentionCount(privateChannelID) == 0)
+
+    model.selectedChannelID = privateChannelID
+    #expect(await eventuallyOnMain {
+        model.selectedChannel?.id == privateChannelID
+            && model.selectedChannel.map(model.conversationAccess(for:)) == .hidden
+    })
 }
 
 @MainActor

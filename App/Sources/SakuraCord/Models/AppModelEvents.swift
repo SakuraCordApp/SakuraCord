@@ -143,11 +143,11 @@ extension AppModel {
         let selectedGuildChannels: [Channel]
         if let selectedGuildID {
             selectedGuildChannels = projectedChannels.filter {
-                $0.guildID == selectedGuildID && accessByChannelID[$0.id] != .hidden
+                $0.guildID == selectedGuildID
             }
         } else {
             selectedGuildChannels = projectedChannels.filter {
-                $0.guildID == nil && accessByChannelID[$0.id] != .hidden
+                $0.guildID == nil
             }
         }
         if selectedGuildChannels != visibleChannels {
@@ -157,7 +157,9 @@ extension AppModel {
            !selectedGuildChannels.contains(where: { $0.id == selectedChannelID })
         {
             self.selectedChannelID = Self.preferredInitialChannelID(
-                in: selectedGuildChannels
+                in: selectedGuildChannels.filter {
+                    accessByChannelID[$0.id] != .hidden
+                }
             )
         }
         let projectedSelectedChannel =
