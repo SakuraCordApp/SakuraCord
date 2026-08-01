@@ -85,6 +85,11 @@ current user, and stores the resulting credential through
 `KeychainCredentialStore`. Passwords, cookies, captured authorization headers,
 and analytics identifiers are not persisted.
 
+An explicitly insecure, debug-only build flag can migrate the credential once
+from Keychain into a mode-`0600` file within the app's sandbox Application
+Support container. It is excluded from release and update-enabled packages and
+is not the production credential contract.
+
 Account data is stored through `SakuraCordPersistence`. Credentials never enter
 GRDB, fixtures, logs, or plugin APIs. Normal and offline runs use separate
 storage behavior.

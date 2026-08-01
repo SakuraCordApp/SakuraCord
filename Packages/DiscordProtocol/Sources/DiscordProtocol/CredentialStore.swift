@@ -78,6 +78,140 @@ public actor KeychainCredentialStore: CredentialStore {
     }
 }
 
+public actor InsecureDebugFileCredentialStore: CredentialStore {
+    private let directory: URL
+    private let fileManager: FileManager
+
+    public init(directory: URL? = nil, fileManager: FileManager = .default) {
+        self.fileManager = fileManager
+        self.directory = directory ?? Self.defaultDirectory(fileManager: fileManager)
+    }
+
+    public func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
+        let fileURL = try credentialURL(accountID: accountID)
+        try prepareDirectory()
+        try credential.write(to: fileURL, options: .atomic)
+        try fileManager.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: fileURL.path
+        )
+        return CredentialHandle(accountID: accountID)
+    }
+
+    public func credential(for handle: CredentialHandle) async throws -> Data {
+        try Data(contentsOf: credentialURL(accountID: handle.accountID))
+    }
+
+    public func remove(_ handle: CredentialHandle) async throws {
+        let fileURL = try credentialURL(accountID: handle.accountID)
+        guard fileManager.fileExists(atPath: fileURL.path) else { return }
+        try fileManager.removeItem(at: fileURL)
+    }
+
+    public func handles() async throws -> [CredentialHandle] {
+        guard fileManager.fileExists(atPath: directory.path) else { return [] }
+        return try fileManager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )
+        .filter { $0.pathExtension == "credential" }
+        .compactMap { url in
+            let accountID = url.deletingPathExtension().lastPathComponent
+            return Self.isValidAccountID(accountID)
+                ? CredentialHandle(accountID: accountID)
+                : nil
+        }
+        .sorted { $0.accountID < $1.accountID }
+    }
+
+    private func prepareDirectory() throws {
+        try fileManager.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try fileManager.setAttributes(
+            [.posixPermissions: 0o700],
+            ofItemAtPath: directory.path
+        )
+    }
+
+    private func credentialURL(accountID: String) throws -> URL {
+        guard Self.isValidAccountID(accountID) else {
+            throw InsecureDebugCredentialError.invalidAccountID
+        }
+        return directory.appendingPathComponent("\(accountID).credential", isDirectory: false)
+    }
+
+    private static func isValidAccountID(_ accountID: String) -> Bool {
+        !accountID.isEmpty && accountID.allSatisfy(\.isNumber)
+    }
+
+    private static func defaultDirectory(fileManager: FileManager) -> URL {
+        let applicationSupport = fileManager.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first ?? fileManager.temporaryDirectory
+        return applicationSupport
+            .appendingPathComponent("SakuraCord", isDirectory: true)
+            .appendingPathComponent("InsecureDebugCredentials", isDirectory: true)
+    }
+}
+
+public actor InsecureDebugMigratingCredentialStore: CredentialStore {
+    private let local: any CredentialStore
+    private let keychain: any CredentialStore
+    private var didAttemptMigration = false
+
+    public init(
+        local: any CredentialStore = InsecureDebugFileCredentialStore(),
+        keychain: any CredentialStore = KeychainCredentialStore()
+    ) {
+        self.local = local
+        self.keychain = keychain
+    }
+
+    public func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
+        try await local.store(credential, accountID: accountID)
+    }
+
+    public func credential(for handle: CredentialHandle) async throws -> Data {
+        try await local.credential(for: handle)
+    }
+
+    public func remove(_ handle: CredentialHandle) async throws {
+        try await local.remove(handle)
+        try await keychain.remove(handle)
+    }
+
+    public func handles() async throws -> [CredentialHandle] {
+        let localHandles = try await local.handles()
+        guard localHandles.isEmpty, !didAttemptMigration else { return localHandles }
+        didAttemptMigration = true
+        let keychainHandles = try await keychain.handles()
+        for handle in keychainHandles {
+            var credential = try await keychain.credential(for: handle)
+            do {
+                _ = try await local.store(credential, accountID: handle.accountID)
+                credential.resetBytes(in: credential.indices)
+            } catch {
+                credential.resetBytes(in: credential.indices)
+                throw error
+            }
+        }
+        return try await local.handles()
+    }
+}
+
+public enum InsecureDebugCredentialError: LocalizedError, Sendable {
+    case invalidAccountID
+
+    public var errorDescription: String? {
+        "The debug credential account identifier is invalid."
+    }
+}
+
 public nonisolated enum CredentialServiceName {
     public static let primary = "dev.sakuracord.SakuraCord.session"
 

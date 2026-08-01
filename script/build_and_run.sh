@@ -44,6 +44,16 @@ if [[ "$UPDATES_ENABLED" != "0" && "$UPDATES_ENABLED" != "1" ]]; then
   echo "SAKURACORD_ENABLE_UPDATES must be 0 or 1." >&2
   exit 2
 fi
+INSECURE_DEBUG_CREDENTIALS="${SAKURACORD_INSECURE_DEBUG_CREDENTIALS:-0}"
+if [[ "$INSECURE_DEBUG_CREDENTIALS" != "0" && "$INSECURE_DEBUG_CREDENTIALS" != "1" ]]; then
+  echo "SAKURACORD_INSECURE_DEBUG_CREDENTIALS must be 0 or 1." >&2
+  exit 2
+fi
+if [[ "$INSECURE_DEBUG_CREDENTIALS" == "1" \
+  && ( "$MODE" == "package-release" || "$UPDATES_ENABLED" == "1" ) ]]; then
+  echo "Insecure debug credentials cannot be used for release or update-enabled packages." >&2
+  exit 2
+fi
 if [[ "$UPDATES_ENABLED" == "1" ]]; then
   if [[ "$SAKURACORD_IS_MAIN_WORKTREE" -ne 1 ]]; then
     echo "Production updates can only be enabled for the canonical main-checkout bundle." >&2
@@ -182,6 +192,11 @@ if [[ "$UPDATES_ENABLED" == "1" ]]; then
   /usr/libexec/PlistBuddy -c "Add :SUEnableInstallerLauncherService bool true" "$CONTENTS/Info.plist"
   /usr/libexec/PlistBuddy -c "Add :SUVerifyUpdateBeforeExtraction bool true" "$CONTENTS/Info.plist"
   /usr/libexec/PlistBuddy -c "Add :SURequireSignedFeed bool true" "$CONTENTS/Info.plist"
+fi
+if [[ "$INSECURE_DEBUG_CREDENTIALS" == "1" ]]; then
+  /usr/libexec/PlistBuddy -c \
+    "Add :SakuraCordInsecureDebugCredentialsEnabled bool true" \
+    "$CONTENTS/Info.plist"
 fi
 plutil -lint "$CONTENTS/Info.plist" >/dev/null
 

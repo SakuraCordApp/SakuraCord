@@ -11,6 +11,7 @@ xcuserdata/
 *.db-shm
 *.db-wal
 *.token
+*.credential
 *.cookies
 .env
 .env.*

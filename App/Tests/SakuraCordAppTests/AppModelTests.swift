@@ -1433,6 +1433,22 @@ private func forumPresentationPost(
 }
 
 @MainActor
+@Test func `network disabled insecure debug launch prepares its credential store`() async {
+    let credentials = CredentialAccessProbeStore()
+    let model = AppModel(
+        launchMode: .normal,
+        discordNetworkDisabledOverride: true,
+        usesInsecureDebugCredentialsOverride: true,
+        credentialStore: credentials
+    )
+
+    await model.start()
+
+    #expect(model.sessionState == .signedOut)
+    #expect(await credentials.accessCount == 1)
+}
+
+@MainActor
 @Test func `interactive sign in keeps login presentation alive until bootstrap finishes`() async {
     let provider = SuspendedBootstrapTestProvider()
     let notifications = PermissionRecordingNotificationService()

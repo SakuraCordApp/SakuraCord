@@ -647,6 +647,7 @@ final class AppModel {
     @ObservationIgnored var messageCacheOrder: [ChannelID] = []
     @ObservationIgnored var hasMoreCache: [ChannelID: Bool] = [:]
     @ObservationIgnored let discordNetworkDisabled: Bool
+    @ObservationIgnored let usesInsecureDebugCredentials: Bool
     @ObservationIgnored let restoresStoredSession: Bool
     @ObservationIgnored let credentialStore: any CredentialStore
     @ObservationIgnored let authenticatedProviderFactory:
@@ -674,6 +675,7 @@ final class AppModel {
         launchMode: AppLaunchMode,
         provider: (any ChatProvider)? = nil,
         discordNetworkDisabledOverride: Bool? = nil,
+        usesInsecureDebugCredentialsOverride: Bool? = nil,
         restoresStoredSession: Bool = true,
         credentialStore: (any CredentialStore)? = nil,
         authenticatedProviderFactory: ((CredentialHandle, String?) -> any ChatProvider)? = nil,
@@ -701,11 +703,21 @@ final class AppModel {
                 ?? (launchMode == .offlineTesting
                     || ProcessInfo.processInfo.environment["SAKURACORD_DISABLE_DISCORD_NETWORK"] == "1")
         self.restoresStoredSession = restoresStoredSession
-        let resolvedCredentialStore: any CredentialStore =
-            credentialStore
-                ?? (launchMode == .offlineTesting
-                    ? OfflineCredentialStore()
-                    : KeychainCredentialStore())
+        usesInsecureDebugCredentials =
+            usesInsecureDebugCredentialsOverride
+                ?? (launchMode == .normal
+                    && Bundle.main.object(
+                        forInfoDictionaryKey: "SakuraCordInsecureDebugCredentialsEnabled"
+                    ) as? Bool == true)
+        let defaultCredentialStore: any CredentialStore
+        if launchMode == .offlineTesting {
+            defaultCredentialStore = OfflineCredentialStore()
+        } else if usesInsecureDebugCredentials {
+            defaultCredentialStore = InsecureDebugMigratingCredentialStore()
+        } else {
+            defaultCredentialStore = KeychainCredentialStore()
+        }
+        let resolvedCredentialStore = credentialStore ?? defaultCredentialStore
         self.credentialStore = resolvedCredentialStore
         self.authenticatedProviderFactory =
             authenticatedProviderFactory ?? { handle, fingerprint in

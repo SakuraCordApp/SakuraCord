@@ -190,6 +190,13 @@ extension AppModel {
 
     func prepareSessionStart() async -> Bool {
         if launchMode == .normal, discordNetworkDisabled {
+            if usesInsecureDebugCredentials {
+                do {
+                    _ = try await credentialStore.handles()
+                } catch {
+                    errorMessage = error.localizedDescription
+                }
+            }
             didAttemptSessionRestore = true
             isLoading = false
             sessionState = .signedOut
