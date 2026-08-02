@@ -5,8 +5,8 @@ import Testing
 @MainActor
 struct DiscordAPILogExporterTests {
     @Test func `API log exporter attaches its save panel to the active settings window`() async {
-        let panel = NSSavePanel()
-        let window = NSWindow()
+        let panel = NSObject()
+        let window = NSObject()
         var usedSheet = false
         var usedApplicationModal = false
 
@@ -29,13 +29,14 @@ struct DiscordAPILogExporterTests {
     }
 
     @Test func `API log exporter falls back when no presentation window exists`() async {
-        let panel = NSSavePanel()
+        let panel = NSObject()
+        let window: NSObject? = nil
         var usedSheet = false
         var usedApplicationModal = false
 
         let response = await DiscordAPILogExporter.present(
             panel,
-            attachedTo: nil,
+            attachedTo: window,
             beginSheet: { _, _, completion in
                 usedSheet = true
                 completion(.cancel)

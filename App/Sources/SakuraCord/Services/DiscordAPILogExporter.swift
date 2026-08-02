@@ -29,20 +29,32 @@ enum DiscordAPILogExporter {
 
     static func present(
         _ panel: NSSavePanel,
-        attachedTo presentingWindow: NSWindow?,
-        beginSheet: @escaping (
-            NSSavePanel,
-            NSWindow,
-            @escaping (NSApplication.ModalResponse) -> Void
-        ) -> Void = { panel, window, completion in
+        attachedTo presentingWindow: NSWindow?
+    ) async -> NSApplication.ModalResponse {
+        await present(
+            panel,
+            attachedTo: presentingWindow,
+            beginSheet: { panel, window, completion in
             panel.beginSheetModal(for: window, completionHandler: completion)
-        },
-        beginApplicationModal: @escaping (
-            NSSavePanel,
+            },
+            beginApplicationModal: { panel, completion in
+                panel.begin(completionHandler: completion)
+            }
+        )
+    }
+
+    static func present<Panel: AnyObject, Window: AnyObject>(
+        _ panel: Panel,
+        attachedTo presentingWindow: Window?,
+        beginSheet: @escaping (
+            Panel,
+            Window,
             @escaping (NSApplication.ModalResponse) -> Void
-        ) -> Void = { panel, completion in
-            panel.begin(completionHandler: completion)
-        }
+        ) -> Void,
+        beginApplicationModal: @escaping (
+            Panel,
+            @escaping (NSApplication.ModalResponse) -> Void
+        ) -> Void
     ) async -> NSApplication.ModalResponse {
         let response = await withCheckedContinuation { continuation in
             let completion: (NSApplication.ModalResponse) -> Void = { [panel] response in

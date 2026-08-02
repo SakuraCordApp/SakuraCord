@@ -3,6 +3,17 @@ import Foundation
 import SakuraCordModels
 import Testing
 
+@Test func `discord timestamps parse fractional and whole seconds`() throws {
+    let fractional = try #require(
+        DiscordDate.parse("2026-08-01T03:04:05.123456+00:00")
+    )
+    let whole = try #require(
+        DiscordDate.parse("2026-08-01T03:04:05+00:00")
+    )
+
+    #expect(abs(fractional.timeIntervalSince(whole) - 0.123456) < 0.000_001)
+}
+
 @Test func `enhanced role primary color takes precedence over legacy color`() throws {
     let data = Data(
         #"""

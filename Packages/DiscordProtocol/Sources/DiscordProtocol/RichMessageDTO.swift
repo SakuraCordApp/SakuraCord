@@ -95,7 +95,7 @@ struct MessageEmbedDTO: Decodable {
     func domain(index: Int) -> MessageEmbed {
         MessageEmbed(
             id: "embed-\(index)", title: title, type: type, description: description,
-            url: url.flatMap(URL.init), timestamp: timestamp.flatMap(RichDiscordDate.parse), color: color,
+            url: url.flatMap(URL.init), timestamp: timestamp.flatMap(DiscordDate.parse), color: color,
             footer: footer?.domain, image: image?.domain, thumbnail: thumbnail?.domain,
             video: video?.domain,
             provider: provider?.domain, author: author?.domain,
@@ -395,13 +395,5 @@ final class MessageComponentDTO: Decodable {
         default:
             return .unsupported(id: stableID, type: type)
         }
-    }
-}
-
-private enum RichDiscordDate {
-    static func parse(_ value: String) -> Date? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.date(from: value) ?? ISO8601DateFormatter().date(from: value)
     }
 }

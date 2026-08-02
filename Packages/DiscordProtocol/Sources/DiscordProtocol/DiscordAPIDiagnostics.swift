@@ -15,14 +15,16 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
 
     private struct State {
         var entries: [RetainedEntry?]
+        var capturesPayloadDetails: Bool
         var headIndex = 0
         var entryCount = 0
         var retainedEstimatedByteCount = 0
         var nextSequence: UInt64 = 1
         var droppedEntryCount = 0
 
-        init(capacity: Int) {
+        init(capacity: Int, capturesPayloadDetails: Bool) {
             entries = Array(repeating: nil, count: capacity)
+            self.capturesPayloadDetails = capturesPayloadDetails
         }
 
         var orderedEntries: [Entry] {
@@ -123,11 +125,25 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
 
     public init(
         maximumEntries: Int = 5_000,
-        maximumRetainedBytes: Int = 8 * 1_024 * 1_024
+        maximumRetainedBytes: Int = 8 * 1_024 * 1_024,
+        capturesPayloadDetails: Bool = false
     ) {
         let capacity = max(1, maximumEntries)
         self.maximumRetainedBytes = max(1, maximumRetainedBytes)
-        state = State(capacity: capacity)
+        state = State(
+            capacity: capacity,
+            capturesPayloadDetails: capturesPayloadDetails
+        )
+    }
+
+    /// Detailed payload diagnostics deliberately default to off. Sanitizing a
+    /// large message or member response otherwise decodes and walks the same
+    /// payload a second time on every ordinary request. Route, status, timing,
+    /// rate-limit headers, and byte counts remain available in the lightweight
+    /// default mode.
+    public var capturesPayloadDetails: Bool {
+        get { withLock { $0.capturesPayloadDetails } }
+        set { withLock { $0.capturesPayloadDetails = newValue } }
     }
 
     public var retainedEntryCount: Int {
@@ -154,8 +170,8 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
         if !query.isEmpty {
             object["query"] = .object(Self.sanitizedQuery(query))
         }
-        if let body, let payload = Self.sanitizedPayload(body) {
-            object["body"] = payload
+        if let body {
+            object["body"] = payloadForRetention(body)
         }
         append(
             transport: transport,
@@ -187,7 +203,7 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
             statusCode: response.statusCode,
             durationMilliseconds: Self.milliseconds(duration),
             headers: Self.sanitizedHeaders(response.allHeaderFields),
-            payload: Self.sanitizedPayload(body)
+            payload: payloadForRetention(body)
         )
     }
 
@@ -216,16 +232,23 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
         direction: String,
         envelope: GatewayEnvelope
     ) {
+        var payload: [String: JSONValue] = [
+            "op": .number(Double(envelope.op)),
+            "sequence": envelope.sequence.map { .number(Double($0)) } ?? .null,
+            "event": envelope.eventName.map(JSONValue.string) ?? .null,
+        ]
+        if capturesPayloadDetails {
+            payload["data"] = Self.sanitize(
+                envelope.data ?? .null,
+                key: "data",
+                depth: 0
+            )
+        }
         append(
             transport: transport,
             direction: direction,
             operation: envelope.eventName ?? "opcode_\(envelope.op)",
-            payload: .object([
-                "op": .number(Double(envelope.op)),
-                "sequence": envelope.sequence.map { .number(Double($0)) } ?? .null,
-                "event": envelope.eventName.map(JSONValue.string) ?? .null,
-                "data": Self.sanitize(envelope.data ?? .null, key: "data", depth: 0),
-            ])
+            payload: .object(payload)
         )
     }
 
@@ -251,6 +274,15 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
         direction: String,
         data: Data
     ) {
+        guard capturesPayloadDetails else {
+            append(
+                transport: transport,
+                direction: direction,
+                operation: "websocket_payload",
+                payload: Self.payloadSummary(data)
+            )
+            return
+        }
         let rawPayload = try? JSONDecoder().decode(JSONValue.self, from: data)
         let operation: String
         if case let .object(object)? = rawPayload,
@@ -308,6 +340,17 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
             return .object(["byte_count": .number(Double(data.count))])
         }
         return sanitize(value, key: nil, depth: 0)
+    }
+
+    private func payloadForRetention(_ data: Data) -> JSONValue {
+        guard capturesPayloadDetails else {
+            return Self.payloadSummary(data)
+        }
+        return Self.sanitizedPayload(data) ?? Self.payloadSummary(data)
+    }
+
+    private static func payloadSummary(_ data: Data) -> JSONValue {
+        .object(["byte_count": .number(Double(data.count))])
     }
 
     private func append(

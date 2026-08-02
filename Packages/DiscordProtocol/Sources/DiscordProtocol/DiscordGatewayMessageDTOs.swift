@@ -653,9 +653,15 @@ struct EmojiCacheEntry: Codable {
 }
 
 enum DiscordDate {
+    private static let fractionalFormat = Date.ISO8601FormatStyle(
+        includingFractionalSeconds: true
+    )
+    private static let wholeSecondFormat = Date.ISO8601FormatStyle()
+
     static func parse(_ value: String) -> Date? {
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+        if value.contains(".") {
+            return try? fractionalFormat.parse(value)
+        }
+        return try? wholeSecondFormat.parse(value)
     }
 }

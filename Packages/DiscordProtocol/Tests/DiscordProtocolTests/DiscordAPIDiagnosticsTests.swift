@@ -3,7 +3,10 @@ import Foundation
 import Testing
 
 @Test func `API diagnostics discard sensitive values before export`() throws {
-    let store = DiscordAPIDiagnosticStore(maximumEntries: 10)
+    let store = DiscordAPIDiagnosticStore(
+        maximumEntries: 10,
+        capturesPayloadDetails: true
+    )
     let requestBody = Data(
         """
         {
@@ -65,7 +68,10 @@ import Testing
 }
 
 @Test func `gateway diagnostics redact identify credentials and dispatch content`() throws {
-    let store = DiscordAPIDiagnosticStore(maximumEntries: 10)
+    let store = DiscordAPIDiagnosticStore(
+        maximumEntries: 10,
+        capturesPayloadDetails: true
+    )
     store.recordGateway(
         direction: "request",
         envelope: GatewayEnvelope(
@@ -104,7 +110,10 @@ import Testing
 }
 
 @Test func `voice Gateway diagnostics discard session encryption material`() throws {
-    let store = DiscordAPIDiagnosticStore(maximumEntries: 10)
+    let store = DiscordAPIDiagnosticStore(
+        maximumEntries: 10,
+        capturesPayloadDetails: true
+    )
     store.recordWebSocketData(
         transport: "voice_gateway",
         direction: "response",
@@ -148,6 +157,32 @@ import Testing
     #expect(store.retainedEntryCount == 2)
     #expect(lines.count == 3)
     #expect(lines[0].contains("\"droppedEntryCount\":1"))
+}
+
+@Test func `API diagnostics default to lightweight payload summaries`() throws {
+    let store = DiscordAPIDiagnosticStore(maximumEntries: 10)
+    let response = try #require(HTTPURLResponse(
+        url: URL(string: "https://discord.com/api/v9/channels/1/messages")!,
+        statusCode: 200,
+        httpVersion: nil,
+        headerFields: nil
+    ))
+    let body = Data(#"[{"id":"123","content":"private"}]"#.utf8)
+
+    store.recordHTTPResponse(
+        method: "GET",
+        path: "/channels/1/messages",
+        attempt: 1,
+        response: response,
+        body: body,
+        duration: .milliseconds(4)
+    )
+
+    let text = try #require(String(data: store.exportData(), encoding: .utf8))
+    #expect(text.contains("byte_count"))
+    #expect(text.contains(String(body.count)))
+    #expect(!text.contains("123"))
+    #expect(!text.contains("private"))
 }
 
 @Test func `API diagnostics ring buffer stays bounded beyond capacity`() throws {
