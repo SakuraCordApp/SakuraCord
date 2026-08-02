@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<trace-query-result>
+  <node>
+    <row>
+      <event-time fmt="00:00.000.000">0</event-time>
+      <process fmt="SakuraCord Helper (pid: 2)">2</process>
+      <event-type>Begin</event-type>
+      <os-signpost-identifier fmt="999">999</os-signpost-identifier>
+      <signpost-name>StartupToWorkspace</signpost-name>
+    </row>
+    <row>
+      <event-time fmt="00:01.000.000">1000000000</event-time>
+      <process id="startup-process" fmt="SakuraCord (pid: 1)">
+        <pid id="startup-pid">1</pid>
+      </process>
+      <event-type>Begin</event-type>
+      <os-signpost-identifier fmt="404">404</os-signpost-identifier>
+      <signpost-name>StartupToWorkspace</signpost-name>
+    </row>
+    <row>
+      <event-time fmt="00:05.000.000">5000000000</event-time>
+      <process ref="startup-process" />
+      <event-type>End</event-type>
+      <os-signpost-identifier fmt="404">404</os-signpost-identifier>
+      <signpost-name>StartupToWorkspace</signpost-name>
+    </row>
+    <row>
+      <event-time fmt="00:10.000.000">10000000000</event-time>
+      <process fmt="SakuraCord Helper (pid: 2)">2</process>
+      <event-type>End</event-type>
+      <os-signpost-identifier fmt="999">999</os-signpost-identifier>
+      <signpost-name>StartupToWorkspace</signpost-name>
+    </row>
+  </node>
+</trace-query-result>

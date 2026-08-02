@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<trace-query-result>
+  <node>
+    <row>
+      <event-time fmt="00:01.000.000">1000000000</event-time>
+      <process fmt="SakuraCord (pid: 1)">1</process>
+      <event-type>Begin</event-type>
+      <os-signpost-identifier fmt="303">303</os-signpost-identifier>
+      <signpost-name>MessageTimelineAutoScrollBenchmark</signpost-name>
+    </row>
+    <row>
+      <event-time fmt="00:01.000.000">1000000000</event-time>
+      <process fmt="SakuraCord (pid: 1)">1</process>
+      <event-type>Begin</event-type>
+      <os-signpost-identifier fmt="101">101</os-signpost-identifier>
+      <signpost-name>OverlappingWork</signpost-name>
+    </row>
+    <row>
+      <event-time fmt="00:02.000.000">2000000000</event-time>
+      <process fmt="SakuraCord (pid: 1)">1</process>
+      <event-type>Begin</event-type>
+      <os-signpost-identifier fmt="202">202</os-signpost-identifier>
+      <signpost-name>OverlappingWork</signpost-name>
+    </row>
+    <row>
+      <event-time fmt="00:03.000.000">3000000000</event-time>
+      <process fmt="SakuraCord (pid: 1)">1</process>
+      <event-type>End</event-type>
+      <os-signpost-identifier fmt="101">101</os-signpost-identifier>
+      <signpost-name>OverlappingWork</signpost-name>
+    </row>
+    <row>
+      <event-time fmt="00:05.000.000">5000000000</event-time>
+      <process fmt="SakuraCord (pid: 1)">1</process>
+      <event-type>End</event-type>
+      <os-signpost-identifier fmt="202">202</os-signpost-identifier>
+      <signpost-name>OverlappingWork</signpost-name>
+    </row>
+    <row>
+      <event-time fmt="00:21.000.000">21000000000</event-time>
+      <process fmt="SakuraCord (pid: 1)">1</process>
+      <event-type>End</event-type>
+      <os-signpost-identifier fmt="303">303</os-signpost-identifier>
+      <signpost-name>MessageTimelineAutoScrollBenchmark</signpost-name>
+    </row>
+    <row>
+      <event-time fmt="00:21.000.000">21000000000</event-time>
+      <process fmt="SakuraCord (pid: 1)">1</process>
+      <event-type>Event</event-type>
+      <os-signpost-identifier fmt="404">404</os-signpost-identifier>
+      <signpost-name>MessageTimelineAutoScrollBenchmarkCompleted</signpost-name>
+    </row>
+  </node>
+</trace-query-result>

@@ -23,3 +23,5 @@ sparkle-private-key
 *.mobileprovision
 Package.resolved
 !App/Package.resolved
+__pycache__/
+*.pyc

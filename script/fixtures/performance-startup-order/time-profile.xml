@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<trace-query-result>
+  <node>
+    <row>
+      <sample-time id="sample-1">2000000000</sample-time>
+      <process id="process-1" fmt="SakuraCord (1)">
+        <pid id="pid-1">1</pid>
+      </process>
+      <thread id="thread-1" fmt="Main Thread 0x1" />
+      <weight id="weight-1">1000000</weight>
+      <tagged-backtrace id="stack-1">
+        <frame id="frame-1" name="startupWork">
+          <binary id="binary-1" name="SakuraCord" />
+        </frame>
+      </tagged-backtrace>
+    </row>
+    <row>
+      <sample-time id="sample-2">2000000000</sample-time>
+      <process id="process-2" fmt="SakuraCord (10)">
+        <pid id="pid-2">10</pid>
+      </process>
+      <thread ref="thread-1" />
+      <weight ref="weight-1" />
+      <tagged-backtrace ref="stack-1" />
+    </row>
+  </node>
+</trace-query-result>
