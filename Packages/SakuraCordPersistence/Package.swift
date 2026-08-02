@@ -11,6 +11,12 @@ let package = Package(
     ],
     targets: [
         .target(name: "SakuraCordPersistence", dependencies: ["SakuraCordModels", .product(name: "GRDB", package: "GRDB.swift")]),
-        .testTarget(name: "SakuraCordPersistenceTests", dependencies: ["SakuraCordPersistence"])
+        .testTarget(
+            name: "SakuraCordPersistenceTests",
+            dependencies: [
+                "SakuraCordPersistence",
+                .product(name: "GRDB", package: "GRDB.swift")
+            ]
+        )
     ]
 )

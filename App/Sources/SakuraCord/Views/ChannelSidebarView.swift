@@ -2,6 +2,87 @@ import AppKit
 import SakuraCordModels
 import SwiftUI
 
+@MainActor
+final class ChannelSidebarSelectionCommitter {
+    private enum PendingSelection: Equatable {
+        case none
+        case value(ChannelID?)
+    }
+
+    private var pendingTask: Task<Void, Never>?
+    private var pendingSelectionState = PendingSelection.none
+
+    var pendingSelection: ChannelID? {
+        guard case let .value(selection) = pendingSelectionState else {
+            return nil
+        }
+        return selection
+    }
+
+    var hasPendingSelection: Bool {
+        if case .value = pendingSelectionState {
+            return true
+        }
+        return false
+    }
+
+    func presentedSelection(fallback: ChannelID?) -> ChannelID? {
+        guard case let .value(selection) = pendingSelectionState else {
+            return fallback
+        }
+        return selection
+    }
+
+    func schedule(
+        _ selection: ChannelID?,
+        currentSelection: @escaping @MainActor () -> ChannelID?,
+        commit: @escaping @MainActor (ChannelID?) -> Void
+    ) {
+        pendingTask?.cancel()
+        let selectionBeforeDeferral = currentSelection()
+        let pendingSelection = PendingSelection.value(selection)
+        pendingSelectionState = pendingSelection
+        pendingTask = Task { @MainActor [weak self] in
+            // Let NSOutlineView finish its selection transaction before the
+            // model publishes the conversation-wide state change. Performing
+            // both operations reentrantly makes AppKit lay out the complete
+            // split view while its sidebar selection guard is still active.
+            await Task.yield()
+            guard let self,
+                  !Task.isCancelled,
+                  self.pendingSelectionState == pendingSelection
+            else { return }
+            guard currentSelection() == selectionBeforeDeferral else {
+                self.cancel()
+                return
+            }
+            commit(selection)
+        }
+    }
+
+    func selectedValueChanged(to selection: ChannelID?) {
+        guard case let .value(pendingSelection) = pendingSelectionState else {
+            return
+        }
+        if pendingSelection == selection {
+            pendingTask = nil
+            pendingSelectionState = .none
+        } else {
+            cancel()
+        }
+    }
+
+    func cancel() {
+        pendingTask?.cancel()
+        pendingTask = nil
+        pendingSelectionState = .none
+    }
+
+    deinit {
+        pendingTask?.cancel()
+    }
+}
+
 struct ChannelSidebarView: View {
     let voiceModel: AppModel
     let guild: Guild?
@@ -11,12 +92,15 @@ struct ChannelSidebarView: View {
     let connectionState: ConnectionState
     let currentStatus: PresenceStatus
     let isAuthenticated: Bool
+    var isCachedStartup = false
     let isOfflineTesting: Bool
     let activeVoiceChannelID: ChannelID?
     let connectAccount: () -> Void
     let logout: () async -> Void
     let updateStatus: (PresenceStatus) async -> Void
     @Environment(\.displayScale) private var displayScale
+    @State private var selectionCommitter =
+        ChannelSidebarSelectionCommitter()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -36,7 +120,7 @@ struct ChannelSidebarView: View {
                 .accessibilityHidden(guild != nil)
 
                 if guild != nil {
-                    List(selection: $selection) {
+                    List(selection: deferredGuildSelection) {
                         let groups = ChannelGroup.make(from: displayedChannels)
                         ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
                             ChannelGroupRows(
@@ -53,6 +137,11 @@ struct ChannelSidebarView: View {
                     .listStyle(.sidebar)
                     .scrollContentBackground(.hidden)
                     .clipped()
+                    .onChange(of: selection) { _, newSelection in
+                        selectionCommitter.selectedValueChanged(
+                            to: newSelection
+                        )
+                    }
                 }
             }
 
@@ -62,6 +151,7 @@ struct ChannelSidebarView: View {
                 connectionState: connectionState,
                 currentStatus: currentStatus,
                 isAuthenticated: isAuthenticated,
+                isCachedStartup: isCachedStartup,
                 isOfflineTesting: isOfflineTesting,
                 connectAccount: connectAccount,
                 logout: logout,
@@ -82,12 +172,36 @@ struct ChannelSidebarView: View {
         1 / max(displayScale, 1)
     }
 
-    private var hiddenChannelIDs: Set<ChannelID> {
-        Set(
-            channels.lazy
-                .filter { voiceModel.conversationAccess(for: $0) == .hidden }
-                .map(\.id)
+    private var deferredGuildSelection: Binding<ChannelID?> {
+        Binding(
+            // During the one-run-loop handoff, report the sidebar's accepted
+            // value back to NSOutlineView instead of the still-old model
+            // value. Otherwise AppKit sees the selection snap backward and
+            // performs a second complete selection/layout transaction when
+            // the model commit arrives.
+            get: {
+                selectionCommitter.presentedSelection(fallback: selection)
+            },
+            set: { newSelection in
+                guard selection != newSelection else { return }
+                if let newSelection {
+                    AppPerformanceSignposts.beginConversationNavigation(
+                        to: newSelection
+                    )
+                } else {
+                    AppPerformanceSignposts.cancelConversationNavigation()
+                }
+                selectionCommitter.schedule(
+                    newSelection,
+                    currentSelection: { selection },
+                    commit: { selection = $0 }
+                )
+            }
         )
+    }
+
+    private var hiddenChannelIDs: Set<ChannelID> {
+        voiceModel.hiddenChannelIDs
     }
 
     private var displayedChannels: [Channel] {
@@ -358,6 +472,7 @@ private struct AccountControlView: View {
     let connectionState: ConnectionState
     let currentStatus: PresenceStatus
     let isAuthenticated: Bool
+    let isCachedStartup: Bool
     let isOfflineTesting: Bool
     let connectAccount: () -> Void
     let logout: () async -> Void
@@ -381,6 +496,7 @@ private struct AccountControlView: View {
                     Spacer(minLength: 4)
                     AccountMenu(
                         isAuthenticated: isAuthenticated,
+                        isCachedStartup: isCachedStartup,
                         isOfflineTesting: isOfflineTesting,
                         currentStatus: currentStatus,
                         connectAccount: connectAccount,
@@ -418,12 +534,17 @@ private struct AccountControlView: View {
         if isOfflineTesting {
             return "Offline Testing"
         }
-        return isAuthenticated ? (user?.displayName ?? "Discord Account") : "Connect Account"
+        return isAuthenticated || isCachedStartup
+            ? (user?.displayName ?? "Discord Account")
+            : "Connect Account"
     }
 
     private var accountSubtitle: String {
         if isOfflineTesting {
             return "Mock data • networking disabled"
+        }
+        if isCachedStartup {
+            return "Cached data • reconnecting"
         }
         if isAuthenticated {
             return user.map { "@\($0.username)" } ?? connectionState.rawValue
@@ -450,6 +571,7 @@ private struct AccountAvatar: View {
 
 private struct AccountMenu: View {
     let isAuthenticated: Bool
+    let isCachedStartup: Bool
     let isOfflineTesting: Bool
     let currentStatus: PresenceStatus
     let connectAccount: () -> Void
@@ -460,6 +582,14 @@ private struct AccountMenu: View {
         Menu {
             if isOfflineTesting {
                 Text("Discord networking is disabled")
+            } else if isCachedStartup {
+                Text("Cached data is read-only while Discord reconnects")
+                Button(
+                    "Log Out",
+                    systemImage: "rectangle.portrait.and.arrow.right",
+                    role: .destructive,
+                    action: requestLogout
+                )
             } else if isAuthenticated {
                 Menu("Set Status", systemImage: "circle.dotted") {
                     ForEach(PresenceStatus.allCases.filter { $0 != .offline }, id: \.self) { status in
@@ -576,6 +706,7 @@ private struct ChannelRow: View {
                 isUnread: model.isChannelUnread(channel.id),
                 isMutationPending:
                     model.isChannelNotificationMutationPending(channel.id),
+                allowsMutations: !model.presentsCachedStartup,
                 directOverride: model.channelNotificationOverride(for: channel),
                 inheritedLevel:
                     model.inheritedChannelNotificationLevel(for: channel),

@@ -48,12 +48,7 @@ private struct ChatRootView: View {
     @State private var isFileDropTargeted = false
     @State private var isInstantUpload = false
     @State private var hoveredFileDropDestination: MessageComposerDestination?
-
-    private let modifierFlagTimer = Timer.publish(
-        every: 0.05,
-        on: .main,
-        in: .common
-    ).autoconnect()
+    @State private var modifierPollingTask: Task<Void, Never>?
 
     var body: some View {
         @Bindable var model = model
@@ -77,6 +72,7 @@ private struct ChatRootView: View {
                     connectionState: model.connectionState,
                     currentStatus: model.currentStatus,
                     isAuthenticated: model.isAuthenticated,
+                    isCachedStartup: model.presentsCachedStartup,
                     isOfflineTesting: model.isOfflineTesting,
                     activeVoiceChannelID: model.activeVoiceChannel?.id,
                     connectAccount: {
@@ -140,6 +136,15 @@ private struct ChatRootView: View {
             }
             .frame(width: 0, height: 0)
         }
+        .background {
+            DisplayCompleteFrameReporter(
+                presentationID: model.selectedChannelID?.rawValue
+            ) {
+                guard model.selectedChannelID == nil else { return }
+                AppPerformanceSignposts.reportNonTimelineWorkspaceFrame()
+            }
+            .frame(width: 1, height: 1)
+        }
         .overlay {
             if presentsForumComposer,
                let channel = model.selectedChannel,
@@ -187,13 +192,9 @@ private struct ChatRootView: View {
                 isInstantUpload = targeted && NSEvent.modifierFlags.contains(.shift)
                 hoveredFileDropDestination =
                     targeted ? composerDestinationForCurrentPointer() : nil
+                updateModifierPolling(isTargeted: targeted)
             }
         )
-        .onReceive(modifierFlagTimer) { _ in
-            guard isFileDropTargeted else { return }
-            isInstantUpload = NSEvent.modifierFlags.contains(.shift)
-            hoveredFileDropDestination = composerDestinationForCurrentPointer()
-        }
         .onPreferenceChange(ThreadPaneFramePreferenceKey.self) { frame in
             supplementaryPaneFrame = frame
         }
@@ -202,8 +203,18 @@ private struct ChatRootView: View {
                 supplementaryPaneFrame = .zero
             }
         }
-        .onChange(of: model.selectedChannelID) {
+        .onChange(of: model.selectedChannelID) { _, channelID in
             presentsForumComposer = false
+            AppPerformanceSignposts.expectStartupConversation(channelID)
+        }
+        .onAppear {
+            AppPerformanceSignposts.expectStartupConversation(
+                model.selectedChannelID
+            )
+        }
+        .onDisappear {
+            modifierPollingTask?.cancel()
+            modifierPollingTask = nil
         }
         .sheet(isPresented: $showLogin) {
             DiscordLoginView(
@@ -231,6 +242,19 @@ private struct ChatRootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .sakuracordNotificationDeepLink)) { notification in
             guard let link = notification.object as? NotificationDeepLink else { return }
             Task { await model.navigate(from: link) }
+        }
+    }
+
+    private func updateModifierPolling(isTargeted: Bool) {
+        modifierPollingTask?.cancel()
+        modifierPollingTask = nil
+        guard isTargeted else { return }
+        modifierPollingTask = Task { @MainActor in
+            while !Task.isCancelled {
+                isInstantUpload = NSEvent.modifierFlags.contains(.shift)
+                hoveredFileDropDestination = composerDestinationForCurrentPointer()
+                try? await Task.sleep(for: .milliseconds(50))
+            }
         }
     }
 
@@ -493,6 +517,74 @@ private struct ChatRootView: View {
     private var selectedGuild: Guild? {
         guard let guildID = model.selectedGuildID else { return nil }
         return model.snapshot?.guilds.first(where: { $0.id == guildID })
+    }
+}
+
+struct DisplayCompleteFrameReporter: NSViewRepresentable {
+    let presentationID: UInt64?
+    let report: @MainActor () -> Void
+
+    func makeNSView(context: Context) -> DisplayCompleteFrameReportingView {
+        DisplayCompleteFrameReportingView(
+            presentationID: presentationID,
+            report: report
+        )
+    }
+
+    func updateNSView(
+        _ nsView: DisplayCompleteFrameReportingView,
+        context: Context
+    ) {
+        nsView.update(
+            presentationID: presentationID,
+            report: report
+        )
+    }
+}
+
+final class DisplayCompleteFrameReportingView: NSView {
+    private var presentationID: UInt64?
+    private var report: @MainActor () -> Void
+    private var didReport = false
+
+    init(
+        presentationID: UInt64?,
+        report: @escaping @MainActor () -> Void
+    ) {
+        self.presentationID = presentationID
+        self.report = report
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard window != nil, !didReport else { return }
+        didReport = true
+        Task { @MainActor [report] in
+            await Task.yield()
+            report()
+        }
+    }
+
+    func update(
+        presentationID: UInt64?,
+        report: @escaping @MainActor () -> Void
+    ) {
+        self.report = report
+        guard self.presentationID != presentationID else { return }
+        self.presentationID = presentationID
+        didReport = false
+        needsDisplay = true
     }
 }
 

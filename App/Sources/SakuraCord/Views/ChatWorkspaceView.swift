@@ -32,6 +32,15 @@ struct ChatWorkspaceView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onChange(of: model.selectedChannelID) { _, channelID in
+            guard let channelID else {
+                AppPerformanceSignposts.cancelConversationNavigation()
+                return
+            }
+            AppPerformanceSignposts.ensureConversationNavigation(
+                to: channelID
+            )
+        }
         .sheet(
             item: Binding(
                 get: { model.presentedInteractionModal },
@@ -96,14 +105,42 @@ private struct ChatWorkspacePrimaryContent: View {
                     || model.activeVoiceChannel?.id == channel.id
             {
                 DirectMessageCallWorkspace(model: model, channel: channel)
+                    .background {
+                        nonTimelineFrameReporter(channel.id)
+                    }
             } else {
                 ChatDetailView(model: model)
             }
         case .forum:
             ForumChannelView(model: model, presentsComposer: $presentsForumComposer)
+                .background {
+                    if let channelID = model.selectedChannelID {
+                        nonTimelineFrameReporter(channelID)
+                    }
+                }
         case .voice:
             VoiceChannelView(model: model)
+                .background {
+                    if let channelID = model.selectedChannelID {
+                        nonTimelineFrameReporter(channelID)
+                    }
+                }
         }
+    }
+
+    private func nonTimelineFrameReporter(
+        _ channelID: ChannelID
+    ) -> some View {
+        DisplayCompleteFrameReporter(
+            presentationID: channelID.rawValue
+        ) {
+            guard model.selectedChannelID == channelID else { return }
+            AppPerformanceSignposts.reportNonTimelineWorkspaceFrame()
+            AppPerformanceSignposts.reportConversationFirstFrame(
+                channelID: channelID
+            )
+        }
+        .frame(width: 1, height: 1)
     }
 }
 

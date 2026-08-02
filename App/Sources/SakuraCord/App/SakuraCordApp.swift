@@ -14,6 +14,7 @@ struct SakuraCordApp: App {
     private let performanceMockProvider: MockChatProvider?
 
     init() {
+        AppPerformanceSignposts.beginStartup()
         let configuration = AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments)
         opensForumPerformanceFixture = configuration.includesForumPerformanceFixture
         opensChatPerformanceFixture = configuration.includesChatPerformanceFixture
@@ -51,6 +52,9 @@ struct SakuraCordApp: App {
         WindowGroup("SakuraCord", id: "main") {
             RootView(model: model)
                 .frame(minWidth: 860, minHeight: 560)
+                .onAppear {
+                    AppPerformanceSignposts.reportRootViewAppeared()
+                }
                 .task {
                     await model.start()
                     if opensChatPerformanceFixture {

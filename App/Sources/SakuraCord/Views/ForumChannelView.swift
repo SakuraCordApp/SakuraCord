@@ -30,7 +30,9 @@ struct ForumChannelView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .onChange(of: channel.id) {
                 searchText = model.forumSearchText
+                reportPresentedForum(channel.id)
             }
+            .onAppear { reportPresentedForum(channel.id) }
         } else {
             ContentUnavailableView("Choose a forum", systemImage: "rectangle.3.group.bubble")
         }
@@ -70,6 +72,19 @@ struct ForumChannelView: View {
             )
         } else {
             ForumPostCollection(model: model, channel: channel)
+        }
+    }
+
+    private func reportPresentedForum(_ channelID: ChannelID) {
+        // SwiftUI's appearance callback runs before the current display
+        // transaction. Deferring one main-actor turn makes the signpost a
+        // closer proxy for the first presentable forum frame.
+        Task { @MainActor in
+            await Task.yield()
+            guard model.selectedChannelID == channelID else { return }
+            AppPerformanceSignposts.reportConversationFirstFrame(
+                channelID: channelID
+            )
         }
     }
 }
@@ -1284,6 +1299,7 @@ private struct ForumPostCardChrome<Content: View>: View {
                     isUnread: model.isForumPostUnread(post),
                     isMutationPending:
                         model.isForumNotificationMutationPending(post.id),
+                    allowsMutations: !model.presentsCachedStartup,
                     notificationSettings: post.thread.notificationSettings,
                     inheritedNotificationLevel:
                         model.inheritedForumPostNotificationLevel(post),

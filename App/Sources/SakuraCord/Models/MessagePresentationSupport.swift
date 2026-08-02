@@ -152,7 +152,10 @@ final class MessageRowPresentation: Identifiable, Equatable, Sendable {
         lhs: MessageRowPresentation,
         rhs: MessageRowPresentation
     ) -> Bool {
-        lhs.message == rhs.message
+        if lhs === rhs {
+            return true
+        }
+        return lhs.message == rhs.message
             && lhs.startsGroup == rhs.startsGroup
             && lhs.startsDay == rhs.startsDay
             && lhs.replyPreview == rhs.replyPreview

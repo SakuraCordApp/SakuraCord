@@ -4,6 +4,7 @@ import Foundation
 import MessageRendering
 @testable import SakuraCord
 import SakuraCordModels
+import SakuraCordPersistence
 import Testing
 
 @MainActor
@@ -452,6 +453,27 @@ import Testing
     #expect(
         !model.addComposerAttachments(
             [URL(fileURLWithPath: "/tmp/not-for-voice")],
+            to: .channel
+        )
+    )
+}
+
+@MainActor
+@Test func `window attachment drops reject cached startup surfaces`() async {
+    let model = AppModel(
+        launchMode: .offlineTesting,
+        provider: TypingTestProvider()
+    )
+    await model.start()
+    #expect(model.isComposerDropEligible(.channel))
+
+    model.presentsCachedStartup = true
+
+    #expect(!model.isComposerDropEligible(.channel))
+    #expect(!model.isComposerDropEligible(.thread))
+    #expect(
+        !model.addComposerAttachments(
+            [URL(fileURLWithPath: "/tmp/cached-startup-drop")],
             to: .channel
         )
     )
@@ -953,7 +975,10 @@ import Testing
         discordNetworkDisabledOverride: false,
         restoresStoredSession: false,
         credentialStore: credentials,
-        authenticatedProviderFactory: { _, _ in MockChatProvider() }
+        authenticatedProviderFactory: { _, _ in MockChatProvider() },
+        accountDatabaseFactory: { _ in
+            try? SakuraCordDatabase(inMemory: true)
+        }
     )
     await model.start()
     #expect(

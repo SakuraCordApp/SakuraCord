@@ -100,6 +100,7 @@ final class AppModel {
         didSet { updateOrderedCustomEmojis() }
     }
     var visibleChannels: [Channel] = []
+    var hiddenChannelIDs: Set<ChannelID> = []
     var selectedChannel: Channel?
     @ObservationIgnored var messages: [Message] = []
     @ObservationIgnored var messageRows: [MessageRowPresentation] = []
@@ -127,33 +128,48 @@ final class AppModel {
     var unreadDividerMessageIDs: [ChannelID: MessageID] = [:]
     var members: [Member] = [] {
         didSet {
-            let presentationChanged = oldValue != members
-            rebuildMemberSections()
+            guard oldValue != members else { return }
+            let previousMembersByID = membersByID
+            if !defersMemberPresentationRebuild {
+                rebuildMemberSections()
+            }
             let indexed = mergedMemberStore(with: members)
             if membersByID != indexed {
                 membersByID = indexed
             }
+            var permissionsChanged = false
             if let guildID = selectedGuildID,
                let currentUserID = snapshot?.currentUser.id,
                let currentMember = indexed[currentUserID]
             {
                 let roleIDs = Set(currentMember.roles.map(\.id))
-                currentUserRoleIDsByGuild[guildID] = roleIDs
-                readState.updateCurrentUserRoles(roleIDs, guildID: guildID)
+                if currentUserRoleIDsByGuild[guildID] != roleIDs {
+                    currentUserRoleIDsByGuild[guildID] = roleIDs
+                    readState.updateCurrentUserRoles(roleIDs, guildID: guildID)
+                    permissionsChanged = true
+                }
             }
-            refreshUnreadPresentation()
-            if presentationChanged {
-                invalidateTimelinePresentation()
+            if permissionsChanged {
+                refreshUnreadPresentation(appliesAccessImmediately: true)
+            }
+            if !defersMemberPresentationRebuild {
+                publishTimelineMemberPresentationChanges(
+                    from: previousMembersByID,
+                    to: indexed
+                )
             }
         }
     }
 
     var membersByID: [UserID: Member] = [:]
     @ObservationIgnored var membersByGuildID: [GuildID: [UserID: Member]] = [:]
+    @ObservationIgnored var memberListsByGuildID: [GuildID: [Member]] = [:]
+    @ObservationIgnored var memberListGroupsByGuildID: [GuildID: [GuildMemberListGroup]] = [:]
+    @ObservationIgnored var defersMemberPresentationRebuild = false
     var memberSections: [MemberSection] = []
     var memberListGroups: [GuildMemberListGroup] = [] {
         didSet {
-            if oldValue != memberListGroups {
+            if oldValue != memberListGroups, !defersMemberPresentationRebuild {
                 rebuildMemberSections()
             }
         }
@@ -161,11 +177,11 @@ final class AppModel {
     var guildRoles: [GuildRole] = [] {
         didSet {
             let presentationChanged = oldValue != guildRoles
-            if presentationChanged {
+            if presentationChanged, !defersMemberPresentationRebuild {
                 rebuildMemberSections()
-            }
-            refreshUnreadPresentation()
-            if presentationChanged {
+                AppPerformanceSignposts.signposter.emitEvent(
+                    "TimelineInvalidationGuildRoles"
+                )
                 invalidateTimelinePresentation()
             }
         }
@@ -177,6 +193,9 @@ final class AppModel {
     var knownMentionMembers: [UserID: Member] = [:] {
         didSet {
             if oldValue != knownMentionMembers {
+                AppPerformanceSignposts.signposter.emitEvent(
+                    "TimelineInvalidationKnownMentionMembers"
+                )
                 invalidateTimelinePresentation()
             }
         }
@@ -384,16 +403,20 @@ final class AppModel {
     }
 
     var canCreateForumPosts: Bool {
-        selectedConversationAccess.canSend && supportedCapabilities.contains(.forums)
+        !presentsCachedStartup
+            && selectedConversationAccess.canSend
+            && supportedCapabilities.contains(.forums)
     }
 
     var canManageForumPosts: Bool {
+        guard !presentsCachedStartup else { return false }
         guard let permissions = selectedEffectivePermissions else { return false }
         return permissions & DiscordPermissionBits.manageThreads != 0
     }
 
     func canDeleteForumPost(_ post: ForumPost) -> Bool {
-        Self.canDeleteForumPost(
+        guard !presentsCachedStartup else { return false }
+        return Self.canDeleteForumPost(
             ownerID: post.thread.ownerID ?? post.owner?.id,
             currentUserID: snapshot?.currentUser.id,
             canManage: canManageForumPosts
@@ -401,6 +424,7 @@ final class AppModel {
     }
 
     func canArchiveForumPost(_ post: ForumPost) -> Bool {
+        guard !presentsCachedStartup else { return false }
         if canManageForumPosts { return true }
         guard !post.thread.isLocked else { return false }
         let ownerID = post.thread.ownerID ?? post.owner?.id
@@ -408,6 +432,7 @@ final class AppModel {
     }
 
     func canEditForumPostTags(_ post: ForumPost) -> Bool {
+        guard !presentsCachedStartup else { return false }
         if canManageForumPosts { return true }
         guard !post.thread.isLocked else { return false }
         let ownerID = post.thread.ownerID ?? post.owner?.id
@@ -467,13 +492,18 @@ final class AppModel {
         else {
             return .checking
         }
-        let member = membersByID[currentUserID]
+        let member =
+            membersByGuildID[guildID]?[currentUserID]
+            ?? (guildID == selectedGuildID ? membersByID[currentUserID] : nil)
+        let roles =
+            guildRolesByGuildID[guildID]
+            ?? (guildID == selectedGuildID ? guildRoles : [])
         let permissions = ConversationPermissionResolver.effectivePermissions(
             guild: guild,
             channel: channel,
             currentUserID: currentUserID,
             currentMember: member,
-            roles: guildID == selectedGuildID ? guildRoles : [],
+            roles: roles,
             currentRoleIDs: currentUserRoleIDsByGuild[guildID]
         )
         if channel.kind == .voice {
@@ -509,13 +539,22 @@ final class AppModel {
     var selectedChannelID: ChannelID? {
         didSet {
             guard selectedChannelID != oldValue else { return }
+            if let selectedChannelID {
+                AppPerformanceSignposts.ensureConversationNavigation(
+                    to: selectedChannelID
+                )
+            } else {
+                AppPerformanceSignposts.cancelConversationNavigation()
+            }
             dismissInspectorProfile()
             if let oldValue {
+                cancelConversationRefresh(in: oldValue)
                 unreadDividerMessageIDs[oldValue] = nil
                 if conversationNewestRequest?.channelID == oldValue {
                     conversationNewestRequest = nil
                 }
                 storeCachedMessages(messages, for: oldValue)
+                storeCachedMessageRows(messageRows, for: oldValue)
                 lastTypingRequestAt[oldValue] = nil
                 _ = readState.updatePresentation(channelID: oldValue, isPresented: false)
                 readState.endForumVisit(channelID: oldValue)
@@ -523,6 +562,13 @@ final class AppModel {
             selectedChannel =
                 snapshot?.channels.first { $0.id == selectedChannelID }
                     ?? visibleChannels.first { $0.id == selectedChannelID }
+            if let selectedChannelID, let database {
+                selectedChannelPersistenceTask?.cancel()
+                selectedChannelPersistenceTask = Task {
+                    guard !Task.isCancelled else { return }
+                    try? await database.saveSelectedChannelID(selectedChannelID)
+                }
+            }
             commandLoadTask?.cancel()
             commandAutocompleteTask?.cancel()
             cancelApplicationCommandMemberSearch()
@@ -539,22 +585,26 @@ final class AppModel {
                     initialPositionEstablished: false,
                     windowIsActive: mainWindowIsActive,
                     hasReachedReadBoundary: false,
-                    blocksAutomaticAcknowledgement: false
+                    blocksAutomaticAcknowledgement: presentsCachedStartup
                 )
             }
             if selectedChannel?.kind == .forum {
                 if let selectedChannelID {
                     readState.beginForumVisit(channelID: selectedChannelID)
                 }
-                beginForumLoad()
+                if !presentsCachedStartup {
+                    beginForumLoad()
+                }
             } else {
                 beginSelectedChannelLoad()
             }
             if let channel = selectedChannel,
+               !presentsCachedStartup,
                channel.kind == .directMessage || channel.kind == .groupDirectMessage
             {
-                Task { [weak self] in
-                    await self?.observePrivateCall(in: channel)
+                let account = accountSession()
+                startAccountChildTask(account: account) { model, account in
+                    await model.observePrivateCall(in: channel, account: account)
                 }
             }
         }
@@ -569,10 +619,16 @@ final class AppModel {
 
     @ObservationIgnored var provider: any ChatProvider
     @ObservationIgnored var database: SakuraCordDatabase?
+    @ObservationIgnored var accountSessionGeneration: UInt64 = 0
+    @ObservationIgnored var installedAccountSessionRevision: UInt64 = 0
+    @ObservationIgnored let accountTransitionCoordinator = AccountTransitionCoordinator()
+    @ObservationIgnored var accountTransitionIsActive = false
+    @ObservationIgnored var accountChildTasks: [UUID: Task<Void, Never>] = [:]
+    var presentsCachedStartup = false
+    @ObservationIgnored var selectedChannelPersistenceTask:
+        Task<Void, Never>?
     @ObservationIgnored let messagePersistenceSink = MessagePersistenceSink()
-    @ObservationIgnored let runsChatPerformanceBenchmark =
-        AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments)
-        .runsChatPerformanceAutoScroll
+    @ObservationIgnored let runsChatPerformanceBenchmark: Bool
     @ObservationIgnored var eventTask: Task<Void, Never>?
     @ObservationIgnored var locallyStartedOutgoingPrivateCallRings:
         Set<ChannelID> = []
@@ -587,8 +643,7 @@ final class AppModel {
         [MessageID: NativeTimelineTextPlan] = [:]
     @ObservationIgnored var batchedUnreadPresentationNeedsRefresh =
         false
-    @ObservationIgnored var unreadPresentationRefreshTask:
-        Task<Void, Never>?
+    @ObservationIgnored var hasDeferredUnreadPresentationRefresh = false
     @ObservationIgnored var batchedAcknowledgementChannelIDs:
         Set<ChannelID> = []
     @ObservationIgnored let maximumCreatedMessagesPerFlush = 4
@@ -604,6 +659,9 @@ final class AppModel {
     @ObservationIgnored var profileCache:
         [ProfileCacheKey: UserProfile] = [:]
     @ObservationIgnored var channelLoadTask: Task<Void, Never>?
+    @ObservationIgnored var conversationRefreshJournals:
+        [ChannelID: ConversationRefreshJournal] = [:]
+    @ObservationIgnored var conversationRefreshJournalRevision: UInt64 = 0
     @ObservationIgnored var forumLoadTask: Task<Void, Never>?
     @ObservationIgnored var forumNextOffset: Int?
     @ObservationIgnored var forumLoadGeneration: UInt64 = 0
@@ -621,11 +679,13 @@ final class AppModel {
     @ObservationIgnored var roleMemberTask: Task<Void, Never>?
     @ObservationIgnored var commandExecutionTask: Task<Void, Never>?
     @ObservationIgnored var stickerLoadTasks: [GuildID: Task<Void, Never>] = [:]
+    @ObservationIgnored var stickerLoadGeneration: UInt64 = 0
     @ObservationIgnored var componentKeyByNonce: [String: ComponentControlKey] = [:]
     @ObservationIgnored var loadingReactionReactors: Set<ReactionReactorLoadKey> = []
     @ObservationIgnored var failedReactionReactorLoads: [ReactionReactorLoadKey: Date] = [:]
     @ObservationIgnored var liveScrollingConversationIDs:
         Set<ChannelID> = []
+    @ObservationIgnored var timelineScrollActivityRevision: UInt64 = 0
     @ObservationIgnored let reactionReactorLoadLimiter = ReactionReactorLoadLimiter(
         maximumConcurrentLoads: maximumConcurrentReactionReactorLoads
     )
@@ -635,6 +695,7 @@ final class AppModel {
         [ReactionMutationKey: Task<Void, Never>] = [:]
     @ObservationIgnored var guildActivationTask: Task<Void, Never>?
     @ObservationIgnored var memberLoadTask: Task<Void, Never>?
+    @ObservationIgnored var memberLoadGeneration: UInt64 = 0
     @ObservationIgnored var voiceEventTask: Task<Void, Never>?
     @ObservationIgnored var voiceMigrationTask: Task<Void, Never>?
     @ObservationIgnored var voiceSession: DiscordVoiceSession?
@@ -645,6 +706,9 @@ final class AppModel {
     @ObservationIgnored var conversationNewestRequestID: UInt64 = 0
     @ObservationIgnored var messageCache: [ChannelID: [Message]] = [:]
     @ObservationIgnored var messageCacheOrder: [ChannelID] = []
+    @ObservationIgnored var messageRowCache:
+        [ChannelID: [MessageRowPresentation]] = [:]
+    @ObservationIgnored var messageRowCacheOrder: [ChannelID] = []
     @ObservationIgnored var hasMoreCache: [ChannelID: Bool] = [:]
     @ObservationIgnored let discordNetworkDisabled: Bool
     @ObservationIgnored let usesInsecureDebugCredentials: Bool
@@ -652,6 +716,8 @@ final class AppModel {
     @ObservationIgnored let credentialStore: any CredentialStore
     @ObservationIgnored let authenticatedProviderFactory:
         (CredentialHandle, String?) -> any ChatProvider
+    @ObservationIgnored let accountDatabaseFactory:
+        (AccountID) -> SakuraCordDatabase?
     @ObservationIgnored let persistsEmojiPreferences: Bool
     @ObservationIgnored var didAttemptSessionRestore = false
     @ObservationIgnored var credentialHandle: CredentialHandle?
@@ -679,12 +745,14 @@ final class AppModel {
         restoresStoredSession: Bool = true,
         credentialStore: (any CredentialStore)? = nil,
         authenticatedProviderFactory: ((CredentialHandle, String?) -> any ChatProvider)? = nil,
+        accountDatabaseFactory: ((AccountID) -> SakuraCordDatabase?)? = nil,
         notificationService: (any NativeNotificationService)? = nil,
         soundPlayer: (any AppSoundPlaying)? = nil,
         notificationPreferences: NotificationPreferences? = nil,
         typingExpiry: Duration = .seconds(10),
         localTypingTiming: LocalTypingTiming = LocalTypingTiming(),
-        readAcknowledgementTiming: ReadAcknowledgementTiming = ReadAcknowledgementTiming()
+        readAcknowledgementTiming: ReadAcknowledgementTiming = ReadAcknowledgementTiming(),
+        runsChatPerformanceBenchmarkOverride: Bool? = nil
     ) {
         self.launchMode = launchMode
         self.notificationService =
@@ -698,6 +766,11 @@ final class AppModel {
         typingState = TypingStateModel(expiry: typingExpiry)
         self.localTypingTiming = localTypingTiming
         self.readAcknowledgementTiming = readAcknowledgementTiming
+        runsChatPerformanceBenchmark =
+            runsChatPerformanceBenchmarkOverride
+                ?? AppLaunchConfiguration(
+                    arguments: ProcessInfo.processInfo.arguments
+                ).runsChatPerformanceAutoScroll
         discordNetworkDisabled =
             discordNetworkDisabledOverride
                 ?? (launchMode == .offlineTesting
@@ -727,6 +800,9 @@ final class AppModel {
                     fingerprint: fingerprint
                 )
             }
+        self.accountDatabaseFactory = accountDatabaseFactory ?? { accountID in
+            try? SakuraCordDatabase(accountID: accountID)
+        }
         persistsEmojiPreferences = launchMode == .normal
         favoriteEmojiKeys =
             launchMode == .normal
@@ -738,10 +814,12 @@ final class AppModel {
                 as? [String: Int]
                 ?? [:]
                 : [:]
-        database =
-            launchMode == .normal
-                ? try? SakuraCordDatabase(accountID: AccountID(rawValue: 1))
-                : try? SakuraCordDatabase(inMemory: true)
+        // A normal launch does not know the account yet. Opening the historical
+        // account-1 fallback here only to replace it during credential restore
+        // duplicates filesystem and SQLite work on every startup.
+        database = launchMode == .offlineTesting
+            ? try? SakuraCordDatabase(inMemory: true)
+            : nil
         commandComposer.configureFrecencyScope(
             launchMode == .offlineTesting ? "offline" : "signed-out"
         )

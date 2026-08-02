@@ -14,6 +14,7 @@ struct ForumPostContextMenuBridge: NSViewRepresentable {
     let isPinned: Bool
     let isUnread: Bool
     let isMutationPending: Bool
+    var allowsMutations = true
     let notificationSettings: ThreadNotificationSettings?
     let inheritedNotificationLevel: MessageNotificationLevel
     let requiresTag: Bool
@@ -62,6 +63,7 @@ struct ForumPostContextMenuBridge: NSViewRepresentable {
         private var isPinned: Bool
         private var isUnread: Bool
         private var isMutationPending: Bool
+        private var allowsMutations: Bool
         private var notificationSettings: ThreadNotificationSettings?
         private var inheritedNotificationLevel: MessageNotificationLevel
         private var requiresTag: Bool
@@ -92,6 +94,7 @@ struct ForumPostContextMenuBridge: NSViewRepresentable {
             isPinned = bridge.isPinned
             isUnread = bridge.isUnread
             isMutationPending = bridge.isMutationPending
+            allowsMutations = bridge.allowsMutations
             notificationSettings = bridge.notificationSettings
             inheritedNotificationLevel = bridge.inheritedNotificationLevel
             requiresTag = bridge.requiresTag
@@ -126,6 +129,7 @@ struct ForumPostContextMenuBridge: NSViewRepresentable {
             isPinned = bridge.isPinned
             isUnread = bridge.isUnread
             isMutationPending = bridge.isMutationPending
+            allowsMutations = bridge.allowsMutations
             notificationSettings = bridge.notificationSettings
             inheritedNotificationLevel = bridge.inheritedNotificationLevel
             requiresTag = bridge.requiresTag
@@ -155,7 +159,7 @@ struct ForumPostContextMenuBridge: NSViewRepresentable {
                     "Mark as Read",
                     systemImage: "envelope.open.fill",
                     action: #selector(markReadFromMenu),
-                    isEnabled: isUnread
+                    isEnabled: isUnread && allowsMutations
                 )
             )
             menu.addItem(.separator())
@@ -172,7 +176,7 @@ struct ForumPostContextMenuBridge: NSViewRepresentable {
                     "Unmute Post",
                     systemImage: "bell.fill",
                     action: #selector(unmuteFromMenu),
-                    isEnabled: !isMutationPending
+                    isEnabled: allowsMutations && !isMutationPending
                 )
                 if let subtitle = ChannelContextMenuSubtitle.muteRemaining(
                     until: notificationSettings?.muteConfiguration?.endTime
@@ -185,7 +189,7 @@ struct ForumPostContextMenuBridge: NSViewRepresentable {
                     "Mute Post",
                     systemImage: "bell.slash.fill",
                     action: nil,
-                    isEnabled: !isMutationPending
+                    isEnabled: allowsMutations && !isMutationPending
                 )
                 let muteMenu = NSMenu(title: "Mute Post")
                 muteMenu.autoenablesItems = false
@@ -193,7 +197,7 @@ struct ForumPostContextMenuBridge: NSViewRepresentable {
                     let item = menuItem(
                         duration.title,
                         action: #selector(muteFromMenu(_:)),
-                        isEnabled: !isMutationPending
+                        isEnabled: allowsMutations && !isMutationPending
                     )
                     item.representedObject = NSNumber(value: index)
                     muteMenu.addItem(item)
@@ -206,7 +210,7 @@ struct ForumPostContextMenuBridge: NSViewRepresentable {
                 "Notification Settings",
                 systemImage: "bell.badge.fill",
                 action: nil,
-                isEnabled: !isMutationPending
+                isEnabled: allowsMutations && !isMutationPending
             )
             notificationItem.subtitle =
                 ChannelContextMenuSubtitle.notificationSelection(

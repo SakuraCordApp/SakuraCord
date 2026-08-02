@@ -218,6 +218,7 @@ final class MacNativeNotificationService: NSObject, NativeNotificationService {
         let identifier = Self.identifier(
             accountID: accountID, channelID: message.channelID, messageID: message.id
         )
+        guard !Task.isCancelled else { return }
         do {
             try await center.add(
                 UNNotificationRequest(identifier: identifier, content: content, trigger: nil)

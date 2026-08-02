@@ -94,6 +94,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
     let isSelected: Bool
     let isUnread: Bool
     let isMutationPending: Bool
+    var allowsMutations = true
     let directOverride: ChannelNotificationOverride?
     let inheritedLevel: MessageNotificationLevel
     let inheritanceSource: ChannelNotificationInheritanceSource
@@ -136,6 +137,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
     final class Coordinator: NSObject {
         private var isUnread: Bool
         private var isMutationPending: Bool
+        private var allowsMutations: Bool
         private var directOverride: ChannelNotificationOverride?
         private var inheritedLevel: MessageNotificationLevel
         private var inheritanceSource: ChannelNotificationInheritanceSource
@@ -149,6 +151,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
         init(from bridge: ChannelContextMenuBridge) {
             isUnread = bridge.isUnread
             isMutationPending = bridge.isMutationPending
+            allowsMutations = bridge.allowsMutations
             directOverride = bridge.directOverride
             inheritedLevel = bridge.inheritedLevel
             inheritanceSource = bridge.inheritanceSource
@@ -163,6 +166,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
         func update(from bridge: ChannelContextMenuBridge) {
             isUnread = bridge.isUnread
             isMutationPending = bridge.isMutationPending
+            allowsMutations = bridge.allowsMutations
             directOverride = bridge.directOverride
             inheritedLevel = bridge.inheritedLevel
             inheritanceSource = bridge.inheritanceSource
@@ -183,7 +187,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
                     "Mark as Read",
                     systemImage: "envelope.open.fill",
                     action: #selector(markReadFromMenu),
-                    isEnabled: isUnread
+                    isEnabled: isUnread && allowsMutations
                 )
             )
             menu.addItem(.separator())
@@ -193,7 +197,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
                     "Unmute Channel",
                     systemImage: "bell.fill",
                     action: #selector(unmuteFromMenu),
-                    isEnabled: !isMutationPending
+                    isEnabled: allowsMutations && !isMutationPending
                 )
                 if let subtitle = ChannelContextMenuSubtitle.muteRemaining(
                     until: directOverride?.muteConfiguration?.endTime
@@ -206,7 +210,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
                     "Mute Channel",
                     systemImage: "bell.slash.fill",
                     action: nil,
-                    isEnabled: !isMutationPending
+                    isEnabled: allowsMutations && !isMutationPending
                 )
                 let muteMenu = NSMenu(title: "Mute Channel")
                 muteMenu.autoenablesItems = false
@@ -214,7 +218,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
                     let item = menuItem(
                         duration.title,
                         action: #selector(muteFromMenu(_:)),
-                        isEnabled: !isMutationPending
+                        isEnabled: allowsMutations && !isMutationPending
                     )
                     item.representedObject = NSNumber(value: index)
                     muteMenu.addItem(item)
@@ -227,7 +231,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
                 "Notification Settings",
                 systemImage: "bell.badge.fill",
                 action: nil,
-                isEnabled: !isMutationPending
+                isEnabled: allowsMutations && !isMutationPending
             )
             notificationItem.subtitle =
                 ChannelContextMenuSubtitle.notificationSelection(
@@ -278,7 +282,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
                 let item = menuItem(
                     title,
                     action: #selector(setNotificationFromMenu(_:)),
-                    isEnabled: !isMutationPending
+                    isEnabled: allowsMutations && !isMutationPending
                 )
                 item.state = selected == level ? .on : .off
                 item.representedObject = NSNumber(value: level.rawValue)

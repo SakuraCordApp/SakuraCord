@@ -55,13 +55,13 @@ final class MacAppSoundPlayer: AppSoundPlaying {
     }
 
     func setLooping(_ effect: AppSoundEffect, active: Bool) {
-        guard let player = player(for: effect) else { return }
         if active {
+            guard let player = player(for: effect) else { return }
             guard !player.isPlaying || player.numberOfLoops != -1 else { return }
             player.numberOfLoops = -1
             player.currentTime = 0
             player.play()
-        } else if player.numberOfLoops == -1 {
+        } else if let player = players[effect], player.numberOfLoops == -1 {
             player.stop()
             player.currentTime = 0
             player.numberOfLoops = 0

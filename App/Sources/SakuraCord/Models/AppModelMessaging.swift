@@ -4,25 +4,111 @@ import Foundation
 import MediaPipeline
 import OSLog
 import SakuraCordModels
+import SakuraCordPersistence
 import UniformTypeIdentifiers
 
+enum ConversationRefreshMutation {
+    case upsert(Message)
+    case delete
+}
+
+struct ConversationRefreshJournal {
+    let revision: UInt64
+    var mutationsByMessageID: [MessageID: ConversationRefreshMutation] = [:]
+}
+
 extension AppModel {
+    func beginConversationRefresh(in channelID: ChannelID) -> UInt64 {
+        conversationRefreshJournalRevision &+= 1
+        let revision = conversationRefreshJournalRevision
+        conversationRefreshJournals[channelID] = ConversationRefreshJournal(
+            revision: revision
+        )
+        return revision
+    }
+
+    func recordConversationRefreshMutation(
+        _ mutation: ConversationRefreshMutation,
+        messageID: MessageID,
+        channelID: ChannelID
+    ) {
+        guard var journal = conversationRefreshJournals[channelID] else { return }
+        journal.mutationsByMessageID[messageID] = mutation
+        conversationRefreshJournals[channelID] = journal
+    }
+
+    func conversationRefreshMutations(
+        in channelID: ChannelID,
+        revision: UInt64
+    ) -> [MessageID: ConversationRefreshMutation] {
+        guard let journal = conversationRefreshJournals[channelID],
+              journal.revision == revision
+        else { return [:] }
+        return journal.mutationsByMessageID
+    }
+
+    func endConversationRefresh(
+        in channelID: ChannelID,
+        revision: UInt64
+    ) {
+        guard conversationRefreshJournals[channelID]?.revision == revision else {
+            return
+        }
+        conversationRefreshJournals[channelID] = nil
+    }
+
+    func cancelConversationRefresh(in channelID: ChannelID) {
+        conversationRefreshJournals[channelID] = nil
+    }
+
+    @discardableResult
+    func journalAuthoritativeMessageUpsert(_ message: Message) -> Message {
+        let persistedMessage = reactionConfirmedSnapshot(message)
+        recordConversationRefreshMutation(
+            .upsert(persistedMessage),
+            messageID: persistedMessage.id,
+            channelID: persistedMessage.channelID
+        )
+        return persistedMessage
+    }
+
+    func persistAuthoritativeMessageUpsert(_ message: Message) {
+        persist(journalAuthoritativeMessageUpsert(message))
+    }
+
     func edit(_ message: Message, content: String) async {
+        guard !presentsCachedStartup else { return }
+        let session = accountSession()
         do {
-            let updated = try await provider.edit(
+            let updated = try await session.provider.edit(
                 messageID: message.id, channelID: message.channelID, content: content
             )
-            reconcileVisibleOrCached(updated)
-        } catch { errorMessage = error.localizedDescription }
+            guard isCurrentAccountSession(session) else { return }
+            let reconciled = reconcileVisibleOrCached(updated)
+            persistAuthoritativeMessageUpsert(reconciled)
+        } catch {
+            guard isCurrentAccountSession(session) else { return }
+            errorMessage = error.localizedDescription
+        }
     }
 
     func delete(_ message: Message) async {
+        guard !presentsCachedStartup else { return }
+        let session = accountSession()
         do {
-            try await provider.delete(messageID: message.id, channelID: message.channelID)
-            if replyingTo?.id == message.id {
-                replyingTo = nil
-            }
-        } catch { errorMessage = error.localizedDescription }
+            try await session.provider.delete(
+                messageID: message.id,
+                channelID: message.channelID
+            )
+            guard isCurrentAccountSession(session) else { return }
+            consumeMessageDeleted(
+                channelID: message.channelID,
+                messageID: message.id
+            )
+        } catch {
+            guard isCurrentAccountSession(session) else { return }
+            errorMessage = error.localizedDescription
+        }
     }
 
     func dismissEphemeralMessage(_ message: Message) {
@@ -33,10 +119,15 @@ extension AppModel {
             }
         }
         messageCache[message.channelID]?.removeAll { $0.id == message.id }
-        Task { try? await database?.deleteMessage(message.id) }
+        let session = accountSession()
+        Task { [weak self] in
+            guard let self, self.isCurrentAccountSession(session) else { return }
+            try? await session.database?.deleteMessage(message.id)
+        }
     }
 
     func toggleReaction(_ emoji: String, on message: Message) async {
+        guard !presentsCachedStartup else { return }
         let guildID = message.guildID ?? selectedGuildID
         let currentGuildEmojis = guildID.flatMap { emojisByGuild[$0] } ?? []
         guard
@@ -103,6 +194,8 @@ extension AppModel {
         for key: ReactionMutationKey,
         generation: UInt64
     ) async {
+        guard !presentsCachedStartup else { return }
+        let session = accountSession()
         guard var state = reactionMutations[key],
               state.generation == generation,
               !state.isSending
@@ -117,13 +210,14 @@ extension AppModel {
         state.isSending = true
         reactionMutations[key] = state
         do {
-            try await provider.setReaction(
+            try await session.provider.setReaction(
                 state.emoji,
                 reacted: sentState,
                 messageID: key.messageID,
                 channelID: key.channelID
             )
         } catch {
+            guard isCurrentAccountSession(session) else { return }
             guard let latest = reactionMutations[key] else { return }
             applyCurrentUserReactionState(
                 latest.confirmedReacted,
@@ -139,6 +233,7 @@ extension AppModel {
             return
         }
 
+        guard isCurrentAccountSession(session) else { return }
         guard var latest = reactionMutations[key] else { return }
         latest.confirmedReacted = sentState
         latest.isSending = false
@@ -151,12 +246,12 @@ extension AppModel {
             reactionMutations[key] = nil
             reactionMutationTasks[key] = nil
             if let message = reactionMessage(for: key) {
-                persist(message)
+                persistAuthoritativeMessageUpsert(message)
             }
         } else {
             reactionMutations[key] = latest
             if let message = reactionMessage(for: key) {
-                persist(reactionConfirmedSnapshot(message))
+                persistAuthoritativeMessageUpsert(message)
             }
             scheduleReactionMutation(for: key)
         }
@@ -231,6 +326,7 @@ extension AppModel {
     func loadReactionReactors(_ reaction: Reaction, on message: Message) async {
         guard reaction.count > 0, reaction.reactors.isEmpty else { return }
         guard await waitForTimelineScrollingToEnd() else { return }
+        let session = accountSession()
         let key = ReactionReactorLoadKey(
             channelID: message.channelID,
             messageID: message.id,
@@ -242,24 +338,30 @@ extension AppModel {
             return
         }
         guard loadingReactionReactors.insert(key).inserted else { return }
-        defer { loadingReactionReactors.remove(key) }
+        defer {
+            if isCurrentAccountSession(session) {
+                loadingReactionReactors.remove(key)
+            }
+        }
 
         do {
-            let provider = self.provider
             let reactors = try await reactionReactorLoadLimiter.withPermit {
-                try await provider.reactionReactors(
+                try await session.provider.reactionReactors(
                     for: reaction.emoji,
                     messageID: message.id,
                     channelID: message.channelID,
                     reactionCount: reaction.count
                 )
             }
-            guard await waitForTimelineScrollingToEnd() else { return }
+            guard await waitForTimelineScrollingToEnd(),
+                  isCurrentAccountSession(session)
+            else { return }
             failedReactionReactorLoads[key] = nil
             applyReactionReactors(reactors, for: key)
         } catch is CancellationError {
             return
         } catch {
+            guard isCurrentAccountSession(session) else { return }
             if failedReactionReactorLoads.count >= 256,
                let oldest = failedReactionReactorLoads.min(by: { $0.value < $1.value })?.key
             {
@@ -281,6 +383,15 @@ extension AppModel {
         }
         let isScrollingNow = !liveScrollingConversationIDs.isEmpty
         guard wasScrolling != isScrollingNow else { return }
+        timelineScrollActivityRevision &+= 1
+        let revision = timelineScrollActivityRevision
+        Task {
+            await SharedAnimatedImageDecodeScheduler.shared
+                .setInteractiveScrolling(
+                    isScrollingNow,
+                    revision: revision
+                )
+        }
         if !isScrollingNow {
             flushUnreadPresentationRefresh()
         }
@@ -299,6 +410,15 @@ extension AppModel {
 
     func resetTimelineLiveScrolling() {
         liveScrollingConversationIDs.removeAll(keepingCapacity: true)
+        timelineScrollActivityRevision &+= 1
+        let revision = timelineScrollActivityRevision
+        Task {
+            await SharedAnimatedImageDecodeScheduler.shared
+                .setInteractiveScrolling(
+                    false,
+                    revision: revision
+                )
+        }
         flushUnreadPresentationRefresh()
     }
 
@@ -483,13 +603,16 @@ extension AppModel {
         }
 
         if persistsResult, let messageToPersist {
-            persist(reactionConfirmedSnapshot(messageToPersist))
+            persistAuthoritativeMessageUpsert(messageToPersist)
         }
     }
 
     func updateStatus(_ status: PresenceStatus) async {
+        guard !presentsCachedStartup else { return }
+        let session = accountSession()
         do {
-            try await provider.updateStatus(status)
+            try await session.provider.updateStatus(status)
+            guard isCurrentAccountSession(session) else { return }
             currentStatus = status
             members = members.map { member in
                 guard member.user.id == snapshot?.currentUser.id else { return member }
@@ -498,11 +621,13 @@ extension AppModel {
                 return updatedMember
             }
         } catch {
+            guard isCurrentAccountSession(session) else { return }
             errorMessage = error.localizedDescription
         }
     }
 
     func joinVoice(_ channel: Channel) async {
+        guard !presentsCachedStartup else { return }
         guard channel.kind == .voice
                 || channel.kind == .directMessage
                 || channel.kind == .groupDirectMessage
@@ -512,53 +637,78 @@ extension AppModel {
         {
             return
         }
-        await leaveVoice()
+        let account = accountSession()
+        await leaveVoice(account: account)
+        guard isCurrentAccountSession(account) else { return }
+        voiceMigrationGeneration &+= 1
+        let voiceGeneration = voiceMigrationGeneration
         activeVoiceChannel = channel
         reconcilePrivateCallSounds()
         voiceSessionState = .connecting
         voiceErrorMessage = nil
         do {
-            let info = try await provider.joinVoice(
+            let info = try await account.provider.joinVoice(
                 channelID: channel.id,
                 guildID: channel.guildID,
                 selfMute: isVoiceMuted,
                 selfDeaf: isVoiceDeafened
             )
-            try await startVoiceSession(with: info)
+            guard isCurrentVoiceOperation(
+                account,
+                generation: voiceGeneration,
+                channelID: channel.id
+            ) else { return }
+            try await startVoiceSession(
+                with: info,
+                account: account,
+                generation: voiceGeneration
+            )
+            guard isCurrentVoiceOperation(
+                account,
+                generation: voiceGeneration,
+                channelID: channel.id
+            ) else { return }
             soundPlayer.play(.userJoin)
         } catch {
+            guard isCurrentVoiceOperation(
+                account,
+                generation: voiceGeneration,
+                channelID: channel.id
+            ) else { return }
+            let failedSession = voiceSession
             voiceEventTask?.cancel()
             voiceEventTask = nil
-            await voiceSession?.disconnect()
+            await failedSession?.disconnect()
+            guard isCurrentVoiceOperation(
+                account,
+                generation: voiceGeneration,
+                channelID: channel.id
+            ) else { return }
             voiceSessionState = .failed
             voiceErrorMessage = error.localizedDescription
             errorMessage = error.localizedDescription
-            try? await provider.updateVoiceState(
+            try? await account.provider.updateVoiceState(
                 channelID: nil,
                 guildID: channel.guildID,
                 selfMute: false,
                 selfDeaf: false,
                 selfVideo: false
             )
+            guard isCurrentVoiceOperation(
+                account,
+                generation: voiceGeneration,
+                channelID: channel.id
+            ) else { return }
             activeVoiceChannel = nil
-            voiceSession = nil
+            if voiceSession === failedSession {
+                voiceSession = nil
+            }
             reconcilePrivateCallSounds()
         }
     }
 
-    func observePrivateCall(in channel: Channel) async {
-        guard channel.kind == .directMessage || channel.kind == .groupDirectMessage else {
-            return
-        }
-        do {
-            try await provider.subscribeToPrivateCall(channelID: channel.id)
-        } catch {
-            // Observation is opportunistic while the Gateway is reconnecting.
-            // Connection-ready reconciliation will subscribe again.
-        }
-    }
-
     func startPrivateCall(in channel: Channel, withVideo: Bool = false) async {
+        guard !presentsCachedStartup else { return }
         guard channel.kind == .directMessage || channel.kind == .groupDirectMessage,
               !channel.isOfficialSystemDirectMessage
         else { return }
@@ -577,6 +727,7 @@ extension AppModel {
         withVideo: Bool,
         generation: UInt64
     ) async {
+        let session = accountSession()
         if privateCall(in: channel.id) != nil {
             await joinPrivateCall(
                 in: channel,
@@ -587,23 +738,23 @@ extension AppModel {
         }
 
         do {
-            try await provider.subscribeToPrivateCall(channelID: channel.id)
+            try await session.provider.subscribeToPrivateCall(channelID: channel.id)
             guard isCurrentPrivateCallAction(
                 channelID: channel.id,
                 generation: generation
-            ) else { return }
+            ), isCurrentAccountSession(session) else { return }
             let shouldRing: Bool
             if channel.kind == .groupDirectMessage {
                 shouldRing = true
             } else {
-                shouldRing = try await provider.privateCallIsRingable(
+                shouldRing = try await session.provider.privateCallIsRingable(
                     channelID: channel.id
                 )
             }
             guard isCurrentPrivateCallAction(
                 channelID: channel.id,
                 generation: generation
-            ) else { return }
+            ), isCurrentAccountSession(session) else { return }
             await completePrivateCallStart(
                 in: channel,
                 withVideo: withVideo,
@@ -611,6 +762,12 @@ extension AppModel {
                 generation: generation
             )
         } catch {
+            guard isCurrentAccountSession(session),
+                  isCurrentPrivateCallAction(
+                      channelID: channel.id,
+                      generation: generation
+                  )
+            else { return }
             voiceErrorMessage = error.localizedDescription
             errorMessage = error.localizedDescription
         }
@@ -622,29 +779,37 @@ extension AppModel {
         shouldRing: Bool,
         generation: UInt64
     ) async {
+        let session = accountSession()
         await joinVoice(channel)
         guard isCurrentPrivateCallAction(
             channelID: channel.id,
             generation: generation
         ),
               activeVoiceChannel?.id == channel.id,
-              voiceSessionState == .connected
+              voiceSessionState == .connected,
+              isCurrentAccountSession(session)
         else { return }
         if withVideo, !isCameraEnabled {
             await toggleCamera()
             guard isCurrentPrivateCallAction(
                 channelID: channel.id,
                 generation: generation
-            ) else { return }
+            ), isCurrentAccountSession(session) else { return }
         }
         guard shouldRing else { return }
         beginLocalOutgoingPrivateCallRing(channelID: channel.id)
         do {
-            try await provider.ringPrivateCall(
+            try await session.provider.ringPrivateCall(
                 channelID: channel.id,
                 recipients: nil
             )
         } catch {
+            guard isCurrentAccountSession(session),
+                  isCurrentPrivateCallAction(
+                      channelID: channel.id,
+                      generation: generation
+                  )
+            else { return }
             endLocalOutgoingPrivateCallRing(channelID: channel.id)
             // Joining succeeded and is not replayed. Surface the bounded
             // ring failure without turning it into a second call action.
@@ -654,6 +819,7 @@ extension AppModel {
     }
 
     func joinPrivateCall(in channel: Channel, withVideo: Bool = false) async {
+        guard !presentsCachedStartup else { return }
         guard channel.kind == .directMessage || channel.kind == .groupDirectMessage,
               !channel.isOfficialSystemDirectMessage
         else { return }
@@ -672,17 +838,19 @@ extension AppModel {
         withVideo: Bool,
         generation: UInt64
     ) async {
+        let session = accountSession()
         do {
-            try await provider.subscribeToPrivateCall(channelID: channel.id)
+            try await session.provider.subscribeToPrivateCall(channelID: channel.id)
             guard isCurrentPrivateCallAction(
                 channelID: channel.id,
                 generation: generation
-            ) else { return }
+            ), isCurrentAccountSession(session) else { return }
             await joinVoice(channel)
             if isCurrentPrivateCallAction(
                 channelID: channel.id,
                 generation: generation
             ),
+               isCurrentAccountSession(session),
                withVideo,
                activeVoiceChannel?.id == channel.id,
                voiceSessionState == .connected,
@@ -691,12 +859,19 @@ extension AppModel {
                 await toggleCamera()
             }
         } catch {
+            guard isCurrentAccountSession(session),
+                  isCurrentPrivateCallAction(
+                      channelID: channel.id,
+                      generation: generation
+                  )
+            else { return }
             voiceErrorMessage = error.localizedDescription
             errorMessage = error.localizedDescription
         }
     }
 
     func acceptPrivateCall(_ call: PrivateCall) async {
+        guard !presentsCachedStartup else { return }
         guard let channel = snapshot?.channels.first(where: { $0.id == call.channelID })
                 ?? visibleChannels.first(where: { $0.id == call.channelID })
         else { return }
@@ -715,6 +890,7 @@ extension AppModel {
     }
 
     func declinePrivateCall(_ call: PrivateCall) async {
+        guard !presentsCachedStartup else { return }
         guard let currentUserID = snapshot?.currentUser.id else { return }
         await performPrivateCallAction(in: call.channelID) { generation in
             await self.declinePrivateCall(
@@ -730,21 +906,28 @@ extension AppModel {
         currentUserID: UserID,
         generation: UInt64
     ) async {
+        let session = accountSession()
         do {
-            try await provider.stopRingingPrivateCall(
+            try await session.provider.stopRingingPrivateCall(
                 channelID: call.channelID,
                 recipients: [currentUserID]
             )
             guard isCurrentPrivateCallAction(
                 channelID: call.channelID,
                 generation: generation
-            ) else { return }
+            ), isCurrentAccountSession(session) else { return }
             if var updated = privateCallsByChannel[call.channelID] {
                 updated.ongoingRings.removeAll { $0.recipientID == currentUserID }
                 privateCallsByChannel[call.channelID] = updated
                 reconcilePrivateCallSounds()
             }
         } catch {
+            guard isCurrentAccountSession(session),
+                  isCurrentPrivateCallAction(
+                      channelID: call.channelID,
+                      generation: generation
+                  )
+            else { return }
             voiceErrorMessage = error.localizedDescription
             errorMessage = error.localizedDescription
         }
@@ -777,6 +960,30 @@ extension AppModel {
     func resetPrivateCallActions() {
         privateCallActionGeneration &+= 1
         privateCallActionChannelIDs = []
+    }
+
+    func isCurrentVoiceOperation(
+        _ account: AppModelAccountSession,
+        generation: Int,
+        channelID: ChannelID
+    ) -> Bool {
+        isCurrentAccountSession(account)
+            && generation == voiceMigrationGeneration
+            && activeVoiceChannel?.id == channelID
+    }
+
+    func isCurrentVoiceOperation(
+        _ account: AppModelAccountSession,
+        generation: Int,
+        voiceSession expectedSession: DiscordVoiceSession?
+    ) -> Bool {
+        guard isCurrentAccountSession(account),
+              generation == voiceMigrationGeneration
+        else { return false }
+        if let expectedSession {
+            return voiceSession === expectedSession
+        }
+        return voiceSession == nil
     }
 
     func reconcilePrivateCallVoiceState(_ state: VoiceParticipantState) {
@@ -825,32 +1032,40 @@ extension AppModel {
         soundPlayer.setLooping(.callCalling, active: state.ringsOutgoing)
     }
 
-    func resetAppSounds() {
-        resetPrivateCallActions()
-        for task in outgoingPrivateCallRingTimeoutTasks.values {
-            task.cancel()
+    func leaveVoice(
+        account: AppModelAccountSession? = nil,
+        expectedOperation: AppModelVoiceOperationIdentity? = nil
+    ) async {
+        let account = account ?? accountSession()
+        guard isCurrentAccountSession(account) else { return }
+        if let expectedOperation {
+            guard isCurrentVoiceOperation(
+                account,
+                identity: expectedOperation
+            ) else { return }
         }
-        outgoingPrivateCallRingTimeoutTasks = [:]
-        locallyStartedOutgoingPrivateCallRings = []
-        soundPlayer.stopAll()
-    }
-
-    func leaveVoice() async {
         let channel = activeVoiceChannel
         let guildID = channel?.guildID
         let hadActiveVoice = channel != nil
+        let departingSession = voiceSession
         if let channelID = channel?.id {
             endLocalOutgoingPrivateCallRing(channelID: channelID)
         }
         voiceMigrationGeneration &+= 1
+        let voiceGeneration = voiceMigrationGeneration
         voiceMigrationTask?.cancel()
         voiceMigrationTask = nil
         voiceEventTask?.cancel()
         voiceEventTask = nil
-        await voiceSession?.disconnect()
-        voiceSession = nil
-        if activeVoiceChannel != nil {
-            try? await provider.updateVoiceState(
+        await departingSession?.disconnect()
+        guard isCurrentAccountSession(account),
+              voiceMigrationGeneration == voiceGeneration
+        else { return }
+        if voiceSession === departingSession {
+            voiceSession = nil
+        }
+        if activeVoiceChannel?.id == channel?.id, channel != nil {
+            try? await account.provider.updateVoiceState(
                 channelID: nil,
                 guildID: guildID,
                 selfMute: false,
@@ -858,6 +1073,10 @@ extension AppModel {
                 selfVideo: false
             )
         }
+        guard isCurrentAccountSession(account),
+              voiceMigrationGeneration == voiceGeneration,
+              activeVoiceChannel?.id == channel?.id
+        else { return }
         activeVoiceChannel = nil
         voiceParticipants = []
         isLocallySpeaking = false
@@ -876,50 +1095,105 @@ extension AppModel {
     }
 
     func toggleVoiceMute() async {
+        guard !presentsCachedStartup else { return }
+        let account = accountSession()
+        let generation = voiceMigrationGeneration
+        let session = voiceSession
         isVoiceMuted.toggle()
+        let muted = isVoiceMuted
         UserDefaults.standard.set(isVoiceMuted, forKey: "voiceMuted")
-        await voiceSession?.setMuted(isVoiceMuted)
-        await publishVoiceState()
+        await session?.setMuted(muted)
+        guard isCurrentVoiceOperation(
+            account,
+            generation: generation,
+            voiceSession: session
+        ) else { return }
+        await publishVoiceState(account: account, generation: generation)
+        guard isCurrentVoiceOperation(
+            account,
+            generation: generation,
+            voiceSession: session
+        ) else { return }
         if activeVoiceChannel != nil {
-            soundPlayer.play(isVoiceMuted ? .mute : .unmute)
+            soundPlayer.play(muted ? .mute : .unmute)
         }
     }
 
     func toggleVoiceDeafen() async {
+        guard !presentsCachedStartup else { return }
+        let account = accountSession()
+        let generation = voiceMigrationGeneration
+        let session = voiceSession
         isVoiceDeafened.toggle()
+        let deafened = isVoiceDeafened
         UserDefaults.standard.set(isVoiceDeafened, forKey: "voiceDeafened")
-        await voiceSession?.setDeafened(isVoiceDeafened)
-        await publishVoiceState()
+        await session?.setDeafened(deafened)
+        guard isCurrentVoiceOperation(
+            account,
+            generation: generation,
+            voiceSession: session
+        ) else { return }
+        await publishVoiceState(account: account, generation: generation)
+        guard isCurrentVoiceOperation(
+            account,
+            generation: generation,
+            voiceSession: session
+        ) else { return }
         if activeVoiceChannel != nil {
-            soundPlayer.play(isVoiceDeafened ? .deafen : .undeafen)
+            soundPlayer.play(deafened ? .deafen : .undeafen)
         }
     }
 
     func toggleCamera() async {
+        guard !presentsCachedStartup else { return }
+        let account = accountSession()
+        let generation = voiceMigrationGeneration
+        let session = voiceSession
         let enabled = !isCameraEnabled
-        if voiceSession == nil {
+        if session == nil {
             isCameraEnabled = enabled
-            await publishVoiceState()
+            await publishVoiceState(account: account, generation: generation)
+            guard isCurrentVoiceOperation(
+                account,
+                generation: generation,
+                voiceSession: session
+            ) else { return }
             if activeVoiceChannel != nil {
                 soundPlayer.play(enabled ? .cameraOn : .cameraOff)
             }
             return
         }
         do {
-            try await voiceSession?.setCameraEnabled(enabled)
+            try await session?.setCameraEnabled(enabled)
+            guard isCurrentVoiceOperation(
+                account,
+                generation: generation,
+                voiceSession: session
+            ) else { return }
             isCameraEnabled = enabled
             if !enabled, let ownUserID = snapshot?.currentUser.id {
                 voiceVideoFrames[String(ownUserID.rawValue)] = nil
             }
-            try await provider.updateVoiceState(
-                channelID: activeVoiceChannel?.id,
-                guildID: activeVoiceChannel?.guildID,
+            let channel = activeVoiceChannel
+            try await account.provider.updateVoiceState(
+                channelID: channel?.id,
+                guildID: channel?.guildID,
                 selfMute: isVoiceMuted,
                 selfDeaf: isVoiceDeafened,
                 selfVideo: enabled
             )
+            guard isCurrentVoiceOperation(
+                account,
+                generation: generation,
+                voiceSession: session
+            ), activeVoiceChannel?.id == channel?.id else { return }
             soundPlayer.play(enabled ? .cameraOn : .cameraOff)
         } catch {
+            guard isCurrentVoiceOperation(
+                account,
+                generation: generation,
+                voiceSession: session
+            ) else { return }
             voiceErrorMessage = error.localizedDescription
             errorMessage = error.localizedDescription
         }
@@ -927,7 +1201,15 @@ extension AppModel {
 
     func selectCamera(_ camera: CameraDeviceInfo?) async {
         UserDefaults.standard.set(camera?.uniqueID, forKey: "voiceCameraUID")
-        do { try await voiceSession?.selectCamera(uniqueID: camera?.uniqueID) } catch {
+        let account = accountSession()
+        let generation = voiceMigrationGeneration
+        let session = voiceSession
+        do { try await session?.selectCamera(uniqueID: camera?.uniqueID) } catch {
+            guard isCurrentVoiceOperation(
+                account,
+                generation: generation,
+                voiceSession: session
+            ) else { return }
             voiceErrorMessage = error.localizedDescription
             errorMessage = error.localizedDescription
         }
@@ -947,14 +1229,30 @@ extension AppModel {
 
     func selectInputDevice(_ device: AudioDeviceInfo?) async {
         UserDefaults.standard.set(device?.uid, forKey: "voiceInputDeviceUID")
-        do { try await voiceSession?.selectInputDevice(device?.id) } catch {
+        let account = accountSession()
+        let generation = voiceMigrationGeneration
+        let session = voiceSession
+        do { try await session?.selectInputDevice(device?.id) } catch {
+            guard isCurrentVoiceOperation(
+                account,
+                generation: generation,
+                voiceSession: session
+            ) else { return }
             errorMessage = error.localizedDescription
         }
     }
 
     func selectOutputDevice(_ device: AudioDeviceInfo?) async {
         UserDefaults.standard.set(device?.uid, forKey: "voiceOutputDeviceUID")
-        do { try await voiceSession?.selectOutputDevice(device?.id) } catch {
+        let account = accountSession()
+        let generation = voiceMigrationGeneration
+        let session = voiceSession
+        do { try await session?.selectOutputDevice(device?.id) } catch {
+            guard isCurrentVoiceOperation(
+                account,
+                generation: generation,
+                voiceSession: session
+            ) else { return }
             errorMessage = error.localizedDescription
         }
     }
@@ -970,9 +1268,22 @@ extension AppModel {
     }
 
     func publishVoiceState() async {
-        guard let activeVoiceChannel else { return }
+        await publishVoiceState(
+            account: accountSession(),
+            generation: voiceMigrationGeneration
+        )
+    }
+
+    func publishVoiceState(
+        account: AppModelAccountSession,
+        generation: Int
+    ) async {
+        guard isCurrentAccountSession(account),
+              generation == voiceMigrationGeneration,
+              let activeVoiceChannel
+        else { return }
         do {
-            try await provider.updateVoiceState(
+            try await account.provider.updateVoiceState(
                 channelID: activeVoiceChannel.id,
                 guildID: activeVoiceChannel.guildID,
                 selfMute: isVoiceMuted,
@@ -980,6 +1291,9 @@ extension AppModel {
                 selfVideo: isCameraEnabled
             )
         } catch {
+            guard isCurrentAccountSession(account),
+                  generation == voiceMigrationGeneration
+            else { return }
             voiceErrorMessage = error.localizedDescription
         }
     }
@@ -1025,7 +1339,16 @@ extension AppModel {
         return nil
     }
 
-    func startVoiceSession(with info: VoiceConnectionInfo) async throws {
+    func startVoiceSession(
+        with info: VoiceConnectionInfo,
+        account: AppModelAccountSession,
+        generation: Int
+    ) async throws {
+        guard isCurrentVoiceOperation(
+            account,
+            generation: generation,
+            channelID: info.channelID
+        ) else { throw CancellationError() }
         if info.endpoint == "mock.sakuracord.invalid" {
             voiceSessionState = .connected
             return
@@ -1046,32 +1369,75 @@ extension AppModel {
         voiceEventTask?.cancel()
         voiceEventTask = Task { [weak self] in
             for await event in session.events {
-                guard !Task.isCancelled else { return }
-                self?.consumeVoiceEvent(event)
+                guard let self,
+                      !Task.isCancelled,
+                      self.isCurrentVoiceOperation(
+                          account,
+                          generation: generation,
+                          voiceSession: session
+                      )
+                else { return }
+                self.consumeVoiceEvent(event)
             }
         }
-        try await session.connect()
+        do {
+            try await session.connect()
+        } catch {
+            guard isCurrentVoiceOperation(
+                account,
+                generation: generation,
+                voiceSession: session
+            ) else { throw CancellationError() }
+            throw error
+        }
+        guard isCurrentVoiceOperation(
+            account,
+            generation: generation,
+            voiceSession: session
+        ) else {
+            await session.disconnect()
+            throw CancellationError()
+        }
     }
 
     func scheduleVoiceServerMigration(to info: VoiceConnectionInfo?) {
         voiceMigrationGeneration &+= 1
         let generation = voiceMigrationGeneration
         voiceMigrationTask?.cancel()
-        voiceMigrationTask = Task { [weak self] in
-            await self?.migrateVoiceServer(to: info, generation: generation)
+        let account = accountSession()
+        voiceMigrationTask = startAccountChildTask(account: account) { model, account in
+            await model.migrateVoiceServer(
+                to: info,
+                generation: generation,
+                account: account
+            )
         }
     }
 
-    func migrateVoiceServer(to info: VoiceConnectionInfo?, generation: Int) async {
-        guard activeVoiceChannel != nil, generation == voiceMigrationGeneration else { return }
+    func migrateVoiceServer(
+        to info: VoiceConnectionInfo?,
+        generation: Int,
+        account: AppModelAccountSession
+    ) async {
+        guard !Task.isCancelled,
+              isCurrentAccountSession(account),
+              activeVoiceChannel != nil,
+              generation == voiceMigrationGeneration
+        else { return }
         let cameraWasEnabled = isCameraEnabled
+        let previousSession = voiceSession
 
         voiceEventTask?.cancel()
         voiceEventTask = nil
-        await voiceSession?.disconnect()
-        guard !Task.isCancelled, generation == voiceMigrationGeneration else { return }
+        await previousSession?.disconnect()
+        guard !Task.isCancelled,
+              isCurrentAccountSession(account),
+              generation == voiceMigrationGeneration
+        else { return }
 
-        voiceSession = nil
+        if voiceSession === previousSession {
+            voiceSession = nil
+        }
         voiceParticipants = []
         voiceVideoFrames = [:]
         voiceEncryptionVersion = nil
@@ -1083,19 +1449,34 @@ extension AppModel {
         guard info.channelID == activeVoiceChannel?.id else { return }
 
         do {
-            try await startVoiceSession(with: info)
-            guard !Task.isCancelled, generation == voiceMigrationGeneration else {
+            try await startVoiceSession(
+                with: info,
+                account: account,
+                generation: generation
+            )
+            guard !Task.isCancelled,
+                  isCurrentAccountSession(account),
+                  generation == voiceMigrationGeneration
+            else {
                 await voiceSession?.disconnect()
                 return
             }
             if cameraWasEnabled, voiceSession != nil {
-                try await voiceSession?.setCameraEnabled(true)
+                let migratedSession = voiceSession
+                try await migratedSession?.setCameraEnabled(true)
+                guard isCurrentVoiceOperation(
+                    account,
+                    generation: generation,
+                    voiceSession: migratedSession
+                ) else { return }
                 isCameraEnabled = true
             }
         } catch is CancellationError {
             return
         } catch {
-            guard generation == voiceMigrationGeneration else { return }
+            guard isCurrentAccountSession(account),
+                  generation == voiceMigrationGeneration
+            else { return }
             voiceSessionState = .failed
             voiceErrorMessage = error.localizedDescription
             errorMessage = error.localizedDescription
@@ -1213,15 +1594,17 @@ extension AppModel {
             contextualProfilePresentation = presentation
         }
         guard cachedProfile == nil else { return }
+        let session = accountSession()
 
         let task = Task { [weak self] in
             guard let self else { return }
             do {
-                let loaded = try await provider.profile(
+                let loaded = try await session.provider.profile(
                     for: member.id,
                     in: guildID
                 )
                 guard !Task.isCancelled,
+                      isCurrentAccountSession(session),
                       selectedGuildID == guildID,
                       profilePresentation(
                           for: destination
@@ -1243,6 +1626,7 @@ extension AppModel {
                 return
             } catch {
                 guard !Task.isCancelled,
+                      isCurrentAccountSession(session),
                       profilePresentation(
                           for: destination
                       )?.requestID == requestID
@@ -1328,8 +1712,18 @@ extension AppModel {
         await (try? database?.messages(in: channelID)) ?? []
     }
 
-    func storedDraft(in channelID: ChannelID) async -> String {
-        await (try? database?.draft(channelID: channelID)) ?? ""
+    func storedConversationPage(
+        in channelID: ChannelID,
+        account: AppModelAccountSession
+    ) async -> PersistedConversationPage? {
+        try? await account.database?.conversationPage(in: channelID)
+    }
+
+    func storedDraft(
+        in channelID: ChannelID,
+        account: AppModelAccountSession
+    ) async -> String {
+        await (try? account.database?.draft(channelID: channelID)) ?? ""
     }
 
     func isCurrentLoad(_ channelID: ChannelID, generation: Int) -> Bool {
@@ -1370,6 +1764,62 @@ extension AppModel {
             }
             return lhs.id < rhs.id
         }
+    }
+
+    static func reconcilingNewestPage(
+        current: [Message],
+        fresh: [Message],
+        hasMoreBefore: Bool,
+        authoritativeOldestMessageID: MessageID? = nil
+    ) -> [Message] {
+        let oldestFreshID = authoritativeOldestMessageID ?? fresh.map(\.id).min()
+        let retainedCurrent = current.filter { message in
+            guard message.outboxState == .confirmed else { return true }
+            guard hasMoreBefore, let oldestFreshID else { return false }
+            return message.id < oldestFreshID
+        }
+        return merging(current: retainedCurrent, fresh: fresh)
+    }
+
+    static func applyingConversationRefreshMutations(
+        _ mutations: [MessageID: ConversationRefreshMutation],
+        to messages: [Message]
+    ) -> [Message] {
+        var byID = Dictionary(uniqueKeysWithValues: messages.map { ($0.id, $0) })
+        for (messageID, mutation) in mutations {
+            switch mutation {
+            case .upsert(let message):
+                byID[messageID] = message
+            case .delete:
+                byID[messageID] = nil
+            }
+        }
+        return byID.values.sorted { lhs, rhs in
+            if lhs.timestamp != rhs.timestamp {
+                return lhs.timestamp < rhs.timestamp
+            }
+            return lhs.id < rhs.id
+        }
+    }
+
+    static func persistenceMutations(
+        from mutations: [MessageID: ConversationRefreshMutation]
+    ) -> (protectedMessages: [Message], deletedMessageIDs: Set<MessageID>) {
+        var protectedMessages: [Message] = []
+        var deletedMessageIDs: Set<MessageID> = []
+        for (messageID, mutation) in mutations {
+            switch mutation {
+            case .upsert(let message):
+                guard message.outboxState == .confirmed,
+                      !message.flags.contains(.ephemeral)
+                else { continue }
+                protectedMessages.append(message)
+            case .delete:
+                deletedMessageIDs.insert(messageID)
+            }
+        }
+        protectedMessages.sort { $0.id < $1.id }
+        return (protectedMessages, deletedMessageIDs)
     }
 
     func isChannelUnread(_ channelID: ChannelID) -> Bool {
@@ -1435,18 +1885,6 @@ extension AppModel {
     func forumUnreadMessageCount(_ post: ForumPost) -> Int {
         guard isForumPostUnread(post) else { return 0 }
         return readState.unreadMessageCount(channelID: post.id)
-    }
-
-    func channelMentionCount(_ channelID: ChannelID) -> Int {
-        readState.mentions(channelID: channelID)
-    }
-
-    var directMessageUnread: Bool {
-        readState.directMessageUnread()
-    }
-
-    var directMessageMentionCount: Int {
-        readState.directMessageMentions
     }
 
     func reportMainWindowActive(_ isActive: Bool) {
@@ -1524,11 +1962,15 @@ extension AppModel {
 
     func reportTimelineUserInteraction(channelID: ChannelID) {
         guard channelID == selectedChannelID || channelID == openThread?.id else { return }
+        guard !presentsCachedStartup else { return }
         readState.unblockAutomaticAcknowledgement(channelID: channelID)
     }
 
     func reportConversationHistoryLoaded(channelID: ChannelID) {
         guard channelID == selectedChannelID || channelID == openThread?.id else { return }
+        AppPerformanceSignposts.reportStartupConversationHistoryReady(
+            channelID: channelID
+        )
         preserveUnreadDividerIfNeeded(channelID: channelID)
         if let target = readState.updatePresentation(
             channelID: channelID,
@@ -1551,233 +1993,4 @@ extension AppModel {
         )
     }
 
-    func unreadDividerMessageID(channelID: ChannelID) -> MessageID? {
-        unreadDividerMessageIDs[channelID]
-    }
-
-    func markConversationRead(channelID: ChannelID) {
-        guard readState.unread(channelID: channelID),
-              let target = readState.entries[channelID]?.latestKnownMessageID
-        else { return }
-        preserveUnreadDividerIfNeeded(channelID: channelID)
-        acknowledgementTasks[channelID]?.cancel()
-        acknowledgementTasks[channelID] = nil
-        queuedAcknowledgements[channelID] = nil
-        acknowledgementQueueOrder.removeAll { $0 == channelID }
-        readState.unblockAutomaticAcknowledgement(channelID: channelID)
-        readState.markAcknowledgementPending(channelID: channelID, messageID: target)
-        refreshUnreadPresentation()
-        cancelNativeNotifications(channelID: channelID)
-        enqueueAcknowledgement(
-            channelID: channelID,
-            mutation: readStateMutation(
-                channelID: channelID,
-                messageID: target,
-                manual: false,
-                mentionCount: nil
-            )
-        )
-    }
-
-    func setChannelNotificationLevel(
-        _ level: MessageNotificationLevel,
-        for channel: Channel
-    ) {
-        guard channelNotificationMutationTasks[channel.id] == nil
-        else { return }
-        let guildID = channel.guildID
-        let channelID = channel.id
-        let generation = channelNotificationMutationGeneration
-        let activeProvider = provider
-        channelNotificationMutationTasks[channelID] = Task { [weak self] in
-            do {
-                try await activeProvider.updateChannelNotificationLevel(
-                    guildID: guildID,
-                    channelID: channelID,
-                    level: level
-                )
-                guard let self,
-                      generation == self.channelNotificationMutationGeneration
-                else { return }
-                self.updateLocalChannelNotificationOverride(
-                    channel: channel
-                ) { override in
-                    override.messageNotifications = level
-                }
-            } catch is CancellationError {
-                return
-            } catch {
-                guard let self,
-                      generation == self.channelNotificationMutationGeneration
-                else { return }
-                self.errorMessage = "Discord did not accept the channel notification setting."
-            }
-            guard let self,
-                  generation == self.channelNotificationMutationGeneration
-            else { return }
-            self.channelNotificationMutationTasks[channelID] = nil
-        }
-    }
-
-    func setChannelMute(
-        _ isMuted: Bool,
-        until: Date?,
-        for channel: Channel
-    ) {
-        guard channelNotificationMutationTasks[channel.id] == nil
-        else { return }
-        let guildID = channel.guildID
-        let channelID = channel.id
-        let generation = channelNotificationMutationGeneration
-        let activeProvider = provider
-        channelNotificationMutationTasks[channelID] = Task { [weak self] in
-            do {
-                try await activeProvider.updateChannelMute(
-                    guildID: guildID,
-                    channelID: channelID,
-                    isMuted: isMuted,
-                    until: until
-                )
-                guard let self,
-                      generation == self.channelNotificationMutationGeneration
-                else { return }
-                self.updateLocalChannelNotificationOverride(
-                    channel: channel
-                ) { override in
-                    override.isMuted = isMuted
-                    override.muteConfiguration =
-                        isMuted ? DiscordMuteConfiguration(endTime: until) : nil
-                }
-            } catch is CancellationError {
-                return
-            } catch {
-                guard let self,
-                      generation == self.channelNotificationMutationGeneration
-                else { return }
-                self.errorMessage = "Discord did not accept the channel mute setting."
-            }
-            guard let self,
-                  generation == self.channelNotificationMutationGeneration
-            else { return }
-            self.channelNotificationMutationTasks[channelID] = nil
-        }
-    }
-
-    func setForumPostNotificationLevel(
-        _ level: MessageNotificationLevel,
-        for post: ForumPost
-    ) {
-        guard forumNotificationMutationTasks[post.id] == nil else { return }
-        let generation = forumNotificationMutationGeneration
-        let activeProvider = provider
-        forumNotificationMutationTasks[post.id] = Task { [weak self] in
-            do {
-                try await activeProvider.updateForumPostNotificationLevel(
-                    post,
-                    level: level
-                )
-                guard let self,
-                      generation == self.forumNotificationMutationGeneration
-                else { return }
-                self.updateLocalForumPostNotificationSettings(postID: post.id) {
-                    $0.flags = $0.flags(setting: level)
-                }
-            } catch is CancellationError {
-                return
-            } catch {
-                guard let self,
-                      generation == self.forumNotificationMutationGeneration
-                else { return }
-                self.forumActionError =
-                    "Discord did not accept the post notification setting."
-            }
-            guard let self,
-                  generation == self.forumNotificationMutationGeneration
-            else { return }
-            self.forumNotificationMutationTasks[post.id] = nil
-        }
-    }
-
-    func setForumPostMute(
-        _ isMuted: Bool,
-        until: Date?,
-        for post: ForumPost
-    ) {
-        guard forumNotificationMutationTasks[post.id] == nil else { return }
-        let generation = forumNotificationMutationGeneration
-        let activeProvider = provider
-        forumNotificationMutationTasks[post.id] = Task { [weak self] in
-            do {
-                try await activeProvider.updateForumPostMute(
-                    post,
-                    isMuted: isMuted,
-                    until: until
-                )
-                guard let self,
-                      generation == self.forumNotificationMutationGeneration
-                else { return }
-                self.updateLocalForumPostNotificationSettings(postID: post.id) {
-                    $0.isMuted = isMuted
-                    $0.muteConfiguration =
-                        isMuted ? DiscordMuteConfiguration(endTime: until) : nil
-                }
-            } catch is CancellationError {
-                return
-            } catch {
-                guard let self,
-                      generation == self.forumNotificationMutationGeneration
-                else { return }
-                self.forumActionError = "Discord did not accept the post mute setting."
-            }
-            guard let self,
-                  generation == self.forumNotificationMutationGeneration
-            else { return }
-            self.forumNotificationMutationTasks[post.id] = nil
-        }
-    }
-
-    func updateLocalForumPostNotificationSettings(
-        postID: ChannelID,
-        mutation: (inout ThreadNotificationSettings) -> Void
-    ) {
-        guard let index = forumCatalogueIndexByID[postID] else { return }
-        var post = forumCataloguePosts[index]
-        var settings = post.thread.notificationSettings ?? ThreadNotificationSettings()
-        mutation(&settings)
-        post.thread.notificationSettings = settings
-        forumCataloguePosts[index] = post
-        readState.merge(thread: post.thread)
-        updateForumPresentation(with: post)
-        if openThread?.id == postID {
-            openThread?.notificationSettings = settings
-        }
-    }
-
-    func updateLocalChannelNotificationOverride(
-        channel: Channel,
-        mutation: (inout ChannelNotificationOverride) -> Void
-    ) {
-        var settings =
-            readState.notificationSettings(guildID: channel.guildID)
-            ?? GuildNotificationSettings(
-                guildID: channel.guildID,
-                messageNotifications: .inherit
-            )
-        var override =
-            settings.channelOverrides.last { $0.channelID == channel.id }
-            ?? ChannelNotificationOverride(channelID: channel.id)
-        mutation(&override)
-        settings.channelOverrides.removeAll { $0.channelID == channel.id }
-        settings.channelOverrides.append(override)
-        applyNotificationSettings(settings)
-        refreshUnreadPresentation()
-    }
-
-    func applyNotificationSettings(_ settings: GuildNotificationSettings) {
-        readState.apply(settings)
-        guard var value = snapshot else { return }
-        value.notificationSettings.removeAll { $0.guildID == settings.guildID }
-        value.notificationSettings.append(settings)
-        snapshot = value
-    }
 }

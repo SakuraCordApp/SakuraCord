@@ -3,6 +3,7 @@ import DiscordProtocol
 import Foundation
 import MessageRendering
 import SakuraCordModels
+import SakuraCordPersistence
 import Testing
 import UserNotifications
 @testable import SakuraCord
@@ -257,6 +258,520 @@ import UserNotifications
 }
 
 @MainActor
+@Test func `newest page reconciliation removes covered deletions and preserves live rows`() {
+    let channelID = ChannelID(rawValue: 9_100)
+    let author = User(
+        id: UserID(rawValue: 9_101),
+        username: "reconcile",
+        displayName: "Reconcile"
+    )
+    func message(
+        _ value: UInt64,
+        outboxState: OutboxState = .confirmed
+    ) -> Message {
+        Message(
+            id: MessageID(rawValue: value),
+            channelID: channelID,
+            author: author,
+            content: "message \(value)",
+            timestamp: Date(timeIntervalSince1970: TimeInterval(value)),
+            outboxState: outboxState
+        )
+    }
+    let current = [
+        message(1),
+        message(2),
+        message(3),
+        message(5),
+        message(6, outboxState: .sending),
+        message(7),
+    ]
+    let fresh = [message(2), message(4)]
+    let mutations: [MessageID: ConversationRefreshMutation] = [
+        message(7).id: .upsert(message(7))
+    ]
+    let refreshed = AppModel.applyingConversationRefreshMutations(
+        mutations,
+        to: fresh
+    )
+
+    let partialPageIDs = AppModel.reconcilingNewestPage(
+        current: current,
+        fresh: refreshed,
+        hasMoreBefore: true,
+        authoritativeOldestMessageID: fresh.map(\.id).min()
+    ).map(\.id.rawValue)
+    let completePageIDs = AppModel.reconcilingNewestPage(
+        current: current,
+        fresh: refreshed,
+        hasMoreBefore: false,
+        authoritativeOldestMessageID: fresh.map(\.id).min()
+    ).map(\.id.rawValue)
+
+    #expect(partialPageIDs == [1, 2, 4, 6, 7])
+    #expect(completePageIDs == [2, 4, 6, 7])
+    #expect(
+        AppModel.persistenceMutations(from: mutations)
+            .protectedMessages.map(\.id.rawValue) == [7]
+    )
+}
+
+@MainActor
+@Test func `selected refresh preserves Gateway update and delete in memory and on reopen`()
+    async throws
+{
+    let directory = FileManager.default.temporaryDirectory.appending(
+        path: "sakuracord-selected-refresh-\(UUID().uuidString)"
+    )
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let accountID = AccountID(rawValue: 9_150)
+    let channelID = ChannelID(rawValue: 9_151)
+    let author = User(
+        id: UserID(rawValue: 9_152),
+        username: "selected-race",
+        displayName: "Selected Race"
+    )
+    func message(_ value: UInt64, content: String? = nil) -> Message {
+        Message(
+            id: MessageID(rawValue: value),
+            channelID: channelID,
+            author: author,
+            content: content ?? "selected message \(value)",
+            timestamp: Date(timeIntervalSince1970: TimeInterval(value))
+        )
+    }
+    let cached = [message(100), message(101), message(104)]
+    let fresh = [message(101), message(102), message(104)]
+    let updated = message(101, content: "Gateway update wins")
+    let database = try SakuraCordDatabase(
+        accountID: accountID,
+        directory: directory
+    )
+    try await database.saveConversationPage(
+        messages: cached,
+        channelID: channelID,
+        hasMoreBefore: false,
+        mode: .reconcileNewestPage
+    )
+    let provider = SuspendedBootstrapTestProvider(
+        suspendsMessages: true,
+        messagePage: MessagePage(messages: fresh, hasMoreBefore: false)
+    )
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    model.database = database
+    model.snapshot = BootstrapSnapshot(
+        currentUser: author,
+        guilds: [],
+        channels: [Channel(id: channelID, guildID: nil, name: "selected-race")],
+        members: []
+    )
+
+    model.selectedChannelID = channelID
+    await provider.waitUntilMessageLoadStarts()
+    #expect(await eventuallyOnMain {
+        model.messages.map(\.id.rawValue) == [100, 101, 104]
+    })
+
+    model.consumeMessageUpdated(updated, preparedTextPlan: nil)
+    model.consumeMessageDeleted(channelID: channelID, messageID: message(104).id)
+    #expect(model.messages.map(\.id.rawValue) == [100, 101])
+    #expect(model.messages.last?.content == "Gateway update wins")
+
+    await model.messagePersistenceSink.flush()
+    let persistedMutations = try await database.conversationPage(in: channelID)
+    #expect(
+        persistedMutations?.messages.first(where: { $0.id == updated.id })?.content
+            == updated.content
+    )
+    #expect(
+        persistedMutations?.messages.contains(where: { $0.id == message(104).id })
+            == false
+    )
+
+    await provider.releaseMessageLoad()
+    await model.channelLoadTask?.value
+    #expect(model.messages.map(\.id.rawValue) == [101, 102])
+    #expect(model.messages.first?.content == "Gateway update wins")
+
+    let reopened = try SakuraCordDatabase(
+        accountID: accountID,
+        directory: directory
+    )
+    let reopenedPage = try #require(
+        try await reopened.conversationPage(in: channelID)
+    )
+    #expect(reopenedPage.messages.map(\.id.rawValue) == [101, 102])
+    #expect(reopenedPage.messages.first?.content == "Gateway update wins")
+}
+
+@MainActor
+@Test func `thread refresh preserves a persisted Gateway arrival in memory and on reopen`()
+    async throws
+{
+    let directory = FileManager.default.temporaryDirectory.appending(
+        path: "sakuracord-thread-refresh-\(UUID().uuidString)"
+    )
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let accountID = AccountID(rawValue: 9_200)
+    let parentID = ChannelID(rawValue: 9_201)
+    let threadID = ChannelID(rawValue: 9_202)
+    let author = User(
+        id: UserID(rawValue: 9_203),
+        username: "thread-race",
+        displayName: "Thread Race"
+    )
+    func message(_ value: UInt64) -> Message {
+        Message(
+            id: MessageID(rawValue: value),
+            channelID: threadID,
+            author: author,
+            content: "thread message \(value)",
+            timestamp: Date(timeIntervalSince1970: TimeInterval(value))
+        )
+    }
+    let cached = [message(100), message(101), message(104)]
+    let fresh = [message(101), message(102), message(104)]
+    let gatewayArrival = message(103)
+    var gatewayUpdate = message(101)
+    gatewayUpdate.content = "Gateway thread update wins"
+    let database = try SakuraCordDatabase(
+        accountID: accountID,
+        directory: directory
+    )
+    try await database.saveConversationPage(
+        messages: cached,
+        channelID: threadID,
+        hasMoreBefore: false,
+        mode: .reconcileNewestPage
+    )
+    let provider = SuspendedBootstrapTestProvider(
+        suspendsMessages: true,
+        messagePage: MessagePage(messages: fresh, hasMoreBefore: false)
+    )
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    model.database = database
+    model.snapshot = BootstrapSnapshot(
+        currentUser: author,
+        guilds: [],
+        channels: [],
+        members: []
+    )
+    let thread = MessageThreadSummary(
+        id: threadID,
+        parentID: parentID,
+        name: "Persisted race"
+    )
+
+    model.openThreadConversation(
+        thread,
+        starter: author,
+        startedAt: nil,
+        initialMessages: []
+    )
+    await provider.waitUntilMessageLoadStarts()
+    #expect(await eventuallyOnMain {
+        model.threadMessages.map(\.id.rawValue) == [100, 101, 104]
+    })
+
+    var receivedArrival = gatewayArrival
+    model.consumeMessageCreated(&receivedArrival, preparedTextPlan: nil)
+    model.consumeMessageUpdated(gatewayUpdate, preparedTextPlan: nil)
+    model.consumeMessageDeleted(channelID: threadID, messageID: message(104).id)
+    #expect(model.threadMessages.map(\.id.rawValue) == [100, 101, 103])
+    #expect(model.threadMessages[1].content == "Gateway thread update wins")
+
+    await model.messagePersistenceSink.flush()
+    let persistedMutations = try await database.conversationPage(in: threadID)
+    #expect(
+        persistedMutations?.messages.contains(where: { $0.id == gatewayArrival.id })
+            == true
+    )
+    #expect(
+        persistedMutations?.messages.first(where: { $0.id == gatewayUpdate.id })?.content
+            == gatewayUpdate.content
+    )
+    #expect(
+        persistedMutations?.messages.contains(where: { $0.id == message(104).id })
+            == false
+    )
+
+    await provider.releaseMessageLoad()
+    await model.threadLoadTask?.value
+    #expect(model.threadMessages.map(\.id.rawValue) == [101, 102, 103])
+    #expect(model.threadMessages.first?.content == "Gateway thread update wins")
+
+    let reopened = try SakuraCordDatabase(
+        accountID: accountID,
+        directory: directory
+    )
+    let reopenedPage = try #require(
+        try await reopened.conversationPage(in: threadID)
+    )
+    #expect(reopenedPage.messages.map(\.id.rawValue) == [101, 102, 103])
+    #expect(reopenedPage.messages.first?.content == "Gateway thread update wins")
+}
+
+@MainActor
+@Test func `selected refresh preserves confirmed local send edit and reaction without Gateway`()
+    async throws
+{
+    let directory = FileManager.default.temporaryDirectory.appending(
+        path: "sakuracord-selected-local-refresh-\(UUID().uuidString)"
+    )
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let channelID = ChannelID(rawValue: 9_301)
+    let author = User(id: UserID(rawValue: 93_000), username: "tester", displayName: "Tester")
+    func message(_ value: UInt64) -> Message {
+        Message(
+            id: MessageID(rawValue: value),
+            channelID: channelID,
+            author: author,
+            content: "stale selected \(value)",
+            timestamp: Date(timeIntervalSince1970: TimeInterval(value))
+        )
+    }
+    let cached = [message(100), message(101), message(102)]
+    let fresh = [message(101), message(102)]
+    let database = try SakuraCordDatabase(
+        accountID: AccountID(rawValue: 9_300),
+        directory: directory
+    )
+    try await database.saveConversationPage(
+        messages: cached,
+        channelID: channelID,
+        hasMoreBefore: false,
+        mode: .reconcileNewestPage
+    )
+    let provider = SuspendedBootstrapTestProvider(
+        suspendsMessages: true,
+        messagePage: MessagePage(messages: fresh, hasMoreBefore: false)
+    )
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    model.database = database
+    model.snapshot = BootstrapSnapshot(
+        currentUser: author,
+        guilds: [],
+        channels: [Channel(id: channelID, guildID: nil, name: "local-selected")],
+        members: []
+    )
+    model.selectedChannelID = channelID
+    await provider.waitUntilMessageLoadStarts()
+    #expect(await eventuallyOnMain { model.messages.count == cached.count })
+
+    await model.edit(model.messages[1], content: "confirmed local edit")
+    await model.toggleReaction("👍", on: model.messages[2])
+    await provider.waitUntilReactionRequest()
+    #expect(await eventuallyOnMain { model.reactionMutations.isEmpty })
+    let sent = await model.performOutgoingSend(
+        SendMessageDraft(channelID: channelID, content: "confirmed local send"),
+        isRetry: false
+    )
+    #expect(sent)
+
+    await provider.releaseMessageLoad()
+    await model.channelLoadTask?.value
+    #expect(model.messages.map(\.id.rawValue) == [101, 102, 94_001])
+    #expect(model.messages[0].content == "confirmed local edit")
+    #expect(model.messages[1].reactions.first?.didCurrentUserReact == true)
+    #expect(model.messages[2].content == "confirmed local send")
+
+    let reopened = try SakuraCordDatabase(
+        accountID: AccountID(rawValue: 9_300),
+        directory: directory
+    )
+    let reopenedMessages = try #require(
+        try await reopened.conversationPage(in: channelID)
+    ).messages
+    #expect(reopenedMessages.map(\.id.rawValue) == [101, 102, 94_001])
+    #expect(reopenedMessages[0].content == "confirmed local edit")
+    #expect(reopenedMessages[1].reactions.first?.didCurrentUserReact == true)
+}
+
+@MainActor
+@Test func `message persistence sink preserves save and delete order`() async throws {
+    let directory = FileManager.default.temporaryDirectory.appending(
+        path: "sakuracord-persistence-order-\(UUID().uuidString)"
+    )
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let accountID = AccountID(rawValue: 9_349)
+    let firstDatabase = try SakuraCordDatabase(
+        accountID: accountID,
+        directory: directory
+    )
+    let secondDatabase = try SakuraCordDatabase(
+        accountID: accountID,
+        directory: directory
+    )
+    let channelID = ChannelID(rawValue: 9_350)
+    let messageID = MessageID(rawValue: 9_351)
+    let author = User(
+        id: UserID(rawValue: 9_352),
+        username: "persistence-order",
+        displayName: "Persistence Order"
+    )
+    var message = Message(
+        id: messageID,
+        channelID: channelID,
+        author: author,
+        content: "first"
+    )
+    let sink = MessagePersistenceSink()
+
+    sink.enqueue(message, database: firstDatabase)
+    sink.enqueueDeletion(messageID, database: secondDatabase)
+    await sink.flush()
+    #expect(try await firstDatabase.conversationPage(in: channelID) == nil)
+
+    sink.enqueueDeletion(messageID, database: firstDatabase)
+    message.content = "last save wins"
+    sink.enqueue(message, database: secondDatabase)
+    await sink.flush()
+    let persisted = try #require(
+        try await firstDatabase.conversationPage(in: channelID)?.messages.first
+    )
+    #expect(persisted.content == "last save wins")
+
+    var closingSink: MessagePersistenceSink? = MessagePersistenceSink()
+    message.content = "shutdown drains pending work"
+    closingSink?.enqueue(message, database: firstDatabase)
+    await closingSink?.shutdown()
+    await closingSink?.shutdown()
+    await closingSink?.flush()
+    closingSink = nil
+    let drained = try #require(
+        try await secondDatabase.conversationPage(in: channelID)?.messages.first
+    )
+    #expect(drained.content == "shutdown drains pending work")
+}
+
+@MainActor
+@Test func `message persistence sink deinit drains buffered mutations`() async throws {
+    let database = try SakuraCordDatabase(inMemory: true)
+    let channelID = ChannelID(rawValue: 9_360)
+    let author = User(
+        id: UserID(rawValue: 9_361),
+        username: "deinit-drain",
+        displayName: "Deinit Drain"
+    )
+    var saved = Message(
+        id: MessageID(rawValue: 9_362),
+        channelID: channelID,
+        author: author,
+        content: "before"
+    )
+    let deleted = Message(
+        id: MessageID(rawValue: 9_363),
+        channelID: channelID,
+        author: author,
+        content: "delete me"
+    )
+    try await database.save(messages: [saved, deleted])
+
+    var sink: MessagePersistenceSink? = MessagePersistenceSink()
+    saved.content = "drained after deinit"
+    sink?.enqueue(saved, database: database)
+    sink?.enqueueDeletion(deleted.id, database: database)
+    sink = nil
+
+    let deadline = ContinuousClock.now + .seconds(5)
+    var drained = false
+    while ContinuousClock.now < deadline {
+        let messages = try await database.conversationPage(in: channelID)?.messages
+        if messages?.first(where: { $0.id == saved.id })?.content == saved.content,
+           messages?.contains(where: { $0.id == deleted.id }) == false
+        {
+            drained = true
+            break
+        }
+        try await Task.sleep(for: .milliseconds(5))
+    }
+    #expect(drained)
+}
+
+@MainActor
+@Test func `thread refresh preserves confirmed local send edit and reaction without Gateway`()
+    async throws
+{
+    let directory = FileManager.default.temporaryDirectory.appending(
+        path: "sakuracord-thread-local-refresh-\(UUID().uuidString)"
+    )
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let threadID = ChannelID(rawValue: 9_401)
+    let author = User(id: UserID(rawValue: 93_000), username: "tester", displayName: "Tester")
+    func message(_ value: UInt64) -> Message {
+        Message(
+            id: MessageID(rawValue: value),
+            channelID: threadID,
+            author: author,
+            content: "stale thread \(value)",
+            timestamp: Date(timeIntervalSince1970: TimeInterval(value))
+        )
+    }
+    let cached = [message(100), message(101), message(102)]
+    let fresh = [message(101), message(102)]
+    let database = try SakuraCordDatabase(
+        accountID: AccountID(rawValue: 9_400),
+        directory: directory
+    )
+    try await database.saveConversationPage(
+        messages: cached,
+        channelID: threadID,
+        hasMoreBefore: false,
+        mode: .reconcileNewestPage
+    )
+    let provider = SuspendedBootstrapTestProvider(
+        suspendsMessages: true,
+        messagePage: MessagePage(messages: fresh, hasMoreBefore: false)
+    )
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    model.database = database
+    model.snapshot = BootstrapSnapshot(
+        currentUser: author,
+        guilds: [],
+        channels: [],
+        members: []
+    )
+    let thread = MessageThreadSummary(
+        id: threadID,
+        parentID: ChannelID(rawValue: 9_402),
+        name: "local-thread"
+    )
+    model.openThreadConversation(thread, starter: author, startedAt: nil, initialMessages: [])
+    await provider.waitUntilMessageLoadStarts()
+    #expect(await eventuallyOnMain { model.threadMessages.count == cached.count })
+
+    await model.edit(model.threadMessages[1], content: "confirmed thread edit")
+    await model.toggleReaction("👍", on: model.threadMessages[2])
+    await provider.waitUntilReactionRequest()
+    #expect(await eventuallyOnMain { model.reactionMutations.isEmpty })
+    let sent = await model.sendThreadMessage(
+        content: "confirmed thread send",
+        attachments: [],
+        thread: thread,
+        clearsComposer: false
+    )
+    #expect(sent)
+
+    await provider.releaseMessageLoad()
+    await model.threadLoadTask?.value
+    #expect(model.threadMessages.map(\.id.rawValue) == [101, 102, 94_001])
+    #expect(model.threadMessages[0].content == "confirmed thread edit")
+    #expect(model.threadMessages[1].reactions.first?.didCurrentUserReact == true)
+    #expect(model.threadMessages[2].content == "confirmed thread send")
+
+    let reopened = try SakuraCordDatabase(
+        accountID: AccountID(rawValue: 9_400),
+        directory: directory
+    )
+    let reopenedMessages = try #require(
+        try await reopened.conversationPage(in: threadID)
+    ).messages
+    #expect(reopenedMessages.map(\.id.rawValue) == [101, 102, 94_001])
+    #expect(reopenedMessages[0].content == "confirmed thread edit")
+    #expect(reopenedMessages[1].reactions.first?.didCurrentUserReact == true)
+}
+
+@MainActor
 @Test func `inaccessible private channels remain visible but are excluded from unread state`() async {
     let model = AppModel(launchMode: .offlineTesting)
     await model.start()
@@ -268,6 +783,7 @@ import UserNotifications
     let privateChannel = model.visibleChannels.first { $0.id == privateChannelID }
     #expect(privateChannel != nil)
     #expect(privateChannel.map(model.conversationAccess(for:)) == .hidden)
+    #expect(model.hiddenChannelIDs.contains(privateChannelID))
     #expect(!model.isChannelUnread(privateChannelID))
     #expect(model.channelMentionCount(privateChannelID) == 0)
 
@@ -305,6 +821,238 @@ import UserNotifications
                 )
             ]
     )
+}
+
+@MainActor
+@Test func `cached startup presents its selected conversation before live bootstrap`() async
+    throws
+{
+    let currentUser = User(
+        id: UserID(rawValue: 77_100),
+        username: "cached-user",
+        displayName: "Cached User"
+    )
+    let channel = Channel(
+        id: ChannelID(rawValue: 77_101),
+        guildID: nil,
+        name: "cached-conversation"
+    )
+    let message = Message(
+        id: MessageID(rawValue: 77_102),
+        channelID: channel.id,
+        author: currentUser,
+        content: "Available without the network"
+    )
+    let snapshot = BootstrapSnapshot(
+        currentUser: currentUser,
+        guilds: [],
+        channels: [channel],
+        members: [
+            Member(
+                user: currentUser,
+                roleName: "You",
+                isOnline: true
+            )
+        ]
+    )
+    let database = try SakuraCordDatabase(inMemory: true)
+    try await database.saveConversationPage(
+        messages: [message],
+        channelID: channel.id,
+        hasMoreBefore: false,
+        mode: .reconcileNewestPage
+    )
+    let model = AppModel(
+        launchMode: .offlineTesting,
+        provider: MockChatProvider()
+    )
+    model.database = database
+
+    await model.applyCachedBootstrap(
+        snapshot,
+        selectedChannelID: channel.id
+    )
+
+    #expect(model.sessionState == .workspace)
+    #expect(model.selectedChannelID == channel.id)
+    #expect(model.visibleChannels == [channel])
+    #expect(await eventuallyOnMain { model.messages == [message] })
+    #expect(model.hasCompletedInitialMessageLoad)
+    #expect(model.presentsCachedStartup)
+    #expect(!model.isAuthenticated)
+
+    model.consumeChannelsChanged(guildID: nil, channels: [])
+    #expect(model.selectedChannelID == channel.id)
+    #expect(model.selectedChannel == channel)
+}
+
+@MainActor
+@Test func `cached startup never acknowledges its restored unread viewport`() async throws {
+    let currentUser = User(
+        id: UserID(rawValue: 77_200),
+        username: "cached-reader",
+        displayName: "Cached Reader"
+    )
+    let author = User(
+        id: UserID(rawValue: 77_201),
+        username: "cached-author",
+        displayName: "Cached Author"
+    )
+    let channelID = ChannelID(rawValue: 77_202)
+    let acknowledgedID = MessageID(rawValue: 77_203)
+    let newestID = MessageID(rawValue: 77_204)
+    let channel = Channel(
+        id: channelID,
+        guildID: nil,
+        name: "cached-unread",
+        lastMessageID: newestID
+    )
+    let message = Message(
+        id: newestID,
+        channelID: channelID,
+        author: author,
+        content: "Must remain unread until live bootstrap and interaction"
+    )
+    let snapshot = BootstrapSnapshot(
+        currentUser: currentUser,
+        guilds: [],
+        channels: [channel],
+        members: [],
+        readStates: [
+            ChannelReadState(
+                channelID: channelID,
+                lastAcknowledgedMessageID: acknowledgedID
+            )
+        ]
+    )
+    let database = try SakuraCordDatabase(inMemory: true)
+    try await database.saveConversationPage(
+        messages: [message],
+        channelID: channelID,
+        hasMoreBefore: false,
+        mode: .reconcileNewestPage
+    )
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    model.database = database
+
+    await model.applyCachedBootstrap(snapshot, selectedChannelID: channelID)
+    #expect(await eventuallyOnMain { model.messages == [message] })
+    model.reportMainWindowActive(true)
+    model.reportConversationHistoryLoaded(channelID: channelID)
+    model.reportTimelineInitialPosition(
+        channelID: channelID,
+        hasReachedReadBoundary: true
+    )
+    model.reportTimelineUserInteraction(channelID: channelID)
+    await Task.yield()
+
+    #expect(model.presentsCachedStartup)
+    #expect(
+        model.readState.presentations[channelID]?.blocksAutomaticAcknowledgement
+            == true
+    )
+    #expect(model.acknowledgementTasks.isEmpty)
+    #expect(model.queuedAcknowledgements.isEmpty)
+    #expect(await provider.acknowledgementRequests.isEmpty)
+
+    let post = forumPresentationPost(
+        id: 77_205,
+        name: "Cached post",
+        date: .now,
+        tags: []
+    )
+    model.setChannelNotificationLevel(.nothing, for: channel)
+    model.setChannelMute(true, until: nil, for: channel)
+    model.setForumPostNotificationLevel(.nothing, for: post)
+    model.setForumPostMute(true, until: nil, for: post)
+    await Task.yield()
+
+    #expect(model.channelNotificationMutationTasks.isEmpty)
+    #expect(model.forumNotificationMutationTasks.isEmpty)
+    #expect(await provider.channelNotificationRequests.isEmpty)
+    #expect(await provider.threadNotificationRequests.isEmpty)
+}
+
+@MainActor
+@Test func `cached thread requires live history and post bootstrap interaction to acknowledge`()
+    async throws
+{
+    let currentUser = User(
+        id: UserID(rawValue: 77_300),
+        username: "cached-thread-reader",
+        displayName: "Cached Thread Reader"
+    )
+    let parentID = ChannelID(rawValue: 77_301)
+    // Reuse the mock provider's populated timeline channel as the live thread
+    // endpoint so the post-bootstrap reconciliation is authoritative.
+    let threadID = ChannelID(rawValue: 210)
+    let acknowledgedID = MessageID(rawValue: 2_000)
+    let newestID = MessageID(rawValue: 2_011)
+    let parent = Channel(
+        id: parentID,
+        guildID: nil,
+        name: "cached-parent",
+        kind: .text
+    )
+    let thread = MessageThreadSummary(
+        id: threadID,
+        parentID: parentID,
+        name: "cached-thread",
+        lastMessageID: newestID
+    )
+    let snapshot = BootstrapSnapshot(
+        currentUser: currentUser,
+        guilds: [],
+        channels: [parent],
+        members: [],
+        readStates: [
+            ChannelReadState(
+                channelID: threadID,
+                lastAcknowledgedMessageID: acknowledgedID
+            )
+        ]
+    )
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+
+    await model.applyCachedBootstrap(snapshot, selectedChannelID: parentID)
+    model.open(thread)
+    model.reportMainWindowActive(true)
+    model.reportTimelineInitialPosition(
+        channelID: threadID,
+        hasReachedReadBoundary: true
+    )
+    #expect(await eventuallyOnMain { model.hasCompletedInitialThreadLoad })
+
+    // Simulate the live bootstrap completing. Cached interaction was ignored,
+    // and the successfully reconciled thread remains blocked until a new
+    // explicit interaction occurs after this point.
+    model.presentsCachedStartup = false
+    model.reportTimelinePosition(
+        channelID: threadID,
+        hasReachedReadBoundary: true
+    )
+    await Task.yield()
+
+    #expect(
+        model.readState.presentations[threadID]?.blocksAutomaticAcknowledgement
+            == true
+    )
+    #expect(await provider.acknowledgementRequests.isEmpty)
+
+    model.reportTimelineUserInteraction(channelID: threadID)
+    model.reportTimelinePosition(
+        channelID: threadID,
+        hasReachedReadBoundary: true
+    )
+    var acknowledgementCount = 0
+    for _ in 0 ..< 50 {
+        acknowledgementCount = await provider.acknowledgementRequests.count
+        if acknowledgementCount == 1 { break }
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(acknowledgementCount == 1)
 }
 
 @Test func `local history member resolution prioritizes newest unknown authors and stays bounded`() {
@@ -346,6 +1094,80 @@ import UserNotifications
         model.authorPresentation(for: model.messages[0]).roleColorHex == 0xFF7900
     })
     #expect(await provider.resolutionRequests() == [[UserID(rawValue: 76_101)]])
+}
+
+@MainActor
+@Test func `history member hydration refreshes only affected message rows`() throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    let channelID = ChannelID(rawValue: 76_400)
+    let affectedAuthor = User(
+        id: UserID(rawValue: 76_401),
+        username: "affected",
+        displayName: "Affected"
+    )
+    let unaffectedAuthor = User(
+        id: UserID(rawValue: 76_402),
+        username: "unaffected",
+        displayName: "Unaffected"
+    )
+    let sourceMessages = [
+        Message(
+            id: MessageID(rawValue: 76_403),
+            channelID: channelID,
+            author: affectedAuthor,
+            content: "Affected row"
+        ),
+        Message(
+            id: MessageID(rawValue: 76_404),
+            channelID: channelID,
+            author: unaffectedAuthor,
+            content: "Unaffected row"
+        ),
+    ]
+    model.replaceSelectedMessages(with: sourceMessages)
+    let affectedRow = try #require(model.messageRows.first)
+    let unaffectedRow = try #require(model.messageRows.last)
+    let previousRowsRevision = model.messageRowsRevision
+    let previousPresentationRevision = model.timelinePresentationRevision
+    let resolvedMember = Member(
+        user: User(
+            id: affectedAuthor.id,
+            username: affectedAuthor.username,
+            displayName: "Resolved nickname"
+        ),
+        roleName: "Resolved",
+        status: .offline,
+        roleID: RoleID(rawValue: 76_405),
+        rolePosition: 1,
+        isRoleCategory: true,
+        roleIDs: [RoleID(rawValue: 76_405)]
+    )
+    let hydrated = LocalHistoryMemberResolution.hydrating(
+        sourceMessages,
+        with: [resolvedMember.id: resolvedMember]
+    )
+
+    model.applySelectedHistoryMemberHydration(
+        hydrated,
+        presentationMessageIDs: [sourceMessages[0].id]
+    )
+
+    #expect(model.messages[0].guildMember != nil)
+    #expect(model.messageRows[0] !== affectedRow)
+    #expect(model.messageRows[0].textPlan == affectedRow.textPlan)
+    #expect(model.messageRows[1] === unaffectedRow)
+    #expect(model.messageRowsRevision == previousRowsRevision &+ 1)
+    #expect(model.timelinePresentationRevision == previousPresentationRevision)
+    let records = try #require(
+        model.messageRowsUpdateJournal.records(
+            after: previousRowsRevision,
+            through: model.messageRowsRevision
+        )
+    )
+    #expect(records.count == 1)
+    let record = try #require(records.first)
+    #expect(record.changedMessageIDs == [sourceMessages[0].id])
+    #expect(!record.invalidatesAllRows)
 }
 
 @MainActor
@@ -1410,6 +2232,16 @@ private func forumPresentationPost(
     #expect(chatMediaAutoScroll.includesChatMediaPerformanceFixture)
     #expect(chatMediaAutoScroll.runsChatPerformanceAutoScroll)
     #expect(!chatMediaAutoScroll.runsChatLiveArrivalStress)
+    let authenticatedAutoScroll = AppLaunchConfiguration(
+        arguments: [
+            "SakuraCord",
+            "--debug-authenticated-chat-performance-autoscroll",
+        ]
+    )
+    #expect(authenticatedAutoScroll.mode == .normal)
+    #expect(!authenticatedAutoScroll.includesChatPerformanceFixture)
+    #expect(authenticatedAutoScroll.runsChatPerformanceAutoScroll)
+    #expect(!authenticatedAutoScroll.runsChatLiveArrivalStress)
     let incomingPrivateCall = AppLaunchConfiguration(
         arguments: ["SakuraCord", "--offline-incoming-private-call"]
     )
@@ -1441,6 +2273,26 @@ private func forumPresentationPost(
 }
 
 @MainActor
+@Test func `workspace presentation does not wait for initial history`() async {
+    let provider = SuspendedBootstrapTestProvider(suspendsMessages: true)
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+
+    let start = Task { await model.start() }
+    await provider.waitUntilBootstrapStarts()
+    await provider.releaseBootstrap()
+    await provider.waitUntilMessageLoadStarts()
+
+    #expect(model.sessionState == .workspace)
+    #expect(model.isLoadingMessages)
+    #expect(model.messages.isEmpty)
+
+    await provider.releaseMessageLoad()
+    await start.value
+    #expect(!model.isLoadingMessages)
+    #expect(model.hasCompletedInitialMessageLoad)
+}
+
+@MainActor
 @Test func `network disabled insecure debug launch prepares its credential store`() async {
     let credentials = CredentialAccessProbeStore()
     let model = AppModel(
@@ -1465,6 +2317,9 @@ private func forumPresentationPost(
         discordNetworkDisabledOverride: false,
         restoresStoredSession: false,
         authenticatedProviderFactory: { _, _ in provider },
+        accountDatabaseFactory: { _ in
+            try? SakuraCordDatabase(inMemory: true)
+        },
         notificationService: notifications
     )
     await model.start()
@@ -1521,6 +2376,9 @@ private actor CredentialAccessProbeStore: CredentialStore {
         discordNetworkDisabledOverride: false,
         restoresStoredSession: false,
         authenticatedProviderFactory: { _, _ in provider },
+        accountDatabaseFactory: { _ in
+            try? SakuraCordDatabase(inMemory: true)
+        },
         notificationService: notifications
     )
     await model.start()
@@ -1539,6 +2397,659 @@ private actor CredentialAccessProbeStore: CredentialStore {
     #expect(model.sessionState == .signedOut)
     #expect(model.errorMessage == "fixture bootstrap stopped")
     #expect(notifications.authorizationRequestCount == 0)
+}
+
+@MainActor
+@Test func `cached startup failure does not authenticate a stale snapshot`() async throws {
+    let provider = SuspendedBootstrapTestProvider(
+        bootstrapError: "cached fixture bootstrap stopped"
+    )
+    let database = try SakuraCordDatabase(inMemory: true)
+    let cachedUser = User(
+        id: UserID(rawValue: 93_100),
+        username: "cached-user",
+        displayName: "Cached User"
+    )
+    try await database.saveBootstrapSnapshot(BootstrapSnapshot(
+        currentUser: cachedUser,
+        guilds: [],
+        channels: [],
+        members: []
+    ))
+    let notifications = PermissionRecordingNotificationService()
+    let model = AppModel(
+        launchMode: .normal,
+        discordNetworkDisabledOverride: false,
+        restoresStoredSession: false,
+        authenticatedProviderFactory: { _, _ in provider },
+        accountDatabaseFactory: { _ in database },
+        notificationService: notifications
+    )
+    await model.start()
+
+    let connection = Task {
+        await model.connectAuthenticatedAccount(
+            CredentialHandle(accountID: "93100"),
+            preservesInteractivePresentation: true
+        )
+    }
+    await provider.waitUntilBootstrapStarts()
+    #expect(model.sessionState == .workspace)
+    #expect(model.presentsCachedStartup)
+    #expect(!model.isAuthenticated)
+
+    await provider.releaseBootstrap()
+    #expect(await !(connection.value))
+    #expect(model.sessionState == .signedOut)
+    #expect(!model.isAuthenticated)
+    #expect(model.snapshot == nil)
+    #expect(!model.presentsCachedStartup)
+    #expect(model.errorMessage == "cached fixture bootstrap stopped")
+    #expect(notifications.authorizationRequestCount == 0)
+}
+
+@MainActor
+@Test func `logout cancels account loads and clears every forum surface`() async throws {
+    let oldProvider = SuspendedAccountLoadTestProvider(
+        label: "Old",
+        suspendsLoads: true
+    )
+    let model = AppModel(
+        launchMode: .normal,
+        discordNetworkDisabledOverride: false,
+        restoresStoredSession: false,
+        credentialStore: CredentialAccessProbeStore(),
+        authenticatedProviderFactory: { _, _ in oldProvider },
+        accountDatabaseFactory: { _ in nil }
+    )
+    await model.start()
+    #expect(await model.connectAuthenticatedAccount(
+        CredentialHandle(accountID: "account-load-old")
+    ))
+    #expect(await oldProvider.waitUntilLoadsStart())
+
+    let stalePost = oldProvider.post
+    model.forumPosts = [stalePost]
+    model.forumCataloguePosts = [stalePost]
+    model.forumCatalogueIndexByID = [stalePost.id: 0]
+    model.forumRecentPostCount = 1
+    model.isLoadingForumPosts = true
+    model.isSearchingForumPosts = true
+    model.hasLoadedForumPosts = true
+    model.isLoadingMoreForumPosts = true
+    model.hasMoreForumPosts = true
+    model.forumPostError = "load"
+    model.forumActionError = "action"
+    model.forumPaginationError = "pagination"
+    model.forumCreateProgress = .submitting
+    model.forumSearchText = "stale query"
+    model.forumSelectedTagIDs = [ForumTagID(rawValue: 1)]
+    model.forumSortOrder = .creationDate
+    model.forumLayout = .gallery
+    model.forumTagMatch = .matchAll
+    model.forumNextOffset = 25
+    model.presentsCachedStartup = true
+    let memberGeneration = model.memberLoadGeneration
+    let forumGeneration = model.forumLoadGeneration
+    let createGeneration = model.forumCreateGeneration
+
+    await model.logout()
+
+    #expect(model.memberLoadTask == nil)
+    #expect(model.forumLoadTask == nil)
+    #expect(model.memberLoadGeneration > memberGeneration)
+    #expect(model.forumLoadGeneration > forumGeneration)
+    #expect(model.forumCreateGeneration > createGeneration)
+    #expect(model.forumPosts.isEmpty)
+    #expect(model.forumCataloguePosts.isEmpty)
+    #expect(model.forumCatalogueIndexByID.isEmpty)
+    #expect(model.forumRecentPostCount == 0)
+    #expect(!model.isLoadingForumPosts)
+    #expect(!model.isSearchingForumPosts)
+    #expect(!model.hasLoadedForumPosts)
+    #expect(!model.isLoadingMoreForumPosts)
+    #expect(!model.hasMoreForumPosts)
+    #expect(model.forumPostError == nil)
+    #expect(model.forumActionError == nil)
+    #expect(model.forumPaginationError == nil)
+    #expect(model.forumCreateProgress == nil)
+    #expect(model.forumSearchText.isEmpty)
+    #expect(model.forumSelectedTagIDs.isEmpty)
+    #expect(model.forumSortOrder == .latestActivity)
+    #expect(model.forumLayout == .list)
+    #expect(model.forumTagMatch == .matchSome)
+    #expect(model.forumNextOffset == nil)
+    #expect(!model.presentsCachedStartup)
+
+    await oldProvider.releaseSuspendedLoads()
+    #expect(await oldProvider.waitUntilLoadsReturn())
+    for _ in 0 ..< 20 { await Task.yield() }
+    #expect(model.members.isEmpty)
+    #expect(model.forumPosts.isEmpty)
+    #expect(model.forumCataloguePosts.isEmpty)
+}
+
+@MainActor
+@Test func `reconnect rejects old provider loads when account IDs are identical`() async throws {
+    let oldProvider = SuspendedAccountLoadTestProvider(
+        label: "Old",
+        suspendsLoads: true
+    )
+    let newProvider = SuspendedAccountLoadTestProvider(
+        label: "New",
+        suspendsLoads: false
+    )
+    let model = AppModel(
+        launchMode: .normal,
+        discordNetworkDisabledOverride: false,
+        restoresStoredSession: false,
+        credentialStore: CredentialAccessProbeStore(),
+        authenticatedProviderFactory: { handle, _ in
+            handle.accountID == "account-load-old" ? oldProvider : newProvider
+        },
+        accountDatabaseFactory: { _ in nil }
+    )
+    await model.start()
+    #expect(await model.connectAuthenticatedAccount(
+        CredentialHandle(accountID: "account-load-old")
+    ))
+    #expect(await oldProvider.waitUntilLoadsStart())
+
+    // A replacement account with no persisted snapshot must not inherit the
+    // old session's cached-startup mutation gate.
+    model.presentsCachedStartup = true
+    #expect(await model.connectAuthenticatedAccount(
+        CredentialHandle(accountID: "account-load-new")
+    ))
+    #expect(!model.presentsCachedStartup)
+    #expect(await eventuallyOnMain {
+        model.members.first?.user.displayName == "New member"
+            && model.forumPosts.first?.thread.name == "New post"
+    })
+    #expect(model.selectedGuildID == oldProvider.guildID)
+    #expect(model.selectedChannelID == oldProvider.forumID)
+
+    await oldProvider.releaseSuspendedLoads()
+    #expect(await oldProvider.waitUntilLoadsReturn())
+    for _ in 0 ..< 20 { await Task.yield() }
+
+    #expect(model.members.first?.user.displayName == "New member")
+    #expect(model.forumPosts.first?.thread.name == "New post")
+    #expect(model.forumCataloguePosts.first?.thread.name == "New post")
+}
+
+@MainActor
+@Test func `cached forum presentation never inherits a prior account post`() async throws {
+    let provider = SuspendedAccountLoadTestProvider(
+        label: "Cached",
+        suspendsLoads: false
+    )
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let priorPost = forumPresentationPost(
+        id: 91_999,
+        name: "Prior account post",
+        date: .now,
+        tags: []
+    )
+    model.forumPosts = [priorPost]
+    model.forumCataloguePosts = [priorPost]
+    model.forumCatalogueIndexByID = [priorPost.id: 0]
+    model.forumRecentPostCount = 1
+
+    await model.applyCachedBootstrap(
+        provider.snapshot,
+        selectedChannelID: provider.forumID
+    )
+
+    #expect(model.presentsCachedStartup)
+    #expect(model.selectedChannelID == provider.forumID)
+    #expect(model.selectedChannel?.kind == .forum)
+    #expect(model.forumPosts.isEmpty)
+    #expect(model.forumCataloguePosts.isEmpty)
+    #expect(model.forumCatalogueIndexByID.isEmpty)
+    #expect(model.forumRecentPostCount == 0)
+    #expect(!model.hasLoadedForumPosts)
+    #expect(model.forumLoadTask == nil)
+}
+
+@MainActor
+@Test func `completed old account send and edit cannot enter replacement account state or database`()
+    async throws
+{
+    let directory = FileManager.default.temporaryDirectory.appending(
+        path: "sakuracord-account-mutation-race-\(UUID().uuidString)"
+    )
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let oldProvider = SuspendedAccountOperationTestProvider(suspendsOperations: true)
+    let newProvider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
+    let oldDatabase = try SakuraCordDatabase(
+        accountID: AccountID(rawValue: 96_100),
+        directory: directory
+    )
+    let newAccountID = AccountID(rawValue: 96_101)
+    let newDatabase = try SakuraCordDatabase(
+        accountID: newAccountID,
+        directory: directory
+    )
+    let model = AppModel(launchMode: .offlineTesting, provider: oldProvider)
+    model.database = oldDatabase
+    model.selectedChannelID = oldProvider.channelID
+    model.replaceSelectedMessages(with: [oldProvider.editTarget])
+
+    let send = Task { @MainActor in
+        await model.performOutgoingSend(
+            SendMessageDraft(
+                channelID: oldProvider.channelID,
+                content: "old account send"
+            ),
+            isRetry: false
+        )
+    }
+    let edit = Task { @MainActor in
+        await model.edit(oldProvider.editTarget, content: "old account edit")
+    }
+    #expect(await oldProvider.waitUntilMutationRequestsStart())
+
+    model.invalidateAccountSession()
+    model.installAccountSession(provider: newProvider, database: newDatabase)
+    var replacementMessage = oldProvider.editTarget
+    replacementMessage.content = "replacement account value"
+    model.replaceSelectedMessages(with: [replacementMessage])
+
+    await oldProvider.releaseMutationRequests()
+    #expect(await !send.value)
+    await edit.value
+    await model.messagePersistenceSink.flush()
+
+    #expect(model.messages.map(\.id) == [replacementMessage.id])
+    #expect(model.messages.first?.content == "replacement account value")
+    #expect(
+        model.conversationRefreshJournals.values.allSatisfy {
+            $0.mutationsByMessageID.isEmpty
+        }
+    )
+    #expect(try await newDatabase.conversationPage(in: oldProvider.channelID) == nil)
+
+    let reopened = try SakuraCordDatabase(
+        accountID: newAccountID,
+        directory: directory
+    )
+    #expect(try await reopened.conversationPage(in: oldProvider.channelID) == nil)
+}
+
+@MainActor
+@Test func `account session identity changes only with an atomically installed provider database pair`() {
+    let firstProvider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
+    let secondProvider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
+    let model = AppModel(launchMode: .offlineTesting, provider: firstProvider)
+    let first = model.accountSession()
+    let replacementDatabase = try? SakuraCordDatabase(inMemory: true)
+
+    model.installAccountSession(
+        provider: secondProvider,
+        database: replacementDatabase
+    )
+
+    #expect(!model.isCurrentAccountSession(first))
+    let second = model.accountSession()
+    #expect(model.isCurrentAccountSession(second))
+    #expect(second.installedRevision == first.installedRevision + 1)
+    #expect(second.database === replacementDatabase)
+}
+
+@MainActor
+@Test func `account transition fails closed before reaching the installed provider`() async {
+    let provider = SuspendedAccountOperationTestProvider(suspendsOperations: true)
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    model.accountTransitionIsActive = true
+
+    let sent = await model.performOutgoingSend(
+        SendMessageDraft(channelID: provider.channelID, content: "must not leave"),
+        isRetry: false
+    )
+
+    #expect(!sent)
+    #expect(await !provider.sendRequestHasStarted())
+}
+
+@MainActor
+@Test func `a started account transition cannot be superseded by credential reuse`() async {
+    let provider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
+    let model = AppModel(
+        launchMode: .normal,
+        discordNetworkDisabledOverride: false,
+        restoresStoredSession: false,
+        authenticatedProviderFactory: { _, _ in provider }
+    )
+    let generation = model.accountSessionGeneration
+    #expect(await model.accountTransitionCoordinator.acquireIfAvailable())
+
+    let connected = await model.connectAuthenticatedAccount(
+        CredentialHandle(accountID: "account-transition-in-progress")
+    )
+
+    #expect(!connected)
+    #expect(model.accountSessionGeneration == generation)
+    await model.accountTransitionCoordinator.release()
+}
+
+@MainActor
+@Test func `completed old account earlier pages cannot enter replacement conversations or database`()
+    async throws
+{
+    let directory = FileManager.default.temporaryDirectory.appending(
+        path: "sakuracord-account-pagination-race-\(UUID().uuidString)"
+    )
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let oldProvider = SuspendedAccountOperationTestProvider(suspendsOperations: true)
+    let newProvider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
+    let oldDatabase = try SakuraCordDatabase(
+        accountID: AccountID(rawValue: 96_200),
+        directory: directory
+    )
+    let newAccountID = AccountID(rawValue: 96_201)
+    let newDatabase = try SakuraCordDatabase(
+        accountID: newAccountID,
+        directory: directory
+    )
+    let model = AppModel(launchMode: .offlineTesting, provider: oldProvider)
+    model.database = oldDatabase
+    model.selectedChannelID = oldProvider.channelID
+    model.replaceSelectedMessages(with: [oldProvider.selectedNewest])
+    model.hasMoreMessages = true
+    model.openThread = oldProvider.thread
+    model.threadMessages = [oldProvider.threadNewest]
+    model.hasMoreThreadMessages = true
+
+    let selectedLoad = Task { @MainActor in await model.loadEarlier() }
+    let threadLoad = Task { @MainActor in await model.loadEarlierThread() }
+    #expect(await oldProvider.waitUntilEarlierPageRequestsStart(expected: 2))
+
+    model.invalidateAccountSession()
+    model.installAccountSession(provider: newProvider, database: newDatabase)
+    var replacementSelected = oldProvider.selectedNewest
+    replacementSelected.content = "replacement selected newest"
+    var replacementThread = oldProvider.threadNewest
+    replacementThread.content = "replacement thread newest"
+    model.replaceSelectedMessages(with: [replacementSelected])
+    model.hasMoreMessages = true
+    model.openThread = oldProvider.thread
+    model.threadMessages = [replacementThread]
+    model.hasMoreThreadMessages = true
+    model.isLoadingEarlier = true
+    model.isLoadingEarlierThread = true
+
+    await oldProvider.releaseEarlierPageRequests()
+    await selectedLoad.value
+    await threadLoad.value
+
+    #expect(model.messages.map(\.id) == [replacementSelected.id])
+    #expect(model.messages.first?.content == "replacement selected newest")
+    #expect(model.threadMessages.map(\.id) == [replacementThread.id])
+    #expect(model.threadMessages.first?.content == "replacement thread newest")
+    #expect(model.isLoadingEarlier)
+    #expect(model.isLoadingEarlierThread)
+    #expect(try await newDatabase.conversationPage(in: oldProvider.channelID) == nil)
+    #expect(try await newDatabase.conversationPage(in: oldProvider.threadID) == nil)
+
+    let reopened = try SakuraCordDatabase(
+        accountID: newAccountID,
+        directory: directory
+    )
+    #expect(try await reopened.conversationPage(in: oldProvider.channelID) == nil)
+    #expect(try await reopened.conversationPage(in: oldProvider.threadID) == nil)
+}
+
+@MainActor
+@Test func `stale GIF send cannot restore an old account draft`() async throws {
+    let oldProvider = SuspendedAccountOperationTestProvider(suspendsOperations: true)
+    let newProvider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
+    let model = AppModel(launchMode: .offlineTesting, provider: oldProvider)
+    let channel = Channel(id: oldProvider.channelID, guildID: nil, name: "shared")
+    model.snapshot = BootstrapSnapshot(
+        currentUser: oldProvider.editTarget.author,
+        guilds: [],
+        channels: [channel],
+        members: []
+    )
+    model.visibleChannels = [channel]
+    model.selectedChannel = channel
+    model.selectedChannelID = oldProvider.channelID
+    model.draft = "old account draft"
+    let gif = GIFSearchResult(
+        id: "account-race-gif",
+        title: "Account race",
+        url: URL(string: "https://example.com/account-race.gif")!,
+        previewURL: URL(string: "https://example.com/account-race-preview.gif")!
+    )
+
+    let send = Task { @MainActor in await model.sendGIF(gif) }
+    #expect(await oldProvider.waitUntilSendRequestStarts())
+    model.invalidateAccountSession()
+    model.installAccountSession(provider: newProvider, database: nil)
+    model.draft = "replacement account draft"
+
+    await oldProvider.releaseSendRequest()
+    #expect(await !send.value)
+    #expect(model.draft == "replacement account draft")
+}
+
+@MainActor
+@Test func `enqueued old account command and call observers never reach replacement provider`()
+    async
+{
+    let oldProvider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
+    let newProvider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
+    let commandChannel = Channel(
+        id: oldProvider.channelID,
+        guildID: nil,
+        name: "command-boundary",
+        kind: .text
+    )
+    let commandModel = AppModel(launchMode: .offlineTesting, provider: oldProvider)
+    commandModel.snapshot = BootstrapSnapshot(
+        currentUser: oldProvider.editTarget.author,
+        guilds: [],
+        channels: [commandChannel],
+        members: []
+    )
+    commandModel.visibleChannels = [commandChannel]
+    commandModel.selectedChannelID = commandChannel.id
+    commandModel.supportedCapabilities = [.slashCommands]
+    commandModel.loadApplicationCommands()
+    let commandTask = commandModel.commandLoadTask
+
+    commandModel.invalidateAccountSession()
+    commandModel.installAccountSession(provider: newProvider, database: nil)
+    await commandTask?.value
+
+    #expect(await oldProvider.applicationCommandRequestCount == 0)
+    #expect(await newProvider.applicationCommandRequestCount == 0)
+
+    let oldCallProvider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
+    let newCallProvider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
+    let privateChannel = Channel(
+        id: oldCallProvider.channelID,
+        guildID: nil,
+        name: "private-call-boundary",
+        kind: .directMessage
+    )
+    let callModel = AppModel(launchMode: .offlineTesting, provider: oldCallProvider)
+    callModel.snapshot = BootstrapSnapshot(
+        currentUser: oldCallProvider.editTarget.author,
+        guilds: [],
+        channels: [privateChannel],
+        members: []
+    )
+    callModel.visibleChannels = [privateChannel]
+    callModel.selectedChannelID = privateChannel.id
+    let observerTasks = Array(callModel.accountChildTasks.values)
+
+    callModel.invalidateAccountSession()
+    callModel.installAccountSession(provider: newCallProvider, database: nil)
+    for task in observerTasks {
+        await task.value
+    }
+
+    #expect(await oldCallProvider.privateCallSubscriptionRequestCount == 0)
+    #expect(await newCallProvider.privateCallSubscriptionRequestCount == 0)
+}
+
+@MainActor
+@Test func `enqueued old account channel and guild loads never reach replacement provider`() async {
+    let oldProvider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
+    let newProvider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
+    let sharedChannel = Channel(
+        id: oldProvider.channelID,
+        guildID: nil,
+        name: "shared-channel-boundary",
+        kind: .text
+    )
+    let channelModel = AppModel(launchMode: .offlineTesting, provider: oldProvider)
+    channelModel.snapshot = BootstrapSnapshot(
+        currentUser: oldProvider.editTarget.author,
+        guilds: [],
+        channels: [sharedChannel],
+        members: []
+    )
+    channelModel.visibleChannels = [sharedChannel]
+    channelModel.selectedChannelID = sharedChannel.id
+    let channelTask = channelModel.channelLoadTask
+
+    channelModel.invalidateAccountSession()
+    channelModel.installAccountSession(provider: newProvider, database: nil)
+    channelModel.selectedChannelID = nil
+    await channelTask?.value
+
+    #expect(channelModel.selectedChannelID == nil)
+    #expect(await oldProvider.newestMessageRequestCount == 0)
+    #expect(await newProvider.newestMessageRequestCount == 0)
+
+    let oldGuildProvider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
+    let newGuildProvider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
+    let oldGuildID = GuildID(rawValue: 96_100)
+    let replacementGuildID = GuildID(rawValue: 96_101)
+    let guildModel = AppModel(launchMode: .offlineTesting, provider: oldGuildProvider)
+    guildModel.snapshot = BootstrapSnapshot(
+        currentUser: oldGuildProvider.editTarget.author,
+        guilds: [Guild(id: oldGuildID, name: "Old account guild")],
+        channels: [],
+        members: []
+    )
+    guildModel.selectGuild(oldGuildID)
+    let guildTask = guildModel.guildActivationTask
+
+    guildModel.invalidateAccountSession()
+    guildModel.installAccountSession(provider: newGuildProvider, database: nil)
+    guildModel.selectedGuildID = replacementGuildID
+    await guildTask?.value
+
+    #expect(guildModel.selectedGuildID == replacementGuildID)
+    #expect(guildModel.selectedChannelID == nil)
+    #expect(await oldGuildProvider.channelRequestCount == 0)
+    #expect(await newGuildProvider.channelRequestCount == 0)
+}
+
+@MainActor
+@Test func `cancelled enqueued thread load never leaves a refresh journal`() async {
+    let provider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let firstThread = MessageThreadSummary(
+        id: provider.threadID,
+        parentID: provider.channelID,
+        name: "First queued thread"
+    )
+    let secondThread = MessageThreadSummary(
+        id: ChannelID(rawValue: provider.threadID.rawValue + 1),
+        parentID: provider.channelID,
+        name: "Replacement queued thread"
+    )
+
+    model.openThreadConversation(
+        firstThread,
+        starter: nil,
+        startedAt: nil,
+        initialMessages: []
+    )
+    let firstTask = model.threadLoadTask
+    model.openThreadConversation(
+        secondThread,
+        starter: nil,
+        startedAt: nil,
+        initialMessages: []
+    )
+    let secondTask = model.threadLoadTask
+
+    await firstTask?.value
+    await secondTask?.value
+
+    #expect(model.openThread?.id == secondThread.id)
+    #expect(model.conversationRefreshJournals[firstThread.id] == nil)
+    #expect(model.conversationRefreshJournals[secondThread.id] == nil)
+}
+
+@MainActor
+@Test func `old private call deletion cannot tear down replacement voice state`() async {
+    let oldProvider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
+    let newProvider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
+    let model = AppModel(launchMode: .offlineTesting, provider: oldProvider)
+    let sharedChannel = Channel(
+        id: oldProvider.channelID,
+        guildID: nil,
+        name: "shared-call",
+        kind: .directMessage
+    )
+    model.activeVoiceChannel = sharedChannel
+    model.voiceSessionState = .connected
+
+    model.consumePrivateCallDeleted(channelID: sharedChannel.id, unavailable: false)
+    let leaveTasks = Array(model.accountChildTasks.values)
+    model.invalidateAccountSession()
+    model.installAccountSession(provider: newProvider, database: nil)
+    model.activeVoiceChannel = sharedChannel
+    model.voiceSessionState = .connected
+
+    for task in leaveTasks {
+        await task.value
+    }
+
+    #expect(model.activeVoiceChannel == sharedChannel)
+    #expect(model.voiceSessionState == .connected)
+    #expect(await newProvider.voiceStateUpdateRequestCount == 0)
+}
+
+@MainActor
+@Test func `account transition cancels and drains stale native notification delivery`() async {
+    let notifications = SuspendedAccountNotificationService()
+    let oldProvider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
+    let newProvider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
+    let model = AppModel(
+        launchMode: .offlineTesting,
+        provider: oldProvider,
+        notificationService: notifications
+    )
+    let author = oldProvider.editTarget.author
+    let message = Message(
+        id: MessageID(rawValue: 96_050),
+        channelID: oldProvider.channelID,
+        author: author,
+        content: "old account notification"
+    )
+
+    model.deliverNativeNotification(for: message)
+    await notifications.waitUntilDeliveryStarts()
+    model.invalidateAccountSession()
+    model.resetAccountScopedLoadsAndForumState()
+    let drain = Task { @MainActor in
+        await model.drainAccountChildTasks()
+    }
+    await Task.yield()
+    notifications.releaseDelivery()
+    await drain.value
+    model.installAccountSession(provider: newProvider, database: nil)
+
+    #expect(notifications.publishedMessageIDs.isEmpty)
+    #expect(model.accountChildTasks.isEmpty)
 }
 
 @MainActor
@@ -1765,6 +3276,99 @@ private actor CredentialAccessProbeStore: CredentialStore {
     #expect(merged.count == 2)
     #expect(merged[existing.id] == replacement)
     #expect(merged[other.id] == other)
+}
+
+@MainActor
+@Test func `member list churn invalidates only presentation dependent messages`() throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    let channelID = ChannelID(rawValue: 70_001)
+    let author = User(
+        id: UserID(rawValue: 70_002),
+        username: "timeline-author",
+        displayName: "Timeline Author"
+    )
+    let message = Message(
+        id: MessageID(rawValue: 70_003),
+        channelID: channelID,
+        author: author,
+        content: "Cached row"
+    )
+    model.replaceSelectedMessages(with: [message])
+    let original = Member(
+        user: author,
+        roleName: "Member",
+        status: .online
+    )
+    model.members = [original]
+
+    let stableRowsRevision = model.messageRowsRevision
+    let stablePresentationRevision = model.timelinePresentationRevision
+    let unrelated = Member(
+        user: User(
+            id: UserID(rawValue: 70_004),
+            username: "unrelated",
+            displayName: "Unrelated"
+        ),
+        roleName: "Member",
+        status: .online
+    )
+    model.members = [original, unrelated]
+    #expect(model.messageRowsRevision == stableRowsRevision)
+    #expect(model.timelinePresentationRevision == stablePresentationRevision)
+
+    var presenceOnly = original
+    presenceOnly.status = .idle
+    presenceOnly.activityText = "Playing something"
+    model.members = [presenceOnly, unrelated]
+    #expect(model.messageRowsRevision == stableRowsRevision)
+    #expect(model.timelinePresentationRevision == stablePresentationRevision)
+
+    var renamed = presenceOnly
+    renamed.user.displayName = "Renamed Author"
+    model.members = [renamed, unrelated]
+    #expect(model.messageRowsRevision == stableRowsRevision &+ 1)
+    #expect(model.timelinePresentationRevision == stablePresentationRevision)
+    let record = try #require(
+        model.messageRowsUpdateJournal.records(
+            after: stableRowsRevision,
+            through: model.messageRowsRevision
+        )?.first
+    )
+    #expect(record.change == nil)
+    #expect(record.changedMessageIDs == [message.id])
+    #expect(!record.invalidatesAllRows)
+}
+
+@MainActor
+@Test func `member changes affecting an offscreen cached conversation invalidate safely`() {
+    let model = AppModel(launchMode: .offlineTesting)
+    let author = User(
+        id: UserID(rawValue: 71_001),
+        username: "cached-author",
+        displayName: "Cached Author"
+    )
+    model.storeCachedMessages(
+        [
+            Message(
+                id: MessageID(rawValue: 71_002),
+                channelID: ChannelID(rawValue: 71_003),
+                author: author,
+                content: "Offscreen cached row"
+            ),
+        ],
+        for: ChannelID(rawValue: 71_003)
+    )
+    let revision = model.timelinePresentationRevision
+
+    model.members = [
+        Member(
+            user: author,
+            roleName: "Member",
+            status: .online
+        ),
+    ]
+
+    #expect(model.timelinePresentationRevision == revision &+ 1)
 }
 
 @MainActor
@@ -2030,7 +3634,7 @@ private func eventuallyOnMain(_ condition: @escaping @MainActor () -> Bool) asyn
 }
 
 @MainActor
-@Test func `channel loads are single flight cached and protected from stale responses`()
+@Test func `complete channel pages reopen immediately and refresh once`()
     async throws
 {
     let provider = ChannelLoadTestProvider()
@@ -2045,16 +3649,32 @@ private func eventuallyOnMain(_ condition: @escaping @MainActor () -> Bool) asyn
             == [ChannelLoadMessageRequest(before: nil, limit: 100)]
     )
     #expect(model.messages.map(\.channelID) == [firstChannel])
+    let preparedFirstRow = try #require(model.messageRows.first)
 
     model.selectedChannelID = secondChannel
     try await Task.sleep(for: .milliseconds(5))
     model.selectedChannelID = firstChannel
 
-    // The in-memory page is restored synchronously, while the refresh remains
-    // explicitly in flight so the UI cannot claim this cached boundary is the
-    // start of the channel.
+    // The in-memory page and its known boundary are restored synchronously,
+    // while one newest-page refresh protects against a missed Gateway event.
     #expect(model.messages.map(\.channelID) == [firstChannel])
+    #expect(model.messageRows.first === preparedFirstRow)
     #expect(model.isLoadingMessages)
+    #expect(!model.hasMoreMessages)
+    #expect(
+        !ConversationBeginningPolicy.showsBeginning(
+            isLoading: model.isLoadingMessages,
+            hasMoreBefore: model.hasMoreMessages,
+            hasError: model.messageLoadError != nil
+        )
+    )
+    #expect(
+        MessageTimelineLoadingPolicy.showsEarlierIndicator(
+            isLoadingInitialPage: model.isLoadingMessages,
+            messageCount: model.messages.count,
+            isLoadingEarlierPage: model.isLoadingEarlier
+        )
+    )
     try await Task.sleep(for: .milliseconds(160))
 
     #expect(model.selectedChannelID == firstChannel)
@@ -2219,6 +3839,62 @@ private func eventuallyOnMain(_ condition: @escaping @MainActor () -> Bool) asyn
 
     #expect(await provider.reactorRequestCount() == 1)
     #expect(model.messages.first?.reactions.first?.reactors.count == 5)
+}
+
+@MainActor
+@Test func `unread projection waits for live timeline scrolling to end`() async {
+    let model = AppModel(launchMode: .offlineTesting)
+    await model.start()
+    let channelID = model.selectedChannelID ?? ChannelID(rawValue: 1)
+
+    model.reportTimelineLiveScrolling(true, conversationID: channelID)
+    model.refreshUnreadPresentation()
+    #expect(model.hasDeferredUnreadPresentationRefresh)
+
+    model.reportTimelineLiveScrolling(false, conversationID: channelID)
+    #expect(!model.hasDeferredUnreadPresentationRefresh)
+}
+
+@MainActor
+@Test func `permission revocation applies while unread publication is deferred`() async {
+    let model = AppModel(launchMode: .offlineTesting)
+    await model.start()
+    let privateChannelID = ChannelID(rawValue: 215)
+    #expect(
+        model.snapshot?.channels.contains { $0.id == privateChannelID }
+            == true
+    )
+
+    model.hiddenChannelIDs.remove(privateChannelID)
+    model.readState.applyAccessibility([privateChannelID: true])
+    model.reportTimelineLiveScrolling(true, conversationID: privateChannelID)
+    model.refreshUnreadPresentation(appliesAccessImmediately: true)
+
+    #expect(model.hasDeferredUnreadPresentationRefresh)
+    #expect(model.hiddenChannelIDs.contains(privateChannelID))
+    #expect(model.readState.entries[privateChannelID]?.isAccessible == false)
+
+    model.reportTimelineLiveScrolling(false, conversationID: privateChannelID)
+}
+
+@MainActor
+@Test func `provider member refresh revokes access during live scrolling`() async {
+    let provider = MemberRoleRevocationTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let channelID = provider.channelID
+
+    #expect(await provider.waitUntilMemberRequestStarts())
+    #expect(!model.hiddenChannelIDs.contains(channelID))
+    model.reportTimelineLiveScrolling(true, conversationID: channelID)
+    await provider.releaseRevokedMember()
+
+    #expect(await eventuallyOnMain {
+        model.hiddenChannelIDs.contains(channelID)
+            && model.readState.entries[channelID]?.isAccessible == false
+    })
+    #expect(model.hasDeferredUnreadPresentationRefresh)
+    model.reportTimelineLiveScrolling(false, conversationID: channelID)
 }
 
 @MainActor
@@ -2451,6 +4127,151 @@ private func eventuallyOnMain(_ condition: @escaping @MainActor () -> Bool) asyn
     await firstDecline.value
     #expect((await provider.counts()).declines == 1)
     #expect(!model.isPrivateCallActionInFlight(in: channel.id))
+}
+
+@MainActor @Test
+func `conversation first-frame marker only completes its matching navigation`() {
+    let first = ChannelID(rawValue: 98_001)
+    let second = ChannelID(rawValue: 98_002)
+    AppPerformanceSignposts.cancelConversationNavigation()
+    defer { AppPerformanceSignposts.cancelConversationNavigation() }
+
+    AppPerformanceSignposts.beginConversationNavigation(to: first)
+    AppPerformanceSignposts.reportConversationFirstFrame(channelID: second)
+    #expect(
+        AppPerformanceSignposts.navigationChannelIDForTesting
+            == first
+    )
+
+    AppPerformanceSignposts.ensureConversationNavigation(to: first)
+    #expect(
+        AppPerformanceSignposts.navigationChannelIDForTesting
+            == first
+    )
+
+    AppPerformanceSignposts.reportConversationFirstFrame(channelID: first)
+    #expect(
+        AppPerformanceSignposts.navigationChannelIDForTesting
+            == nil
+    )
+}
+
+@Test func `startup presentation waits for history then a subsequent frame`() {
+    let cachedChannelID = ChannelID(rawValue: 98_003)
+    var readiness = StartupPresentationReadiness(
+        expectedConversationID: cachedChannelID
+    )
+
+    #expect(!readiness.reportFramePresented(channelID: cachedChannelID))
+    readiness.reportHistoryReady(channelID: cachedChannelID)
+    #expect(readiness.reportFramePresented(channelID: cachedChannelID))
+
+    let unrelatedChannelID = ChannelID(rawValue: 98_004)
+    readiness.reportHistoryReady(channelID: unrelatedChannelID)
+    #expect(!readiness.reportFramePresented(channelID: unrelatedChannelID))
+}
+
+@MainActor @Test
+func `channel sidebar selection commits after coalescing reentrant changes`() async {
+    let committer = ChannelSidebarSelectionCommitter()
+    let first = ChannelID(rawValue: 98_011)
+    let second = ChannelID(rawValue: 98_012)
+    var modelSelection: ChannelID?
+    var committed: [ChannelID?] = []
+
+    committer.schedule(first, currentSelection: { modelSelection }) {
+        modelSelection = $0
+        committed.append($0)
+    }
+    committer.schedule(second, currentSelection: { modelSelection }) {
+        modelSelection = $0
+        committed.append($0)
+    }
+    for _ in 0 ..< 4 {
+        await Task.yield()
+    }
+
+    #expect(committed == [second])
+    #expect(committer.pendingSelection == second)
+    #expect(committer.hasPendingSelection)
+    committer.selectedValueChanged(to: second)
+    #expect(committer.pendingSelection == nil)
+    #expect(!committer.hasPendingSelection)
+}
+
+@MainActor @Test
+func `external navigation cancels a pending sidebar selection`() async {
+    let committer = ChannelSidebarSelectionCommitter()
+    let pending = ChannelID(rawValue: 98_021)
+    let external = ChannelID(rawValue: 98_022)
+    let modelSelection: ChannelID? = nil
+    var committed: [ChannelID?] = []
+
+    committer.schedule(pending, currentSelection: { modelSelection }) {
+        committed.append($0)
+    }
+    committer.selectedValueChanged(to: external)
+    for _ in 0 ..< 4 {
+        await Task.yield()
+    }
+
+    #expect(committed.isEmpty)
+    #expect(committer.pendingSelection == nil)
+    #expect(!committer.hasPendingSelection)
+}
+
+@MainActor @Test
+func `external navigation cancels a pending sidebar deselection`() async {
+    let committer = ChannelSidebarSelectionCommitter()
+    let current = ChannelID(rawValue: 98_031)
+    let external = ChannelID(rawValue: 98_032)
+    let modelSelection: ChannelID? = current
+    var committed: [ChannelID?] = []
+
+    committer.schedule(nil, currentSelection: { modelSelection }) {
+        committed.append($0)
+    }
+    #expect(committer.hasPendingSelection)
+    #expect(committer.presentedSelection(fallback: current) == nil)
+    committer.selectedValueChanged(to: external)
+    for _ in 0 ..< 4 {
+        await Task.yield()
+    }
+
+    #expect(committed.isEmpty)
+    #expect(!committer.hasPendingSelection)
+    #expect(committer.presentedSelection(fallback: external) == external)
+}
+
+@MainActor @Test
+func `deferred sidebar commit revalidates external model navigation`() async {
+    let committer = ChannelSidebarSelectionCommitter()
+    let current = ChannelID(rawValue: 98_041)
+    let pending = ChannelID(rawValue: 98_042)
+    let external = ChannelID(rawValue: 98_043)
+    let modelSelection = ChannelSidebarSelectionTestState(current)
+    var committed: [ChannelID?] = []
+
+    committer.schedule(pending, currentSelection: { modelSelection.value }) {
+        committed.append($0)
+    }
+    modelSelection.value = external
+    for _ in 0 ..< 4 {
+        await Task.yield()
+    }
+
+    #expect(committed.isEmpty)
+    #expect(!committer.hasPendingSelection)
+    #expect(committer.presentedSelection(fallback: external) == external)
+}
+
+@MainActor
+private final class ChannelSidebarSelectionTestState {
+    var value: ChannelID?
+
+    init(_ value: ChannelID?) {
+        self.value = value
+    }
 }
 
 private struct ReactionMutationRequest: Equatable, Sendable {
@@ -2827,6 +4648,515 @@ private actor LocalHistoryMemberTestProvider: ChatProvider {
     func disconnect() async {}
 
     func resolutionRequests() -> [[UserID]] { requests }
+}
+
+private actor MemberRoleRevocationTestProvider: ChatProvider {
+    private let guildID = GuildID(rawValue: 76_700)
+    private let user = User(
+        id: UserID(rawValue: 76_701),
+        username: "role-refresh-user",
+        displayName: "Role Refresh User"
+    )
+    private let allowedRole = GuildRole(
+        id: RoleID(rawValue: 76_702),
+        name: "Private Reader"
+    )
+    let channelID = ChannelID(rawValue: 76_703)
+    private var memberContinuation: CheckedContinuation<[Member], Never>?
+
+    private var guild: Guild {
+        Guild(
+            id: guildID,
+            name: "Role Refresh Guild",
+            currentUserPermissions: DiscordPermissionBits.readMessageHistory
+        )
+    }
+
+    private var channel: Channel {
+        Channel(
+            id: channelID,
+            guildID: guildID,
+            name: "private-role-channel",
+            permissionOverwrites: [
+                ChannelPermissionOverwrite(
+                    id: allowedRole.id.description,
+                    type: 0,
+                    allow: DiscordPermissionBits.viewChannel
+                ),
+            ]
+        )
+    }
+
+    private var initialMember: Member {
+        Member(
+            user: user,
+            roleName: allowedRole.name,
+            isOnline: true,
+            roles: [allowedRole]
+        )
+    }
+
+    func bootstrap() async throws -> BootstrapSnapshot {
+        BootstrapSnapshot(
+            currentUser: user,
+            guilds: [guild],
+            channels: [channel],
+            members: [initialMember]
+        )
+    }
+
+    func channels(in guildID: GuildID?) async throws -> [Channel] {
+        guildID == self.guildID ? [channel] : []
+    }
+
+    func members(in guildID: GuildID?) async throws -> [Member] {
+        guard guildID == self.guildID else { return [] }
+        return await withCheckedContinuation { continuation in
+            memberContinuation = continuation
+        }
+    }
+
+    func roles(in guildID: GuildID) async throws -> [GuildRole] {
+        guildID == self.guildID ? [allowedRole] : []
+    }
+
+    func waitUntilMemberRequestStarts() async -> Bool {
+        for _ in 0 ..< 100 {
+            if memberContinuation != nil { return true }
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        return false
+    }
+
+    func releaseRevokedMember() {
+        memberContinuation?.resume(returning: [
+            Member(
+                user: user,
+                roleName: "Member",
+                isOnline: true,
+                roles: []
+            ),
+        ])
+        memberContinuation = nil
+    }
+
+    func profile(
+        for userID: UserID,
+        in guildID: GuildID?
+    ) async throws -> UserProfile {
+        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
+    }
+
+    func currentStatus() async -> PresenceStatus { .online }
+    func updateStatus(_ status: PresenceStatus) async throws {}
+
+    func messages(
+        in channelID: ChannelID,
+        before: MessageID?,
+        limit: Int
+    ) async throws -> MessagePage {
+        MessagePage(messages: [], hasMoreBefore: false)
+    }
+
+    func send(_ draft: SendMessageDraft) async throws -> Message {
+        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
+    }
+
+    func edit(
+        messageID: MessageID,
+        channelID: ChannelID,
+        content: String
+    ) async throws -> Message {
+        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
+    }
+
+    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
+    func toggleReaction(
+        _ emoji: String,
+        messageID: MessageID,
+        channelID: ChannelID
+    ) async throws {}
+
+    func eventStream() async -> AsyncStream<ClientEvent> {
+        AsyncStream { $0.finish() }
+    }
+
+    func disconnect() async {}
+}
+
+private actor SuspendedAccountOperationTestProvider: ChatProvider {
+    nonisolated let channelID = ChannelID(rawValue: 96_001)
+    nonisolated let threadID = ChannelID(rawValue: 96_002)
+    nonisolated let thread: MessageThreadSummary
+    nonisolated let editTarget: Message
+    nonisolated let selectedNewest: Message
+    nonisolated let threadNewest: Message
+
+    private let user = User(
+        id: UserID(rawValue: 96_003),
+        username: "account-race",
+        displayName: "Account Race"
+    )
+    private let suspendsOperations: Bool
+    private var sendStarted = false
+    private var editStarted = false
+    private var earlierPageRequestCount = 0
+    private(set) var channelRequestCount = 0
+    private(set) var newestMessageRequestCount = 0
+    private(set) var applicationCommandRequestCount = 0
+    private(set) var privateCallSubscriptionRequestCount = 0
+    private(set) var voiceStateUpdateRequestCount = 0
+    private var sendContinuation: CheckedContinuation<Void, Never>?
+    private var editContinuation: CheckedContinuation<Void, Never>?
+    private var earlierContinuations: [CheckedContinuation<Void, Never>] = []
+
+    init(suspendsOperations: Bool) {
+        self.suspendsOperations = suspendsOperations
+        thread = MessageThreadSummary(
+            id: threadID,
+            parentID: channelID,
+            name: "Shared thread"
+        )
+        editTarget = Message(
+            id: MessageID(rawValue: 96_010),
+            channelID: channelID,
+            author: user,
+            content: "old editable value"
+        )
+        selectedNewest = Message(
+            id: MessageID(rawValue: 96_020),
+            channelID: channelID,
+            author: user,
+            content: "old selected newest"
+        )
+        threadNewest = Message(
+            id: MessageID(rawValue: 96_021),
+            channelID: threadID,
+            author: user,
+            content: "old thread newest"
+        )
+    }
+
+    func bootstrap() async throws -> BootstrapSnapshot {
+        BootstrapSnapshot(
+            currentUser: user,
+            guilds: [],
+            channels: [Channel(id: channelID, guildID: nil, name: "shared")],
+            members: []
+        )
+    }
+
+    func channels(in guildID: GuildID?) async throws -> [Channel] {
+        channelRequestCount += 1
+        return [Channel(id: channelID, guildID: nil, name: "shared")]
+    }
+
+    func members(in guildID: GuildID?) async throws -> [Member] { [] }
+
+    func profile(
+        for userID: UserID,
+        in guildID: GuildID?
+    ) async throws -> UserProfile {
+        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
+    }
+
+    func currentStatus() async -> PresenceStatus { .online }
+    func updateStatus(_ status: PresenceStatus) async throws {}
+
+    func messages(
+        in requestedChannelID: ChannelID,
+        before: MessageID?,
+        limit: Int
+    ) async throws -> MessagePage {
+        guard before != nil else {
+            newestMessageRequestCount += 1
+            return MessagePage(messages: [], hasMoreBefore: false)
+        }
+        earlierPageRequestCount += 1
+        if suspendsOperations {
+            await withCheckedContinuation { earlierContinuations.append($0) }
+        }
+        let message = Message(
+            id: MessageID(rawValue: requestedChannelID == channelID ? 96_005 : 96_006),
+            channelID: requestedChannelID,
+            author: user,
+            content: "old account earlier page"
+        )
+        return MessagePage(messages: [message], hasMoreBefore: false)
+    }
+
+    func send(_ draft: SendMessageDraft) async throws -> Message {
+        sendStarted = true
+        if suspendsOperations {
+            await withCheckedContinuation { sendContinuation = $0 }
+        }
+        return Message(
+            id: MessageID(rawValue: 96_011),
+            channelID: draft.channelID,
+            author: user,
+            content: draft.content,
+            nonce: draft.nonce
+        )
+    }
+
+    func edit(
+        messageID: MessageID,
+        channelID: ChannelID,
+        content: String
+    ) async throws -> Message {
+        editStarted = true
+        if suspendsOperations {
+            await withCheckedContinuation { editContinuation = $0 }
+        }
+        var edited = editTarget
+        edited.content = content
+        return edited
+    }
+
+    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
+
+    func toggleReaction(
+        _ emoji: String,
+        messageID: MessageID,
+        channelID: ChannelID
+    ) async throws {}
+
+    func applicationCommandCatalog(
+        for target: ApplicationCommandIndexTarget
+    ) async throws -> ApplicationCommandCatalog {
+        applicationCommandRequestCount += 1
+        return ApplicationCommandCatalog(target: target)
+    }
+
+    func subscribeToPrivateCall(channelID: ChannelID) async throws {
+        privateCallSubscriptionRequestCount += 1
+    }
+
+    func updateVoiceState(
+        channelID: ChannelID?,
+        guildID: GuildID?,
+        selfMute: Bool,
+        selfDeaf: Bool,
+        selfVideo: Bool
+    ) async throws {
+        voiceStateUpdateRequestCount += 1
+    }
+
+    func eventStream() async -> AsyncStream<ClientEvent> {
+        AsyncStream { $0.finish() }
+    }
+
+    func disconnect() async {}
+
+    func waitUntilMutationRequestsStart() async -> Bool {
+        for _ in 0 ..< 5_000 {
+            if sendStarted, editStarted { return true }
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        return false
+    }
+
+    func releaseMutationRequests() {
+        sendContinuation?.resume()
+        sendContinuation = nil
+        editContinuation?.resume()
+        editContinuation = nil
+    }
+
+    func waitUntilSendRequestStarts() async -> Bool {
+        for _ in 0 ..< 5_000 {
+            if sendStarted { return true }
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        return false
+    }
+
+    func sendRequestHasStarted() -> Bool {
+        sendStarted
+    }
+
+    func releaseSendRequest() {
+        sendContinuation?.resume()
+        sendContinuation = nil
+    }
+
+    func waitUntilEarlierPageRequestsStart(expected: Int) async -> Bool {
+        for _ in 0 ..< 5_000 {
+            if earlierPageRequestCount >= expected { return true }
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        return false
+    }
+
+    func releaseEarlierPageRequests() {
+        earlierContinuations.forEach { $0.resume() }
+        earlierContinuations.removeAll()
+    }
+}
+
+private actor SuspendedAccountLoadTestProvider: ChatProvider {
+    nonisolated let guildID = GuildID(rawValue: 91_000)
+    nonisolated let forumID = ChannelID(rawValue: 91_001)
+    nonisolated let post: ForumPost
+    nonisolated let snapshot: BootstrapSnapshot
+
+    private let member: Member
+    private let suspendsLoads: Bool
+    private var memberContinuation: CheckedContinuation<[Member], Never>?
+    private var forumContinuation: CheckedContinuation<ForumPostPage, Never>?
+    private var memberLoadStarted = false
+    private var forumLoadStarted = false
+    private var memberLoadReturned = false
+    private var forumLoadReturned = false
+
+    init(label: String, suspendsLoads: Bool) {
+        self.suspendsLoads = suspendsLoads
+        let guild = Guild(id: guildID, name: "Shared guild")
+        let forum = Channel(
+            id: forumID,
+            guildID: guildID,
+            name: "shared-forum",
+            kind: .forum
+        )
+        let currentUser = User(
+            id: UserID(rawValue: 91_002),
+            username: "account-load-user",
+            displayName: "Account Load User"
+        )
+        member = Member(
+            user: User(
+                id: UserID(rawValue: 91_003),
+                username: "shared-member",
+                displayName: "\(label) member"
+            ),
+            roleName: "Member",
+            isOnline: true
+        )
+        post = ForumPost(
+            thread: MessageThreadSummary(
+                id: ChannelID(rawValue: 91_004),
+                guildID: guildID,
+                parentID: forumID,
+                name: "\(label) post",
+                createdAt: Date(timeIntervalSince1970: 91_004)
+            )
+        )
+        snapshot = BootstrapSnapshot(
+            currentUser: currentUser,
+            guilds: [guild],
+            channels: [forum],
+            members: []
+        )
+    }
+
+    func bootstrap() async throws -> BootstrapSnapshot { snapshot }
+
+    func channels(in guildID: GuildID?) async throws -> [Channel] {
+        snapshot.channels.filter { $0.guildID == guildID }
+    }
+
+    func members(in guildID: GuildID?) async throws -> [Member] {
+        guard guildID == self.guildID else { return [] }
+        memberLoadStarted = true
+        let value: [Member]
+        if suspendsLoads {
+            value = await withCheckedContinuation { memberContinuation = $0 }
+        } else {
+            value = [member]
+        }
+        memberLoadReturned = true
+        return value
+    }
+
+    func roles(in guildID: GuildID) async throws -> [GuildRole] { [] }
+
+    func forumPosts(
+        in channelID: ChannelID,
+        query _: ForumPostQuery
+    ) async throws -> ForumPostPage {
+        guard channelID == forumID else {
+            throw ChatProviderError.channelNotFound
+        }
+        forumLoadStarted = true
+        let page: ForumPostPage
+        if suspendsLoads {
+            page = await withCheckedContinuation { forumContinuation = $0 }
+        } else {
+            page = ForumPostPage(posts: [post], hasMore: false, nextOffset: nil)
+        }
+        forumLoadReturned = true
+        return page
+    }
+
+    func waitUntilLoadsStart() async -> Bool {
+        for _ in 0 ..< 500 {
+            if memberLoadStarted, forumLoadStarted { return true }
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        return false
+    }
+
+    func releaseSuspendedLoads() {
+        memberContinuation?.resume(returning: [member])
+        memberContinuation = nil
+        forumContinuation?.resume(returning: ForumPostPage(
+            posts: [post],
+            hasMore: false,
+            nextOffset: nil
+        ))
+        forumContinuation = nil
+    }
+
+    func waitUntilLoadsReturn() async -> Bool {
+        for _ in 0 ..< 500 {
+            if memberLoadReturned, forumLoadReturned { return true }
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        return false
+    }
+
+    func profile(
+        for userID: UserID,
+        in guildID: GuildID?
+    ) async throws -> UserProfile {
+        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
+    }
+
+    func currentStatus() async -> PresenceStatus { .online }
+    func updateStatus(_ status: PresenceStatus) async throws {}
+
+    func messages(
+        in channelID: ChannelID,
+        before: MessageID?,
+        limit: Int
+    ) async throws -> MessagePage {
+        MessagePage(messages: [], hasMoreBefore: false)
+    }
+
+    func send(_ draft: SendMessageDraft) async throws -> Message {
+        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
+    }
+
+    func edit(
+        messageID: MessageID,
+        channelID: ChannelID,
+        content: String
+    ) async throws -> Message {
+        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
+    }
+
+    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
+    func toggleReaction(
+        _ emoji: String,
+        messageID: MessageID,
+        channelID: ChannelID
+    ) async throws {}
+
+    func eventStream() async -> AsyncStream<ClientEvent> {
+        AsyncStream { $0.finish() }
+    }
+
+    func disconnect() async {}
 }
 
 private actor StartupUnreadTestProvider: ChatProvider {
@@ -3265,9 +5595,23 @@ private actor SuspendedBootstrapTestProvider: ChatProvider {
     private var startWaiters: [CheckedContinuation<Void, Never>] = []
     private var bootstrapContinuation: CheckedContinuation<Void, Never>?
     private let bootstrapError: String?
+    private let suspendsMessages: Bool
+    private let messagePage: MessagePage
+    private var messageLoadStarted = false
+    private var messageLoadStartWaiters: [CheckedContinuation<Void, Never>] = []
+    private var messageLoadContinuation: CheckedContinuation<Void, Never>?
+    private var nextSentMessageID: UInt64 = 94_000
+    private var reactionRequestCount = 0
+    private var reactionRequestWaiters: [CheckedContinuation<Void, Never>] = []
 
-    init(bootstrapError: String? = nil) {
+    init(
+        bootstrapError: String? = nil,
+        suspendsMessages: Bool = false,
+        messagePage: MessagePage = MessagePage(messages: [], hasMoreBefore: false)
+    ) {
         self.bootstrapError = bootstrapError
+        self.suspendsMessages = suspendsMessages
+        self.messagePage = messagePage
     }
 
     func bootstrap() async throws -> BootstrapSnapshot {
@@ -3293,6 +5637,25 @@ private actor SuspendedBootstrapTestProvider: ChatProvider {
         bootstrapContinuation = nil
     }
 
+    func waitUntilMessageLoadStarts() async {
+        if messageLoadStarted {
+            return
+        }
+        await withCheckedContinuation { messageLoadStartWaiters.append($0) }
+    }
+
+    func releaseMessageLoad() {
+        messageLoadContinuation?.resume()
+        messageLoadContinuation = nil
+    }
+
+    func waitUntilReactionRequest() async {
+        if reactionRequestCount > 0 {
+            return
+        }
+        await withCheckedContinuation { reactionRequestWaiters.append($0) }
+    }
+
     func channels(in guildID: GuildID?) async throws -> [Channel] {
         [channel]
     }
@@ -3313,19 +5676,40 @@ private actor SuspendedBootstrapTestProvider: ChatProvider {
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
         -> MessagePage
     {
-        MessagePage(messages: [], hasMoreBefore: false)
+        if suspendsMessages {
+            messageLoadStarted = true
+            messageLoadStartWaiters.forEach { $0.resume() }
+            messageLoadStartWaiters.removeAll()
+            await withCheckedContinuation { messageLoadContinuation = $0 }
+        }
+        return messagePage
     }
 
     func send(_ draft: SendMessageDraft) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
+        nextSentMessageID &+= 1
+        return Message(
+            id: MessageID(rawValue: nextSentMessageID),
+            channelID: draft.channelID,
+            author: user,
+            content: draft.content,
+            nonce: draft.nonce
+        )
     }
 
     func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message {
-        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
+        guard var message = messagePage.messages.first(where: { $0.id == messageID }) else {
+            throw ChatProviderError.invalidRequest("The synthetic message does not exist.")
+        }
+        message.content = content
+        return message
     }
 
     func delete(messageID: MessageID, channelID: ChannelID) async throws {}
-    func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws {}
+    func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws {
+        reactionRequestCount += 1
+        reactionRequestWaiters.forEach { $0.resume() }
+        reactionRequestWaiters.removeAll()
+    }
     func eventStream() async -> AsyncStream<ClientEvent> {
         AsyncStream { $0.finish() }
     }
@@ -3359,6 +5743,51 @@ private final class PermissionRecordingNotificationService: NativeNotificationSe
     func cancel(accountID: String, channelID: ChannelID) async {}
 
     func setDockBadge(_ count: Int, enabled: Bool) {}
+}
+
+@MainActor
+private final class SuspendedAccountNotificationService: NativeNotificationService {
+    private(set) var publishedMessageIDs: [MessageID] = []
+    private var deliveryStarted = false
+    private var deliveryContinuation: CheckedContinuation<Void, Never>?
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func requestAuthorization() async throws -> Bool { true }
+    func authorizationStatus() async -> UNAuthorizationStatus { .authorized }
+
+    func deliver(
+        message: Message,
+        channel: Channel?,
+        guild: Guild?,
+        accountID: String,
+        preferences: NotificationPreferences
+    ) async {
+        deliveryStarted = true
+        for waiter in startWaiters {
+            waiter.resume()
+        }
+        startWaiters = []
+        await withCheckedContinuation { continuation in
+            deliveryContinuation = continuation
+        }
+        guard !Task.isCancelled else { return }
+        publishedMessageIDs.append(message.id)
+    }
+
+    func cancel(accountID: String, channelID: ChannelID) async {}
+    func setDockBadge(_ count: Int, enabled: Bool) {}
+
+    func waitUntilDeliveryStarts() async {
+        guard !deliveryStarted else { return }
+        await withCheckedContinuation { continuation in
+            startWaiters.append(continuation)
+        }
+    }
+
+    func releaseDelivery() {
+        deliveryContinuation?.resume()
+        deliveryContinuation = nil
+    }
 }
 
 private actor VoiceMigrationTestProvider: ChatProvider {

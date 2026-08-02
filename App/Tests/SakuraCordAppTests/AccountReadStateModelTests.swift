@@ -1865,6 +1865,32 @@ struct AccountReadStateModelTests {
 }
 
 @MainActor
+@Test func `automated benchmark emits no acknowledgement mutations`() async {
+    let provider = MockChatProvider()
+    let model = AppModel(
+        launchMode: .offlineTesting,
+        provider: provider,
+        runsChatPerformanceBenchmarkOverride: true
+    )
+    let channelID = ChannelID(rawValue: 99_920)
+    model.enqueueAcknowledgement(
+        channelID: channelID,
+        mutation: AppModel.ReadStateMutation(
+            messageID: MessageID(rawValue: 99_921),
+            manual: false,
+            mentionCount: nil,
+            flags: 0,
+            lastViewed: 0
+        )
+    )
+    await Task.yield()
+
+    #expect(await provider.acknowledgementRequests.isEmpty)
+    #expect(model.queuedAcknowledgements.isEmpty)
+    #expect(model.acknowledgementQueueOrder.isEmpty)
+}
+
+@MainActor
 @Test func `view acknowledgements coalesce serialize and chain the response token`() async {
     let provider = MockChatProvider()
     let model = AppModel(

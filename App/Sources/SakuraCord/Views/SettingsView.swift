@@ -17,6 +17,8 @@ struct SettingsView: View {
     @State private var notificationPermission = "Checking…"
     @State private var apiDiagnosticEntryCount = 0
     @State private var apiDiagnosticStatus: String?
+    @State private var capturesDetailedAPIPayloads =
+        DiscordAPIDiagnosticStore.shared.capturesPayloadDetails
 
     var body: some View {
         @Bindable var notificationPreferences = model.notificationPreferences
@@ -202,6 +204,15 @@ struct SettingsView: View {
 
             Form {
                 Section("Discord API logs") {
+                    Toggle(
+                        "Capture detailed sanitized payloads",
+                        isOn: $capturesDetailedAPIPayloads
+                    )
+                    .onChange(of: capturesDetailedAPIPayloads) { _, captures in
+                        DiscordAPIDiagnosticStore.shared.capturesPayloadDetails =
+                            captures
+                    }
+
                     LabeledContent("Retained entries") {
                         Text(apiDiagnosticEntryCount.formatted())
                             .monospacedDigit()
@@ -209,8 +220,9 @@ struct SettingsView: View {
 
                     Text(
                         "Exports retained Discord REST, attachment, authentication, and Gateway request/response metadata from this app session. "
+                            + "Detailed sanitized payload capture is off by default because processing large responses increases CPU and energy use. "
                             + "Message text, names, usernames, profile text, credentials, cookies, challenge data, filenames, and URLs are discarded before logging. "
-                            + "Message, user, channel, and server IDs may be included."
+                            + "Message, user, channel, and server IDs may be included when detailed capture is enabled."
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)

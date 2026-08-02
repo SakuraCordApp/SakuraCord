@@ -20,6 +20,21 @@ struct ChatDetailView: View {
                         roles: model.guildRoles
                     )
                 )
+                .background {
+                    DisplayCompleteFrameReporter(
+                        presentationID: channel.id.rawValue
+                    ) {
+                        guard model.selectedChannelID == channel.id else {
+                            return
+                        }
+                        AppPerformanceSignposts
+                            .reportNonTimelineWorkspaceFrame()
+                        AppPerformanceSignposts.reportConversationFirstFrame(
+                            channelID: channel.id
+                        )
+                    }
+                    .frame(width: 1, height: 1)
+                }
             } else {
                 MessageTimelineView(
                     model: model,
@@ -60,24 +75,30 @@ private struct ChatDetailFooter: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            switch access {
-            case .checking:
-                DisabledComposerView(message: "Checking channel permissions…")
-            case .readable(canSend: true):
-                TypingIndicatorView(typingState: model.typingState, channelID: channel.id)
-                ComposerView(
-                    model: model,
-                    channelName: channel.name,
-                    onEditMessage: onEditMessage
-                )
-            case .readable(canSend: false):
+            if model.presentsCachedStartup {
                 DisabledComposerView(
-                    message: channel.isOfficialSystemDirectMessage
-                        ? "This chat is reserved for official Discord notifications."
-                        : "You do not have permission to send messages in this channel."
+                    message: "Messages are read-only while Discord reconnects."
                 )
-            case .hidden:
-                EmptyView()
+            } else {
+                switch access {
+                case .checking:
+                    DisabledComposerView(message: "Checking channel permissions…")
+                case .readable(canSend: true):
+                    TypingIndicatorView(typingState: model.typingState, channelID: channel.id)
+                    ComposerView(
+                        model: model,
+                        channelName: channel.name,
+                        onEditMessage: onEditMessage
+                    )
+                case .readable(canSend: false):
+                    DisabledComposerView(
+                        message: channel.isOfficialSystemDirectMessage
+                            ? "This chat is reserved for official Discord notifications."
+                            : "You do not have permission to send messages in this channel."
+                    )
+                case .hidden:
+                    EmptyView()
+                }
             }
         }
     }

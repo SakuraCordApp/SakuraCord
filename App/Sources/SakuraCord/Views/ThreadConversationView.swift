@@ -168,24 +168,30 @@ private struct ThreadConversationComposer: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            switch model.openThreadAccess {
-            case .checking:
-                DisabledComposerView(message: "Checking thread permissions…")
-            case .readable(canSend: true):
-                ComposerView(
-                    model: model,
-                    channelName: thread.name,
-                    conversation: .thread,
-                    onEditMessage: onEditMessage
+            if model.presentsCachedStartup {
+                DisabledComposerView(
+                    message: "Messages are read-only while Discord reconnects."
                 )
-            case .readable(canSend: false):
-                if !thread.isLocked {
-                    DisabledComposerView(
-                        message: "You do not have permission to send messages in this thread."
+            } else {
+                switch model.openThreadAccess {
+                case .checking:
+                    DisabledComposerView(message: "Checking thread permissions…")
+                case .readable(canSend: true):
+                    ComposerView(
+                        model: model,
+                        channelName: thread.name,
+                        conversation: .thread,
+                        onEditMessage: onEditMessage
                     )
+                case .readable(canSend: false):
+                    if !thread.isLocked {
+                        DisabledComposerView(
+                            message: "You do not have permission to send messages in this thread."
+                        )
+                    }
+                case .hidden:
+                    EmptyView()
                 }
-            case .hidden:
-                EmptyView()
             }
         }
     }
@@ -260,7 +266,8 @@ private struct ThreadMessageTimelineView: View {
     let editRequest: MessageTimelineEditRequest?
     @State private var isNearBottom = false
     @State private var hasEstablishedInitialPosition = false
-    @State private var hasUserRequestedEarlierHistory = false
+    @State private var hasEarlierHistoryScrollIntent = false
+    @State private var isEarlierHistoryScrollGestureActive = false
     @State private var scrollRequest: MessageTimelineScrollRequest?
 
     var body: some View {
@@ -297,9 +304,7 @@ private struct ThreadMessageTimelineView: View {
             onScrollStateChange: handleScrollState,
             onInitialPositionEstablished: handleInitialPosition,
             onUserScrollBegan: handleUserScrollBegan,
-            onUserScrollEnded: { state in
-                isNearBottom = state.isNearBottom
-            }
+            onUserScrollEnded: handleUserScrollEnded
         )
         .scrollEdgeEffectStyle(.soft, for: .top)
         .ignoresSafeArea(.container, edges: .top)
@@ -362,7 +367,8 @@ private struct ThreadMessageTimelineView: View {
             }
             isNearBottom = false
             hasEstablishedInitialPosition = false
-            hasUserRequestedEarlierHistory = false
+            hasEarlierHistoryScrollIntent = false
+            isEarlierHistoryScrollGestureActive = false
         }
         .onChange(of: model.conversationNewestRequest) { _, request in
             guard let request,
@@ -499,6 +505,15 @@ private struct ThreadMessageTimelineView: View {
 
     private func handleScrollState(_ state: TimelineScrollState) {
         isNearBottom = state.isNearBottom
+        let retainedHistoryIntent =
+            TimelineEarlierHistoryScrollIntentPolicy.shouldRetain(
+                hasIntent: hasEarlierHistoryScrollIntent,
+                isGestureActive: isEarlierHistoryScrollGestureActive,
+                isInProvisionalHistory: state.isInProvisionalHistory
+            )
+        if hasEarlierHistoryScrollIntent != retainedHistoryIntent {
+            hasEarlierHistoryScrollIntent = retainedHistoryIntent
+        }
         if TimelineEarlierHistoryLoadingPolicy.shouldLoad(
             isNearTop: state.isNearTop,
             allowsAutomaticLoading: true,
@@ -507,10 +522,9 @@ private struct ThreadMessageTimelineView: View {
             hasUnresolvedUnreadBoundary:
                 hasUnresolvedInitialUnreadBoundary,
             hasUserScrollIntent:
-                hasUserRequestedEarlierHistory
+                hasEarlierHistoryScrollIntent
         )
         {
-            hasUserRequestedEarlierHistory = false
             loadEarlier()
         }
         guard state.hasEstablishedInitialPosition else { return }
@@ -528,11 +542,24 @@ private struct ThreadMessageTimelineView: View {
     }
 
     private func handleUserScrollBegan() {
+        isEarlierHistoryScrollGestureActive = true
         if hasUnresolvedInitialUnreadBoundary {
-            hasUserRequestedEarlierHistory = true
+            hasEarlierHistoryScrollIntent = true
         }
         guard let threadID = model.openThread?.id else { return }
         model.reportTimelineUserInteraction(channelID: threadID)
+    }
+
+    private func handleUserScrollEnded(_ state: TimelineScrollState) {
+        isEarlierHistoryScrollGestureActive = false
+        hasEarlierHistoryScrollIntent =
+            TimelineEarlierHistoryScrollIntentPolicy.shouldRetain(
+                hasIntent: hasEarlierHistoryScrollIntent,
+                isGestureActive: false,
+                isInProvisionalHistory: state.isInProvisionalHistory
+            )
+        isNearBottom = state.isNearBottom
+        handleScrollState(state)
     }
 
     private func requestScroll(_ target: MessageTimelineScrollRequest.Target) {
