@@ -795,6 +795,57 @@ import UserNotifications
 }
 
 @MainActor
+@Test func `selecting an inaccessible text channel performs no message read`() async throws {
+    let provider = InaccessibleChannelRequestCountingProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let channel = try hiddenMockChannel(kind: .text, in: model)
+
+    model.selectedChannelID = channel.id
+    try await Task.sleep(for: .milliseconds(40))
+
+    #expect(model.selectedConversationAccess == .hidden)
+    #expect(await provider.messageRequestCount(for: channel.id) == 0)
+    #expect(!model.isLoadingMessages)
+    #expect(model.messages.isEmpty)
+}
+
+@MainActor
+@Test func `selecting an inaccessible forum performs no forum read`() async throws {
+    let provider = InaccessibleChannelRequestCountingProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let channel = try hiddenMockChannel(kind: .forum, in: model)
+
+    model.selectedChannelID = channel.id
+    try await Task.sleep(for: .milliseconds(40))
+
+    #expect(model.selectedConversationAccess == .hidden)
+    #expect(await provider.forumRequestCount(for: channel.id) == 0)
+    #expect(model.forumLoadTask == nil)
+}
+
+@MainActor
+@Test func `inaccessible voice keeps chat readable but cannot join`() async throws {
+    let provider = InaccessibleChannelRequestCountingProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let channel = try hiddenMockChannel(kind: .voice, in: model)
+
+    model.selectedChannelID = channel.id
+    try await Task.sleep(for: .milliseconds(40))
+    #expect(await provider.messageRequestCount(for: channel.id) == 1)
+    #expect(!model.isLoadingMessages)
+    #expect(model.selectedConversationAccess == .hidden)
+    #expect(!model.canJoinVoice(channel))
+
+    await model.joinVoice(channel)
+
+    #expect(await provider.voiceJoinRequestCount() == 0)
+    #expect(model.activeVoiceChannel == nil)
+}
+
+@MainActor
 @Test func `startup snapshot presents channel guild and folder unread without a later event`() async
     throws
 {
@@ -3643,6 +3694,25 @@ private func eventuallyOnMain(_ condition: @escaping @MainActor () -> Bool) asyn
 }
 
 @MainActor
+private func hiddenMockChannel(
+    kind: ChannelKindValue,
+    in model: AppModel
+) throws -> Channel {
+    let channelID = ChannelID(rawValue: 215)
+    var snapshot = try #require(model.snapshot)
+    let index = try #require(
+        snapshot.channels.firstIndex { $0.id == channelID }
+    )
+    var channel = snapshot.channels[index]
+    channel.kind = kind
+    snapshot.channels[index] = channel
+    model.snapshot = snapshot
+    model.refreshUnreadPresentation(appliesAccessImmediately: true)
+    #expect(model.conversationAccess(for: channel) == .hidden)
+    return channel
+}
+
+@MainActor
 @Test func `demo emoji preferences and custom emoji assets stay offline`() async throws {
     let provider = MockChatProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
@@ -4456,6 +4526,112 @@ private actor ReactionMutationTestProvider: ChatProvider {
 private struct ChannelLoadMessageRequest: Equatable, Sendable {
     let before: MessageID?
     let limit: Int
+}
+
+private actor InaccessibleChannelRequestCountingProvider: ChatProvider {
+    private let base = MockChatProvider()
+    private var messageRequests: [ChannelID: Int] = [:]
+    private var forumRequests: [ChannelID: Int] = [:]
+    private var voiceJoinRequests = 0
+
+    func bootstrap() async throws -> BootstrapSnapshot {
+        try await base.bootstrap()
+    }
+
+    func channels(in guildID: GuildID?) async throws -> [Channel] {
+        try await base.channels(in: guildID)
+    }
+
+    func members(in guildID: GuildID?) async throws -> [Member] {
+        try await base.members(in: guildID)
+    }
+
+    func profile(
+        for userID: UserID,
+        in guildID: GuildID?
+    ) async throws -> UserProfile {
+        try await base.profile(for: userID, in: guildID)
+    }
+
+    func currentStatus() async -> PresenceStatus {
+        await base.currentStatus()
+    }
+
+    func updateStatus(_ status: PresenceStatus) async throws {
+        try await base.updateStatus(status)
+    }
+
+    func messages(
+        in channelID: ChannelID,
+        before: MessageID?,
+        limit: Int
+    ) async throws -> MessagePage {
+        messageRequests[channelID, default: 0] += 1
+        return try await base.messages(
+            in: channelID,
+            before: before,
+            limit: limit
+        )
+    }
+
+    func forumPosts(
+        in channelID: ChannelID,
+        query: ForumPostQuery
+    ) async throws -> ForumPostPage {
+        forumRequests[channelID, default: 0] += 1
+        return try await base.forumPosts(in: channelID, query: query)
+    }
+
+    func send(_ draft: SendMessageDraft) async throws -> Message {
+        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
+    }
+
+    func edit(
+        messageID: MessageID,
+        channelID: ChannelID,
+        content: String
+    ) async throws -> Message {
+        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
+    }
+
+    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
+    func toggleReaction(
+        _ emoji: String,
+        messageID: MessageID,
+        channelID: ChannelID
+    ) async throws {}
+
+    func joinVoice(
+        channelID: ChannelID,
+        guildID: GuildID?,
+        selfMute: Bool,
+        selfDeaf: Bool
+    ) async throws -> VoiceConnectionInfo {
+        voiceJoinRequests += 1
+        throw ChatProviderError.invalidRequest(
+            "Voice joining should be suppressed for this test."
+        )
+    }
+
+    func eventStream() async -> AsyncStream<ClientEvent> {
+        await base.eventStream()
+    }
+
+    func disconnect() async {
+        await base.disconnect()
+    }
+
+    func messageRequestCount(for channelID: ChannelID) -> Int {
+        messageRequests[channelID, default: 0]
+    }
+
+    func forumRequestCount(for channelID: ChannelID) -> Int {
+        forumRequests[channelID, default: 0]
+    }
+
+    func voiceJoinRequestCount() -> Int {
+        voiceJoinRequests
+    }
 }
 
 private actor ChannelLoadTestProvider: ChatProvider {

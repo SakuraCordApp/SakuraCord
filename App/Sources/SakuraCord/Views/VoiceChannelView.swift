@@ -86,6 +86,7 @@ struct VoiceChannelView: View {
             .regular.tint(Color(hex: 0x23A55A)).interactive(),
             in: Capsule()
         )
+        .disabled(channel.map(model.canJoinVoice) != true)
     }
 
     private var channel: Channel? {

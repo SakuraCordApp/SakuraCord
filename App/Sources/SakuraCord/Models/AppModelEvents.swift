@@ -195,8 +195,22 @@ extension AppModel {
                 access == .hidden ? channelID : nil
             }
         )
+        let selectedChannelBecameHidden = selectedChannelID.map {
+            projectedHiddenChannelIDs.contains($0)
+                && !hiddenChannelIDs.contains($0)
+        } ?? false
         if projectedHiddenChannelIDs != hiddenChannelIDs {
             hiddenChannelIDs = projectedHiddenChannelIDs
+        }
+        if selectedChannelBecameHidden {
+            switch selectedChannel?.kind {
+            case .forum:
+                beginForumLoad()
+            case .voice:
+                break
+            default:
+                beginSelectedChannelLoad()
+            }
         }
         readState.applyAccessibility(
             projection.accessibilityByChannelID

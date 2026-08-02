@@ -1289,6 +1289,7 @@ extension AppModel {
                 channel.defaultForumLayout == .defaultLayout ? .list : channel.defaultForumLayout
             forumTagMatch = channel.defaultTagMatch
         }
+        guard selectedConversationAccess != .hidden else { return }
         forumLoadTask = Task { [weak self] in
             await self?.loadForumPosts(reset: true)
         }
@@ -1352,7 +1353,8 @@ extension AppModel {
     func loadForumPosts(reset: Bool) async {
         guard !Task.isCancelled,
               let channelID = selectedChannelID,
-              selectedChannel?.kind == .forum
+              selectedChannel?.kind == .forum,
+              selectedConversationAccess != .hidden
         else { return }
         let session = accountSession()
         let loadSignpost = Self.forumPerformanceSignposter.beginInterval("ForumPostsLoad")

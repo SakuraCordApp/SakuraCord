@@ -514,6 +514,14 @@ final class AppModel {
         return ConversationPermissionResolver.channelAccess(effectivePermissions: permissions)
     }
 
+    func canJoinVoice(_ channel: Channel) -> Bool {
+        guard channel.kind == .voice
+                || channel.kind == .directMessage
+                || channel.kind == .groupDirectMessage
+        else { return false }
+        return conversationAccess(for: channel) != .hidden
+    }
+
     var openThreadAccess: ConversationAccess {
         guard let thread = openThread, let channel = selectedChannel else { return .checking }
         guard let guildID = channel.guildID else { return .readable(canSend: true) }

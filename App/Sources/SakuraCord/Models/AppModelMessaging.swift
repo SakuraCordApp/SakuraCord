@@ -628,10 +628,7 @@ extension AppModel {
 
     func joinVoice(_ channel: Channel) async {
         guard !presentsCachedStartup else { return }
-        guard channel.kind == .voice
-                || channel.kind == .directMessage
-                || channel.kind == .groupDirectMessage
-        else { return }
+        guard canJoinVoice(channel) else { return }
         if activeVoiceChannel?.id == channel.id,
            voiceSessionState == .connected || voiceSessionState == .connecting
         {
