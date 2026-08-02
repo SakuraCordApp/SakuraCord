@@ -1453,20 +1453,30 @@ extension DiscordRESTProvider {
                 )
                 throw error
             }
-            if let response = rawResponse as? HTTPURLResponse {
-                apiDiagnostics.recordHTTPResponse(
+            guard let response = rawResponse as? HTTPURLResponse else {
+                let error = ChatProviderError.invalidRequest(
+                    "Discord's attachment storage returned an invalid HTTP response."
+                )
+                apiDiagnostics.recordHTTPFailure(
                     transport: "attachment_storage",
                     method: "PUT",
                     path: "/attachments/\(slot.id)",
                     attempt: 1,
-                    response: response,
-                    body: Data(),
-                    duration: uploadStarted.duration(to: .now)
+                    duration: uploadStarted.duration(to: .now),
+                    error: error
                 )
+                throw error
             }
-            guard let response = rawResponse as? HTTPURLResponse,
-                  (200 ..< 300).contains(response.statusCode)
-            else {
+            apiDiagnostics.recordHTTPResponse(
+                transport: "attachment_storage",
+                method: "PUT",
+                path: "/attachments/\(slot.id)",
+                attempt: 1,
+                response: response,
+                body: Data(),
+                duration: uploadStarted.duration(to: .now)
+            )
+            guard (200 ..< 300).contains(response.statusCode) else {
                 throw ChatProviderError.invalidRequest(
                     "Discord's attachment storage rejected \(file.name)."
                 )

@@ -54,11 +54,12 @@ import Testing
     let export = try store.exportData()
     let text = try #require(String(data: export, encoding: .utf8))
 
-    #expect(text.contains("123456789"))
-    #expect(text.contains("234567890"))
-    #expect(text.contains("345678901"))
+    #expect(!text.contains("123456789"))
+    #expect(!text.contains("234567890"))
+    #expect(!text.contains("345678901"))
     #expect(text.contains("online"))
-    #expect(text.contains("bucket-id"))
+    #expect(!text.contains("bucket-id"))
+    #expect(text.contains("<redacted-id>"))
     #expect(!text.contains("secret message body"))
     #expect(!text.contains("private-user"))
     #expect(!text.contains("Private Server"))
@@ -100,8 +101,8 @@ import Testing
     let text = try #require(
         String(data: store.exportData(), encoding: .utf8)
     )
-    #expect(text.contains("123"))
-    #expect(text.contains("456"))
+    #expect(!text.contains(#""123""#))
+    #expect(!text.contains(#""456""#))
     #expect(text.contains("MESSAGE_CREATE"))
     #expect(!text.contains("private-token"))
     #expect(!text.contains("private-session"))
@@ -135,7 +136,7 @@ import Testing
     let text = try #require(
         String(data: store.exportData(), encoding: .utf8)
     )
-    #expect(text.contains("123456789"))
+    #expect(!text.contains("123456789"))
     #expect(text.contains("\"secret_key\":\"<redacted>\""))
     #expect(!text.contains("[11,22,33,44]"))
 }
@@ -288,6 +289,145 @@ import Testing
     #expect(store.retainedEstimatedByteCount == 0)
 }
 
+@Test func `API diagnostics redact identifiers in every retained surface`() throws {
+    let store = DiscordAPIDiagnosticStore(
+        maximumEntries: 10,
+        capturesPayloadDetails: true
+    )
+    let body = Data(
+        #"{"id":"111111111111111111","recipient_ids":["222222222222222222"],"nonce":"333333333333333333","id_map":{"121212121212121212":{"status":"online"}}}"#.utf8
+    )
+    store.recordHTTPRequest(
+        method: "GET",
+        path: "/channels/444444444444444444/messages/555555555555555555/reactions/private-emoji",
+        query: [
+            URLQueryItem(name: "before", value: "666666666666666666"),
+            URLQueryItem(name: "guild_id", value: "777777777777777777"),
+        ],
+        body: body,
+        attempt: 1
+    )
+    let response = try #require(HTTPURLResponse(
+        url: URL(string: "https://discord.com/api/v9/channels/444444444444444444")!,
+        statusCode: 200,
+        httpVersion: nil,
+        headerFields: [
+            "X-Request-ID": "888888888888888888",
+            "X-RateLimit-Bucket": "999999999999999999",
+        ]
+    ))
+    store.recordHTTPResponse(
+        method: "GET",
+        path: "/channels/444444444444444444/messages/555555555555555555",
+        attempt: 1,
+        response: response,
+        body: body,
+        duration: .milliseconds(1)
+    )
+
+    let text = try #require(String(data: store.exportData(), encoding: .utf8))
+    for identifier in [
+        "111111111111111111", "222222222222222222", "333333333333333333",
+        "444444444444444444", "555555555555555555", "666666666666666666",
+        "777777777777777777", "888888888888888888", "999999999999999999",
+        "121212121212121212", "private-emoji",
+    ] {
+        #expect(!text.contains(identifier))
+    }
+    #expect(text.contains("/channels/<redacted-id>/messages/<redacted-id>"))
+    #expect(text.contains(#""X-Request-ID":"<redacted-id>""#))
+    #expect(text.contains(#""X-RateLimit-Bucket":"<redacted-id>""#))
+}
+
+@Test func `disk diagnostics are opt in and contain every recorded request outcome`() throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appending(path: "SakuraCordDiagnosticsTests-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = DiscordAPIDiagnosticStore(
+        maximumEntries: 10,
+        capturesPayloadDetails: true,
+        diskDirectoryURL: directory
+    )
+
+    store.recordHTTPRequest(
+        method: "GET",
+        path: "/channels/111111111111111111/messages",
+        body: nil,
+        attempt: 1
+    )
+    #expect(!FileManager.default.fileExists(atPath: directory.path))
+
+    try store.setSavesDiagnosticsToDisk(true)
+    let fileURL = try #require(store.currentDiskLogURL)
+    let response = try #require(HTTPURLResponse(
+        url: URL(string: "https://discord.com/api/v9/channels/222222222222222222")!,
+        statusCode: 204,
+        httpVersion: nil,
+        headerFields: nil
+    ))
+    store.recordHTTPRequest(
+        method: "DELETE",
+        path: "/channels/222222222222222222/messages/333333333333333333",
+        body: nil,
+        attempt: 1
+    )
+    store.recordHTTPResponse(
+        method: "DELETE",
+        path: "/channels/222222222222222222/messages/333333333333333333",
+        attempt: 1,
+        response: response,
+        body: Data(),
+        duration: .milliseconds(2)
+    )
+    try store.setSavesDiagnosticsToDisk(false)
+
+    let text = try String(contentsOf: fileURL, encoding: .utf8)
+    let lines = text.split(separator: "\n")
+    #expect(lines.count == 3)
+    #expect(lines[1].contains(#""direction":"request""#))
+    #expect(lines[2].contains(#""direction":"response""#))
+    #expect(!text.contains("222222222222222222"))
+    #expect(!text.contains("333333333333333333"))
+    let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+    #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
+}
+
+@Test func `central REST transport records one request and one response`() async throws {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [DiagnosticsURLProtocol.self]
+    let diagnostics = DiscordAPIDiagnosticStore(
+        maximumEntries: 10,
+        capturesPayloadDetails: true
+    )
+    let provider = DiscordRESTProvider(
+        credentials: DiagnosticsCredentialStore(),
+        handle: CredentialHandle(accountID: "diagnostics-test"),
+        session: URLSession(configuration: configuration),
+        apiDiagnostics: diagnostics
+    )
+
+    let (_, response) = try await provider.perform(
+        "/channels/111111111111111111/messages",
+        method: "GET",
+        query: [],
+        body: nil,
+        maximumAttempts: 1
+    )
+    #expect(response.statusCode == 200)
+    await provider.disconnect()
+
+    let lines = try #require(
+        String(data: diagnostics.exportData(), encoding: .utf8)
+    ).split(separator: "\n")
+    #expect(lines.count == 3)
+    let request = try decodedJSONObject(lines[1])
+    let recordedResponse = try decodedJSONObject(lines[2])
+    #expect(request["direction"] as? String == "request")
+    #expect(recordedResponse["direction"] as? String == "response")
+    #expect(request["path"] as? String == "/channels/<redacted-id>/messages")
+    #expect(recordedResponse["statusCode"] as? Int == 200)
+}
+
 private func decodedJSONObject(
     _ line: Substring
 ) throws -> [String: Any] {
@@ -295,4 +435,51 @@ private func decodedJSONObject(
     return try #require(
         JSONSerialization.jsonObject(with: data) as? [String: Any]
     )
+}
+
+private actor DiagnosticsCredentialStore: CredentialStore {
+    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
+        CredentialHandle(accountID: accountID)
+    }
+
+    func credential(for _: CredentialHandle) async throws -> Data {
+        Data("diagnostics-test-token".utf8)
+    }
+
+    func remove(_: CredentialHandle) async throws {}
+
+    func handles() async throws -> [CredentialHandle] { [] }
+}
+
+private final class DiagnosticsURLProtocol: URLProtocol, @unchecked Sendable {
+    override static func canInit(with _: URLRequest) -> Bool { true }
+
+    override static func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: [
+                "Content-Type": "application/json",
+                "X-Request-ID": "222222222222222222",
+                "X-RateLimit-Bucket": "333333333333333333",
+            ]
+        )!
+        client?.urlProtocol(
+            self,
+            didReceive: response,
+            cacheStoragePolicy: .notAllowed
+        )
+        client?.urlProtocol(
+            self,
+            didLoad: Data(#"{"id":"444444444444444444"}"#.utf8)
+        )
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }

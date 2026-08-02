@@ -13,6 +13,7 @@ struct SettingsView: View {
     @AppStorage("voiceCameraUID") private var cameraUID = ""
     @AppStorage("voiceInputVolume") private var inputVolume = 1.0
     @AppStorage("voiceOutputVolume") private var outputVolume = 1.0
+    @AppStorage("saveAPIDiagnosticsToDisk") private var savesAPIDiagnosticsToDisk = false
     @State private var mediaDevices: MediaDeviceSnapshot = .empty
     @State private var notificationPermission = "Checking…"
     @State private var apiDiagnosticEntryCount = 0
@@ -213,6 +214,14 @@ struct SettingsView: View {
                             captures
                     }
 
+                    Toggle(
+                        "Save diagnostics to disk",
+                        isOn: $savesAPIDiagnosticsToDisk
+                    )
+                    .onChange(of: savesAPIDiagnosticsToDisk) { _, savesToDisk in
+                        updateDiskLogging(savesToDisk)
+                    }
+
                     LabeledContent("Retained entries") {
                         Text(apiDiagnosticEntryCount.formatted())
                             .monospacedDigit()
@@ -222,7 +231,8 @@ struct SettingsView: View {
                         "Exports retained Discord REST, attachment, authentication, and Gateway request/response metadata from this app session. "
                             + "Detailed sanitized payload capture is off by default because processing large responses increases CPU and energy use. "
                             + "Message text, names, usernames, profile text, credentials, cookies, challenge data, filenames, and URLs are discarded before logging. "
-                            + "Message, user, channel, and server IDs may be included when detailed capture is enabled."
+                            + "IDs, nonces, request IDs, and rate-limit bucket IDs are always redacted. "
+                            + "Disk capture is off by default and writes a private JSON Lines file in Application Support/SakuraCord/Diagnostics."
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -268,6 +278,24 @@ struct SettingsView: View {
     private func refreshAPIDiagnosticCount() {
         apiDiagnosticEntryCount =
             DiscordAPIDiagnosticStore.shared.retainedEntryCount
+    }
+
+    private func updateDiskLogging(_ savesToDisk: Bool) {
+        do {
+            try DiscordAPIDiagnosticStore.shared
+                .setSavesDiagnosticsToDisk(savesToDisk)
+            if savesToDisk,
+               let fileURL = DiscordAPIDiagnosticStore.shared.currentDiskLogURL
+            {
+                apiDiagnosticStatus = "Saving diagnostics to \(fileURL.lastPathComponent)"
+            } else {
+                apiDiagnosticStatus = "Diagnostics are no longer being saved to disk."
+            }
+        } catch {
+            savesAPIDiagnosticsToDisk = false
+            apiDiagnosticStatus =
+                "Could not save diagnostics to disk: \(error.localizedDescription)"
+        }
     }
 
     private func exportAPILogs() async {

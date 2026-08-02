@@ -252,7 +252,17 @@ extension DiscordRESTProvider {
                 throw error
             }
             guard let response = rawResponse as? HTTPURLResponse else {
-                throw ChatProviderError.invalidRequest("Discord returned an invalid HTTP response.")
+                let error = ChatProviderError.invalidRequest(
+                    "Discord returned an invalid HTTP response."
+                )
+                apiDiagnostics.recordHTTPFailure(
+                    method: method,
+                    path: path,
+                    attempt: requestAttempt,
+                    duration: requestStarted.duration(to: .now),
+                    error: error
+                )
+                throw error
             }
             apiDiagnostics.recordHTTPResponse(
                 method: method,

@@ -365,7 +365,16 @@ actor DiscordSessionAuthenticator {
             throw error
         }
         guard let response = rawResponse as? HTTPURLResponse else {
-            throw AuthenticationError.invalidResponse
+            let error = AuthenticationError.invalidResponse
+            apiDiagnostics.recordHTTPFailure(
+                transport: "authentication",
+                method: "GET",
+                path: "/users/@me",
+                attempt: 1,
+                duration: requestStarted.duration(to: .now),
+                error: error
+            )
+            throw error
         }
         apiDiagnostics.recordHTTPResponse(
             transport: "authentication",
@@ -435,7 +444,16 @@ actor DiscordSessionAuthenticator {
                 throw error
             }
             guard let response = rawResponse as? HTTPURLResponse else {
-                throw AuthenticationError.invalidResponse
+                let error = AuthenticationError.invalidResponse
+                apiDiagnostics.recordHTTPFailure(
+                    transport: "authentication",
+                    method: method,
+                    path: path,
+                    attempt: attempt + 1,
+                    duration: requestStarted.duration(to: .now),
+                    error: error
+                )
+                throw error
             }
             apiDiagnostics.recordHTTPResponse(
                 transport: "authentication",

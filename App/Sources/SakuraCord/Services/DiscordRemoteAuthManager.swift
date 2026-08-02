@@ -164,6 +164,11 @@ actor DiscordRemoteAuthManager {
             return
         } catch {
             guard self.generation == generation else { return }
+            apiDiagnostics.recordWebSocketFailure(
+                transport: "remote_auth_gateway",
+                direction: "response",
+                error: error
+            )
             emit(.failed("QR sign-in lost its connection. You can create a fresh code and try again."))
             await disconnect(emit: false)
         }
@@ -254,7 +259,16 @@ actor DiscordRemoteAuthManager {
             direction: "request",
             data: data
         )
-        try await webSocket.send(.string(text))
+        do {
+            try await webSocket.send(.string(text))
+        } catch {
+            apiDiagnostics.recordWebSocketFailure(
+                transport: "remote_auth_gateway",
+                direction: "request",
+                error: error
+            )
+            throw error
+        }
     }
 
     private func disconnect(emit _: Bool, clearPrivateKey: Bool = true) async {

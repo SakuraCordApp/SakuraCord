@@ -325,13 +325,23 @@ import Testing
     let spare = FakeGatewaySocket()
     let transport = FakeGatewayTransport(sockets: [socket, spare])
     let clock = ManualGatewayClock()
-    let session = makeGatewaySession(transport: transport, clock: clock, randomValues: [])
+    let diagnostics = DiscordAPIDiagnosticStore(maximumEntries: 10)
+    let session = makeGatewaySession(
+        transport: transport,
+        clock: clock,
+        randomValues: [],
+        apiDiagnostics: diagnostics
+    )
     await session.connect()
     #expect(await eventually { await transport.connectionCount == 1 })
     await socket.push(.text("not-json"))
     #expect(await eventually { await session.snapshot().state == .stopped })
     #expect(await transport.connectionCount == 1)
     #expect(await socket.closeCodes == [4002])
+    let diagnosticText = (try? diagnostics.exportData())
+        .flatMap { String(data: $0, encoding: .utf8) } ?? ""
+    #expect(diagnosticText.contains("unparsed_payload"))
+    #expect(diagnosticText.contains("response_failure"))
 }
 
 @Test func `existing message member presence and voice dispatches remain lossless`() async {
@@ -368,7 +378,8 @@ private func makeGatewaySession(
     clock: ManualGatewayClock,
     randomValues: [Double],
     maximumReconnectAttempts: Int = 8,
-    backoffCap: Duration = .seconds(60)
+    backoffCap: Duration = .seconds(60),
+    apiDiagnostics: DiscordAPIDiagnosticStore = .shared
 ) -> GatewaySession {
     let identify = encodedGatewayData(GatewayEnvelope(op: 2, data: .object([
         "token": .string("test-token")
@@ -383,7 +394,8 @@ private func makeGatewaySession(
         ),
         transport: transport,
         clock: clock,
-        random: SequenceGatewayRandom(values: randomValues)
+        random: SequenceGatewayRandom(values: randomValues),
+        apiDiagnostics: apiDiagnostics
     )
 }
 

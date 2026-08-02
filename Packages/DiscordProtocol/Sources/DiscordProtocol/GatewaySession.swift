@@ -238,7 +238,16 @@ actor GatewaySession {
     func send(_ data: Data) async throws {
         guard !intentionallyStopped, state == .ready, let socket else { throw GatewaySessionError.stopped }
         apiDiagnostics.recordGatewayData(direction: "request", data: data)
-        try await socket.send(data)
+        do {
+            try await socket.send(data)
+        } catch {
+            apiDiagnostics.recordWebSocketFailure(
+                transport: "gateway",
+                direction: "request",
+                error: error
+            )
+            throw error
+        }
     }
 
     func snapshot() -> Snapshot {
@@ -390,8 +399,11 @@ actor GatewaySession {
                 let message = try await activeSocket.receive()
                 let payloads = try framer.append(message)
                 for payload in payloads {
+                    apiDiagnostics.recordGatewayData(
+                        direction: "response",
+                        data: payload
+                    )
                     let envelope = try codec.decode(payload)
-                    apiDiagnostics.recordGateway(direction: "response", envelope: envelope)
                     if let outcome = try await process(envelope, generation: activeGeneration) {
                         await activeSocket.close(code: 4000)
                         return outcome
@@ -402,6 +414,11 @@ actor GatewaySession {
         } catch is CancellationError {
             return .cancelled
         } catch {
+            apiDiagnostics.recordWebSocketFailure(
+                transport: "gateway",
+                direction: "response",
+                error: error
+            )
             if let forcedOutcome {
                 self.forcedOutcome = nil
                 return forcedOutcome
@@ -498,7 +515,16 @@ actor GatewaySession {
                 direction: "request",
                 data: configuration.identifyPayload
             )
-            try await socket?.send(configuration.identifyPayload)
+            do {
+                try await socket?.send(configuration.identifyPayload)
+            } catch {
+                apiDiagnostics.recordWebSocketFailure(
+                    transport: "gateway",
+                    direction: "request",
+                    error: error
+                )
+                throw error
+            }
         }
     }
 
@@ -514,7 +540,16 @@ actor GatewaySession {
             "seq": .number(Double(sequence))
         ]))
         apiDiagnostics.recordGateway(direction: "request", envelope: envelope)
-        try await socket?.send(codec.encode(envelope))
+        do {
+            try await socket?.send(codec.encode(envelope))
+        } catch {
+            apiDiagnostics.recordWebSocketFailure(
+                transport: "gateway",
+                direction: "request",
+                error: error
+            )
+            throw error
+        }
     }
 
     private func startHeartbeatLoop(generation activeGeneration: Int, initialDelay: Duration, interval: Duration) {
@@ -556,7 +591,16 @@ actor GatewaySession {
         let data: JSONValue = sequence.map { .number(Double($0)) } ?? .null
         let envelope = GatewayEnvelope(op: 1, data: data)
         apiDiagnostics.recordGateway(direction: "request", envelope: envelope)
-        try await socket.send(codec.encode(envelope))
+        do {
+            try await socket.send(codec.encode(envelope))
+        } catch {
+            apiDiagnostics.recordWebSocketFailure(
+                transport: "gateway",
+                direction: "request",
+                error: error
+            )
+            throw error
+        }
         awaitingHeartbeatACK = true
         if restartCadence, let interval = heartbeatInterval {
             startHeartbeatLoop(generation: activeGeneration, initialDelay: interval, interval: interval)
