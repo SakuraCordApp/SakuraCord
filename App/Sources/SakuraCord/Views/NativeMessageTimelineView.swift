@@ -10,6 +10,7 @@ struct NativeMessageTimelineView: NSViewRepresentable {
     let firstMessageStartsDayOverride: Bool?
     let hasMoreMessages: Bool
     let isLoadingEarlier: Bool
+    let earlierHistoryLoadFailed: Bool
     let bottomContentInset: CGFloat
     let unreadMessageID: MessageID?
     let highlightedMessageID: MessageID?
@@ -32,6 +33,7 @@ struct NativeMessageTimelineView: NSViewRepresentable {
         firstMessageStartsDayOverride: Bool?,
         hasMoreMessages: Bool,
         isLoadingEarlier: Bool,
+        earlierHistoryLoadFailed: Bool = false,
         bottomContentInset: CGFloat,
         unreadMessageID: MessageID?,
         highlightedMessageID: MessageID?,
@@ -55,6 +57,7 @@ struct NativeMessageTimelineView: NSViewRepresentable {
             firstMessageStartsDayOverride
         self.hasMoreMessages = hasMoreMessages
         self.isLoadingEarlier = isLoadingEarlier
+        self.earlierHistoryLoadFailed = earlierHistoryLoadFailed
         self.bottomContentInset = bottomContentInset
         self.unreadMessageID = unreadMessageID
         self.highlightedMessageID = highlightedMessageID
@@ -110,6 +113,17 @@ struct NativeMessageTimelineView: NSViewRepresentable {
 
 @MainActor
 final class NativeMessageTimelineCoordinator: NSObject {
+        struct CachedItemLayout {
+            let item: NativeMessageTimelineItem
+            let layout: NativeTimelineRowLayout
+        }
+
+        struct CachedItemLayoutKey: Hashable {
+            let identifier: NativeMessageTimelineItem.Identifier
+            let roundedWidth: Int
+            let presentationRevision: UInt64
+        }
+
         struct VisibleAnchor {
             let messageID: MessageID
             let offsetFromViewportTop: CGFloat
@@ -130,6 +144,8 @@ final class NativeMessageTimelineCoordinator: NSObject {
         /// consume the current headroom and visually pin at the loaded top.
         static let prefetchDistance: CGFloat = 8_000
         static let leadingHistoryReserveChunk: CGFloat = 65_536
+        static let maximumCachedItemLayouts = 750
+        static let cachedItemLayoutsPerConversation = 256
         static let performanceSignposter = OSSignposter(
             subsystem: "dev.sakuracord.SakuraCord",
             category: "PointsOfInterest"
@@ -167,6 +183,7 @@ final class NativeMessageTimelineCoordinator: NSObject {
             set { storage.contentHeight = newValue }
         }
         var rowCount = 0
+        var appliedSourceRows: [MessageRowPresentation] = []
         var messageIDs: [MessageID] = []
         var firstRowID: MessageID?
         var lastRowID: MessageID?
@@ -186,6 +203,12 @@ final class NativeMessageTimelineCoordinator: NSObject {
         var performanceFallbackReason = "none"
         var lastPerformanceUpdateDuration = 0.0
         var lastLoggedPerformanceFallbackReason: String?
+        var recentLayoutCacheHits = 0
+        var cachedItemLayouts:
+            [CachedItemLayoutKey: CachedItemLayout] = [:]
+        var cachedItemLayoutOrder:
+            [CachedItemLayoutKey] = []
+        var cachedItemLayoutEvictionIndex = 0
 
         weak var canvas: NativeTimelineCanvasView?
         weak var documentView: NativeTimelineDocumentView?
@@ -194,7 +217,11 @@ final class NativeMessageTimelineCoordinator: NSObject {
         var lastScrollRequestID: UUID?
         var lastEditRequestID: UUID?
         var lastReportedState: TimelineScrollState?
-        var scrollStateCallbackGeneration: UInt64 = 0
+        var pendingScrollState: TimelineScrollState?
+        var scrollStateCallbackTask: Task<Void, Never>?
+        var isEarlierHistoryScrollGestureActive = false
+        var hasEarlierHistoryScrollIntent = false
+        var hasIssuedEarlierHistoryRequest = false
         var lastReportedScrollActivity: Bool?
         var scrollActivityCallbackGeneration: UInt64 = 0
         var initialPositionCallbackGeneration: UInt64 = 0
@@ -204,10 +231,14 @@ final class NativeMessageTimelineCoordinator: NSObject {
         var isApplyingUpdate = false
         var scrollIdleTask: Task<Void, Never>?
         var lastScrollActivityUptime = 0.0
+        var widthRelayoutTask: Task<Void, Never>?
+        var pendingLayoutWidth: CGFloat?
+        var widthRelayoutGeneration: UInt64 = 0
         var performanceAutoScrollTask: Task<Void, Never>?
         var performanceDisplayLinkTicker:
             NativeTimelineDisplayLinkTicker?
-        var performanceBenchmarkFinish: (() -> Void)?
+        var performanceBenchmarkFinish:
+            ((NativeTimelineBenchmarkFinishOutcome) -> Void)?
         var didStartPerformanceAutoScroll = false
         var isPreparingOrRunningPerformanceBenchmark = false
 
@@ -278,6 +309,9 @@ extension NativeMessageTimelineCoordinator {
             let oldRowCount = rowCount
             let oldContentHeight = contentHeight
             let oldParent = self.parent
+            if conversationChanged {
+                cacheBoundedCurrentItemLayouts()
+            }
             let wasNearBottom = scrollState().isNearBottom
             let bottomInsetChanged =
                 abs(
@@ -285,12 +319,31 @@ extension NativeMessageTimelineCoordinator {
                         - parent.bottomContentInset
                 ) >= 0.5
             if conversationChanged {
+                widthRelayoutGeneration &+= 1
+                widthRelayoutTask?.cancel()
+                widthRelayoutTask = nil
+                pendingLayoutWidth = nil
                 leadingHistoryReserve = 0
                 followsMaterializedHistoryBoundary = false
+                isEarlierHistoryScrollGestureActive = false
+                hasEarlierHistoryScrollIntent = false
+                hasIssuedEarlierHistoryRequest = false
                 initialPositionConversation = nil
                 initialPositionCallbackGeneration &+= 1
+                scrollStateCallbackTask?.cancel()
+                scrollStateCallbackTask = nil
+                pendingScrollState = nil
             }
             self.parent = parent
+            if parent.isLoadingEarlier {
+                hasIssuedEarlierHistoryRequest = true
+            } else if oldParent.isLoadingEarlier {
+                // Re-arm only after the previous bounded request has
+                // completed. If the user's requested viewport is still in
+                // provisional history, the scroll-state report at the end of
+                // this update may immediately request the next page.
+                hasIssuedEarlierHistoryRequest = false
+            }
             let newRows = parent.conversation.rows(in: parent.model)
             let hasUnpublishedRows =
                 (parent.rowsUpdateJournal.latestRevision
@@ -311,7 +364,16 @@ extension NativeMessageTimelineCoordinator {
                 "MessageTimelineReload"
             )
             isApplyingUpdate = true
-            let width = max(220, scrollView.contentView.bounds.width.rounded())
+            let measuredWidth = max(
+                220,
+                scrollView.contentView.bounds.width.rounded()
+            )
+            if layoutWidth > 0 {
+                scheduleRelayoutForWidthChange(measuredWidth)
+            }
+            let width = pendingLayoutWidth == nil
+                ? measuredWidth
+                : max(220, layoutWidth)
             let widthChanged = abs(width - layoutWidth) >= 1
             let anchor = visibleAnchor(
                 preferringVisibleMessageBeginning:
@@ -335,8 +397,14 @@ extension NativeMessageTimelineCoordinator {
             didPrependItems = false
             performanceUpdatePath = "none"
             performanceFallbackReason = "none"
+            recentLayoutCacheHits = 0
             let reconcileStartUptime = ProcessInfo.processInfo.systemUptime
-            if presentationChanged || conversationChanged {
+            if conversationChanged {
+                canvas.invalidateConversationTransientCaches()
+            } else if presentationChanged {
+                canvas.invalidatePresentationCaches()
+            }
+            if conversationChanged, presentationChanged {
                 canvas.invalidatePresentationCaches()
             }
             if widthChanged || presentationChanged {
@@ -402,6 +470,7 @@ extension NativeMessageTimelineCoordinator {
             let reconcileEndUptime = ProcessInfo.processInfo.systemUptime
             if acceptsNewRows, !hasUnpublishedRows {
                 rowCount = newRows.count
+                appliedSourceRows = newRows
                 firstRowID = newRows.first?.id
                 lastRowID = newRows.last?.id
                 rowsRevision = parent.rowsRevision
@@ -445,7 +514,7 @@ extension NativeMessageTimelineCoordinator {
                                     )
                         )
                     }
-                } else if oldItemCount == 0,
+                } else if oldItemCount == 0 || conversationChanged,
                           parent.hasMoreMessages,
                           leadingHistoryReserve == 0
                 {
@@ -521,6 +590,11 @@ extension NativeMessageTimelineCoordinator {
             }
             let establishedInitialPosition =
                 applyInitialPositionIfNeeded()
+            if recentLayoutCacheHits > 0 {
+                Self.performanceSignposter.emitEvent(
+                    "ConversationRowLayoutCacheUsed"
+                )
+            }
             applyScrollRequestIfNeeded()
             applyEditRequestIfNeeded()
             if establishedInitialPosition {
@@ -547,11 +621,21 @@ extension NativeMessageTimelineCoordinator {
         }
 
         func stopObserving() {
+            scrollStateCallbackTask?.cancel()
+            scrollStateCallbackTask = nil
+            pendingScrollState = nil
+            isEarlierHistoryScrollGestureActive = false
+            hasEarlierHistoryScrollIntent = false
+            hasIssuedEarlierHistoryRequest = false
             scrollIdleTask?.cancel()
             scrollIdleTask = nil
+            widthRelayoutTask?.cancel()
+            widthRelayoutTask = nil
+            pendingLayoutWidth = nil
+            widthRelayoutGeneration &+= 1
             performanceAutoScrollTask?.cancel()
             performanceAutoScrollTask = nil
-            performanceBenchmarkFinish?()
+            performanceBenchmarkFinish?(.cancelled)
             performanceBenchmarkFinish = nil
             performanceDisplayLinkTicker?.stop()
             performanceDisplayLinkTicker = nil
@@ -586,6 +670,26 @@ extension NativeMessageTimelineCoordinator {
 
         var contentHeightForTesting: CGFloat {
             contentHeight
+        }
+
+        var performanceUpdatePathForTesting: String {
+            performanceUpdatePath
+        }
+
+        var pendingLayoutWidthForTesting: CGFloat? {
+            pendingLayoutWidth
+        }
+
+        var widthRelayoutGenerationForTesting: UInt64 {
+            widthRelayoutGeneration
+        }
+
+        var cachedItemLayoutCountForTesting: Int {
+            cachedItemLayouts.count
+        }
+
+        func applyPendingWidthRelayoutForTesting() {
+            applyPendingWidthRelayout()
         }
 
         func messageOffsetFromViewportTopForTesting(
@@ -637,38 +741,40 @@ extension NativeMessageTimelineCoordinator {
         static func makeActions(
             from parent: NativeMessageTimelineView
         ) -> NativeTimelineRowActions {
-            NativeTimelineRowActions(
+            let allowsMutations = !parent.model.presentsCachedStartup
+            return NativeTimelineRowActions(
                 loadEarlier: parent.loadEarlier,
                 openReply: parent.openReply,
-                reply: parent.conversation.supportsReply
+                reply: parent.conversation.supportsReply && allowsMutations
                     ? { [weak model = parent.model] message in
                         model?.reply(to: message)
                     }
                     : nil,
                 retry: { [weak model = parent.model] message in
-                    guard let model else { return }
+                    guard let model, !model.presentsCachedStartup else { return }
                     Task { await model.retrySending(message) }
                 },
                 edit: { [weak model = parent.model] message, content in
-                    guard let model else { return }
+                    guard let model, !model.presentsCachedStartup else { return }
                     Task { await model.edit(message, content: content) }
                 },
                 markUnread: { [weak model = parent.model] message in
-                    model?.markMessageAndFollowingUnread(message)
+                    guard let model, !model.presentsCachedStartup else { return }
+                    model.markMessageAndFollowingUnread(message)
                 },
                 delete: { [weak model = parent.model] message in
-                    guard let model else { return }
+                    guard let model, !model.presentsCachedStartup else { return }
                     Task { await model.delete(message) }
                 },
                 react: { [weak model = parent.model] emoji, message in
-                    guard let model else { return }
+                    guard let model, !model.presentsCachedStartup else { return }
                     Task { await model.toggleReaction(emoji, on: message) }
                 },
                 openThread: { [weak model = parent.model] thread in
                     model?.open(thread)
                 },
                 submitComponent: { [weak model = parent.model] message, customID, kind, values in
-                    guard let model else { return }
+                    guard let model, !model.presentsCachedStartup else { return }
                     Task {
                         await model.submitComponent(
                             on: message,
@@ -695,7 +801,13 @@ extension NativeMessageTimelineCoordinator {
             {
                 items = newItems
                 messageIDs = rows.map(\.id)
-                layouts = items.map { layout(for: $0, width: width) }
+                layouts = items.map {
+                    layoutUsingRecentConversationCache(
+                        for: $0,
+                        width: width,
+                        presentationRevision: parent.presentationRevision
+                    )
+                }
                 rowHeights = layouts.map(\.height)
                 didMutateItems = true
                 requiresVisibleRedraw = true
@@ -703,6 +815,80 @@ extension NativeMessageTimelineCoordinator {
                 requiresFullOriginRebuild = true
                 performanceUpdatePath = "rebuild"
             }
+        }
+
+        func cacheBoundedCurrentItemLayouts() {
+            guard !items.isEmpty, items.count == layouts.count else { return }
+            let count = min(
+                Self.cachedItemLayoutsPerConversation,
+                items.count
+            )
+            let centerIndex = canvas.flatMap {
+                $0.rowIndex(at: $0.visibleRect.midY)
+            } ?? (items.count - 1)
+            let lowerBound = min(
+                max(0, centerIndex - count / 2),
+                items.count - count
+            )
+            for index in lowerBound ..< lowerBound + count {
+                cacheItemLayout(items[index], layout: layouts[index])
+            }
+        }
+
+        func cacheItemLayout(
+            _ item: NativeMessageTimelineItem,
+            layout: NativeTimelineRowLayout
+        ) {
+            let key = CachedItemLayoutKey(
+                identifier: item.identifier,
+                roundedWidth: Int(layoutWidth.rounded()),
+                presentationRevision: presentationRevision
+            )
+            let inserted = cachedItemLayouts.updateValue(
+                CachedItemLayout(item: item, layout: layout),
+                forKey: key
+            ) == nil
+            if inserted {
+                cachedItemLayoutOrder.append(key)
+            }
+            while cachedItemLayouts.count > Self.maximumCachedItemLayouts,
+                  cachedItemLayoutEvictionIndex
+                    < cachedItemLayoutOrder.count
+            {
+                let evicted = cachedItemLayoutOrder[
+                    cachedItemLayoutEvictionIndex
+                ]
+                cachedItemLayoutEvictionIndex += 1
+                cachedItemLayouts[evicted] = nil
+            }
+            if cachedItemLayoutEvictionIndex > 1_024,
+               cachedItemLayoutEvictionIndex * 2
+                > cachedItemLayoutOrder.count
+            {
+                cachedItemLayoutOrder.removeFirst(
+                    cachedItemLayoutEvictionIndex
+                )
+                cachedItemLayoutEvictionIndex = 0
+            }
+        }
+
+        func layoutUsingRecentConversationCache(
+            for item: NativeMessageTimelineItem,
+            width: CGFloat,
+            presentationRevision: UInt64
+        ) -> NativeTimelineRowLayout {
+            let key = CachedItemLayoutKey(
+                identifier: item.identifier,
+                roundedWidth: Int(width.rounded()),
+                presentationRevision: presentationRevision
+            )
+            if let cached = cachedItemLayouts[key],
+               cached.item == item
+            {
+                recentLayoutCacheHits += 1
+                return cached.layout
+            }
+            return layout(for: item, width: width)
         }
 
         var fastUpdateOperation:
@@ -800,6 +986,22 @@ extension NativeMessageTimelineCoordinator {
 
             let delta = newRows.count - rowCount
             if delta == 0 {
+                if let records = newParent.rowsUpdateJournal.records(
+                    after: rowsRevision,
+                    through: newParent.rowsRevision
+                ),
+                    records.contains(where: {
+                        $0.change == nil && !$0.changedMessageIDs.isEmpty
+                    })
+                {
+                    // A member/mention presentation can change while the
+                    // immutable message row remains equal. The journal path
+                    // knows the exact dependent IDs and deliberately forces
+                    // their derived layout and bitmap to refresh.
+                    performanceFallbackReason =
+                        "journal-presentation-change"
+                    return false
+                }
                 if case let .replace(changedIndexes)? =
                     newParent.rowsUpdateHint?.change,
                    newParent.rowsUpdateHint?.revision == newParent.rowsRevision,
@@ -1219,7 +1421,7 @@ extension NativeMessageTimelineCoordinator {
             }
             for rowIndex in newRows.indices
             where changedMessageIDs.contains(newRows[rowIndex].id) {
-                replaceItem(
+                refreshItemPresentation(
                     at: oldLeadingCount + rowIndex,
                     with: messageItem(
                         newRows[rowIndex],

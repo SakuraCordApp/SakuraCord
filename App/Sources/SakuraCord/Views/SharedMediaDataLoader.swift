@@ -1,9 +1,14 @@
 import Foundation
 import MediaPipeline
 
+nonisolated enum SharedMediaDataMemoryPolicy {
+    static let remoteBytes = 24 * 1_024 * 1_024
+    static let localBytes = 32 * 1_024 * 1_024
+    static let retainedBytes = remoteBytes + localBytes
+}
+
 actor SharedMediaDataLoader {
     static let shared = SharedMediaDataLoader()
-    private static let remoteMemoryCostLimit = 24 * 1024 * 1024
     private static let remoteDiskCostLimit: Int64 = 512 * 1024 * 1024
 
     private struct RemoteWaiter {
@@ -13,23 +18,18 @@ actor SharedMediaDataLoader {
 
     private struct PendingRemoteLoad {
         var waiters: [UUID: RemoteWaiter]
-        var isPromotedToVisible = false
 
         var priority: MediaLoadPriority {
             let hasVisibleWaiter = waiters.values.contains {
                 $0.priority == .visible
             }
-            if isPromotedToVisible || hasVisibleWaiter {
-                return .visible
-            }
-            return .prefetch
+            return hasVisibleWaiter ? .visible : .prefetch
         }
     }
 
     private struct ActiveRemoteLoad {
         let id: UUID
         var priority: MediaLoadPriority
-        var isPromotedToVisible: Bool
         var waiters: [UUID: RemoteWaiter]
         let task: Task<Void, Never>
     }
@@ -48,9 +48,9 @@ actor SharedMediaDataLoader {
             maximumBytes: Self.remoteDiskCostLimit
         )
         remoteFetch = Self.download
-        localFileCache.totalCostLimit = 32 * 1024 * 1024
+        localFileCache.totalCostLimit = SharedMediaDataMemoryPolicy.localBytes
         localFileCache.countLimit = 256
-        remoteDataCache.totalCostLimit = Self.remoteMemoryCostLimit
+        remoteDataCache.totalCostLimit = SharedMediaDataMemoryPolicy.remoteBytes
         remoteDataCache.countLimit = 128
     }
 
@@ -59,9 +59,9 @@ actor SharedMediaDataLoader {
     ) {
         remoteDiskCache = nil
         self.remoteFetch = remoteFetch
-        localFileCache.totalCostLimit = 32 * 1024 * 1024
+        localFileCache.totalCostLimit = SharedMediaDataMemoryPolicy.localBytes
         localFileCache.countLimit = 256
-        remoteDataCache.totalCostLimit = Self.remoteMemoryCostLimit
+        remoteDataCache.totalCostLimit = SharedMediaDataMemoryPolicy.remoteBytes
         remoteDataCache.countLimit = 128
     }
 
@@ -115,19 +115,6 @@ actor SharedMediaDataLoader {
         return data
     }
 
-    func promotePendingLoad(for url: URL) {
-        if var pending = pendingRemoteLoads[url] {
-            pending.isPromotedToVisible = true
-            pendingRemoteLoads[url] = pending
-        }
-        if var active = activeRemoteLoads[url] {
-            active.priority = .visible
-            active.isPromotedToVisible = true
-            activeRemoteLoads[url] = active
-        }
-        startEligibleRemoteLoads()
-    }
-
 #if DEBUG
     struct RemoteLoadSnapshot: Equatable, Sendable {
         let pendingCount: Int
@@ -147,6 +134,11 @@ actor SharedMediaDataLoader {
                     $0 + $1.waiters.count
                 }
         )
+    }
+
+    func remotePriorityForTesting(_ url: URL) -> MediaLoadPriority? {
+        pendingRemoteLoads[url]?.priority
+            ?? activeRemoteLoads[url]?.priority
     }
 #endif
 
@@ -264,7 +256,6 @@ actor SharedMediaDataLoader {
         activeRemoteLoads[url] = ActiveRemoteLoad(
             id: loadID,
             priority: pending.priority,
-            isPromotedToVisible: pending.isPromotedToVisible,
             waiters: pending.waiters,
             task: task
         )
@@ -351,10 +342,7 @@ actor SharedMediaDataLoader {
         let hasVisibleWaiter = active.waiters.values.contains {
             $0.priority == .visible
         }
-        if active.isPromotedToVisible || hasVisibleWaiter {
-            return .visible
-        }
-        return .prefetch
+        return hasVisibleWaiter ? .visible : .prefetch
     }
 
     private func cancelPendingRemoteWaiter(

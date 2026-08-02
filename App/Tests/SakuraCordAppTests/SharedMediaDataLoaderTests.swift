@@ -1,5 +1,7 @@
 @testable import SakuraCord
+import CoreGraphics
 import Foundation
+import SakuraCordModels
 import Testing
 
 @Test func `cancelling the final media waiter cancels its fetch`() async throws {
@@ -91,6 +93,224 @@ import Testing
     #expect(await waitUntil {
         await loader.remoteLoadSnapshot().activeCount == 0
     })
+}
+
+@Test func `simultaneous image waiters create one queued decode`() async throws {
+    let probe = SuspendedRemoteMediaFetch()
+    let dataLoader = SharedMediaDataLoader(remoteFetch: probe.fetch)
+    let decodeScheduler = NativeTimelineMediaDecodeScheduler()
+    let decodedLoader = SharedDecodedImageLoader(
+        dataLoader: dataLoader,
+        decodeScheduler: decodeScheduler
+    )
+    let url = try #require(
+        URL(string: "https://cdn.example/coalesced-static.png")
+    )
+    #expect(await decodeScheduler.acquirePermitForTesting(priority: .visible))
+    #expect(await decodeScheduler.acquirePermitForTesting(priority: .visible))
+    let first = Task {
+        await decodedLoader.image(
+            for: url,
+            maximumPixelDimension: 32,
+            priority: .prefetch
+        )
+    }
+    let second = Task {
+        await decodedLoader.image(
+            for: url,
+            maximumPixelDimension: 32,
+            priority: .prefetch
+        )
+    }
+
+    #expect(await waitUntil { await probe.fetchCount == 1 })
+    let encoded = try #require(Data(base64Encoded:
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+3vYjWQAAAABJRU5ErkJggg=="
+    ))
+    await probe.finish(url, with: encoded)
+    #expect(await waitUntil {
+        await decodeScheduler.snapshot().prefetchWaiterCount == 1
+    })
+
+    await decodeScheduler.releasePermitForTesting(priority: .visible)
+    #expect(await first.value != nil)
+    #expect(await second.value != nil)
+    #expect(await probe.fetchCount == 1)
+    await decodeScheduler.releasePermitForTesting(priority: .visible)
+}
+
+@MainActor
+@Test func `visible duplicate keeps a later fallback at visible priority`() async throws {
+    let primaryURL = try #require(
+        URL(string: "https://cdn.example/primary-static.png")
+    )
+    let fallbackURL = try #require(
+        URL(string: "https://cdn.example/fallback-static.png")
+    )
+    let probe = ControlledDecodedImageLoad()
+    let store = NativeTimelineMediaStore { url, dimension, priority in
+        await probe.load(url: url, dimension: dimension, priority: priority)
+    }
+    let key = NativeTimelineMediaKey.media(
+        primaryURL,
+        fallbackURL: fallbackURL,
+        maximumPixelDimension: 32
+    )
+    store.request(
+        key,
+        owner: UUID(),
+        subscriber: .message(MessageID(rawValue: 1)),
+        priority: .prefetch
+    ) { _ in }
+    await probe.waitForCall(to: primaryURL)
+
+    store.request(
+        key,
+        owner: UUID(),
+        subscriber: .message(MessageID(rawValue: 2)),
+        priority: .visible
+    ) { _ in }
+    await probe.finish(primaryURL, image: nil)
+    await probe.waitForCall(to: fallbackURL)
+    #expect(await probe.priority(for: fallbackURL) == .visible)
+
+    await probe.finish(fallbackURL, image: nil)
+    for _ in 0 ..< 100 where store.loading.contains(key) {
+        await Task.yield()
+    }
+    #expect(!store.loading.contains(key))
+}
+
+@MainActor
+@Test func `cancelling an offscreen static request cancels its owned callback`()
+    async throws
+{
+    let url = try #require(
+        URL(string: "https://cdn.example/cancelled-visible-static.png")
+    )
+    let key = NativeTimelineMediaKey.media(url, maximumPixelDimension: 32)
+    let probe = ControlledDecodedImageLoad()
+    let store = NativeTimelineMediaStore { url, dimension, priority in
+        await probe.load(url: url, dimension: dimension, priority: priority)
+    }
+    let owner = UUID()
+    var outcomes: [NativeTimelineStaticMediaLoadOutcome] = []
+    store.request(
+        key,
+        owner: owner,
+        subscriber: .message(MessageID(rawValue: 98_111)),
+        priority: .visible
+    ) { outcome in
+        outcomes.append(outcome)
+    }
+    await probe.waitForCall(to: url)
+
+    store.cancelStaticRequestsOutsideVisibleSet(owner: owner)
+
+    #expect(outcomes == [.cancelled])
+    await probe.finish(url, image: nil)
+}
+
+@MainActor
+@Test func `same row media subscribers remain isolated by canvas owner`() async throws {
+    let url = try #require(
+        URL(string: "https://cdn.example/two-canvas-static.png")
+    )
+    let key = NativeTimelineMediaKey.media(url, maximumPixelDimension: 32)
+    let probe = ControlledDecodedImageLoad()
+    let store = NativeTimelineMediaStore { url, dimension, priority in
+        await probe.load(url: url, dimension: dimension, priority: priority)
+    }
+    let firstOwner = UUID()
+    let secondOwner = UUID()
+    let sharedRow = NativeMessageTimelineItem.Identifier.message(
+        MessageID(rawValue: 98_113)
+    )
+    var callbackOutcomes:
+        [UUID: [NativeTimelineStaticMediaLoadOutcome]] = [:]
+    var invalidationOwners: [UUID] = []
+
+    store.retainVisibleImages(for: [key], owner: firstOwner)
+    store.retainVisibleImages(for: [key], owner: secondOwner)
+    store.request(
+        key,
+        owner: firstOwner,
+        subscriber: sharedRow,
+        priority: .visible
+    ) { outcome in
+        callbackOutcomes[firstOwner, default: []].append(outcome)
+        invalidationOwners.append(firstOwner)
+    }
+    store.request(
+        key,
+        owner: secondOwner,
+        subscriber: sharedRow,
+        priority: .visible
+    ) { outcome in
+        callbackOutcomes[secondOwner, default: []].append(outcome)
+        invalidationOwners.append(secondOwner)
+    }
+    await probe.waitForCall(to: url)
+
+    store.retainVisibleImages(for: [], owner: firstOwner)
+    store.cancelStaticRequestsOutsideVisibleSet(owner: firstOwner)
+
+    #expect(callbackOutcomes[firstOwner] == [.cancelled])
+    #expect(callbackOutcomes[secondOwner] == nil)
+    #expect(store.loading.contains(key))
+    #expect(store.subscribers[key]?.count == 1)
+    #expect(store.subscribers[key]?.keys.first?.owner == secondOwner)
+
+    let encoded = try #require(Data(base64Encoded:
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+3vYjWQAAAABJRU5ErkJggg=="
+    ))
+    let image = try #require(NativeTimelineMediaDecoder.decode(
+        encoded,
+        maximumPixelDimension: 32
+    ))
+    await probe.finish(url, image: image)
+    for _ in 0 ..< 100 where store.loading.contains(key) {
+        await Task.yield()
+    }
+
+    #expect(callbackOutcomes[secondOwner] == [.ready])
+    #expect(Set(invalidationOwners) == [firstOwner, secondOwner])
+    #expect(store.subscribers[key] == nil)
+}
+
+private actor ControlledDecodedImageLoad {
+    private var calls: [(url: URL, priority: MediaLoadPriority)] = []
+    private var continuations: [URL: CheckedContinuation<CGImage?, Never>] = [:]
+    private var callWaiters: [URL: [CheckedContinuation<Void, Never>]] = [:]
+
+    func load(
+        url: URL,
+        dimension _: Int,
+        priority: MediaLoadPriority
+    ) async -> CGImage? {
+        calls.append((url, priority))
+        for waiter in callWaiters.removeValue(forKey: url) ?? [] {
+            waiter.resume()
+        }
+        return await withCheckedContinuation { continuation in
+            continuations[url] = continuation
+        }
+    }
+
+    func waitForCall(to url: URL) async {
+        guard !calls.contains(where: { $0.url == url }) else { return }
+        await withCheckedContinuation { continuation in
+            callWaiters[url, default: []].append(continuation)
+        }
+    }
+
+    func priority(for url: URL) -> MediaLoadPriority? {
+        calls.last(where: { $0.url == url })?.priority
+    }
+
+    func finish(_ url: URL, image: CGImage?) {
+        continuations.removeValue(forKey: url)?.resume(returning: image)
+    }
 }
 
 private actor SuspendedRemoteMediaFetch {

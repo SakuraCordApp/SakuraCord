@@ -40,7 +40,6 @@ extension NativeTimelineRowPainter {
             let bounds = input.bounds
             let model = input.model
             let highlighted = input.highlighted
-            let isHovered = input.isHovered
             let showsCompactTimestamp = input.showsCompactTimestamp
             let hoveredMention = input.hoveredMention
             let hoveredTextSpoiler = input.hoveredTextSpoiler
@@ -293,12 +292,11 @@ extension NativeTimelineRowPainter {
                 concentricRoundedRect: region.frame,
                 cornerRadius: 8
             ).fill()
-            let key = NativeTimelineMediaKey.media(
-                attachment.proxyURL ?? attachment.url
-            )
             switch attachment.mediaKind {
             case .image, .animatedImage:
-                if let image = mediaImage(for: key) {
+                if let key = NativeTimelineMediaKey.attachment(attachment),
+                   let image = mediaImage(for: key)
+                {
                     drawImage(
                         image,
                         in: region.frame,

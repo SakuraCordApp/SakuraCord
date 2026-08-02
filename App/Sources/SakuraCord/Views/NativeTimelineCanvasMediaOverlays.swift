@@ -9,10 +9,39 @@ import SakuraCordModels
 import SwiftUI
 
 extension NativeTimelineCanvasView {
+    var permitsAnimatedMediaPlayback: Bool {
+        AnimatedMediaPlaybackPolicy.shouldPlay(
+            isVisible: window != nil,
+            isApplicationActive: NSApp.isActive,
+            isWindowVisible: window?.occlusionState.contains(.visible) == true,
+            reduceMotion: false,
+            reduceAnimatedMedia: false
+        )
+    }
+
+    @objc
+    func mediaPlaybackVisibilityDidChange(_ notification: Notification) {
+        if let changedWindow = notification.object as? NSWindow,
+           changedWindow !== window
+        {
+            return
+        }
+        reconcileAnimatedMedia(allowsScrolling: true)
+        let reduceMotion =
+            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            || UserDefaults.standard.bool(forKey: "reduceAnimatedMedia")
+            || !permitsAnimatedMediaPlayback
+        reconcileInlineVideoOverlays(plays: !reduceMotion)
+        reconcileLottieStickerOverlays(reduceMotion: reduceMotion)
+    }
+
     func scheduleAnimatedMediaReconciliation() {
         animatedMediaReconcileTask?.cancel()
         animatedMediaReconcileTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(120))
+            // The static first frame has its own visible-priority path. Give
+            // channel layout and that first paint one quiet frame budget
+            // before expanding every GIF/APNG frame at utility priority.
+            try? await Task.sleep(for: .milliseconds(250))
             guard !Task.isCancelled, let self else { return }
             self.animatedMediaReconcileTask = nil
             self.reconcileAnimatedMedia()
@@ -24,6 +53,7 @@ extension NativeTimelineCanvasView {
         let reduceMotion =
             NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
             || UserDefaults.standard.bool(forKey: "reduceAnimatedMedia")
+            || !permitsAnimatedMediaPlayback
         guard !items.isEmpty,
               var index = rowIndex(at: max(0, visibleRect.minY))
         else {
@@ -295,9 +325,9 @@ extension NativeTimelineCanvasView {
                 append(
                     row: identifier,
                     role: .attachment(region.attachment.id),
-                    media: .media(
-                        region.attachment.proxyURL ?? region.attachment.url
-                    ),
+                    media: NativeTimelineMediaKey.attachment(
+                        region.attachment
+                    ) ?? .media(region.attachment.url),
                     frame: region.frame,
                     cornerRadius: 8,
                     isLooping: true,
@@ -1128,17 +1158,6 @@ extension NativeTimelineCanvasView {
         }
         spoilerOverlays.removeAll()
         spoilerOverlayPresentations.removeAll()
-    }
-
-    func scheduleAnimatedMediaScrollReconciliation() {
-        guard animatedMediaScrollReconcileTask == nil else { return }
-        animatedMediaScrollReconcileTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(80))
-            guard !Task.isCancelled, let self else { return }
-            self.animatedMediaScrollReconcileTask = nil
-            guard self.suppressesHoverPresentation else { return }
-            self.reconcileAnimatedMedia(allowsScrolling: true)
-        }
     }
 
 }

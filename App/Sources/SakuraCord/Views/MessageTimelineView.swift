@@ -10,7 +10,8 @@ struct MessageTimelineView: View {
         .runsChatPerformanceAutoScroll
     @State private var scrollPolicy = MessageTimelineScrollPolicy()
     @State private var allowsAutomaticHistoryLoading = false
-    @State private var hasUserRequestedEarlierHistory = false
+    @State private var hasEarlierHistoryScrollIntent = false
+    @State private var isEarlierHistoryScrollGestureActive = false
     @State private var highlightedMessageID: MessageID?
     @State private var hasEstablishedInitialPosition = false
     @State private var scrollRequest: MessageTimelineScrollRequest?
@@ -39,6 +40,9 @@ struct MessageTimelineView: View {
                     messageCount: model.messages.count,
                     isLoadingEarlierPage: model.isLoadingEarlier
                 ),
+            earlierHistoryLoadFailed:
+                model.messageLoadErrorIsEarlierPage
+                    && model.messageLoadError != nil,
             bottomContentInset: bottomContentInset,
             unreadMessageID: exactUnreadBoundaryMessageID,
             highlightedMessageID: highlightedMessageID,
@@ -126,7 +130,8 @@ struct MessageTimelineView: View {
                 )
             }
             hasEstablishedInitialPosition = false
-            hasUserRequestedEarlierHistory = false
+            hasEarlierHistoryScrollIntent = false
+            isEarlierHistoryScrollGestureActive = false
             scrollPolicy.didBeginChannel()
             latestScrollState = TimelineScrollState(
                 isNearTop: false,
@@ -154,7 +159,8 @@ struct MessageTimelineView: View {
         }
         .task(id: model.selectedChannelID) {
             allowsAutomaticHistoryLoading = false
-            hasUserRequestedEarlierHistory = false
+            hasEarlierHistoryScrollIntent = false
+            isEarlierHistoryScrollGestureActive = false
             try? await Task.sleep(for: .milliseconds(350))
             guard !Task.isCancelled else { return }
             allowsAutomaticHistoryLoading = true
@@ -287,6 +293,15 @@ struct MessageTimelineView: View {
 
     private func handleScrollState(_ value: TimelineScrollState) {
         latestScrollState = value
+        let retainedHistoryIntent =
+            TimelineEarlierHistoryScrollIntentPolicy.shouldRetain(
+                hasIntent: hasEarlierHistoryScrollIntent,
+                isGestureActive: isEarlierHistoryScrollGestureActive,
+                isInProvisionalHistory: value.isInProvisionalHistory
+            )
+        if hasEarlierHistoryScrollIntent != retainedHistoryIntent {
+            hasEarlierHistoryScrollIntent = retainedHistoryIntent
+        }
         if scrollPolicy.isNearBottom != value.isNearBottom {
             scrollPolicy.updateGeometry(isNearBottom: value.isNearBottom)
         }
@@ -318,17 +333,21 @@ struct MessageTimelineView: View {
             hasUnresolvedUnreadBoundary:
                 hasUnresolvedInitialUnreadBoundary,
             hasUserScrollIntent:
-                hasUserRequestedEarlierHistory
+                hasEarlierHistoryScrollIntent
         )
         else { return }
-        hasUserRequestedEarlierHistory = false
         loadEarlier()
     }
 
     private func handleUserScrollBegan() {
         scrollPolicy.userScrollBegan()
+        isEarlierHistoryScrollGestureActive = true
         if hasUnresolvedInitialUnreadBoundary {
-            hasUserRequestedEarlierHistory = true
+            // Keep the intent for the complete live gesture. A fast upward
+            // scroll can consume more than one bounded history page before
+            // AppKit sends didEndLiveScroll; clearing it after the first page
+            // strands the viewport against a still-provisional boundary.
+            hasEarlierHistoryScrollIntent = true
         }
         if let channelID = model.selectedChannelID {
             model.reportTimelineUserInteraction(channelID: channelID)
@@ -336,7 +355,15 @@ struct MessageTimelineView: View {
     }
 
     private func handleUserScrollEnded(_ value: TimelineScrollState) {
+        isEarlierHistoryScrollGestureActive = false
+        hasEarlierHistoryScrollIntent =
+            TimelineEarlierHistoryScrollIntentPolicy.shouldRetain(
+                hasIntent: hasEarlierHistoryScrollIntent,
+                isGestureActive: false,
+                isInProvisionalHistory: value.isInProvisionalHistory
+            )
         scrollPolicy.userScrollEnded(isNearBottom: value.isNearBottom)
+        loadEarlierIfNeeded(for: value)
     }
 }
 
@@ -431,13 +458,15 @@ nonisolated struct TimelineScrollState: Equatable, Sendable {
     let contentFitsViewport: Bool
     let hasEstablishedInitialPosition: Bool
     let hasReachedNewestMessageBoundary: Bool
+    let isInProvisionalHistory: Bool
 
     init(
         isNearTop: Bool,
         isNearBottom: Bool,
         contentFitsViewport: Bool = false,
         hasEstablishedInitialPosition: Bool = false,
-        hasReachedNewestMessageBoundary: Bool = false
+        hasReachedNewestMessageBoundary: Bool = false,
+        isInProvisionalHistory: Bool = false
     ) {
         self.isNearTop = isNearTop
         self.isNearBottom = isNearBottom
@@ -446,6 +475,7 @@ nonisolated struct TimelineScrollState: Equatable, Sendable {
             hasEstablishedInitialPosition
         self.hasReachedNewestMessageBoundary =
             hasReachedNewestMessageBoundary
+        self.isInProvisionalHistory = isInProvisionalHistory
     }
 
 }

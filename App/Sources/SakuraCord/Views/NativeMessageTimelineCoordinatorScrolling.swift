@@ -3,6 +3,93 @@ import OSLog
 import SakuraCordModels
 import SwiftUI
 
+nonisolated enum NativeTimelineViewportWindowPolicy {
+    static let overscan: CGFloat = 320
+    static let minimumRetainedBuffer: CGFloat = 80
+
+    static func geometry(
+        viewport: CGRect,
+        documentSize: CGSize,
+        currentFrame: CGRect
+    ) -> (frame: CGRect, bounds: CGRect) {
+        let documentHeight = max(1, documentSize.height)
+        let viewportWidth = max(1, viewport.width)
+        let canvasHeight = min(
+            documentHeight,
+            max(1, viewport.height + overscan * 2)
+        )
+        let maximumOriginY = max(0, documentHeight - canvasHeight)
+
+        let frameCoversViewport =
+            abs(currentFrame.width - viewportWidth) < 0.5
+            && abs(currentFrame.height - canvasHeight) < 0.5
+            && currentFrame.minY <= viewport.minY + 0.5
+            && currentFrame.maxY >= viewport.maxY - 0.5
+            && currentFrame.minY >= -0.5
+            && currentFrame.maxY <= documentHeight + 0.5
+        let retainsLeadingBuffer =
+            currentFrame.minY <= 0.5
+            || viewport.minY - currentFrame.minY >= minimumRetainedBuffer
+        let retainsTrailingBuffer =
+            currentFrame.maxY >= documentHeight - 0.5
+            || currentFrame.maxY - viewport.maxY >= minimumRetainedBuffer
+
+        if frameCoversViewport,
+           retainsLeadingBuffer,
+           retainsTrailingBuffer
+        {
+            let bounds = CGRect(
+                x: 0,
+                y: currentFrame.minY,
+                width: currentFrame.width,
+                height: currentFrame.height
+            )
+            return (currentFrame, bounds)
+        }
+
+        let originY = min(
+            maximumOriginY,
+            max(0, viewport.minY - overscan)
+        )
+        let frame = CGRect(
+            x: 0,
+            y: originY,
+            width: viewportWidth,
+            height: canvasHeight
+        )
+        let bounds = CGRect(
+            x: 0,
+            y: originY,
+            width: frame.width,
+            height: frame.height
+        )
+        return (frame, bounds)
+    }
+}
+
+nonisolated enum NativeTimelineWidthRelayoutPolicy {
+    static let asynchronousRowThreshold = 1_000
+    static let batchSize = 96
+
+    static func indexes(
+        itemCount: Int,
+        visibleRange: Range<Int>?
+    ) -> [Int] {
+        guard itemCount > 0 else { return [] }
+        let allIndexes = 0 ..< itemCount
+        guard let visibleRange else { return Array(allIndexes) }
+        let lower = min(itemCount, max(0, visibleRange.lowerBound))
+        let upper = min(itemCount, max(lower, visibleRange.upperBound))
+        guard lower < upper else { return Array(allIndexes) }
+        var result: [Int] = []
+        result.reserveCapacity(itemCount)
+        result.append(contentsOf: lower ..< upper)
+        result.append(contentsOf: upper ..< itemCount)
+        result.append(contentsOf: 0 ..< lower)
+        return result
+    }
+}
+
 extension NativeMessageTimelineCoordinator {
         func replaceItem(
             at index: Int,
@@ -18,6 +105,41 @@ extension NativeMessageTimelineCoordinator {
             items[index] = item
             layouts[index] = updatedLayout
             rowHeights[index] = updatedLayout.height
+            didMutateItems = true
+            dirtyItemIndexes.insert(index)
+            if abs(previousHeight - updatedLayout.height) >= 0.5 {
+                requiresFullOriginRebuild = true
+                if itemAffectsVisibleCoordinates(at: index) {
+                    requiresVisibleRedraw = true
+                    requiresAnchorRestore = true
+                }
+            }
+        }
+
+        /// Member-store presentation changes can alter an author's name,
+        /// avatar, role color, or a resolved mention without changing the
+        /// immutable message row itself. Refresh that one row's derived layout
+        /// and bitmap instead of bumping the global presentation revision.
+        func refreshItemPresentation(
+            at index: Int,
+            with item: NativeMessageTimelineItem,
+            width: CGFloat
+        ) {
+            guard items.indices.contains(index),
+                  layouts.indices.contains(index),
+                  rowHeights.indices.contains(index)
+            else { return }
+            if items[index] != item {
+                replaceItem(at: index, with: item, width: width)
+                return
+            }
+            let previousHeight = layouts[index].height
+            let updatedLayout = layout(for: item, width: width)
+            layouts[index] = updatedLayout
+            rowHeights[index] = updatedLayout.height
+            canvas?.invalidateBitmap(item.identifier)
+            canvas?.mentionPointerRegionCache[item.identifier] = nil
+            canvas?.codeBlockPointerRegionCache[item.identifier] = nil
             didMutateItems = true
             dirtyItemIndexes.insert(index)
             if abs(previousHeight - updatedLayout.height) >= 0.5 {
@@ -85,6 +207,7 @@ extension NativeMessageTimelineCoordinator {
                     height: effectiveContentHeight
                 )
             )
+            canvas.presentedConversationID = parent.conversation.id
             canvas.apply(
                 storage: storage,
                 model: parent.model,
@@ -154,31 +277,25 @@ extension NativeMessageTimelineCoordinator {
             guard let documentView, let canvas, let scrollView else {
                 return
             }
-            let viewport = scrollView.contentView.bounds
-            let documentSize = documentView.frame.size
-            let overscan: CGFloat = 320
-            let canvasHeight = min(
-                max(1, documentSize.height),
-                max(1, viewport.height + overscan * 2)
+            var viewport = scrollView.contentView.bounds
+            if pendingLayoutWidth != nil, layoutWidth > 0 {
+                // A settled width relayout is pending. Keep the backing view
+                // at the width its row layouts and cached bitmaps describe;
+                // resizing that layer early stretches the previous pixels
+                // until an unrelated invalidation (such as hover) repaints
+                // them. The clip view can temporarily crop or reveal the
+                // old-width canvas without presenting distorted text.
+                viewport.size.width = layoutWidth
+            }
+            let geometry = NativeTimelineViewportWindowPolicy.geometry(
+                viewport: viewport,
+                documentSize: documentView.frame.size,
+                currentFrame: canvas.frame
             )
-            let maximumOriginY = max(0, documentSize.height - canvasHeight)
-            let originY = min(
-                maximumOriginY,
-                max(0, viewport.minY - overscan)
+            canvas.installViewportGeometry(
+                frame: geometry.frame,
+                bounds: geometry.bounds
             )
-            let frame = NSRect(
-                x: 0,
-                y: originY,
-                width: max(1, viewport.width),
-                height: canvasHeight
-            )
-            let bounds = NSRect(
-                x: 0,
-                y: originY,
-                width: frame.width,
-                height: frame.height
-            )
-            canvas.installViewportGeometry(frame: frame, bounds: bounds)
         }
 
         @discardableResult
@@ -283,7 +400,9 @@ extension NativeMessageTimelineCoordinator {
 
         @discardableResult
         func reconcileViewportGeometryIfNeeded(
-            proposedWidth: CGFloat? = nil
+            proposedWidth: CGFloat? = nil,
+            appliesWidthImmediately: Bool = false,
+            preparedLayouts: [NativeTimelineRowLayout]? = nil
         ) -> Bool {
             guard let canvas, let scrollView else { return false }
             let viewportSize = scrollView.contentView.bounds.size
@@ -295,6 +414,19 @@ extension NativeMessageTimelineCoordinator {
                 abs(viewportSize.width - lastViewportSize.width) >= 0.5
                 || abs(viewportSize.height - lastViewportSize.height) >= 0.5
             let widthChanged = abs(width - layoutWidth) >= 1
+            let reflowsWidth = widthChanged
+                && (appliesWidthImmediately || layoutWidth <= 0)
+            if widthChanged, !reflowsWidth {
+                scheduleRelayoutForWidthChange(width)
+            } else if !widthChanged, !appliesWidthImmediately {
+                // A live resize can return to the established width before
+                // the debounce fires. The canvas does not change width while
+                // a relayout is pending, so it emits no callback for that
+                // return trip; cancel the obsolete destination here.
+                widthRelayoutTask?.cancel()
+                widthRelayoutTask = nil
+                pendingLayoutWidth = nil
+            }
             guard sizeChanged || widthChanged else { return false }
             lastViewportSize = viewportSize
             guard !isApplyingUpdate else { return true }
@@ -311,7 +443,7 @@ extension NativeMessageTimelineCoordinator {
                 preservesEstablishedPosition && !wasNearBottom
                 ? visibleAnchor(
                     preferringVisibleMessageBeginning:
-                        widthChanged
+                        reflowsWidth
                         && NativeMessageTimelineLayoutPolicy
                         .prefersVisibleMessageBeginning(
                             from: layoutWidth,
@@ -320,18 +452,19 @@ extension NativeMessageTimelineCoordinator {
                 )
                 : nil
             let anchor =
-                widthChanged
+                reflowsWidth
                 ? visiblePosition?.topPinnedForWidthChange
                 : visiblePosition
 
             isApplyingUpdate = true
-            if widthChanged {
+            if reflowsWidth {
+                let targetLayouts = preparedLayouts
+                    ?? items.map { layout(for: $0, width: width) }
                 layoutWidth = width
-                layouts = items.map { layout(for: $0, width: width) }
+                layouts = targetLayouts
                 rowHeights = layouts.map(\.height)
                 rebuildOrigins()
                 applySnapshot(to: canvas, in: scrollView)
-                canvas.invalidateVisibleContent()
             }
             updateInsets()
             updateHistorySkeletonPresentation()
@@ -344,6 +477,19 @@ extension NativeMessageTimelineCoordinator {
                 restore(anchor)
             }
             positionViewportCanvas()
+            if reflowsWidth {
+                // Restore the anchor before choosing the dirty rectangle.
+                // Invalidating the old visible rect leaves the newly restored
+                // viewport backed by stretched Core Animation contents until
+                // pointer movement happens to dirty an individual row.
+                // Redraw the complete bounded backing window synchronously:
+                // it is only the viewport plus overscan, not the full message
+                // document, and guarantees no stale-width layer tiles survive
+                // the transition.
+                canvas.needsDisplay = true
+                canvas.layer?.setNeedsDisplay()
+                canvas.display()
+            }
             let establishedInitialPosition =
                 applyInitialPositionIfNeeded()
             applyScrollRequestIfNeeded()
@@ -357,9 +503,158 @@ extension NativeMessageTimelineCoordinator {
         }
 
         func relayoutForWidthChange(_ proposedWidth: CGFloat) {
-            _ = reconcileViewportGeometryIfNeeded(
-                proposedWidth: proposedWidth
+            scheduleRelayoutForWidthChange(proposedWidth)
+        }
+
+        func scheduleRelayoutForWidthChange(_ proposedWidth: CGFloat) {
+            let width = max(220, proposedWidth.rounded())
+            guard abs(width - layoutWidth) >= 1 else {
+                widthRelayoutGeneration &+= 1
+                widthRelayoutTask?.cancel()
+                widthRelayoutTask = nil
+                pendingLayoutWidth = nil
+                return
+            }
+            if pendingLayoutWidth == width,
+               widthRelayoutTask != nil
+            {
+                // Bounds notifications, scrolling, and unrelated timeline
+                // publications can all rediscover the same stale width while
+                // the debounce or bounded reflow is active. Preserve that work
+                // so an active channel cannot postpone layout indefinitely.
+                return
+            }
+            guard layoutWidth > 0,
+                  initialPositionConversation == parent.conversation
+            else {
+                _ = reconcileViewportGeometryIfNeeded(
+                    proposedWidth: width,
+                    appliesWidthImmediately: true
+                )
+                return
+            }
+            pendingLayoutWidth = width
+            widthRelayoutGeneration &+= 1
+            let generation = widthRelayoutGeneration
+            widthRelayoutTask?.cancel()
+            widthRelayoutTask = Task { @MainActor [weak self] in
+                do {
+                    try await Task.sleep(for: .milliseconds(120))
+                } catch {
+                    return
+                }
+                guard let self,
+                      self.pendingLayoutWidth == width,
+                      self.widthRelayoutGeneration == generation
+                else { return }
+                self.widthRelayoutTask = nil
+                self.applyPendingWidthRelayout()
+            }
+        }
+
+        func applyPendingWidthRelayout() {
+            guard let width = pendingLayoutWidth else { return }
+            widthRelayoutTask = nil
+            guard items.count >= NativeTimelineWidthRelayoutPolicy
+                .asynchronousRowThreshold
+            else {
+                pendingLayoutWidth = nil
+                _ = reconcileViewportGeometryIfNeeded(
+                    proposedWidth: width,
+                    appliesWidthImmediately: true
+                )
+                return
+            }
+            beginBatchedWidthRelayout(width)
+        }
+
+        func beginBatchedWidthRelayout(_ width: CGFloat) {
+            let sourceItems = items
+            let sourceConversation = parent.conversation
+            let sourcePresentationRevision = parent.presentationRevision
+            let visibleRange = visibleItemRangeForWidthRelayout()
+            let indexes = NativeTimelineWidthRelayoutPolicy.indexes(
+                itemCount: sourceItems.count,
+                visibleRange: visibleRange
             )
+            widthRelayoutGeneration &+= 1
+            let generation = widthRelayoutGeneration
+            widthRelayoutTask = Task { @MainActor [weak self] in
+                guard let self else { return }
+                var prepared: [NativeTimelineRowLayout?] = .init(
+                    repeating: nil,
+                    count: sourceItems.count
+                )
+                var offset = 0
+                while offset < indexes.count {
+                    guard !Task.isCancelled,
+                          self.widthRelayoutGeneration == generation,
+                          self.pendingLayoutWidth == width,
+                          self.parent.conversation == sourceConversation
+                    else { return }
+                    let upperBound = min(
+                        indexes.count,
+                        offset + NativeTimelineWidthRelayoutPolicy.batchSize
+                    )
+                    for orderedIndex in offset ..< upperBound {
+                        let index = indexes[orderedIndex]
+                        prepared[index] = self.layout(
+                            for: sourceItems[index],
+                            width: width
+                        )
+                    }
+                    offset = upperBound
+                    if offset < indexes.count {
+                        await Task.yield()
+                    }
+                }
+                guard !Task.isCancelled,
+                      self.widthRelayoutGeneration == generation,
+                      self.pendingLayoutWidth == width,
+                      self.parent.conversation == sourceConversation
+                else { return }
+                let preparedByIdentifier = Dictionary(
+                    uniqueKeysWithValues: sourceItems.indices.compactMap { index -> (
+                            NativeMessageTimelineItem.Identifier,
+                            (NativeMessageTimelineItem, NativeTimelineRowLayout)
+                        )? in
+                        guard let layout = prepared[index] else { return nil }
+                        return (
+                            sourceItems[index].identifier,
+                            (sourceItems[index], layout)
+                        )
+                    }
+                )
+                let canReusePreparedPresentation =
+                    self.parent.presentationRevision
+                        == sourcePresentationRevision
+                let finalLayouts = self.items.map { item in
+                    if canReusePreparedPresentation,
+                       let prepared = preparedByIdentifier[item.identifier],
+                       prepared.0 == item
+                    {
+                        return prepared.1
+                    }
+                    return self.layout(for: item, width: width)
+                }
+                self.widthRelayoutTask = nil
+                self.pendingLayoutWidth = nil
+                _ = self.reconcileViewportGeometryIfNeeded(
+                    proposedWidth: width,
+                    appliesWidthImmediately: true,
+                    preparedLayouts: finalLayouts
+                )
+            }
+        }
+
+        func visibleItemRangeForWidthRelayout() -> Range<Int>? {
+            guard let canvas,
+                  !items.isEmpty,
+                  let first = canvas.rowIndex(at: canvas.visibleRect.minY)
+            else { return nil }
+            let last = canvas.rowIndex(at: canvas.visibleRect.maxY)
+                ?? (items.count - 1)
+            return first ..< min(items.count, max(first + 1, last + 1))
         }
 
         func makeItems(
@@ -477,6 +772,8 @@ extension NativeMessageTimelineCoordinator {
                         guard let self else { return }
                         self.canvas?.dismissHoverPresentationForScroll()
                         self.noteScrollActivity()
+                        self.isEarlierHistoryScrollGestureActive = true
+                        self.hasEarlierHistoryScrollIntent = true
                         if self.scrollState().isNearTop {
                             // Trackpad gestures may begin while AppKit is
                             // already constrained at the materialized top and
@@ -495,8 +792,7 @@ extension NativeMessageTimelineCoordinator {
                 ) { [weak self] _ in
                     MainActor.assumeIsolated {
                         guard let self else { return }
-                        self.finishScrollActivity()
-                        self.parent.onUserScrollEnded(self.scrollState())
+                        self.liveScrollTrackingDidEnd()
                     }
                 },
                 center.addObserver(
@@ -550,6 +846,15 @@ extension NativeMessageTimelineCoordinator {
                     }
                 }
             }
+        }
+
+        func liveScrollTrackingDidEnd() {
+            let state = scrollState()
+            isEarlierHistoryScrollGestureActive = false
+            hasEarlierHistoryScrollIntent = state.isInProvisionalHistory
+            finishScrollActivity()
+            parent.onUserScrollEnded(state)
+            requestEarlierHistoryIfNeeded(for: state)
         }
 
         func finishScrollActivity() {
@@ -780,18 +1085,54 @@ extension NativeMessageTimelineCoordinator {
 
         func reportScrollState(force: Bool = false) {
             let state = scrollState()
+            if hasEarlierHistoryScrollIntent,
+               !isEarlierHistoryScrollGestureActive,
+               !state.isInProvisionalHistory
+            {
+                hasEarlierHistoryScrollIntent = false
+            }
+            requestEarlierHistoryIfNeeded(for: state)
             guard force || state != lastReportedState else { return }
             lastReportedState = state
-            scrollStateCallbackGeneration &+= 1
-            let generation = scrollStateCallbackGeneration
-            let callback = parent.onScrollStateChange
-            Task { @MainActor [weak self] in
+            pendingScrollState = state
+            // A clamped high-frequency gesture can request a forced report on
+            // every display tick. Replacing a yield-delayed callback each time
+            // starves all of them, so pagination never learns that it is still
+            // near the top. Keep one main-actor handoff and let it consume the
+            // newest coalesced state.
+            guard scrollStateCallbackTask == nil else { return }
+            let conversation = parent.conversation
+            scrollStateCallbackTask = Task { @MainActor [weak self] in
                 await Task.yield()
-                guard self?.scrollStateCallbackGeneration == generation else {
-                    return
-                }
-                callback(state)
+                guard let self else { return }
+                self.scrollStateCallbackTask = nil
+                guard !Task.isCancelled,
+                      self.parent.conversation == conversation,
+                      let state = self.pendingScrollState
+                else { return }
+                self.pendingScrollState = nil
+                self.parent.onScrollStateChange(state)
             }
+        }
+
+        /// The native scroll view owns the authoritative gesture and clamp
+        /// state, so it must not depend exclusively on a yield-delayed SwiftUI
+        /// state callback to continue a user-requested history climb. During a
+        /// display-rate gesture that callback can be postponed until after the
+        /// viewport has consumed its entire provisional reserve. Issue at most
+        /// one request per observed loading cycle directly from the native
+        /// boundary; `AppModel.loadEarlier` retains its own in-flight guard.
+        func requestEarlierHistoryIfNeeded(
+            for state: TimelineScrollState
+        ) {
+            guard state.isNearTop,
+                  hasEarlierHistoryScrollIntent,
+                  parent.hasMoreMessages,
+                  !parent.isLoadingEarlier,
+                  !hasIssuedEarlierHistoryRequest
+            else { return }
+            hasIssuedEarlierHistoryRequest = true
+            parent.loadEarlier()
         }
 
         func publishScrollActivity(_ isActive: Bool) {
@@ -854,7 +1195,11 @@ extension NativeMessageTimelineCoordinator {
                     hasEstablishedInitialPosition,
                 hasReachedNewestMessageBoundary:
                     hasEstablishedInitialPosition
-                    && hasReachedNewestMessageBoundary(in: visibleRect)
+                    && hasReachedNewestMessageBoundary(in: visibleRect),
+                isInProvisionalHistory:
+                    parent.hasMoreMessages
+                    && visibleRect.minY
+                        < leadingHistoryReserve - 0.5
             )
         }
 
@@ -1006,10 +1351,21 @@ extension NativeMessageTimelineCoordinator {
                     """
                 )
                 canvas.resetDrawTelemetry()
+                // Exercise native pagination directly. This synthetic workload
+                // must never invoke the user-interaction callback: that callback
+                // deliberately unblocks read acknowledgements for real input.
+                beginPerformanceBenchmarkPaginationIntent()
                 let signpost = Self.performanceSignposter.beginInterval(
                     "MessageTimelineAutoScrollBenchmark"
                 )
-                var previousTickUptime = ProcessInfo.processInfo.systemUptime
+                AppPerformanceSignposts.beginResourceWindow(
+                    named: "MessageTimelineAutoScrollBenchmark"
+                )
+                let benchmarkStartUptime = ProcessInfo.processInfo.systemUptime
+                var benchmarkController = NativeTimelineBenchmarkScrollController(
+                    startedAt: benchmarkStartUptime
+                )
+                var previousTickUptime = benchmarkStartUptime
                 var maximumTickInterval = 0.0
                 var maximumScrollWork = 0.0
                 var completedTicks = 0
@@ -1022,21 +1378,68 @@ extension NativeMessageTimelineCoordinator {
                 let displayLinkTicker = NativeTimelineDisplayLinkTicker()
                 self.performanceDisplayLinkTicker = displayLinkTicker
                 var didFinish = false
-                let finish: () -> Void = { [weak self, weak canvas, weak displayLinkTicker] in
+                let finish: (NativeTimelineBenchmarkFinishOutcome) -> Void = { [weak self, weak canvas, weak displayLinkTicker] outcome in
                     guard !didFinish else { return }
                     didFinish = true
                     displayLinkTicker?.stop()
-                    Self.performanceSignposter.endInterval(
-                        "MessageTimelineAutoScrollBenchmark",
-                        signpost
-                    )
+                    switch outcome {
+                    case .completed:
+                        Self.performanceSignposter.emitEvent(
+                            "MessageTimelineAutoScrollBenchmarkCompleted"
+                        )
+                    case .insufficientHistory:
+                        Self.performanceSignposter.emitEvent(
+                            "MessageTimelineAutoScrollBenchmarkInsufficientHistory"
+                        )
+                    case .cancelled:
+                        Self.performanceSignposter.emitEvent(
+                            "MessageTimelineAutoScrollBenchmarkCancelled"
+                        )
+                    case .paginationFailed:
+                        Self.performanceSignposter.emitEvent(
+                            "MessageTimelineAutoScrollBenchmarkPaginationFailed"
+                        )
+                    }
+                    let benchmarkElapsed =
+                        NativeTimelineBenchmarkFinishSequence.run(
+                            startedAt: benchmarkStartUptime,
+                            now: {
+                                ProcessInfo.processInfo.systemUptime
+                            },
+                            closeMeasurement: {
+                                // Exclude synchronous artifact/resource I/O
+                                // from the measured UI workload.
+                                Self.performanceSignposter.endInterval(
+                                    "MessageTimelineAutoScrollBenchmark",
+                                    signpost
+                                )
+                            },
+                            performBookkeeping: { elapsed in
+                                NativeTimelineBenchmarkArtifact.write(
+                                    outcome: outcome,
+                                    completedDistance:
+                                        benchmarkController.completedDistance,
+                                    elapsed: elapsed
+                                )
+                                AppPerformanceSignposts.endResourceWindow(
+                                    named:
+                                        "MessageTimelineAutoScrollBenchmark",
+                                    nominalDuration:
+                                        outcome == .completed
+                                            ? NativeTimelineBenchmarkScrollPolicy
+                                                .duration
+                                            : nil
+                                )
+                            }
+                        )
                     let summary = String(
                         format:
                             "SakuraCord timeline benchmark: max main-thread tick interval %.2f ms; "
                                 + "max scroll work %.2f ms; max canvas draw %.2f ms; "
                                 + "max row raster %.2f ms (height %.0f) over %d ticks "
                                 + "(%d above 33 ms; max at %d items, y %.0f); "
-                                + "history-starved %d ticks (max %d consecutive)",
+                                + "history-starved %d ticks (max %d consecutive); "
+                                + "spatial work %.0f / %.0f nominal points in %.2f s",
                         maximumTickInterval * 1_000,
                         maximumScrollWork * 1_000,
                         (canvas?.maximumDrawDuration ?? 0) * 1_000,
@@ -1047,12 +1450,16 @@ extension NativeMessageTimelineCoordinator {
                         maximumTickItemCount,
                         maximumTickDocumentY,
                         historyStarvedTicks,
-                        maximumHistoryStarvedTicks
+                        maximumHistoryStarvedTicks,
+                        benchmarkController.completedDistance,
+                        NativeTimelineBenchmarkScrollPolicy.nominalDistance,
+                        benchmarkElapsed
                     )
                     Self.performanceLogger.notice(
                         "\(summary, privacy: .public)"
                     )
                     self?.isPreparingOrRunningPerformanceBenchmark = false
+                    self?.endPerformanceBenchmarkPaginationIntent()
                     self?.performanceDisplayLinkTicker = nil
                     self?.performanceBenchmarkFinish = nil
                     self?.finishScrollActivity()
@@ -1060,7 +1467,7 @@ extension NativeMessageTimelineCoordinator {
                 self.performanceBenchmarkFinish = finish
                 displayLinkTicker.start(on: canvas) { [weak self, weak scrollView] in
                     guard let self, let scrollView else {
-                        finish()
+                        finish(.cancelled)
                         return
                     }
                     let tickUptime = ProcessInfo.processInfo.systemUptime
@@ -1087,15 +1494,14 @@ extension NativeMessageTimelineCoordinator {
                             """
                         )
                     }
-                    if items.count >= 500,
-                       visibleRect.minY - leadingHistoryReserve <= 160
-                    {
-                        finish()
-                        return
-                    }
                     let workStart = ProcessInfo.processInfo.systemUptime
+                    let scrollDistance =
+                        NativeTimelineBenchmarkScrollPolicy.distance(
+                            tickInterval: tickInterval
+                        )
                     scroll(
-                        toDocumentY: visibleRect.minY - 160,
+                        toDocumentY:
+                            visibleRect.minY - scrollDistance,
                         scrollView: scrollView
                     )
                     let didAdvance =
@@ -1115,8 +1521,21 @@ extension NativeMessageTimelineCoordinator {
                         maximumScrollWork,
                         ProcessInfo.processInfo.systemUptime - workStart
                     )
-                    if completedTicks >= 1_200 {
-                        finish()
+                    switch benchmarkController.recordTick(
+                        uptime: tickUptime,
+                        previousDocumentY: visibleRect.minY,
+                        currentDocumentY: scrollView.contentView.bounds.minY,
+                        hasMoreMessages: parent.hasMoreMessages,
+                        paginationFailed: parent.earlierHistoryLoadFailed
+                    ) {
+                    case .continueBenchmark:
+                        break
+                    case .completed:
+                        finish(.completed)
+                    case .insufficientHistory:
+                        finish(.insufficientHistory)
+                    case .paginationFailed:
+                        finish(.paginationFailed)
                     }
                 }
                 NativeTimelinePerformanceBenchmarkGate.shared.begin()
@@ -1126,5 +1545,16 @@ extension NativeMessageTimelineCoordinator {
 
         func startPerformanceAutoScrollIfNeeded() {
             performanceAutoScrollStartOperation()
+        }
+
+        func beginPerformanceBenchmarkPaginationIntent() {
+            isEarlierHistoryScrollGestureActive = true
+            hasEarlierHistoryScrollIntent = true
+            hasIssuedEarlierHistoryRequest = parent.isLoadingEarlier
+        }
+
+        func endPerformanceBenchmarkPaginationIntent() {
+            isEarlierHistoryScrollGestureActive = false
+            hasEarlierHistoryScrollIntent = false
         }
 }

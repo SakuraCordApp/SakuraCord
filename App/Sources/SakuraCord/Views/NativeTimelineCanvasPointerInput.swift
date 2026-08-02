@@ -1520,6 +1520,7 @@ extension NativeTimelineCanvasView {
         let reduceMotion =
             NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
             || UserDefaults.standard.bool(forKey: "reduceAnimatedMedia")
+            || !permitsAnimatedMediaPlayback
 
         var rows:
             [NativeMessageTimelineItem.Identifier: Set<NativeTimelineMediaKey>] = [:]
@@ -1546,6 +1547,7 @@ extension NativeTimelineCanvasView {
                 for key in keys {
                     NativeTimelineMediaStore.shared.requestAnimated(
                         key,
+                        owner: visibleMediaPinOwner,
                         subscriber: identifier
                     ) { [weak self] in
                         guard let self,

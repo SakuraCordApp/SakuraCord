@@ -1126,7 +1126,8 @@ final class NativeTimelineLottieStickerOverlay: NSView {
             progressIndicator.isHidden = false
             progressIndicator.startAnimation(nil)
             loadingTask = Task { @MainActor [weak self] in
-                let animation = await LottieAnimation.loadedFrom(url: url)
+                let animation = await SharedTimelineLottieAnimationLoader
+                    .shared.animation(for: url)
                 guard !Task.isCancelled,
                       let self,
                       self.url == url
@@ -1167,6 +1168,116 @@ final class NativeTimelineLottieStickerOverlay: NSView {
 
     deinit {
         loadingTask?.cancel()
+    }
+}
+
+nonisolated enum TimelineLottieLoadingPolicy {
+    static let maximumCachedAnimations = 12
+    static let maximumConcurrentParses = 1
+}
+
+actor SharedTimelineLottieAnimationLoader {
+    static let shared = SharedTimelineLottieAnimationLoader()
+
+    typealias DataLoader = @Sendable (URL) async throws -> Data
+
+    private let cache: DefaultAnimationCache = {
+        let cache = DefaultAnimationCache()
+        cache.cacheSize = TimelineLottieLoadingPolicy.maximumCachedAnimations
+        return cache
+    }()
+    private var inFlight: [URL: Task<LottieAnimation?, Never>] = [:]
+    private var isParsing = false
+    private struct ParseWaiter {
+        let id: UUID
+        let continuation: CheckedContinuation<Bool, Never>
+    }
+
+    private var parseWaiters: [ParseWaiter] = []
+    private let loadData: DataLoader
+
+    init(
+        loadData: @escaping DataLoader = { url in
+            try await SharedMediaDataLoader.shared.data(
+                for: url,
+                priority: .visible
+            )
+        }
+    ) {
+        self.loadData = loadData
+    }
+
+    func animation(for url: URL) async -> LottieAnimation? {
+        if let cached = cache.animation(forKey: url.absoluteString) {
+            return cached
+        }
+        if let task = inFlight[url] {
+            return await task.value
+        }
+        let task = Task<LottieAnimation?, Never> { [weak self] in
+            guard let self else { return nil }
+            let data = try? await self.loadData(url)
+            guard let data, !Task.isCancelled,
+                  await self.acquireParseLane()
+            else { return nil }
+            guard !Task.isCancelled else {
+                await self.releaseParseLane()
+                return nil
+            }
+            let animation = try? LottieAnimation.from(data: data)
+            if let animation {
+                self.cache.setAnimation(
+                    animation,
+                    forKey: url.absoluteString
+                )
+            }
+            await self.releaseParseLane()
+            return animation
+        }
+        inFlight[url] = task
+        let animation = await task.value
+        inFlight[url] = nil
+        return animation
+    }
+
+    private func acquireParseLane() async -> Bool {
+        if Task.isCancelled {
+            return false
+        }
+        if !isParsing {
+            isParsing = true
+            return true
+        }
+        let waiterID = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                parseWaiters.append(
+                    ParseWaiter(
+                        id: waiterID,
+                        continuation: continuation
+                    )
+                )
+            }
+        } onCancel: {
+            Task {
+                await self.cancelParseWaiter(waiterID)
+            }
+        }
+    }
+
+    private func cancelParseWaiter(_ id: UUID) {
+        guard let index = parseWaiters.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        parseWaiters.remove(at: index).continuation.resume(returning: false)
+    }
+
+    private func releaseParseLane() {
+        if !parseWaiters.isEmpty {
+            parseWaiters.removeFirst().continuation.resume(returning: true)
+        } else {
+            isParsing = false
+        }
     }
 }
 
@@ -1490,6 +1601,10 @@ final class NativeTimelineAnimatedMediaOverlay: NSView {
         } else {
             selectionView.isHidden = true
         }
+    }
+
+    func setPlaybackSuppressed(_ isSuppressed: Bool) {
+        imageView.setPlaybackSuppressed(isSuppressed)
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }

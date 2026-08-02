@@ -1166,6 +1166,40 @@ func `inline rich tokens inherit their enclosing spoiler`() {
 }
 
 @MainActor
+@Test func `attachment loading and painting share one stable media key`() throws {
+    let source = try #require(URL(string: "https://cdn.example/image.png"))
+    let proxy = try #require(URL(string: "https://media.example/image.png"))
+    let image = Attachment(
+        id: "image",
+        filename: "image.png",
+        url: source,
+        proxyURL: proxy,
+        mediaType: "image/png",
+        width: 1_600,
+        height: 900
+    )
+    let video = Attachment(
+        id: "video",
+        filename: "video.mov",
+        url: source,
+        proxyURL: proxy,
+        mediaType: "video/quicktime",
+        width: 1_600,
+        height: 900
+    )
+
+    #expect(
+        NativeTimelineMediaKey.attachment(image)
+            == .media(proxy, fallbackURL: source)
+    )
+    #expect(
+        NativeTimelineMediaKey.attachment(image)?.loadURLs
+            == [proxy, source]
+    )
+    #expect(NativeTimelineMediaKey.attachment(video) == nil)
+}
+
+@MainActor
 @Test func `updating a visible media lease keeps shared images pinned`() throws {
     let firstKey = NativeTimelineMediaKey.media(try #require(URL(
         string: "https://cdn.example/visible-first.png"
@@ -1314,6 +1348,37 @@ func `timeline presentation invalidation clears cached render state`() {
 }
 
 @MainActor @Test
+func `conversation switch retains validated row bitmap cache`() {
+    let canvas = NativeTimelineCanvasView(
+        frame: CGRect(x: 0, y: 0, width: 720, height: 480)
+    )
+    let channel = Channel(
+        id: ChannelID(rawValue: 77),
+        guildID: GuildID(rawValue: 7),
+        name: "cached-channel",
+        kind: .text
+    )
+    let item = NativeMessageTimelineItem.beginning(
+        .channel(channel, rulesChannelID: nil)
+    )
+    let image = NSImage(size: NSSize(width: 720, height: 80))
+    canvas.bitmapCache[item.identifier] = .init(
+        item: item,
+        width: 720,
+        appearanceName: canvas.effectiveAppearance.name,
+        image: image,
+        cost: 1,
+        mediaPinOwner: UUID()
+    )
+
+    canvas.invalidateConversationTransientCaches()
+
+    #expect(canvas.cachedBitmap(for: item, width: 720) === image)
+    canvas.invalidatePresentationCaches()
+    #expect(canvas.cachedBitmap(for: item, width: 720) == nil)
+}
+
+@MainActor @Test
 func `native scrolling removes installed pointer tracking immediately`() {
     let canvas = NativeTimelineCanvasView(
         frame: CGRect(x: 0, y: 0, width: 720, height: 480)
@@ -1449,21 +1514,30 @@ func `native scrolling removes installed pointer tracking immediately`() {
         )
     #expect(replenished.reserve == 63_336)
     #expect(replenished.grew)
+
+    let proactivelyReplenished =
+        NativeMessageTimelineLayoutPolicy.consumingLeadingHistoryReserve(
+            65_536,
+            prependedHeight: 40_000,
+            chunk: 65_536
+        )
+    #expect(proactivelyReplenished.reserve == 91_072)
+    #expect(proactivelyReplenished.grew)
 }
 
-@Test func `native timeline exposes a bounded provisional history page`() {
+@Test func `native timeline exposes its complete bounded history reserve`() {
     #expect(
         NativeMessageTimelineLayoutPolicy.provisionalHistoryDepth(
             reserve: 65_536,
             viewportHeight: 800
-        ) == 8_000
+        ) == 65_536
     )
     #expect(
         NativeMessageTimelineLayoutPolicy.provisionalHistoryMinimumY(
             reserve: 65_536,
             viewportHeight: 800,
             allowsProvisionalHistory: true
-        ) == 57_536
+        ) == 0
     )
     #expect(
         NativeMessageTimelineLayoutPolicy.provisionalHistoryMinimumY(
@@ -1479,6 +1553,203 @@ func `native scrolling removes installed pointer tracking immediately`() {
             allowsProvisionalHistory: true
         ) == 0
     )
+}
+
+@Test func `native timeline benchmark scroll speed is display refresh independent`() {
+    #expect(
+        NativeTimelineBenchmarkScrollPolicy.distance(
+            tickInterval: 1.0 / 60.0
+        ) == 160
+    )
+    #expect(
+        NativeTimelineBenchmarkScrollPolicy.distance(
+            tickInterval: 1.0 / 120.0
+        ) == 80
+    )
+    #expect(
+        NativeTimelineBenchmarkScrollPolicy.distance(
+            tickInterval: 1
+        ) == 320
+    )
+    #expect(
+        NativeTimelineBenchmarkScrollPolicy.nominalDistance == 192_000
+    )
+    #expect(
+        NativeTimelineBenchmarkScrollPolicy.distanceDeficit(
+            completedDistance: 191_360
+        ) == 640
+    )
+    #expect(
+        NativeTimelineBenchmarkScrollPolicy.spatialQuality(
+            completedDistance: 192_000
+        ) == 1
+    )
+    #expect(
+        NativeTimelineBenchmarkScrollPolicy.spatialQuality(
+            completedDistance: 96_000
+        ) == 0.5
+    )
+}
+
+@Test func `native timeline benchmark controller rejects exhausted short history`() {
+    var paginating = NativeTimelineBenchmarkScrollController(startedAt: 0)
+    #expect(
+        paginating.recordTick(
+            uptime: 1,
+            previousDocumentY: 100,
+            currentDocumentY: 100,
+            hasMoreMessages: true
+        ) == .continueBenchmark
+    )
+
+    var exhausted = NativeTimelineBenchmarkScrollController(startedAt: 0)
+    #expect(
+        exhausted.recordTick(
+            uptime: 1,
+            previousDocumentY: 100,
+            currentDocumentY: 100,
+            hasMoreMessages: false
+        ) == .insufficientHistory
+    )
+
+    var completing = NativeTimelineBenchmarkScrollController(startedAt: 0)
+    #expect(
+        completing.recordTick(
+            uptime: 10,
+            previousDocumentY: 100_000,
+            currentDocumentY: 4_000,
+            hasMoreMessages: true
+        ) == .continueBenchmark
+    )
+    #expect(
+        completing.recordTick(
+            uptime: 20,
+            previousDocumentY: 100_000,
+            currentDocumentY: 4_000,
+            hasMoreMessages: false
+        ) == .completed
+    )
+    #expect(completing.completedDistance == 192_000)
+
+}
+
+@Test func `benchmark rejects an earlier history request failure`() {
+    var failed = NativeTimelineBenchmarkScrollController(startedAt: 0)
+    #expect(
+        failed.recordTick(
+            uptime: 1,
+            previousDocumentY: 100,
+            currentDocumentY: 100,
+            hasMoreMessages: true,
+            paginationFailed: true
+        ) == .paginationFailed
+    )
+}
+
+@Test func `one several second late tick remains a reportable fixed duration run`() {
+    var controller = NativeTimelineBenchmarkScrollController(startedAt: 0)
+    var uptime: TimeInterval = 0
+    var documentY: CGFloat = 500_000
+    for _ in 0 ..< 1_194 {
+        uptime += 1.0 / 60.0
+        let step = NativeTimelineBenchmarkScrollPolicy.distance(
+            tickInterval: 1.0 / 60.0
+        )
+        let previousY = documentY
+        documentY -= step
+        #expect(
+            controller.recordTick(
+                uptime: uptime,
+                previousDocumentY: previousY,
+                currentDocumentY: documentY,
+                hasMoreMessages: true
+            ) == .continueBenchmark
+        )
+    }
+    let delayedStep = NativeTimelineBenchmarkScrollPolicy.distance(
+        tickInterval: 3.1
+    )
+    #expect(delayedStep == NativeTimelineBenchmarkScrollPolicy.maximumStep)
+    let previousY = documentY
+    documentY -= delayedStep
+    #expect(
+        controller.recordTick(
+            uptime: NativeTimelineBenchmarkScrollPolicy.duration + 3,
+            previousDocumentY: previousY,
+            currentDocumentY: documentY,
+            hasMoreMessages: true
+        ) == .completed
+    )
+    #expect(controller.completedDistance == 191_360)
+    #expect(
+        NativeTimelineBenchmarkScrollPolicy.distanceDeficit(
+            completedDistance: controller.completedDistance
+        ) == 640
+    )
+}
+
+@MainActor @Test
+func `benchmark closes measurement before delayed bookkeeping`() {
+    var uptime: TimeInterval = 20
+    var measuredEnd: TimeInterval?
+    var persistedElapsed: TimeInterval?
+    var sequence: [String] = []
+
+    let elapsed = NativeTimelineBenchmarkFinishSequence.run(
+        startedAt: 0,
+        now: {
+            sequence.append("capture")
+            return uptime
+        },
+        closeMeasurement: {
+            sequence.append("close")
+            measuredEnd = uptime
+        },
+        performBookkeeping: { capturedElapsed in
+            sequence.append("bookkeeping")
+            uptime += 5
+            persistedElapsed = capturedElapsed
+        }
+    )
+
+    #expect(sequence == ["capture", "close", "bookkeeping"])
+    #expect(measuredEnd == 20)
+    #expect(persistedElapsed == 20)
+    #expect(elapsed == 20)
+    #expect(uptime == 25)
+}
+
+@MainActor @Test
+func `automated benchmark pagination never emits user interaction callbacks`() {
+    let model = AppModel(launchMode: .offlineTesting)
+    var beganCount = 0
+    var endedCount = 0
+    let timeline = NativeMessageTimelineView(
+        model: model,
+        conversation: .channel(ChannelID(rawValue: 99_910)),
+        beginning: nil,
+        firstMessageStartsDayOverride: nil,
+        hasMoreMessages: true,
+        isLoadingEarlier: false,
+        bottomContentInset: 0,
+        unreadMessageID: nil,
+        highlightedMessageID: nil,
+        scrollRequest: nil,
+        runsPerformanceAutoScroll: true,
+        loadEarlier: {},
+        openReply: { _ in },
+        onScrollActivityChange: { _ in },
+        onScrollStateChange: { _ in },
+        onUserScrollBegan: { beganCount += 1 },
+        onUserScrollEnded: { _ in endedCount += 1 }
+    )
+    let coordinator = timeline.makeCoordinator()
+
+    coordinator.beginPerformanceBenchmarkPaginationIntent()
+    coordinator.endPerformanceBenchmarkPaginationIntent()
+
+    #expect(beganCount == 0)
+    #expect(endedCount == 0)
 }
 
 @Test func `native timeline only presents history skeletons while provisional history is active`() {
@@ -2404,6 +2675,105 @@ func `first viewport layout keeps bounded canvas frame and bounds synchronized`(
     coordinator.stopObserving()
 }
 
+@Test
+func `small scrolls retain the overscanned timeline backing window`() {
+    let documentSize = CGSize(width: 820, height: 20_000)
+    let initialViewport = CGRect(x: 0, y: 8_000, width: 820, height: 700)
+    let initial = NativeTimelineViewportWindowPolicy.geometry(
+        viewport: initialViewport,
+        documentSize: documentSize,
+        currentFrame: .zero
+    )
+
+    let lightlyScrolled = NativeTimelineViewportWindowPolicy.geometry(
+        viewport: initialViewport.offsetBy(dx: 0, dy: 200),
+        documentSize: documentSize,
+        currentFrame: initial.frame
+    )
+    #expect(lightlyScrolled.frame == initial.frame)
+    #expect(lightlyScrolled.bounds == initial.bounds)
+}
+
+@Test
+func `timeline backing window advances only near its overscan edge`() {
+    let documentSize = CGSize(width: 820, height: 20_000)
+    let initialViewport = CGRect(x: 0, y: 8_000, width: 820, height: 700)
+    let initial = NativeTimelineViewportWindowPolicy.geometry(
+        viewport: initialViewport,
+        documentSize: documentSize,
+        currentFrame: .zero
+    )
+
+    let advanced = NativeTimelineViewportWindowPolicy.geometry(
+        viewport: initialViewport.offsetBy(dx: 0, dy: 260),
+        documentSize: documentSize,
+        currentFrame: initial.frame
+    )
+    #expect(advanced.frame != initial.frame)
+    #expect(abs(advanced.frame.minY - 7_940) < 0.5)
+    #expect(advanced.bounds.minY == advanced.frame.minY)
+}
+
+@MainActor @Test
+func `member presentation changes use a bounded timeline journal refresh`() throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    let channelID = ChannelID(rawValue: 92_201)
+    let author = User(
+        id: UserID(rawValue: 92_202),
+        username: "member-refresh",
+        displayName: "Before"
+    )
+    let message = Message(
+        id: MessageID(rawValue: 92_203),
+        channelID: channelID,
+        author: author,
+        content: "Stable message storage"
+    )
+    model.replaceSelectedMessages(with: [message])
+    model.members = [
+        Member(user: author, roleName: "Member", status: .online),
+    ]
+    let timeline = NativeMessageTimelineView(
+        model: model,
+        conversation: .channel(channelID),
+        beginning: nil,
+        firstMessageStartsDayOverride: nil,
+        hasMoreMessages: false,
+        isLoadingEarlier: false,
+        bottomContentInset: 0,
+        unreadMessageID: nil,
+        highlightedMessageID: nil,
+        scrollRequest: nil,
+        runsPerformanceAutoScroll: false,
+        loadEarlier: {},
+        openReply: { _ in },
+        onScrollActivityChange: { _ in },
+        onScrollStateChange: { _ in },
+        onUserScrollBegan: {},
+        onUserScrollEnded: { _ in }
+    )
+    let coordinator = timeline.makeCoordinator()
+    let scrollView = coordinator.makeScrollView()
+    coordinator.stopObserving()
+    scrollView.frame = CGRect(x: 0, y: 0, width: 820, height: 700)
+    scrollView.tile()
+    scrollView.layoutSubtreeIfNeeded()
+    coordinator.update(parent: timeline, scrollView: scrollView)
+    let presentationRevision = model.timelinePresentationRevision
+
+    var renamed = try #require(model.members.first)
+    renamed.user.displayName = "After"
+    model.members = [renamed]
+    coordinator.update(parent: timeline, scrollView: scrollView)
+
+    #expect(model.timelinePresentationRevision == presentationRevision)
+    #expect(
+        coordinator.performanceUpdatePathForTesting
+            == "bounded-journal-merge"
+    )
+    coordinator.stopObserving()
+}
+
 @MainActor @Test
 func `short timeline is bottom aligned on its first frame and stays there while resizing`() throws {
     let model = AppModel(launchMode: .offlineTesting)
@@ -2788,6 +3158,167 @@ func `reentrant first width layout preserves the newer canvas bounds`() {
     )
 
     #expect(canvas.bounds == correctedBounds)
+}
+
+@MainActor @Test
+func `timeline coalesces intermediate width changes before reflow`() throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    let channelID = ChannelID(rawValue: 99_201)
+    let author = User(
+        id: UserID(rawValue: 99_202),
+        username: "resize",
+        displayName: "Resize"
+    )
+    let messages = (0 ..< 500).map { index in
+        Message(
+            id: MessageID(rawValue: UInt64(99_300 + index)),
+            channelID: channelID,
+            author: author,
+            content:
+                "Message \(index) has enough text to wrap differently as the timeline width changes."
+        )
+    }
+    model.replaceSelectedMessages(with: messages)
+    let targetMessage = messages[430]
+    let timeline = NativeMessageTimelineView(
+        model: model,
+        conversation: .channel(channelID),
+        beginning: .channel(
+            Channel(
+                id: channelID,
+                guildID: GuildID(rawValue: 99_200),
+                name: "resize",
+                kind: .text
+            ),
+            rulesChannelID: nil
+        ),
+        firstMessageStartsDayOverride: nil,
+        hasMoreMessages: false,
+        isLoadingEarlier: false,
+        bottomContentInset: 0,
+        unreadMessageID: nil,
+        highlightedMessageID: nil,
+        initialScrollTarget: .message(targetMessage.id, anchor: .top),
+        scrollRequest: nil,
+        runsPerformanceAutoScroll: false,
+        loadEarlier: {},
+        openReply: { _ in },
+        onScrollActivityChange: { _ in },
+        onScrollStateChange: { _ in },
+        onUserScrollBegan: {},
+        onUserScrollEnded: { _ in }
+    )
+    let coordinator = timeline.makeCoordinator()
+    let scrollView = coordinator.makeScrollView()
+    scrollView.frame = CGRect(x: 0, y: 0, width: 820, height: 700)
+    scrollView.tile()
+    scrollView.layoutSubtreeIfNeeded()
+    coordinator.update(parent: timeline, scrollView: scrollView)
+    coordinator.reconcileViewportGeometryForTesting()
+    #expect(coordinator.hasAppliedInitialPositionForTesting)
+    let initialWidth = coordinator.layoutWidth
+    let initialOffset = try #require(
+        coordinator.messageOffsetFromViewportTopForTesting(
+            targetMessage.id
+        )
+    )
+
+    coordinator.relayoutForWidthChange(760)
+    coordinator.relayoutForWidthChange(700)
+    let pendingGeneration = coordinator.widthRelayoutGenerationForTesting
+    coordinator.relayoutForWidthChange(700)
+    coordinator.relayoutForWidthChange(700)
+
+    #expect(coordinator.layoutWidth == initialWidth)
+    #expect(coordinator.pendingLayoutWidthForTesting == 700)
+    #expect(coordinator.widthRelayoutGenerationForTesting == pendingGeneration)
+
+    scrollView.frame.size.width = initialWidth
+    scrollView.tile()
+    scrollView.layoutSubtreeIfNeeded()
+    coordinator.reconcileViewportGeometryForTesting()
+    #expect(coordinator.pendingLayoutWidthForTesting == nil)
+    #expect(coordinator.layoutWidth == initialWidth)
+
+    coordinator.relayoutForWidthChange(760)
+    coordinator.relayoutForWidthChange(700)
+    scrollView.frame.size.width = 700
+    scrollView.tile()
+    scrollView.layoutSubtreeIfNeeded()
+    coordinator.reconcileViewportGeometryForTesting()
+    #expect(coordinator.canvas?.frame.width == initialWidth)
+    coordinator.applyPendingWidthRelayoutForTesting()
+
+    #expect(coordinator.pendingLayoutWidthForTesting == nil)
+    #expect(coordinator.layoutWidth == 700)
+    #expect(coordinator.canvas?.frame.width == 700)
+    let resizedOffset = try #require(
+        coordinator.messageOffsetFromViewportTopForTesting(
+            targetMessage.id
+        )
+    )
+    #expect(
+        abs(
+            resizedOffset
+                - NativeMessageTimelineLayoutPolicy
+                    .widthChangeAnchorOffset(from: initialOffset)
+        ) < 1
+    )
+
+    coordinator.relayoutForWidthChange(initialWidth)
+    coordinator.applyPendingWidthRelayoutForTesting()
+    #expect(coordinator.layoutWidth == initialWidth)
+    coordinator.stopObserving()
+}
+
+@Test
+func `five thousand row width relayout prioritizes visible rows and stays bounded`() {
+    let visibleRange = 4_200 ..< 4_224
+    let indexes = NativeTimelineWidthRelayoutPolicy.indexes(
+        itemCount: 5_000,
+        visibleRange: visibleRange
+    )
+
+    #expect(indexes.count == 5_000)
+    #expect(Array(indexes.prefix(visibleRange.count)) == Array(visibleRange))
+    #expect(Set(indexes).count == 5_000)
+    #expect(indexes.allSatisfy { (0 ..< 5_000).contains($0) })
+    #expect(NativeTimelineWidthRelayoutPolicy.batchSize < 5_000)
+}
+
+@MainActor @Test
+func `live scroll end restores hover presentation`() throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    let channelID = ChannelID(rawValue: 99_211)
+    let timeline = NativeMessageTimelineView(
+        model: model,
+        conversation: .channel(channelID),
+        beginning: nil,
+        firstMessageStartsDayOverride: nil,
+        hasMoreMessages: false,
+        isLoadingEarlier: false,
+        bottomContentInset: 0,
+        unreadMessageID: nil,
+        highlightedMessageID: nil,
+        scrollRequest: nil,
+        runsPerformanceAutoScroll: false,
+        loadEarlier: {},
+        openReply: { _ in },
+        onScrollActivityChange: { _ in },
+        onScrollStateChange: { _ in },
+        onUserScrollBegan: {},
+        onUserScrollEnded: { _ in }
+    )
+    let coordinator = timeline.makeCoordinator()
+    _ = coordinator.makeScrollView()
+    let canvas = try #require(coordinator.canvas)
+    canvas.dismissHoverPresentationForScroll()
+
+    coordinator.liveScrollTrackingDidEnd()
+
+    #expect(!canvas.suppressesHoverPresentation)
+    #expect(coordinator.lastReportedScrollActivity == false)
+    coordinator.stopObserving()
 }
 
 @MainActor @Test

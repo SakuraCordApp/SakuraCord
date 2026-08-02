@@ -122,7 +122,17 @@ nonisolated enum TimelineEarlierHistoryLoadingPolicy {
     }
 }
 
-enum NativeTimelineConversation: Equatable {
+nonisolated enum TimelineEarlierHistoryScrollIntentPolicy {
+    static func shouldRetain(
+        hasIntent: Bool,
+        isGestureActive: Bool,
+        isInProvisionalHistory: Bool
+    ) -> Bool {
+        hasIntent && (isGestureActive || isInProvisionalHistory)
+    }
+}
+
+enum NativeTimelineConversation: Hashable {
     case channel(ChannelID?)
     case thread(ChannelID?)
 
@@ -360,6 +370,125 @@ nonisolated enum NativeTimelineAutomaticHistoryPolicy {
     }
 }
 
+nonisolated enum NativeTimelineBenchmarkScrollPolicy {
+    /// Run for one fixed wall-clock interval at a refresh-independent target
+    /// speed. Delayed frames remain part of the result: the step cap avoids
+    /// measuring a stall twice, while the artifact records the resulting
+    /// spatial deficit instead of censoring the run.
+    static let pointsPerSecond: CGFloat = 9_600
+    static let maximumStep: CGFloat = 320
+    static let duration: TimeInterval = 20
+    static let nominalDistance = pointsPerSecond * duration
+
+    static func distance(tickInterval: TimeInterval) -> CGFloat {
+        min(
+            maximumStep,
+            max(0, CGFloat(tickInterval)) * pointsPerSecond
+        )
+    }
+
+    static func distanceDeficit(completedDistance: CGFloat) -> CGFloat {
+        max(0, nominalDistance - completedDistance)
+    }
+
+    static func spatialQuality(completedDistance: CGFloat) -> Double {
+        min(1, max(0, Double(completedDistance / nominalDistance)))
+    }
+}
+
+nonisolated struct NativeTimelineBenchmarkScrollController {
+    enum Outcome: Equatable {
+        case continueBenchmark
+        case completed
+        case insufficientHistory
+        case paginationFailed
+    }
+
+    let startedAt: TimeInterval
+    private(set) var completedDistance: CGFloat = 0
+
+    mutating func recordTick(
+        uptime: TimeInterval,
+        previousDocumentY: CGFloat,
+        currentDocumentY: CGFloat,
+        hasMoreMessages: Bool,
+        paginationFailed: Bool = false
+    ) -> Outcome {
+        let advance = max(0, previousDocumentY - currentDocumentY)
+        completedDistance += advance
+        if paginationFailed {
+            return .paginationFailed
+        }
+        if advance <= 0.5, !hasMoreMessages {
+            return .insufficientHistory
+        }
+        if uptime - startedAt >= NativeTimelineBenchmarkScrollPolicy.duration {
+            return .completed
+        }
+        return .continueBenchmark
+    }
+}
+
+enum NativeTimelineBenchmarkFinishOutcome: String {
+    case completed
+    case insufficientHistory
+    case cancelled
+    case paginationFailed
+}
+
+@MainActor
+enum NativeTimelineBenchmarkFinishSequence {
+    @discardableResult
+    static func run(
+        startedAt: TimeInterval,
+        now: () -> TimeInterval,
+        closeMeasurement: () -> Void,
+        performBookkeeping: (_ elapsed: TimeInterval) -> Void
+    ) -> TimeInterval {
+        let elapsed = now() - startedAt
+        closeMeasurement()
+        performBookkeeping(elapsed)
+        return elapsed
+    }
+}
+
+@MainActor
+enum NativeTimelineBenchmarkArtifact {
+    static func write(
+        outcome: NativeTimelineBenchmarkFinishOutcome,
+        completedDistance: CGFloat,
+        elapsed: TimeInterval
+    ) {
+        guard let path = ProcessInfo.processInfo.environment[
+            "SAKURACORD_PERFORMANCE_RESULT_PATH"
+        ] else { return }
+        let deficit = NativeTimelineBenchmarkScrollPolicy.distanceDeficit(
+            completedDistance: completedDistance
+        )
+        let quality = NativeTimelineBenchmarkScrollPolicy.spatialQuality(
+            completedDistance: completedDistance
+        )
+        let duration = NativeTimelineBenchmarkScrollPolicy.duration
+        let overshoot = max(0, elapsed - duration)
+        let contents = """
+        outcome\t\(outcome.rawValue)
+        elapsed_seconds\t\(elapsed)
+        nominal_duration_seconds\t\(duration)
+        elapsed_overshoot_seconds\t\(overshoot)
+        completed_distance_points\t\(completedDistance)
+        nominal_distance_points\t\(NativeTimelineBenchmarkScrollPolicy.nominalDistance)
+        distance_deficit_points\t\(deficit)
+        spatial_quality_ratio\t\(quality)
+
+        """
+        try? contents.write(
+            to: URL(fileURLWithPath: path),
+            atomically: true,
+            encoding: .utf8
+        )
+    }
+}
+
 nonisolated enum NativeTimelineReadBoundaryPolicy {
     static func hasReachedNewestMessageBoundary(
         newestMessageMaximumY: CGFloat,
@@ -420,35 +549,44 @@ nonisolated enum NativeMessageTimelineLayoutPolicy {
                 grew: false
             )
         }
-        if currentReserve >= prependedHeight {
+        let remainingReserve = currentReserve - prependedHeight
+        let minimumReserve = chunk / 2
+        if remainingReserve >= minimumReserve {
             return LeadingHistoryReserveUpdate(
-                reserve: currentReserve - prependedHeight,
+                reserve: remainingReserve,
                 grew: false
             )
         }
-        let shortage = prependedHeight - currentReserve
-        let addedChunks = max(1, ceil(shortage / chunk))
+        // A media-heavy page can fit in the current coordinate reserve while
+        // consuming nearly all of it. Waiting until the next page exceeds the
+        // reserve leaves only a few thousand scroll points of skeleton and
+        // visibly pins a fast gesture during the following request. Refill
+        // before falling below half a chunk; anchor restoration absorbs the
+        // coordinate growth without moving already visible messages.
+        let addedChunks = max(
+            1,
+            ceil((minimumReserve - remainingReserve) / chunk)
+        )
         return LeadingHistoryReserveUpdate(
             reserve:
-                currentReserve
-                + addedChunks * chunk
-                - prependedHeight,
+                remainingReserve
+                + addedChunks * chunk,
             grew: true
         )
     }
 
-    /// Keep one bounded page of provisional geometry above the oldest loaded
-    /// row. It is large enough for a fast gesture to continue naturally while
-    /// an authenticated request is in flight, without turning a slow request
-    /// into an unbounded chain of speculative history loads.
+    /// Expose the complete bounded reserve above the oldest loaded row while
+    /// the user is actively crossing that boundary. The document already
+    /// advertises this reserve to AppKit's scroller; exposing only a small
+    /// suffix made the viewport stop while the thumb still showed substantial
+    /// space above it. Network pagination remains separately bounded to one
+    /// in-flight page and requires a live user gesture at unresolved unread
+    /// boundaries.
     static func provisionalHistoryDepth(
         reserve: CGFloat,
         viewportHeight: CGFloat
     ) -> CGFloat {
-        min(
-            max(0, reserve),
-            max(8_000, max(1, viewportHeight) * 8)
-        )
+        max(0, reserve)
     }
 
     static func provisionalHistoryMinimumY(

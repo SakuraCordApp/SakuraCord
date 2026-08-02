@@ -81,7 +81,9 @@ extension NativeTimelineCanvasView {
                     isSpoiler: attachment.isSpoiler,
                     store: spoilerRevealStore
                 ) {
-                keys.insert(.media(attachment.proxyURL ?? attachment.url))
+                if let key = NativeTimelineMediaKey.attachment(attachment) {
+                    keys.insert(key)
+                }
             }
         }
         if let model {

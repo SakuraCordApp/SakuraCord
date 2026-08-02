@@ -187,7 +187,7 @@ private final class MessageTimelineSkeletonSafeAreaHost<Content: View>:
     )
 }
 
-@Test func `unresolved unread history requires a user scroll before loading one older page`() {
+@Test func `unresolved unread history requires user scroll intent before loading`() {
     #expect(
         !TimelineEarlierHistoryLoadingPolicy.shouldLoad(
             isNearTop: true,
@@ -226,6 +226,30 @@ private final class MessageTimelineSkeletonSafeAreaHost<Content: View>:
             isLoading: true,
             hasUnresolvedUnreadBoundary: true,
             hasUserScrollIntent: true
+        )
+    )
+}
+
+@Test func `earlier history intent survives an active gesture or requested skeleton viewport`() {
+    #expect(
+        TimelineEarlierHistoryScrollIntentPolicy.shouldRetain(
+            hasIntent: true,
+            isGestureActive: true,
+            isInProvisionalHistory: false
+        )
+    )
+    #expect(
+        TimelineEarlierHistoryScrollIntentPolicy.shouldRetain(
+            hasIntent: true,
+            isGestureActive: false,
+            isInProvisionalHistory: true
+        )
+    )
+    #expect(
+        !TimelineEarlierHistoryScrollIntentPolicy.shouldRetain(
+            hasIntent: true,
+            isGestureActive: false,
+            isInProvisionalHistory: false
         )
     )
 }

@@ -32,12 +32,23 @@ struct AvatarView: View {
                 fallback
             }
             if let url {
-                AnimatedRemoteImage(
-                    url: url,
-                    animates: animates,
-                    maximumPixelDimension: requestedPixelDimension,
-                    contentMode: .fill
-                )
+                if animates,
+                   NativeTimelineAvatarPresentation
+                    .shouldDecodeAnimation(for: url)
+                {
+                    AnimatedRemoteImage(
+                        url: url,
+                        maximumPixelDimension: requestedPixelDimension,
+                        contentMode: .fill
+                    )
+                } else {
+                    StaticRemoteImage(
+                        url: url,
+                        maximumPixelDimension:
+                            max(96, requestedPixelDimension),
+                        contentMode: .fill
+                    )
+                }
             }
         }
         .frame(width: size, height: size)
@@ -58,7 +69,11 @@ struct AvatarView: View {
     }
 
     var cachedFrame: CGImage? {
-        guard let url else { return nil }
+        guard let url,
+              animates,
+              NativeTimelineAvatarPresentation
+                .shouldDecodeAnimation(for: url)
+        else { return nil }
         return AnimatedRemoteImageDisplayCache.shared.image(
             for: url,
             maximumPixelDimension: requestedPixelDimension

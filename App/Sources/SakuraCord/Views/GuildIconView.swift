@@ -12,7 +12,20 @@ struct GuildIconView: View {
             ConcentricRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(Color.secondary.opacity(0.16))
             if let iconURL {
-                AnimatedRemoteImage(url: iconURL, animates: animates)
+                if animates,
+                   NativeTimelineAvatarPresentation
+                    .shouldDecodeAnimation(for: iconURL)
+                {
+                    AnimatedRemoteImage(
+                        url: iconURL,
+                        maximumPixelDimension: requestedPixelDimension
+                    )
+                } else {
+                    StaticRemoteImage(
+                        url: iconURL,
+                        maximumPixelDimension: requestedPixelDimension
+                    )
+                }
             } else {
                 Image(systemName: "person.3.fill")
                     .font(.system(size: size * 0.38, weight: .semibold))
@@ -22,5 +35,9 @@ struct GuildIconView: View {
         .frame(width: size, height: size)
         .clipShape(ConcentricRectangle(cornerRadius: cornerRadius, style: .continuous))
         .accessibilityLabel(name.isEmpty ? "Unnamed Server" : name)
+    }
+
+    private var requestedPixelDimension: Int {
+        max(1, Int((size * 2).rounded(.up)))
     }
 }

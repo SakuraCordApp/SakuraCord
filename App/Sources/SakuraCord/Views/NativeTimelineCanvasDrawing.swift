@@ -233,19 +233,29 @@ extension NativeTimelineCanvasView {
         needsDisplay = true
     }
 
+    /// A channel switch replaces pointer geometry and transient hover state,
+    /// but it does not make an otherwise identical row bitmap stale. Message
+    /// snowflakes are globally unique, and `cachedBitmap(for:width:)` also
+    /// validates the complete item, width, and appearance before reuse. Keep
+    /// those bounded bitmaps warm so returning to a recent conversation does
+    /// not synchronously raster every visible CoreText row again.
+    func invalidateConversationTransientCaches() {
+        pointer.cancelPrewarming()
+        mentionPointerRegionCache.removeAll(keepingCapacity: true)
+        codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
+        needsDisplay = true
+    }
+
     func dismissHoverPresentationForScroll() {
         // Prewarming is idle work. A scroll can begin after a programmatic
         // position request has queued it but before that main-actor task gets
         // its first turn. Cancel it at the activity boundary so a cold bitmap
         // raster cannot block the first scrolling frames.
         pointer.cancelPrewarming()
-        // Bounds changes arrive for every momentum-scroll tick. Repeating the
-        // teardown work here used to restart the media timer on every tick,
-        // which meant it could never fire until scrolling stopped.
-        guard !suppressesHoverPresentation else {
-            scheduleAnimatedMediaScrollReconciliation()
-            return
-        }
+        // Bounds changes arrive for every momentum-scroll tick. All teardown
+        // and playback suppression below must happen only at the transition
+        // into scrolling, never for each tick.
+        guard !suppressesHoverPresentation else { return }
         suppressesHoverPresentation = true
         // Pause native playback once without destroying its presentation.
         // Recreating AVPlayer and Lottie overlays on each reconciliation
@@ -259,6 +269,9 @@ extension NativeTimelineCanvasView {
         for overlay in lottieStickerOverlays.values {
             overlay.pauseForScroll()
         }
+        for overlay in animatedMediaOverlays.values {
+            overlay.setPlaybackSuppressed(true)
+        }
         // Setting the flag only prevents future installation. Existing
         // in-visible-rect areas otherwise remain registered, so AppKit walks
         // and hit-tests the moving timeline under a stationary pointer on
@@ -269,7 +282,9 @@ extension NativeTimelineCanvasView {
         cancelReactionCountAnimations()
         animatedMediaReconcileTask?.cancel()
         animatedMediaReconcileTask = nil
-        scheduleAnimatedMediaScrollReconciliation()
+        NativeTimelineMediaStore.shared.cancelAnimatedRequests(
+            owner: visibleMediaPinOwner
+        )
         let clearedTargets = pointer.clearHoverAndPressTargets()
         reactionHoverCoordinator.close()
         closeMessageProfilePopover()
@@ -317,8 +332,11 @@ extension NativeTimelineCanvasView {
 
     func allowHoverPresentationAfterScroll() {
         suppressesHoverPresentation = false
-        animatedMediaScrollReconcileTask?.cancel()
-        animatedMediaScrollReconcileTask = nil
+        for overlay in animatedMediaOverlays.values {
+            overlay.setPlaybackSuppressed(false)
+        }
+        refreshVisibleMediaPins()
+        reconcileVisibleReactionPreviewLoads()
         restoreEditingRowAfterScroll()
         reconcileAnimatedMedia()
         reconcileLoadingIndicators()
@@ -379,10 +397,16 @@ extension NativeTimelineCanvasView {
             mediaInvalidationTask?.cancel()
             mediaInvalidationTask = nil
             pendingMediaInvalidations.removeAll(keepingCapacity: false)
+            NativeTimelineMediaStore.shared.removeStaticRequests(
+                owner: visibleMediaPinOwner
+            )
             NativeTimelineMediaStore.shared.releaseVisibleImages(
                 owner: visibleMediaPinOwner
             )
             NativeTimelineMediaStore.shared.releasePinnedImages(
+                owner: visibleMediaPinOwner
+            )
+            NativeTimelineMediaStore.shared.cancelAnimatedRequests(
                 owner: visibleMediaPinOwner
             )
             clearBitmapCache(keepingCapacity: false)
@@ -395,8 +419,6 @@ extension NativeTimelineCanvasView {
             reactionCountBaselineTask = nil
             animatedMediaReconcileTask?.cancel()
             animatedMediaReconcileTask = nil
-            animatedMediaScrollReconcileTask?.cancel()
-            animatedMediaScrollReconcileTask = nil
             animatedMediaRows.removeAll()
             inlineVideoRows.removeAll()
             lottieStickerRows.removeAll()
@@ -636,6 +658,7 @@ extension NativeTimelineCanvasView {
                     } else {
                         (cachedBitmap ?? bitmap(
                             for: items[index],
+                            at: index,
                             layout: layouts[index],
                             width: rowFrame.width
                         )).draw(
@@ -663,6 +686,11 @@ extension NativeTimelineCanvasView {
 
     override func draw(_ dirtyRect: NSRect) {
         drawOperation(dirtyRect)
+        if let presentedConversationID {
+            AppPerformanceSignposts.reportConversationFirstFrame(
+                channelID: presentedConversationID
+            )
+        }
     }
 
     func drawCodeBlockCopyControl(
@@ -913,13 +941,14 @@ extension NativeTimelineCanvasView {
 
     func prewarmRows(above rect: CGRect, count: Int) {
         prewarmTask?.cancel()
-        guard count > 0,
+        let boundedCount = min(count, Self.prewarmRowLimit)
+        guard boundedCount > 0,
               let firstVisible = rowIndex(at: rect.minY),
               firstVisible > 0
         else {
             return
         }
-        let lowerBound = max(0, firstVisible - count)
+        let lowerBound = max(0, firstVisible - boundedCount)
         let indexes = Array(stride(
             from: firstVisible - 1,
             through: lowerBound,
@@ -944,6 +973,7 @@ extension NativeTimelineCanvasView {
                 )
                 _ = self.bitmap(
                     for: self.items[index],
+                    at: index,
                     layout: self.layouts[index],
                     width: self.bounds.width
                 )
@@ -964,6 +994,7 @@ extension NativeTimelineCanvasView {
 
     func bitmap(
         for item: NativeMessageTimelineItem,
+        at index: Int,
         layout: NativeTimelineRowLayout,
         width: CGFloat
     ) -> NSImage {
@@ -1028,12 +1059,7 @@ extension NativeTimelineCanvasView {
 
         let mediaPinOwner = UUID()
         NativeTimelineMediaStore.shared.pinLoadedImages(
-            for: mediaKeys(
-                for: item,
-                at: items.firstIndex(where: {
-                    $0.identifier == item.identifier
-                })
-            ),
+            for: mediaKeys(for: item, at: index),
             owner: mediaPinOwner
         )
         let cost = max(1, Int(ceil(width * layout.height * 4 * scale * scale)))
@@ -1106,12 +1132,15 @@ extension NativeTimelineCanvasView {
         priority: MediaLoadPriority = .visible
     ) {
         let identifier = item.identifier
-        for key in mediaKeys(for: item, at: index) {
+        let requestOwner = visibleMediaPinOwner
+        let keys = mediaKeys(for: item, at: index)
+        for key in keys {
             NativeTimelineMediaStore.shared.request(
                 key,
+                owner: requestOwner,
                 subscriber: identifier,
                 priority: priority
-            ) { [weak self] in
+            ) { [weak self] _ in
                 self?.scheduleMediaInvalidation(identifier)
             }
         }
@@ -1229,6 +1258,12 @@ extension NativeTimelineCanvasView {
                 for: [],
                 owner: visibleMediaPinOwner
             )
+            if pointer.suppressesHoverPresentation {
+                NativeTimelineMediaStore.shared
+                    .cancelStaticRequestsOutsideVisibleSet(
+                        owner: visibleMediaPinOwner
+                    )
+            }
             return
         }
 
@@ -1246,6 +1281,12 @@ extension NativeTimelineCanvasView {
             for: keys,
             owner: visibleMediaPinOwner
         )
+        if pointer.suppressesHoverPresentation {
+            NativeTimelineMediaStore.shared
+                .cancelStaticRequestsOutsideVisibleSet(
+                    owner: visibleMediaPinOwner
+                )
+        }
     }
 
     var mediaKeysOperation:
@@ -1312,7 +1353,8 @@ extension NativeTimelineCanvasView {
                 }
             }
         }
-        for attachment in message.attachments {
+        for region in layouts[index].attachmentRegions {
+            let attachment = region.attachment
             guard NativeTimelineSpoilerConcealmentPolicy
                 .shouldLoadOrAnimate(
                     messageID: message.id,
@@ -1324,9 +1366,11 @@ extension NativeTimelineCanvasView {
                 )
             else { continue }
             switch attachment.mediaKind {
-            case .image, .animatedImage, .video:
-                keys.append(.media(attachment.proxyURL ?? attachment.url))
-            case .audio, .file:
+            case .image, .animatedImage:
+                if let key = NativeTimelineMediaKey.attachment(attachment) {
+                    keys.append(key)
+                }
+            case .video, .audio, .file:
                 break
             }
         }
