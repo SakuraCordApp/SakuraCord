@@ -184,6 +184,10 @@ public actor DiscordRESTProvider: ChatProvider {
 }
 
 extension DiscordRESTProvider {
+    public func prepareAuthentication() async throws {
+        _ = try await authorizationToken()
+    }
+
     public func bootstrap() async throws -> BootstrapSnapshot {
         continuation?.yield(.connectionChanged(.connecting))
         _ = try await authorizationToken()

@@ -31,10 +31,44 @@ extension AppModel {
         }
         guard await accountTransitionCoordinator.acquireIfAvailable() else { return false }
         accountTransitionIsActive = true
+        let fingerprint = await AppPerformanceSignposts.measure("FingerprintRestore") {
+            await UserDefaultsDiscordFingerprintStore.shared.load()
+        }
+        guard !Task.isCancelled else {
+            accountTransitionIsActive = false
+            await accountTransitionCoordinator.release()
+            return false
+        }
+        let nextProvider = AppPerformanceSignposts.measureSync("ProviderCreation") {
+            authenticatedProviderFactory(handle, fingerprint)
+        }
+        do {
+            // Enumerating Keychain item attributes reveals the account handle
+            // without necessarily authorizing access to its secret. Do not
+            // open or present that account's persisted workspace until macOS
+            // has granted access to the credential value itself. Preparing the
+            // provider also retains that value for bootstrap, avoiding a second
+            // Keychain prompt after a one-time authorization.
+            try await nextProvider.prepareAuthentication()
+        } catch {
+            errorMessage = error.localizedDescription
+            accountTransitionIsActive = false
+            if !isAuthenticated {
+                sessionState = .signedOut
+            }
+            await accountTransitionCoordinator.release()
+            return false
+        }
+        guard !Task.isCancelled else {
+            accountTransitionIsActive = false
+            await accountTransitionCoordinator.release()
+            return false
+        }
         invalidateAccountSession()
         let transitionGeneration = accountSessionGeneration
         let connected = await performAuthenticatedAccountConnection(
             handle,
+            provider: nextProvider,
             preservesInteractivePresentation: preservesInteractivePresentation,
             transitionGeneration: transitionGeneration
         )
@@ -45,6 +79,7 @@ extension AppModel {
 
     func performAuthenticatedAccountConnection(
         _ handle: CredentialHandle,
+        provider nextProvider: any ChatProvider,
         preservesInteractivePresentation: Bool,
         transitionGeneration: UInt64
     ) async -> Bool {
@@ -84,13 +119,6 @@ extension AppModel {
         typingState.clearAll()
         if !preservesInteractivePresentation {
             sessionState = .connecting
-        }
-        let fingerprint = await AppPerformanceSignposts.measure("FingerprintRestore") {
-            await UserDefaultsDiscordFingerprintStore.shared.load()
-        }
-        guard accountSessionGeneration == transitionGeneration else { return false }
-        let nextProvider = AppPerformanceSignposts.measureSync("ProviderCreation") {
-            authenticatedProviderFactory(handle, fingerprint)
         }
         await messagePersistenceSink.flush()
         guard accountSessionGeneration == transitionGeneration else { return false }

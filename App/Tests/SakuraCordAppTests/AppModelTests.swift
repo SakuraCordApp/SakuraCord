@@ -887,6 +887,60 @@ import UserNotifications
 }
 
 @MainActor
+@Test func `cached startup waits for credential access authorization`() async throws {
+    let handle = CredentialHandle(accountID: "77110")
+    let credentials = RestoredCredentialHandleStore(handle: handle)
+    let provider = SuspendedBootstrapTestProvider(suspendsAuthentication: true)
+    let currentUser = User(
+        id: UserID(rawValue: 77_110),
+        username: "private-cached-user",
+        displayName: "Private Cached User"
+    )
+    let channel = Channel(
+        id: ChannelID(rawValue: 77_111),
+        guildID: nil,
+        name: "private-cached-conversation"
+    )
+    let database = try SakuraCordDatabase(inMemory: true)
+    try await database.saveBootstrapSnapshot(BootstrapSnapshot(
+        currentUser: currentUser,
+        guilds: [],
+        channels: [channel],
+        members: []
+    ))
+    try await database.saveSelectedChannelID(channel.id)
+    let model = AppModel(
+        launchMode: .normal,
+        discordNetworkDisabledOverride: false,
+        credentialStore: credentials,
+        authenticatedProviderFactory: { _, _ in provider },
+        accountDatabaseFactory: { _ in database }
+    )
+
+    let start = Task { await model.start() }
+    #expect(await provider.waitUntilAuthenticationStarts())
+
+    #expect(model.sessionState == .restoring)
+    #expect(model.snapshot == nil)
+    #expect(!model.presentsCachedStartup)
+    #expect(model.selectedChannelID == nil)
+
+    await provider.releaseAuthentication()
+    await provider.waitUntilBootstrapStarts()
+
+    #expect(model.sessionState == .workspace)
+    #expect(model.snapshot?.currentUser == currentUser)
+    #expect(model.selectedChannelID == channel.id)
+    #expect(model.presentsCachedStartup)
+    #expect(!model.isAuthenticated)
+
+    await provider.releaseBootstrap()
+    await start.value
+    #expect(model.isAuthenticated)
+    #expect(!model.presentsCachedStartup)
+}
+
+@MainActor
 @Test func `cached startup never acknowledges its restored unread viewport`() async throws {
     let currentUser = User(
         id: UserID(rawValue: 77_200),
@@ -5595,6 +5649,10 @@ private actor SuspendedBootstrapTestProvider: ChatProvider {
     private var startWaiters: [CheckedContinuation<Void, Never>] = []
     private var bootstrapContinuation: CheckedContinuation<Void, Never>?
     private let bootstrapError: String?
+    private let suspendsAuthentication: Bool
+    private var authenticationStarted = false
+    private var authenticationReleased = false
+    private var authenticationContinuation: CheckedContinuation<Void, Never>?
     private let suspendsMessages: Bool
     private let messagePage: MessagePage
     private var messageLoadStarted = false
@@ -5606,12 +5664,37 @@ private actor SuspendedBootstrapTestProvider: ChatProvider {
 
     init(
         bootstrapError: String? = nil,
+        suspendsAuthentication: Bool = false,
         suspendsMessages: Bool = false,
         messagePage: MessagePage = MessagePage(messages: [], hasMoreBefore: false)
     ) {
         self.bootstrapError = bootstrapError
+        self.suspendsAuthentication = suspendsAuthentication
         self.suspendsMessages = suspendsMessages
         self.messagePage = messagePage
+    }
+
+    func prepareAuthentication() async {
+        guard suspendsAuthentication else { return }
+        authenticationStarted = true
+        guard !authenticationReleased else { return }
+        await withCheckedContinuation { authenticationContinuation = $0 }
+    }
+
+    func waitUntilAuthenticationStarts() async -> Bool {
+        for _ in 0 ..< 200 {
+            if authenticationStarted {
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        return authenticationStarted
+    }
+
+    func releaseAuthentication() {
+        authenticationReleased = true
+        authenticationContinuation?.resume()
+        authenticationContinuation = nil
     }
 
     func bootstrap() async throws -> BootstrapSnapshot {
@@ -5715,6 +5798,28 @@ private actor SuspendedBootstrapTestProvider: ChatProvider {
     }
 
     func disconnect() async {}
+}
+
+private actor RestoredCredentialHandleStore: CredentialStore {
+    private let handle: CredentialHandle
+
+    init(handle: CredentialHandle) {
+        self.handle = handle
+    }
+
+    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
+        CredentialHandle(accountID: accountID)
+    }
+
+    func credential(for handle: CredentialHandle) async throws -> Data {
+        Data("credential".utf8)
+    }
+
+    func remove(_ handle: CredentialHandle) async throws {}
+
+    func handles() async throws -> [CredentialHandle] {
+        [handle]
+    }
 }
 
 @MainActor

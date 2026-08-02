@@ -5,6 +5,21 @@ import Testing
 
 @Suite(.serialized)
 struct ProviderRequestContractTests {
+    @Test func `authentication preparation reads and caches the credential once`() async throws {
+        let credentials = TestCredentialStore()
+        let provider = DiscordRESTProvider(
+            credentials: credentials,
+            handle: CredentialHandle(accountID: "1"),
+            session: URLSession(configuration: .ephemeral)
+        )
+
+        try await provider.prepareAuthentication()
+        let authorization = try await provider.authorizationToken()
+
+        #expect(authorization == "test-session-credential-value")
+        #expect(await credentials.credentialReadCount == 1)
+    }
+
     @Test func `concurrent sends with one nonce use one message mutation`() async throws {
         RateLimitURLProtocol.reset()
         let configuration = URLSessionConfiguration.ephemeral

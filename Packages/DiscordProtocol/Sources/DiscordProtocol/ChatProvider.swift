@@ -2,6 +2,7 @@ import Foundation
 import SakuraCordModels
 
 public protocol ChatProvider: Sendable {
+    func prepareAuthentication() async throws
     func bootstrap() async throws -> BootstrapSnapshot
     func channels(in guildID: GuildID?) async throws -> [Channel]
     func members(in guildID: GuildID?) async throws -> [Member]
@@ -115,6 +116,8 @@ public protocol ChatProvider: Sendable {
 }
 
 public extension ChatProvider {
+    func prepareAuthentication() async throws {}
+
     func resolveMembers(in guildID: GuildID, userIDs: [UserID]) async throws -> [Member] {
         let requested = Set(userIDs.prefix(100))
         return try await members(in: guildID).filter { requested.contains($0.id) }
