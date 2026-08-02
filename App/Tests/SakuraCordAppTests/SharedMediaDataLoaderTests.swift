@@ -140,6 +140,74 @@ import Testing
 }
 
 @MainActor
+@Test func `visible timeline request promotes coalesced prefetch download and decode`() async throws {
+    let probe = SuspendedRemoteMediaFetch()
+    let dataLoader = SharedMediaDataLoader(remoteFetch: probe.fetch)
+    let decodeScheduler = NativeTimelineMediaDecodeScheduler()
+    let decodedLoader = SharedDecodedImageLoader(
+        dataLoader: dataLoader,
+        decodeScheduler: decodeScheduler
+    )
+    let url = try #require(
+        URL(string: "https://cdn.example/promoted-static.png")
+    )
+    #expect(await decodeScheduler.acquirePermitForTesting(priority: .visible))
+    #expect(await decodeScheduler.acquirePermitForTesting(priority: .visible))
+    let store = NativeTimelineMediaStore(
+        decodedImageLoad: { url, dimension, priority in
+            await decodedLoader.image(
+                for: url,
+                maximumPixelDimension: dimension,
+                priority: priority
+            )
+        },
+        decodedImagePromotion: { url, dimension in
+            await decodedLoader.promoteImageLoad(
+                for: url,
+                maximumPixelDimension: dimension
+            )
+        }
+    )
+    let key = NativeTimelineMediaKey.media(url, maximumPixelDimension: 32)
+    var outcomes: [NativeTimelineStaticMediaLoadOutcome] = []
+    store.request(
+        key,
+        owner: UUID(),
+        subscriber: .message(MessageID(rawValue: 1)),
+        priority: .prefetch
+    ) { outcome in
+        outcomes.append(outcome)
+    }
+    #expect(await waitUntilOnMainActor { await probe.fetchCount == 1 })
+
+    store.request(
+        key,
+        owner: UUID(),
+        subscriber: .message(MessageID(rawValue: 2)),
+        priority: .visible
+    ) { outcome in
+        outcomes.append(outcome)
+    }
+    #expect(await waitUntilOnMainActor {
+        await dataLoader.remotePriorityForTesting(url) == .visible
+    })
+
+    let encoded = try #require(Data(base64Encoded:
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+3vYjWQAAAABJRU5ErkJggg=="
+    ))
+    await probe.finish(url, with: encoded)
+    #expect(await waitUntilOnMainActor {
+        await decodeScheduler.snapshot().visibleWaiterCount == 1
+    })
+
+    await decodeScheduler.releasePermitForTesting(priority: .visible)
+    #expect(await waitUntilOnMainActor { outcomes.count == 2 })
+    #expect(outcomes.allSatisfy { $0 == .ready })
+    #expect(await probe.fetchCount == 1)
+    await decodeScheduler.releasePermitForTesting(priority: .visible)
+}
+
+@MainActor
 @Test func `visible duplicate keeps a later fallback at visible priority`() async throws {
     let primaryURL = try #require(
         URL(string: "https://cdn.example/primary-static.png")
@@ -384,6 +452,20 @@ private func expectCancellation(
 }
 
 private func waitUntil(
+    maximumYields: Int = 10_000,
+    _ condition: () async -> Bool
+) async -> Bool {
+    for _ in 0 ..< maximumYields {
+        if await condition() {
+            return true
+        }
+        await Task.yield()
+    }
+    return false
+}
+
+@MainActor
+private func waitUntilOnMainActor(
     maximumYields: Int = 10_000,
     _ condition: () async -> Bool
 ) async -> Bool {

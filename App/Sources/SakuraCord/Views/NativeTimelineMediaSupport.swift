@@ -104,6 +104,7 @@ actor SharedDecodedImageLoader {
         let id: UUID
         let task: Task<CGImage?, Never>
         var waiterIDs: Set<UUID>
+        var priority: MediaLoadPriority
     }
 
     struct RequestKey: Hashable, Sendable {
@@ -153,24 +154,39 @@ actor SharedDecodedImageLoader {
         let task: Task<CGImage?, Never>
         if var request = inFlight[key] {
             request.waiterIDs.insert(waiterID)
+            let promotesToVisible =
+                priority == .visible && request.priority == .prefetch
+            if promotesToVisible {
+                request.priority = .visible
+            }
             inFlight[key] = request
+            if promotesToVisible {
+                await dataLoader.promoteRemoteLoad(for: url)
+                await decodeScheduler.promoteWaiter(request.id)
+            }
             requestID = request.id
             task = request.task
         } else {
-            requestID = UUID()
+            let createdRequestID = UUID()
+            requestID = createdRequestID
             let dataLoader = self.dataLoader
             let decodeScheduler = self.decodeScheduler
-            task = Task {
+            task = Task { [weak self] in
                 do {
                     let data = try await dataLoader.data(
                         for: url,
                         priority: priority
                     )
                     try Task.checkCancellation()
+                    let effectivePriority = await self?.priority(
+                        for: key,
+                        requestID: createdRequestID
+                    ) ?? priority
                     return await decodeScheduler.decode(
                         data,
                         maximumPixelDimension: key.maximumPixelDimension,
-                        priority: priority
+                        priority: effectivePriority,
+                        waiterID: createdRequestID
                     )
                 } catch {
                     return nil
@@ -179,7 +195,8 @@ actor SharedDecodedImageLoader {
             inFlight[key] = InFlightRequest(
                 id: requestID,
                 task: task,
-                waiterIDs: [waiterID]
+                waiterIDs: [waiterID],
+                priority: priority
             )
         }
 
@@ -204,6 +221,33 @@ actor SharedDecodedImageLoader {
             for: key,
             image: image
         )
+    }
+
+    func promoteImageLoad(
+        for url: URL,
+        maximumPixelDimension: Int
+    ) async {
+        let key = RequestKey(
+            url: url,
+            maximumPixelDimension: max(1, maximumPixelDimension)
+        )
+        guard var request = inFlight[key],
+              request.priority == .prefetch
+        else { return }
+        request.priority = .visible
+        inFlight[key] = request
+        await dataLoader.promoteRemoteLoad(for: url)
+        await decodeScheduler.promoteWaiter(request.id)
+    }
+
+    private func priority(
+        for key: RequestKey,
+        requestID: UUID
+    ) -> MediaLoadPriority? {
+        guard let request = inFlight[key], request.id == requestID else {
+            return nil
+        }
+        return request.priority
     }
 
     private func cancelWaiter(
@@ -284,6 +328,7 @@ final class NativeTimelineMediaStore {
         Int,
         MediaLoadPriority
     ) async -> CGImage?
+    typealias DecodedImagePromotion = (URL, Int) async -> Void
 
     struct AnimatedSubscriberID: Hashable {
         let owner: UUID
@@ -353,13 +398,19 @@ final class NativeTimelineMediaStore {
         [NativeTimelineMediaKey: PinnedImageReference] = [:]
     var pinnedImageCost = 0
     private let decodedImageLoad: DecodedImageLoad
+    private let decodedImagePromotion: DecodedImagePromotion
 
     init() {
         decodedImageLoad = Self.loadDecodedImage
+        decodedImagePromotion = Self.promoteDecodedImageLoad
     }
 
-    init(decodedImageLoad: @escaping DecodedImageLoad) {
+    init(
+        decodedImageLoad: @escaping DecodedImageLoad,
+        decodedImagePromotion: @escaping DecodedImagePromotion = { _, _ in }
+    ) {
         self.decodedImageLoad = decodedImageLoad
+        self.decodedImagePromotion = decodedImagePromotion
     }
 
     private nonisolated static func loadDecodedImage(
@@ -371,6 +422,16 @@ final class NativeTimelineMediaStore {
             for: url,
             maximumPixelDimension: dimension,
             priority: priority
+        )
+    }
+
+    private nonisolated static func promoteDecodedImageLoad(
+        _ url: URL,
+        _ dimension: Int
+    ) async {
+        await SharedDecodedImageLoader.shared.promoteImageLoad(
+            for: url,
+            maximumPixelDimension: dimension
         )
     }
 
@@ -493,8 +554,20 @@ final class NativeTimelineMediaStore {
         let subscriberID = StaticSubscriberID(owner: owner, row: subscriber)
         subscribers[key, default: [:]][subscriberID] = completion
         guard loading.insert(key).inserted else {
-            if priority == .visible {
-                loadingPriorities[key] = .visible
+            guard priority == .visible,
+                  loadingPriorities[key] == .prefetch,
+                  let loadID = loadingTaskIDs[key]
+            else { return }
+            loadingPriorities[key] = .visible
+            let decodedImagePromotion = decodedImagePromotion
+            Task { [weak self] in
+                for url in key.loadURLs {
+                    guard self?.loadingTaskIDs[key] == loadID else { return }
+                    await decodedImagePromotion(
+                        url,
+                        key.maximumPixelDimension
+                    )
+                }
             }
             return
         }
@@ -770,9 +843,9 @@ actor NativeTimelineMediaDecodeScheduler {
     func decode(
         _ data: Data,
         maximumPixelDimension: Int,
-        priority: MediaLoadPriority
+        priority: MediaLoadPriority,
+        waiterID: UUID = UUID()
     ) async -> CGImage? {
-        let waiterID = UUID()
         let acquiredPriority = await withTaskCancellationHandler {
             await acquire(waiterID: waiterID, priority: priority)
         } onCancel: {
@@ -801,6 +874,19 @@ actor NativeTimelineMediaDecodeScheduler {
         }
         release(priority: acquiredPriority)
         return Task.isCancelled ? nil : image
+    }
+
+    func promoteWaiter(_ id: UUID) {
+        guard let index = prefetchWaiters.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        let waiter = prefetchWaiters.remove(at: index)
+        if activeCount < Self.maximumConcurrentDecodes {
+            activeCount += 1
+            waiter.continuation.resume(returning: .visible)
+        } else {
+            visibleWaiters.append(waiter)
+        }
     }
 
     private func acquire(

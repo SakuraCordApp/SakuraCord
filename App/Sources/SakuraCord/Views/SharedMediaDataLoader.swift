@@ -18,18 +18,22 @@ actor SharedMediaDataLoader {
 
     private struct PendingRemoteLoad {
         var waiters: [UUID: RemoteWaiter]
+        var isPromotedToVisible = false
 
         var priority: MediaLoadPriority {
             let hasVisibleWaiter = waiters.values.contains {
                 $0.priority == .visible
             }
-            return hasVisibleWaiter ? .visible : .prefetch
+            return isPromotedToVisible || hasVisibleWaiter
+                ? .visible
+                : .prefetch
         }
     }
 
     private struct ActiveRemoteLoad {
         let id: UUID
         var priority: MediaLoadPriority
+        var isPromotedToVisible: Bool
         var waiters: [UUID: RemoteWaiter]
         let task: Task<Void, Never>
     }
@@ -113,6 +117,19 @@ actor SharedMediaDataLoader {
         }
         try Task.checkCancellation()
         return data
+    }
+
+    func promoteRemoteLoad(for url: URL) {
+        if var pending = pendingRemoteLoads[url] {
+            pending.isPromotedToVisible = true
+            pendingRemoteLoads[url] = pending
+        }
+        if var active = activeRemoteLoads[url] {
+            active.priority = .visible
+            active.isPromotedToVisible = true
+            activeRemoteLoads[url] = active
+        }
+        startEligibleRemoteLoads()
     }
 
 #if DEBUG
@@ -256,6 +273,7 @@ actor SharedMediaDataLoader {
         activeRemoteLoads[url] = ActiveRemoteLoad(
             id: loadID,
             priority: pending.priority,
+            isPromotedToVisible: pending.isPromotedToVisible,
             waiters: pending.waiters,
             task: task
         )
@@ -342,7 +360,9 @@ actor SharedMediaDataLoader {
         let hasVisibleWaiter = active.waiters.values.contains {
             $0.priority == .visible
         }
-        return hasVisibleWaiter ? .visible : .prefetch
+        return active.isPromotedToVisible || hasVisibleWaiter
+            ? .visible
+            : .prefetch
     }
 
     private func cancelPendingRemoteWaiter(
