@@ -101,6 +101,7 @@ final class AppModel {
     }
     var visibleChannels: [Channel] = []
     var hiddenChannelIDs: Set<ChannelID> = []
+    var checkingChannelIDs: Set<ChannelID> = []
     var selectedChannel: Channel?
     @ObservationIgnored var messages: [Message] = []
     @ObservationIgnored var messageRows: [MessageRowPresentation] = []
@@ -519,7 +520,7 @@ final class AppModel {
                 || channel.kind == .directMessage
                 || channel.kind == .groupDirectMessage
         else { return false }
-        return conversationAccess(for: channel) != .hidden
+        return conversationAccess(for: channel).isReadable
     }
 
     var openThreadAccess: ConversationAccess {
@@ -634,6 +635,8 @@ final class AppModel {
     @ObservationIgnored var accountChildTasks: [UUID: Task<Void, Never>] = [:]
     var presentsCachedStartup = false
     @ObservationIgnored var selectedChannelPersistenceTask:
+        Task<Void, Never>?
+    @ObservationIgnored var cachedWorkspacePersistenceTask:
         Task<Void, Never>?
     @ObservationIgnored let messagePersistenceSink = MessagePersistenceSink()
     @ObservationIgnored let runsChatPerformanceBenchmark: Bool

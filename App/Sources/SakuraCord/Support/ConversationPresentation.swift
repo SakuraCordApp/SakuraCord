@@ -10,6 +10,11 @@ nonisolated enum ConversationAccess: Equatable {
         if case let .readable(canSend) = self { return canSend }
         return false
     }
+
+    var isReadable: Bool {
+        if case .readable = self { return true }
+        return false
+    }
 }
 
 nonisolated enum DiscordPermissionBits {
@@ -51,6 +56,19 @@ nonisolated enum ChannelIconPresentation {
         case .groupDirectMessage: "person.2.fill"
         case .unknown: "questionmark"
         }
+    }
+
+    static func systemImage(
+        for channel: Channel,
+        access: ConversationAccess,
+        rulesChannelID: ChannelID?
+    ) -> String {
+        if access == .checking { return "lock.fill" }
+        return systemImage(
+            for: channel,
+            isHidden: access == .hidden,
+            rulesChannelID: rulesChannelID
+        )
     }
 
     static let forumPostSystemImage = "bubble.left.fill"

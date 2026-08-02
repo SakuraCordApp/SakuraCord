@@ -371,11 +371,7 @@ extension AppModel {
                 account: session
             )
             guard isCurrentAccountSession(session) else { return }
-            if let database = session.database {
-                Task.detached(priority: .background) {
-                    try? await database.saveBootstrapSnapshot(value)
-                }
-            }
+            scheduleCachedWorkspacePersistence()
         } catch {
             handleSessionStartFailure(error, account: session)
         }
@@ -581,6 +577,26 @@ extension AppModel {
             )
         }
         sessionState = .workspace
+    }
+
+    func scheduleCachedWorkspacePersistence() {
+        guard !presentsCachedStartup,
+              let snapshot,
+              let database
+        else { return }
+        let session = accountSession()
+        let cachedSnapshot = readState.cacheSnapshot(updating: snapshot)
+        cachedWorkspacePersistenceTask?.cancel()
+        cachedWorkspacePersistenceTask = Task { [weak self] in
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            try? await database.saveBootstrapSnapshot(cachedSnapshot)
+            guard let self,
+                  self.isCurrentAccountSession(session),
+                  !Task.isCancelled
+            else { return }
+            self.cachedWorkspacePersistenceTask = nil
+        }
     }
 
     func logBootstrapUnreadState(_ value: BootstrapSnapshot) {
@@ -976,7 +992,7 @@ extension AppModel {
         }
         if !visibleChannels.contains(where: { $0.id == selectedChannelID }) {
             let selectableChannels = visibleChannels.filter {
-                conversationAccess(for: $0) != .hidden
+                conversationAccess(for: $0).isReadable
             }
             selectedChannelID = Self.preferredInitialChannelID(in: selectableChannels)
         }
@@ -1134,6 +1150,8 @@ extension AppModel {
         cancelAccountChildTasks()
         selectedChannelPersistenceTask?.cancel()
         selectedChannelPersistenceTask = nil
+        cachedWorkspacePersistenceTask?.cancel()
+        cachedWorkspacePersistenceTask = nil
         channelLoadTask?.cancel()
         channelLoadTask = nil
         channelLoadGeneration &+= 1
@@ -1289,7 +1307,7 @@ extension AppModel {
                 channel.defaultForumLayout == .defaultLayout ? .list : channel.defaultForumLayout
             forumTagMatch = channel.defaultTagMatch
         }
-        guard selectedConversationAccess != .hidden else { return }
+        guard selectedConversationAccess.isReadable else { return }
         forumLoadTask = Task { [weak self] in
             await self?.loadForumPosts(reset: true)
         }
@@ -1354,7 +1372,7 @@ extension AppModel {
         guard !Task.isCancelled,
               let channelID = selectedChannelID,
               selectedChannel?.kind == .forum,
-              selectedConversationAccess != .hidden
+              selectedConversationAccess.isReadable
         else { return }
         let session = accountSession()
         let loadSignpost = Self.forumPerformanceSignposter.beginInterval("ForumPostsLoad")

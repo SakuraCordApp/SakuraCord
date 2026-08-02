@@ -439,7 +439,7 @@ private struct ChatRootView: View {
     private func channelToolbarSymbol(_ channel: Channel) -> String {
         ChannelIconPresentation.systemImage(
             for: channel,
-            isHidden: model.conversationAccess(for: channel) == .hidden,
+            access: model.conversationAccess(for: channel),
             rulesChannelID: selectedGuild?.rulesChannelID
         )
     }

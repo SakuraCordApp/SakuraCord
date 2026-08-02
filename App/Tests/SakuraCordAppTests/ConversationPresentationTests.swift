@@ -310,6 +310,21 @@ func `permission resolver ignores noncanonical numeric member ids`(_ overwriteID
     #expect(ChannelIconPresentation.forumPostSystemImage == "bubble.left.fill")
 }
 
+@Test func `unresolved channel access uses a locked icon`() {
+    let channel = Channel(
+        id: ChannelID(rawValue: 99),
+        guildID: GuildID(rawValue: 100),
+        name: "loading"
+    )
+    #expect(
+        ChannelIconPresentation.systemImage(
+            for: channel,
+            access: .checking,
+            rulesChannelID: nil
+        ) == "lock.fill"
+    )
+}
+
 @Test func `rules channel icon uses only the guild designation`() {
     let guildID = GuildID(rawValue: 100)
     let designatedRulesID = ChannelID(rawValue: 101)

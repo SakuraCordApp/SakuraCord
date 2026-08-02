@@ -339,6 +339,12 @@ public actor SakuraCordDatabase {
             try db.drop(index: "messages_on_timestamp")
             try db.drop(index: "messages_channel_timestamp")
         }
+        migrator.registerMigration("v7-refresh-bootstrap-unread-cache") { db in
+            // Snapshots written before v7 omitted the account notification
+            // mode and were not refreshed after read-state changes. Drop only
+            // that derived first-paint cache; live Ready will repopulate it.
+            try BootstrapSnapshotRecord.deleteAll(db)
+        }
         return migrator
     }
 }

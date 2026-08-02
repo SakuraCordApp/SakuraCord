@@ -26,7 +26,8 @@ import Testing
         ),
         guilds: [],
         channels: [],
-        members: []
+        members: [],
+        usesNewNotifications: false
     )
 
     #expect(try await database.bootstrapSnapshot() == nil)
@@ -396,7 +397,13 @@ import Testing
     ))
     try createVersionFiveDatabase(
         at: path,
-        messages: legacyMessages
+        messages: legacyMessages,
+        snapshot: BootstrapSnapshot(
+            currentUser: user,
+            guilds: [],
+            channels: [],
+            members: []
+        )
     )
 
     let upgraded = try SakuraCordDatabase(
@@ -405,6 +412,7 @@ import Testing
     )
     let newest = try await upgraded.messages(in: channelID, limit: 2)
     #expect(newest.map(\.id.rawValue) == [1_200, unsignedHighID])
+    #expect(try await upgraded.bootstrapSnapshot() == nil)
 
     let inspectionQueue = try DatabaseQueue(path: path)
     let indexNames = try await inspectionQueue.read { db in
@@ -435,7 +443,8 @@ private func snowflakeOrderData(_ rawValue: UInt64) -> Data {
 
 private func createVersionFiveDatabase(
     at path: String,
-    messages: [Message]
+    messages: [Message],
+    snapshot: BootstrapSnapshot
 ) throws {
     let queue = try DatabaseQueue(path: path)
     var migrator = DatabaseMigrator()
@@ -501,5 +510,12 @@ private func createVersionFiveDatabase(
                 ]
             )
         }
+        try db.execute(
+            sql: """
+            INSERT INTO bootstrapSnapshots (id, payload, updatedAt)
+            VALUES (1, ?, ?)
+            """,
+            arguments: [try encoder.encode(snapshot), Date.now]
+        )
     }
 }

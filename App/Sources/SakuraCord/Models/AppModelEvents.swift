@@ -199,8 +199,20 @@ extension AppModel {
             projectedHiddenChannelIDs.contains($0)
                 && !hiddenChannelIDs.contains($0)
         } ?? false
+        let projectedCheckingChannelIDs = Set(
+            projection.accessByChannelID.compactMap { channelID, access in
+                access == .checking ? channelID : nil
+            }
+        )
+        let selectedChannelBecameReadable = selectedChannelID.map { channelID in
+            checkingChannelIDs.contains(channelID)
+                && projection.accessByChannelID[channelID]?.isReadable == true
+        } ?? false
         if projectedHiddenChannelIDs != hiddenChannelIDs {
             hiddenChannelIDs = projectedHiddenChannelIDs
+        }
+        if projectedCheckingChannelIDs != checkingChannelIDs {
+            checkingChannelIDs = projectedCheckingChannelIDs
         }
         if selectedChannelBecameHidden {
             switch selectedChannel?.kind {
@@ -209,6 +221,13 @@ extension AppModel {
             case .voice:
                 break
             default:
+                beginSelectedChannelLoad()
+            }
+        }
+        if selectedChannelBecameReadable {
+            if selectedChannel?.kind == .forum {
+                beginForumLoad()
+            } else if selectedChannel?.kind != .voice {
                 beginSelectedChannelLoad()
             }
         }
@@ -233,12 +252,10 @@ extension AppModel {
             let access = conversationAccess(for: channel)
             accessByChannelID[channel.id] = access
             switch access {
-            case .hidden:
+            case .hidden, .checking:
                 accessibilityByChannelID[channel.id] = false
             case .readable:
                 accessibilityByChannelID[channel.id] = true
-            case .checking:
-                break
             }
         }
         return UnreadAccessProjection(
@@ -444,6 +461,7 @@ extension AppModel {
                 snapshot = value
             }
             refreshUnreadPresentation()
+            scheduleCachedWorkspacePersistence()
         case .notificationSettingsChanged(let settings):
             applyNotificationSettings(settings)
             refreshUnreadPresentation()
@@ -560,6 +578,7 @@ extension AppModel {
         } else {
             acknowledgeIfEligible(channelID: message.channelID)
         }
+        scheduleCachedWorkspacePersistence()
     }
 
     func consumeMessageUpdated(
@@ -628,6 +647,7 @@ extension AppModel {
             )
         }
         refreshUnreadPresentation()
+        scheduleCachedWorkspacePersistence()
         if let selectedChannelID { acknowledgeIfEligible(channelID: selectedChannelID) }
         if let threadID = openThread?.id { acknowledgeIfEligible(channelID: threadID) }
     }
@@ -635,6 +655,7 @@ extension AppModel {
     func consumeReadStateChange(_ state: ChannelReadState) {
         if readState.applyRemote(state) {
             refreshUnreadPresentation()
+            scheduleCachedWorkspacePersistence()
             if !readState.unread(channelID: state.channelID) {
                 cancelNativeNotifications(channelID: state.channelID)
             }
@@ -666,6 +687,7 @@ extension AppModel {
         }
         readState.replaceChannels(in: guildID, with: channels)
         refreshUnreadPresentation(appliesAccessImmediately: true)
+        scheduleCachedWorkspacePersistence()
     }
 
     func consumeForumPostsChanged(channelID: ChannelID, posts: [ForumPost]) {
@@ -854,6 +876,7 @@ extension AppModel {
         }
         updateServerRail(from: value)
         refreshUnreadPresentation(appliesAccessImmediately: true)
+        scheduleCachedWorkspacePersistence()
         selectGuild(selectedGuildID)
     }
 
@@ -864,6 +887,7 @@ extension AppModel {
         value.guilds[index] = guild
         snapshot = value
         readState.merge(guilds: [guild])
+        scheduleCachedWorkspacePersistence()
     }
 
     func consumeGuildLayoutChanged(guilds: [Guild], railItems: [GuildRailItem]) {
@@ -873,6 +897,7 @@ extension AppModel {
         snapshot = value
         readState.retainGuilds(Set(guilds.map(\.id)))
         readState.merge(guilds: guilds)
+        scheduleCachedWorkspacePersistence()
         updateServerRail(from: value)
     }
 

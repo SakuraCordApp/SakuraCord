@@ -130,6 +130,7 @@ struct ChannelSidebarView: View {
                                 rulesChannelID: guild?.rulesChannelID,
                                 activeVoiceChannelID: activeVoiceChannelID,
                                 hiddenChannelIDs: hiddenChannelIDs,
+                                checkingChannelIDs: checkingChannelIDs,
                                 voiceParticipantsByChannel: voiceSidebarParticipantsByChannel
                             )
                         }
@@ -202,6 +203,10 @@ struct ChannelSidebarView: View {
 
     private var hiddenChannelIDs: Set<ChannelID> {
         voiceModel.hiddenChannelIDs
+    }
+
+    private var checkingChannelIDs: Set<ChannelID> {
+        voiceModel.checkingChannelIDs
     }
 
     private var displayedChannels: [Channel] {
@@ -348,6 +353,7 @@ private struct ChannelGroupRows: View {
     let rulesChannelID: ChannelID?
     let activeVoiceChannelID: ChannelID?
     let hiddenChannelIDs: Set<ChannelID>
+    let checkingChannelIDs: Set<ChannelID>
     let voiceParticipantsByChannel: [ChannelID: [VoiceSidebarParticipant]]
     @SceneStorage private var isExpanded: Bool
 
@@ -358,6 +364,7 @@ private struct ChannelGroupRows: View {
         rulesChannelID: ChannelID?,
         activeVoiceChannelID: ChannelID?,
         hiddenChannelIDs: Set<ChannelID>,
+        checkingChannelIDs: Set<ChannelID>,
         voiceParticipantsByChannel: [ChannelID: [VoiceSidebarParticipant]]
     ) {
         self.model = model
@@ -366,6 +373,7 @@ private struct ChannelGroupRows: View {
         self.rulesChannelID = rulesChannelID
         self.activeVoiceChannelID = activeVoiceChannelID
         self.hiddenChannelIDs = hiddenChannelIDs
+        self.checkingChannelIDs = checkingChannelIDs
         self.voiceParticipantsByChannel = voiceParticipantsByChannel
         _isExpanded = SceneStorage(wrappedValue: true, "dev.sakuracord.channel-category.\(group.id).expanded")
     }
@@ -380,7 +388,8 @@ private struct ChannelGroupRows: View {
                             channel: channel,
                             rulesChannelID: rulesChannelID,
                             isVoiceConnected: activeVoiceChannelID == channel.id,
-                            isHidden: hiddenChannelIDs.contains(channel.id)
+                            isHidden: hiddenChannelIDs.contains(channel.id),
+                            isChecking: checkingChannelIDs.contains(channel.id)
                         )
                         .tag(channel.id)
                         ForEach(voiceParticipantsByChannel[channel.id] ?? []) { participant in
@@ -391,7 +400,8 @@ private struct ChannelGroupRows: View {
                             model: model,
                             channel: channel,
                             rulesChannelID: rulesChannelID,
-                            isHidden: hiddenChannelIDs.contains(channel.id)
+                            isHidden: hiddenChannelIDs.contains(channel.id),
+                            isChecking: checkingChannelIDs.contains(channel.id)
                         )
                         .tag(channel.id)
                     }
@@ -651,17 +661,18 @@ private struct ChannelRow: View {
     var rulesChannelID: ChannelID?
     var isVoiceConnected = false
     var isHidden = false
+    var isChecking = false
 
     var body: some View {
         HStack(spacing: 8) {
             Capsule()
                 .fill(Color.white)
                 .frame(width: 4, height: 8)
-                .opacity(channel.unreadCount > 0 ? 1 : 0)
+                .opacity(showsUnread ? 1 : 0)
                 .frame(width: 8)
             Image(systemName: systemImage)
                 .fontWeight(
-                    channel.unreadCount > 0 && !isMuted
+                    showsUnread && !isMuted
                         ? .medium
                         : .regular
                 )
@@ -672,7 +683,7 @@ private struct ChannelRow: View {
                 .frame(width: 16)
             Text(channel.name)
                 .fontWeight(
-                    channel.unreadCount > 0 && !isMuted
+                    showsUnread && !isMuted
                         ? .medium
                         : .regular
                 )
@@ -684,12 +695,12 @@ private struct ChannelRow: View {
                     .font(.caption)
                     .foregroundStyle(.green)
             }
-            if channel.kind == .forum, channel.unreadCount > 0 {
+            if channel.kind == .forum, showsUnread {
                 Text("\(channel.unreadCount) New")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Color(hex: 0x5865F2))
             }
-            if channel.mentionCount > 0 {
+            if !isChecking, channel.mentionCount > 0 {
                 Text(channel.mentionCount, format: .number)
                     .font(.caption2.bold())
                     .foregroundStyle(.white)
@@ -706,7 +717,7 @@ private struct ChannelRow: View {
                 isUnread: model.isChannelUnread(channel.id),
                 isMutationPending:
                     model.isChannelNotificationMutationPending(channel.id),
-                allowsMutations: !model.presentsCachedStartup,
+                allowsMutations: !model.presentsCachedStartup && !isChecking,
                 directOverride: model.channelNotificationOverride(for: channel),
                 inheritedLevel:
                     model.inheritedChannelNotificationLevel(for: channel),
@@ -744,7 +755,8 @@ private struct ChannelRow: View {
     }
 
     private var systemImage: String {
-        ChannelIconPresentation.systemImage(
+        if isChecking { return "lock.fill" }
+        return ChannelIconPresentation.systemImage(
             for: channel,
             isHidden: isHidden,
             rulesChannelID: rulesChannelID
@@ -755,11 +767,15 @@ private struct ChannelRow: View {
         model.isChannelMuted(channel)
     }
 
+    private var showsUnread: Bool {
+        !isChecking && channel.unreadCount > 0
+    }
+
     private var channelIconForegroundStyle: Color {
         if isMuted {
             return .primary.opacity(0.32)
         }
-        return channel.unreadCount > 0
+        return showsUnread
             ? .primary
             : .primary.opacity(0.66)
     }
@@ -768,12 +784,13 @@ private struct ChannelRow: View {
         if isMuted {
             return .primary.opacity(0.35)
         }
-        return channel.unreadCount > 0
+        return showsUnread
             ? .primary
             : .primary.opacity(0.78)
     }
 
     private var accessibilityValue: String {
+        if isChecking { return "Checking access" }
         var values: [String] = []
         if channel.kind == .forum, channel.unreadCount > 0 {
             values.append(

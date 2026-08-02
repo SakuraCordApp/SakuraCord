@@ -1659,6 +1659,7 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
         try container.encode(members, forKey: .members)
         try container.encode(readStates, forKey: .readStates)
         try container.encode(notificationSettings, forKey: .notificationSettings)
+        try container.encode(usesNewNotifications, forKey: .usesNewNotifications)
     }
 }
 

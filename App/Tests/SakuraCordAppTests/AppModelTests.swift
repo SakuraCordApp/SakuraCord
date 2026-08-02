@@ -811,6 +811,70 @@ import UserNotifications
 }
 
 @MainActor
+@Test func `unresolved channel waits for readable access before loading`() async throws {
+    let provider = InaccessibleChannelRequestCountingProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    var snapshot = try #require(model.snapshot)
+    var guild = try #require(snapshot.guilds.first)
+    guild.currentUserPermissions = nil
+    let guildIndex = try #require(snapshot.guilds.firstIndex { $0.id == guild.id })
+    snapshot.guilds[guildIndex] = guild
+    let channel = Channel(
+        id: ChannelID(rawValue: 77_150),
+        guildID: guild.id,
+        name: "permission-loading",
+        kind: .text,
+        lastMessageID: MessageID(rawValue: 77_151)
+    )
+    snapshot.channels.append(channel)
+    model.snapshot = snapshot
+    model.serverRailGuildsByID[guild.id] = guild
+    model.selectedGuildID = guild.id
+    model.currentUserRoleIDsByGuild[guild.id] = nil
+    model.membersByGuildID[guild.id] = nil
+    model.guildRolesByGuildID[guild.id] = nil
+    model.membersByID = [:]
+    model.guildRoles = []
+    model.refreshUnreadPresentation(appliesAccessImmediately: true)
+
+    #expect(model.conversationAccess(for: channel) == .checking)
+    #expect(model.checkingChannelIDs.contains(channel.id))
+    #expect(model.readState.entries[channel.id]?.isAccessible == false)
+    let checkingVoice = Channel(
+        id: ChannelID(rawValue: 77_152),
+        guildID: guild.id,
+        name: "permission-loading-voice",
+        kind: .voice
+    )
+    #expect(!model.canJoinVoice(checkingVoice))
+
+    model.selectedChannelID = channel.id
+    try await Task.sleep(for: .milliseconds(40))
+    #expect(await provider.messageRequestCount(for: channel.id) == 0)
+
+    guild.currentUserPermissions = .max
+    var resolvedSnapshot = try #require(model.snapshot)
+    let resolvedGuildIndex = try #require(
+        resolvedSnapshot.guilds.firstIndex { $0.id == guild.id }
+    )
+    resolvedSnapshot.guilds[resolvedGuildIndex] = guild
+    model.snapshot = resolvedSnapshot
+    model.serverRailGuildsByID[guild.id] = guild
+    model.currentUserRoleIDsByGuild[guild.id] = []
+    model.refreshUnreadPresentation(appliesAccessImmediately: true)
+
+    #expect(await eventuallyOnMain {
+        model.selectedConversationAccess.isReadable
+            && !model.checkingChannelIDs.contains(channel.id)
+    })
+    #expect(await eventuallyOnMain {
+        !model.isLoadingMessages
+    })
+    #expect(await provider.messageRequestCount(for: channel.id) == 1)
+}
+
+@MainActor
 @Test func `selecting an inaccessible forum performs no forum read`() async throws {
     let provider = InaccessibleChannelRequestCountingProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
@@ -935,6 +999,44 @@ import UserNotifications
     model.consumeChannelsChanged(guildID: nil, channels: [])
     #expect(model.selectedChannelID == channel.id)
     #expect(model.selectedChannel == channel)
+}
+
+@MainActor
+@Test func `accepted read acknowledgement updates the next cached startup`() async throws {
+    let database = try SakuraCordDatabase(inMemory: true)
+    let provider = MockChatProvider()
+    let model = AppModel(
+        launchMode: .offlineTesting,
+        provider: provider,
+        readAcknowledgementTiming: .init(debounce: .milliseconds(1))
+    )
+    model.database = database
+    await model.start()
+    let channelID = ChannelID(rawValue: 210)
+    let target = try #require(model.readState.entries[channelID]?.latestKnownMessageID)
+
+    model.markConversationRead(channelID: channelID)
+    #expect(await eventuallyOnMain {
+        model.readState.entries[channelID]?.pendingAcknowledgementID == nil
+    })
+    for _ in 0 ..< 500 {
+        let cached = try await database.bootstrapSnapshot()
+        if cached?.readStates.first(where: { $0.channelID == channelID })?
+            .lastAcknowledgedMessageID == target
+        {
+            break
+        }
+        try await Task.sleep(for: .milliseconds(1))
+    }
+
+    let cached = try #require(try await database.bootstrapSnapshot())
+    #expect(
+        cached.readStates.first(where: { $0.channelID == channelID })?
+            .lastAcknowledgedMessageID == target
+    )
+    let restored = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+    await restored.applyCachedBootstrap(cached, selectedChannelID: channelID)
+    #expect(!restored.isChannelUnread(channelID))
 }
 
 @MainActor
@@ -1196,7 +1298,8 @@ import UserNotifications
     await model.start()
 
     #expect(await eventuallyOnMain {
-        model.authorPresentation(for: model.messages[0]).roleColorHex == 0xFF7900
+        guard let message = model.messages.first else { return false }
+        return model.authorPresentation(for: message).roleColorHex == 0xFF7900
     })
     #expect(await provider.resolutionRequests() == [[UserID(rawValue: 76_101)]])
 }
@@ -1289,6 +1392,7 @@ import UserNotifications
             Guild(
                 id: guildID,
                 name: "Legacy unread policy",
+                currentUserPermissions: .max,
                 defaultMessageNotifications: .onlyMentions
             )
         ],
@@ -1334,6 +1438,7 @@ import UserNotifications
             Guild(
                 id: guildID,
                 name: "Reconnect policy",
+                currentUserPermissions: .max,
                 defaultMessageNotifications: .onlyMentions
             )
         ],
@@ -4785,7 +4890,11 @@ private actor ChannelLoadTestProvider: ChatProvider {
 }
 
 private actor LocalHistoryMemberTestProvider: ChatProvider {
-    private let guild = Guild(id: GuildID(rawValue: 76_000), name: "History Guild")
+    private let guild = Guild(
+        id: GuildID(rawValue: 76_000),
+        name: "History Guild",
+        currentUserPermissions: .max
+    )
     private let currentUser = User(
         id: UserID(rawValue: 76_001),
         username: "current",
@@ -5241,7 +5350,11 @@ private actor SuspendedAccountLoadTestProvider: ChatProvider {
 
     init(label: String, suspendsLoads: Bool) {
         self.suspendsLoads = suspendsLoads
-        let guild = Guild(id: guildID, name: "Shared guild")
+        let guild = Guild(
+            id: guildID,
+            name: "Shared guild",
+            currentUserPermissions: .max
+        )
         let forum = Channel(
             id: forumID,
             guildID: guildID,
@@ -5390,7 +5503,11 @@ private actor SuspendedAccountLoadTestProvider: ChatProvider {
 }
 
 private actor StartupUnreadTestProvider: ChatProvider {
-    private let guild = Guild(id: GuildID(rawValue: 77_000), name: "Startup Guild")
+    private let guild = Guild(
+        id: GuildID(rawValue: 77_000),
+        name: "Startup Guild",
+        currentUserPermissions: .max
+    )
     private let user = User(
         id: UserID(rawValue: 77_001),
         username: "startup-tester",
@@ -5480,7 +5597,11 @@ private actor ForumVisitAcknowledgementTestProvider: ChatProvider {
     nonisolated let forumID = ChannelID(rawValue: 96_002)
     nonisolated let newPostID = ChannelID(rawValue: 96_300)
     nonisolated let unreadPostID = ChannelID(rawValue: 96_240)
-    private let guild = Guild(id: GuildID(rawValue: 96_000), name: "Forum Visits")
+    private let guild = Guild(
+        id: GuildID(rawValue: 96_000),
+        name: "Forum Visits",
+        currentUserPermissions: .max
+    )
     private let user = User(
         id: UserID(rawValue: 96_001),
         username: "forum-visitor",
@@ -5611,7 +5732,11 @@ private actor ForumVisitAcknowledgementTestProvider: ChatProvider {
 }
 
 private actor ForumPaginationTestProvider: ChatProvider {
-    private let guild = Guild(id: GuildID(rawValue: 95_000), name: "Forum Test")
+    private let guild = Guild(
+        id: GuildID(rawValue: 95_000),
+        name: "Forum Test",
+        currentUserPermissions: .max
+    )
     private let user = User(
         id: UserID(rawValue: 95_001),
         username: "forum-tester",
@@ -6072,7 +6197,11 @@ private final class SuspendedAccountNotificationService: NativeNotificationServi
 }
 
 private actor VoiceMigrationTestProvider: ChatProvider {
-    private let guild = Guild(id: GuildID(rawValue: 92000), name: "Voice Test")
+    private let guild = Guild(
+        id: GuildID(rawValue: 92000),
+        name: "Voice Test",
+        currentUserPermissions: .max
+    )
     private let user = User(id: UserID(rawValue: 92001), username: "tester", displayName: "Tester")
     private let channel = Channel(
         id: ChannelID(rawValue: 92002),
