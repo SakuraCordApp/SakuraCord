@@ -250,7 +250,6 @@ extension AppModel {
                     messageID: mutation.messageID,
                     token: response.token
                 )
-                scheduleCachedWorkspacePersistence()
                 logReadAcknowledgementAccepted(channelID: channelID, mutation: mutation)
             } catch is CancellationError {
                 return
@@ -517,6 +516,5 @@ extension AppModel {
         value.notificationSettings.removeAll { $0.guildID == settings.guildID }
         value.notificationSettings.append(settings)
         snapshot = value
-        scheduleCachedWorkspacePersistence()
     }
 }

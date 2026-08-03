@@ -1,90 +1,235 @@
 import AppKit
 import SwiftUI
 
+/// A data-free representation of the complete chat chrome. The authenticated
+/// workspace is not mounted until the live bootstrap has completed, so none of
+/// these placeholders can expose stale account state from a previous process.
 struct SakuraCordSessionLoadingView: View {
     let state: AppModel.SessionState
     let isOfflineTesting: Bool
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var appeared = false
-    @State private var animationStart = Date()
+    private let pulse = false
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
-        GeometryReader { geometry in
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion)) { timeline in
-                let elapsed = reduceMotion ? 0 : timeline.date.timeIntervalSince(animationStart)
-
-                ZStack {
-                    SakuraCordAuroraBackdrop(elapsed: elapsed)
-                    SakuraCordSakuraPetalField(elapsed: elapsed, size: geometry.size)
-                        .accessibilityHidden(true)
-
-                    loadingHero(elapsed: elapsed)
-                        .padding(48)
-                        .scaleEffect(appeared ? 1 : 0.94)
-                        .opacity(appeared ? 1 : 0)
-
-                    windowDragRegion
-                }
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            HStack(spacing: 0) {
+                serverRail
+                channelSidebar
             }
+            .navigationSplitViewColumnWidth(
+                min: ChatChromeMetrics.serverRailWidth + 190,
+                ideal: ChatChromeMetrics.serverRailWidth + 230,
+                max: ChatChromeMetrics.serverRailWidth + 310
+            )
+        } detail: {
+            workspace
+                .navigationTitle("")
+                .toolbar { detailToolbar }
         }
-        .ignoresSafeArea()
+        .toolbar { conversationToolbar }
+        .overlay(alignment: .topLeading) {
+            SkeletonShape(cornerRadius: 4, pulse: pulse)
+                .frame(width: 132, height: 14)
+                .offset(
+                    x: ChatChromeMetrics.sidebarTitleLeadingOffset,
+                    y: ChatChromeMetrics.sidebarTitleTopOffset + 7
+                )
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .preferredColorScheme(.dark)
-        .toolbar(removing: .title)
-        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-        .onAppear {
-            animationStart = Date()
-            guard !reduceMotion else {
-                appeared = true
-                return
-            }
-            withAnimation(.spring(duration: 0.9, bounce: 0.22)) {
-                appeared = true
-            }
-        }
-    }
-
-    private func loadingHero(elapsed: TimeInterval) -> some View {
-        VStack(spacing: 0) {
-            ZStack {
-                Image(nsImage: NSApplication.shared.applicationIconImage)
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFit()
-                    .frame(width: 112, height: 112)
-                    .offset(y: reduceMotion ? 0 : sin(elapsed * 1.25) * 3)
-                    .shadow(color: Color.black.opacity(0.36), radius: 28, y: 15)
-                    .accessibilityHidden(true)
-            }
-            .padding(.bottom, 20)
-
-            Text("Opening SakuraCord")
-                .font(.system(size: 30, weight: .bold, design: .rounded))
-                .tracking(-0.5)
-                .foregroundStyle(.white)
-
-            HStack(spacing: 11) {
-                LoadingPulse(elapsed: elapsed, reduceMotion: reduceMotion)
-                Text(detail)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.72))
-            }
-            .padding(.top, 13)
-        }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("Opening SakuraCord. \(detail)")
     }
 
-    private var windowDragRegion: some View {
-        VStack(spacing: 0) {
-            Color.clear
-                .contentShape(Rectangle())
-                .frame(height: 52)
-                .gesture(WindowDragGesture())
-                .allowsWindowActivationEvents(true)
-            Spacer(minLength: 0)
+    private var serverRail: some View {
+        ScrollView {
+            VStack(spacing: 10) {
+                railItem(cornerRadius: 14, delay: 0)
+                Divider().padding(.horizontal, 12)
+                ForEach(0 ..< 7, id: \.self) { index in
+                    railItem(
+                        cornerRadius: index == 0 ? 14 : 22,
+                        delay: Double(index + 1) * 0.06
+                    )
+                }
+            }
+            .padding(.bottom, 12)
         }
+        .scrollIndicators(.hidden)
+        .frame(width: ChatChromeMetrics.serverRailWidth)
+    }
+
+    private func railItem(cornerRadius: CGFloat, delay: Double) -> some View {
+        HStack(spacing: 5) {
+            Color.clear.frame(width: 7, height: 40)
+            SkeletonShape(cornerRadius: cornerRadius, pulse: pulse, delay: delay)
+                .frame(width: 44, height: 44)
+        }
+        .frame(width: ChatChromeMetrics.serverRailWidth, height: 46, alignment: .leading)
+    }
+
+    private var channelSidebar: some View {
+        VStack(spacing: 0) {
+            List {
+                ForEach(0 ..< 3, id: \.self) { section in
+                    Section {
+                        ForEach(0 ..< (section == 1 ? 4 : 3), id: \.self) { row in
+                            HStack(spacing: 8) {
+                                SkeletonShape(
+                                    cornerRadius: 4,
+                                    pulse: pulse,
+                                    delay: Double(row + section) * 0.05
+                                )
+                                .frame(width: 16, height: 16)
+                                SkeletonShape(
+                                    cornerRadius: 4,
+                                    pulse: pulse,
+                                    delay: Double(row + section) * 0.05
+                                )
+                                .frame(width: row.isMultiple(of: 2) ? 112 : 84, height: 12)
+                            }
+                            .frame(height: 24)
+                        }
+                    } header: {
+                        SkeletonShape(cornerRadius: 3, pulse: pulse, delay: Double(section) * 0.08)
+                            .frame(width: section == 1 ? 88 : 68, height: 9)
+                            .padding(.top, section == 0 ? 0 : 8)
+                    }
+                }
+            }
+            .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
+            .contentMargins(.top, ChatChromeMetrics.channelListTopPadding, for: .scrollContent)
+
+            GlassEffectContainer(spacing: 0) {
+                HStack(spacing: 9) {
+                    SkeletonShape(cornerRadius: 17, pulse: pulse)
+                        .frame(width: 34, height: 34)
+                    VStack(alignment: .leading, spacing: 4) {
+                        SkeletonShape(cornerRadius: 4, pulse: pulse)
+                            .frame(width: 88, height: 11)
+                        SkeletonShape(cornerRadius: 3, pulse: pulse, delay: 0.1)
+                            .frame(width: 58, height: 8)
+                    }
+                    Spacer(minLength: 4)
+                    SkeletonShape(cornerRadius: 7, pulse: pulse, delay: 0.15)
+                        .frame(width: 22, height: 22)
+                }
+                .padding(.horizontal, 10)
+                .frame(height: ChatChromeMetrics.controlHeight)
+                .glassEffect(
+                    .regular,
+                    in: ConcentricRectangle(
+                        corners: .concentric(
+                            minimum: .fixed(ChatChromeMetrics.composerMinimumCornerRadius)
+                        ),
+                        isUniform: true
+                    )
+                )
+            }
+            .padding(.horizontal, 8)
+            .padding(.top, 8)
+            .padding(.bottom, 12)
+        }
+        .overlay {
+            SidebarChromeSeparator(
+                cornerRadius: ChatChromeMetrics.sidebarContentCornerRadius,
+                strokeInset: 0.5
+            )
+            .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+            .allowsHitTesting(false)
+        }
+    }
+
+    private var workspace: some View {
+        HStack(spacing: 0) {
+            messageTimeline
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Divider()
+            memberList
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var messageTimeline: some View {
+        MessageTimelineLoadingSkeleton(
+            bottomContentInset: ChatDetailLayoutPolicy.defaultFloatingFooterHeight
+        )
+        .overlay(alignment: .bottom) {
+            SkeletonShape(
+                cornerRadius: ChatChromeMetrics.composerMinimumCornerRadius,
+                pulse: pulse
+            )
+            .frame(height: ChatChromeMetrics.controlHeight)
+            .padding(.horizontal, ChatChromeMetrics.composerWindowInset)
+            .padding(.bottom, ChatChromeMetrics.composerWindowInset)
+        }
+    }
+
+    private var memberList: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(0 ..< 2, id: \.self) { section in
+                    SkeletonShape(cornerRadius: 4, pulse: pulse, delay: Double(section) * 0.08)
+                        .frame(width: section == 0 ? 92 : 70, height: 11)
+                        .padding(.horizontal, 10)
+                        .padding(.top, 12)
+                        .padding(.bottom, 5)
+                    ForEach(0 ..< (section == 0 ? 4 : 3), id: \.self) { index in
+                        HStack(spacing: 10) {
+                            SkeletonShape(cornerRadius: 17, pulse: pulse, delay: Double(index) * 0.05)
+                                .frame(width: 34, height: 34)
+                            VStack(alignment: .leading, spacing: 5) {
+                                SkeletonShape(cornerRadius: 4, pulse: pulse, delay: Double(index) * 0.05)
+                                    .frame(width: index.isMultiple(of: 3) ? 108 : 78, height: 11)
+                                if index.isMultiple(of: 2) {
+                                    SkeletonShape(cornerRadius: 3, pulse: pulse, delay: Double(index) * 0.05)
+                                        .frame(width: 62, height: 8)
+                                }
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .frame(height: 48)
+                        .padding(.horizontal, 10)
+                    }
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 10)
+        }
+        .frame(width: ChatChromeMetrics.memberListWidth)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.45))
+    }
+
+    @ToolbarContentBuilder
+    private var conversationToolbar: some ToolbarContent {
+        ToolbarItem(placement: .navigation) {
+            HStack(spacing: 8) {
+                SkeletonShape(cornerRadius: 4, pulse: pulse)
+                    .frame(width: 16, height: 16)
+                SkeletonShape(cornerRadius: 4, pulse: pulse, delay: 0.08)
+                    .frame(width: 112, height: 13)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+        }
+        .visibilityPriority(.high)
+    }
+
+    @ToolbarContentBuilder
+    private var detailToolbar: some ToolbarContent {
+        ToolbarSpacer(.flexible)
+        ToolbarItemGroup {
+            ForEach(0 ..< 3, id: \.self) { index in
+                SkeletonShape(cornerRadius: 6, pulse: pulse, delay: Double(index) * 0.05)
+                    .frame(width: 20, height: 20)
+            }
+        }
+        .visibilityPriority(.high)
     }
 
     private var detail: String {
@@ -99,6 +244,19 @@ struct SakuraCordSessionLoadingView: View {
     }
 }
 
+private struct SkeletonShape: View {
+    let cornerRadius: CGFloat
+    let pulse: Bool
+    var delay = 0.0
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(.white.opacity(0.09))
+    }
+}
+
+// Shared by the signed-out login surface. The session-loading surface above
+// intentionally uses only structural placeholders.
 struct SakuraCordAuroraBackdrop: View {
     let elapsed: TimeInterval
 
@@ -146,26 +304,6 @@ struct SakuraCordAuroraBackdrop: View {
                 endRadius: 800
             )
         }
-    }
-}
-
-private struct LoadingPulse: View {
-    let elapsed: TimeInterval
-    let reduceMotion: Bool
-
-    var body: some View {
-        HStack(spacing: 4) {
-            ForEach(0 ..< 3, id: \.self) { index in
-                let phase = reduceMotion ? Double(index) * 0.5 : elapsed * 3.2 - Double(index) * 0.7
-                let amount = (sin(phase) + 1) / 2
-                Circle()
-                    .fill(Color(hex: 0xFF86B5))
-                    .frame(width: 5, height: 5)
-                    .scaleEffect(0.78 + amount * 0.32)
-                    .opacity(0.38 + amount * 0.62)
-            }
-        }
-        .accessibilityHidden(true)
     }
 }
 
@@ -221,7 +359,8 @@ private enum SakuraPetal {
         let duration = 10 + seed * 9
         let progress = fraction(elapsed / duration + secondarySeed)
         let baseX = seed * max(canvasSize.width, 1)
-        let sway = sin(elapsed * (0.45 + secondarySeed * 0.25) + seed * 12) * (22 + seed * 34)
+        let sway = sin(elapsed * (0.45 + secondarySeed * 0.25) + seed * 12)
+            * (22 + seed * 34)
         let width = max(canvasSize.width, 1)
         let horizontalPosition = wrapped(baseX + sway, limit: width)
         let verticalPosition = -30 + progress * (canvasSize.height + 60)

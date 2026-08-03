@@ -41,11 +41,10 @@ public final class DiscordClientMetadata: @unchecked Sendable {
         self.locale = locale
         self.timeZone = timeZone
         self.acceptLanguage = acceptLanguage ?? Self.acceptLanguageHeader()
-        let chromeVersion = "138.0.7204.251"
         let webKitVersion = "537.36"
         let osVersion = osVersion ?? Self.operatingSystemVersion()
         userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/\(webKitVersion) "
-            + "(KHTML, like Gecko) discord/\(baseline.desktopVersion) Chrome/\(chromeVersion) "
+            + "(KHTML, like Gecko) discord/\(baseline.desktopVersion) Chrome/\(baseline.chromiumVersion) "
             + "Electron/\(baseline.electronVersion) Safari/\(webKitVersion)"
         self.fingerprint = fingerprint?.isEmpty == false ? fingerprint : nil
         storedInstallationID = installationID?.isEmpty == false ? installationID : nil
@@ -69,14 +68,20 @@ public final class DiscordClientMetadata: @unchecked Sendable {
             "browser_version": .string(baseline.electronVersion),
             "os_sdk_version": .string(osVersion.split(separator: ".").first.map(String.init) ?? ""),
             "client_build_number": .number(Double(baseline.webBuildNumber)),
+            "native_build_number": .number(Double(baseline.nativeBuildNumber)),
             "client_event_source": .null,
         ]
     }
 
-    func properties(clientAppState: String) -> [String: JSONValue] {
+    func properties(
+        clientAppState: String,
+        includesHeartbeatSession: Bool = true
+    ) -> [String: JSONValue] {
         var value = baseProperties
         value["client_app_state"] = .string(clientAppState)
-        value["client_heartbeat_session_id"] = .string(currentHeartbeatSession().sessionID)
+        if includesHeartbeatSession {
+            value["client_heartbeat_session_id"] = .string(currentHeartbeatSession().sessionID)
+        }
         return value
     }
 
@@ -143,20 +148,30 @@ public final class DiscordClientMetadata: @unchecked Sendable {
         }
     }
 
-    func superPropertiesHeader(clientAppState: String = "focused") throws -> String {
+    func superPropertiesHeader(
+        clientAppState: String = "focused",
+        includesHeartbeatSession: Bool = true
+    ) throws -> String {
         try JSONEncoder().encode(
-            JSONValue.object(properties(clientAppState: clientAppState))
+            JSONValue.object(properties(
+                clientAppState: clientAppState,
+                includesHeartbeatSession: includesHeartbeatSession
+            ))
         ).base64EncodedString()
     }
 
     public func apply(
         to request: inout URLRequest,
-        clientAppState: String = "focused"
+        clientAppState: String = "focused",
+        includesHeartbeatSession: Bool = true
     ) throws {
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("*/*", forHTTPHeaderField: "Accept")
         try request.setValue(
-            superPropertiesHeader(clientAppState: clientAppState),
+            superPropertiesHeader(
+                clientAppState: clientAppState,
+                includesHeartbeatSession: includesHeartbeatSession
+            ),
             forHTTPHeaderField: "X-Super-Properties"
         )
         request.setValue(locale, forHTTPHeaderField: "X-Discord-Locale")
@@ -170,7 +185,7 @@ public final class DiscordClientMetadata: @unchecked Sendable {
         request.setValue("?0", forHTTPHeaderField: "Sec-CH-UA-Mobile")
         request.setValue("\"macOS\"", forHTTPHeaderField: "Sec-CH-UA-Platform")
         request.setValue(
-            "\"Not)A;Brand\";v=\"8\", \"Chromium\";v=\"138\"",
+            "\"Not)A;Brand\";v=\"8\", \"Chromium\";v=\"148\"",
             forHTTPHeaderField: "Sec-CH-UA"
         )
         request.setValue("https://discord.com/channels/@me", forHTTPHeaderField: "Referer")

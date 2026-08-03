@@ -1,5 +1,5 @@
 import AppKit
-import DiscordProtocol
+@testable import DiscordProtocol
 import Foundation
 import MessageRendering
 import SakuraCordModels
@@ -310,465 +310,6 @@ import UserNotifications
 
     #expect(partialPageIDs == [1, 2, 4, 6, 7])
     #expect(completePageIDs == [2, 4, 6, 7])
-    #expect(
-        AppModel.persistenceMutations(from: mutations)
-            .protectedMessages.map(\.id.rawValue) == [7]
-    )
-}
-
-@MainActor
-@Test func `selected refresh preserves Gateway update and delete in memory and on reopen`()
-    async throws
-{
-    let directory = FileManager.default.temporaryDirectory.appending(
-        path: "sakuracord-selected-refresh-\(UUID().uuidString)"
-    )
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let accountID = AccountID(rawValue: 9_150)
-    let channelID = ChannelID(rawValue: 9_151)
-    let author = User(
-        id: UserID(rawValue: 9_152),
-        username: "selected-race",
-        displayName: "Selected Race"
-    )
-    func message(_ value: UInt64, content: String? = nil) -> Message {
-        Message(
-            id: MessageID(rawValue: value),
-            channelID: channelID,
-            author: author,
-            content: content ?? "selected message \(value)",
-            timestamp: Date(timeIntervalSince1970: TimeInterval(value))
-        )
-    }
-    let cached = [message(100), message(101), message(104)]
-    let fresh = [message(101), message(102), message(104)]
-    let updated = message(101, content: "Gateway update wins")
-    let database = try SakuraCordDatabase(
-        accountID: accountID,
-        directory: directory
-    )
-    try await database.saveConversationPage(
-        messages: cached,
-        channelID: channelID,
-        hasMoreBefore: false,
-        mode: .reconcileNewestPage
-    )
-    let provider = SuspendedBootstrapTestProvider(
-        suspendsMessages: true,
-        messagePage: MessagePage(messages: fresh, hasMoreBefore: false)
-    )
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
-    model.database = database
-    model.snapshot = BootstrapSnapshot(
-        currentUser: author,
-        guilds: [],
-        channels: [Channel(id: channelID, guildID: nil, name: "selected-race")],
-        members: []
-    )
-
-    model.selectedChannelID = channelID
-    await provider.waitUntilMessageLoadStarts()
-    #expect(await eventuallyOnMain {
-        model.messages.map(\.id.rawValue) == [100, 101, 104]
-    })
-
-    model.consumeMessageUpdated(updated, preparedTextPlan: nil)
-    model.consumeMessageDeleted(channelID: channelID, messageID: message(104).id)
-    #expect(model.messages.map(\.id.rawValue) == [100, 101])
-    #expect(model.messages.last?.content == "Gateway update wins")
-
-    await model.messagePersistenceSink.flush()
-    let persistedMutations = try await database.conversationPage(in: channelID)
-    #expect(
-        persistedMutations?.messages.first(where: { $0.id == updated.id })?.content
-            == updated.content
-    )
-    #expect(
-        persistedMutations?.messages.contains(where: { $0.id == message(104).id })
-            == false
-    )
-
-    await provider.releaseMessageLoad()
-    await model.channelLoadTask?.value
-    #expect(model.messages.map(\.id.rawValue) == [101, 102])
-    #expect(model.messages.first?.content == "Gateway update wins")
-
-    let reopened = try SakuraCordDatabase(
-        accountID: accountID,
-        directory: directory
-    )
-    let reopenedPage = try #require(
-        try await reopened.conversationPage(in: channelID)
-    )
-    #expect(reopenedPage.messages.map(\.id.rawValue) == [101, 102])
-    #expect(reopenedPage.messages.first?.content == "Gateway update wins")
-}
-
-@MainActor
-@Test func `thread refresh preserves a persisted Gateway arrival in memory and on reopen`()
-    async throws
-{
-    let directory = FileManager.default.temporaryDirectory.appending(
-        path: "sakuracord-thread-refresh-\(UUID().uuidString)"
-    )
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let accountID = AccountID(rawValue: 9_200)
-    let parentID = ChannelID(rawValue: 9_201)
-    let threadID = ChannelID(rawValue: 9_202)
-    let author = User(
-        id: UserID(rawValue: 9_203),
-        username: "thread-race",
-        displayName: "Thread Race"
-    )
-    func message(_ value: UInt64) -> Message {
-        Message(
-            id: MessageID(rawValue: value),
-            channelID: threadID,
-            author: author,
-            content: "thread message \(value)",
-            timestamp: Date(timeIntervalSince1970: TimeInterval(value))
-        )
-    }
-    let cached = [message(100), message(101), message(104)]
-    let fresh = [message(101), message(102), message(104)]
-    let gatewayArrival = message(103)
-    var gatewayUpdate = message(101)
-    gatewayUpdate.content = "Gateway thread update wins"
-    let database = try SakuraCordDatabase(
-        accountID: accountID,
-        directory: directory
-    )
-    try await database.saveConversationPage(
-        messages: cached,
-        channelID: threadID,
-        hasMoreBefore: false,
-        mode: .reconcileNewestPage
-    )
-    let provider = SuspendedBootstrapTestProvider(
-        suspendsMessages: true,
-        messagePage: MessagePage(messages: fresh, hasMoreBefore: false)
-    )
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
-    model.database = database
-    model.snapshot = BootstrapSnapshot(
-        currentUser: author,
-        guilds: [],
-        channels: [],
-        members: []
-    )
-    let thread = MessageThreadSummary(
-        id: threadID,
-        parentID: parentID,
-        name: "Persisted race"
-    )
-
-    model.openThreadConversation(
-        thread,
-        starter: author,
-        startedAt: nil,
-        initialMessages: []
-    )
-    await provider.waitUntilMessageLoadStarts()
-    #expect(await eventuallyOnMain {
-        model.threadMessages.map(\.id.rawValue) == [100, 101, 104]
-    })
-
-    var receivedArrival = gatewayArrival
-    model.consumeMessageCreated(&receivedArrival, preparedTextPlan: nil)
-    model.consumeMessageUpdated(gatewayUpdate, preparedTextPlan: nil)
-    model.consumeMessageDeleted(channelID: threadID, messageID: message(104).id)
-    #expect(model.threadMessages.map(\.id.rawValue) == [100, 101, 103])
-    #expect(model.threadMessages[1].content == "Gateway thread update wins")
-
-    await model.messagePersistenceSink.flush()
-    let persistedMutations = try await database.conversationPage(in: threadID)
-    #expect(
-        persistedMutations?.messages.contains(where: { $0.id == gatewayArrival.id })
-            == true
-    )
-    #expect(
-        persistedMutations?.messages.first(where: { $0.id == gatewayUpdate.id })?.content
-            == gatewayUpdate.content
-    )
-    #expect(
-        persistedMutations?.messages.contains(where: { $0.id == message(104).id })
-            == false
-    )
-
-    await provider.releaseMessageLoad()
-    await model.threadLoadTask?.value
-    #expect(model.threadMessages.map(\.id.rawValue) == [101, 102, 103])
-    #expect(model.threadMessages.first?.content == "Gateway thread update wins")
-
-    let reopened = try SakuraCordDatabase(
-        accountID: accountID,
-        directory: directory
-    )
-    let reopenedPage = try #require(
-        try await reopened.conversationPage(in: threadID)
-    )
-    #expect(reopenedPage.messages.map(\.id.rawValue) == [101, 102, 103])
-    #expect(reopenedPage.messages.first?.content == "Gateway thread update wins")
-}
-
-@MainActor
-@Test func `selected refresh preserves confirmed local send edit and reaction without Gateway`()
-    async throws
-{
-    let directory = FileManager.default.temporaryDirectory.appending(
-        path: "sakuracord-selected-local-refresh-\(UUID().uuidString)"
-    )
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let channelID = ChannelID(rawValue: 9_301)
-    let author = User(id: UserID(rawValue: 93_000), username: "tester", displayName: "Tester")
-    func message(_ value: UInt64) -> Message {
-        Message(
-            id: MessageID(rawValue: value),
-            channelID: channelID,
-            author: author,
-            content: "stale selected \(value)",
-            timestamp: Date(timeIntervalSince1970: TimeInterval(value))
-        )
-    }
-    let cached = [message(100), message(101), message(102)]
-    let fresh = [message(101), message(102)]
-    let database = try SakuraCordDatabase(
-        accountID: AccountID(rawValue: 9_300),
-        directory: directory
-    )
-    try await database.saveConversationPage(
-        messages: cached,
-        channelID: channelID,
-        hasMoreBefore: false,
-        mode: .reconcileNewestPage
-    )
-    let provider = SuspendedBootstrapTestProvider(
-        suspendsMessages: true,
-        messagePage: MessagePage(messages: fresh, hasMoreBefore: false)
-    )
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
-    model.database = database
-    model.snapshot = BootstrapSnapshot(
-        currentUser: author,
-        guilds: [],
-        channels: [Channel(id: channelID, guildID: nil, name: "local-selected")],
-        members: []
-    )
-    model.selectedChannelID = channelID
-    await provider.waitUntilMessageLoadStarts()
-    #expect(await eventuallyOnMain { model.messages.count == cached.count })
-
-    await model.edit(model.messages[1], content: "confirmed local edit")
-    await model.toggleReaction("👍", on: model.messages[2])
-    await provider.waitUntilReactionRequest()
-    #expect(await eventuallyOnMain { model.reactionMutations.isEmpty })
-    let sent = await model.performOutgoingSend(
-        SendMessageDraft(channelID: channelID, content: "confirmed local send"),
-        isRetry: false
-    )
-    #expect(sent)
-
-    await provider.releaseMessageLoad()
-    await model.channelLoadTask?.value
-    #expect(model.messages.map(\.id.rawValue) == [101, 102, 94_001])
-    #expect(model.messages[0].content == "confirmed local edit")
-    #expect(model.messages[1].reactions.first?.didCurrentUserReact == true)
-    #expect(model.messages[2].content == "confirmed local send")
-
-    let reopened = try SakuraCordDatabase(
-        accountID: AccountID(rawValue: 9_300),
-        directory: directory
-    )
-    let reopenedMessages = try #require(
-        try await reopened.conversationPage(in: channelID)
-    ).messages
-    #expect(reopenedMessages.map(\.id.rawValue) == [101, 102, 94_001])
-    #expect(reopenedMessages[0].content == "confirmed local edit")
-    #expect(reopenedMessages[1].reactions.first?.didCurrentUserReact == true)
-}
-
-@MainActor
-@Test func `message persistence sink preserves save and delete order`() async throws {
-    let directory = FileManager.default.temporaryDirectory.appending(
-        path: "sakuracord-persistence-order-\(UUID().uuidString)"
-    )
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let accountID = AccountID(rawValue: 9_349)
-    let firstDatabase = try SakuraCordDatabase(
-        accountID: accountID,
-        directory: directory
-    )
-    let secondDatabase = try SakuraCordDatabase(
-        accountID: accountID,
-        directory: directory
-    )
-    let channelID = ChannelID(rawValue: 9_350)
-    let messageID = MessageID(rawValue: 9_351)
-    let author = User(
-        id: UserID(rawValue: 9_352),
-        username: "persistence-order",
-        displayName: "Persistence Order"
-    )
-    var message = Message(
-        id: messageID,
-        channelID: channelID,
-        author: author,
-        content: "first"
-    )
-    let sink = MessagePersistenceSink()
-
-    sink.enqueue(message, database: firstDatabase)
-    sink.enqueueDeletion(messageID, database: secondDatabase)
-    await sink.flush()
-    #expect(try await firstDatabase.conversationPage(in: channelID) == nil)
-
-    sink.enqueueDeletion(messageID, database: firstDatabase)
-    message.content = "last save wins"
-    sink.enqueue(message, database: secondDatabase)
-    await sink.flush()
-    let persisted = try #require(
-        try await firstDatabase.conversationPage(in: channelID)?.messages.first
-    )
-    #expect(persisted.content == "last save wins")
-
-    var closingSink: MessagePersistenceSink? = MessagePersistenceSink()
-    message.content = "shutdown drains pending work"
-    closingSink?.enqueue(message, database: firstDatabase)
-    await closingSink?.shutdown()
-    await closingSink?.shutdown()
-    await closingSink?.flush()
-    closingSink = nil
-    let drained = try #require(
-        try await secondDatabase.conversationPage(in: channelID)?.messages.first
-    )
-    #expect(drained.content == "shutdown drains pending work")
-}
-
-@MainActor
-@Test func `message persistence sink deinit drains buffered mutations`() async throws {
-    let database = try SakuraCordDatabase(inMemory: true)
-    let channelID = ChannelID(rawValue: 9_360)
-    let author = User(
-        id: UserID(rawValue: 9_361),
-        username: "deinit-drain",
-        displayName: "Deinit Drain"
-    )
-    var saved = Message(
-        id: MessageID(rawValue: 9_362),
-        channelID: channelID,
-        author: author,
-        content: "before"
-    )
-    let deleted = Message(
-        id: MessageID(rawValue: 9_363),
-        channelID: channelID,
-        author: author,
-        content: "delete me"
-    )
-    try await database.save(messages: [saved, deleted])
-
-    var sink: MessagePersistenceSink? = MessagePersistenceSink()
-    saved.content = "drained after deinit"
-    sink?.enqueue(saved, database: database)
-    sink?.enqueueDeletion(deleted.id, database: database)
-    sink = nil
-
-    let deadline = ContinuousClock.now + .seconds(5)
-    var drained = false
-    while ContinuousClock.now < deadline {
-        let messages = try await database.conversationPage(in: channelID)?.messages
-        if messages?.first(where: { $0.id == saved.id })?.content == saved.content,
-           messages?.contains(where: { $0.id == deleted.id }) == false
-        {
-            drained = true
-            break
-        }
-        try await Task.sleep(for: .milliseconds(5))
-    }
-    #expect(drained)
-}
-
-@MainActor
-@Test func `thread refresh preserves confirmed local send edit and reaction without Gateway`()
-    async throws
-{
-    let directory = FileManager.default.temporaryDirectory.appending(
-        path: "sakuracord-thread-local-refresh-\(UUID().uuidString)"
-    )
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let threadID = ChannelID(rawValue: 9_401)
-    let author = User(id: UserID(rawValue: 93_000), username: "tester", displayName: "Tester")
-    func message(_ value: UInt64) -> Message {
-        Message(
-            id: MessageID(rawValue: value),
-            channelID: threadID,
-            author: author,
-            content: "stale thread \(value)",
-            timestamp: Date(timeIntervalSince1970: TimeInterval(value))
-        )
-    }
-    let cached = [message(100), message(101), message(102)]
-    let fresh = [message(101), message(102)]
-    let database = try SakuraCordDatabase(
-        accountID: AccountID(rawValue: 9_400),
-        directory: directory
-    )
-    try await database.saveConversationPage(
-        messages: cached,
-        channelID: threadID,
-        hasMoreBefore: false,
-        mode: .reconcileNewestPage
-    )
-    let provider = SuspendedBootstrapTestProvider(
-        suspendsMessages: true,
-        messagePage: MessagePage(messages: fresh, hasMoreBefore: false)
-    )
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
-    model.database = database
-    model.snapshot = BootstrapSnapshot(
-        currentUser: author,
-        guilds: [],
-        channels: [],
-        members: []
-    )
-    let thread = MessageThreadSummary(
-        id: threadID,
-        parentID: ChannelID(rawValue: 9_402),
-        name: "local-thread"
-    )
-    model.openThreadConversation(thread, starter: author, startedAt: nil, initialMessages: [])
-    await provider.waitUntilMessageLoadStarts()
-    #expect(await eventuallyOnMain { model.threadMessages.count == cached.count })
-
-    await model.edit(model.threadMessages[1], content: "confirmed thread edit")
-    await model.toggleReaction("👍", on: model.threadMessages[2])
-    await provider.waitUntilReactionRequest()
-    #expect(await eventuallyOnMain { model.reactionMutations.isEmpty })
-    let sent = await model.sendThreadMessage(
-        content: "confirmed thread send",
-        attachments: [],
-        thread: thread,
-        clearsComposer: false
-    )
-    #expect(sent)
-
-    await provider.releaseMessageLoad()
-    await model.threadLoadTask?.value
-    #expect(model.threadMessages.map(\.id.rawValue) == [101, 102, 94_001])
-    #expect(model.threadMessages[0].content == "confirmed thread edit")
-    #expect(model.threadMessages[1].reactions.first?.didCurrentUserReact == true)
-    #expect(model.threadMessages[2].content == "confirmed thread send")
-
-    let reopened = try SakuraCordDatabase(
-        accountID: AccountID(rawValue: 9_400),
-        directory: directory
-    )
-    let reopenedMessages = try #require(
-        try await reopened.conversationPage(in: threadID)
-    ).messages
-    #expect(reopenedMessages.map(\.id.rawValue) == [101, 102, 94_001])
-    #expect(reopenedMessages[0].content == "confirmed thread edit")
-    #expect(reopenedMessages[1].reactions.first?.didCurrentUserReact == true)
 }
 
 @MainActor
@@ -939,129 +480,11 @@ import UserNotifications
 }
 
 @MainActor
-@Test func `cached startup presents its selected conversation before live bootstrap`() async
-    throws
-{
-    let currentUser = User(
-        id: UserID(rawValue: 77_100),
-        username: "cached-user",
-        displayName: "Cached User"
-    )
-    let channel = Channel(
-        id: ChannelID(rawValue: 77_101),
-        guildID: nil,
-        name: "cached-conversation"
-    )
-    let message = Message(
-        id: MessageID(rawValue: 77_102),
-        channelID: channel.id,
-        author: currentUser,
-        content: "Available without the network"
-    )
-    let snapshot = BootstrapSnapshot(
-        currentUser: currentUser,
-        guilds: [],
-        channels: [channel],
-        members: [
-            Member(
-                user: currentUser,
-                roleName: "You",
-                isOnline: true
-            )
-        ]
-    )
-    let database = try SakuraCordDatabase(inMemory: true)
-    try await database.saveConversationPage(
-        messages: [message],
-        channelID: channel.id,
-        hasMoreBefore: false,
-        mode: .reconcileNewestPage
-    )
-    let model = AppModel(
-        launchMode: .offlineTesting,
-        provider: MockChatProvider()
-    )
-    model.database = database
-
-    await model.applyCachedBootstrap(
-        snapshot,
-        selectedChannelID: channel.id
-    )
-
-    #expect(model.sessionState == .workspace)
-    #expect(model.selectedChannelID == channel.id)
-    #expect(model.visibleChannels == [channel])
-    #expect(await eventuallyOnMain { model.messages == [message] })
-    #expect(model.hasCompletedInitialMessageLoad)
-    #expect(model.presentsCachedStartup)
-    #expect(!model.isAuthenticated)
-
-    model.consumeChannelsChanged(guildID: nil, channels: [])
-    #expect(model.selectedChannelID == channel.id)
-    #expect(model.selectedChannel == channel)
-}
-
-@MainActor
-@Test func `accepted read acknowledgement updates the next cached startup`() async throws {
-    let database = try SakuraCordDatabase(inMemory: true)
-    let provider = MockChatProvider()
-    let model = AppModel(
-        launchMode: .offlineTesting,
-        provider: provider,
-        readAcknowledgementTiming: .init(debounce: .milliseconds(1))
-    )
-    model.database = database
-    await model.start()
-    let channelID = ChannelID(rawValue: 210)
-    let target = try #require(model.readState.entries[channelID]?.latestKnownMessageID)
-
-    model.markConversationRead(channelID: channelID)
-    #expect(await eventuallyOnMain {
-        model.readState.entries[channelID]?.pendingAcknowledgementID == nil
-    })
-    for _ in 0 ..< 500 {
-        let cached = try await database.bootstrapSnapshot()
-        if cached?.readStates.first(where: { $0.channelID == channelID })?
-            .lastAcknowledgedMessageID == target
-        {
-            break
-        }
-        try await Task.sleep(for: .milliseconds(1))
-    }
-
-    let cached = try #require(try await database.bootstrapSnapshot())
-    #expect(
-        cached.readStates.first(where: { $0.channelID == channelID })?
-            .lastAcknowledgedMessageID == target
-    )
-    let restored = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
-    await restored.applyCachedBootstrap(cached, selectedChannelID: channelID)
-    #expect(!restored.isChannelUnread(channelID))
-}
-
-@MainActor
-@Test func `cached startup waits for credential access authorization`() async throws {
+@Test func `workspace remains a skeleton until live bootstrap completes`() async throws {
     let handle = CredentialHandle(accountID: "77110")
     let credentials = RestoredCredentialHandleStore(handle: handle)
     let provider = SuspendedBootstrapTestProvider(suspendsAuthentication: true)
-    let currentUser = User(
-        id: UserID(rawValue: 77_110),
-        username: "private-cached-user",
-        displayName: "Private Cached User"
-    )
-    let channel = Channel(
-        id: ChannelID(rawValue: 77_111),
-        guildID: nil,
-        name: "private-cached-conversation"
-    )
     let database = try SakuraCordDatabase(inMemory: true)
-    try await database.saveBootstrapSnapshot(BootstrapSnapshot(
-        currentUser: currentUser,
-        guilds: [],
-        channels: [channel],
-        members: []
-    ))
-    try await database.saveSelectedChannelID(channel.id)
     let model = AppModel(
         launchMode: .normal,
         discordNetworkDisabledOverride: false,
@@ -1071,7 +494,7 @@ import UserNotifications
     )
 
     let start = Task { await model.start() }
-    #expect(await provider.waitUntilAuthenticationStarts())
+    await provider.waitUntilAuthenticationStarts()
 
     #expect(model.sessionState == .restoring)
     #expect(model.snapshot == nil)
@@ -1081,185 +504,39 @@ import UserNotifications
     await provider.releaseAuthentication()
     await provider.waitUntilBootstrapStarts()
 
-    #expect(model.sessionState == .workspace)
-    #expect(model.snapshot?.currentUser == currentUser)
-    #expect(model.selectedChannelID == channel.id)
-    #expect(model.presentsCachedStartup)
+    #expect(model.sessionState == .connecting)
+    #expect(model.snapshot == nil)
+    #expect(model.serverRailItems.isEmpty)
+    #expect(model.selectedChannelID == nil)
     #expect(!model.isAuthenticated)
 
     await provider.releaseBootstrap()
     await start.value
     #expect(model.isAuthenticated)
+    #expect(model.sessionState == .workspace)
     #expect(!model.presentsCachedStartup)
 }
 
 @MainActor
-@Test func `cached startup never acknowledges its restored unread viewport`() async throws {
-    let currentUser = User(
-        id: UserID(rawValue: 77_200),
-        username: "cached-reader",
-        displayName: "Cached Reader"
-    )
-    let author = User(
-        id: UserID(rawValue: 77_201),
-        username: "cached-author",
-        displayName: "Cached Author"
-    )
-    let channelID = ChannelID(rawValue: 77_202)
-    let acknowledgedID = MessageID(rawValue: 77_203)
-    let newestID = MessageID(rawValue: 77_204)
-    let channel = Channel(
-        id: channelID,
-        guildID: nil,
-        name: "cached-unread",
-        lastMessageID: newestID
-    )
-    let message = Message(
-        id: newestID,
-        channelID: channelID,
-        author: author,
-        content: "Must remain unread until live bootstrap and interaction"
-    )
-    let snapshot = BootstrapSnapshot(
-        currentUser: currentUser,
-        guilds: [],
-        channels: [channel],
-        members: [],
-        readStates: [
-            ChannelReadState(
-                channelID: channelID,
-                lastAcknowledgedMessageID: acknowledgedID
-            )
-        ]
-    )
-    let database = try SakuraCordDatabase(inMemory: true)
-    try await database.saveConversationPage(
-        messages: [message],
-        channelID: channelID,
-        hasMoreBefore: false,
-        mode: .reconcileNewestPage
-    )
-    let provider = MockChatProvider()
+@Test func `reopening a channel reuses session memory without another history request`() async throws {
+    let provider = ChannelLoadTestProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
-    model.database = database
+    await model.start()
+    let first = try #require(model.visibleChannels.first)
+    let second = try #require(model.visibleChannels.dropFirst().first)
 
-    await model.applyCachedBootstrap(snapshot, selectedChannelID: channelID)
-    #expect(await eventuallyOnMain { model.messages == [message] })
-    model.reportMainWindowActive(true)
-    model.reportConversationHistoryLoaded(channelID: channelID)
-    model.reportTimelineInitialPosition(
-        channelID: channelID,
-        hasReachedReadBoundary: true
-    )
-    model.reportTimelineUserInteraction(channelID: channelID)
-    await Task.yield()
+    model.selectedChannelID = first.id
+    await model.channelLoadTask?.value
+    #expect(await provider.requestCount(for: first.id) == 1)
+    let firstMessages = model.messages
 
-    #expect(model.presentsCachedStartup)
-    #expect(
-        model.readState.presentations[channelID]?.blocksAutomaticAcknowledgement
-            == true
-    )
-    #expect(model.acknowledgementTasks.isEmpty)
-    #expect(model.queuedAcknowledgements.isEmpty)
-    #expect(await provider.acknowledgementRequests.isEmpty)
+    model.selectedChannelID = second.id
+    await model.channelLoadTask?.value
+    model.selectedChannelID = first.id
+    await model.channelLoadTask?.value
 
-    let post = forumPresentationPost(
-        id: 77_205,
-        name: "Cached post",
-        date: .now,
-        tags: []
-    )
-    model.setChannelNotificationLevel(.nothing, for: channel)
-    model.setChannelMute(true, until: nil, for: channel)
-    model.setForumPostNotificationLevel(.nothing, for: post)
-    model.setForumPostMute(true, until: nil, for: post)
-    await Task.yield()
-
-    #expect(model.channelNotificationMutationTasks.isEmpty)
-    #expect(model.forumNotificationMutationTasks.isEmpty)
-    #expect(await provider.channelNotificationRequests.isEmpty)
-    #expect(await provider.threadNotificationRequests.isEmpty)
-}
-
-@MainActor
-@Test func `cached thread requires live history and post bootstrap interaction to acknowledge`()
-    async throws
-{
-    let currentUser = User(
-        id: UserID(rawValue: 77_300),
-        username: "cached-thread-reader",
-        displayName: "Cached Thread Reader"
-    )
-    let parentID = ChannelID(rawValue: 77_301)
-    // Reuse the mock provider's populated timeline channel as the live thread
-    // endpoint so the post-bootstrap reconciliation is authoritative.
-    let threadID = ChannelID(rawValue: 210)
-    let acknowledgedID = MessageID(rawValue: 2_000)
-    let newestID = MessageID(rawValue: 2_011)
-    let parent = Channel(
-        id: parentID,
-        guildID: nil,
-        name: "cached-parent",
-        kind: .text
-    )
-    let thread = MessageThreadSummary(
-        id: threadID,
-        parentID: parentID,
-        name: "cached-thread",
-        lastMessageID: newestID
-    )
-    let snapshot = BootstrapSnapshot(
-        currentUser: currentUser,
-        guilds: [],
-        channels: [parent],
-        members: [],
-        readStates: [
-            ChannelReadState(
-                channelID: threadID,
-                lastAcknowledgedMessageID: acknowledgedID
-            )
-        ]
-    )
-    let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
-
-    await model.applyCachedBootstrap(snapshot, selectedChannelID: parentID)
-    model.open(thread)
-    model.reportMainWindowActive(true)
-    model.reportTimelineInitialPosition(
-        channelID: threadID,
-        hasReachedReadBoundary: true
-    )
-    #expect(await eventuallyOnMain { model.hasCompletedInitialThreadLoad })
-
-    // Simulate the live bootstrap completing. Cached interaction was ignored,
-    // and the successfully reconciled thread remains blocked until a new
-    // explicit interaction occurs after this point.
-    model.presentsCachedStartup = false
-    model.reportTimelinePosition(
-        channelID: threadID,
-        hasReachedReadBoundary: true
-    )
-    await Task.yield()
-
-    #expect(
-        model.readState.presentations[threadID]?.blocksAutomaticAcknowledgement
-            == true
-    )
-    #expect(await provider.acknowledgementRequests.isEmpty)
-
-    model.reportTimelineUserInteraction(channelID: threadID)
-    model.reportTimelinePosition(
-        channelID: threadID,
-        hasReachedReadBoundary: true
-    )
-    var acknowledgementCount = 0
-    for _ in 0 ..< 50 {
-        acknowledgementCount = await provider.acknowledgementRequests.count
-        if acknowledgementCount == 1 { break }
-        try? await Task.sleep(for: .milliseconds(10))
-    }
-    #expect(acknowledgementCount == 1)
+    #expect(model.messages == firstMessages)
+    #expect(await provider.requestCount(for: first.id) == 1)
 }
 
 @Test func `local history member resolution prioritizes newest unknown authors and stays bounded`() {
@@ -1780,14 +1057,23 @@ import UserNotifications
         await model.toggleReaction("🔥", on: message)
     }
 
-    try await Task.sleep(for: .milliseconds(700))
-    #expect(
-        await provider.requests()
-            == [
-                .init(messageID: message.id, emoji: "🔥", reacted: true),
-                .init(messageID: message.id, emoji: "🔥", reacted: false),
-            ]
-    )
+    let expectedRequests = [
+        ReactionMutationRequest(messageID: message.id, emoji: "🔥", reacted: true),
+        ReactionMutationRequest(messageID: message.id, emoji: "🔥", reacted: false),
+    ]
+    let deadline = ContinuousClock.now + .seconds(3)
+    while await provider.requests() != expectedRequests,
+          ContinuousClock.now < deadline
+    {
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(await provider.requests() == expectedRequests)
+    while !model.reactionMutationTasks.isEmpty,
+          ContinuousClock.now < deadline
+    {
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(model.reactionMutationTasks.isEmpty)
     #expect(model.messages.first?.reactions.isEmpty == true)
 }
 
@@ -2579,6 +1865,128 @@ private func forumPresentationPost(
     #expect(notifications.authorizationRequestCount == 1)
 }
 
+@MainActor
+@Test func `pending sign in persists only after ready and uses the ready account id`() async throws {
+    let pending = try PendingDiscordCredential(
+        Data("pending-session-credential-value".utf8)
+    )
+    let provider = SuspendedBootstrapTestProvider(pendingCredential: pending)
+    let credentials = PendingCredentialRecordingStore()
+    var openedAccountIDs: [String] = []
+    let model = AppModel(
+        launchMode: .normal,
+        discordNetworkDisabledOverride: false,
+        restoresStoredSession: false,
+        credentialStore: credentials,
+        pendingAuthenticatedProviderFactory: { _, _ in provider },
+        accountDatabaseFactory: { accountID in
+            openedAccountIDs.append(accountID.description)
+            return try? SakuraCordDatabase(inMemory: true)
+        }
+    )
+    await model.start()
+
+    let connection = Task {
+        await model.connectPendingAuthenticatedAccount(
+            pending,
+            preservesInteractivePresentation: true
+        )
+    }
+    await provider.waitUntilBootstrapStarts()
+
+    #expect(await credentials.storedAccountID == nil)
+    #expect(openedAccountIDs.isEmpty)
+    #expect(model.credentialHandle == nil)
+    #expect(model.sessionState == .signedOut)
+
+    await provider.releaseBootstrap()
+    #expect(await connection.value)
+    #expect(await credentials.storedAccountID == "93000")
+    #expect(await credentials.storedCredential == Data("pending-session-credential-value".utf8))
+    #expect(openedAccountIDs == ["93000"])
+    #expect(model.credentialHandle == CredentialHandle(accountID: "93000"))
+    #expect(model.sessionState == .workspace)
+}
+
+@MainActor
+@Test func `cancelled pending sign in stores nothing and discards the credential`() async throws {
+    let pending = try PendingDiscordCredential(
+        Data("cancelled-session-credential-value".utf8)
+    )
+    let provider = SuspendedBootstrapTestProvider(pendingCredential: pending)
+    let credentials = PendingCredentialRecordingStore()
+    let model = AppModel(
+        launchMode: .normal,
+        discordNetworkDisabledOverride: false,
+        restoresStoredSession: false,
+        credentialStore: credentials,
+        pendingAuthenticatedProviderFactory: { _, _ in provider },
+        accountDatabaseFactory: { _ in nil }
+    )
+    await model.start()
+
+    let connection = Task {
+        await model.connectPendingAuthenticatedAccount(
+            pending,
+            preservesInteractivePresentation: true
+        )
+    }
+    await provider.waitUntilBootstrapStarts()
+    connection.cancel()
+    await provider.releaseBootstrap()
+
+    #expect(await !(connection.value))
+    #expect(await credentials.storedAccountID == nil)
+    await #expect(throws: PendingDiscordCredentialError.unavailable) {
+        try await provider.persistPendingCredential(
+            to: credentials,
+            accountID: "93000"
+        )
+    }
+    #expect(model.sessionState == .signedOut)
+}
+
+@MainActor
+@Test func `failed pending bootstrap stores nothing and discards the credential`() async throws {
+    let pending = try PendingDiscordCredential(
+        Data("failed-session-credential-value".utf8)
+    )
+    let provider = SuspendedBootstrapTestProvider(
+        bootstrapError: "fixture pending bootstrap stopped",
+        pendingCredential: pending
+    )
+    let credentials = PendingCredentialRecordingStore()
+    let model = AppModel(
+        launchMode: .normal,
+        discordNetworkDisabledOverride: false,
+        restoresStoredSession: false,
+        credentialStore: credentials,
+        pendingAuthenticatedProviderFactory: { _, _ in provider },
+        accountDatabaseFactory: { _ in nil }
+    )
+    await model.start()
+
+    let connection = Task {
+        await model.connectPendingAuthenticatedAccount(
+            pending,
+            preservesInteractivePresentation: true
+        )
+    }
+    await provider.waitUntilBootstrapStarts()
+    await provider.releaseBootstrap()
+
+    #expect(await !(connection.value))
+    #expect(await credentials.storedAccountID == nil)
+    await #expect(throws: PendingDiscordCredentialError.unavailable) {
+        try await provider.persistPendingCredential(
+            to: credentials,
+            accountID: "93000"
+        )
+    }
+    #expect(model.sessionState == .signedOut)
+    #expect(model.errorMessage == "fixture pending bootstrap stopped")
+}
+
 private actor CredentialAccessProbeStore: CredentialStore {
     private(set) var accessCount = 0
 
@@ -2599,6 +2007,33 @@ private actor CredentialAccessProbeStore: CredentialStore {
     func handles() async throws -> [CredentialHandle] {
         accessCount += 1
         return []
+    }
+}
+
+private actor PendingCredentialRecordingStore: CredentialStore {
+    private(set) var storedAccountID: String?
+    private(set) var storedCredential: Data?
+
+    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
+        storedAccountID = accountID
+        storedCredential = credential
+        return CredentialHandle(accountID: accountID)
+    }
+
+    func credential(for handle: CredentialHandle) async throws -> Data {
+        guard handle.accountID == storedAccountID, let storedCredential else {
+            throw PendingDiscordCredentialError.unavailable
+        }
+        return storedCredential
+    }
+
+    func remove(_ handle: CredentialHandle) async throws {
+        storedAccountID = nil
+        storedCredential = nil
+    }
+
+    func handles() async throws -> [CredentialHandle] {
+        storedAccountID.map { [CredentialHandle(accountID: $0)] } ?? []
     }
 }
 
@@ -2635,22 +2070,11 @@ private actor CredentialAccessProbeStore: CredentialStore {
 }
 
 @MainActor
-@Test func `cached startup failure does not authenticate a stale snapshot`() async throws {
+@Test func `failed bootstrap never presents or authenticates a workspace`() async throws {
     let provider = SuspendedBootstrapTestProvider(
         bootstrapError: "cached fixture bootstrap stopped"
     )
     let database = try SakuraCordDatabase(inMemory: true)
-    let cachedUser = User(
-        id: UserID(rawValue: 93_100),
-        username: "cached-user",
-        displayName: "Cached User"
-    )
-    try await database.saveBootstrapSnapshot(BootstrapSnapshot(
-        currentUser: cachedUser,
-        guilds: [],
-        channels: [],
-        members: []
-    ))
     let notifications = PermissionRecordingNotificationService()
     let model = AppModel(
         launchMode: .normal,
@@ -2669,8 +2093,11 @@ private actor CredentialAccessProbeStore: CredentialStore {
         )
     }
     await provider.waitUntilBootstrapStarts()
-    #expect(model.sessionState == .workspace)
-    #expect(model.presentsCachedStartup)
+    // Interactive sign-in keeps the login presentation alive until READY;
+    // critically, it never substitutes the stored workspace while waiting.
+    #expect(model.sessionState == .signedOut)
+    #expect(model.snapshot == nil)
+    #expect(model.serverRailItems.isEmpty)
     #expect(!model.isAuthenticated)
 
     await provider.releaseBootstrap()
@@ -2814,41 +2241,7 @@ private actor CredentialAccessProbeStore: CredentialStore {
 }
 
 @MainActor
-@Test func `cached forum presentation never inherits a prior account post`() async throws {
-    let provider = SuspendedAccountLoadTestProvider(
-        label: "Cached",
-        suspendsLoads: false
-    )
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
-    let priorPost = forumPresentationPost(
-        id: 91_999,
-        name: "Prior account post",
-        date: .now,
-        tags: []
-    )
-    model.forumPosts = [priorPost]
-    model.forumCataloguePosts = [priorPost]
-    model.forumCatalogueIndexByID = [priorPost.id: 0]
-    model.forumRecentPostCount = 1
-
-    await model.applyCachedBootstrap(
-        provider.snapshot,
-        selectedChannelID: provider.forumID
-    )
-
-    #expect(model.presentsCachedStartup)
-    #expect(model.selectedChannelID == provider.forumID)
-    #expect(model.selectedChannel?.kind == .forum)
-    #expect(model.forumPosts.isEmpty)
-    #expect(model.forumCataloguePosts.isEmpty)
-    #expect(model.forumCatalogueIndexByID.isEmpty)
-    #expect(model.forumRecentPostCount == 0)
-    #expect(!model.hasLoadedForumPosts)
-    #expect(model.forumLoadTask == nil)
-}
-
-@MainActor
-@Test func `completed old account send and edit cannot enter replacement account state or database`()
+@Test func `completed old account send and edit cannot enter replacement account state`()
     async throws
 {
     let directory = FileManager.default.temporaryDirectory.appending(
@@ -2894,7 +2287,6 @@ private actor CredentialAccessProbeStore: CredentialStore {
     await oldProvider.releaseMutationRequests()
     #expect(await !send.value)
     await edit.value
-    await model.messagePersistenceSink.flush()
 
     #expect(model.messages.map(\.id) == [replacementMessage.id])
     #expect(model.messages.first?.content == "replacement account value")
@@ -2903,13 +2295,6 @@ private actor CredentialAccessProbeStore: CredentialStore {
             $0.mutationsByMessageID.isEmpty
         }
     )
-    #expect(try await newDatabase.conversationPage(in: oldProvider.channelID) == nil)
-
-    let reopened = try SakuraCordDatabase(
-        accountID: newAccountID,
-        directory: directory
-    )
-    #expect(try await reopened.conversationPage(in: oldProvider.channelID) == nil)
 }
 
 @MainActor
@@ -2969,7 +2354,7 @@ private actor CredentialAccessProbeStore: CredentialStore {
 }
 
 @MainActor
-@Test func `completed old account earlier pages cannot enter replacement conversations or database`()
+@Test func `completed old account earlier pages cannot enter replacement conversations`()
     async throws
 {
     let directory = FileManager.default.temporaryDirectory.appending(
@@ -3024,15 +2409,6 @@ private actor CredentialAccessProbeStore: CredentialStore {
     #expect(model.threadMessages.first?.content == "replacement thread newest")
     #expect(model.isLoadingEarlier)
     #expect(model.isLoadingEarlierThread)
-    #expect(try await newDatabase.conversationPage(in: oldProvider.channelID) == nil)
-    #expect(try await newDatabase.conversationPage(in: oldProvider.threadID) == nil)
-
-    let reopened = try SakuraCordDatabase(
-        accountID: newAccountID,
-        directory: directory
-    )
-    #expect(try await reopened.conversationPage(in: oldProvider.channelID) == nil)
-    #expect(try await reopened.conversationPage(in: oldProvider.threadID) == nil)
 }
 
 @MainActor
@@ -3685,7 +3061,7 @@ private actor CredentialAccessProbeStore: CredentialStore {
 }
 
 @MainActor
-@Test func `voice channel selection loads once and closed chat can be reopened`() async throws {
+@Test func `voice channel selection reuses the session page when chat is reopened`() async throws {
     let provider = ChannelLoadTestProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
@@ -3716,7 +3092,7 @@ private actor CredentialAccessProbeStore: CredentialStore {
     #expect(model.isVoiceChatOpen)
     try await Task.sleep(for: .milliseconds(40))
     #expect(!model.isLoadingMessages)
-    #expect(await provider.requestCount(for: voiceChannel) == 2)
+    #expect(await provider.requestCount(for: voiceChannel) == 1)
     #expect(model.activeVoiceChannel == nil)
 }
 
@@ -3888,7 +3264,7 @@ private func hiddenMockChannel(
 }
 
 @MainActor
-@Test func `complete channel pages reopen immediately and refresh once`()
+@Test func `complete channel pages reopen immediately from session memory`()
     async throws
 {
     let provider = ChannelLoadTestProvider()
@@ -3909,31 +3285,30 @@ private func hiddenMockChannel(
     try await Task.sleep(for: .milliseconds(5))
     model.selectedChannelID = firstChannel
 
-    // The in-memory page and its known boundary are restored synchronously,
-    // while one newest-page refresh protects against a missed Gateway event.
+    // The in-memory page and its known boundary are restored synchronously.
+    // Gateway events keep it current while the app remains open, so reopening
+    // the channel does not issue another history request.
     #expect(model.messages.map(\.channelID) == [firstChannel])
     #expect(model.messageRows.first === preparedFirstRow)
-    #expect(model.isLoadingMessages)
+    #expect(!model.isLoadingMessages)
     #expect(!model.hasMoreMessages)
     #expect(
-        !ConversationBeginningPolicy.showsBeginning(
+        ConversationBeginningPolicy.showsBeginning(
             isLoading: model.isLoadingMessages,
             hasMoreBefore: model.hasMoreMessages,
             hasError: model.messageLoadError != nil
         )
     )
     #expect(
-        MessageTimelineLoadingPolicy.showsEarlierIndicator(
+        !MessageTimelineLoadingPolicy.showsEarlierIndicator(
             isLoadingInitialPage: model.isLoadingMessages,
             messageCount: model.messages.count,
             isLoadingEarlierPage: model.isLoadingEarlier
         )
     )
-    try await Task.sleep(for: .milliseconds(160))
-
     #expect(model.selectedChannelID == firstChannel)
     #expect(model.messages.allSatisfy { $0.channelID == firstChannel })
-    #expect(await provider.requestCount(for: firstChannel) == 2)
+    #expect(await provider.requestCount(for: firstChannel) == 1)
     #expect(await provider.requestCount(for: secondChannel) == 1)
 }
 
@@ -6025,15 +5400,17 @@ private actor LinkedChannelNavigationTestProvider: ChatProvider {
     }
 }
 
-private actor SuspendedBootstrapTestProvider: ChatProvider {
+private actor SuspendedBootstrapTestProvider: PendingCredentialChatProvider {
     private let user = User(id: UserID(rawValue: 93000), username: "tester", displayName: "Tester")
     private let channel = Channel(id: ChannelID(rawValue: 93001), guildID: nil, name: "general")
     private var bootstrapStarted = false
     private var startWaiters: [CheckedContinuation<Void, Never>] = []
     private var bootstrapContinuation: CheckedContinuation<Void, Never>?
     private let bootstrapError: String?
+    private let pendingCredential: PendingDiscordCredential?
     private let suspendsAuthentication: Bool
     private var authenticationStarted = false
+    private var authenticationStartWaiters: [CheckedContinuation<Void, Never>] = []
     private var authenticationReleased = false
     private var authenticationContinuation: CheckedContinuation<Void, Never>?
     private let suspendsMessages: Bool
@@ -6047,11 +5424,13 @@ private actor SuspendedBootstrapTestProvider: ChatProvider {
 
     init(
         bootstrapError: String? = nil,
+        pendingCredential: PendingDiscordCredential? = nil,
         suspendsAuthentication: Bool = false,
         suspendsMessages: Bool = false,
         messagePage: MessagePage = MessagePage(messages: [], hasMoreBefore: false)
     ) {
         self.bootstrapError = bootstrapError
+        self.pendingCredential = pendingCredential
         self.suspendsAuthentication = suspendsAuthentication
         self.suspendsMessages = suspendsMessages
         self.messagePage = messagePage
@@ -6060,18 +5439,31 @@ private actor SuspendedBootstrapTestProvider: ChatProvider {
     func prepareAuthentication() async {
         guard suspendsAuthentication else { return }
         authenticationStarted = true
+        authenticationStartWaiters.forEach { $0.resume() }
+        authenticationStartWaiters.removeAll()
         guard !authenticationReleased else { return }
         await withCheckedContinuation { authenticationContinuation = $0 }
     }
 
-    func waitUntilAuthenticationStarts() async -> Bool {
-        for _ in 0 ..< 200 {
-            if authenticationStarted {
-                return true
-            }
-            try? await Task.sleep(for: .milliseconds(1))
+    func persistPendingCredential(
+        to store: any CredentialStore,
+        accountID: String
+    ) async throws -> CredentialHandle {
+        guard let pendingCredential else {
+            throw PendingDiscordCredentialError.unavailable
         }
-        return authenticationStarted
+        return try await pendingCredential.persist(to: store, accountID: accountID)
+    }
+
+    func discardPendingCredential() async {
+        await pendingCredential?.discard()
+    }
+
+    func waitUntilAuthenticationStarts() async {
+        if authenticationStarted {
+            return
+        }
+        await withCheckedContinuation { authenticationStartWaiters.append($0) }
     }
 
     func releaseAuthentication() {

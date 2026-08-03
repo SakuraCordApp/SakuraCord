@@ -55,6 +55,51 @@ import Testing
     #expect(try await store.credential(for: CredentialHandle(accountID: "42")) == Data("migrated".utf8))
 }
 
+@Test func `pending credential persists once under the gateway ready account`() async throws {
+    let value = Data("pending-session-credential-value".utf8)
+    let pending = try PendingDiscordCredential(value)
+    let store = CredentialStoreSpy(credentials: [:])
+
+    let handle = try await pending.persist(to: store, accountID: "123456789012345678")
+
+    #expect(handle == CredentialHandle(accountID: "123456789012345678"))
+    #expect(try await store.credential(for: handle) == value)
+    await #expect(throws: PendingDiscordCredentialError.unavailable) {
+        try await pending.value()
+    }
+}
+
+@Test func `concurrent pending credential persistence admits only one keychain write`() async throws {
+    let pending = try PendingDiscordCredential(
+        Data("pending-session-credential-value".utf8)
+    )
+    let store = SuspendedCredentialStore()
+    let first = Task {
+        try await pending.persist(to: store, accountID: "123456789012345678")
+    }
+    await store.waitUntilStoreStarts()
+
+    await #expect(throws: PendingDiscordCredentialError.unavailable) {
+        try await pending.persist(to: store, accountID: "123456789012345678")
+    }
+
+    await store.releaseStore()
+    #expect(try await first.value == CredentialHandle(accountID: "123456789012345678"))
+    #expect(await store.storeCount == 1)
+}
+
+@Test func `invalid ready account does not consume the pending credential`() async throws {
+    let value = Data("pending-session-credential-value".utf8)
+    let pending = try PendingDiscordCredential(value)
+    let store = CredentialStoreSpy(credentials: [:])
+
+    await #expect(throws: PendingDiscordCredentialError.invalidAccountID) {
+        try await pending.persist(to: store, accountID: "not-a-snowflake")
+    }
+    let handle = try await pending.persist(to: store, accountID: "123456789012345678")
+    #expect(try await store.credential(for: handle) == value)
+}
+
 private actor CredentialStoreSpy: CredentialStore {
     private var credentials: [String: Data]
     private(set) var handleReads = 0
@@ -83,4 +128,38 @@ private actor CredentialStoreSpy: CredentialStore {
         handleReads += 1
         return credentials.keys.sorted().map(CredentialHandle.init(accountID:))
     }
+}
+
+private actor SuspendedCredentialStore: CredentialStore {
+    private(set) var storeCount = 0
+    private var storeStarted = false
+    private var storeReleased = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var storeContinuation: CheckedContinuation<Void, Never>?
+
+    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
+        storeCount += 1
+        storeStarted = true
+        startWaiters.forEach { $0.resume() }
+        startWaiters.removeAll()
+        if !storeReleased {
+            await withCheckedContinuation { storeContinuation = $0 }
+        }
+        return CredentialHandle(accountID: accountID)
+    }
+
+    func waitUntilStoreStarts() async {
+        if storeStarted { return }
+        await withCheckedContinuation { startWaiters.append($0) }
+    }
+
+    func releaseStore() {
+        storeReleased = true
+        storeContinuation?.resume()
+        storeContinuation = nil
+    }
+
+    func credential(for handle: CredentialHandle) async throws -> Data { Data() }
+    func remove(_ handle: CredentialHandle) async throws {}
+    func handles() async throws -> [CredentialHandle] { [] }
 }

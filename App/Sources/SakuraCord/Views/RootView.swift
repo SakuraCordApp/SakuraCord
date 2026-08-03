@@ -14,11 +14,10 @@ struct RootView: View {
             if model.launchMode == .normal {
                 DiscordLoginView(
                     showsCancel: false,
-                    networkingEnabled: !model.isDiscordNetworkingDisabled,
-                    credentials: model.credentialStore
-                ) { handle in
-                    await model.connectAuthenticatedAccount(
-                        handle,
+                    networkingEnabled: !model.isDiscordNetworkingDisabled
+                ) { credential in
+                    await model.connectPendingAuthenticatedAccount(
+                        credential,
                         preservesInteractivePresentation: true
                     )
                         ? nil
@@ -220,11 +219,10 @@ private struct ChatRootView: View {
         .sheet(isPresented: $showLogin) {
             DiscordLoginView(
                 showsCancel: true,
-                networkingEnabled: !model.isDiscordNetworkingDisabled,
-                credentials: model.credentialStore
-            ) { handle in
-                await model.connectAuthenticatedAccount(
-                    handle,
+                networkingEnabled: !model.isDiscordNetworkingDisabled
+            ) { credential in
+                await model.connectPendingAuthenticatedAccount(
+                    credential,
                     preservesInteractivePresentation: true
                 )
                     ? nil

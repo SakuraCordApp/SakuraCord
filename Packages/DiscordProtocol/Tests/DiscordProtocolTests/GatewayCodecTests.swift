@@ -48,11 +48,75 @@ import Testing
     ))
 }
 
+@Test func `desktop ETF string extension preserves member list byte ranges`() throws {
+    var fixture = Data([131, 116, 0, 0, 0, 4])
+    appendETFBinary("op", to: &fixture)
+    fixture.append(contentsOf: [97, 0])
+    appendETFBinary("d", to: &fixture)
+    fixture.append(contentsOf: [116, 0, 0, 0, 1])
+    appendETFBinary("range", to: &fixture)
+    fixture.append(contentsOf: [107, 0, 2, 0, 99])
+    appendETFBinary("s", to: &fixture)
+    fixture.append(contentsOf: [97, 1])
+    appendETFBinary("t", to: &fixture)
+    appendETFBinary("GUILD_MEMBER_LIST_UPDATE", to: &fixture)
+
+    let envelope = try ETFGatewayCodec().decode(fixture)
+
+    #expect(envelope == GatewayEnvelope(
+        op: 0,
+        data: .object([
+            "range": .array([.number(0), .number(99)])
+        ]),
+        sequence: 1,
+        eventName: "GUILD_MEMBER_LIST_UPDATE"
+    ))
+}
+
+@Test func `desktop ETF codec preserves integer map keys exactly`() throws {
+    var fixture = Data([131, 116, 0, 0, 0, 4])
+    appendETFBinary("op", to: &fixture)
+    fixture.append(contentsOf: [97, 0])
+    appendETFBinary("d", to: &fixture)
+    fixture.append(contentsOf: [116, 0, 0, 0, 2, 110, 8, 0])
+    fixture.append(contentsOf: [255, 255, 255, 255, 255, 255, 255, 127])
+    appendETFBinary("present", to: &fixture)
+    appendETFBinary("id", to: &fixture)
+    fixture.append(contentsOf: [110, 8, 0])
+    fixture.append(contentsOf: [255, 255, 255, 255, 255, 255, 255, 127])
+    appendETFBinary("s", to: &fixture)
+    fixture.append(contentsOf: [97, 1])
+    appendETFBinary("t", to: &fixture)
+    appendETFBinary("READY", to: &fixture)
+
+    let envelope = try ETFGatewayCodec().decode(fixture)
+    #expect(envelope == GatewayEnvelope(
+        op: 0,
+        data: .object([
+            "9223372036854775807": .string("present"),
+            "id": .string("9223372036854775807"),
+        ]),
+        sequence: 1,
+        eventName: "READY"
+    ))
+}
+
+private func appendETFBinary(_ value: String, to data: inout Data) {
+    let bytes = Data(value.utf8)
+    data.append(109)
+    var count = UInt32(bytes.count).bigEndian
+    withUnsafeBytes(of: &count) { data.append(contentsOf: $0) }
+    data.append(bytes)
+}
+
 @Test func `production baseline matches observed bootstrap`() {
     let baseline = DiscordProductionBaseline.august2026
     #expect(baseline.apiVersion == 9)
     #expect(baseline.webBuildNumber == 587_597)
-    #expect(baseline.desktopVersion == "0.0.402")
+    #expect(baseline.desktopVersion == "0.0.403")
+    #expect(baseline.electronVersion == "42.7.1")
+    #expect(baseline.chromiumVersion == "148.0.7778.280")
+    #expect(baseline.nativeBuildNumber == 87_263)
     #expect(baseline.webGatewayEncoding == "json")
     #expect(baseline.webGatewayCompression == "zlib-stream")
     #expect(baseline.desktopGatewayEncoding == "etf")
@@ -71,7 +135,7 @@ import Testing
     )
 
     #expect(metadata.acceptLanguage == "en-US,en-GB;q=0.9")
-    #expect(metadata.properties["client_version"] == .string("0.0.402"))
+    #expect(metadata.properties["client_version"] == .string("0.0.403"))
     #expect(metadata.properties["client_build_number"] == .number(587_597))
     #expect(metadata.properties["os_version"] == .string("27.0.0"))
     #expect(metadata.properties["os_sdk_version"] == .string("27"))
@@ -85,9 +149,10 @@ import Testing
         metadata.properties(clientAppState: "unfocused")["client_app_state"]
             == .string("unfocused")
     )
-    #expect(metadata.properties["native_build_number"] == nil)
-    #expect(metadata.userAgent.contains("discord/0.0.402"))
-    #expect(metadata.userAgent.contains("Electron/37.6.0"))
+    #expect(metadata.properties["native_build_number"] == .number(87_263))
+    #expect(metadata.userAgent.contains("discord/0.0.403"))
+    #expect(metadata.userAgent.contains("Chrome/148.0.7778.280"))
+    #expect(metadata.userAgent.contains("Electron/42.7.1"))
 
     guard case let .string(signature)? = metadata.properties["launch_signature"],
           let signatureUUID = UUID(uuidString: signature)
@@ -117,7 +182,7 @@ import Testing
         "os", "browser", "release_channel", "client_version", "os_version",
         "os_arch", "app_arch", "system_locale", "has_client_mods",
         "client_launch_id", "browser_user_agent", "browser_version",
-        "os_sdk_version", "client_build_number", "client_event_source",
+        "os_sdk_version", "client_build_number", "native_build_number", "client_event_source",
         "is_fast_connect", "installation_id",
     ]))
     #expect(gateway["installation_id"] == .string("server-issued-installation"))

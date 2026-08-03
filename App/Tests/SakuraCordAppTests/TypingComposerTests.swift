@@ -96,16 +96,14 @@ import Testing
     model.updateDraft("h")
     model.updateDraft("he")
     model.updateDraft("hello")
-    try? await Task.sleep(for: .milliseconds(25))
-    #expect(await provider.typingCount == 1)
+    #expect(await eventuallyTypingCount(1, from: provider))
     #expect(await provider.typingChannels == [textID])
 
     model.updateDraft("hello!")
     model.updateDraft("hello!!")
     try? await Task.sleep(for: .milliseconds(15))
     #expect(await provider.typingCount == 1)
-    try? await Task.sleep(for: .milliseconds(50))
-    #expect(await provider.typingCount == 2)
+    #expect(await eventuallyTypingCount(2, from: provider))
 
     model.updateDraft("pending")
     model.updateDraft("")
@@ -1745,6 +1743,20 @@ private func eventuallyOnMain(_ condition: @escaping @MainActor () -> Bool) asyn
         try? await Task.sleep(for: .milliseconds(1))
     }
     return condition()
+}
+
+private func eventuallyTypingCount(
+    _ expectedCount: Int,
+    from provider: TypingTestProvider
+) async -> Bool {
+    let deadline = ContinuousClock.now + .seconds(3)
+    repeat {
+        if await provider.typingCount == expectedCount {
+            return true
+        }
+        try? await Task.sleep(for: .milliseconds(5))
+    } while ContinuousClock.now < deadline
+    return await provider.typingCount == expectedCount
 }
 
 private actor TypingTestProvider: ChatProvider {

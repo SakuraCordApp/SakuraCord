@@ -67,24 +67,27 @@ extension AppModel {
         )
         let cachedBoundary = hasMoreCache[channelID]
         hasMoreMessages = cachedBoundary ?? false
-        // Cached rows are immediately presentable, but a pagination boundary
-        // does not prove that the newest range is still current after a
-        // Gateway gap. Keep the established single newest-page refresh.
+        if cachedBoundary != nil {
+            isLoadingMessages = false
+            hasCompletedInitialMessageLoad = true
+            readState.observeLoadedMessages(channelID: channelID, messages: messages)
+            preserveUnreadDividerIfNeeded(channelID: channelID)
+            reportConversationHistoryLoaded(channelID: channelID)
+            let account = accountSession()
+            channelLoadTask = startAccountChildTask(account: account) { model, account in
+                let savedDraft = await model.storedDraft(in: channelID, account: account)
+                guard model.isCurrentAccountSession(account),
+                      model.isCurrentLoad(channelID, generation: generation),
+                      model.draft.isEmpty
+                else { return }
+                model.draft = savedDraft
+            }
+            return
+        }
         isLoadingMessages = true
         preserveUnreadDividerIfNeeded(channelID: channelID)
         draft = ""
         let account = accountSession()
-        if presentsCachedStartup {
-            isLoadingMessages = true
-            channelLoadTask = startAccountChildTask(account: account) { model, account in
-                await model.loadStoredSelectedChannel(
-                    channelID,
-                    generation: generation,
-                    account: account
-                )
-            }
-            return
-        }
         channelLoadTask = startAccountChildTask(account: account) { model, account in
             await model.loadSelectedChannel(
                 channelID,
@@ -92,38 +95,6 @@ extension AppModel {
                 account: account
             )
         }
-    }
-
-    func loadStoredSelectedChannel(
-        _ channelID: ChannelID,
-        generation: Int,
-        account: AppModelAccountSession
-    ) async {
-        guard isCurrentAccountSession(account),
-              isCurrentLoad(channelID, generation: generation)
-        else { return }
-        async let storedDraft = storedDraft(in: channelID, account: account)
-        async let storedPage = storedConversationPage(in: channelID, account: account)
-        let (savedDraft, page) = await (storedDraft, storedPage)
-        guard isCurrentAccountSession(account),
-              isCurrentLoad(channelID, generation: generation),
-              presentsCachedStartup
-        else { return }
-        if draft.isEmpty {
-            draft = savedDraft
-        }
-        if let page {
-            replaceSelectedMessages(with: page.messages)
-            hasMoreMessages = page.hasMoreBefore ?? true
-            hasCompletedInitialMessageLoad = true
-            readState.observeLoadedMessages(
-                channelID: channelID,
-                messages: page.messages
-            )
-            preserveUnreadDividerIfNeeded(channelID: channelID)
-            reportConversationHistoryLoaded(channelID: channelID)
-        }
-        isLoadingMessages = page == nil
     }
 
     func loadSelectedChannel(
@@ -151,32 +122,10 @@ extension AppModel {
             )
         }
         async let storedDraft = storedDraft(in: channelID, account: account)
-
-        async let cachedPage = storedConversationPage(in: channelID, account: account)
         async let freshPage = account.provider.messages(
             in: channelID,
             before: nil,
             limit: 10
-        )
-
-        let persistedPage = await cachedPage
-        guard isCurrentAccountSession(account),
-              isCurrentLoad(channelID, generation: generation)
-        else { return }
-        if messages.isEmpty, let persistedPage, !persistedPage.messages.isEmpty {
-            let cachedMessages = Self.applyingConversationRefreshMutations(
-                conversationRefreshMutations(
-                    in: channelID,
-                    revision: refreshRevision
-                ),
-                to: persistedPage.messages
-            )
-            replaceSelectedMessages(with: cachedMessages)
-            preserveUnreadDividerIfNeeded(channelID: channelID)
-        }
-        applyPersistedConversationBoundary(
-            persistedPage?.hasMoreBefore,
-            channelID: channelID
         )
 
         let savedDraft = await storedDraft
@@ -262,18 +211,6 @@ extension AppModel {
         )
     }
 
-    private func applyPersistedConversationBoundary(
-        _ boundary: Bool?,
-        channelID: ChannelID
-    ) {
-        guard let boundary else { return }
-        hasMoreMessages = boundary
-        hasMoreCache[channelID] = boundary
-        isLoadingMessages = false
-        hasCompletedInitialMessageLoad = true
-        reportStartupContentReady(channelID, acceptsEmpty: true)
-    }
-
     func finishSelectedChannelLoad(
         channelID: ChannelID,
         freshMessages: [Message],
@@ -308,15 +245,6 @@ extension AppModel {
         readState.observeLoadedMessages(channelID: channelID, messages: messages)
         preserveUnreadDividerIfNeeded(channelID: channelID)
         reportConversationHistoryLoaded(channelID: channelID)
-        let persistenceMutations = Self.persistenceMutations(from: mutations)
-        try await session.database?.saveConversationPage(
-            messages: freshMessages,
-            protectedMessages: persistenceMutations.protectedMessages,
-            deletedMessageIDs: persistenceMutations.deletedMessageIDs,
-            channelID: channelID,
-            hasMoreBefore: hasMoreBefore,
-            mode: .reconcileNewestPage
-        )
     }
 
     func resolveSelectedHistoryMembers(
@@ -440,12 +368,6 @@ extension AppModel {
                     )
                 }
             }
-            try await session.database?.saveConversationPage(
-                messages: page.messages,
-                channelID: channelID,
-                hasMoreBefore: page.hasMoreBefore,
-                mode: .appendOlderPage
-            )
         } catch is CancellationError {
             return
         } catch {
@@ -541,6 +463,16 @@ extension AppModel {
         threadLoadTask?.cancel()
         threadErrorMessage = nil
         threadErrorScope = nil
+        if hasMoreCache[thread.id] != nil {
+            isLoadingThread = false
+            hasCompletedInitialThreadLoad = true
+            readState.observeLoadedMessages(
+                channelID: thread.id,
+                messages: threadMessages
+            )
+            reportConversationHistoryLoaded(channelID: thread.id)
+            return
+        }
         isLoadingThread = true
         hasCompletedInitialThreadLoad = false
         let account = accountSession()
@@ -561,29 +493,11 @@ extension AppModel {
                     loadSignpost
                 )
             }
-            async let cachedPage = model.storedConversationPage(
-                in: thread.id,
-                account: account
-            )
             async let freshPage = account.provider.messages(
                 in: thread.id,
                 before: nil,
                 limit: 100
             )
-            let persistedPage = await cachedPage
-            guard !Task.isCancelled,
-                  model.isCurrentAccountSession(account),
-                  model.openThread?.id == thread.id
-            else {
-                return
-            }
-            if let persistedPage {
-                model.applyStoredThreadPage(
-                    persistedPage,
-                    threadID: thread.id,
-                    refreshRevision: refreshRevision
-                )
-            }
             do {
                 let page = try await freshPage
                 guard !Task.isCancelled,
@@ -607,30 +521,6 @@ extension AppModel {
                 model.isLoadingThread = false
                 model.hasCompletedInitialThreadLoad = true
             }
-        }
-    }
-
-    func applyStoredThreadPage(
-        _ page: PersistedConversationPage,
-        threadID: ChannelID,
-        refreshRevision: UInt64
-    ) {
-        let cachedMessages = Self.applyingConversationRefreshMutations(
-            conversationRefreshMutations(
-                in: threadID,
-                revision: refreshRevision
-            ),
-            to: page.messages
-        )
-        threadMessages = Self.merging(
-            current: threadMessages,
-            fresh: cachedMessages
-        )
-        if let boundary = page.hasMoreBefore {
-            hasMoreThreadMessages = boundary
-            hasMoreCache[threadID] = boundary
-            isLoadingThread = false
-            hasCompletedInitialThreadLoad = true
         }
     }
 
@@ -666,15 +556,6 @@ extension AppModel {
         )
         reportConversationHistoryLoaded(channelID: threadID)
         hasMoreCache[threadID] = page.hasMoreBefore
-        let persistenceMutations = Self.persistenceMutations(from: mutations)
-        try await session.database?.saveConversationPage(
-            messages: page.messages,
-            protectedMessages: persistenceMutations.protectedMessages,
-            deletedMessageIDs: persistenceMutations.deletedMessageIDs,
-            channelID: threadID,
-            hasMoreBefore: page.hasMoreBefore,
-            mode: .reconcileNewestPage
-        )
     }
 
     func closeThread() {
@@ -758,12 +639,6 @@ extension AppModel {
             threadErrorMessage = nil
             threadErrorScope = nil
             hasMoreCache[thread.id] = page.hasMoreBefore
-            try await session.database?.saveConversationPage(
-                messages: page.messages,
-                channelID: thread.id,
-                hasMoreBefore: page.hasMoreBefore,
-                mode: .appendOlderPage
-            )
         } catch is CancellationError {
             return
         } catch {
@@ -838,9 +713,7 @@ extension AppModel {
             guard isCurrentAccountSession(session) else { return false }
             guard openThread?.id == thread.id else { return true }
             let reconciled = reconcileVisibleOrCached(message)
-            try await session.database?.save(messages: [
-                journalAuthoritativeMessageUpsert(reconciled)
-            ])
+            journalAuthoritativeMessageUpsert(reconciled)
             guard isCurrentAccountSession(session) else { return false }
             completeConversationReadingAndAdvance(channelID: thread.id)
             return true
@@ -1291,9 +1164,7 @@ extension AppModel {
             let message = try await session.provider.send(draft)
             guard isCurrentAccountSession(session) else { return false }
             let reconciled = reconcileVisibleOrCached(message)
-            try await session.database?.save(messages: [
-                journalAuthoritativeMessageUpsert(reconciled)
-            ])
+            journalAuthoritativeMessageUpsert(reconciled)
             guard isCurrentAccountSession(session) else { return false }
             completeConversationReadingAndAdvance(channelID: channelID)
             return true
@@ -1739,21 +1610,7 @@ extension AppModel {
             guard isCurrentAccountSession(session) else { return false }
             let reconciled = reconcileVisibleOrCached(confirmed)
             outgoingDraftsByNonce[outgoing.nonce] = nil
-            do {
-                try await session.database?.save(messages: [
-                    journalAuthoritativeMessageUpsert(reconciled)
-                ])
-            } catch {
-                let nsError = error as NSError
-                Self.messageSendLogger.warning(
-                    """
-                    Message sent but local persistence failed \
-                    channel=\(outgoing.channelID.description, privacy: .public) \
-                    message=\(confirmed.id.description, privacy: .public) \
-                    errorDomain=\(nsError.domain, privacy: .public) errorCode=\(nsError.code)
-                    """
-                )
-            }
+            journalAuthoritativeMessageUpsert(reconciled)
             guard isCurrentAccountSession(session) else { return false }
             Self.messageSendLogger.info(
                 """

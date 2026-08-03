@@ -572,13 +572,6 @@ final class AppModel {
             selectedChannel =
                 snapshot?.channels.first { $0.id == selectedChannelID }
                     ?? visibleChannels.first { $0.id == selectedChannelID }
-            if let selectedChannelID, let database {
-                selectedChannelPersistenceTask?.cancel()
-                selectedChannelPersistenceTask = Task {
-                    guard !Task.isCancelled else { return }
-                    try? await database.saveSelectedChannelID(selectedChannelID)
-                }
-            }
             commandLoadTask?.cancel()
             commandAutocompleteTask?.cancel()
             cancelApplicationCommandMemberSearch()
@@ -635,11 +628,6 @@ final class AppModel {
     @ObservationIgnored var accountTransitionIsActive = false
     @ObservationIgnored var accountChildTasks: [UUID: Task<Void, Never>] = [:]
     var presentsCachedStartup = false
-    @ObservationIgnored var selectedChannelPersistenceTask:
-        Task<Void, Never>?
-    @ObservationIgnored var cachedWorkspacePersistenceTask:
-        Task<Void, Never>?
-    @ObservationIgnored let messagePersistenceSink = MessagePersistenceSink()
     @ObservationIgnored let runsChatPerformanceBenchmark: Bool
     @ObservationIgnored var eventTask: Task<Void, Never>?
     @ObservationIgnored var locallyStartedOutgoingPrivateCallRings:
@@ -728,6 +716,8 @@ final class AppModel {
     @ObservationIgnored let credentialStore: any CredentialStore
     @ObservationIgnored let authenticatedProviderFactory:
         (CredentialHandle, String?) -> any ChatProvider
+    @ObservationIgnored let pendingAuthenticatedProviderFactory:
+        (PendingDiscordCredential, String?) -> any PendingCredentialChatProvider
     @ObservationIgnored let accountDatabaseFactory:
         (AccountID) -> SakuraCordDatabase?
     @ObservationIgnored let persistsEmojiPreferences: Bool
@@ -758,6 +748,8 @@ final class AppModel {
         restoresStoredSession: Bool = true,
         credentialStore: (any CredentialStore)? = nil,
         authenticatedProviderFactory: ((CredentialHandle, String?) -> any ChatProvider)? = nil,
+        pendingAuthenticatedProviderFactory:
+            ((PendingDiscordCredential, String?) -> any PendingCredentialChatProvider)? = nil,
         accountDatabaseFactory: ((AccountID) -> SakuraCordDatabase?)? = nil,
         notificationService: (any NativeNotificationService)? = nil,
         soundPlayer: (any AppSoundPlaying)? = nil,
@@ -810,6 +802,13 @@ final class AppModel {
                 DiscordRESTProvider(
                     credentials: resolvedCredentialStore,
                     handle: handle,
+                    installationID: installationID
+                )
+            }
+        self.pendingAuthenticatedProviderFactory =
+            pendingAuthenticatedProviderFactory ?? { credential, installationID in
+                DiscordRESTProvider(
+                    pendingCredential: credential,
                     installationID: installationID
                 )
             }

@@ -188,8 +188,16 @@ private struct ETFParser {
         switch tag {
         case 70, 97, 98, 99, 110, 111:
             return try parseNumber(tag: tag)
-        case 100, 107, 109, 115, 118, 119:
+        case 100, 109, 115, 118, 119:
             return try parseText(tag: tag)
+        case 107: // STRING_EXT is an optimized Erlang byte list, not text.
+            let count = Int(try readUInt16())
+            var values: [JSONValue] = []
+            values.reserveCapacity(count)
+            for _ in 0 ..< count {
+                values.append(.number(Double(try readByte())))
+            }
+            return .array(values)
         case 104: // SMALL_TUPLE_EXT
             return try parseTuple(count: Int(try readByte()), depth: depth)
         case 105: // LARGE_TUPLE_EXT
@@ -212,9 +220,7 @@ private struct ETFParser {
             var object: [String: JSONValue] = [:]
             object.reserveCapacity(count)
             for _ in 0 ..< count {
-                guard case let .string(key) = try parseTerm(depth: depth + 1) else {
-                    throw GatewaySessionError.malformedPayload
-                }
+                let key = try parseMapKey(depth: depth + 1)
                 object[key] = try parseTerm(depth: depth + 1)
             }
             return .object(object)
@@ -251,6 +257,9 @@ private struct ETFParser {
         case 100, 118: // ATOM_EXT / ATOM_UTF8_EXT
             return try atomValue(readString(count: Int(try readUInt16())))
         case 107: // STRING_EXT
+            // JSON object keys must be strings. Discord normally emits binary
+            // keys, but retain a bounded textual interpretation if an ETF map
+            // uses the byte-list optimization for a key.
             return .string(try readString(count: Int(try readUInt16())))
         case 109: // BINARY_EXT
             return .string(try readString(count: checkedCount(try readUInt32())))
@@ -270,16 +279,67 @@ private struct ETFParser {
         return .array(values)
     }
 
+    private mutating func parseMapKey(depth: Int) throws -> String {
+        guard depth <= 96 else { throw GatewaySessionError.malformedPayload }
+        let tag = try readByte()
+        switch tag {
+        case 100, 107, 109, 115, 118, 119:
+            return switch try parseText(tag: tag) {
+            case let .string(value): value
+            case let .bool(value): String(value)
+            case .null: "null"
+            default: throw GatewaySessionError.malformedPayload
+            }
+        case 70:
+            let value = Double(bitPattern: try readUInt64())
+            guard value.isFinite else { throw GatewaySessionError.malformedPayload }
+            return String(value)
+        case 97:
+            return String(try readByte())
+        case 98:
+            return String(Int32(bitPattern: try readUInt32()))
+        case 99:
+            let string = try readString(count: 31).prefix { $0 != "\0" }
+            guard Double(String(string))?.isFinite == true else {
+                throw GatewaySessionError.malformedPayload
+            }
+            return String(string)
+        case 110:
+            return try parseBigIntegerKey(count: Int(try readByte()))
+        case 111:
+            return try parseBigIntegerKey(count: checkedCount(try readUInt32()))
+        default:
+            throw GatewaySessionError.malformedPayload
+        }
+    }
+
     private mutating func parseBigInteger(count: Int) throws -> JSONValue {
+        let (sign, magnitude) = try parseBigIntegerComponents(count: count)
+        let maximumExactlyRepresentableInteger: UInt64 = (1 << 53) - 1
+        if magnitude > maximumExactlyRepresentableInteger {
+            let value = sign == 1 && magnitude != 0 ? "-\(magnitude)" : String(magnitude)
+            return .string(value)
+        }
+        let value = Double(magnitude) * (sign == 0 ? 1 : -1)
+        guard value.isFinite else { throw GatewaySessionError.malformedPayload }
+        return .number(value)
+    }
+
+    private mutating func parseBigIntegerKey(count: Int) throws -> String {
+        let (sign, magnitude) = try parseBigIntegerComponents(count: count)
+        return sign == 1 && magnitude != 0 ? "-\(magnitude)" : String(magnitude)
+    }
+
+    private mutating func parseBigIntegerComponents(
+        count: Int
+    ) throws -> (sign: UInt8, magnitude: UInt64) {
         let sign = try readByte()
         guard sign <= 1, count <= 8 else { throw GatewaySessionError.malformedPayload }
         var magnitude: UInt64 = 0
         for offset in 0 ..< count {
             magnitude |= UInt64(try readByte()) << UInt64(offset * 8)
         }
-        let value = Double(magnitude) * (sign == 0 ? 1 : -1)
-        guard value.isFinite else { throw GatewaySessionError.malformedPayload }
-        return .number(value)
+        return (sign, magnitude)
     }
 
     private func atomValue(_ atom: String) throws -> JSONValue {

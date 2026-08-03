@@ -478,7 +478,7 @@ extension DiscordRESTProvider {
         if let authorizationValue {
             return authorizationValue
         }
-        let credential = try await credentials.credential(for: handle)
+        let credential = try await credentialSource.credential()
         guard let value = String(data: credential, encoding: .utf8) else {
             throw ChatProviderError.unauthenticated
         }
@@ -506,5 +506,24 @@ extension DiscordRESTProvider {
             return false
         }
         return (object["global"] as? Bool) == true
+    }
+}
+
+enum DiscordCredentialSource: Sendable {
+    case stored(any CredentialStore, CredentialHandle)
+    case pending(PendingDiscordCredential)
+
+    var isPending: Bool {
+        if case .pending = self { return true }
+        return false
+    }
+
+    func credential() async throws -> Data {
+        switch self {
+        case let .stored(store, handle):
+            try await store.credential(for: handle)
+        case let .pending(pendingCredential):
+            try await pendingCredential.value()
+        }
     }
 }

@@ -328,7 +328,7 @@ struct ChannelGroup: Identifiable {
     }
 }
 
-private struct SidebarChromeSeparator: Shape {
+struct SidebarChromeSeparator: Shape {
     let cornerRadius: CGFloat
     let strokeInset: CGFloat
 

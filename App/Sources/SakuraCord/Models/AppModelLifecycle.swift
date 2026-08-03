@@ -61,10 +61,8 @@ extension AppModel {
         await nextProvider.updateClientAppState(isFocused: mainWindowIsActive)
         do {
             // Enumerating Keychain item attributes reveals the account handle
-            // without necessarily authorizing access to its secret. Do not
-            // open or present that account's persisted workspace until macOS
-            // has granted access to the credential value itself. Preparing the
-            // provider also retains that value for bootstrap, avoiding a second
+            // without necessarily authorizing access to its secret. Preparing
+            // the provider retains that value for bootstrap, avoiding a second
             // Keychain prompt after a one-time authorization.
             try await nextProvider.prepareAuthentication()
         } catch {
@@ -137,8 +135,6 @@ extension AppModel {
         if !preservesInteractivePresentation {
             sessionState = .connecting
         }
-        await messagePersistenceSink.flush()
-        guard accountSessionGeneration == transitionGeneration else { return false }
         let nextDatabase = AppPerformanceSignposts.measureSync("AccountDatabaseOpen") {
             AccountID(handle.accountID).flatMap {
                 accountDatabaseFactory($0)
@@ -148,17 +144,13 @@ extension AppModel {
         accountTransitionIsActive = false
         resetForAccountConnection(handle)
         resetAccountPresentationState()
-        let presentedCachedWorkspace = await presentCachedWorkspaceIfAvailable()
-        guard accountSessionGeneration == transitionGeneration else { return false }
         AppPerformanceSignposts.signposter.endInterval(
             "AccountConnectionPreparation",
             preparationSignpost
         )
         didEndPreparationSignpost = true
         await start(
-            publishesSessionState:
-                !presentedCachedWorkspace && !preservesInteractivePresentation,
-            refreshesExistingSnapshot: presentedCachedWorkspace
+            publishesSessionState: !preservesInteractivePresentation
         )
         guard accountSessionGeneration == transitionGeneration else { return false }
         isAuthenticated = snapshot != nil
@@ -223,24 +215,6 @@ extension AppModel {
         errorMessage = nil
     }
 
-    func presentCachedWorkspaceIfAvailable() async -> Bool {
-        let session = accountSession()
-        guard let database = session.database,
-              let cachedBootstrap = try? await database.bootstrapSnapshot()
-        else { return false }
-        guard isCurrentAccountSession(session) else { return false }
-        let cachedChannelID = try? await database.selectedChannelID()
-        guard isCurrentAccountSession(session) else { return false }
-        await AppPerformanceSignposts.measure("CachedWorkspacePresentation") {
-            await applyCachedBootstrap(
-                cachedBootstrap,
-                selectedChannelID: cachedChannelID,
-                account: session
-            )
-        }
-        return isCurrentAccountSession(session)
-    }
-
     func logout() async {
         guard await accountTransitionCoordinator.acquireIfAvailable() else { return }
         accountTransitionIsActive = true
@@ -297,8 +271,6 @@ extension AppModel {
         pendingComponentControls = []
         componentErrors = [:]
         componentKeyByNonce = [:]
-        await messagePersistenceSink.flush()
-        guard accountSessionGeneration == transitionGeneration else { return }
         let signedOutDatabase = launchMode == .offlineTesting
             ? try? SakuraCordDatabase(inMemory: true)
             : nil
@@ -388,7 +360,6 @@ extension AppModel {
                 account: session
             )
             guard isCurrentAccountSession(session) else { return }
-            scheduleCachedWorkspacePersistence()
         } catch {
             handleSessionStartFailure(error, account: session)
         }
@@ -415,18 +386,11 @@ extension AppModel {
         account: AppModelAccountSession
     ) async {
         guard isCurrentAccountSession(account) else { return }
-        let wasPresentingCachedStartup = presentsCachedStartup
-        if wasPresentingCachedStartup, let selectedChannelID {
-            storeCachedMessages(messages, for: selectedChannelID)
-            storeCachedMessageRows(messageRows, for: selectedChannelID)
-            hasMoreCache[selectedChannelID] = nil
-        }
         presentsCachedStartup = false
         await AppPerformanceSignposts.measure("BootstrapApplication") {
             await applyBootstrap(
                 value,
                 publishesSessionState: publishesSessionState,
-                reconcilesCurrentSelection: wasPresentingCachedStartup,
                 account: account
             )
         }
@@ -439,8 +403,8 @@ extension AppModel {
         guard isCurrentAccountSession(account) else { return }
         errorMessage = error.localizedDescription
         guard launchMode == .normal else { return }
-        // A persisted snapshot is only a first-paint optimization. It must not
-        // become evidence that the credential is still valid after bootstrap fails.
+        // No workspace is published until bootstrap succeeds. A failed
+        // bootstrap must return to sign-in without exposing partial state.
         presentsCachedStartup = false
         snapshot = nil
         isAuthenticated = false
@@ -551,88 +515,6 @@ extension AppModel {
             sessionState = .workspace
         }
         await channelLoadTask?.value
-    }
-
-    func applyCachedBootstrap(
-        _ value: BootstrapSnapshot,
-        selectedChannelID cachedChannelID: ChannelID?,
-        account: AppModelAccountSession? = nil
-    ) async {
-        let account = account ?? accountSession()
-        guard isCurrentAccountSession(account) else { return }
-        resetAccountScopedLoadsAndForumState()
-        resetAcknowledgementWork()
-        presentsCachedStartup = true
-        snapshot = value
-        readState.configure(
-            accountID: credentialHandle?.accountID,
-            guilds: value.guilds,
-            channels: value.channels,
-            readStates: value.readStates,
-            notificationSettings: value.notificationSettings,
-            usesNewNotifications: value.usesNewNotifications
-        )
-        for thread in value.threads {
-            readState.merge(thread: thread)
-        }
-        readState.setCurrentUserID(value.currentUser.id)
-        applyBootstrapCurrentUserRoles(value)
-        updateServerRail(from: value)
-        refreshUnreadPresentation()
-        members = value.members
-        let status = await account.provider.currentStatus()
-        guard isCurrentAccountSession(account) else { return }
-        currentStatus = status
-        // Cached state is read-only first paint, not proof that the restored
-        // credential has completed a live bootstrap.
-        isAuthenticated = false
-
-        let cachedChannel = cachedChannelID.flatMap { channelID in
-            value.channels.first { $0.id == channelID }
-        }
-        if let cachedChannel {
-            selectedChannelID = cachedChannel.id
-        }
-        await activateGuild(
-            cachedChannel?.guildID ?? value.guilds.first?.id,
-            account: account
-        )
-        guard isCurrentAccountSession(account) else { return }
-        if let selectedChannelID {
-            _ = readState.updatePresentation(
-                channelID: selectedChannelID,
-                blocksAutomaticAcknowledgement: true
-            )
-        }
-        sessionState = .workspace
-    }
-
-    func scheduleCachedWorkspacePersistence() {
-        guard !presentsCachedStartup, snapshot != nil, database != nil else { return }
-        let session = accountSession()
-        cachedWorkspacePersistenceTask?.cancel()
-        cachedWorkspacePersistenceTask = Task { [weak self] in
-            await Task.yield()
-            guard let self,
-                  !Task.isCancelled,
-                  self.isCurrentAccountSession(session),
-                  !self.presentsCachedStartup,
-                  let snapshot = self.snapshot,
-                  let database = self.database
-            else { return }
-            // Preparing the durable snapshot walks every channel, thread, and
-            // read-state entry. Do it only after burst calls have coalesced so
-            // cancelled persistence requests never pay that main-actor cost.
-            let cachedSnapshot = self.readState.cacheSnapshot(updating: snapshot)
-            guard !Task.isCancelled,
-                  self.isCurrentAccountSession(session)
-            else { return }
-            try? await database.saveBootstrapSnapshot(cachedSnapshot)
-            guard self.isCurrentAccountSession(session),
-                  !Task.isCancelled
-            else { return }
-            self.cachedWorkspacePersistenceTask = nil
-        }
     }
 
     func logBootstrapUnreadState(_ value: BootstrapSnapshot) {
@@ -914,11 +796,6 @@ extension AppModel {
                     replaceSelectedMessages(
                         with: Self.merging(current: messages, fresh: page.messages)
                     )
-                    try await session.database?.save(messages: page.messages)
-                    guard !Task.isCancelled,
-                          isCurrentAccountSession(session),
-                          selectedChannelID == channel.id
-                    else { return }
                 } catch is CancellationError {
                     return
                 } catch {
@@ -1184,10 +1061,6 @@ extension AppModel {
     /// reconnects through a replacement provider.
     func resetAccountScopedLoadsAndForumState() {
         cancelAccountChildTasks()
-        selectedChannelPersistenceTask?.cancel()
-        selectedChannelPersistenceTask = nil
-        cachedWorkspacePersistenceTask?.cancel()
-        cachedWorkspacePersistenceTask = nil
         clientAppStateUpdateTask?.cancel()
         clientAppStateUpdateTask = nil
         channelLoadTask?.cancel()

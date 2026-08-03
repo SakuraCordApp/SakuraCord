@@ -16,7 +16,7 @@ nonisolated struct AttachmentUploadFile: Equatable, Sendable {
     }
 }
 
-public actor DiscordRESTProvider: ChatProvider {
+public actor DiscordRESTProvider: PendingCredentialChatProvider {
     struct ForumReadState: Sendable {
         var lastReadMessageID: MessageID?
         var mentionCount: Int
@@ -37,8 +37,8 @@ public actor DiscordRESTProvider: ChatProvider {
     static let maximumReactionReactorCacheEntries = 256
     static let maximumConcurrentReactionReactorReads = 4
 
-    let credentials: any CredentialStore
-    let handle: CredentialHandle
+    var credentialSource: DiscordCredentialSource
+    var accountID: String?
     let session: URLSession
     let gatewayTransport: any GatewayTransport
     let gatewayCodec: any GatewayCodec
@@ -48,6 +48,7 @@ public actor DiscordRESTProvider: ChatProvider {
     let clientMetadata: DiscordClientMetadata
     let apiDiagnostics: DiscordAPIDiagnosticStore
     let usesEmojiDiskCache: Bool
+    let persistsResolvedInstallationID: Bool
     var clientAppState = "focused"
     var continuation: AsyncStream<ClientEvent>.Continuation?
     var currentUser: User?
@@ -91,6 +92,7 @@ public actor DiscordRESTProvider: ChatProvider {
     var requestedHistoryMemberIDs: [GuildID: Set<UserID>] = [:]
     var cachedGuilds: [GuildID: Guild] = [:]
     var cachedGuildRailItems: [GuildRailItem] = []
+    var cachedGuildLayout: DiscordGuildLayout?
     var cachedProfiles: [ProfileCacheKey: UserProfile] = [:]
     var profileTasks: [ProfileCacheKey: Task<UserProfile, Error>] = [:]
     var collectibleProductTasks: [String: Task<CollectibleProductDTO?, Never>] = [:]
@@ -189,8 +191,8 @@ public actor DiscordRESTProvider: ChatProvider {
         usesEmojiDiskCache: Bool = true
     ) {
         let resolvedSession = session ?? URLSession(configuration: .default)
-        self.credentials = credentials
-        self.handle = handle
+        credentialSource = .stored(credentials, handle)
+        accountID = handle.accountID
         self.session = resolvedSession
         gatewayTransport = URLSessionGatewayTransport(session: resolvedSession)
         gatewayCodec = ETFGatewayCodec()
@@ -202,6 +204,31 @@ public actor DiscordRESTProvider: ChatProvider {
         )
         self.apiDiagnostics = apiDiagnostics
         self.usesEmojiDiskCache = usesEmojiDiskCache
+        persistsResolvedInstallationID = true
+    }
+
+    public init(
+        pendingCredential: PendingDiscordCredential,
+        session: URLSession? = nil,
+        installationID: String? = nil,
+        apiDiagnostics: DiscordAPIDiagnosticStore = .shared,
+        usesEmojiDiskCache: Bool = true
+    ) {
+        let resolvedSession = session ?? URLSession(configuration: .default)
+        credentialSource = .pending(pendingCredential)
+        accountID = nil
+        self.session = resolvedSession
+        gatewayTransport = URLSessionGatewayTransport(session: resolvedSession)
+        gatewayCodec = ETFGatewayCodec()
+        gatewayEncoding = DiscordProductionBaseline.august2026.desktopGatewayEncoding
+        gatewayCompression = .zstdStream
+        usesDesktopHeartbeat = true
+        clientMetadata = DiscordClientMetadata(
+            installationID: installationID ?? DiscordClientMetadata.persistedInstallationID()
+        )
+        self.apiDiagnostics = apiDiagnostics
+        self.usesEmojiDiskCache = usesEmojiDiskCache
+        persistsResolvedInstallationID = true
     }
 
     init(
@@ -217,8 +244,8 @@ public actor DiscordRESTProvider: ChatProvider {
         apiDiagnostics: DiscordAPIDiagnosticStore = .shared,
         usesEmojiDiskCache: Bool = true
     ) {
-        self.credentials = credentials
-        self.handle = handle
+        credentialSource = .stored(credentials, handle)
+        accountID = handle.accountID
         self.session = session
         self.gatewayTransport = gatewayTransport
         self.gatewayCodec = gatewayCodec
@@ -228,24 +255,142 @@ public actor DiscordRESTProvider: ChatProvider {
         clientMetadata = DiscordClientMetadata(installationID: installationID)
         self.apiDiagnostics = apiDiagnostics
         self.usesEmojiDiskCache = usesEmojiDiskCache
+        persistsResolvedInstallationID = false
+    }
+
+    init(
+        pendingCredential: PendingDiscordCredential,
+        session: URLSession,
+        gatewayTransport: any GatewayTransport,
+        gatewayCodec: any GatewayCodec = JSONGatewayCodec(),
+        gatewayEncoding: String = "json",
+        gatewayCompression: GatewayCompression = .zlibStream,
+        usesDesktopHeartbeat: Bool = false,
+        installationID: String? = nil,
+        apiDiagnostics: DiscordAPIDiagnosticStore = .shared,
+        usesEmojiDiskCache: Bool = true
+    ) {
+        credentialSource = .pending(pendingCredential)
+        accountID = nil
+        self.session = session
+        self.gatewayTransport = gatewayTransport
+        self.gatewayCodec = gatewayCodec
+        self.gatewayEncoding = gatewayEncoding
+        self.gatewayCompression = gatewayCompression
+        self.usesDesktopHeartbeat = usesDesktopHeartbeat
+        clientMetadata = DiscordClientMetadata(installationID: installationID)
+        self.apiDiagnostics = apiDiagnostics
+        self.usesEmojiDiskCache = usesEmojiDiskCache
+        persistsResolvedInstallationID = false
     }
 }
 
 extension DiscordRESTProvider {
     public func prepareAuthentication() async throws {
         _ = try await authorizationToken()
+        if usesDesktopHeartbeat {
+            try await ensureInstallationID()
+        }
+    }
+
+    public func persistPendingCredential(
+        to store: any CredentialStore,
+        accountID: String
+    ) async throws -> CredentialHandle {
+        guard case let .pending(pendingCredential) = credentialSource else {
+            throw PendingDiscordCredentialError.unavailable
+        }
+        let handle = try await pendingCredential.persist(
+            to: store,
+            accountID: accountID
+        )
+        credentialSource = .stored(store, handle)
+        self.accountID = handle.accountID
+        return handle
+    }
+
+    public func discardPendingCredential() async {
+        guard case let .pending(pendingCredential) = credentialSource else { return }
+        await pendingCredential.discard()
     }
 
     private func ensureInstallationID() async throws {
         guard clientMetadata.installationID == nil else { return }
-        let response: DiscordExperimentsInstallationDTO = try await request("/experiments")
-        guard let installationID = response.installation, !installationID.isEmpty else {
+        let baseline = DiscordProductionBaseline.august2026
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "discordapp.com"
+        components.path = "/api/v\(baseline.apiVersion)/apex/experiments"
+        components.queryItems = [URLQueryItem(
+            name: "surface",
+            value: String(baseline.apexAppSurface)
+        )]
+        guard let url = components.url else {
             throw ChatProviderError.invalidRequest(
-                "Discord did not issue the installation identity required for desktop parity."
+                "Discord's installation identity endpoint was invalid."
             )
         }
-        clientMetadata.setInstallationID(installationID)
-        DiscordClientMetadata.persistInstallationID(installationID)
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 20
+        try clientMetadata.apply(to: &request, includesHeartbeatSession: false)
+        request.setValue("https://discordapp.com/app", forHTTPHeaderField: "Referer")
+        request.setValue(nil, forHTTPHeaderField: "Origin")
+        apiDiagnostics.recordHTTPRequest(
+            transport: "authentication",
+            method: "GET",
+            path: "/apex/experiments",
+            body: nil,
+            attempt: 1
+        )
+        let requestStarted = ContinuousClock.now
+        let data: Data
+        let rawResponse: URLResponse
+        do {
+            (data, rawResponse) = try await session.data(for: request)
+        } catch {
+            apiDiagnostics.recordHTTPFailure(
+                transport: "authentication",
+                method: "GET",
+                path: "/apex/experiments",
+                attempt: 1,
+                duration: requestStarted.duration(to: .now),
+                error: error
+            )
+            throw error
+        }
+        guard let response = rawResponse as? HTTPURLResponse else {
+            throw ChatProviderError.invalidRequest(
+                "Discord returned an invalid installation identity response."
+            )
+        }
+        apiDiagnostics.recordHTTPResponse(
+            transport: "authentication",
+            method: "GET",
+            path: "/apex/experiments",
+            attempt: 1,
+            response: response,
+            body: data,
+            duration: requestStarted.duration(to: .now)
+        )
+        guard (200 ..< 300).contains(response.statusCode) else {
+            throw ChatProviderError.transport(
+                status: response.statusCode,
+                requestID: response.value(forHTTPHeaderField: "x-request-id")
+            )
+        }
+        guard let payload = try? JSONDecoder().decode(
+            DiscordApexExperimentsDTO.self,
+            from: data
+        ), !payload.installation.isEmpty else {
+            throw ChatProviderError.invalidRequest(
+                "Discord did not issue the installation identity required for desktop startup."
+            )
+        }
+        clientMetadata.setInstallationID(payload.installation)
+        if persistsResolvedInstallationID {
+            DiscordClientMetadata.persistInstallationID(payload.installation)
+        }
     }
 
     public func bootstrap() async throws -> BootstrapSnapshot {
@@ -254,18 +399,23 @@ extension DiscordRESTProvider {
         if usesDesktopHeartbeat {
             try await ensureInstallationID()
         }
-        presenceStatus =
-            UserDefaults.standard.string(forKey: statusDefaultsKey).flatMap(
-                PresenceStatus.init(rawValue:)
-            ) ?? .invisible
+        presenceStatus = statusDefaultsKey.flatMap {
+            UserDefaults.standard.string(forKey: $0)
+        }.flatMap(PresenceStatus.init(rawValue:)) ?? .invisible
         try await startGateway()
         let ready = try await waitForInitialGatewaySnapshot()
 
-        // Current Discord, Paicord, and Swiftcord v1 all source the initial
-        // account and guild catalogue from Gateway READY. Keep the documented
-        // REST reads only as a sequential compatibility fallback for a future
-        // incomplete READY shape; a normal cold launch sends neither request.
+        // Current Discord and Swiftcord v1 source a newly authenticated account
+        // from Gateway READY. Paicord performs an additional /users/@me read,
+        // but a pending SakuraCord login must fail closed instead of introducing
+        // that observable difference before its credential has been persisted.
+        // Previously stored sessions retain the bounded compatibility fallback.
         if currentUser == nil {
+            guard !credentialSource.isPending else {
+                throw ChatProviderError.invalidRequest(
+                    "Discord's initial Gateway state omitted the current user."
+                )
+            }
             let userDTO: UserDTO = try await request("/users/@me")
             currentUser = try userDTO.domain()
         }
@@ -276,6 +426,13 @@ extension DiscordRESTProvider {
             let guilds = try guildDTOs.map { try $0.domain() }
             cachedGuildRailItems = guilds.map { .guild($0.id) }
             cachedGuilds = Dictionary(uniqueKeysWithValues: guilds.map { ($0.id, $0) })
+            if let cachedGuildLayout {
+                let result = Self.applyingGuildLayout(cachedGuildLayout, to: guilds)
+                cachedGuilds = Dictionary(
+                    uniqueKeysWithValues: result.guilds.map { ($0.id, $0) }
+                )
+                cachedGuildRailItems = result.railItems
+            }
         }
         guard let user = currentUser else {
             throw ChatProviderError.invalidRequest(
@@ -847,26 +1004,27 @@ extension DiscordRESTProvider {
     }
 
     func loadEmojiCache(for guildID: GuildID) throws -> EmojiCacheEntry {
-        let data = try Data(contentsOf: emojiCacheURL(for: guildID))
+        let data = try Data(contentsOf: try emojiCacheURL(for: guildID))
         return try JSONDecoder().decode(EmojiCacheEntry.self, from: data)
     }
 
     func persistEmojiCache(_ entry: EmojiCacheEntry, for guildID: GuildID) throws {
-        let url = emojiCacheURL(for: guildID)
+        let url = try emojiCacheURL(for: guildID)
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(), withIntermediateDirectories: true
         )
         try JSONEncoder().encode(entry).write(to: url, options: .atomic)
     }
 
-    func emojiCacheURL(for guildID: GuildID) -> URL {
+    func emojiCacheURL(for guildID: GuildID) throws -> URL {
+        guard let accountID else { throw ChatProviderError.unauthenticated }
         let base =
             FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
                 ?? FileManager.default.temporaryDirectory
         return
             base
                 .appending(
-                    path: "dev.sakuracord.SakuraCord/EmojiCache/\(handle.accountID)",
+                    path: "dev.sakuracord.SakuraCord/EmojiCache/\(accountID)",
                     directoryHint: .isDirectory
                 )
                 .appending(path: "\(guildID).json")
@@ -883,11 +1041,13 @@ extension DiscordRESTProvider {
                 as [String: Any],
         ])
         presenceStatus = status
-        UserDefaults.standard.set(status.rawValue, forKey: statusDefaultsKey)
+        if let statusDefaultsKey {
+            UserDefaults.standard.set(status.rawValue, forKey: statusDefaultsKey)
+        }
     }
 
-    var statusDefaultsKey: String {
-        "dev.sakuracord.presence.\(handle.accountID)"
+    var statusDefaultsKey: String? {
+        accountID.map { "dev.sakuracord.presence.\($0)" }
     }
 
     public func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
@@ -971,6 +1131,6 @@ extension DiscordRESTProvider {
 
 }
 
-private struct DiscordExperimentsInstallationDTO: Decodable, Sendable {
-    var installation: String?
+private nonisolated struct DiscordApexExperimentsDTO: Decodable {
+    let installation: String
 }

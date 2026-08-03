@@ -15,6 +15,87 @@ public protocol CredentialStore: Sendable {
     func handles() async throws -> [CredentialHandle]
 }
 
+/// Holds a newly issued Discord credential only in memory until Gateway READY
+/// supplies the authoritative account identifier used by the durable store.
+public actor PendingDiscordCredential {
+    private enum State {
+        case available(Data)
+        case persisting
+        case consumed
+    }
+
+    private var state: State
+
+    public init(_ credential: Data) throws {
+        guard credential.count > 20 else {
+            throw PendingDiscordCredentialError.invalidCredential
+        }
+        state = .available(credential)
+    }
+
+    func value() throws -> Data {
+        guard case let .available(credential) = state else {
+            throw PendingDiscordCredentialError.unavailable
+        }
+        return credential
+    }
+
+    func persist(
+        to store: any CredentialStore,
+        accountID: String
+    ) async throws -> CredentialHandle {
+        guard !accountID.isEmpty, accountID.allSatisfy(\.isNumber) else {
+            throw PendingDiscordCredentialError.invalidAccountID
+        }
+        guard case let .available(credential) = state else {
+            throw PendingDiscordCredentialError.unavailable
+        }
+        var value = credential
+        state = .persisting
+        defer { value.resetBytes(in: value.indices) }
+        do {
+            let handle = try await store.store(value, accountID: accountID)
+            state = .consumed
+            return handle
+        } catch {
+            if case .persisting = state {
+                state = .available(value)
+            }
+            throw error
+        }
+    }
+
+    public func discard() {
+        if case .available(var credential) = state {
+            credential.resetBytes(in: credential.indices)
+        }
+        state = .consumed
+    }
+
+    deinit {
+        if case .available(var credential) = state {
+            credential.resetBytes(in: credential.indices)
+        }
+    }
+}
+
+public enum PendingDiscordCredentialError: LocalizedError, Sendable {
+    case invalidCredential
+    case invalidAccountID
+    case unavailable
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidCredential:
+            "Discord returned an invalid session credential."
+        case .invalidAccountID:
+            "Discord Gateway READY returned an invalid account identifier."
+        case .unavailable:
+            "The pending Discord session credential is no longer available."
+        }
+    }
+}
+
 public actor KeychainCredentialStore: CredentialStore {
     private let service: String
     public init(service: String? = nil) {

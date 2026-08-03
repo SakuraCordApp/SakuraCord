@@ -1,8 +1,21 @@
 import Foundation
 
 final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var totalRequestCount = 0
     nonisolated(unsafe) static var guildListAttempts = 0
+    nonisolated(unsafe) static var guildListJSON =
+        #"[{"id":"100","name":"Guild","icon":null,"owner":false,"permissions":"1024"}]"#
     nonisolated(unsafe) static var currentUserRequests = 0
+    nonisolated(unsafe) static var apexInstallationRequests = 0
+    nonisolated(unsafe) static var apexInstallationQuery: [String: String] = [:]
+    nonisolated(unsafe) static var apexInstallationMethod: String?
+    nonisolated(unsafe) static var apexInstallationHost: String?
+    nonisolated(unsafe) static var apexInstallationReferer: String?
+    nonisolated(unsafe) static var apexInstallationAuthorization: String?
+    nonisolated(unsafe) static var apexInstallationHeader: String?
+    nonisolated(unsafe) static var apexInstallationFingerprint: String?
+    nonisolated(unsafe) static var apexInstallationSuperProperties: String?
+    nonisolated(unsafe) static var apexInstallationHadBody = false
     nonisolated(unsafe) static var privateChannelListRequests = 0
     nonisolated(unsafe) static var guildChannelRequests = 0
     nonisolated(unsafe) static var guildRoleRequests = 0
@@ -54,8 +67,21 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var reactionMethods: [String] = []
 
     static func reset() {
+        totalRequestCount = 0
         guildListAttempts = 0
+        guildListJSON =
+            #"[{"id":"100","name":"Guild","icon":null,"owner":false,"permissions":"1024"}]"#
         currentUserRequests = 0
+        apexInstallationRequests = 0
+        apexInstallationQuery = [:]
+        apexInstallationMethod = nil
+        apexInstallationHost = nil
+        apexInstallationReferer = nil
+        apexInstallationAuthorization = nil
+        apexInstallationHeader = nil
+        apexInstallationFingerprint = nil
+        apexInstallationSuperProperties = nil
+        apexInstallationHadBody = false
         privateChannelListRequests = 0
         guildChannelRequests = 0
         guildRoleRequests = 0
@@ -128,6 +154,36 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
         let status: Int
         let json: String
         switch path {
+        case "/api/v9/apex/experiments":
+            RateLimitURLProtocol.apexInstallationRequests += 1
+            RateLimitURLProtocol.apexInstallationQuery = Dictionary(
+                uniqueKeysWithValues: (URLComponents(
+                    url: request.url!,
+                    resolvingAgainstBaseURL: false
+                )?.queryItems ?? []).compactMap { item in
+                    item.value.map { (item.name, $0) }
+                }
+            )
+            RateLimitURLProtocol.apexInstallationAuthorization = request.value(
+                forHTTPHeaderField: "Authorization"
+            )
+            RateLimitURLProtocol.apexInstallationMethod = request.httpMethod
+            RateLimitURLProtocol.apexInstallationHost = request.url?.host
+            RateLimitURLProtocol.apexInstallationReferer = request.value(
+                forHTTPHeaderField: "Referer"
+            )
+            RateLimitURLProtocol.apexInstallationHeader = request.value(
+                forHTTPHeaderField: "X-Installation-ID"
+            )
+            RateLimitURLProtocol.apexInstallationFingerprint = request.value(
+                forHTTPHeaderField: "X-Fingerprint"
+            )
+            RateLimitURLProtocol.apexInstallationSuperProperties = request.value(
+                forHTTPHeaderField: "X-Super-Properties"
+            )
+            RateLimitURLProtocol.apexInstallationHadBody = request.httpBody?.isEmpty == false
+            status = 200
+            json = #"{"installation":"server-issued-installation","assignments":{}}"#
         case "/api/v9/users/@me":
             RateLimitURLProtocol.currentUserRequests += 1
             status = 200
@@ -139,7 +195,7 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
                 json = #"{"retry_after":0.01,"global":false}"#
             } else {
                 status = 200
-                json = #"[{"id":"100","name":"Guild","icon":null,"owner":false,"permissions":"1024"}]"#
+                json = RateLimitURLProtocol.guildListJSON
             }
         case "/api/v9/users/@me/channels":
             RateLimitURLProtocol.privateChannelListRequests += 1
@@ -363,6 +419,7 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override func startLoading() {
+        Self.totalRequestCount += 1
         let stub = StubResponseBuilder(request: request).response
         let status = stub.status
         let json = stub.json
@@ -376,14 +433,16 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
 
     override func stopLoading() {}
 
-    private static func guildFolderSettingsProto() -> Data {
+    static func guildFolderSettingsProto(guildIDs orderedGuildIDs: [UInt64] = [100]) -> Data {
         func field(_ number: Int, payload: [UInt8]) -> [UInt8] {
             encodeProtoVarint(UInt64(number << 3 | 2)) + encodeProtoVarint(UInt64(payload.count)) + payload
         }
-        let fixedGuildID = (0 ..< 8).map {
-            UInt8(truncatingIfNeeded: UInt64(100) >> UInt64($0 * 8))
+        let fixedGuildIDs = orderedGuildIDs.flatMap { guildID in
+            (0 ..< 8).map {
+                UInt8(truncatingIfNeeded: guildID >> UInt64($0 * 8))
+            }
         }
-        let guildIDs = field(1, payload: fixedGuildID)
+        let guildIDs = field(1, payload: fixedGuildIDs)
         let folderID = field(2, payload: encodeProtoVarint(1 << 3) + encodeProtoVarint(42))
         let name = field(3, payload: field(1, payload: Array("Work".utf8)))
         let color = field(4, payload: encodeProtoVarint(1 << 3) + encodeProtoVarint(0x58_65_F2))

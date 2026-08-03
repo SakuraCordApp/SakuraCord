@@ -40,7 +40,8 @@ struct ProviderRequestContractTests {
         let provider = DiscordRESTProvider(
             credentials: credentials,
             handle: CredentialHandle(accountID: "1"),
-            session: URLSession(configuration: .ephemeral)
+            session: URLSession(configuration: .ephemeral),
+            installationID: "server-issued-installation"
         )
 
         try await provider.prepareAuthentication()
@@ -48,6 +49,84 @@ struct ProviderRequestContractTests {
 
         #expect(authorization == "test-session-credential-value")
         #expect(await credentials.credentialReadCount == 1)
+    }
+
+    @Test func `stored desktop session repairs missing installation identity before Gateway`() async throws {
+        RateLimitURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RateLimitURLProtocol.self]
+        let socket = ReadyGatewaySocket()
+        let provider = DiscordRESTProvider(
+            credentials: TestCredentialStore(),
+            handle: CredentialHandle(accountID: "1"),
+            session: URLSession(configuration: configuration),
+            gatewayTransport: ReadyGatewayTransport(socket: socket),
+            usesDesktopHeartbeat: true,
+            installationID: nil
+        )
+
+        try await provider.prepareAuthentication()
+        try await provider.prepareAuthentication()
+
+        #expect(RateLimitURLProtocol.totalRequestCount == 1)
+        #expect(RateLimitURLProtocol.apexInstallationRequests == 1)
+        #expect(RateLimitURLProtocol.apexInstallationQuery == ["surface": "2"])
+        #expect(RateLimitURLProtocol.apexInstallationMethod == "GET")
+        #expect(RateLimitURLProtocol.apexInstallationHost == "discordapp.com")
+        #expect(RateLimitURLProtocol.apexInstallationReferer == "https://discordapp.com/app")
+        #expect(RateLimitURLProtocol.apexInstallationAuthorization == nil)
+        #expect(RateLimitURLProtocol.apexInstallationHeader == nil)
+        #expect(RateLimitURLProtocol.apexInstallationFingerprint == nil)
+        #expect(!RateLimitURLProtocol.apexInstallationHadBody)
+        let encodedProperties = try #require(
+            RateLimitURLProtocol.apexInstallationSuperProperties
+        )
+        let propertiesData = try #require(Data(base64Encoded: encodedProperties))
+        let properties = try #require(
+            JSONSerialization.jsonObject(with: propertiesData) as? [String: Any]
+        )
+        #expect(properties["client_heartbeat_session_id"] == nil)
+        #expect(properties["client_app_state"] as? String == "focused")
+        let resolvedMetadata = await provider.clientMetadata
+        #expect(resolvedMetadata.installationID == "server-issued-installation")
+        #expect(await socket.sentCount == 0)
+    }
+
+    @Test func `pending login fails closed when Ready omits user without REST identity lookup`() async throws {
+        RateLimitURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RateLimitURLProtocol.self]
+        let socket = ReadyGatewaySocket()
+        await socket.push(gatewayMessage(
+            op: 10, data: .object(["heartbeat_interval": .number(60_000)])
+        ))
+        await socket.push(gatewayMessage(
+            op: 0,
+            data: .object([
+                "session_id": .string("pending-login-session"),
+                "resume_gateway_url": .string("wss://gateway.discord.gg"),
+                "guilds": .array([]),
+            ]),
+            sequence: 1,
+            eventName: "READY"
+        ))
+        let pending = try PendingDiscordCredential(
+            Data("pending-session-credential-value".utf8)
+        )
+        let provider = DiscordRESTProvider(
+            pendingCredential: pending,
+            session: URLSession(configuration: configuration),
+            gatewayTransport: ReadyGatewayTransport(socket: socket)
+        )
+
+        await #expect(throws: ChatProviderError.self) {
+            try await provider.bootstrap()
+        }
+
+        #expect(RateLimitURLProtocol.currentUserRequests == 0)
+        #expect(RateLimitURLProtocol.totalRequestCount == 0)
+        await provider.disconnect()
+        await pending.discard()
     }
 
     @Test func `concurrent sends with one nonce use one message mutation`() async throws {
@@ -519,6 +598,63 @@ extension ProviderRequestContractTests {
         #expect(snapshot.guilds.map(\.id) == [GuildID(rawValue: 100)])
         #expect(RateLimitURLProtocol.currentUserRequests == 0)
         #expect(RateLimitURLProtocol.guildListAttempts == 2)
+        await provider.disconnect()
+    }
+
+    @Test func `partial Ready retains guild layout through catalogue fallback`() async throws {
+        RateLimitURLProtocol.reset()
+        RateLimitURLProtocol.guildListJSON = #"""
+            [
+            {"id":"100","name":"First response guild","icon":null},
+            {"id":"101","name":"Second response guild","icon":null}
+            ]
+            """#
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RateLimitURLProtocol.self]
+        let socket = ReadyGatewaySocket()
+        await socket.push(gatewayMessage(
+            op: 10, data: .object(["heartbeat_interval": .number(60_000)])
+        ))
+        let settings = RateLimitURLProtocol.guildFolderSettingsProto(guildIDs: [101, 100])
+        await socket.push(gatewayMessage(
+            op: 0,
+            data: .object([
+                "session_id": .string("partial-ready-layout-session"),
+                "resume_gateway_url": .string("wss://gateway.discord.gg"),
+                "user": .object([
+                    "id": .string("1"),
+                    "username": .string("tester"),
+                    "global_name": .string("Tester"),
+                    "avatar": .null,
+                ]),
+                "user_settings_proto": .string(settings.base64EncodedString()),
+                "guilds": .array([
+                    .object(["id": .string("100")]),
+                    .object(["id": .string("101")]),
+                ]),
+            ]),
+            sequence: 1,
+            eventName: "READY"
+        ))
+        let provider = DiscordRESTProvider(
+            credentials: TestCredentialStore(),
+            handle: CredentialHandle(accountID: "1"),
+            session: URLSession(configuration: configuration),
+            gatewayTransport: ReadyGatewayTransport(socket: socket)
+        )
+
+        let snapshot = try await provider.bootstrap()
+
+        #expect(snapshot.guilds.map(\.id) == [
+            GuildID(rawValue: 101), GuildID(rawValue: 100),
+        ])
+        #expect(snapshot.guildRailItems == [
+            .folder(GuildFolder(id: 42, name: "Work", colorHex: 0x58_65_F2, guildIDs: [
+                GuildID(rawValue: 101), GuildID(rawValue: 100),
+            ])),
+        ])
+        #expect(RateLimitURLProtocol.guildListAttempts == 2)
+        #expect(RateLimitURLProtocol.settingsRequestCount == 0)
         await provider.disconnect()
     }
 

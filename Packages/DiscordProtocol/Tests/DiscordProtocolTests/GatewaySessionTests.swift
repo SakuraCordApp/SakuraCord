@@ -337,6 +337,31 @@ import Testing
     #expect(throws: GatewaySessionError.compressedBufferLimitExceeded) {
         try bounded.append(.data(compressed))
     }
+
+    // 70,000 repeated bytes compress to this fixture. It deliberately expands
+    // beyond the decoder's 64 KiB output chunk so consuming all compressed
+    // input is not mistaken for consuming all decompressed output.
+    let largeCompressed = try #require(
+        Data(base64Encoded: "KLUv/QRYVQAAEEFBAQBrETnAAt7Is3c=")
+    )
+    var largeFramer = try GatewayPayloadFramer(
+        compression: .zstdStream,
+        maximumCompressedBufferSize: 1024,
+        maximumDecompressedPayloadSize: 128 * 1024
+    )
+    #expect(
+        try largeFramer.append(.data(largeCompressed))
+            == [Data(repeating: 0x41, count: 70_000)]
+    )
+
+    var decompressedBounded = try GatewayPayloadFramer(
+        compression: .zstdStream,
+        maximumCompressedBufferSize: 1024,
+        maximumDecompressedPayloadSize: 64 * 1024
+    )
+    #expect(throws: GatewaySessionError.decompressedPayloadLimitExceeded) {
+        try decompressedBounded.append(.data(largeCompressed))
+    }
 }
 
 @Test func `desktop session announces time spent then uses QoS heartbeats`() async throws {

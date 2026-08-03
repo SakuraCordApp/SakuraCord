@@ -468,7 +468,6 @@ extension AppModel {
                 snapshot = value
             }
             refreshUnreadPresentation()
-            scheduleCachedWorkspacePersistence()
         case .notificationSettingsChanged(let settings):
             applyNotificationSettings(settings)
             refreshUnreadPresentation()
@@ -610,7 +609,7 @@ extension AppModel {
             )
             commandComposer.interactionSucceeded(nonce: nonce)
         }
-        persistAuthoritativeMessageUpsert(message)
+        recordAuthoritativeMessageUpsert(message)
         if message.channelID == openThread?.id {
             reconcileThread(message)
         }
@@ -639,7 +638,6 @@ extension AppModel {
         } else {
             acknowledgeIfEligible(channelID: message.channelID)
         }
-        scheduleCachedWorkspacePersistence()
     }
 
     func consumeMessageUpdated(
@@ -647,7 +645,7 @@ extension AppModel {
         preparedTextPlan: NativeTimelineTextPlan?
     ) {
         let message = reactionPresentationPreserving(incoming)
-        persistAuthoritativeMessageUpsert(message)
+        recordAuthoritativeMessageUpsert(message)
         if message.channelID == openThread?.id {
             reconcileThreadUpdate(message)
         }
@@ -667,7 +665,6 @@ extension AppModel {
         )
         clearReactionReactorLoadState(channelID: channelID, messageID: messageID)
         clearReactionMutationState(channelID: channelID, messageID: messageID)
-        messagePersistenceSink.enqueueDeletion(messageID, database: database)
         if replyingTo?.id == messageID {
             replyingTo = nil
         }
@@ -708,7 +705,6 @@ extension AppModel {
             )
         }
         refreshUnreadPresentation()
-        scheduleCachedWorkspacePersistence()
         if let selectedChannelID { acknowledgeIfEligible(channelID: selectedChannelID) }
         if let threadID = openThread?.id { acknowledgeIfEligible(channelID: threadID) }
     }
@@ -716,7 +712,6 @@ extension AppModel {
     func consumeReadStateChange(_ state: ChannelReadState) {
         if readState.applyRemote(state) {
             refreshUnreadPresentation()
-            scheduleCachedWorkspacePersistence()
             if !readState.unread(channelID: state.channelID) {
                 cancelNativeNotifications(channelID: state.channelID)
             }
@@ -748,7 +743,6 @@ extension AppModel {
         }
         readState.replaceChannels(in: guildID, with: channels)
         refreshUnreadPresentation(appliesAccessImmediately: true)
-        scheduleCachedWorkspacePersistence()
     }
 
     func consumeForumPostsChanged(channelID: ChannelID, posts: [ForumPost]) {
@@ -937,7 +931,6 @@ extension AppModel {
         }
         updateServerRail(from: value)
         refreshUnreadPresentation(appliesAccessImmediately: true)
-        scheduleCachedWorkspacePersistence()
         selectGuild(selectedGuildID)
     }
 
@@ -949,7 +942,6 @@ extension AppModel {
         snapshot = value
         serverRailGuildsByID[guild.id] = guild
         readState.merge(guilds: [guild])
-        scheduleCachedWorkspacePersistence()
     }
 
     func consumeGuildLayoutChanged(guilds: [Guild], railItems: [GuildRailItem]) {
@@ -959,7 +951,6 @@ extension AppModel {
         snapshot = value
         readState.retainGuilds(Set(guilds.map(\.id)))
         readState.merge(guilds: guilds)
-        scheduleCachedWorkspacePersistence()
         updateServerRail(from: value)
         if let selectedGuildID,
            !guilds.contains(where: { $0.id == selectedGuildID })
@@ -975,7 +966,6 @@ extension AppModel {
         if let index = members.firstIndex(where: { $0.id == user.id }) {
             members[index].user = user
         }
-        scheduleCachedWorkspacePersistence()
     }
 
     func consumeInteraction(_ event: InteractionEvent) {
@@ -1716,11 +1706,6 @@ extension AppModel {
             return messages.first { $0.nonce == nonce }?.outboxState
         }
         return messageCache[channelID]?.first { $0.nonce == nonce }?.outboxState
-    }
-
-    func persist(_ message: Message) {
-        guard !message.flags.contains(.ephemeral) else { return }
-        messagePersistenceSink.enqueue(message, database: database)
     }
 
     func reconcileThread(_ message: Message) {

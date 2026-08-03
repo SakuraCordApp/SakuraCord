@@ -20,7 +20,7 @@ struct DiscordLoginView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let showsCancel: Bool
     let networkingEnabled: Bool
-    let onConnected: @MainActor (CredentialHandle) async -> String?
+    let onConnected: @MainActor (PendingDiscordCredential) async -> String?
 
     @State private var authenticator: DiscordSessionAuthenticator
     @State private var remoteAuthManager = DiscordRemoteAuthManager()
@@ -47,15 +47,12 @@ struct DiscordLoginView: View {
     init(
         showsCancel: Bool,
         networkingEnabled: Bool,
-        credentials: any CredentialStore,
-        onConnected: @escaping @MainActor (CredentialHandle) async -> String?
+        onConnected: @escaping @MainActor (PendingDiscordCredential) async -> String?
     ) {
         self.showsCancel = showsCancel
         self.networkingEnabled = networkingEnabled
         self.onConnected = onConnected
-        _authenticator = State(
-            initialValue: DiscordSessionAuthenticator(credentials: credentials)
-        )
+        _authenticator = State(initialValue: DiscordSessionAuthenticator())
     }
 
     var body: some View {
@@ -285,8 +282,8 @@ struct DiscordLoginView: View {
 
     private func handle(_ step: DiscordNativeAuthenticationStep) async {
         switch step {
-        case let .authenticated(handle):
-            await finishConnection(handle)
+        case let .authenticated(credential):
+            await finishConnection(credential)
         case let .mfa(value):
             challenge = value
             selectedMFAMethod = value.methods.first
@@ -308,12 +305,12 @@ struct DiscordLoginView: View {
         authenticationTask = Task {
             defer { isWorking = false }
             do {
-                let handle = try await authenticator.completeMFA(
+                let credential = try await authenticator.completeMFA(
                     challenge: challenge,
                     method: selectedMFAMethod,
                     code: submittedCode
                 )
-                await finishConnection(handle)
+                await finishConnection(credential)
             } catch is CancellationError {
                 return
             } catch {
@@ -345,9 +342,9 @@ struct DiscordLoginView: View {
         }
     }
 
-    private func finishConnection(_ handle: CredentialHandle) async {
+    private func finishConnection(_ credential: PendingDiscordCredential) async {
         isHandingOffCredential = true
-        if let bootstrapError = await onConnected(handle) {
+        if let bootstrapError = await onConnected(credential) {
             isHandingOffCredential = false
             errorTitle = "Account bootstrap stopped"
             errorMessage = bootstrapError
@@ -435,9 +432,9 @@ struct DiscordLoginView: View {
 
     private func finishRemoteAuth(encryptedToken: String) async throws {
         let token = try await remoteAuthManager.decryptToken(encryptedToken)
-        let handle = try await authenticator.acceptRemoteAuthToken(token)
+        let credential = try await authenticator.acceptRemoteAuthToken(token)
         await remoteAuthManager.disconnect()
-        await finishConnection(handle)
+        await finishConnection(credential)
     }
 }
 

@@ -313,7 +313,9 @@ private struct ThreadMessageTimelineView: View {
                 isLoading: model.isLoadingThread,
                 messageCount: model.threadMessages.count
             ) {
-                MessageTimelineLoadingSkeleton()
+                MessageTimelineLoadingSkeleton(
+                    bottomContentInset: bottomContentInset
+                )
             }
         }
         .overlay(alignment: .top) {

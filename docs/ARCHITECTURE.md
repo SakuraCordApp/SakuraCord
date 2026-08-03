@@ -11,7 +11,7 @@ workspace is a convenience entry point.
 | `App` | SwiftUI application, AppKit bridges, app state, authentication UI, settings, and the plugin-host executable. |
 | `SakuraCordModels` | Stable domain values, typed snowflakes, messages, commands, interactions, and provider events. |
 | `DiscordProtocol` | Provider contract, REST and Gateway implementation, Discord DTO decoding, credentials, request scheduling, and offline provider. |
-| `SakuraCordPersistence` | Account-scoped GRDB database, migrations, drafts, messages, and non-credential cache state. |
+| `SakuraCordPersistence` | Account-scoped GRDB database, migrations, and user-authored drafts. Discord workspace and history state is never persisted. |
 | `MessageRendering` | Parsed message documents, Discord Markdown conversion, and attributed-content planning support. |
 | `MediaPipeline` | Media cache interfaces plus voice/video signaling, transport, capture, playback, Opus, H.264, and DAVE integration. |
 | `SakuraCordPluginSDK` | Plugin manifest, capability, and permission contracts. |
@@ -23,7 +23,7 @@ construct Discord requests or own network transports.
 ## Application state
 
 `AppModel` is a Main Actor observable projection over a `ChatProvider` and
-`SakuraCordDatabase`. It coordinates navigation, caches, drafts, message
+`SakuraCordDatabase`. It coordinates navigation, session-memory caches, drafts, message
 presentation, forum state, interactions, and voice state for the current app
 workspace. Views receive narrow values or the model reference.
 
@@ -33,7 +33,10 @@ Launch state is explicit:
   `--offline-forum-performance` construct deterministic fixture providers and
   an in-memory database with Discord networking disabled.
 - A normal launch restores a real account session, presents native sign-in, or
-  reports a connection failure. It never falls back to mock data.
+  reports a connection failure. It never falls back to mock data. The complete
+  chat layout remains a data-free skeleton until the live Gateway bootstrap is
+  ready; no account rail, channel, member, read-state, or message presentation
+  is restored from disk.
 
 High-frequency presentation state such as remote typing is kept in narrower
 observable models so it does not invalidate the complete app tree.
@@ -82,19 +85,27 @@ in [PROTOCOL_BASELINE.md](PROTOCOL_BASELINE.md).
 ## Authentication and persistence
 
 Native authentication obtains only identifiers issued by Discord's legitimate
-flow, presents MFA or user-completed hCaptcha when requested, validates the
-current user, and stores the resulting credential through
-`KeychainCredentialStore`. Passwords, cookies, captured authorization headers,
-and analytics identifiers are not persisted.
+flow and presents MFA or user-completed hCaptcha when requested. A newly issued
+credential remains memory-only while the main Gateway connects; a valid
+`READY.user` supplies its account ID before the credential is stored through
+`KeychainCredentialStore`. Failure or cancellation discards the pending value.
+An older stored credential that predates installation-identity persistence
+performs one unauthenticated Apex installation lookup before Gateway startup;
+it does not repeat the fingerprint preflight or force an otherwise valid
+credential through the login flow.
+Passwords, cookies, captured authorization headers, and analytics identifiers
+are not persisted.
 
 An explicitly insecure, debug-only build flag can migrate the credential once
 from Keychain into a mode-`0600` file within the app's sandbox Application
 Support container. It is excluded from release and update-enabled packages and
 is not the production credential contract.
 
-Account data is stored through `SakuraCordPersistence`. Credentials never enter
-GRDB, fixtures, logs, or plugin APIs. Normal and offline runs use separate
-storage behavior.
+Only user-authored drafts are stored through `SakuraCordPersistence`.
+Credentials never enter GRDB, fixtures, logs, or plugin APIs. Discord
+workspace, message, read, member, and Gateway state is session-memory only. A
+database migration drops the obsolete tables from earlier builds while
+preserving drafts. Normal and offline runs use separate storage behavior.
 
 ## Message and media flow
 

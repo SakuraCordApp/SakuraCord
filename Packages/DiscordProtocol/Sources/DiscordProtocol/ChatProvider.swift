@@ -116,6 +116,14 @@ public protocol ChatProvider: Sendable {
     func disconnect() async
 }
 
+public protocol PendingCredentialChatProvider: ChatProvider {
+    func persistPendingCredential(
+        to store: any CredentialStore,
+        accountID: String
+    ) async throws -> CredentialHandle
+    func discardPendingCredential() async
+}
+
 public extension ChatProvider {
     func prepareAuthentication() async throws {}
 

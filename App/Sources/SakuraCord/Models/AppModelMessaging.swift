@@ -72,8 +72,8 @@ extension AppModel {
         return persistedMessage
     }
 
-    func persistAuthoritativeMessageUpsert(_ message: Message) {
-        persist(journalAuthoritativeMessageUpsert(message))
+    func recordAuthoritativeMessageUpsert(_ message: Message) {
+        journalAuthoritativeMessageUpsert(message)
     }
 
     func edit(_ message: Message, content: String) async {
@@ -85,7 +85,7 @@ extension AppModel {
             )
             guard isCurrentAccountSession(session) else { return }
             let reconciled = reconcileVisibleOrCached(updated)
-            persistAuthoritativeMessageUpsert(reconciled)
+            recordAuthoritativeMessageUpsert(reconciled)
         } catch {
             guard isCurrentAccountSession(session) else { return }
             errorMessage = error.localizedDescription
@@ -119,11 +119,6 @@ extension AppModel {
             }
         }
         messageCache[message.channelID]?.removeAll { $0.id == message.id }
-        let session = accountSession()
-        Task { [weak self] in
-            guard let self, self.isCurrentAccountSession(session) else { return }
-            try? await session.database?.deleteMessage(message.id)
-        }
     }
 
     func toggleReaction(_ emoji: String, on message: Message) async {
@@ -226,9 +221,6 @@ extension AppModel {
             )
             reactionMutations[key] = nil
             reactionMutationTasks[key] = nil
-            if let message = reactionMessage(for: key) {
-                persist(message)
-            }
             errorMessage = error.localizedDescription
             return
         }
@@ -246,12 +238,12 @@ extension AppModel {
             reactionMutations[key] = nil
             reactionMutationTasks[key] = nil
             if let message = reactionMessage(for: key) {
-                persistAuthoritativeMessageUpsert(message)
+                recordAuthoritativeMessageUpsert(message)
             }
         } else {
             reactionMutations[key] = latest
             if let message = reactionMessage(for: key) {
-                persistAuthoritativeMessageUpsert(message)
+                recordAuthoritativeMessageUpsert(message)
             }
             scheduleReactionMutation(for: key)
         }
@@ -603,7 +595,7 @@ extension AppModel {
         }
 
         if persistsResult, let messageToPersist {
-            persistAuthoritativeMessageUpsert(messageToPersist)
+            recordAuthoritativeMessageUpsert(messageToPersist)
         }
     }
 
@@ -1705,17 +1697,6 @@ extension AppModel {
         errorMessage = nil
     }
 
-    func storedMessages(in channelID: ChannelID) async -> [Message] {
-        await (try? database?.messages(in: channelID)) ?? []
-    }
-
-    func storedConversationPage(
-        in channelID: ChannelID,
-        account: AppModelAccountSession
-    ) async -> PersistedConversationPage? {
-        try? await account.database?.conversationPage(in: channelID)
-    }
-
     func storedDraft(
         in channelID: ChannelID,
         account: AppModelAccountSession
@@ -1797,26 +1778,6 @@ extension AppModel {
             }
             return lhs.id < rhs.id
         }
-    }
-
-    static func persistenceMutations(
-        from mutations: [MessageID: ConversationRefreshMutation]
-    ) -> (protectedMessages: [Message], deletedMessageIDs: Set<MessageID>) {
-        var protectedMessages: [Message] = []
-        var deletedMessageIDs: Set<MessageID> = []
-        for (messageID, mutation) in mutations {
-            switch mutation {
-            case .upsert(let message):
-                guard message.outboxState == .confirmed,
-                      !message.flags.contains(.ephemeral)
-                else { continue }
-                protectedMessages.append(message)
-            case .delete:
-                deletedMessageIDs.insert(messageID)
-            }
-        }
-        protectedMessages.sort { $0.id < $1.id }
-        return (protectedMessages, deletedMessageIDs)
     }
 
     func isChannelUnread(_ channelID: ChannelID) -> Bool {

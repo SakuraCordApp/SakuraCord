@@ -1,7 +1,7 @@
 # Discord production protocol baseline
 
-Last repository audit: 3 August 2026, in a working tree based on SakuraCord
-commit `e62329d`.
+Last repository audit: 4 August 2026, in a working tree based on SakuraCord
+commit `5a2f42d`.
 
 This document describes SakuraCord's durable network contract and the dated
 evidence behind it. It is not a claim that Discord's undocumented
@@ -21,9 +21,10 @@ using:
   `1a0e2d017c39d427ced2a95c829fd32621bddb14`, API version 9, and main asset
   `web.a8c0f0f55a5a68c4.js` with SHA-256
   `32ea3730be90665e54ee0126c63b1b85a01000f5ab57f92618cf26bd725bc490`;
-- an unmodified, signed, and notarized stable desktop host `0.0.402`
-  (Electron `37.6.0`) copied from Discord's official distribution into a
-  renamed temporary bundle so the installed Equicord app was not targeted;
+- an unmodified, signed, and notarized stable desktop host `0.0.403`
+  (Electron `42.7.1`, Chromium `148.0.7778.280`, native updater build
+  `87263`) installed by Discord's current official distribution into an
+  isolated temporary profile so the installed Equicord app was not targeted;
 - Paicord revision `694761c1938b73bb60bd58942674dfe73aab1135`;
 - Swiftcord v1 revision `14465d927ebe1ba34b3befa00f9365fad7b56eb9`
   and DiscordKit revision `2d42c69cafe592300a1a9d3a307bf485294026c7`;
@@ -113,11 +114,28 @@ Every authenticated request goes through `DiscordRESTProvider.perform`:
 Normal cold startup is Gateway-first. `READY.user`, `READY.guilds`,
 `READY.private_channels`, settings, read state, and the supplemental payload
 seed the account before the first snapshot is published. A complete Ready
-therefore sends zero `/users/@me` and zero `/users/@me/guilds` reads. Those two
-routes remain sequential, bounded compatibility fallbacks only when a future
-Ready payload omits the corresponding required data. This matches the current
-official client, Paicord's current-user and guild stores, and Swiftcord v1's
-Gateway-owned initial state.
+therefore sends zero `/users/@me` and zero `/users/@me/guilds` reads. In the
+sanitized 4 August 2026 large-account desktop observation, Ready carried all 16
+guild IDs and their channel collections but omitted the guild names needed for
+the catalogue. SakuraCord used one bounded `/users/@me/guilds` fallback after a
+server `429`; the decoded settings contained 12 folders covering 15 guilds.
+That layout must remain pending until the fallback catalogue is installed, then
+order the live rail instead of being consumed against an empty catalogue. The
+two REST routes remain sequential, bounded compatibility fallbacks when Ready
+omits required data, except that `/users/@me` is available only to a previously
+stored session. A newly authenticated session requires `READY.user` before it
+persists the credential and never falls back to that route. This matches the
+current official login and Swiftcord v1's pending-token flow. Paicord's stores
+are Gateway-owned after connection, but its login view model is the documented
+outlier that reads `/users/@me` before storing an account. Paicord also treats
+the Ready settings proto as the authoritative guild-folder order.
+
+The 3 August 2026 first-party web asset defines the Apex experiment surface
+`APP` as integer `2` and sends that value on the current login path. A sanitized
+unauthenticated production check returned `400` / Discord error `50035` for the
+obsolete string `discord_app`, while `surface=2` returned `200` with the
+expected installation field. Discord's public API documentation, pinned
+Paicord, and pinned Swiftcord v1 have no corresponding Apex implementation.
 
 ### Audited HTTP route surface
 
@@ -129,12 +147,13 @@ and retained as evidence.
 
 | Method and route template | Trigger and exact supported request shape | Cross-reference result |
 | --- | --- | --- |
-| `GET /experiments` | Cold native password/MFA login is unauthenticated; a restored-session migration for a missing installation ID uses the central authenticated transport. Both forms have no body and accept only the returned fingerprint/installation fields appropriate to that lifecycle. | Current official login and Paicord; Swiftcord v1 has no native-login counterpart. |
-| `POST /auth/login` | Explicit login; `login`, `password`, `undelete:false`; one user-completed CAPTCHA replay may add challenge headers. | Current official and Paicord; S−. |
-| `POST /auth/mfa/{totp,sms,backup}` | Explicit MFA; `code`, `ticket`, `login_instance_id`. | Current official and Paicord; S−. |
+| `GET /apex/experiments?surface=2` | Cold native password/MFA installation preflight, or one stored-session repair when an older credential lacks its installation identity; unauthenticated, no body, Authorization, fingerprint, installation header, or heartbeat session. Only the returned installation ID is retained. The obsolete string surface is rejected with `400` / `50035`. | Current official login; P−, S−. |
+| `GET /experiments?with_guild_experiments=true` | Cold native password/MFA fingerprint preflight only; unauthenticated, no body, carries the server-issued installation ID and `X-Context-Properties` location `Login`. Stored-session repair does not repeat this request. | Current official login and Paicord; Swiftcord v1 has no native-login counterpart. Paicord lacks the current Apex preflight and query/context shape. |
+| `POST /auth/login` | Explicit login; `login`, `password`, `undelete:false`, `login_source:null`, and `gift_code_sku_id:null`; one user-completed CAPTCHA replay may add challenge headers. | Current official live password login and web action; Paicord omits the null keys; S−. |
+| `POST /auth/mfa/{totp,sms,backup}` | Explicit MFA; `code`, `ticket`, optional `login_instance_id`, `login_source:null`, and `gift_code_sku_id:null`. | Current official web action and Paicord; no live MFA challenge occurred in the 3 August clean-client pass; S−. |
 | `POST /auth/mfa/sms/send` | Explicit SMS choice; `ticket`. | Current official and Paicord; S−. |
 | `POST /users/@me/remote-auth/login` | Approved QR ticket exchange; `ticket`; at most one user-completed CAPTCHA replay. | Current official remote-auth v2 and Paicord; S−. |
-| `GET /users/@me` | One post-auth credential validation, or the incomplete-Ready fallback above; no body. | Public user semantics, current official, Paicord, and Swiftcord. |
+| `GET /users/@me` | Incomplete-Ready compatibility fallback for a previously stored session only; no body. A newly authenticated session fails closed if Ready omits its user and never sends this route. | Public user semantics and Paicord. Current official login and Swiftcord v1 obtain the authenticated user from Gateway Ready; Paicord login performs this extra read. |
 | `GET /users/@me/guilds` | Incomplete-Ready compatibility fallback only; no body. | Public guild semantics; normal current official/Paicord/Swiftcord startup uses Gateway instead. |
 | `GET /guilds/{guild}/channels` | Cache-miss fallback only; no body, coalesced by guild. | Public channel semantics and all three client references. |
 | `GET /guilds/{guild}/roles` | Visible role/member UI cache miss; no body, coalesced. | Public guild semantics and all three client references. |
@@ -143,7 +162,7 @@ and retained as evidence.
 | `GET /collectibles-products/{product}` | At most one cache-miss read for a profile effect returned by the profile response; query contains the current `locale`. | Current first-party route; P−, S−. The obsolete `/user-profile-effects` fallback was removed. |
 | `GET /guilds/{guild}/emojis` | Stale/missing Gateway and disk-cache fallback; no body, coalesced. | Public emoji semantics and all three client references. |
 | `GET /users/@me/settings-proto/2` | Explicit emoji-settings cache miss; no body, coalesced for the provider session. | Current first-party, Paicord, and Swiftcord's versioned settings-proto path. |
-| `GET /channels/{channel}/messages` | Visible history only; the current clean client uses `limit=10` for a newly selected uncached channel, which SakuraCord now matches. Older-page pagination uses ordered `before` then `limit=50`; no body. | Public message semantics and all three client references. Paicord and Swiftcord v1 use the historical 50-message initial page. |
+| `GET /channels/{channel}/messages` | Visible history only; the current clean client uses `limit=10` for a newly selected uncached channel, which SakuraCord matches once per channel per process. Reopening a loaded channel restores its bounded session-memory page and sends no history request. Older-page pagination uses ordered `before` then `limit=50`; no body. | Public message semantics and all three client references. Paicord retains a per-channel in-memory store and uses a historical 50-message initial page. Swiftcord v1 clears and refetches 50 on channel change; the current first-party cache behavior takes precedence. |
 | `GET /channels/{thread}` | One unknown-thread deep-link resolution; no body. | Public channel semantics and all three references. |
 | `POST /channels/{forum}/threads?use_nested_fields=true` | Explicit forum creation; `name`, `auto_archive_duration`, ordered `applied_tags`, nested `message` with `content`, `sticker_ids:[]`, and attachments only when uploaded. | Current first-party action; Paicord and Swiftcord have only partial/historical thread creation. |
 | `GET /channels/{forum}/threads/search` | Forum catalogue: `archived=true`, `sort_by`, `sort_order=desc`, `limit`, `offset`, and optional `tag`/`tag_setting`; name search adds `name`. | Current first-party route; P−, S−. |
@@ -171,13 +190,15 @@ clean host: product OS version rather than Darwin kernel version, actual system
 locale, Chromium's ordered language preference header, current client/build
 versions, `client_event_source:null`, and client-generated launch,
 launch-signature, and heartbeat-session identifiers. `client_app_state`
-follows the real main-window focused/unfocused state. `native_build_number` is
-absent in the current host. Pre-login authentication carries the legitimately
-issued fingerprint and installation ID. Successful authentication clears the
-fingerprint from subsequent validation and production REST requests while the
-persisted installation ID remains in `X-Installation-ID`, matching the clean
-client. `X-Routing-Key` remains absent for normal users; the first-party value
-is a staff/developer override, not a client-generated identifier.
+follows the real main-window focused/unfocused state. The current host includes
+`native_build_number:87263`. Pre-login authentication carries the legitimately
+issued fingerprint and installation ID, but omits
+`client_heartbeat_session_id` until Gateway startup, matching the clean host.
+Successful authentication clears the fingerprint before Gateway startup and
+subsequent production REST requests while the persisted installation ID
+remains in `X-Installation-ID`, matching the clean client. `X-Routing-Key`
+remains absent for normal users; the first-party value is a staff/developer
+override, not a client-generated identifier.
 
 Diagnostics payloads are allowlisted and redacted before they enter the
 in-memory store. The export may retain protocol metadata and snowflake IDs, but
@@ -192,7 +213,10 @@ The default attempt budget is exact:
 | Ordinary authenticated GET | 2; the second attempt occurs only after a server `429` cooldown. |
 | Authenticated mutation | 1; no automatic replay after `429`, timeout, or ambiguous failure. |
 | Application-command index readiness | 3 created GETs for the separately tested `202`/`429` flow. |
-| Native authentication status retry | Original plus at most 3 Paicord-policy retries for `429`, `500`, `502`, or `504`, subject to its delay ceiling. |
+| Cold native installation/fingerprint preflight status retry | Original plus at most 3 bounded retries for `429`, `500`, `502`, or `504`, subject to the established delay ceiling. |
+| Stored-session missing-installation repair | 1 unauthenticated Apex GET; no automatic retry. |
+| Native password/MFA status retry | Original plus at most 2 current-official retries for `429`, `500`, `502`, or `504`, subject to the established delay ceiling. |
+| Remote-auth ticket status retry | Original plus at most 3 Paicord-policy retries for `429`, `500`, `502`, or `504`, subject to its delay ceiling. |
 | User-completed login CAPTCHA | At most 1 replay of the challenged request. |
 
 Any `429` pauses authenticated traffic until the server-provided cooldown.
@@ -217,6 +241,39 @@ API v9 ETF encoding with `zstd-stream`. JSON with `zlib-stream` remains only as
 an injectable deterministic test transport and as the historical web/Swiftcord
 cross-reference.
 
+Each zstd WebSocket message is decompressed through one connection-lifetime
+context and is drained until both its compressed input and any pending decoder
+output are exhausted. Consuming the final input byte is not sufficient when
+the decoder filled its output buffer. Discord's current Gateway documentation
+requires repeated `ZSTD_decompressStream` calls and explicitly notes that its
+return value need not reach zero; pinned Paicord likewise continues whenever
+its destination buffer is full. Swiftcord v1/DiscordKit uses JSON with zlib and
+has no zstd counterpart. A sanitized 4 August 2026 live startup exposed the
+regression as exactly 589,824 partial bytes (nine 64 KiB chunks) from a large
+ETF Ready payload; the corrected decoder retains the existing 8 MiB compressed
+and 16 MiB decompressed safety bounds.
+
+ETF maps may use 64-bit integer keys even though the equivalent JSON object can
+only expose string keys. The clean 4 August large-account Ready payload did so;
+SakuraCord now converts integer keys to their exact decimal spelling without a
+floating-point round trip. This follows Discord's documented ETF rule that
+snowflakes may be 64-bit integers or strings and produces the same object-key
+shape consumed by the JSON web, Paicord, and Swiftcord paths.
+
+The same rule applies to ETF integer values outside JavaScript's exact integer
+range: they are normalized to exact decimal strings before DTO decoding rather
+than passing through `Double`. Safe-range counters and timestamps remain JSON
+numbers. This preserves guild, channel, user, message, and role snowflakes on
+large Ready payloads while matching the JSON representations used by the other
+reviewed clients.
+
+ETF `STRING_EXT` is normalized as the byte-list it represents, not as UTF-8
+text. A sanitized 4 August 2026 desktop session used that compact term for the
+two-integer `range` in `GUILD_MEMBER_LIST_UPDATE`; treating it as text caused
+the complete member-list update to fail decoding. The resulting JSON array
+matches the current first-party JSON shape and pinned Paicord's `IntPair`.
+Swiftcord v1 has no corresponding member-list implementation.
+
 The state machine covers:
 
 ```text
@@ -231,7 +288,7 @@ Durable requirements:
 - one Identify or Resume after each new Hello;
 - a randomized first heartbeat and current desktop QoS opcode-40 heartbeats;
 - ACK tracking and reconnect after a missed ACK;
-- persisted session ID, resume URL, and sequence;
+- in-memory session ID, resume URL, and sequence for same-process Resume;
 - Resume before a fresh Identify when state is valid;
 - explicit invalid-session and close-code handling;
 - bounded, jittered reconnect backoff;
@@ -348,20 +405,35 @@ plus zlib.
 
 Native authentication is implemented without an embedded Discord login page:
 
-- a cold password login performs experiments/fingerprint/installation, login, then
-  current-user validation;
-- a warm password login performs login and validation;
+- a cold password login performs the Apex installation preflight, the
+  installation-bearing fingerprint preflight, login, then connects Gateway;
+- a warm password login performs login and then connects Gateway;
+- a stored credential missing only its installation identity performs one
+  unauthenticated Apex lookup and then connects Gateway without repeating the
+  fingerprint or login requests;
 - MFA adds one explicit verification request;
 - hCaptcha is completed by the user and permits one challenged-request replay;
 - QR login uses one remote-auth v2 WebSocket, an ephemeral RSA key, one ticket
-  exchange, and one current-user validation after approval; and
-- only a validated session credential enters `KeychainCredentialStore`.
+  exchange, then connects the main Gateway after approval; and
+- the returned credential remains memory-only until `READY.user` supplies a
+  valid account ID, at which point it enters `KeychainCredentialStore` exactly
+  once. Cancellation, bootstrap failure, or an omitted Ready user discards it.
 
 Passwords, challenge solutions, and credentials are never written to
 preferences, fixtures, GRDB, or logs. The server-issued fingerprint and
 installation ID are persisted only in local preferences to reproduce the
 first-party lifecycle; neither value is logged or committed. A cancelled or
 rejected challenge does not create another request.
+
+The clean desktop additionally read `/auth/location-metadata` for its own
+country, consent, and promotional UI and emitted science traffic before the
+user submitted the form. SakuraCord has no corresponding UI or analytics
+consumer, so it deliberately does not add those unrelated requests. The clean
+success path connected Gateway immediately after `/auth/login`; SakuraCord now
+uses that same ordering. Swiftcord v1 independently corroborates the pending
+token → Gateway Ready user → account-store sequence. Paicord performs an extra
+pre-Gateway current-user read and was retained only as conflicting evidence,
+not copied into the production path.
 
 ## Established feature contracts
 
@@ -370,6 +442,19 @@ implementation records.
 
 ### Messages, typing, mentions, and links
 
+- Process startup never presents a persisted Discord workspace or message
+  page. A data-free full-layout skeleton remains visible until the live Ready
+  bootstrap is applied. Message pages, pagination boundaries, prepared rows,
+  and Gateway deltas are retained only in bounded process memory. Reopening a
+  loaded channel therefore issues zero history requests, while relaunching the
+  app deliberately starts empty and performs the one reviewed `limit=10`
+  newest-page read after Ready. The 3 August first-party bundle performs its
+  initial read only for an uncached selection. Pinned Paicord retains one
+  `ChannelStore` per channel and likewise reuses it on selection; pinned
+  Swiftcord v1 is the historical outlier that clears and refetches on every
+  channel change. Discord's public message documentation defines the endpoint,
+  permissions, and pagination parameters but does not prescribe client cache
+  lifetime.
 - One user send creates one message POST with a Discord-epoch nonce,
   `enforce_nonce: true`, `tts: false`, `flags: 0`, the clean macOS host's
   `mobile_network_type: "unknown"`, attachments only when present, and
@@ -394,7 +479,7 @@ implementation records.
   typed deltas to loaded messages without a history reload. Current-user normal
   and burst state are reconciled independently so the Gateway echo of one
   optimistic REST toggle cannot change the aggregate count twice. Each delta
-  fans out to visible, cached, thread, forum-preview, and persisted message
+  fans out to visible, session-cached, thread, and forum-preview message
   state without issuing another authenticated request. The typed reaction
   event is the sole presentation delta; updating the provider's forum cache
   does not also publish a catalogue replacement for the same Gateway event.

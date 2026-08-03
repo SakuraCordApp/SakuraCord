@@ -848,7 +848,7 @@ private final class GatewayZstdStreamDecoder {
             let destination = UnsafeMutablePointer<UInt8>.allocate(capacity: destinationCapacity)
             defer { destination.deallocate() }
 
-            while input.pos < input.size {
+            while true {
                 let previousInputPosition = input.pos
                 var destinationBuffer = ZSTD_outBuffer(
                     dst: destination,
@@ -865,6 +865,15 @@ private final class GatewayZstdStreamDecoder {
                 }
                 if produced > 0 {
                     output.append(destination, count: produced)
+                }
+
+                // ZSTD may consume the final compressed byte while still
+                // filling the output buffer. Drain that buffered output before
+                // treating this WebSocket message as a complete Gateway
+                // payload. A return value of zero is not a message boundary
+                // for Discord's shared zstd-stream context.
+                if input.pos == input.size, produced < destinationCapacity {
+                    break
                 }
                 guard input.pos > previousInputPosition || produced > 0 else {
                     throw GatewaySessionError.decompressionFailed

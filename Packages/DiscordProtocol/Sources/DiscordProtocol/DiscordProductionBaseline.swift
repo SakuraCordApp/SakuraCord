@@ -8,6 +8,9 @@ public struct DiscordProductionBaseline: Codable, Equatable, Sendable {
     public var apiVersion: Int
     public var desktopVersion: String
     public var electronVersion: String
+    public var chromiumVersion: String
+    public var nativeBuildNumber: Int
+    public var apexAppSurface: Int
     public var webGatewayEncoding: String
     public var webGatewayCompression: String
     public var desktopGatewayEncoding: String
@@ -20,8 +23,11 @@ public struct DiscordProductionBaseline: Codable, Equatable, Sendable {
         observedAt: Date(timeIntervalSince1970: 1_785_773_429),
         webBuildNumber: 587_597,
         apiVersion: 9,
-        desktopVersion: "0.0.402",
-        electronVersion: "37.6.0",
+        desktopVersion: "0.0.403",
+        electronVersion: "42.7.1",
+        chromiumVersion: "148.0.7778.280",
+        nativeBuildNumber: 87_263,
+        apexAppSurface: 2,
         webGatewayEncoding: "json",
         webGatewayCompression: "zlib-stream",
         desktopGatewayEncoding: "etf",

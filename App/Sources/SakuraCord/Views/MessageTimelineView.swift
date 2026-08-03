@@ -72,7 +72,9 @@ struct MessageTimelineView: View {
                 isLoading: model.isLoadingMessages,
                 messageCount: model.messages.count
             ) {
-                MessageTimelineLoadingSkeleton()
+                MessageTimelineLoadingSkeleton(
+                    bottomContentInset: bottomContentInset
+                )
             }
         }
         .overlay(alignment: .top) {
@@ -549,6 +551,8 @@ nonisolated enum TimelineUnreadBoundaryPolicy {
 }
 
 struct MessageTimelineLoadingSkeleton: View {
+    var bottomContentInset: CGFloat = 0
+
     private static let patterns = [
         MessageTimelineSkeletonRow(id: 0, firstLineWidth: 132, secondLineWidth: 330),
         MessageTimelineSkeletonRow(id: 1, firstLineWidth: 94, secondLineWidth: 470),
@@ -563,7 +567,12 @@ struct MessageTimelineLoadingSkeleton: View {
             Color(nsColor: .windowBackgroundColor)
             GeometryReader { geometry in
                 VStack(alignment: .leading, spacing: 20) {
-                    ForEach(0 ..< MessageTimelineSkeletonLayout.rowCount(for: geometry.size.height), id: \.self) { index in
+                    ForEach(
+                        0 ..< MessageTimelineSkeletonLayout.rowCount(
+                            for: max(0, geometry.size.height - bottomContentInset)
+                        ),
+                        id: \.self
+                    ) { index in
                         MessageTimelineSkeletonMessage(
                             row: Self.patterns[index % Self.patterns.count],
                             availableLineWidth: max(120, geometry.size.width - 84)
@@ -572,8 +581,14 @@ struct MessageTimelineLoadingSkeleton: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 18)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: 0,
+                    maxHeight: max(0, geometry.size.height - bottomContentInset),
+                    alignment: .topLeading
+                )
                 .clipped()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
         // The timeline itself extends through the top scroll-edge safe area so
