@@ -215,6 +215,48 @@ import Testing
     #expect(hoverChanges == [true, false])
 }
 
+@MainActor
+@Test func `channel hover template survives selected row virtualization`() throws {
+    let tableView = NSTableView(
+        frame: NSRect(x: 0, y: 0, width: 240, height: 160)
+    )
+    let selectionHost = NSView(
+        frame: NSRect(x: 0, y: 0, width: 240, height: 28)
+    )
+    let selectionView = NSVisualEffectView(
+        frame: NSRect(x: 6, y: 2, width: 228, height: 24)
+    )
+    selectionView.material = .selection
+    selectionView.wantsLayer = true
+    selectionView.layer?.cornerRadius = 7
+    selectionHost.addSubview(selectionView)
+
+    let template = ChannelNativeHoverTemplate(
+        selectionView: selectionView,
+        fallbackRowBounds: selectionHost.bounds
+    )
+    let store = ChannelNativeHoverTemplateStore()
+    store.set(template, for: tableView)
+
+    selectionView.removeFromSuperview()
+    let virtualizedTemplate = try #require(store.template(for: tableView))
+    #expect(
+        virtualizedTemplate.frame(
+            in: NSRect(x: 0, y: 0, width: 300, height: 28)
+        ) == NSRect(x: 6, y: 2, width: 288, height: 24)
+    )
+    #expect(virtualizedTemplate.cornerRadius == 7)
+}
+
+@MainActor
+@Test func `channel hover fallback always has visible row geometry`() {
+    #expect(
+        ChannelNativeHoverTemplate.fallback.frame(
+            in: NSRect(x: 0, y: 0, width: 240, height: 28)
+        ) == NSRect(x: 5, y: 2, width: 230, height: 24)
+    )
+}
+
 @Test func `channel context values preserve discord links and mute windows`() {
     #expect(
         ChannelContextMenuValue.link(
