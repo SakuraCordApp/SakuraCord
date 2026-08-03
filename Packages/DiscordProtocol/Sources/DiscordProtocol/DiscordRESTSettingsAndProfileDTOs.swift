@@ -511,6 +511,8 @@ struct LossyList<Element: Decodable>: Decodable {
     }
 }
 
+extension LossyList: Sendable where Element: Sendable {}
+
 struct LossyValue<Element: Decodable>: Decodable {
     var value: Element?
 
@@ -783,9 +785,9 @@ struct ProfileGuildMemberDTO: Decodable {
     var bio: String?
 }
 
-struct ProfileEffectConfigDTO: Decodable {
-    struct AnimationDTO: Decodable {
-        struct SourceDTO: Decodable { var src: String? }
+struct ProfileEffectConfigDTO: Decodable, Sendable {
+    struct AnimationDTO: Decodable, Sendable {
+        struct SourceDTO: Decodable, Sendable { var src: String? }
 
         var src: String?
         var loop: Bool?
@@ -844,7 +846,7 @@ struct ProfileEffectConfigDTO: Decodable {
     }
 }
 
-struct ProfileEffectPositionDTO: Decodable {
+struct ProfileEffectPositionDTO: Decodable, Sendable {
     var horizontal: Int?
     var vertical: Int?
 
@@ -854,12 +856,7 @@ struct ProfileEffectPositionDTO: Decodable {
     }
 }
 
-struct ProfileEffectsDTO: Decodable {
-    var profileEffectConfigs: LossyList<ProfileEffectConfigDTO>?
-    enum CodingKeys: String, CodingKey { case profileEffectConfigs = "profile_effect_configs" }
-}
-
-struct CollectibleProductDTO: Decodable {
+struct CollectibleProductDTO: Decodable, Sendable {
     var items: LossyList<ProfileEffectConfigDTO>?
 }
 

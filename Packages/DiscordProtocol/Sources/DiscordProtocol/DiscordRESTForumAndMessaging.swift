@@ -200,7 +200,13 @@ extension DiscordRESTProvider {
             throw ChatProviderError.invalidRequest("Select at least one tag before posting.")
         }
         progress(.preparing)
-        var message: [String: JSONValue] = ["content": .string(draft.content)]
+        var message: [String: JSONValue] = [
+            "content": .string(draft.content),
+            // The current first-party nested forum-post action always includes
+            // the selected sticker list. SakuraCord does not expose forum
+            // sticker sending, so the exact supported shape is an empty list.
+            "sticker_ids": .array([]),
+        ]
         if !draft.attachments.isEmpty {
             message["attachments"] = try await .array(
                 uploadForumAttachments(
@@ -1281,7 +1287,12 @@ extension DiscordRESTProvider {
             "content": .string(draft.content),
             "nonce": .string(draft.nonce),
             "enforce_nonce": .bool(true),
-            "attachments": .array([]),
+            "tts": .bool(false),
+            "flags": .number(0),
+            // Chromium reports an unknown Network Information API connection
+            // type on the current macOS desktop host. The first-party send
+            // action forwards that value on every ordinary message POST.
+            "mobile_network_type": .string("unknown"),
         ]
         if let replyTo = draft.replyTo {
             body["message_reference"] = .object([

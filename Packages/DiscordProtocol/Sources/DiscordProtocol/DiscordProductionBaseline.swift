@@ -14,11 +14,11 @@ public struct DiscordProductionBaseline: Codable, Equatable, Sendable {
     public var desktopGatewayCompression: String
     public var defaultCapabilities: Int
 
-    public static let july2026 = DiscordProductionBaseline(
-        observedAt: Date(timeIntervalSince1970: 1_784_240_478),
-        webBuildNumber: 579_073,
+    public static let august2026 = DiscordProductionBaseline(
+        observedAt: Date(timeIntervalSince1970: 1_785_773_429),
+        webBuildNumber: 587_597,
         apiVersion: 9,
-        desktopVersion: "0.0.401",
+        desktopVersion: "0.0.402",
         electronVersion: "37.6.0",
         webGatewayEncoding: "json",
         webGatewayCompression: "zlib-stream",

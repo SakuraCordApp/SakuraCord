@@ -745,6 +745,7 @@ final class AppModel {
         [ChannelID: Task<Void, Never>] = [:]
     @ObservationIgnored var forumNotificationMutationGeneration = 0
     @ObservationIgnored var mainWindowIsActive = false
+    @ObservationIgnored var clientAppStateUpdateTask: Task<Void, Never>?
     @ObservationIgnored var currentUserRoleIDsByGuild: [GuildID: Set<RoleID>] = [:]
     @ObservationIgnored let readAcknowledgementTiming: ReadAcknowledgementTiming
 

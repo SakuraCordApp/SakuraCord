@@ -197,7 +197,7 @@ extension DiscordRESTProvider {
 
             guard var components = URLComponents(
                 string:
-                "https://discord.com/api/v\(DiscordProductionBaseline.july2026.apiVersion)\(path)"
+                "https://discord.com/api/v\(DiscordProductionBaseline.august2026.apiVersion)\(path)"
             ) else {
                 throw ChatProviderError.invalidRequest("Could not construct the Discord API path.")
             }
@@ -220,7 +220,7 @@ extension DiscordRESTProvider {
                     "Discord networking is stopped for this session.")
             }
             request.setValue(token, forHTTPHeaderField: "Authorization")
-            try clientMetadata.apply(to: &request)
+            try clientMetadata.apply(to: &request, clientAppState: clientAppState)
             for (name, value) in headers {
                 request.setValue(value, forHTTPHeaderField: name)
             }

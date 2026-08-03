@@ -43,11 +43,14 @@ public actor DiscordRESTProvider: ChatProvider {
     let gatewayTransport: any GatewayTransport
     let clientMetadata: DiscordClientMetadata
     let apiDiagnostics: DiscordAPIDiagnosticStore
+    let usesEmojiDiskCache: Bool
+    var clientAppState = "focused"
     var continuation: AsyncStream<ClientEvent>.Continuation?
     var currentUser: User?
     var authorizationValue: String?
     var cachedMessages: [MessageID: Message] = [:]
     var cachedChannels: [GuildID?: [Channel]] = [:]
+    var guildChannelTasks: [GuildID: Task<[Channel], Error>] = [:]
     var messageSendTasks: [String: Task<Message, Error>] = [:]
     var cachedForumPosts: [ChannelID: [ChannelID: ForumPost]] = [:]
     var forumCatalogueTasks: [ForumCatalogueLoadKey: Task<Void, Never>] = [:]
@@ -76,6 +79,7 @@ public actor DiscordRESTProvider: ChatProvider {
     var cachedMemberListGroups: [GuildID: [GuildMemberListGroup]] = [:]
     var cachedGatewayUsersByID: [String: UserDTO] = [:]
     var cachedGuildRoles: [GuildID: [GuildRoleDTO]] = [:]
+    var guildRoleTasks: [GuildID: Task<[GuildRoleDTO], Error>] = [:]
     var pendingMemberSearchRequests: [String: PendingMemberSearchRequest] = [:]
     var pendingMemberSearchRequestByGuild: [GuildID: String] = [:]
     var pendingRoleMemberRequests: [String: PendingRoleMemberRequest] = [:]
@@ -83,8 +87,12 @@ public actor DiscordRESTProvider: ChatProvider {
     var cachedGuilds: [GuildID: Guild] = [:]
     var cachedGuildRailItems: [GuildRailItem] = []
     var cachedProfiles: [ProfileCacheKey: UserProfile] = [:]
+    var profileTasks: [ProfileCacheKey: Task<UserProfile, Error>] = [:]
+    var collectibleProductTasks: [String: Task<CollectibleProductDTO?, Never>] = [:]
     var cachedEmojis: [GuildID: EmojiCacheEntry] = [:]
+    var emojiTasks: [GuildID: Task<[DiscordEmoji], Error>] = [:]
     var cachedEmojiUserSettings: EmojiUserSettings?
+    var emojiUserSettingsTask: Task<EmojiUserSettings, Error>?
     var cachedReactionReactors: [ReactionReactorCacheKey: [ReactionReactor]] = [:]
     var reactionReactorCacheOrder: [ReactionReactorCacheKey] = []
     var reactionReactorTasks: [ReactionReactorCacheKey: Task<[ReactionReactor], Error>] =
@@ -150,12 +158,23 @@ public actor DiscordRESTProvider: ChatProvider {
         }
     }
 
+    public func updateClientAppState(isFocused: Bool) async {
+        clientAppState = isFocused ? "focused" : "unfocused"
+    }
+
+    #if DEBUG
+        func clientAppStateForTesting() -> String {
+            clientAppState
+        }
+    #endif
+
     public init(
         credentials: any CredentialStore,
         handle: CredentialHandle,
         session: URLSession? = nil,
         fingerprint: String? = nil,
-        apiDiagnostics: DiscordAPIDiagnosticStore = .shared
+        apiDiagnostics: DiscordAPIDiagnosticStore = .shared,
+        usesEmojiDiskCache: Bool = true
     ) {
         let resolvedSession = session ?? URLSession(configuration: .default)
         self.credentials = credentials
@@ -164,6 +183,7 @@ public actor DiscordRESTProvider: ChatProvider {
         gatewayTransport = URLSessionGatewayTransport(session: resolvedSession)
         clientMetadata = DiscordClientMetadata(fingerprint: fingerprint)
         self.apiDiagnostics = apiDiagnostics
+        self.usesEmojiDiskCache = usesEmojiDiskCache
     }
 
     init(
@@ -172,7 +192,8 @@ public actor DiscordRESTProvider: ChatProvider {
         session: URLSession,
         gatewayTransport: any GatewayTransport,
         fingerprint: String? = nil,
-        apiDiagnostics: DiscordAPIDiagnosticStore = .shared
+        apiDiagnostics: DiscordAPIDiagnosticStore = .shared,
+        usesEmojiDiskCache: Bool = true
     ) {
         self.credentials = credentials
         self.handle = handle
@@ -180,6 +201,7 @@ public actor DiscordRESTProvider: ChatProvider {
         self.gatewayTransport = gatewayTransport
         clientMetadata = DiscordClientMetadata(fingerprint: fingerprint)
         self.apiDiagnostics = apiDiagnostics
+        self.usesEmojiDiskCache = usesEmojiDiskCache
     }
 }
 
@@ -191,24 +213,36 @@ extension DiscordRESTProvider {
     public func bootstrap() async throws -> BootstrapSnapshot {
         continuation?.yield(.connectionChanged(.connecting))
         _ = try await authorizationToken()
-        // Bootstrap deliberately stays sequential. A cold launch is not allowed to
-        // fan out several authenticated user-account requests at once.
-        let userDTO: UserDTO = try await request("/users/@me")
-        let guildDTOs: [GuildDTO] = try await request("/users/@me/guilds")
-        let user = try userDTO.domain()
-        currentUser = user
-        let guilds = try guildDTOs.map { try $0.domain() }
-        cachedGuildRailItems = guilds.map { .guild($0.id) }
-        cachedGuilds = Dictionary(uniqueKeysWithValues: guilds.map { ($0.id, $0) })
-        cachedChannels[nil] = []
         presenceStatus =
             UserDefaults.standard.string(forKey: statusDefaultsKey).flatMap(
                 PresenceStatus.init(rawValue:)
             ) ?? .invisible
-        let members = [Member(user: user, roleName: "You", status: presenceStatus)]
         try await startGateway()
         let ready = try await waitForInitialGatewaySnapshot()
+
+        // Current Discord, Paicord, and Swiftcord v1 all source the initial
+        // account and guild catalogue from Gateway READY. Keep the documented
+        // REST reads only as a sequential compatibility fallback for a future
+        // incomplete READY shape; a normal cold launch sends neither request.
+        if currentUser == nil {
+            let userDTO: UserDTO = try await request("/users/@me")
+            currentUser = try userDTO.domain()
+        }
+        let cachedGuildIDs = Set(cachedGuilds.keys)
+        let readyGuildIDs = Set(gatewayGuildIDs)
+        if !readyGuildIDs.isSubset(of: cachedGuildIDs) {
+            let guildDTOs: [GuildDTO] = try await request("/users/@me/guilds")
+            let guilds = try guildDTOs.map { try $0.domain() }
+            cachedGuildRailItems = guilds.map { .guild($0.id) }
+            cachedGuilds = Dictionary(uniqueKeysWithValues: guilds.map { ($0.id, $0) })
+        }
+        guard let user = currentUser else {
+            throw ChatProviderError.invalidRequest(
+                "Discord's initial Gateway state omitted the current user."
+            )
+        }
         let currentGuilds = guildsInCurrentRailOrder()
+        let members = [Member(user: user, roleName: "You", status: presenceStatus)]
         var channelsByID = Dictionary(
             (cachedChannels[nil] ?? []).map { ($0.id, $0) },
             uniquingKeysWith: { _, newer in newer }
@@ -350,10 +384,23 @@ extension DiscordRESTProvider {
             return cached
         }
         guard let guildID else { return cachedChannels[nil] ?? [] }
-        let values: [ChannelDTO] = try await request("/guilds/\(guildID)/channels")
-        let channels = try Self.domainChannels(values, guildID: guildID)
-        cachedChannels[guildID] = channels
-        return channels
+        if let task = guildChannelTasks[guildID] {
+            return try await task.value
+        }
+        let task = Task { [self] in
+            let values: [ChannelDTO] = try await request("/guilds/\(guildID)/channels")
+            return try Self.domainChannels(values, guildID: guildID)
+        }
+        guildChannelTasks[guildID] = task
+        do {
+            let channels = try await task.value
+            guildChannelTasks[guildID] = nil
+            cachedChannels[guildID] = channels
+            return channels
+        } catch {
+            guildChannelTasks[guildID] = nil
+            throw error
+        }
     }
 
     func privateChannel(id: ChannelID) -> Channel? {
@@ -458,8 +505,7 @@ extension DiscordRESTProvider {
         }
         if cachedGuildRoles[guildID] == nil {
             do {
-                let roles: [GuildRoleDTO] = try await request("/guilds/\(guildID)/roles")
-                cachedGuildRoles[guildID] = roles
+                _ = try await guildRoleDTOs(in: guildID)
             } catch {
                 gatewayLogger.warning(
                     "Guild roles unavailable; member categories will use the default group: \(error.localizedDescription, privacy: .public)"
@@ -476,13 +522,32 @@ extension DiscordRESTProvider {
     }
 
     public func roles(in guildID: GuildID) async throws -> [GuildRole] {
-        if cachedGuildRoles[guildID] == nil {
-            let roles: [GuildRoleDTO] = try await request("/guilds/\(guildID)/roles")
-            cachedGuildRoles[guildID] = roles
-        }
-        return (cachedGuildRoles[guildID] ?? [])
+        try await guildRoleDTOs(in: guildID)
             .compactMap(\.domain)
             .sorted { $0.position > $1.position }
+    }
+
+    func guildRoleDTOs(in guildID: GuildID) async throws -> [GuildRoleDTO] {
+        if let cached = cachedGuildRoles[guildID] {
+            return cached
+        }
+        if let task = guildRoleTasks[guildID] {
+            return try await task.value
+        }
+        let task = Task { [self] in
+            let roles: [GuildRoleDTO] = try await request("/guilds/\(guildID)/roles")
+            return roles
+        }
+        guildRoleTasks[guildID] = task
+        do {
+            let roles = try await task.value
+            guildRoleTasks[guildID] = nil
+            cachedGuildRoles[guildID] = roles
+            return roles
+        } catch {
+            guildRoleTasks[guildID] = nil
+            throw error
+        }
     }
 
     public func searchMembers(
@@ -590,7 +655,25 @@ extension DiscordRESTProvider {
         if let cached = cachedProfiles[key] {
             return cached
         }
+        if let task = profileTasks[key] {
+            return try await task.value
+        }
+        let task = Task { [self] in
+            try await loadProfile(for: userID, in: guildID)
+        }
+        profileTasks[key] = task
+        do {
+            let profile = try await task.value
+            profileTasks[key] = nil
+            cachedProfiles[key] = profile
+            return profile
+        } catch {
+            profileTasks[key] = nil
+            throw error
+        }
+    }
 
+    func loadProfile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
         var query = [
             URLQueryItem(name: "with_mutual_guilds", value: "true"),
             URLQueryItem(name: "with_mutual_friends", value: "true"),
@@ -604,26 +687,9 @@ extension DiscordRESTProvider {
         let effectID =
             dto.guildMemberProfile?.profileEffect?.resolvedID
                 ?? dto.userProfile?.profileEffect?.resolvedID
-        if effectID != nil, profileEffects == nil {
-            let locale = Locale.preferredLanguages.first ?? "en-US"
-            let response: ProfileEffectsDTO? = try? await request(
-                "/user-profile-effects",
-                query: [URLQueryItem(name: "locale", value: locale)]
-            )
-            var effectsByID: [String: ProfileEffectConfigDTO] = [:]
-            for effect in response?.profileEffectConfigs?.elements ?? [] {
-                if let id = effect.id {
-                    effectsByID[id] = effect
-                }
-                if let skuID = effect.skuID {
-                    effectsByID[skuID] = effect
-                }
-            }
-            profileEffects = effectsByID
-        }
+        if effectID != nil, profileEffects == nil { profileEffects = [:] }
         if let effectID, profileEffects?[effectID] == nil {
-            let product: CollectibleProductDTO? = try? await request(
-                "/collectibles-products/\(effectID)")
+            let product = await collectibleProduct(for: effectID)
             for effect in product?.items?.elements.filter({ $0.type == 1 }) ?? [] {
                 if let id = effect.id {
                     profileEffects?[id] = effect
@@ -643,29 +709,62 @@ extension DiscordRESTProvider {
         gatewayLogger.debug(
             "Profile assets resolved; bio=\(profile.bio?.isEmpty == false), badges=\(profile.badges.count), effect=\(profile.effect != nil), animations=\(profile.effect?.animations.count ?? 0)"
         )
-        cachedProfiles[key] = profile
         return profile
+    }
+
+    func collectibleProduct(for effectID: String) async -> CollectibleProductDTO? {
+        if let task = collectibleProductTasks[effectID] {
+            return await task.value
+        }
+        let task = Task<CollectibleProductDTO?, Never> { [self] in
+            try? await request(
+                "/collectibles-products/\(effectID)",
+                query: [URLQueryItem(name: "locale", value: clientMetadata.locale)]
+            )
+        }
+        collectibleProductTasks[effectID] = task
+        let product = await task.value
+        collectibleProductTasks[effectID] = nil
+        return product
     }
 
     public func emojis(in guildID: GuildID) async throws -> [DiscordEmoji] {
         if let cached = cachedEmojis[guildID], cached.isFresh {
             return cached.emojis
         }
-        if let disk = try? loadEmojiCache(for: guildID) {
+        if usesEmojiDiskCache, let disk = try? loadEmojiCache(for: guildID) {
             cachedEmojis[guildID] = disk
             if disk.isFresh {
                 return disk.emojis
             }
         }
+        if let task = emojiTasks[guildID] {
+            do {
+                return try await task.value
+            } catch {
+                if let stale = cachedEmojis[guildID] {
+                    return stale.emojis
+                }
+                throw error
+            }
+        }
+        let task = Task { [self] in
+            let payload: [GuildEmojiDTO] = try await request("/guilds/\(guildID)/emojis")
+            return payload.compactMap { $0.domain(guildID: guildID) }
+        }
+        emojiTasks[guildID] = task
 
         do {
-            let payload: [GuildEmojiDTO] = try await request("/guilds/\(guildID)/emojis")
-            let emojis = payload.compactMap { $0.domain(guildID: guildID) }
+            let emojis = try await task.value
+            emojiTasks[guildID] = nil
             let entry = EmojiCacheEntry(fetchedAt: .now, emojis: emojis)
             cachedEmojis[guildID] = entry
-            try? persistEmojiCache(entry, for: guildID)
+            if usesEmojiDiskCache {
+                try? persistEmojiCache(entry, for: guildID)
+            }
             return emojis
         } catch {
+            emojiTasks[guildID] = nil
             if let stale = cachedEmojis[guildID] {
                 return stale.emojis
             }
@@ -677,14 +776,29 @@ extension DiscordRESTProvider {
         if let cachedEmojiUserSettings {
             return cachedEmojiUserSettings
         }
-        let response: UserSettingsProtoDTO = try await request("/users/@me/settings-proto/2")
-        guard let data = Data(base64Encoded: response.settings) else { return EmojiUserSettings() }
-        let settings = DiscordSettingsProto.emojiSettings(from: data)
-        gatewayLogger.info(
-            "Decoded emoji settings; favorites=\(settings.favoriteKeys.count), frequent=\(settings.frequentlyUsedKeys.count)"
-        )
-        cachedEmojiUserSettings = settings
-        return settings
+        if let task = emojiUserSettingsTask {
+            return try await task.value
+        }
+        let task = Task { [self] in
+            let response: UserSettingsProtoDTO = try await request("/users/@me/settings-proto/2")
+            guard let data = Data(base64Encoded: response.settings) else {
+                return EmojiUserSettings()
+            }
+            return DiscordSettingsProto.emojiSettings(from: data)
+        }
+        emojiUserSettingsTask = task
+        do {
+            let settings = try await task.value
+            emojiUserSettingsTask = nil
+            gatewayLogger.info(
+                "Decoded emoji settings; favorites=\(settings.favoriteKeys.count), frequent=\(settings.frequentlyUsedKeys.count)"
+            )
+            cachedEmojiUserSettings = settings
+            return settings
+        } catch {
+            emojiUserSettingsTask = nil
+            throw error
+        }
     }
 
     func loadEmojiCache(for guildID: GuildID) throws -> EmojiCacheEntry {

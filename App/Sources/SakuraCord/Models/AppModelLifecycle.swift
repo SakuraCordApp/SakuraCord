@@ -58,6 +58,7 @@ extension AppModel {
         let nextProvider = AppPerformanceSignposts.measureSync("ProviderCreation") {
             authenticatedProviderFactory(handle, fingerprint)
         }
+        await nextProvider.updateClientAppState(isFocused: mainWindowIsActive)
         do {
             // Enumerating Keychain item attributes reveals the account handle
             // without necessarily authorizing access to its secret. Do not
@@ -1187,6 +1188,8 @@ extension AppModel {
         selectedChannelPersistenceTask = nil
         cachedWorkspacePersistenceTask?.cancel()
         cachedWorkspacePersistenceTask = nil
+        clientAppStateUpdateTask?.cancel()
+        clientAppStateUpdateTask = nil
         channelLoadTask?.cancel()
         channelLoadTask = nil
         channelLoadGeneration &+= 1

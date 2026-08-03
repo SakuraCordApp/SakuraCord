@@ -10,15 +10,56 @@ import Testing
 }
 
 @Test func `production baseline matches observed bootstrap`() {
-    let baseline = DiscordProductionBaseline.july2026
+    let baseline = DiscordProductionBaseline.august2026
     #expect(baseline.apiVersion == 9)
-    #expect(baseline.webBuildNumber == 579_073)
-    #expect(baseline.desktopVersion == "0.0.401")
+    #expect(baseline.webBuildNumber == 587_597)
+    #expect(baseline.desktopVersion == "0.0.402")
     #expect(baseline.webGatewayEncoding == "json")
     #expect(baseline.webGatewayCompression == "zlib-stream")
     #expect(baseline.desktopGatewayEncoding == "etf")
     #expect(baseline.desktopGatewayCompression == "zstd-stream")
     #expect(baseline.defaultCapabilities == 1_734_653)
+}
+
+@Test func `desktop metadata matches current non-secret official request fields`() throws {
+    let metadata = DiscordClientMetadata(
+        locale: "en-GB",
+        systemLocale: "en-US",
+        acceptLanguage: "en-US,en-GB;q=0.9",
+        osVersion: "27.0.0"
+    )
+
+    #expect(metadata.acceptLanguage == "en-US,en-GB;q=0.9")
+    #expect(metadata.properties["client_version"] == .string("0.0.402"))
+    #expect(metadata.properties["client_build_number"] == .number(587_597))
+    #expect(metadata.properties["os_version"] == .string("27.0.0"))
+    #expect(metadata.properties["os_sdk_version"] == .string("27"))
+    #expect(metadata.properties["system_locale"] == .string("en-US"))
+    #expect(metadata.properties["client_launch_id"] != nil)
+    #expect(metadata.properties["launch_signature"] != nil)
+    #expect(metadata.properties["client_heartbeat_session_id"] != nil)
+    #expect(metadata.properties["client_event_source"] == .null)
+    #expect(metadata.properties["client_app_state"] == .string("focused"))
+    #expect(
+        metadata.properties(clientAppState: "unfocused")["client_app_state"]
+            == .string("unfocused")
+    )
+    #expect(metadata.properties["native_build_number"] == nil)
+    #expect(metadata.userAgent.contains("discord/0.0.402"))
+    #expect(metadata.userAgent.contains("Electron/37.6.0"))
+
+    guard case let .string(signature)? = metadata.properties["launch_signature"],
+          let signatureUUID = UUID(uuidString: signature)
+    else {
+        Issue.record("Launch signature must be a UUID")
+        return
+    }
+    let bytes = withUnsafeBytes(of: signatureUUID.uuid) { Array($0) }
+    let requiredBits: [UInt8] = [
+        0x00, 0x80, 0x10, 0x10, 0x08, 0x10, 0x08, 0x00,
+        0x20, 0x81, 0x00, 0x40, 0x01, 0x00, 0x08, 0x00,
+    ]
+    #expect(zip(bytes, requiredBits).allSatisfy { byte, mask in byte & mask == mask })
 }
 
 @Test func `ready guild decodes the designated community rules channel`() throws {

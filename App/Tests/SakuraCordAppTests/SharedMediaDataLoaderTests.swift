@@ -4,6 +4,14 @@ import Foundation
 import SakuraCordModels
 import Testing
 
+@Test func `remote media transport cannot persist or attach cookies`() {
+    let configuration = SharedMediaDataLoader.remoteSessionConfiguration()
+
+    #expect(configuration.httpCookieStorage == nil)
+    #expect(!configuration.httpShouldSetCookies)
+    #expect(configuration.requestCachePolicy == .returnCacheDataElseLoad)
+}
+
 @Test func `cancelling the final media waiter cancels its fetch`() async throws {
     let probe = SuspendedRemoteMediaFetch()
     let loader = SharedMediaDataLoader(remoteFetch: probe.fetch)

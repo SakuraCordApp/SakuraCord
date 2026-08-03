@@ -249,6 +249,7 @@ import Testing
         (body["message"] as? [String: Any])?["content"] as? String
             == "Nested starter content"
     )
+    #expect((body["message"] as? [String: Any])?["sticker_ids"] as? [String] == [])
 }
 
 @Test func `cold forum catalogue becomes visible without waiting for preview hydration`() async throws {

@@ -10,6 +10,9 @@ nonisolated enum SharedMediaDataMemoryPolicy {
 actor SharedMediaDataLoader {
     static let shared = SharedMediaDataLoader()
     private static let remoteDiskCostLimit: Int64 = 512 * 1024 * 1024
+    nonisolated private static let remoteSession = URLSession(
+        configuration: remoteSessionConfiguration()
+    )
 
     private struct RemoteWaiter {
         let priority: MediaLoadPriority
@@ -279,13 +282,21 @@ actor SharedMediaDataLoader {
         )
     }
 
+    nonisolated static func remoteSessionConfiguration() -> URLSessionConfiguration {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.requestCachePolicy = .returnCacheDataElseLoad
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        return configuration
+    }
+
     nonisolated private static func download(_ url: URL) async throws -> Data {
         let request = URLRequest(
             url: url,
             cachePolicy: .returnCacheDataElseLoad,
             timeoutInterval: 30
         )
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await remoteSession.data(for: request)
         let invalidResponse = (response as? HTTPURLResponse).map {
             !(200 ..< 300).contains($0.statusCode)
         } ?? false

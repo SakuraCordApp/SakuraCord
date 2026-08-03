@@ -336,7 +336,7 @@ actor DiscordSessionAuthenticator {
     private func validateAndStore(token: String, fingerprint: String?) async throws -> CredentialHandle {
         let normalized = token.trimmingCharacters(in: CharacterSet(charactersIn: "\"' \n\r\t"))
         guard normalized.count > 20 else { throw AuthenticationError.invalidCredential }
-        let apiVersion = DiscordProductionBaseline.july2026.apiVersion
+        let apiVersion = DiscordProductionBaseline.august2026.apiVersion
         var request = URLRequest(url: URL(string: "https://discord.com/api/v\(apiVersion)/users/@me")!)
         request.timeoutInterval = 20
         request.setValue(normalized, forHTTPHeaderField: "Authorization")
@@ -404,7 +404,7 @@ actor DiscordSessionAuthenticator {
         additionalHeaders: [String: String] = [:],
         retriesAlreadyPerformed: Int = 0
     ) async throws -> (Data, HTTPURLResponse) {
-        let apiVersion = DiscordProductionBaseline.july2026.apiVersion
+        let apiVersion = DiscordProductionBaseline.august2026.apiVersion
         let url = URL(string: "https://discord.com/api/v\(apiVersion)\(path)")!
         let maximumRetries = 3
 

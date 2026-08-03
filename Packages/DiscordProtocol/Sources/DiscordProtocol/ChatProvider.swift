@@ -111,12 +111,15 @@ public protocol ChatProvider: Sendable {
     func privateCallIsRingable(channelID: ChannelID) async throws -> Bool
     func ringPrivateCall(channelID: ChannelID, recipients: [UserID]?) async throws
     func stopRingingPrivateCall(channelID: ChannelID, recipients: [UserID]) async throws
+    func updateClientAppState(isFocused: Bool) async
     func eventStream() async -> AsyncStream<ClientEvent>
     func disconnect() async
 }
 
 public extension ChatProvider {
     func prepareAuthentication() async throws {}
+
+    func updateClientAppState(isFocused: Bool) async {}
 
     func resolveMembers(in guildID: GuildID, userIDs: [UserID]) async throws -> [Member] {
         let requested = Set(userIDs.prefix(100))

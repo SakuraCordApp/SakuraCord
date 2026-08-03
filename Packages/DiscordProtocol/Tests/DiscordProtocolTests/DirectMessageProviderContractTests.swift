@@ -49,6 +49,36 @@ struct DirectMessageProviderContractTests {
         #expect(request.hadAuthorization)
     }
 
+    @Test func `profile effects use only the current collectibles product route`() async throws {
+        DirectMessageURLProtocol.reset()
+        DirectMessageURLProtocol.profileHasEffect = true
+        let provider = makeProvider()
+
+        async let firstProfile = provider.profile(
+            for: UserID(rawValue: 2),
+            in: nil
+        )
+        async let secondProfile = provider.profile(
+            for: UserID(rawValue: 2),
+            in: nil
+        )
+        let (profile, duplicateProfile) = try await (firstProfile, secondProfile)
+
+        #expect(profile.effect?.id == "900")
+        #expect(profile.effect?.title == "Aurora")
+        #expect(duplicateProfile == profile)
+        #expect(DirectMessageURLProtocol.requests.map(\.path) == [
+            "/api/v9/users/2/profile",
+            "/api/v9/collectibles-products/900",
+        ])
+        #expect(DirectMessageURLProtocol.requests[1].query == [
+            CapturedQueryItem(
+                name: "locale",
+                value: Locale.preferredLanguages.first ?? "en-US"
+            )
+        ])
+    }
+
     @Test func `private channel gateway events reconcile recipients and deletion`() async throws {
         let provider = makeProvider()
         await provider.receiveGatewayDispatchForTesting(
@@ -624,10 +654,12 @@ private final class DirectMessageURLProtocol:
     nonisolated(unsafe) static var requests:
         [CapturedDirectMessageRequest] = []
     nonisolated(unsafe) static var ringStatus = 204
+    nonisolated(unsafe) static var profileHasEffect = false
 
     static func reset() {
         requests = []
         ringStatus = 204
+        profileHasEffect = false
     }
 
     override static func canInit(with request: URLRequest) -> Bool {
@@ -667,8 +699,17 @@ private final class DirectMessageURLProtocol:
         case "/api/v9/channels/41/messages":
             body = "[]"
         case "/api/v9/users/2/profile":
-            body =
-                #"{"user":{"id":"2","username":"maya","global_name":"Maya","avatar":null},"mutual_guilds":[],"mutual_friends":[],"mutual_friends_count":0}"#
+            body = Self.profileHasEffect
+                ? #"""
+                {
+                  "user":{"id":"2","username":"maya","global_name":"Maya","avatar":null},
+                  "user_profile":{"profile_effect":{"sku_id":"900"}},
+                  "mutual_guilds":[],"mutual_friends":[],"mutual_friends_count":0
+                }
+                """#
+                : #"{"user":{"id":"2","username":"maya","global_name":"Maya","avatar":null},"mutual_guilds":[],"mutual_friends":[],"mutual_friends_count":0}"#
+        case "/api/v9/collectibles-products/900":
+            body = #"{"items":[{"type":1,"sku_id":"900","title":"Aurora","effects":[] }]}"#
         case "/api/v9/channels/41/call":
             body = #"{"ringable":true}"#
         default:

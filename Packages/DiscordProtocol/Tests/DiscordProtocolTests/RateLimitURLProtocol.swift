@@ -2,8 +2,12 @@ import Foundation
 
 final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var guildListAttempts = 0
+    nonisolated(unsafe) static var currentUserRequests = 0
     nonisolated(unsafe) static var privateChannelListRequests = 0
     nonisolated(unsafe) static var guildChannelRequests = 0
+    nonisolated(unsafe) static var guildRoleRequests = 0
+    nonisolated(unsafe) static var guildEmojiRequests = 0
+    nonisolated(unsafe) static var emojiSettingsRequests = 0
     nonisolated(unsafe) static var sentNonce: String?
     nonisolated(unsafe) static var sentEnforceNonce = false
     nonisolated(unsafe) static var uploadHadAuthorization = false
@@ -51,8 +55,12 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
 
     static func reset() {
         guildListAttempts = 0
+        currentUserRequests = 0
         privateChannelListRequests = 0
         guildChannelRequests = 0
+        guildRoleRequests = 0
+        guildEmojiRequests = 0
+        emojiSettingsRequests = 0
         sentNonce = nil
         sentEnforceNonce = false
         uploadHadAuthorization = false
@@ -121,6 +129,7 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
         let json: String
         switch path {
         case "/api/v9/users/@me":
+            RateLimitURLProtocol.currentUserRequests += 1
             status = 200
             json = #"{"id":"1","username":"tester","global_name":"Tester","avatar":null}"#
         case "/api/v9/users/@me/guilds":
@@ -150,11 +159,20 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
             "position":2,"permission_overwrites":[]}]
             """#
         case "/api/v9/guilds/100/roles":
+            RateLimitURLProtocol.guildRoleRequests += 1
             status = 200
             json = #"""
             [{"id":"100","name":"@everyone","position":0,"hoist":false,"color":0,"permissions":"1024"},
             {"id":"101","name":"Design","position":2,"hoist":true,"color":5793266,"permissions":"0"}]
             """#
+        case "/api/v9/guilds/987654321012345678/emojis":
+            RateLimitURLProtocol.guildEmojiRequests += 1
+            status = 200
+            json = "[]"
+        case "/api/v9/users/@me/settings-proto/2":
+            RateLimitURLProtocol.emojiSettingsRequests += 1
+            status = 200
+            json = #"{"settings":""}"#
         case "/api/v9/guilds/100/members/search":
             RateLimitURLProtocol.memberSearchRequestCount += 1
             let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems

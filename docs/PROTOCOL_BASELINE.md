@@ -1,6 +1,7 @@
 # Discord production protocol baseline
 
-Last repository audit: 25 July 2026 at SakuraCord commit `32a6b8e`.
+Last repository audit: 3 August 2026, in a working tree based on SakuraCord
+commit `3abaec5`.
 
 This document describes SakuraCord's durable network contract and the dated
 evidence behind it. It is not a claim that Discord's undocumented
@@ -13,14 +14,16 @@ request, or commit description rather than a new Markdown file.
 
 ## Evidence snapshot
 
-The most recent repository-wide comparison was performed on 22–23 July 2026
+The most recent repository-wide comparison was performed on 3 August 2026
 using:
 
-- Discord's public production web build `580156`, version hash
-  `af6069991f1b0f884f278271a1fe36a2432d056c`, API version 9;
-- a signed and notarized stable desktop host `0.0.401`; authenticated
-  observations from a renderer with Equicord injection were limited to visible
-  behavior or separately sanitized request semantics;
+- Discord's public production web build `587597`, version hash
+  `1a0e2d017c39d427ced2a95c829fd32621bddb14`, API version 9, and main asset
+  `web.a8c0f0f55a5a68c4.js` with SHA-256
+  `32ea3730be90665e54ee0126c63b1b85a01000f5ab57f92618cf26bd725bc490`;
+- an unmodified, signed, and notarized stable desktop host `0.0.402`
+  (Electron `37.6.0`) copied from Discord's official distribution into a
+  renamed temporary bundle and run with an isolated data directory;
 - Paicord revision `694761c1938b73bb60bd58942674dfe73aab1135`;
 - Swiftcord v1 revision `14465d927ebe1ba34b3befa00f9365fad7b56eb9`
   and DiscordKit revision `2d42c69cafe592300a1a9d3a307bf485294026c7`;
@@ -37,6 +40,16 @@ No token, cookie, authorization header, message body, personal payload,
 fingerprint, installation identifier, or unsanitized traffic is stored in this
 repository. Treat every build number and observed payload as a dated snapshot,
 not current official behavior.
+
+The clean desktop observation covered sign-in restoration, Gateway startup,
+opening a public guild and its default channel, history loading, and a renderer
+reload. Selecting the guild caused one newest-history GET and no read
+acknowledgement. The reload rebuilt account and guild state from Gateway rather
+than issuing `/users/@me` or `/users/@me/guilds`; it also performed the
+first-party lurker-membership mutation for that public guild. SakuraCord does
+not copy unrelated store, billing, analytics, experiment, or lurker-join
+fan-out. No message, reaction, acknowledgement, call, or other user-content
+mutation was sent during the observation.
 
 ### Evidence priority for protocol changes
 
@@ -97,6 +110,72 @@ Every authenticated request goes through `DiscordRESTProvider.perform`:
   remote-auth Gateway envelopes; and
 - one provider-wide safety circuit shared with the Gateway session.
 
+Normal cold startup is Gateway-first. `READY.user`, `READY.guilds`,
+`READY.private_channels`, settings, read state, and the supplemental payload
+seed the account before the first snapshot is published. A complete Ready
+therefore sends zero `/users/@me` and zero `/users/@me/guilds` reads. Those two
+routes remain sequential, bounded compatibility fallbacks only when a future
+Ready payload omits the corresponding required data. This matches the current
+official client, Paicord's current-user and guild stores, and Swiftcord v1's
+Gateway-owned initial state.
+
+### Audited HTTP route surface
+
+This is the complete production Discord HTTP surface reachable from the
+current app. Optional keys are omitted from JSON rather than encoded as null
+unless the row says otherwise. `P−` and `S−` mean the pinned Paicord or
+Swiftcord v1 revision has no corresponding implementation; absence was checked
+and retained as evidence.
+
+| Method and route template | Trigger and exact supported request shape | Cross-reference result |
+| --- | --- | --- |
+| `GET /experiments` | Cold native password/MFA login only; unauthenticated, no body; accepts only the returned fingerprint. | Current official login and Paicord; Swiftcord v1 has no native-login counterpart. |
+| `POST /auth/login` | Explicit login; `login`, `password`, `undelete:false`; one user-completed CAPTCHA replay may add challenge headers. | Current official and Paicord; S−. |
+| `POST /auth/mfa/{totp,sms,backup}` | Explicit MFA; `code`, `ticket`, `login_instance_id`. | Current official and Paicord; S−. |
+| `POST /auth/mfa/sms/send` | Explicit SMS choice; `ticket`. | Current official and Paicord; S−. |
+| `POST /users/@me/remote-auth/login` | Approved QR ticket exchange; `ticket`; at most one user-completed CAPTCHA replay. | Current official remote-auth v2 and Paicord; S−. |
+| `GET /users/@me` | One post-auth credential validation, or the incomplete-Ready fallback above; no body. | Public user semantics, current official, Paicord, and Swiftcord. |
+| `GET /users/@me/guilds` | Incomplete-Ready compatibility fallback only; no body. | Public guild semantics; normal current official/Paicord/Swiftcord startup uses Gateway instead. |
+| `GET /guilds/{guild}/channels` | Cache-miss fallback only; no body, coalesced by guild. | Public channel semantics and all three client references. |
+| `GET /guilds/{guild}/roles` | Visible role/member UI cache miss; no body, coalesced. | Public guild semantics and all three client references. |
+| `GET /guilds/{guild}/roles/{role}/member-ids` | Explicit role inspection; no body; result display capped at 1,000. | Current first-party route; P−, S−. |
+| `GET /users/{user}/profile` | Explicit profile; `with_mutual_guilds=true`, `with_mutual_friends=true`, `with_mutual_friends_count=true`, plus `guild_id` only in guild context; coalesced by user and guild context. | Current first-party and Paicord; Swiftcord has historical profile data but no equivalent complete route. |
+| `GET /collectibles-products/{product}` | At most one cache-miss read for a profile effect returned by the profile response; query contains the current `locale`. | Current first-party route; P−, S−. The obsolete `/user-profile-effects` fallback was removed. |
+| `GET /guilds/{guild}/emojis` | Stale/missing Gateway and disk-cache fallback; no body, coalesced. | Public emoji semantics and all three client references. |
+| `GET /users/@me/settings-proto/2` | Explicit emoji-settings cache miss; no body, coalesced for the provider session. | Current first-party, Paicord, and Swiftcord's versioned settings-proto path. |
+| `GET /channels/{channel}/messages` | Visible history only; `before` then `limit` when paginating, otherwise `limit`; no body. | Public message semantics and all three client references. |
+| `GET /channels/{thread}` | One unknown-thread deep-link resolution; no body. | Public channel semantics and all three references. |
+| `POST /channels/{forum}/threads?use_nested_fields=true` | Explicit forum creation; `name`, `auto_archive_duration`, ordered `applied_tags`, nested `message` with `content`, `sticker_ids:[]`, and attachments only when uploaded. | Current first-party action; Paicord and Swiftcord have only partial/historical thread creation. |
+| `GET /channels/{forum}/threads/search` | Forum catalogue: `archived=true`, `sort_by`, `sort_order=desc`, `limit`, `offset`, and optional `tag`/`tag_setting`; name search adds `name`. | Current first-party route; P−, S−. |
+| `POST /channels/{forum}/post-data` | Preview hydration with `thread_ids` batches of at most ten. | Current first-party route; P−, S−. |
+| `PATCH` or `DELETE /channels/{thread}` | One explicit forum metadata mutation or deletion; partial body for the selected action only. | Current first-party and public channel semantics; partial Paicord/Swiftcord coverage. |
+| `POST /channels/{thread}/thread-members/@me?location=Change%20Notification%20Settings` | One join only when changing settings for an unjoined post; empty body. | Current first-party route; P−, S−. |
+| `PATCH /channels/{thread}/thread-members/@me/settings` | Explicit thread notification change; only reviewed `flags`, `muted`, and `mute_config` keys. | Current first-party route; P−, S−. |
+| `POST /channels/{channel}/typing` | Empty body after the local 1.5-second delay and eight-second coalescing window. | Public typing semantics and all three references. |
+| `POST /channels/{channel}/messages/{message}/ack` | One viewport-qualified acknowledgement; reviewed `flags`, `last_viewed`, optional server `token`, and manual-unread fields. | Current first-party and Paicord; S−. |
+| `PATCH /users/@me/guilds/{guild-or-@me}/settings` | One explicit notification change; a single partial `channel_overrides` entry. | Current first-party; P− and S− for the private `@me` scope. |
+| `GET /guilds/{guild}/application-command-index`, `/channels/{channel}/application-command-index`, `/users/@me/application-command-index`, or `/applications/{application}/application-command-index` | Target-specific index; at most three created GETs for the reviewed `202`/`429` readiness flow. | Current first-party route family; P−, S−. |
+| `POST /interactions` | One explicit type-2 execution, type-4 autocomplete, or returned modal submission; nonce-keyed, one attempt. | Current first-party and Paicord command model; Swiftcord has no current index/interaction path. |
+| `POST /channels/{channel}/messages` | One explicit send; `content`, nonce, `tts:false`, `flags:0`, macOS `mobile_network_type:"unknown"`, optional reply/attachments, and `X-Context-Properties` location `chat_input`. SakuraCord deliberately adds `enforce_nonce:true`. | Current first-party build and clean macOS Network Information result; Paicord supplies the nonce-oriented reference; Swiftcord is historical and nonce-less. |
+| `POST /channels/{channel}/attachments` | Explicit files only; `files` entries contain string index `id`, `filename`, `file_size`, and `is_clip:false`. | Current first-party upload action and Paicord; Swiftcord has no comparable presigned upload. |
+| `PUT {Discord-issued upload_url}` | One unauthenticated storage PUT per reserved file, `application/octet-stream`, raw bytes, no Discord authorization metadata. | Current first-party and Paicord; S−. |
+| `PATCH` or `DELETE /channels/{channel}/messages/{message}` | Explicit edit with only `content`, or explicit deletion with no body. | Public message semantics and all three references. |
+| `PUT` or `DELETE /channels/{channel}/messages/{message}/reactions/{emoji}/@me` | One coalesced explicit reaction intent; empty body. | Public reaction semantics and all three references. |
+| `GET /channels/{channel}/messages/{message}/reactions/{emoji}` | Visible reactor preview only; `type=0&limit=5`, no pagination. | Public reaction-user semantics and current first-party; Paicord/Swiftcord provide historical reaction reads. |
+| `GET /channels/{dm}/call` | One-to-one explicit call start readiness read only; no body. | Current first-party; P−, S− for the current readiness contract. |
+| `POST /channels/{dm}/call/ring` | Explicit call start after pushed call creation; `recipients:null` or the explicit recipient list. | Current first-party; Paicord partial, S−. |
+| `POST /channels/{dm}/call/stop-ringing` | Explicit decline; nonempty `recipients` list. | Current first-party; Paicord partial, S−. |
+
+Shared request metadata now matches the non-secret fields observed from the
+clean host: product OS version rather than Darwin kernel version, actual system
+locale, Chromium's ordered language preference header, current client/build
+versions, `client_event_source:null`, and client-generated launch,
+launch-signature, and heartbeat-session identifiers. `client_app_state`
+follows the real main-window focused/unfocused state. `native_build_number` is
+absent in the current host. SakuraCord does not invent `X-Installation-ID`,
+`X-Routing-Key`, a fingerprint, or any other server/persisted value it has not
+legitimately received.
+
 Diagnostics payloads are allowlisted and redacted before they enter the
 in-memory store. The export may retain protocol metadata and snowflake IDs, but
 never retains credentials, cookies, challenge values, message content, names,
@@ -155,9 +234,56 @@ Durable requirements:
   socket; and
 - explicit stop/logout with no reconnect.
 
+The complete outgoing main-Gateway opcode surface is 1 heartbeat, 2 Identify,
+3 presence, 4 voice state, 6 Resume, 8 bounded guild-member request/search, 13
+private-call subscription, and 37 bulk guild subscription. The current
+first-party client and Paicord also implement undocumented QoS heartbeat 40 and
+time-spent session update 41. SakuraCord deliberately retains Discord's public
+opcode-1 heartbeat contract and does not add the extra telemetry request. Its
+client heartbeat identifier therefore remains process-scoped rather than being
+rotated through opcode 41. Swiftcord v1 supplies the historical public opcode
+subset and has no 13, 37, 40, or 41 implementation.
+
 SakuraCord deliberately does not copy the official client's undocumented QoS
 heartbeat envelope or native-codec identity. Metadata must be understood and
 sourced from the real local/session environment.
+
+### Other Discord transports
+
+The HTTP table above is the complete API REST and issued-upload surface, but it
+is not the whole network surface. The remaining production connections are:
+
+- the main Gateway WebSocket at `wss://gateway.discord.gg` (or the
+  server-provided resume URL) with the exact `v=9`, `encoding=json`, and
+  `compress=zlib-stream` query. It carries only the outgoing opcodes listed
+  above and decodes pushed dispatches into the shared cache/state model;
+- the unauthenticated remote-login WebSocket at
+  `wss://remote-auth-gateway.discord.gg/?v=2`. It uses an ephemeral URL session
+  without cookie storage, an ephemeral RSA key, and the reviewed User-Agent,
+  Origin, Cache-Control, and Accept-Language headers. It never receives the
+  account authorization token; only the server-issued ticket is exchanged by
+  the central authenticated REST transport after user approval;
+- a voice Gateway WebSocket at the endpoint supplied by
+  `VOICE_SERVER_UPDATE`, normalized to `wss://{endpoint}?v=8`, followed by UDP
+  discovery and encrypted RTP to the server-supplied IP and port. This path is
+  reached only by an explicit voice/call action and uses the existing
+  DAVE-capable voice state machine; and
+- unauthenticated HTTPS media GETs to `cdn.discordapp.com` and
+  `media.discordapp.net` for server-returned or locally derived Discord asset
+  paths. These loads use an isolated ephemeral URLSession with memory-cache
+  semantics and cookie storage explicitly disabled. They carry no
+  Authorization, client-properties, fingerprint, installation ID, or
+  routing-key headers and use a shared coalescing/cancellation queue. Inline
+  linked images are accepted only on those exact HTTPS hosts, without
+  credentials or a custom port; SakuraCord does not fetch arbitrary
+  third-party link previews.
+
+The current official desktop uses ETF with `zstd-stream` for its main Gateway,
+while the public web client uses JSON with compressed Gateway transport,
+Paicord uses JSON plus zstd, and Swiftcord v1 uses the historical JSON path.
+SakuraCord's documented JSON/`zlib-stream` choice is deliberate and remains
+within Discord's public Gateway connection contract rather than claiming the
+official desktop's native codec identity.
 
 ## Authentication
 
@@ -184,8 +310,9 @@ implementation records.
 ### Messages, typing, mentions, and links
 
 - One user send creates one message POST with a Discord-epoch nonce,
-  `enforce_nonce: true`, an `attachments` array, and `chat_input` context. The
-  body contains no `mobile_network_type` field.
+  `enforce_nonce: true`, `tts: false`, `flags: 0`, the clean macOS host's
+  `mobile_network_type: "unknown"`, attachments only when present, and
+  `chat_input` context.
 - Local typing waits 1.5 seconds, then sends at most one empty typing POST per
   eight-second activity window. Draft restoration, send, empty draft, channel
   change, and unsupported channel types cancel pending typing.
@@ -562,12 +689,14 @@ account action or traffic capture was performed.
   Full profiles use one `GET /users/{user.id}/profile` with
   `with_mutual_guilds`, `with_mutual_friends`, and
   `with_mutual_friends_count` set to `true`; one-to-one DMs omit `guild_id`.
-- Message sends remain independent of channel selection. The Paicord-aligned
-  JSON shape is `content`, `nonce`, and an `attachments` array, plus a reply
-  reference containing type `0`, `message_id`, and `channel_id` when needed.
-  The `X-Context-Properties` location is `chat_input`. Concurrent calls with
-  the same channel and nonce share one in-flight mutation.
-- SakuraCord deliberately adds `enforce_nonce: true` to Paicord's body. Discord
+- Message sends remain independent of channel selection. The current
+  first-party JSON shape is `mobile_network_type`, `content`, `nonce`, `tts`,
+  and `flags`, plus attachments only when present and a reply reference
+  containing type `0`, `message_id`, and `channel_id` when needed. The
+  `X-Context-Properties` location is `chat_input`. Concurrent calls with the
+  same channel and nonce share one in-flight mutation.
+- SakuraCord deliberately adds `enforce_nonce: true` to the first-party and
+  Paicord bodies. Discord
   publicly documents this as returning the already-created message for a
   duplicate nonce, and SakuraCord's safety contract requires that stronger
   idempotency boundary. This is the sole reviewed body-shape difference.
@@ -575,7 +704,7 @@ account action or traffic capture was performed.
   replay an ambiguous result automatically.
 - Swiftcord v1 supplied a historical existing-DM history and send reference. It
   omits a nonce and permits a manual retry after failure, so SakuraCord follows
-  Paicord's current shape plus the stricter nonce, deduplication, and
+  the current first-party shape plus the stricter nonce, deduplication, and
   one-attempt safety rules above.
 
 ### Private calls

@@ -300,8 +300,10 @@ extension DiscordRESTProvider {
                 data: .object([
                     "token": .string(token),
                     "capabilities": .number(
-                        Double(DiscordProductionBaseline.july2026.defaultCapabilities)),
-                    "properties": .object(clientMetadata.properties),
+                        Double(DiscordProductionBaseline.august2026.defaultCapabilities)),
+                    "properties": .object(
+                        clientMetadata.properties(clientAppState: clientAppState)
+                    ),
                     "presence": .object([
                         "status": .string(presenceStatus.rawValue),
                         "since": .number(0),
@@ -572,6 +574,11 @@ extension DiscordRESTProvider {
                     ready.users.map { ($0.id, $0) },
                     uniquingKeysWith: { _, newer in newer }
                 )
+                if let userDTO = ready.currentUser,
+                   let user = try? userDTO.domain()
+                {
+                    currentUser = user
+                }
                 forumReadStates = ready.readState.channelEntriesByID.mapValues { entry in
                     ForumReadState(
                         lastReadMessageID: entry.lastMessageID.flatMap(MessageID.init),
@@ -646,6 +653,15 @@ extension DiscordRESTProvider {
                 continuation?.yield(.privateMembersChanged(privateMembersInChannelOrder()))
                 let readyGuilds = ready.hydratedGuilds(using: cachedGatewayUsersByID)
                 gatewayGuildIDs = readyGuilds.compactMap { GuildID($0.id) }
+                let guilds = readyGuilds.compactMap {
+                    $0.domain(currentUserID: currentUser?.id)
+                }
+                if !guilds.isEmpty {
+                    cachedGuilds = Dictionary(
+                        uniqueKeysWithValues: guilds.map { ($0.id, $0) }
+                    )
+                    cachedGuildRailItems = guilds.map { .guild($0.id) }
+                }
                 var voiceStateCount = 0
                 var currentUserRolesByGuild: [GuildID: [RoleID]] = [:]
                 for guild in readyGuilds {

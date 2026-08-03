@@ -326,7 +326,13 @@ struct GuildVoiceStateSnapshotDTO: Decodable {
 struct GatewayReadyGuildsDTO: Decodable {
     struct GuildReference: Decodable {
         var id: String
+        var name: String?
+        var icon: String?
+        var owner: Bool?
+        var ownerID: String?
+        var permissions: String?
         var rulesChannelID: String?
+        var defaultMessageNotifications: Int?
         var voiceStates: [VoiceStateUpdateDTO]
         var emojis: GatewayGuildEmojiCollectionDTO?
         var channels: [ChannelDTO]
@@ -335,8 +341,10 @@ struct GatewayReadyGuildsDTO: Decodable {
         var members: [GuildMemberDTO]
 
         enum CodingKeys: String, CodingKey {
-            case id
+            case id, name, icon, owner, permissions
+            case ownerID = "owner_id"
             case rulesChannelID = "rules_channel_id"
+            case defaultMessageNotifications = "default_message_notifications"
             case voiceStates = "voice_states"
             case emojis
             case channels, threads, roles, members
@@ -345,7 +353,16 @@ struct GatewayReadyGuildsDTO: Decodable {
         init(from decoder: any Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             id = try container.decode(String.self, forKey: .id)
+            name = try? container.decode(String.self, forKey: .name)
+            icon = try? container.decode(String.self, forKey: .icon)
+            owner = try? container.decode(Bool.self, forKey: .owner)
+            ownerID = try? container.decode(String.self, forKey: .ownerID)
+            permissions = try? container.decode(String.self, forKey: .permissions)
             rulesChannelID = try? container.decode(String.self, forKey: .rulesChannelID)
+            defaultMessageNotifications = try? container.decode(
+                Int.self,
+                forKey: .defaultMessageNotifications
+            )
             voiceStates =
                 (try? container.decode(
                     LossyList<VoiceStateUpdateDTO>.self,
@@ -371,6 +388,30 @@ struct GatewayReadyGuildsDTO: Decodable {
                 (try? container.decode(
                     LossyList<GuildMemberDTO>.self, forKey: .members
                 ))?.elements ?? []
+        }
+
+        func domain(currentUserID: UserID?) -> Guild? {
+            guard let id = GuildID(id), let name else { return nil }
+            let iconURL = icon.flatMap { hash in
+                URL(
+                    string:
+                        "https://cdn.discordapp.com/icons/\(id)/\(hash).webp?size=128&animated=\(hash.hasPrefix("a_") ? "true" : "false")"
+                )
+            }
+            let isOwnedByCurrentUser = owner
+                ?? ownerID.map { $0 == currentUserID?.description }
+            return Guild(
+                id: id,
+                name: name,
+                iconURL: iconURL,
+                isOwnedByCurrentUser: isOwnedByCurrentUser,
+                currentUserPermissions: permissions.flatMap(UInt64.init),
+                rulesChannelID: rulesChannelID.flatMap(ChannelID.init),
+                defaultMessageNotifications:
+                    defaultMessageNotifications.flatMap(
+                        MessageNotificationLevel.init(rawValue:)
+                    ) ?? .onlyMentions
+            )
         }
     }
 

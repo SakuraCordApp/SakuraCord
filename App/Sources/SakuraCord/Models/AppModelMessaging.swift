@@ -1886,6 +1886,13 @@ extension AppModel {
 
     func reportMainWindowActive(_ isActive: Bool) {
         mainWindowIsActive = isActive
+        let session = accountSession()
+        let precedingUpdate = clientAppStateUpdateTask
+        clientAppStateUpdateTask = Task {
+            await precedingUpdate?.value
+            guard !Task.isCancelled else { return }
+            await session.provider.updateClientAppState(isFocused: isActive)
+        }
         if let selectedChannelID {
             preserveUnreadDividerIfNeeded(channelID: selectedChannelID)
             if let target = readState.updatePresentation(
