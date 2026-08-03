@@ -371,12 +371,16 @@ nonisolated enum NativeTimelineAutomaticHistoryPolicy {
 }
 
 nonisolated enum NativeTimelineBenchmarkScrollPolicy {
+    // Keep the authenticated workload continuously moving at a speed that is
+    // representative of reading/skim scrolling. The former 9,600 pt/s target
+    // crossed roughly 160 points per 60 Hz frame, exhausting live history far
+    // faster than a person could inspect it and obscuring account-scale costs.
     /// Run for one fixed wall-clock interval at a refresh-independent target
     /// speed. Delayed frames remain part of the result: the step cap avoids
     /// measuring a stall twice, while the artifact records the resulting
     /// spatial deficit instead of censoring the run.
-    static let pointsPerSecond: CGFloat = 9_600
-    static let maximumStep: CGFloat = 320
+    static let pointsPerSecond: CGFloat = 1_200
+    static let maximumStep: CGFloat = 40
     static let duration: TimeInterval = 20
     static let nominalDistance = pointsPerSecond * duration
 

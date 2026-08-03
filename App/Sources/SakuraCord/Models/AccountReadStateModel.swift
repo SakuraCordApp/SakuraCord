@@ -5,6 +5,15 @@ import SakuraCordModels
 @MainActor
 @Observable
 final class AccountReadStateModel {
+    struct UnreadPresentationProjection: Equatable, Sendable {
+        var unreadByChannelID: [ChannelID: Bool]
+        var mentionsByChannelID: [ChannelID: Int]
+        var newForumPostsByChannelID: [ChannelID: Int]
+        var unreadByGuildID: [GuildID: Bool]
+        var mentionsByGuildID: [GuildID: Int]
+        var totalMentions: Int
+    }
+
     struct TimelineUnreadSummary: Equatable, Sendable {
         var firstUnreadMessageID: MessageID
         var loadedUnreadCount: Int
@@ -929,6 +938,62 @@ final class AccountReadStateModel {
             return 0
         }
         return max(1, entry.unreadMessageCount)
+    }
+
+    /// Produces every account-wide sidebar unread value in one entry-table
+    /// pass. The scalar helpers remain useful for narrow updates, but calling
+    /// them once per guild or forum turns a refresh into a quadratic scan on
+    /// large accounts.
+    func unreadPresentationProjection(
+        now: Date = .now
+    ) -> UnreadPresentationProjection {
+        var unreadByChannelID: [ChannelID: Bool] = [:]
+        var mentionsByChannelID: [ChannelID: Int] = [:]
+        var newForumPostsByChannelID: [ChannelID: Int] = [:]
+        var unreadByGuildID: [GuildID: Bool] = [:]
+        var mentionsByGuildID: [GuildID: Int] = [:]
+        var totalMentions = 0
+        unreadByChannelID.reserveCapacity(entries.count)
+        mentionsByChannelID.reserveCapacity(entries.count)
+
+        for entry in entries.values {
+            let channelID = entry.channelID
+            let channelMentions = mentions(channelID: channelID)
+            let channelUnread = unread(channelID: channelID, now: now)
+            mentionsByChannelID[channelID] = channelMentions
+            unreadByChannelID[channelID] = channelUnread
+            totalMentions += channelMentions
+
+            if let guildID = entry.guildID {
+                mentionsByGuildID[guildID, default: 0] += channelMentions
+                // Guild rail unread intentionally excludes thread-only state;
+                // this matches `guildUnread`, whose source is channelByID.
+                if channelByID[channelID] != nil, channelUnread {
+                    unreadByGuildID[guildID] = true
+                }
+            }
+
+            guard let parentID = entry.parentID,
+                  forumPostArchivedByID[channelID] != true,
+                  !entry.hasAuthoritativeReadState,
+                  let parent = entries[parentID],
+                  parent.kind == .forum,
+                  parent.hasAuthoritativeReadState
+            else { continue }
+            let boundary = parent.lastAcknowledgedMessageID ?? MessageID(rawValue: 0)
+            if MessageID(rawValue: channelID.rawValue) > boundary {
+                newForumPostsByChannelID[parentID, default: 0] += 1
+            }
+        }
+
+        return UnreadPresentationProjection(
+            unreadByChannelID: unreadByChannelID,
+            mentionsByChannelID: mentionsByChannelID,
+            newForumPostsByChannelID: newForumPostsByChannelID,
+            unreadByGuildID: unreadByGuildID,
+            mentionsByGuildID: mentionsByGuildID,
+            totalMentions: totalMentions
+        )
     }
 
     func guildUnread(_ guildID: GuildID, now: Date = .now) -> Bool {

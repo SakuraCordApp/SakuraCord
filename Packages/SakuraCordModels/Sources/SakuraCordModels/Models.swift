@@ -1865,6 +1865,7 @@ public enum ClientEvent: Equatable, Sendable {
     )
     case privateMembersChanged([Member])
     case currentUserRolesChanged(guildID: GuildID, roleIDs: [RoleID])
+    case currentUserRolesSnapshot([GuildID: [RoleID]])
     case emojisChanged(guildID: GuildID, emojis: [DiscordEmoji])
     case emojisUpdated(
         guildID: GuildID,

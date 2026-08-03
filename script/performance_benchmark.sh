@@ -5,6 +5,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 runtime="$("$root/script/worktree_runtime.sh")"
 checkout="$(sed -n 's/^Checkout:  *//p' <<<"$runtime")"
 app="$(sed -n 's/^App:  *//p' <<<"$runtime")"
+bundle_id="$(sed -n 's/^Bundle ID:  *//p' <<<"$runtime")"
 executable="${SAKURACORD_PERFORMANCE_EXECUTABLE_OVERRIDE:-$app/Contents/MacOS/SakuraCord}"
 provenance_directory="${SAKURACORD_PERFORMANCE_PROVENANCE_DIRECTORY_OVERRIDE:-$root/.build/performance-tools/build-provenance}"
 
@@ -38,10 +39,12 @@ usage() {
 #       Relaunch the authenticated debug app and run its deterministic native
 #       20-second display-link scroll workload in the persisted selected channel.
 #       Delayed frames remain reportable; spatial distance, deficit from the
-#       nominal 192,000-point path, and quality ratio are recorded separately. The
+#       nominal 24,000-point path, and quality ratio are recorded separately. The
 #       channel must already have at least 100 cached messages. This never
 #       synthesizes user interaction, marks content read, sends a message, or
-#       enables an offline fixture. Defaults: 35 seconds.
+#       enables an offline fixture. Set SAKURACORD_PERFORMANCE_ACCOUNT_ID to a
+#       stored debug account ID to compare accounts; otherwise the most recently
+#       selected account is used. Defaults: 35 seconds.
 #   snapshot
 #       Print a one-shot CPU, RSS, thread, footprint, and network sample.
 #   summarize <artifact-directory>
@@ -329,6 +332,8 @@ record_running_app() {
 
 record_launch() {
     local scenario="$1" seconds="$2" pid output trace trace_pid notify_pid notification sampler
+    local stopped_state sandbox_directory sandbox_result sandbox_window
+    local performance_account_id debug_credential_directory newest_credential
     local resource_window_name
     shift 2
     pid="$(running_pid || true)"
@@ -362,6 +367,61 @@ record_launch() {
         authenticated-scroll) resource_window_name="MessageTimelineAutoScrollBenchmark" ;;
         *) resource_window_name="" ;;
     esac
+    performance_account_id="${SAKURACORD_PERFORMANCE_ACCOUNT_ID:-}"
+    if [[ "$scenario" == "authenticated-scroll" ]]; then
+        debug_credential_directory="$HOME/Library/Containers/$bundle_id/Data/Library/Application Support/SakuraCord/InsecureDebugCredentials"
+        if [[ -z "$performance_account_id" ]]; then
+            newest_credential="$(
+                find "$debug_credential_directory" -maxdepth 1 -type f \
+                    -name '*.credential' -print 2>/dev/null \
+                    | while IFS= read -r candidate; do
+                        printf '%s\t%s\n' "$(stat -f '%m' "$candidate")" "$candidate"
+                    done \
+                    | sort -rn | head -1 | cut -f2-
+            )"
+            performance_account_id="$(
+                basename "$newest_credential" .credential 2>/dev/null || true
+            )"
+        fi
+        if [[ ! "$performance_account_id" =~ ^[0-9]+$ ]] \
+            || [[ ! -f "$debug_credential_directory/$performance_account_id.credential" ]]
+        then
+            printf '%s\n' \
+                "Authenticated scrolling requires a selected local debug credential." >&2
+            exit 4
+        fi
+    fi
+    sandbox_directory="$HOME/Library/Containers/$bundle_id/Data/tmp"
+    mkdir -p "$sandbox_directory"
+    sandbox_result="$(mktemp "$sandbox_directory/sakuracord-performance-result.XXXXXX")"
+    sandbox_window="$(mktemp "$sandbox_directory/sakuracord-performance-window.XXXXXX")"
+    # xctrace's direct --launch path can leave a never-executed process stub on
+    # current macOS/Xcode beta builds. Start a suspended wrapper instead, attach
+    # the trace to its stable PID, and only exec the app once tracing is active.
+    # The exec preserves the PID, so startup and benchmark signposts remain in
+    # one process trace without allowing the workload to race ahead of attach.
+        SAKURACORD_INSECURE_DEBUG_CREDENTIALS=1 \
+        SAKURACORD_PERFORMANCE_ACCOUNT_ID="$performance_account_id" \
+        SAKURACORD_PERFORMANCE_WINDOW_NAME="$resource_window_name" \
+        SAKURACORD_PERFORMANCE_WINDOW_PATH="$sandbox_window" \
+        SAKURACORD_PERFORMANCE_RESULT_PATH="$sandbox_result" \
+        /bin/sh -c 'kill -STOP "$$"; exec "$@"' sh "$executable" "$@" \
+        >"$output/app-output.log" 2>&1 &
+    pid=$!
+    printf '%s\n' "$pid" >"$output/app-pid.txt"
+    stopped_state=""
+    for _ in {1..100}; do
+        stopped_state="$(ps -p "$pid" -o state= 2>/dev/null || true)"
+        [[ "$stopped_state" == *T* ]] && break
+        sleep 0.02
+    done
+    if [[ "$stopped_state" != *T* ]]; then
+        printf '%s\n' "Benchmark launch wrapper did not suspend: $pid" >&2
+        kill -TERM "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+        exit 4
+    fi
+
     notifyutil -1 "$notification" >"$output/trace-start-notification.txt" &
     notify_pid=$!
     xcrun xctrace record \
@@ -370,21 +430,15 @@ record_launch() {
         --no-prompt \
         --notify-tracing-started "$notification" \
         --output "$trace" \
-        --env SAKURACORD_INSECURE_DEBUG_CREDENTIALS=1 \
-        --env SAKURACORD_PERFORMANCE_WINDOW_NAME="$resource_window_name" \
-        --env SAKURACORD_PERFORMANCE_WINDOW_PATH="$output/resource-window.tsv" \
-        --env SAKURACORD_PERFORMANCE_RESULT_PATH="$output/benchmark-result.tsv" \
-        --launch -- "$executable" "$@" &
+        --attach "$pid" &
     trace_pid=$!
-    wait_for_trace_start "$notify_pid" "$trace_pid" "$output"
-    pid=""
-    for _ in {1..200}; do
-        if pid="$(running_pid || true)"; [[ -n "$pid" ]]; then
-            printf '%s\n' "$pid" >"$output/app-pid.txt"
-            break
-        fi
-        sleep 0.02
-    done
+    if ! wait_for_trace_start "$notify_pid" "$trace_pid" "$output"; then
+        kill -CONT "$pid" 2>/dev/null || true
+        kill -TERM "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+        exit 7
+    fi
+    kill -CONT "$pid"
     if [[ "$scenario" == "authenticated-scroll" && -n "$pid" ]]; then
         top -pid "$pid" -l "$seconds" -s 1 \
             -stats pid,cpu,mem,threads,power -o cpu \
@@ -406,6 +460,16 @@ record_launch() {
         wait "$nettop_pid" || true
         footprint "$pid" >"$output/footprint.txt" \
             2>"$output/footprint-error.txt" || true
+    fi
+    if [[ -s "$sandbox_result" ]]; then
+        mv "$sandbox_result" "$output/benchmark-result.tsv"
+    else
+        rm -f "$sandbox_result"
+    fi
+    if [[ -s "$sandbox_window" ]]; then
+        mv "$sandbox_window" "$output/resource-window.tsv"
+    else
+        rm -f "$sandbox_window"
     fi
     export_trace_tables "$trace" "$output"
     printf '%s\n' "Completed: $output"

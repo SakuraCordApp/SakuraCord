@@ -1755,6 +1755,81 @@ struct AccountReadStateModelTests {
         #expect(model.entries.isEmpty)
     }
 
+    @Test func `one pass unread projection matches scalar account aggregates`() {
+        let forumID = ChannelID(rawValue: 250)
+        let newPostID = ChannelID(rawValue: 300)
+        let threadID = ChannelID(rawValue: 301)
+        let model = makeModel(latest: 12, acknowledged: 10, mentions: 2)
+        model.merge(channels: [
+            Channel(
+                id: forumID,
+                guildID: guildID,
+                name: "forum",
+                kind: .forum,
+                lastMessageID: MessageID(rawValue: newPostID.rawValue)
+            )
+        ])
+        model.applyRemote(
+            ChannelReadState(
+                channelID: forumID,
+                lastAcknowledgedMessageID: MessageID(rawValue: 275)
+            )
+        )
+        model.merge(
+            forumPost: ForumPost(
+                thread: MessageThreadSummary(
+                    id: newPostID,
+                    guildID: guildID,
+                    parentID: forumID,
+                    name: "Unopened post",
+                    lastMessageID: MessageID(rawValue: newPostID.rawValue)
+                )
+            )
+        )
+        model.merge(
+            thread: MessageThreadSummary(
+                id: threadID,
+                guildID: guildID,
+                parentID: forumID,
+                name: "Mentioned thread",
+                lastMessageID: MessageID(rawValue: 310)
+            )
+        )
+        model.applyRemote(
+            ChannelReadState(
+                channelID: threadID,
+                lastAcknowledgedMessageID: MessageID(rawValue: 309),
+                mentionCount: 1
+            )
+        )
+
+        let projection = model.unreadPresentationProjection()
+
+        for channelID in model.entries.keys {
+            #expect(
+                projection.unreadByChannelID[channelID]
+                    == model.unread(channelID: channelID)
+            )
+            #expect(
+                projection.mentionsByChannelID[channelID]
+                    == model.mentions(channelID: channelID)
+            )
+        }
+        #expect(
+            projection.newForumPostsByChannelID[forumID, default: 0]
+                == model.forumNewPostCount(channelID: forumID)
+        )
+        #expect(
+            projection.unreadByGuildID[guildID, default: false]
+                == model.guildUnread(guildID)
+        )
+        #expect(
+            projection.mentionsByGuildID[guildID, default: 0]
+                == model.guildMentions(guildID)
+        )
+        #expect(projection.totalMentions == model.totalMentions)
+    }
+
     private func makeModel(
         latest: UInt64,
         acknowledged: UInt64,

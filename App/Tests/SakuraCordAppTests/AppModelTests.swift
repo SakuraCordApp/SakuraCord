@@ -2482,6 +2482,31 @@ private func forumPresentationPost(
     #expect(await credentials.accessCount == 0)
 }
 
+@Test func `performance restore selects its requested stored account`() {
+    let first = CredentialHandle(accountID: "100")
+    let requested = CredentialHandle(accountID: "200")
+    let handles = [first, requested]
+
+    #expect(
+        RestoredCredentialSelectionPolicy.handle(
+            from: handles,
+            preferredAccountID: requested.accountID
+        ) == requested
+    )
+    #expect(
+        RestoredCredentialSelectionPolicy.handle(
+            from: handles,
+            preferredAccountID: "missing"
+        ) == first
+    )
+    #expect(
+        RestoredCredentialSelectionPolicy.handle(
+            from: handles,
+            preferredAccountID: nil
+        ) == first
+    )
+}
+
 @MainActor
 @Test func `workspace presentation does not wait for initial history`() async {
     let provider = SuspendedBootstrapTestProvider(suspendsMessages: true)
@@ -4104,6 +4129,25 @@ private func hiddenMockChannel(
     #expect(model.readState.entries[privateChannelID]?.isAccessible == false)
 
     model.reportTimelineLiveScrolling(false, conversationID: privateChannelID)
+}
+
+@MainActor
+@Test func `ready role snapshot installs every guild role set together`() {
+    let model = AppModel(launchMode: .offlineTesting)
+    let firstGuildID = GuildID(rawValue: 91_001)
+    let secondGuildID = GuildID(rawValue: 91_002)
+    let firstRoleID = RoleID(rawValue: 92_001)
+    let secondRoleID = RoleID(rawValue: 92_002)
+
+    model.consumePresenceAndCommandEvent(
+        .currentUserRolesSnapshot([
+            firstGuildID: [firstRoleID],
+            secondGuildID: [secondRoleID]
+        ])
+    )
+
+    #expect(model.currentUserRoleIDsByGuild[firstGuildID] == [firstRoleID])
+    #expect(model.currentUserRoleIDsByGuild[secondGuildID] == [secondRoleID])
 }
 
 @MainActor

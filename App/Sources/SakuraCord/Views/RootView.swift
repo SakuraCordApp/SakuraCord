@@ -14,7 +14,8 @@ struct RootView: View {
             if model.launchMode == .normal {
                 DiscordLoginView(
                     showsCancel: false,
-                    networkingEnabled: !model.isDiscordNetworkingDisabled
+                    networkingEnabled: !model.isDiscordNetworkingDisabled,
+                    credentials: model.credentialStore
                 ) { handle in
                     await model.connectAuthenticatedAccount(
                         handle,
@@ -219,7 +220,8 @@ private struct ChatRootView: View {
         .sheet(isPresented: $showLogin) {
             DiscordLoginView(
                 showsCancel: true,
-                networkingEnabled: !model.isDiscordNetworkingDisabled
+                networkingEnabled: !model.isDiscordNetworkingDisabled,
+                credentials: model.credentialStore
             ) { handle in
                 await model.connectAuthenticatedAccount(
                     handle,

@@ -516,6 +516,10 @@ extension ProviderRequestContractTests {
             session: URLSession(configuration: configuration),
             gatewayTransport: ReadyGatewayTransport(socket: socket)
         )
+        let events = await provider.eventStream()
+        let readyWorkspaceReplays = Task {
+            await readyWorkspaceReplayEvents(untilReadyIn: events)
+        }
 
         let snapshot = try await provider.bootstrap()
         let channel = try #require(snapshot.channels.first { $0.id == ChannelID(rawValue: 200) })
@@ -536,6 +540,7 @@ extension ProviderRequestContractTests {
         #expect(settings.channelOverrides.first?.flags == 1024)
         #expect(!snapshot.usesNewNotifications)
         #expect(RateLimitURLProtocol.guildChannelRequests == 0)
+        #expect(await readyWorkspaceReplays.value.isEmpty)
 
         await provider.disconnect()
     }
@@ -595,6 +600,27 @@ extension ProviderRequestContractTests {
         #expect(RateLimitURLProtocol.messageRequestCount == 1)
         #expect(await socket.closeCodes.isEmpty)
     }
+}
+
+private func readyWorkspaceReplayEvents(
+    untilReadyIn events: AsyncStream<ClientEvent>
+) async -> [ClientEvent] {
+    var replays: [ClientEvent] = []
+    for await event in events {
+        if event == .connectionChanged(.ready) {
+            return replays
+        }
+        switch event {
+        case .readStateSnapshot,
+             .notificationModeChanged,
+             .notificationSettingsChanged,
+             .channelsChanged:
+            replays.append(event)
+        default:
+            break
+        }
+    }
+    return replays
 }
 
 private struct ReactionGatewayScenario {

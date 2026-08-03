@@ -625,20 +625,12 @@ extension DiscordRESTProvider {
                     channelOptIn=\(channelOptInCount)
                     """
                 )
-                continuation?.yield(
-                    .notificationModeChanged(
-                        usesNewNotifications: ready.usesNewNotifications
-                    )
-                )
-                continuation?.yield(
-                    .readStateSnapshot(
-                        readyReadStates,
-                        version: ready.readState.version
-                    )
-                )
-                for settings in readyNotificationSettings {
-                    continuation?.yield(.notificationSettingsChanged(settings))
-                }
+                // READY is the source that completes `bootstrap()`. Publishing
+                // its account-wide read metadata here as incremental events
+                // makes the app apply the same state once per guild before it
+                // immediately applies the complete BootstrapSnapshot again.
+                // Subsequent Gateway updates still use their incremental
+                // ClientEvent cases below.
                 let privateChannels = Self.orderedPrivateChannels(
                     ready.privateChannels.compactMap {
                         try? $0.domain(
@@ -651,13 +643,11 @@ extension DiscordRESTProvider {
                 for presence in ready.privatePresences {
                     cachePrivatePresence(presence)
                 }
-                continuation?.yield(
-                    .channelsChanged(guildID: nil, channels: privateChannels)
-                )
                 continuation?.yield(.privateMembersChanged(privateMembersInChannelOrder()))
                 let readyGuilds = ready.hydratedGuilds(using: cachedGatewayUsersByID)
                 gatewayGuildIDs = readyGuilds.compactMap { GuildID($0.id) }
                 var voiceStateCount = 0
+                var currentUserRolesByGuild: [GuildID: [RoleID]] = [:]
                 for guild in readyGuilds {
                     let guildID = GuildID(guild.id)
                     if let guildID {
@@ -667,7 +657,6 @@ extension DiscordRESTProvider {
                        let channels = try? Self.domainChannels(guild.channels, guildID: guildID)
                     {
                         cachedChannels[guildID] = channels
-                        continuation?.yield(.channelsChanged(guildID: guildID, channels: channels))
                     }
                     if let guildID, !guild.roles.isEmpty {
                         cachedGuildRoles[guildID] = guild.roles
@@ -694,12 +683,7 @@ extension DiscordRESTProvider {
                         if let currentUserID = currentUser?.id,
                            let currentMember = members.first(where: { $0.id == currentUserID })
                         {
-                            continuation?.yield(
-                                .currentUserRolesChanged(
-                                    guildID: guildID,
-                                    roleIDs: currentMember.roles.map(\.id)
-                                )
-                            )
+                            currentUserRolesByGuild[guildID] = currentMember.roles.map(\.id)
                         }
                     }
                     if let guildID, let emojis = guild.emojis {
@@ -712,6 +696,11 @@ extension DiscordRESTProvider {
                         voiceStateCount += 1
                         continuation?.yield(.voiceStateChanged(participant))
                     }
+                }
+                if !currentUserRolesByGuild.isEmpty {
+                    continuation?.yield(
+                        .currentUserRolesSnapshot(currentUserRolesByGuild)
+                    )
                 }
                 if voiceStateCount > 0 {
                     gatewayLogger.info(

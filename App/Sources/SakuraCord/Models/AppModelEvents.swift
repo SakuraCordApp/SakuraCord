@@ -120,19 +120,26 @@ extension AppModel {
             applyUnreadAccessProjection(accessProjection)
         }
         let accessByChannelID = accessProjection.accessByChannelID
+        let unreadProjection = readState.unreadPresentationProjection()
         let projectedChannels = value.channels.map { channel in
             var channel = channel
             channel.unreadCount =
                 channel.kind == .forum
-                ? readState.forumNewPostCount(channelID: channel.id)
-                : (readState.unread(channelID: channel.id) ? 1 : 0)
-            channel.mentionCount = readState.mentions(channelID: channel.id)
+                ? unreadProjection.newForumPostsByChannelID[channel.id, default: 0]
+                : (unreadProjection.unreadByChannelID[channel.id] == true ? 1 : 0)
+            channel.mentionCount = unreadProjection.mentionsByChannelID[
+                channel.id,
+                default: 0
+            ]
             return channel
         }
         let projectedGuilds = value.guilds.map { guild in
             var guild = guild
-            guild.unreadCount = readState.guildUnread(guild.id) ? 1 : 0
-            guild.mentionCount = readState.guildMentions(guild.id)
+            guild.unreadCount = unreadProjection.unreadByGuildID[guild.id] == true ? 1 : 0
+            guild.mentionCount = unreadProjection.mentionsByGuildID[
+                guild.id,
+                default: 0
+            ]
             return guild
         }
         if UnreadPresentationPublicationPolicy.shouldPublish(
@@ -182,7 +189,7 @@ extension AppModel {
             selectedChannel = projectedSelectedChannel
         }
         notificationService.setDockBadge(
-            readState.totalMentions,
+            unreadProjection.totalMentions,
             enabled: notificationPreferences.showsDockBadge
         )
     }
@@ -491,11 +498,8 @@ extension AppModel {
         case .privateMembersChanged(let value):
             guard selectedGuildID == nil else { return }
             members = value
-        case .currentUserRolesChanged(let guildID, let roleIDs):
-            let roleIDs = Set(roleIDs)
-            currentUserRoleIDsByGuild[guildID] = roleIDs
-            readState.updateCurrentUserRoles(roleIDs, guildID: guildID)
-            refreshUnreadPresentation(appliesAccessImmediately: true)
+        case .currentUserRolesChanged, .currentUserRolesSnapshot:
+            consumeCurrentUserRoleEvent(event)
         case .voiceStateChanged(let state):
             consumeVoiceStateChanged(state)
         case .privateCallChanged(var call):
@@ -520,6 +524,44 @@ extension AppModel {
             consumeInteraction(event)
         default:
             break
+        }
+    }
+
+    func consumeCurrentUserRoleEvent(_ event: ClientEvent) {
+        switch event {
+        case .currentUserRolesChanged(let guildID, let roleIDs):
+            consumeCurrentUserRolesChanged(guildID: guildID, roleIDs: roleIDs)
+        case .currentUserRolesSnapshot(let roleIDsByGuild):
+            consumeCurrentUserRolesSnapshot(roleIDsByGuild)
+        default:
+            break
+        }
+    }
+
+    func consumeCurrentUserRolesChanged(
+        guildID: GuildID,
+        roleIDs values: [RoleID]
+    ) {
+        let roleIDs = Set(values)
+        guard currentUserRoleIDsByGuild[guildID] != roleIDs else { return }
+        currentUserRoleIDsByGuild[guildID] = roleIDs
+        readState.updateCurrentUserRoles(roleIDs, guildID: guildID)
+        refreshUnreadPresentation(appliesAccessImmediately: true)
+    }
+
+    func consumeCurrentUserRolesSnapshot(
+        _ roleIDsByGuild: [GuildID: [RoleID]]
+    ) {
+        var didChange = false
+        for (guildID, values) in roleIDsByGuild {
+            let roleIDs = Set(values)
+            guard currentUserRoleIDsByGuild[guildID] != roleIDs else { continue }
+            currentUserRoleIDsByGuild[guildID] = roleIDs
+            readState.updateCurrentUserRoles(roleIDs, guildID: guildID)
+            didChange = true
+        }
+        if didChange {
+            refreshUnreadPresentation(appliesAccessImmediately: true)
         }
     }
 

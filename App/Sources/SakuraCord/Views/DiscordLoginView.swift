@@ -22,7 +22,7 @@ struct DiscordLoginView: View {
     let networkingEnabled: Bool
     let onConnected: @MainActor (CredentialHandle) async -> String?
 
-    @State private var authenticator = DiscordSessionAuthenticator()
+    @State private var authenticator: DiscordSessionAuthenticator
     @State private var remoteAuthManager = DiscordRemoteAuthManager()
     @State private var identifier = ""
     @State private var password = ""
@@ -43,6 +43,20 @@ struct DiscordLoginView: View {
     @State private var smsCooldownEndsAt: Date?
     @State private var backgroundAnimationStart = Date()
     @FocusState private var focusedField: DiscordLoginField?
+
+    init(
+        showsCancel: Bool,
+        networkingEnabled: Bool,
+        credentials: any CredentialStore,
+        onConnected: @escaping @MainActor (CredentialHandle) async -> String?
+    ) {
+        self.showsCancel = showsCancel
+        self.networkingEnabled = networkingEnabled
+        self.onConnected = onConnected
+        _authenticator = State(
+            initialValue: DiscordSessionAuthenticator(credentials: credentials)
+        )
+    }
 
     var body: some View {
         ZStack {

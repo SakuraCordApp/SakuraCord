@@ -1559,34 +1559,34 @@ func `native scrolling removes installed pointer tracking immediately`() {
     #expect(
         NativeTimelineBenchmarkScrollPolicy.distance(
             tickInterval: 1.0 / 60.0
-        ) == 160
+        ) == 20
     )
     #expect(
         NativeTimelineBenchmarkScrollPolicy.distance(
             tickInterval: 1.0 / 120.0
-        ) == 80
+        ) == 10
     )
     #expect(
         NativeTimelineBenchmarkScrollPolicy.distance(
             tickInterval: 1
-        ) == 320
+        ) == 40
     )
     #expect(
-        NativeTimelineBenchmarkScrollPolicy.nominalDistance == 192_000
+        NativeTimelineBenchmarkScrollPolicy.nominalDistance == 24_000
     )
     #expect(
         NativeTimelineBenchmarkScrollPolicy.distanceDeficit(
-            completedDistance: 191_360
-        ) == 640
+            completedDistance: 23_920
+        ) == 80
     )
     #expect(
         NativeTimelineBenchmarkScrollPolicy.spatialQuality(
-            completedDistance: 192_000
+            completedDistance: 24_000
         ) == 1
     )
     #expect(
         NativeTimelineBenchmarkScrollPolicy.spatialQuality(
-            completedDistance: 96_000
+            completedDistance: 12_000
         ) == 0.5
     )
 }
@@ -1617,19 +1617,19 @@ func `native scrolling removes installed pointer tracking immediately`() {
         completing.recordTick(
             uptime: 10,
             previousDocumentY: 100_000,
-            currentDocumentY: 4_000,
+            currentDocumentY: 88_000,
             hasMoreMessages: true
         ) == .continueBenchmark
     )
     #expect(
         completing.recordTick(
             uptime: 20,
-            previousDocumentY: 100_000,
-            currentDocumentY: 4_000,
+            previousDocumentY: 88_000,
+            currentDocumentY: 76_000,
             hasMoreMessages: false
         ) == .completed
     )
-    #expect(completing.completedDistance == 192_000)
+    #expect(completing.completedDistance == 24_000)
 
 }
 
@@ -1680,11 +1680,11 @@ func `native scrolling removes installed pointer tracking immediately`() {
             hasMoreMessages: true
         ) == .completed
     )
-    #expect(controller.completedDistance == 191_360)
+    #expect(controller.completedDistance == 23_920)
     #expect(
         NativeTimelineBenchmarkScrollPolicy.distanceDeficit(
             completedDistance: controller.completedDistance
-        ) == 640
+        ) == 80
     )
 }
 

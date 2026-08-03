@@ -12,6 +12,22 @@ import SakuraCordPersistence
 import UniformTypeIdentifiers
 import UserNotifications
 
+nonisolated enum RestoredCredentialSelectionPolicy {
+    static func handle(
+        from handles: [CredentialHandle],
+        preferredAccountID: String?
+    ) -> CredentialHandle? {
+        if let preferredAccountID,
+           let preferred = handles.first(where: {
+               $0.accountID == preferredAccountID
+           })
+        {
+            return preferred
+        }
+        return handles.first
+    }
+}
+
 extension AppModel {
     var isOfflineTesting: Bool {
         launchMode == .offlineTesting
@@ -455,7 +471,18 @@ extension AppModel {
             } else {
                 nil
             }
-            if let handle = handles?.first {
+            let preferredPerformanceAccountID =
+                runsChatPerformanceBenchmark
+                    ? ProcessInfo.processInfo.environment[
+                        "SAKURACORD_PERFORMANCE_ACCOUNT_ID"
+                    ]
+                    : nil
+            if let handles,
+               let handle = RestoredCredentialSelectionPolicy.handle(
+                   from: handles,
+                   preferredAccountID: preferredPerformanceAccountID
+               )
+            {
                 _ = await connectAuthenticatedAccount(handle)
                 return false
             }
@@ -580,19 +607,27 @@ extension AppModel {
     }
 
     func scheduleCachedWorkspacePersistence() {
-        guard !presentsCachedStartup,
-              let snapshot,
-              let database
-        else { return }
+        guard !presentsCachedStartup, snapshot != nil, database != nil else { return }
         let session = accountSession()
-        let cachedSnapshot = readState.cacheSnapshot(updating: snapshot)
         cachedWorkspacePersistenceTask?.cancel()
         cachedWorkspacePersistenceTask = Task { [weak self] in
             await Task.yield()
-            guard !Task.isCancelled else { return }
-            try? await database.saveBootstrapSnapshot(cachedSnapshot)
             guard let self,
+                  !Task.isCancelled,
                   self.isCurrentAccountSession(session),
+                  !self.presentsCachedStartup,
+                  let snapshot = self.snapshot,
+                  let database = self.database
+            else { return }
+            // Preparing the durable snapshot walks every channel, thread, and
+            // read-state entry. Do it only after burst calls have coalesced so
+            // cancelled persistence requests never pay that main-actor cost.
+            let cachedSnapshot = self.readState.cacheSnapshot(updating: snapshot)
+            guard !Task.isCancelled,
+                  self.isCurrentAccountSession(session)
+            else { return }
+            try? await database.saveBootstrapSnapshot(cachedSnapshot)
+            guard self.isCurrentAccountSession(session),
                   !Task.isCancelled
             else { return }
             self.cachedWorkspacePersistenceTask = nil
