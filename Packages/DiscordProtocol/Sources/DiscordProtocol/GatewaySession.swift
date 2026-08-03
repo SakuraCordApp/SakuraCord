@@ -1,5 +1,6 @@
 import Compression
 import Foundation
+import libzstd
 import OSLog
 import SakuraCordModels
 
@@ -96,6 +97,11 @@ enum GatewaySessionEvent: Sendable, Equatable {
     case dispatch(name: String, data: JSONValue)
 }
 
+enum GatewayCompression: String, Sendable {
+    case zlibStream = "zlib-stream"
+    case zstdStream = "zstd-stream"
+}
+
 actor GatewaySession {
     enum State: Sendable, Equatable {
         case disconnected
@@ -112,6 +118,12 @@ actor GatewaySession {
         var gatewayURL: URL
         var identifyPayload: Data
         var token: String
+        var gatewayEncoding: String
+        var gatewayCompression: GatewayCompression
+        var heartbeatSession: DiscordHeartbeatSession?
+        var clientLaunchID: String?
+        var qosActive: Bool
+        var qosVersion: Int
         var maximumReconnectAttempts: Int
         var maximumMessageSize: Int
         var maximumCompressedBufferSize: Int
@@ -123,6 +135,12 @@ actor GatewaySession {
             gatewayURL: URL,
             identifyPayload: Data,
             token: String,
+            gatewayEncoding: String = "json",
+            gatewayCompression: GatewayCompression = .zlibStream,
+            heartbeatSession: DiscordHeartbeatSession? = nil,
+            clientLaunchID: String? = nil,
+            qosActive: Bool = false,
+            qosVersion: Int = 29,
             maximumReconnectAttempts: Int = 8,
             maximumMessageSize: Int = 16 * 1024 * 1024,
             maximumCompressedBufferSize: Int = 8 * 1024 * 1024,
@@ -133,6 +151,12 @@ actor GatewaySession {
             self.gatewayURL = gatewayURL
             self.identifyPayload = identifyPayload
             self.token = token
+            self.gatewayEncoding = gatewayEncoding
+            self.gatewayCompression = gatewayCompression
+            self.heartbeatSession = heartbeatSession
+            self.clientLaunchID = clientLaunchID
+            self.qosActive = qosActive
+            self.qosVersion = qosVersion
             self.maximumReconnectAttempts = maximumReconnectAttempts
             self.maximumMessageSize = maximumMessageSize
             self.maximumCompressedBufferSize = maximumCompressedBufferSize
@@ -189,6 +213,8 @@ actor GatewaySession {
     private var reconnectAttempts = 0
     private var awaitingHeartbeatACK = false
     private var heartbeatInterval: Duration?
+    private var heartbeatSession: DiscordHeartbeatSession?
+    private var qosActive: Bool
 
     init(
         configuration: Configuration,
@@ -204,6 +230,8 @@ actor GatewaySession {
         self.random = random
         self.codec = codec
         self.apiDiagnostics = apiDiagnostics
+        heartbeatSession = configuration.heartbeatSession
+        qosActive = configuration.qosActive
         let stream = AsyncStream<GatewaySessionEvent>.makeStream(bufferingPolicy: .bufferingNewest(500))
         events = stream.stream
         eventContinuation = stream.continuation
@@ -237,9 +265,10 @@ actor GatewaySession {
 
     func send(_ data: Data) async throws {
         guard !intentionallyStopped, state == .ready, let socket else { throw GatewaySessionError.stopped }
-        apiDiagnostics.recordGatewayData(direction: "request", data: data)
+        let envelope = try JSONGatewayCodec().decode(data)
+        apiDiagnostics.recordGateway(direction: "request", envelope: envelope)
         do {
-            try await socket.send(data)
+            try await socket.send(codec.encode(envelope))
         } catch {
             apiDiagnostics.recordWebSocketFailure(
                 transport: "gateway",
@@ -248,6 +277,34 @@ actor GatewaySession {
             )
             throw error
         }
+    }
+
+    func updateQOS(active: Bool, heartbeatSession: DiscordHeartbeatSession?) async {
+        let becameActive = active && !qosActive
+        qosActive = active
+        let sessionChanged = heartbeatSession?.sessionID != self.heartbeatSession?.sessionID
+        self.heartbeatSession = heartbeatSession
+        guard state == .ready, socket != nil, sessionChanged || becameActive else { return }
+        do {
+            if sessionChanged {
+                try await sendTimeSpentSessionUpdate()
+            }
+            try await sendHeartbeat(generation: generation, restartCadence: false)
+        } catch {
+            apiDiagnostics.recordWebSocketFailure(
+                transport: "gateway",
+                direction: "request",
+                error: error
+            )
+        }
+    }
+
+    func announceDesktopSession() async throws {
+        guard state == .ready, heartbeatSession != nil, configuration.clientLaunchID != nil else {
+            return
+        }
+        try await sendTimeSpentSessionUpdate()
+        try await sendHeartbeat(generation: generation, restartCadence: false)
     }
 
     func snapshot() -> Snapshot {
@@ -375,6 +432,7 @@ actor GatewaySession {
         var framer: GatewayPayloadFramer
         do {
             framer = try GatewayPayloadFramer(
+                compression: configuration.gatewayCompression,
                 maximumCompressedBufferSize: configuration.maximumCompressedBufferSize,
                 maximumDecompressedPayloadSize: configuration.maximumDecompressedPayloadSize
             )
@@ -399,11 +457,18 @@ actor GatewaySession {
                 let message = try await activeSocket.receive()
                 let payloads = try framer.append(message)
                 for payload in payloads {
-                    apiDiagnostics.recordGatewayData(
-                        direction: "response",
-                        data: payload
-                    )
-                    let envelope = try codec.decode(payload)
+                    let envelope: GatewayEnvelope
+                    do {
+                        envelope = try codec.decode(payload)
+                    } catch {
+                        apiDiagnostics.recordGatewayData(
+                            transport: "gateway",
+                            direction: "response",
+                            data: payload
+                        )
+                        throw error
+                    }
+                    apiDiagnostics.recordGateway(direction: "response", envelope: envelope)
                     if let outcome = try await process(envelope, generation: activeGeneration) {
                         await activeSocket.close(code: 4000)
                         return outcome
@@ -440,7 +505,7 @@ actor GatewaySession {
 
         switch envelope.op {
         case 0:
-            try processDispatch(envelope)
+            try await processDispatch(envelope)
         case 1:
             try await sendHeartbeat(generation: activeGeneration, restartCadence: true)
         case 7:
@@ -460,7 +525,7 @@ actor GatewaySession {
         return nil
     }
 
-    private func processDispatch(_ envelope: GatewayEnvelope) throws {
+    private func processDispatch(_ envelope: GatewayEnvelope) async throws {
         guard let name = envelope.eventName, let data = envelope.data else {
             throw GatewaySessionError.malformedPayload
         }
@@ -511,10 +576,8 @@ actor GatewaySession {
             try await sendResume()
         } else {
             transition(to: .identifying)
-            apiDiagnostics.recordGatewayData(
-                direction: "request",
-                data: configuration.identifyPayload
-            )
+            let identifyEnvelope = try codec.decode(configuration.identifyPayload)
+            apiDiagnostics.recordGateway(direction: "request", envelope: identifyEnvelope)
             do {
                 try await socket?.send(configuration.identifyPayload)
             } catch {
@@ -588,8 +651,21 @@ actor GatewaySession {
 
     private func sendHeartbeat(generation activeGeneration: Int, restartCadence: Bool) async throws {
         guard isActive(activeGeneration), let socket else { throw GatewaySessionError.stopped }
-        let data: JSONValue = sequence.map { .number(Double($0)) } ?? .null
-        let envelope = GatewayEnvelope(op: 1, data: data)
+        let sequenceValue: JSONValue = sequence.map { .number(Double($0)) } ?? .null
+        let envelope: GatewayEnvelope
+        if heartbeatSession != nil, configuration.clientLaunchID != nil {
+            let reasons: [JSONValue] = qosActive ? [.string("foregrounded")] : []
+            envelope = GatewayEnvelope(op: 40, data: .object([
+                "seq": sequenceValue,
+                "qos": .object([
+                    "ver": .number(Double(configuration.qosVersion)),
+                    "active": .bool(qosActive),
+                    "reasons": .array(reasons),
+                ]),
+            ]))
+        } else {
+            envelope = GatewayEnvelope(op: 1, data: sequenceValue)
+        }
         apiDiagnostics.recordGateway(direction: "request", envelope: envelope)
         do {
             try await socket.send(codec.encode(envelope))
@@ -604,6 +680,28 @@ actor GatewaySession {
         awaitingHeartbeatACK = true
         if restartCadence, let interval = heartbeatInterval {
             startHeartbeatLoop(generation: activeGeneration, initialDelay: interval, interval: interval)
+        }
+    }
+
+    private func sendTimeSpentSessionUpdate() async throws {
+        guard let socket, let heartbeatSession, let clientLaunchID = configuration.clientLaunchID else {
+            return
+        }
+        let envelope = GatewayEnvelope(op: 41, data: .object([
+            "initialization_timestamp": .number(Double(heartbeatSession.initializationTimestamp)),
+            "session_id": .string(heartbeatSession.sessionID),
+            "client_launch_id": .string(clientLaunchID),
+        ]))
+        apiDiagnostics.recordGateway(direction: "request", envelope: envelope)
+        do {
+            try await socket.send(codec.encode(envelope))
+        } catch {
+            apiDiagnostics.recordWebSocketFailure(
+                transport: "gateway",
+                direction: "request",
+                error: error
+            )
+            throw error
         }
     }
 
@@ -646,8 +744,8 @@ actor GatewaySession {
             items.append(URLQueryItem(name: name, value: value))
         }
         set("v", "9")
-        set("encoding", "json")
-        set("compress", "zlib-stream")
+        set("encoding", configuration.gatewayEncoding)
+        set("compress", configuration.gatewayCompression.rawValue)
         components.queryItems = items
         return components.url ?? base
     }
@@ -677,20 +775,103 @@ private func scaled(_ duration: Duration, by multiplier: Double) -> Duration {
 }
 
 struct GatewayPayloadFramer {
-    private var decoder: GatewayZlibStreamDecoder
+    private enum Decoder {
+        case zlib(GatewayZlibStreamDecoder)
+        case zstd(GatewayZstdStreamDecoder)
+    }
 
-    init(maximumCompressedBufferSize: Int, maximumDecompressedPayloadSize: Int) throws {
-        decoder = try GatewayZlibStreamDecoder(
-            maximumCompressedBufferSize: maximumCompressedBufferSize,
-            maximumDecompressedPayloadSize: maximumDecompressedPayloadSize
-        )
+    private var decoder: Decoder
+
+    init(
+        compression: GatewayCompression = .zlibStream,
+        maximumCompressedBufferSize: Int,
+        maximumDecompressedPayloadSize: Int
+    ) throws {
+        switch compression {
+        case .zlibStream:
+            decoder = try .zlib(GatewayZlibStreamDecoder(
+                maximumCompressedBufferSize: maximumCompressedBufferSize,
+                maximumDecompressedPayloadSize: maximumDecompressedPayloadSize
+            ))
+        case .zstdStream:
+            decoder = try .zstd(GatewayZstdStreamDecoder(
+                maximumCompressedBufferSize: maximumCompressedBufferSize,
+                maximumDecompressedPayloadSize: maximumDecompressedPayloadSize
+            ))
+        }
     }
 
     mutating func append(_ message: GatewaySocketMessage) throws -> [Data] {
         switch message {
         case let .text(text): [Data(text.utf8)]
-        case let .data(data): try decoder.append(data)
+        case let .data(data):
+            switch decoder {
+            case let .zlib(decoder): try decoder.append(data)
+            case let .zstd(decoder): try decoder.append(data)
+            }
         }
+    }
+}
+
+private final class GatewayZstdStreamDecoder {
+    private let context: OpaquePointer
+    private let maximumCompressedBufferSize: Int
+    private let maximumDecompressedPayloadSize: Int
+
+    init(maximumCompressedBufferSize: Int, maximumDecompressedPayloadSize: Int) throws {
+        guard let context = ZSTD_createDCtx() else {
+            throw GatewaySessionError.decompressionFailed
+        }
+        self.context = context
+        self.maximumCompressedBufferSize = maximumCompressedBufferSize
+        self.maximumDecompressedPayloadSize = maximumDecompressedPayloadSize
+    }
+
+    deinit {
+        ZSTD_freeDCtx(context)
+    }
+
+    func append(_ data: Data) throws -> [Data] {
+        guard data.count <= maximumCompressedBufferSize else {
+            throw GatewaySessionError.compressedBufferLimitExceeded
+        }
+        guard !data.isEmpty else { return [] }
+
+        var output = Data()
+        try data.withUnsafeBytes { sourceBytes in
+            var input = ZSTD_inBuffer(
+                src: sourceBytes.baseAddress,
+                size: sourceBytes.count,
+                pos: 0
+            )
+            let destinationCapacity = 64 * 1024
+            let destination = UnsafeMutablePointer<UInt8>.allocate(capacity: destinationCapacity)
+            defer { destination.deallocate() }
+
+            while input.pos < input.size {
+                let previousInputPosition = input.pos
+                var destinationBuffer = ZSTD_outBuffer(
+                    dst: destination,
+                    size: destinationCapacity,
+                    pos: 0
+                )
+                let result = ZSTD_decompressStream(context, &destinationBuffer, &input)
+                guard ZSTD_isError(result) == 0 else {
+                    throw GatewaySessionError.decompressionFailed
+                }
+                let produced = destinationBuffer.pos
+                guard output.count + produced <= maximumDecompressedPayloadSize else {
+                    throw GatewaySessionError.decompressedPayloadLimitExceeded
+                }
+                if produced > 0 {
+                    output.append(destination, count: produced)
+                }
+                guard input.pos > previousInputPosition || produced > 0 else {
+                    throw GatewaySessionError.decompressionFailed
+                }
+            }
+        }
+        return output.isEmpty ? [] : [output]
     }
 }
 

@@ -9,6 +9,45 @@ import Testing
     #expect(try codec.decode(codec.encode(envelope)) == envelope)
 }
 
+@Test func `desktop ETF codec round trips Discord JSON compatible terms`() throws {
+    let codec = ETFGatewayCodec()
+    let envelope = GatewayEnvelope(
+        op: 40,
+        data: .object([
+            "seq": .number(42),
+            "qos": .object([
+                "ver": .number(29),
+                "active": .bool(true),
+                "reasons": .array([.string("foregrounded")]),
+                "optional": .null,
+            ]),
+        ])
+    )
+    let encoded = try codec.encode(envelope)
+    #expect(encoded.first == 131)
+    #expect(try codec.decode(encoded) == envelope)
+}
+
+@Test func `desktop ETF codec decodes a sanitized official erlpack fixture`() throws {
+    // Packed by the clean stable desktop's native discord_erlpack module. The
+    // synthetic QoS envelope contains no account or session identifiers.
+    let fixture = try #require(Data(base64Encoded:
+        "g3QAAAACbQAAAAJvcGEobQAAAAFkdAAAAAJtAAAAA3NlcWEHbQAAAANxb3N0AAAAA20AAAAGYWN0aXZlcwVmYWxzZW0AAAADdmVyYR1tAAAAB3JlYXNvbnNq"
+    ))
+    let envelope = try ETFGatewayCodec().decode(fixture)
+    #expect(envelope == GatewayEnvelope(
+        op: 40,
+        data: .object([
+            "seq": .number(7),
+            "qos": .object([
+                "active": .bool(false),
+                "ver": .number(29),
+                "reasons": .array([]),
+            ]),
+        ])
+    ))
+}
+
 @Test func `production baseline matches observed bootstrap`() {
     let baseline = DiscordProductionBaseline.august2026
     #expect(baseline.apiVersion == 9)
@@ -19,6 +58,8 @@ import Testing
     #expect(baseline.desktopGatewayEncoding == "etf")
     #expect(baseline.desktopGatewayCompression == "zstd-stream")
     #expect(baseline.defaultCapabilities == 1_734_653)
+    #expect(baseline.privateChannelObfuscationCapabilities == 1_767_421)
+    #expect(baseline.qosHeartbeatVersion == 29)
 }
 
 @Test func `desktop metadata matches current non-secret official request fields`() throws {
@@ -60,6 +101,41 @@ import Testing
         0x20, 0x81, 0x00, 0x40, 0x01, 0x00, 0x08, 0x00,
     ]
     #expect(zip(bytes, requiredBits).allSatisfy { byte, mask in byte & mask == mask })
+}
+
+@Test func `desktop gateway and REST metadata use their exact separate shapes`() throws {
+    let metadata = DiscordClientMetadata(
+        locale: "en-US",
+        systemLocale: "en-US",
+        timeZone: "Europe/Kyiv",
+        acceptLanguage: "en-US",
+        osVersion: "27.0.0",
+        installationID: "server-issued-installation"
+    )
+    let gateway = metadata.gatewayProperties()
+    #expect(Set(gateway.keys) == Set([
+        "os", "browser", "release_channel", "client_version", "os_version",
+        "os_arch", "app_arch", "system_locale", "has_client_mods",
+        "client_launch_id", "browser_user_agent", "browser_version",
+        "os_sdk_version", "client_build_number", "client_event_source",
+        "is_fast_connect", "installation_id",
+    ]))
+    #expect(gateway["installation_id"] == .string("server-issued-installation"))
+    #expect(gateway["launch_signature"] == nil)
+    #expect(gateway["client_heartbeat_session_id"] == nil)
+    #expect(gateway["client_app_state"] == nil)
+
+    var get = URLRequest(url: URL(string: "https://discord.com/api/v9/users/@me")!)
+    get.httpMethod = "GET"
+    try metadata.apply(to: &get, clientAppState: "unfocused")
+    #expect(get.value(forHTTPHeaderField: "X-Installation-ID") == "server-issued-installation")
+    #expect(get.value(forHTTPHeaderField: "X-Fingerprint") == nil)
+    #expect(get.value(forHTTPHeaderField: "Origin") == nil)
+
+    var post = URLRequest(url: URL(string: "https://discord.com/api/v9/channels/1/messages")!)
+    post.httpMethod = "POST"
+    try metadata.apply(to: &post)
+    #expect(post.value(forHTTPHeaderField: "Origin") == "https://discord.com")
 }
 
 @Test func `ready guild decodes the designated community rules channel`() throws {

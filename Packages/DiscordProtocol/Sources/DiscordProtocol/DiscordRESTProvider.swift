@@ -41,6 +41,10 @@ public actor DiscordRESTProvider: ChatProvider {
     let handle: CredentialHandle
     let session: URLSession
     let gatewayTransport: any GatewayTransport
+    let gatewayCodec: any GatewayCodec
+    let gatewayEncoding: String
+    let gatewayCompression: GatewayCompression
+    let usesDesktopHeartbeat: Bool
     let clientMetadata: DiscordClientMetadata
     let apiDiagnostics: DiscordAPIDiagnosticStore
     let usesEmojiDiskCache: Bool
@@ -160,6 +164,11 @@ public actor DiscordRESTProvider: ChatProvider {
 
     public func updateClientAppState(isFocused: Bool) async {
         clientAppState = isFocused ? "focused" : "unfocused"
+        let heartbeat = clientMetadata.updateHeartbeatActivity(isActive: isFocused)
+        await gatewaySession?.updateQOS(
+            active: isFocused,
+            heartbeatSession: heartbeat.session
+        )
     }
 
     #if DEBUG
@@ -172,7 +181,7 @@ public actor DiscordRESTProvider: ChatProvider {
         credentials: any CredentialStore,
         handle: CredentialHandle,
         session: URLSession? = nil,
-        fingerprint: String? = nil,
+        installationID: String? = nil,
         apiDiagnostics: DiscordAPIDiagnosticStore = .shared,
         usesEmojiDiskCache: Bool = true
     ) {
@@ -181,7 +190,13 @@ public actor DiscordRESTProvider: ChatProvider {
         self.handle = handle
         self.session = resolvedSession
         gatewayTransport = URLSessionGatewayTransport(session: resolvedSession)
-        clientMetadata = DiscordClientMetadata(fingerprint: fingerprint)
+        gatewayCodec = ETFGatewayCodec()
+        gatewayEncoding = DiscordProductionBaseline.august2026.desktopGatewayEncoding
+        gatewayCompression = .zstdStream
+        usesDesktopHeartbeat = true
+        clientMetadata = DiscordClientMetadata(
+            installationID: installationID ?? DiscordClientMetadata.persistedInstallationID()
+        )
         self.apiDiagnostics = apiDiagnostics
         self.usesEmojiDiskCache = usesEmojiDiskCache
     }
@@ -191,7 +206,11 @@ public actor DiscordRESTProvider: ChatProvider {
         handle: CredentialHandle,
         session: URLSession,
         gatewayTransport: any GatewayTransport,
-        fingerprint: String? = nil,
+        gatewayCodec: any GatewayCodec = JSONGatewayCodec(),
+        gatewayEncoding: String = "json",
+        gatewayCompression: GatewayCompression = .zlibStream,
+        usesDesktopHeartbeat: Bool = false,
+        installationID: String? = nil,
         apiDiagnostics: DiscordAPIDiagnosticStore = .shared,
         usesEmojiDiskCache: Bool = true
     ) {
@@ -199,7 +218,11 @@ public actor DiscordRESTProvider: ChatProvider {
         self.handle = handle
         self.session = session
         self.gatewayTransport = gatewayTransport
-        clientMetadata = DiscordClientMetadata(fingerprint: fingerprint)
+        self.gatewayCodec = gatewayCodec
+        self.gatewayEncoding = gatewayEncoding
+        self.gatewayCompression = gatewayCompression
+        self.usesDesktopHeartbeat = usesDesktopHeartbeat
+        clientMetadata = DiscordClientMetadata(installationID: installationID)
         self.apiDiagnostics = apiDiagnostics
         self.usesEmojiDiskCache = usesEmojiDiskCache
     }
@@ -210,9 +233,24 @@ extension DiscordRESTProvider {
         _ = try await authorizationToken()
     }
 
+    private func ensureInstallationID() async throws {
+        guard clientMetadata.installationID == nil else { return }
+        let response: DiscordExperimentsInstallationDTO = try await request("/experiments")
+        guard let installationID = response.installation, !installationID.isEmpty else {
+            throw ChatProviderError.invalidRequest(
+                "Discord did not issue the installation identity required for desktop parity."
+            )
+        }
+        clientMetadata.setInstallationID(installationID)
+        DiscordClientMetadata.persistInstallationID(installationID)
+    }
+
     public func bootstrap() async throws -> BootstrapSnapshot {
         continuation?.yield(.connectionChanged(.connecting))
         _ = try await authorizationToken()
+        if usesDesktopHeartbeat {
+            try await ensureInstallationID()
+        }
         presenceStatus =
             UserDefaults.standard.string(forKey: statusDefaultsKey).flatMap(
                 PresenceStatus.init(rawValue:)
@@ -924,4 +962,8 @@ extension DiscordRESTProvider {
         }
     }
 
+}
+
+private struct DiscordExperimentsInstallationDTO: Decodable, Sendable {
+    var installation: String?
 }

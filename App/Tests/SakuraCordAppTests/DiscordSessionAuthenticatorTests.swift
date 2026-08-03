@@ -30,11 +30,14 @@ struct DiscordSessionAuthenticatorTests {
         #expect(AuthenticationURLProtocol.loginBody?["password"] as? String == "correct horse battery staple")
         #expect(AuthenticationURLProtocol.loginBody?["undelete"] as? Bool == false)
         #expect(AuthenticationURLProtocol.loginFingerprint == "server-issued-fingerprint")
+        #expect(AuthenticationURLProtocol.loginInstallationID == "server-issued-installation")
         #expect(AuthenticationURLProtocol.loginAuthorization == nil)
         #expect(AuthenticationURLProtocol.validationAuthorization == "test-session-credential-value")
-        #expect(AuthenticationURLProtocol.validationFingerprint == "server-issued-fingerprint")
+        #expect(AuthenticationURLProtocol.validationFingerprint == nil)
+        #expect(AuthenticationURLProtocol.validationInstallationID == "server-issued-installation")
         #expect(AuthenticationURLProtocol.superPropertiesCount == 3)
         #expect(await fingerprints.load() == "server-issued-fingerprint")
+        #expect(await fingerprints.loadInstallationID() == "server-issued-installation")
         #expect(await store.storedAccountID == "123456789012345678")
     }
 
@@ -76,6 +79,7 @@ struct DiscordSessionAuthenticatorTests {
         #expect(AuthenticationURLProtocol.mfaBody?["ticket"] as? String == "mfa-ticket")
         #expect(AuthenticationURLProtocol.mfaBody?["login_instance_id"] as? String == "login-instance")
         #expect(AuthenticationURLProtocol.mfaFingerprint == "existing-fingerprint")
+        #expect(AuthenticationURLProtocol.mfaInstallationID == "existing-installation")
     }
 
     @Test func `captcha replays once with paicord challenge headers`() async throws {
@@ -141,7 +145,8 @@ struct DiscordSessionAuthenticatorTests {
         #expect(AuthenticationURLProtocol.remoteAuthBody?["ticket"] as? String == "approved-ticket")
         #expect(AuthenticationURLProtocol.remoteAuthAuthorization == nil)
         #expect(AuthenticationURLProtocol.validationAuthorization == "remote-session-credential-value")
-        #expect(AuthenticationURLProtocol.validationFingerprint == "existing-fingerprint")
+        #expect(AuthenticationURLProtocol.validationFingerprint == nil)
+        #expect(AuthenticationURLProtocol.validationInstallationID == "existing-installation")
         #expect(await store.storedAccountID == "123456789012345678")
     }
 
@@ -218,9 +223,11 @@ struct DiscordSessionAuthenticatorTests {
 
 private actor TestFingerprintStore: DiscordFingerprintStoring {
     private var value: String?
+    private var installationID: String?
 
-    init(value: String? = nil) {
+    init(value: String? = nil, installationID: String? = nil) {
         self.value = value
+        self.installationID = installationID ?? (value == nil ? nil : "existing-installation")
     }
 
     func load() -> String? {
@@ -229,6 +236,14 @@ private actor TestFingerprintStore: DiscordFingerprintStoring {
 
     func save(_ fingerprint: String) {
         value = fingerprint
+    }
+
+    func loadInstallationID() async -> String? {
+        installationID
+    }
+
+    func saveInstallationID(_ installationID: String) async {
+        self.installationID = installationID
     }
 }
 
@@ -267,6 +282,9 @@ private final class AuthenticationURLProtocol: URLProtocol, @unchecked Sendable 
     nonisolated(unsafe) static var loginFingerprint: String?
     nonisolated(unsafe) static var mfaFingerprint: String?
     nonisolated(unsafe) static var validationFingerprint: String?
+    nonisolated(unsafe) static var loginInstallationID: String?
+    nonisolated(unsafe) static var mfaInstallationID: String?
+    nonisolated(unsafe) static var validationInstallationID: String?
     nonisolated(unsafe) static var loginAuthorization: String?
     nonisolated(unsafe) static var validationAuthorization: String?
     nonisolated(unsafe) static var superPropertiesCount = 0
@@ -289,6 +307,9 @@ private final class AuthenticationURLProtocol: URLProtocol, @unchecked Sendable 
         loginFingerprint = nil
         mfaFingerprint = nil
         validationFingerprint = nil
+        loginInstallationID = nil
+        mfaInstallationID = nil
+        validationInstallationID = nil
         loginAuthorization = nil
         validationAuthorization = nil
         superPropertiesCount = 0
@@ -324,13 +345,14 @@ private final class AuthenticationURLProtocol: URLProtocol, @unchecked Sendable 
         switch path {
         case "/api/v9/experiments":
             status = 200
-            body = #"{"fingerprint":"server-issued-fingerprint"}"#
+            body = #"{"fingerprint":"server-issued-fingerprint","installation":"server-issued-installation"}"#
         case "/api/v9/auth/login":
             Self.loginRequestCount += 1
             Self.loginBody = Self.bodyData(from: request).flatMap {
                 try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
             }
             Self.loginFingerprint = request.value(forHTTPHeaderField: "X-Fingerprint")
+            Self.loginInstallationID = request.value(forHTTPHeaderField: "X-Installation-ID")
             Self.loginAuthorization = request.value(forHTTPHeaderField: "Authorization")
             Self.captchaKey = request.value(forHTTPHeaderField: "X-Captcha-Key")
             Self.captchaRQToken = request.value(forHTTPHeaderField: "X-Captcha-Rqtoken")
@@ -377,11 +399,13 @@ private final class AuthenticationURLProtocol: URLProtocol, @unchecked Sendable 
                 try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
             }
             Self.mfaFingerprint = request.value(forHTTPHeaderField: "X-Fingerprint")
+            Self.mfaInstallationID = request.value(forHTTPHeaderField: "X-Installation-ID")
             status = 200
             body = #"{"token":"test-session-credential-value"}"#
         case "/api/v9/users/@me":
             Self.validationAuthorization = request.value(forHTTPHeaderField: "Authorization")
             Self.validationFingerprint = request.value(forHTTPHeaderField: "X-Fingerprint")
+            Self.validationInstallationID = request.value(forHTTPHeaderField: "X-Installation-ID")
             status = 200
             body = #"{"id":"123456789012345678"}"#
         default:

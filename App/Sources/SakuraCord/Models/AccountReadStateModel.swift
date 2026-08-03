@@ -78,7 +78,7 @@ final class AccountReadStateModel {
     }
 
     struct AcknowledgementMetadata: Equatable, Sendable {
-        var flags: UInt64
+        var flags: UInt64?
         var lastViewed: Int
     }
 
@@ -1121,7 +1121,10 @@ final class AccountReadStateModel {
         }
         let discordEpoch = Date(timeIntervalSince1970: 1_420_070_400)
         let lastViewed = max(0, Int(now.timeIntervalSince(discordEpoch) / 86_400))
-        return AcknowledgementMetadata(flags: flags, lastViewed: lastViewed)
+        return AcknowledgementMetadata(
+            flags: entry.flags == flags ? nil : flags,
+            lastViewed: lastViewed
+        )
     }
 
     private func entry(for channelID: ChannelID) -> Entry {

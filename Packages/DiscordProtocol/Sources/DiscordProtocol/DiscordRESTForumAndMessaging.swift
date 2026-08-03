@@ -857,7 +857,7 @@ extension DiscordRESTProvider {
         flags: UInt64?,
         lastViewed: Int?
     ) async throws -> ReadAcknowledgementResponse {
-        var body: [String: JSONValue] = [:]
+        var body: [String: JSONValue] = ["token": .null]
         if let token {
             body["token"] = .string(token)
         }

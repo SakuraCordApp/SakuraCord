@@ -90,7 +90,7 @@ final class AppModel {
         var messageID: MessageID
         var manual: Bool
         var mentionCount: Int?
-        var flags: UInt64
+        var flags: UInt64?
         var lastViewed: Int
     }
 
@@ -805,11 +805,11 @@ final class AppModel {
         let resolvedCredentialStore = credentialStore ?? defaultCredentialStore
         self.credentialStore = resolvedCredentialStore
         self.authenticatedProviderFactory =
-            authenticatedProviderFactory ?? { handle, fingerprint in
+            authenticatedProviderFactory ?? { handle, installationID in
                 DiscordRESTProvider(
                     credentials: resolvedCredentialStore,
                     handle: handle,
-                    fingerprint: fingerprint
+                    installationID: installationID
                 )
             }
         self.accountDatabaseFactory = accountDatabaseFactory ?? { accountID in

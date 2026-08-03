@@ -320,6 +320,123 @@ import Testing
     }
 }
 
+@Test func `zstd framer decodes the desktop stream and enforces input bounds`() throws {
+    let compressed = try #require(Data(base64Encoded: "KLUv/QRYkQAAeyJvcCI6MTEsImQiOm51bGx9Bb/X5w=="))
+    var framer = try GatewayPayloadFramer(
+        compression: .zstdStream,
+        maximumCompressedBufferSize: 1024,
+        maximumDecompressedPayloadSize: 1024
+    )
+    #expect(try framer.append(.data(compressed)) == [Data(#"{"op":11,"d":null}"#.utf8)])
+
+    var bounded = try GatewayPayloadFramer(
+        compression: .zstdStream,
+        maximumCompressedBufferSize: 2,
+        maximumDecompressedPayloadSize: 1024
+    )
+    #expect(throws: GatewaySessionError.compressedBufferLimitExceeded) {
+        try bounded.append(.data(compressed))
+    }
+}
+
+@Test func `desktop session announces time spent then uses QoS heartbeats`() async throws {
+    let socket = FakeGatewaySocket()
+    let transport = FakeGatewayTransport(sockets: [socket])
+    let clock = ManualGatewayClock()
+    let heartbeat = DiscordHeartbeatSession(
+        initializationTimestamp: 1_785_773_429_000,
+        sessionID: "heartbeat-session"
+    )
+    let identify = encodedGatewayData(GatewayEnvelope(op: 2, data: .object([:])))
+    let session = GatewaySession(
+        configuration: GatewaySession.Configuration(
+            gatewayURL: URL(string: "wss://gateway.discord.gg")!,
+            identifyPayload: identify,
+            token: "test-token",
+            heartbeatSession: heartbeat,
+            clientLaunchID: "client-launch",
+            qosActive: false,
+            qosVersion: 29
+        ),
+        transport: transport,
+        clock: clock,
+        random: SequenceGatewayRandom(values: [0.5])
+    )
+
+    await session.connect()
+    await socket.push(envelope(op: 10, data: .object(["heartbeat_interval": .number(60_000)])))
+    #expect(await eventually { await socket.sentCount == 1 })
+    await socket.push(envelope(
+        op: 0,
+        data: .object([
+            "session_id": .string("ready-session"),
+            "resume_gateway_url": .string("wss://gateway.discord.gg"),
+        ]),
+        sequence: 7,
+        eventName: "READY"
+    ))
+    #expect(await eventually { await session.snapshot().state == .ready })
+    try await session.announceDesktopSession()
+    #expect(await eventually { await socket.sentCount == 3 })
+
+    let timeSpent = try await sentEnvelope(socket, at: 1)
+    #expect(timeSpent.op == 41)
+    #expect(timeSpent.data == .object([
+        "initialization_timestamp": .number(1_785_773_429_000),
+        "session_id": .string("heartbeat-session"),
+        "client_launch_id": .string("client-launch"),
+    ]))
+    let heartbeatEnvelope = try await sentEnvelope(socket, at: 2)
+    #expect(heartbeatEnvelope.op == 40)
+    #expect(heartbeatEnvelope.data == .object([
+        "seq": .number(7),
+        "qos": .object([
+            "ver": .number(29),
+            "active": .bool(false),
+            "reasons": .array([]),
+        ]),
+    ]))
+
+    await session.updateQOS(active: true, heartbeatSession: heartbeat)
+    #expect(await eventually { await socket.sentCount == 4 })
+    let foregroundHeartbeat = try await sentEnvelope(socket, at: 3)
+    #expect(foregroundHeartbeat.op == 40)
+    guard case let .object(data)? = foregroundHeartbeat.data,
+          case let .object(qos)? = data["qos"]
+    else {
+        Issue.record("QoS heartbeat body was missing")
+        await session.stop()
+        return
+    }
+    #expect(qos["active"] == .bool(true))
+    #expect(qos["reasons"] == .array([.string("foregrounded")]))
+    await session.stop()
+}
+
+@Test func `desktop connection URL requests ETF and zstd`() async throws {
+    let socket = FakeGatewaySocket()
+    let transport = FakeGatewayTransport(sockets: [socket])
+    let codec = ETFGatewayCodec()
+    let session = GatewaySession(
+        configuration: GatewaySession.Configuration(
+            gatewayURL: URL(string: "wss://gateway.discord.gg")!,
+            identifyPayload: try codec.encode(GatewayEnvelope(op: 2, data: .object([:]))),
+            token: "test-token",
+            gatewayEncoding: "etf",
+            gatewayCompression: .zstdStream
+        ),
+        transport: transport,
+        codec: codec
+    )
+    await session.connect()
+    #expect(await eventually { await transport.connectionCount == 1 })
+    let url = try #require(await transport.connectedURLs.first)
+    let query = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
+    #expect(query.contains(URLQueryItem(name: "encoding", value: "etf")))
+    #expect(query.contains(URLQueryItem(name: "compress", value: "zstd-stream")))
+    await session.stop()
+}
+
 @Test func `malformed payload fails closed without reconnect storm`() async {
     let socket = FakeGatewaySocket()
     let spare = FakeGatewaySocket()

@@ -5,16 +5,24 @@ import Foundation
 /// transport while its version and environment values come from the current
 /// Discord host and the real Mac. A server-issued fingerprint can be supplied
 /// after the legitimate unauthenticated experiments flow; it is never invented.
-public struct DiscordClientMetadata: Sendable {
+struct DiscordHeartbeatSession: Sendable, Equatable {
+    var initializationTimestamp: Int
+    var sessionID: String
+}
+
+public final class DiscordClientMetadata: @unchecked Sendable {
     private nonisolated static let clientLaunchID = UUID().uuidString.lowercased()
-    private nonisolated static let launchSignature = Self.makeLaunchSignature()
-    private nonisolated static let clientHeartbeatSessionID = UUID().uuidString.lowercased()
+    private nonisolated static let launchSignature = DiscordClientMetadata.makeLaunchSignature()
     let locale: String
     let timeZone: String
     let acceptLanguage: String
     let userAgent: String
     let fingerprint: String?
     private let baseProperties: [String: JSONValue]
+    private let heartbeatLock = NSLock()
+    private var storedInstallationID: String?
+    private var heartbeatSession: DiscordHeartbeatSession
+    private var inactiveSince: Date?
 
     var properties: [String: JSONValue] {
         properties(clientAppState: "focused")
@@ -27,7 +35,8 @@ public struct DiscordClientMetadata: Sendable {
         timeZone: String = TimeZone.current.identifier,
         acceptLanguage: String? = nil,
         osVersion: String? = nil,
-        fingerprint: String? = nil
+        fingerprint: String? = nil,
+        installationID: String? = nil
     ) {
         self.locale = locale
         self.timeZone = timeZone
@@ -39,6 +48,11 @@ public struct DiscordClientMetadata: Sendable {
             + "(KHTML, like Gecko) discord/\(baseline.desktopVersion) Chrome/\(chromeVersion) "
             + "Electron/\(baseline.electronVersion) Safari/\(webKitVersion)"
         self.fingerprint = fingerprint?.isEmpty == false ? fingerprint : nil
+        storedInstallationID = installationID?.isEmpty == false ? installationID : nil
+        heartbeatSession = DiscordHeartbeatSession(
+            initializationTimestamp: Int(Date().timeIntervalSince1970 * 1_000),
+            sessionID: UUID().uuidString.lowercased()
+        )
         baseProperties = [
             "os": .string("Mac OS X"),
             "browser": .string("Discord Client"),
@@ -51,7 +65,6 @@ public struct DiscordClientMetadata: Sendable {
             "has_client_mods": .bool(false),
             "client_launch_id": .string(Self.clientLaunchID),
             "launch_signature": .string(Self.launchSignature),
-            "client_heartbeat_session_id": .string(Self.clientHeartbeatSessionID),
             "browser_user_agent": .string(userAgent),
             "browser_version": .string(baseline.electronVersion),
             "os_sdk_version": .string(osVersion.split(separator: ".").first.map(String.init) ?? ""),
@@ -63,7 +76,71 @@ public struct DiscordClientMetadata: Sendable {
     func properties(clientAppState: String) -> [String: JSONValue] {
         var value = baseProperties
         value["client_app_state"] = .string(clientAppState)
+        value["client_heartbeat_session_id"] = .string(currentHeartbeatSession().sessionID)
         return value
+    }
+
+    /// The official desktop Identify uses the stable host fields plus its
+    /// server-issued installation, but not the REST-only analytics extensions.
+    func gatewayProperties() -> [String: JSONValue] {
+        var value = baseProperties
+        value.removeValue(forKey: "launch_signature")
+        value["is_fast_connect"] = .bool(false)
+        if let installationID {
+            value["installation_id"] = .string(installationID)
+        }
+        return value
+    }
+
+    var installationID: String? {
+        heartbeatLock.withLock { storedInstallationID }
+    }
+
+    func setInstallationID(_ installationID: String) {
+        heartbeatLock.withLock {
+            storedInstallationID = installationID.isEmpty ? nil : installationID
+        }
+    }
+
+    nonisolated static let installationDefaultsKey = "dev.sakuracord.discord-installation-id"
+
+    static func persistedInstallationID() -> String? {
+        UserDefaults.standard.string(forKey: installationDefaultsKey)
+    }
+
+    static func persistInstallationID(_ installationID: String) {
+        UserDefaults.standard.set(installationID, forKey: installationDefaultsKey)
+    }
+
+    func currentHeartbeatSession() -> DiscordHeartbeatSession {
+        heartbeatLock.withLock { heartbeatSession }
+    }
+
+    var gatewayClientLaunchID: String { Self.clientLaunchID }
+
+    /// Discord retains a heartbeat session while active and rotates it after
+    /// thirty minutes of inactivity. The returned Boolean tells the Gateway
+    /// whether opcode 41 must announce a new session.
+    func updateHeartbeatActivity(isActive: Bool, now: Date = Date())
+        -> (session: DiscordHeartbeatSession, didRotate: Bool)
+    {
+        heartbeatLock.withLock {
+            if isActive {
+                let shouldRotate = inactiveSince.map { now.timeIntervalSince($0) >= 30 * 60 } ?? false
+                inactiveSince = nil
+                if shouldRotate {
+                    heartbeatSession = DiscordHeartbeatSession(
+                        initializationTimestamp: Int(now.timeIntervalSince1970 * 1_000),
+                        sessionID: UUID().uuidString.lowercased()
+                    )
+                }
+                return (heartbeatSession, shouldRotate)
+            }
+            if inactiveSince == nil {
+                inactiveSince = now
+            }
+            return (heartbeatSession, false)
+        }
     }
 
     func superPropertiesHeader(clientAppState: String = "focused") throws -> String {
@@ -97,9 +174,16 @@ public struct DiscordClientMetadata: Sendable {
             forHTTPHeaderField: "Sec-CH-UA"
         )
         request.setValue("https://discord.com/channels/@me", forHTTPHeaderField: "Referer")
-        request.setValue("https://discord.com", forHTTPHeaderField: "Origin")
         if let fingerprint {
             request.setValue(fingerprint, forHTTPHeaderField: "X-Fingerprint")
+        }
+        if let installationID {
+            request.setValue(installationID, forHTTPHeaderField: "X-Installation-ID")
+        }
+        if request.httpMethod != "GET", request.httpMethod != "HEAD" {
+            request.setValue("https://discord.com", forHTTPHeaderField: "Origin")
+        } else {
+            request.setValue(nil, forHTTPHeaderField: "Origin")
         }
     }
 

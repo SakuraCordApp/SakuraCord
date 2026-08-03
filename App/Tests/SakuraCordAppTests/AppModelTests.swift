@@ -3900,7 +3900,7 @@ private func hiddenMockChannel(
     #expect(await provider.requestCount(for: firstChannel) == 1)
     #expect(
         await provider.requests(for: firstChannel)
-            == [ChannelLoadMessageRequest(before: nil, limit: 100)]
+            == [ChannelLoadMessageRequest(before: nil, limit: 10)]
     )
     #expect(model.messages.map(\.channelID) == [firstChannel])
     let preparedFirstRow = try #require(model.messageRows.first)

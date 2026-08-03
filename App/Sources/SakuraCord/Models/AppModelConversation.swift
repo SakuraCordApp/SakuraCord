@@ -156,7 +156,7 @@ extension AppModel {
         async let freshPage = account.provider.messages(
             in: channelID,
             before: nil,
-            limit: 100
+            limit: 10
         )
 
         let persistedPage = await cachedPage

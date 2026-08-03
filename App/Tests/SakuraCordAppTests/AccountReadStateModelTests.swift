@@ -840,6 +840,18 @@ struct AccountReadStateModelTests {
             model.acknowledgementMetadata(channelID: channelID, now: twoDaysAfterEpoch)
                 == .init(flags: 1, lastViewed: 2)
         )
+        model.applyRemote(
+            ChannelReadState(
+                channelID: channelID,
+                lastAcknowledgedMessageID: MessageID(rawValue: 10),
+                mentionCount: 0,
+                flags: 1
+            )
+        )
+        #expect(
+            model.acknowledgementMetadata(channelID: channelID, now: twoDaysAfterEpoch)
+                == .init(flags: nil, lastViewed: 2)
+        )
 
         let threadID = ChannelID(rawValue: 201)
         model.merge(

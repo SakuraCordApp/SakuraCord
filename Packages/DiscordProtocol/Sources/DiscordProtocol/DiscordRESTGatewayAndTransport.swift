@@ -294,27 +294,20 @@ extension DiscordRESTProvider {
     func startGateway() async throws {
         guard gatewaySession == nil else { return }
         let token = try await authorizationToken()
-        let identifyData = try JSONEncoder().encode(
-            GatewayEnvelope(
-                op: 2,
-                data: .object([
-                    "token": .string(token),
-                    "capabilities": .number(
-                        Double(DiscordProductionBaseline.august2026.defaultCapabilities)),
-                    "properties": .object(
-                        clientMetadata.properties(clientAppState: clientAppState)
-                    ),
-                    "presence": .object([
-                        "status": .string(presenceStatus.rawValue),
-                        "since": .number(0),
-                        "activities": .array([]),
-                        "afk": .bool(false),
-                    ]),
-                    "compress": .bool(false),
-                    "client_state": .object(["guild_versions": .object([:])]),
-                ])
-            )
+        let baseline = DiscordProductionBaseline.august2026
+        let identifyEnvelope = GatewayEnvelope(
+            op: 2,
+            data: .object([
+                "token": .string(token),
+                // The official client adds bit 15 only for its private-channel
+                // obfuscation experiment. SakuraCord does not advertise that
+                // capability until it can reconcile obfuscated channels.
+                "capabilities": .number(Double(baseline.defaultCapabilities)),
+                "properties": .object(clientMetadata.gatewayProperties()),
+                "client_state": .object(["guild_versions": .object([:])]),
+            ])
         )
+        let identifyData = try gatewayCodec.encode(identifyEnvelope)
         guard let gatewayURL = URL(string: "wss://gateway.discord.gg") else {
             throw ChatProviderError.invalidRequest("Discord's Gateway URL is invalid.")
         }
@@ -322,9 +315,18 @@ extension DiscordRESTProvider {
             configuration: GatewaySession.Configuration(
                 gatewayURL: gatewayURL,
                 identifyPayload: identifyData,
-                token: token
+                token: token,
+                gatewayEncoding: gatewayEncoding,
+                gatewayCompression: gatewayCompression,
+                heartbeatSession: usesDesktopHeartbeat
+                    ? clientMetadata.currentHeartbeatSession() : nil,
+                clientLaunchID: usesDesktopHeartbeat
+                    ? clientMetadata.gatewayClientLaunchID : nil,
+                qosActive: clientAppState == "focused",
+                qosVersion: baseline.qosHeartbeatVersion
             ),
             transport: gatewayTransport,
+            codec: gatewayCodec,
             apiDiagnostics: apiDiagnostics
         )
         gatewaySession = gateway
@@ -350,6 +352,33 @@ extension DiscordRESTProvider {
             continuation?.yield(.connectionChanged(connectionState))
             if connectionState == .ready {
                 gatewayLogger.info("Gateway session ready")
+                if usesDesktopHeartbeat {
+                    do {
+                        try await sendGateway(
+                            DiscordGatewayPayloadFactory.voiceStateUpdate(
+                                guildID: nil,
+                                channelID: nil,
+                                selfMute: false,
+                                selfDeaf: false,
+                                selfVideo: false
+                            )
+                        )
+                        try await sendGateway([
+                            "op": 3,
+                            "d": [
+                                "since": 0,
+                                "activities": [],
+                                "status": presenceStatus.rawValue,
+                                "afk": false,
+                            ] as [String: Any],
+                        ])
+                        try await gatewaySession?.announceDesktopSession()
+                    } catch {
+                        gatewayLogger.error(
+                            "Desktop Gateway session synchronization failed: \(error.localizedDescription, privacy: .public)"
+                        )
+                    }
+                }
                 if let pendingMemberGuildID {
                     await attemptMemberSubscription(guildID: pendingMemberGuildID)
                 }

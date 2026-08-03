@@ -5,6 +5,36 @@ import Testing
 
 @Suite(.serialized)
 struct ProviderRequestContractTests {
+    @Test func `desktop ready lifecycle matches official opcode ordering`() async throws {
+        let socket = ReadyGatewaySocket()
+        await socket.push(gatewayMessage(
+            op: 10,
+            data: .object(["heartbeat_interval": .number(60_000)])
+        ))
+        await socket.push(gatewayMessage(
+            op: 0,
+            data: .object([
+                "session_id": .string("desktop-session"),
+                "resume_gateway_url": .string("wss://gateway.discord.gg"),
+            ]),
+            sequence: 12,
+            eventName: "READY"
+        ))
+        let provider = DiscordRESTProvider(
+            credentials: TestCredentialStore(),
+            handle: CredentialHandle(accountID: "1"),
+            session: URLSession(configuration: .ephemeral),
+            gatewayTransport: ReadyGatewayTransport(socket: socket),
+            usesDesktopHeartbeat: true,
+            installationID: "server-issued-installation"
+        )
+
+        try await provider.startGateway()
+        #expect(await eventually { await socket.sentCount == 5 })
+        #expect(await socket.sentOpcodes() == [2, 4, 3, 41, 40])
+        await provider.disconnect()
+    }
+
     @Test func `authentication preparation reads and caches the credential once`() async throws {
         let credentials = TestCredentialStore()
         let provider = DiscordRESTProvider(
@@ -89,7 +119,8 @@ struct ProviderRequestContractTests {
         #expect(RateLimitURLProtocol.ackRequestCount == 1)
         #expect(RateLimitURLProtocol.ackMethod == "POST")
         #expect(RateLimitURLProtocol.ackPath == "/api/v9/channels/200/messages/333/ack")
-        #expect(RateLimitURLProtocol.ackBody?.isEmpty == true)
+        #expect(RateLimitURLProtocol.ackBody?["token"] is NSNull)
+        #expect(RateLimitURLProtocol.ackBody?.count == 1)
         #expect(response.token == "next-token")
 
         _ = try await provider.acknowledge(
@@ -1633,6 +1664,14 @@ private actor ReadyGatewaySocket: GatewaySocket {
                     as? [String: Any]
             else { return false }
             return (object["op"] as? NSNumber)?.intValue == opcode
+        }
+    }
+
+    func sentOpcodes() -> [Int] {
+        sentPayloads.compactMap { data in
+            guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { return nil }
+            return (object["op"] as? NSNumber)?.intValue
         }
     }
 

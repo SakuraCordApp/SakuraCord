@@ -47,8 +47,8 @@ extension AppModel {
         }
         guard await accountTransitionCoordinator.acquireIfAvailable() else { return false }
         accountTransitionIsActive = true
-        let fingerprint = await AppPerformanceSignposts.measure("FingerprintRestore") {
-            await UserDefaultsDiscordFingerprintStore.shared.load()
+        let installationID = await AppPerformanceSignposts.measure("InstallationRestore") {
+            await UserDefaultsDiscordFingerprintStore.shared.loadInstallationID()
         }
         guard !Task.isCancelled else {
             accountTransitionIsActive = false
@@ -56,7 +56,7 @@ extension AppModel {
             return false
         }
         let nextProvider = AppPerformanceSignposts.measureSync("ProviderCreation") {
-            authenticatedProviderFactory(handle, fingerprint)
+            authenticatedProviderFactory(handle, installationID)
         }
         await nextProvider.updateClientAppState(isFocused: mainWindowIsActive)
         do {
