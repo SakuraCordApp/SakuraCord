@@ -510,10 +510,9 @@ extension AppModel {
             scheduleVoiceServerMigration(to: info)
         case .snapshotChanged(let value):
             consumeSnapshotChanged(value)
-        case .guildChanged(let guild):
-            consumeGuildChanged(guild)
-        case .guildLayoutChanged(let guilds, let railItems):
-            consumeGuildLayoutChanged(guilds: guilds, railItems: railItems)
+        case .guildChanged, .guildLayoutChanged, .guildRolesChanged,
+             .currentUserChanged, .gatewayFeatureChanged:
+            consumeGatewayWorkspaceStateEvent(event)
         case .applicationCommandIndexInvalidated(let target):
             if commandComposer.invalidated(target) {
                 loadApplicationCommands()
@@ -522,6 +521,26 @@ extension AppModel {
             commandComposer.receiveAutocomplete(result)
         case .interaction(let event):
             consumeInteraction(event)
+        default:
+            break
+        }
+    }
+
+    func consumeGatewayWorkspaceStateEvent(_ event: ClientEvent) {
+        switch event {
+        case .guildChanged(let guild):
+            consumeGuildChanged(guild)
+        case .guildLayoutChanged(let guilds, let railItems):
+            consumeGuildLayoutChanged(guilds: guilds, railItems: railItems)
+        case .guildRolesChanged(let guildID, let roles):
+            applyGuildRoles(roles, to: guildID)
+        case .currentUserChanged(let user):
+            consumeCurrentUserChanged(user)
+        case .gatewayFeatureChanged(let feature):
+            // Unsupported feature families still cross the typed event boundary
+            // so they are observable and testable instead of disappearing in
+            // the provider's default Gateway branch.
+            lastGatewayFeatureEvent = feature
         default:
             break
         }
@@ -928,6 +947,7 @@ extension AppModel {
         else { return }
         value.guilds[index] = guild
         snapshot = value
+        serverRailGuildsByID[guild.id] = guild
         readState.merge(guilds: [guild])
         scheduleCachedWorkspacePersistence()
     }
@@ -941,6 +961,21 @@ extension AppModel {
         readState.merge(guilds: guilds)
         scheduleCachedWorkspacePersistence()
         updateServerRail(from: value)
+        if let selectedGuildID,
+           !guilds.contains(where: { $0.id == selectedGuildID })
+        {
+            selectGuild(guilds.first?.id)
+        }
+    }
+
+    func consumeCurrentUserChanged(_ user: User) {
+        guard var value = snapshot else { return }
+        value.currentUser = user
+        snapshot = value
+        if let index = members.firstIndex(where: { $0.id == user.id }) {
+            members[index].user = user
+        }
+        scheduleCachedWorkspacePersistence()
     }
 
     func consumeInteraction(_ event: InteractionEvent) {

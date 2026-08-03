@@ -74,6 +74,13 @@ struct GatewayApplicationCommandIndexUpdateDTO: Decodable {
 
 struct GatewayDeletedEntityDTO: Decodable {
     var id: String
+    var guildID: String?
+    var unavailable: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case id, unavailable
+        case guildID = "guild_id"
+    }
 }
 
 struct GatewayChannelRecipientDTO: Decodable {

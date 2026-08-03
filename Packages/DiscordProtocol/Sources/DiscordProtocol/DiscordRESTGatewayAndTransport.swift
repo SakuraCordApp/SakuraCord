@@ -282,6 +282,38 @@ extension DiscordRESTProvider {
             cachedMessages[messageID]
         }
 
+        func seedMessageForTesting(_ message: Message) {
+            cachedMessages[message.id] = message
+        }
+
+        func cachedGuildForTesting(guildID: GuildID) -> Guild? {
+            cachedGuilds[guildID]
+        }
+
+        func currentUserForTesting() -> User? {
+            currentUser
+        }
+
+        func cachedGuildsForTesting() -> [Guild] {
+            guildsInCurrentRailOrder()
+        }
+
+        func cachedGuildRolesForTesting(guildID: GuildID) -> [GuildRole] {
+            (cachedGuildRoles[guildID] ?? []).compactMap(\.domain)
+        }
+
+        func cachedMembersForTesting(guildID: GuildID) -> [Member] {
+            cachedMembers[guildID] ?? []
+        }
+
+        func cachedGuildStickersForTesting(guildID: GuildID) -> [MessageSticker] {
+            cachedGuildStickers[guildID] ?? []
+        }
+
+        func gatewayOpcodeIsRateLimitedForTesting(_ opcode: Int) -> Bool {
+            gatewayOpcodeRateLimitDates[opcode].map { $0 > Date() } ?? false
+        }
+
         func seedPrivateCallSubscriptionForTesting(channelID: ChannelID) {
             subscribedPrivateCallChannelIDs.insert(channelID)
         }
@@ -413,6 +445,13 @@ extension DiscordRESTProvider {
     func sendGateway(_ payload: [String: Any]) async throws {
         guard let gatewaySession else {
             throw ChatProviderError.invalidRequest("Discord Gateway is not connected yet.")
+        }
+        if let opcode = payload["op"] as? Int,
+           let cooldown = gatewayOpcodeRateLimitDates[opcode], cooldown > Date()
+        {
+            throw ChatProviderError.invalidRequest(
+                "Discord is temporarily rate limiting Gateway opcode \(opcode)."
+            )
         }
         let data = try JSONSerialization.data(withJSONObject: payload)
         try await gatewaySession.send(data)
@@ -597,6 +636,11 @@ extension DiscordRESTProvider {
                 cachedMembers = [:]
                 cachedMemberListItems = [:]
                 cachedMemberListGroups = [:]
+                cachedGuildChannelDTOs = [:]
+                cachedGuildRoles = [:]
+                cachedGuildStickers = [:]
+                cachedForumPosts = [:]
+                gatewayOpcodeRateLimitDates = [:]
                 requestedHistoryMemberIDs = [:]
                 cachedPrivateMembersByID = [:]
                 cachedGatewayUsersByID = Dictionary(
@@ -675,7 +719,7 @@ extension DiscordRESTProvider {
                         )
                     }
                 )
-                cachedChannels[nil] = privateChannels
+                cachedChannels = [nil: privateChannels]
                 for presence in ready.privatePresences {
                     cachePrivatePresence(presence)
                 }
@@ -685,12 +729,10 @@ extension DiscordRESTProvider {
                 let guilds = readyGuilds.compactMap {
                     $0.domain(currentUserID: currentUser?.id)
                 }
-                if !guilds.isEmpty {
-                    cachedGuilds = Dictionary(
-                        uniqueKeysWithValues: guilds.map { ($0.id, $0) }
-                    )
-                    cachedGuildRailItems = guilds.map { .guild($0.id) }
-                }
+                cachedGuilds = Dictionary(
+                    uniqueKeysWithValues: guilds.map { ($0.id, $0) }
+                )
+                cachedGuildRailItems = guilds.map { .guild($0.id) }
                 var voiceStateCount = 0
                 var currentUserRolesByGuild: [GuildID: [RoleID]] = [:]
                 for guild in readyGuilds {
@@ -698,10 +740,16 @@ extension DiscordRESTProvider {
                     if let guildID {
                         applyGuildRulesChannelID(guild.rulesChannelID, guildID: guildID)
                     }
-                    if let guildID, !guild.channels.isEmpty,
-                       let channels = try? Self.domainChannels(guild.channels, guildID: guildID)
-                    {
-                        cachedChannels[guildID] = channels
+                    if let guildID, !guild.channels.isEmpty {
+                        cachedGuildChannelDTOs[guildID] = Dictionary(
+                            guild.channels.map { ($0.id, $0) },
+                            uniquingKeysWith: { _, newer in newer }
+                        )
+                        if let channels = try? Self.domainChannels(
+                            guild.channels, guildID: guildID
+                        ) {
+                            cachedChannels[guildID] = channels
+                        }
                     }
                     if let guildID, !guild.roles.isEmpty {
                         cachedGuildRoles[guildID] = guild.roles
@@ -842,17 +890,28 @@ extension DiscordRESTProvider {
             }
             gatewayLogger.info("Supplemental voice-state snapshot received; count=\(states.count)")
         case "GUILD_CREATE":
+            if let patch = try? JSONDecoder().decode(GatewayGuildPatchDTO.self, from: data),
+               let guildID = GuildID(patch.id),
+               var guild = patch.applying(
+                   to: cachedGuilds[guildID], currentUserID: currentUser?.id
+               )
+            {
+                guild.isUnavailable = false
+                cachedGuilds[guildID] = guild
+                if !gatewayGuildIDs.contains(guildID) { gatewayGuildIDs.append(guildID) }
+                insertGuildIntoRailIfNeeded(guildID)
+                publishGuildLayout()
+            }
             if let catalog = try? JSONDecoder().decode(GatewayGuildCatalogDTO.self, from: data),
                let guildID = GuildID(catalog.id)
             {
-                applyGuildRulesChannelID(catalog.rulesChannelID, guildID: guildID)
-                if !catalog.channels.isEmpty,
-                   let channels = try? Self.domainChannels(catalog.channels, guildID: guildID)
-                {
-                    cachedChannels[guildID] = channels
-                    continuation?.yield(.channelsChanged(guildID: guildID, channels: channels))
-                }
-                if !catalog.roles.isEmpty { cachedGuildRoles[guildID] = catalog.roles }
+                cachedGuildChannelDTOs[guildID] = Dictionary(
+                    catalog.channels.map { ($0.id, $0) },
+                    uniquingKeysWith: { _, newer in newer }
+                )
+                publishGuildChannels(guildID)
+                cachedGuildRoles[guildID] = catalog.roles
+                publishGuildRoles(guildID)
                 if !catalog.threads.isEmpty {
                     ingestForumThreads(
                         catalog.threads,
@@ -872,6 +931,22 @@ extension DiscordRESTProvider {
                     cachedMembers[guildID] = DiscordMemberStoreOrdering.merging(
                         existing: cachedMembers[guildID] ?? [], updates: members
                     )
+                    continuation?.yield(
+                        .membersChanged(
+                            guildID: guildID,
+                            members: cachedMembers[guildID] ?? [],
+                            groups: cachedMemberListGroups[guildID] ?? []
+                        )
+                    )
+                    if let currentUserID = currentUser?.id,
+                       let ownMember = members.first(where: { $0.id == currentUserID })
+                    {
+                        continuation?.yield(
+                            .currentUserRolesChanged(
+                                guildID: guildID, roleIDs: ownMember.roleIDs
+                            )
+                        )
+                    }
                 }
             }
             if let emojiSnapshot = try? JSONDecoder().decode(
@@ -883,23 +958,27 @@ extension DiscordRESTProvider {
             {
                 publishEmojiCollection(emojis, guildID: guildID)
             }
-            guard
-                let snapshot = try? JSONDecoder().decode(
-                    GuildVoiceStateSnapshotDTO.self, from: data)
-            else { return }
-            let states = snapshot.domainVoiceStates
-            gatewayLogger.info(
-                "Initial voice-state snapshot received; guild=\(snapshot.id, privacy: .public), count=\(states.count)"
-            )
-            for state in states {
-                continuation?.yield(.voiceStateChanged(state))
+            if let snapshot = try? JSONDecoder().decode(
+                GuildVoiceStateSnapshotDTO.self, from: data
+            ) {
+                let states = snapshot.domainVoiceStates
+                gatewayLogger.info(
+                    "Initial voice-state snapshot received; guild=\(snapshot.id, privacy: .public), count=\(states.count)"
+                )
+                for state in states {
+                    continuation?.yield(.voiceStateChanged(state))
+                }
             }
         case "GUILD_UPDATE":
             guard
-                let metadata = try? JSONDecoder().decode(GatewayGuildMetadataDTO.self, from: data),
-                let guildID = GuildID(metadata.id)
+                let patch = try? JSONDecoder().decode(GatewayGuildPatchDTO.self, from: data),
+                let guildID = GuildID(patch.id),
+                let guild = patch.applying(
+                    to: cachedGuilds[guildID], currentUserID: currentUser?.id
+                )
             else { return }
-            applyGuildRulesChannelID(metadata.rulesChannelID, guildID: guildID)
+            cachedGuilds[guildID] = guild
+            continuation?.yield(.guildChanged(guild))
         case "GUILD_EMOJIS_UPDATE":
             guard
                 let update = try? JSONDecoder().decode(
@@ -910,6 +989,76 @@ extension DiscordRESTProvider {
                 let emojis = update.emojis
             else { return }
             publishEmojiCollection(emojis, guildID: guildID)
+        case "GUILD_STICKERS_UPDATE":
+            guard
+                let update = try? JSONDecoder().decode(
+                    GatewayGuildStickersUpdateDTO.self, from: data
+                ), let guildID = GuildID(update.guildID)
+            else { return }
+            cachedGuildStickers[guildID] = update.stickers.map(\.domain)
+            continuation?.yield(
+                .gatewayFeatureChanged(
+                    GatewayFeatureEvent(
+                        kind: .stickers, operation: .replace, guildID: guildID
+                    )
+                )
+            )
+        case "GUILD_ROLE_CREATE", "GUILD_ROLE_UPDATE":
+            guard
+                let update = try? JSONDecoder().decode(
+                    GatewayGuildRoleEventDTO.self, from: data
+                ), let guildID = GuildID(update.guildID)
+            else { return }
+            var roles = cachedGuildRoles[guildID] ?? []
+            roles.removeAll { $0.id == update.role.id }
+            roles.append(update.role)
+            cachedGuildRoles[guildID] = roles
+            clearCurrentUserPermissionSnapshot(guildID)
+            publishGuildRoles(guildID)
+        case "GUILD_ROLE_DELETE":
+            guard
+                let deletion = try? JSONDecoder().decode(
+                    GatewayGuildRoleDeleteDTO.self, from: data
+                ), let guildID = GuildID(deletion.guildID)
+            else { return }
+            cachedGuildRoles[guildID]?.removeAll { $0.id == deletion.roleID }
+            if let roleID = RoleID(deletion.roleID),
+               var members = cachedMembers[guildID]
+            {
+                for index in members.indices {
+                    members[index].roleIDs.removeAll { $0 == roleID }
+                }
+                cachedMembers[guildID] = members
+            }
+            clearCurrentUserPermissionSnapshot(guildID)
+            publishGuildRoles(guildID)
+        case "GUILD_MEMBER_ADD", "GUILD_MEMBER_UPDATE":
+            guard
+                let update = try? JSONDecoder().decode(
+                    GatewayGuildMemberEventDTO.self, from: data
+                ), let guildID = GuildID(update.guildID),
+                let member = try? update.member.domain(
+                    currentUserID: currentUser?.id,
+                    currentStatus: presenceStatus,
+                    guildRoles: cachedGuildRoles[guildID] ?? [],
+                    guildID: guildID
+                )
+            else { return }
+            cachedGatewayUsersByID[update.member.user.id] = update.member.user
+            publishMemberChange(member, guildID: guildID)
+        case "GUILD_MEMBER_REMOVE":
+            guard
+                let deletion = try? JSONDecoder().decode(
+                    GatewayGuildMemberRemoveDTO.self, from: data
+                ), let guildID = GuildID(deletion.guildID),
+                let userID = UserID(deletion.user.id)
+            else { return }
+            removeMember(userID: userID, guildID: guildID)
+        case "USER_UPDATE":
+            guard let dto = try? JSONDecoder().decode(UserDTO.self, from: data),
+                  let user = try? dto.domain()
+            else { return }
+            applyUserUpdate(dto: dto, user: user)
         case "MESSAGE_CREATE":
             if let dto = try? JSONDecoder().decode(MessageDTO.self, from: data),
                let message = try? dto.domain()
@@ -948,6 +1097,30 @@ extension DiscordRESTProvider {
             for (parentID, posts) in cachedForumPosts where posts[threadID] != nil {
                 cachedForumPosts[parentID]?[threadID]?.thread.notificationSettings =
                     member.domain
+                publishForumPosts(parentID: parentID)
+                break
+            }
+        case "THREAD_MEMBERS_UPDATE":
+            guard
+                let update = try? JSONDecoder().decode(
+                    GatewayThreadMembersUpdateDTO.self, from: data
+                ), let threadID = ChannelID(update.id)
+            else { return }
+            for parentID in cachedForumPosts.keys.sorted(by: {
+                $0.rawValue < $1.rawValue
+            }) where cachedForumPosts[parentID]?[threadID] != nil {
+                cachedForumPosts[parentID]?[threadID]?.thread.memberCount =
+                    update.memberCount
+                if let ownMember = update.addedMembers?.first(where: {
+                    $0.userID.flatMap(UserID.init) == currentUser?.id
+                }) {
+                    cachedForumPosts[parentID]?[threadID]?.thread.notificationSettings =
+                        ownMember.domain
+                } else if update.removedMemberIDs?.contains(
+                    currentUser?.id.description ?? ""
+                ) == true {
+                    cachedForumPosts[parentID]?[threadID]?.thread.notificationSettings = nil
+                }
                 publishForumPosts(parentID: parentID)
                 break
             }
@@ -1017,6 +1190,14 @@ extension DiscordRESTProvider {
             if cachedApplicationCommandCatalogs[target]?.version != update.version?.value {
                 invalidateApplicationCommandCatalog(target)
             }
+        case "RATE_LIMITED":
+            guard let rateLimit = try? JSONDecoder().decode(
+                GatewayRateLimitedDTO.self, from: data
+            ) else { return }
+            gatewayOpcodeRateLimitDates[rateLimit.opcode] = Date().addingTimeInterval(
+                max(0, rateLimit.retryAfter)
+            )
+            failGatewayRequests(rateLimited: rateLimit)
         case "GUILD_DELETE":
             guard
                 let deleted = try? JSONDecoder().decode(
@@ -1024,10 +1205,25 @@ extension DiscordRESTProvider {
                 ), let guildID = GuildID(deleted.id)
             else { return }
             invalidateApplicationCommandCatalog(.guild(guildID))
+            if deleted.unavailable == true {
+                if var guild = cachedGuilds[guildID] {
+                    guild.isUnavailable = true
+                    cachedGuilds[guildID] = guild
+                    continuation?.yield(.guildChanged(guild))
+                }
+            } else {
+                removeGuild(guildID)
+            }
         case "CHANNEL_CREATE", "CHANNEL_UPDATE":
-            guard let dto = try? JSONDecoder().decode(ChannelDTO.self, from: data),
-                  dto.guildID == nil,
-                  dto.type == 1 || dto.type == 3,
+            guard let dto = try? JSONDecoder().decode(ChannelDTO.self, from: data) else {
+                return
+            }
+            if let guildID = dto.guildID.flatMap(GuildID.init) {
+                cachedGuildChannelDTOs[guildID, default: [:]][dto.id] = dto
+                publishGuildChannels(guildID)
+                return
+            }
+            guard dto.type == 1 || dto.type == 3,
                   var channel = try? dto.domain(
                       guildID: nil,
                       knownUsersByID: cachedGatewayUsersByID
@@ -1076,6 +1272,17 @@ extension DiscordRESTProvider {
                 ), let channelID = ChannelID(deleted.id)
             else { return }
             invalidateApplicationCommandCatalog(.channel(channelID))
+            let guildID = deleted.guildID.flatMap(GuildID.init)
+                ?? cachedGuildChannelDTOs.first(where: { $0.value[deleted.id] != nil })?.key
+            if let guildID {
+                cachedGuildChannelDTOs[guildID]?[deleted.id] = nil
+                cachedForumPosts[channelID] = nil
+                for parentID in cachedForumPosts.keys {
+                    cachedForumPosts[parentID]?[channelID] = nil
+                }
+                publishGuildChannels(guildID)
+                return
+            }
             if cachedChannels[nil]?.contains(where: { $0.id == channelID }) == true {
                 cachedChannels[nil]?.removeAll { $0.id == channelID }
                 continuation?.yield(
@@ -1219,7 +1426,38 @@ extension DiscordRESTProvider {
             if let value = try? JSONDecoder().decode(MessageDeleteDTO.self, from: data),
                let channelID = ChannelID(value.channelID), let messageID = MessageID(value.id)
             {
+                cachedMessages[messageID] = nil
                 continuation?.yield(.messageDeleted(channelID: channelID, messageID: messageID))
+            }
+        case "MESSAGE_DELETE_BULK":
+            guard
+                let deletion = try? JSONDecoder().decode(
+                    GatewayMessageDeleteBulkDTO.self, from: data
+                ), let channelID = ChannelID(deletion.channelID)
+            else { return }
+            for messageID in deletion.ids.compactMap(MessageID.init) {
+                cachedMessages[messageID] = nil
+                continuation?.yield(
+                    .messageDeleted(channelID: channelID, messageID: messageID)
+                )
+            }
+        case "CHANNEL_PINS_UPDATE":
+            guard
+                let update = try? JSONDecoder().decode(
+                    GatewayChannelPinsUpdateDTO.self, from: data
+                ), let channelID = ChannelID(update.channelID)
+            else { return }
+            let timestamp = update.lastPinTimestamp.flatMap(DiscordDate.parse)
+            if let guildID = update.guildID.flatMap(GuildID.init) {
+                cachedGuildChannelDTOs[guildID]?[update.channelID]?.lastPinTimestamp =
+                    update.lastPinTimestamp
+                publishGuildChannels(guildID)
+            } else if var channels = cachedChannels[nil],
+                      let index = channels.firstIndex(where: { $0.id == channelID })
+            {
+                channels[index].lastPinTimestamp = timestamp
+                cachedChannels[nil] = channels
+                continuation?.yield(.channelsChanged(guildID: nil, channels: channels))
             }
         case "GUILD_MEMBER_LIST_UPDATE":
             guard let update = try? JSONDecoder().decode(GuildMemberListUpdateDTO.self, from: data),
@@ -1338,6 +1576,20 @@ extension DiscordRESTProvider {
                     )
                 )
             }
+        case "VOICE_CHANNEL_STATUS_UPDATE", "VOICE_CHANNEL_START_TIME_UPDATE":
+            guard
+                let update = try? JSONDecoder().decode(
+                    GatewayVoiceChannelMetadataDTO.self, from: data
+                ), let guildID = GuildID(update.guildID),
+                cachedGuildChannelDTOs[guildID]?[update.id] != nil
+            else { return }
+            if name == "VOICE_CHANNEL_STATUS_UPDATE" {
+                cachedGuildChannelDTOs[guildID]?[update.id]?.status = update.status
+            } else {
+                cachedGuildChannelDTOs[guildID]?[update.id]?.voiceStartTime =
+                    update.voiceStartTime
+            }
+            publishGuildChannels(guildID)
         case "VOICE_STATE_UPDATE":
             guard let state = try? JSONDecoder().decode(VoiceStateUpdateDTO.self, from: data),
                   let participant = state.domain()
@@ -1416,7 +1668,14 @@ extension DiscordRESTProvider {
                 )
             )
         default:
-            break
+            guard let mapping = Self.gatewayFeatureMapping(for: name),
+                  let event = try? JSONDecoder().decode(
+                      GatewayFeatureIdentifierDTO.self, from: data
+                  )
+            else { return }
+            publishFeatureEvent(
+                event, kind: mapping.kind, operation: mapping.operation
+            )
         }
         }
     }
@@ -1451,6 +1710,147 @@ extension DiscordRESTProvider {
         cachedApplicationCommandCatalogs[target] = nil
         applicationCommandCatalogTasks.removeValue(forKey: target)?.cancel()
         continuation?.yield(.applicationCommandIndexInvalidated(target))
+    }
+
+    func publishGuildLayout() {
+        continuation?.yield(
+            .guildLayoutChanged(
+                guilds: guildsInCurrentRailOrder(),
+                railItems: cachedGuildRailItems
+            )
+        )
+    }
+
+    func insertGuildIntoRailIfNeeded(_ guildID: GuildID) {
+        let containsGuild = cachedGuildRailItems.contains { item in
+            switch item {
+            case .guild(let id): id == guildID
+            case .folder(let folder): folder.guildIDs.contains(guildID)
+            }
+        }
+        if !containsGuild { cachedGuildRailItems.insert(.guild(guildID), at: 0) }
+    }
+
+    func removeGuildFromRail(_ guildID: GuildID) {
+        cachedGuildRailItems = cachedGuildRailItems.compactMap { item in
+            switch item {
+            case .guild(let id):
+                return id == guildID ? nil : item
+            case .folder(var folder):
+                folder.guildIDs.removeAll { $0 == guildID }
+                return folder.guildIDs.isEmpty ? nil : .folder(folder)
+            }
+        }
+    }
+
+    func publishGuildChannels(_ guildID: GuildID) {
+        guard let values = cachedGuildChannelDTOs[guildID]?.values,
+              let channels = try? Self.domainChannels(Array(values), guildID: guildID)
+        else { return }
+        cachedChannels[guildID] = channels
+        continuation?.yield(.channelsChanged(guildID: guildID, channels: channels))
+    }
+
+    func publishGuildRoles(_ guildID: GuildID) {
+        let roles = (cachedGuildRoles[guildID] ?? [])
+            .compactMap(\.domain)
+            .sorted { lhs, rhs in
+                if lhs.position != rhs.position { return lhs.position > rhs.position }
+                return lhs.id.rawValue > rhs.id.rawValue
+            }
+        continuation?.yield(.guildRolesChanged(guildID: guildID, roles: roles))
+        reconcileMembersAfterRoleChange(guildID: guildID)
+    }
+
+    func reconcileMembersAfterRoleChange(guildID: GuildID) {
+        guard var members = cachedMembers[guildID] else { return }
+        let roleDTOs = cachedGuildRoles[guildID] ?? []
+        for index in members.indices {
+            let roleIDs = Set(members[index].roleIDs.map(\.description))
+            let resolved = roleDTOs
+                .filter { roleIDs.contains($0.id) }
+                .sorted { $0.position > $1.position }
+            let category = resolved.filter(\.hoist).max { lhs, rhs in
+                if lhs.position != rhs.position { return lhs.position < rhs.position }
+                return lhs.id < rhs.id
+            }
+            members[index].roles = resolved.compactMap(\.domain)
+            members[index].roleName = category?.name ?? "Member"
+            members[index].roleID = category.flatMap { RoleID($0.id) }
+            members[index].rolePosition = category?.position
+            members[index].isRoleCategory = category != nil
+        }
+        cachedMembers[guildID] = members
+        continuation?.yield(
+            .membersChanged(
+                guildID: guildID,
+                members: members,
+                groups: cachedMemberListGroups[guildID] ?? []
+            )
+        )
+    }
+
+    func publishMemberChange(_ member: Member, guildID: GuildID) {
+        cachedMembers[guildID] = DiscordMemberStoreOrdering.merging(
+            existing: cachedMembers[guildID] ?? [], updates: [member]
+        )
+        let members = cachedMembers[guildID] ?? []
+        continuation?.yield(
+            .membersChanged(
+                guildID: guildID,
+                members: members,
+                groups: cachedMemberListGroups[guildID] ?? []
+            )
+        )
+        if member.id == currentUser?.id {
+            continuation?.yield(
+                .currentUserRolesChanged(guildID: guildID, roleIDs: member.roleIDs)
+            )
+            if var guild = cachedGuilds[guildID] {
+                guild.currentUserPermissions = nil
+                cachedGuilds[guildID] = guild
+                continuation?.yield(.guildChanged(guild))
+            }
+        }
+    }
+
+    func removeMember(userID: UserID, guildID: GuildID) {
+        cachedMembers[guildID]?.removeAll { $0.id == userID }
+        cachedMemberListItems[guildID]?.removeAll {
+            $0?.member?.user.id == userID.description
+        }
+        let members = cachedMembers[guildID] ?? []
+        continuation?.yield(
+            .membersChanged(
+                guildID: guildID,
+                members: members,
+                groups: cachedMemberListGroups[guildID] ?? []
+            )
+        )
+        if userID == currentUser?.id {
+            continuation?.yield(.currentUserRolesChanged(guildID: guildID, roleIDs: []))
+            clearCurrentUserPermissionSnapshot(guildID)
+        }
+    }
+
+    func publishFeatureEvent(
+        _ dto: GatewayFeatureIdentifierDTO,
+        kind: GatewayFeatureEvent.Kind,
+        operation: GatewayFeatureEvent.Operation
+    ) {
+        continuation?.yield(
+            .gatewayFeatureChanged(
+                GatewayFeatureEvent(
+                    kind: kind,
+                    operation: operation,
+                    guildID: dto.guildID.flatMap(GuildID.init),
+                    channelID: dto.channelID.flatMap(ChannelID.init),
+                    entityID: dto.entityID,
+                    relatedID: dto.relatedID,
+                    userID: dto.userID.flatMap(UserID.init)
+                )
+            )
+        )
     }
 
     func applyGuildSettingsProto(

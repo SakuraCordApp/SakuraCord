@@ -1,7 +1,7 @@
 # Discord production protocol baseline
 
 Last repository audit: 3 August 2026, in a working tree based on SakuraCord
-commit `9b162d5`.
+commit `e62329d`.
 
 This document describes SakuraCord's durable network contract and the dated
 evidence behind it. It is not a claim that Discord's undocumented
@@ -256,6 +256,58 @@ does not advertise that dynamic bit until it implements the corresponding
 obfuscated-private-channel reconciliation. This is the remaining Gateway
 metadata difference and prevents requesting a payload shape the app cannot yet
 consume.
+
+### Dispatch reconciliation
+
+The complete inbound dispatch surface was rechecked on 3 August 2026 against
+Discord's current public Gateway event catalogue, public web build `587597`
+and asset `web.a8c0f0f55a5a68c4.js`, Paicord revision
+`694761c1938b73bb60bd58942674dfe73aab1135`, Swiftcord v1 revision
+`14465d927ebe1ba34b3befa00f9365fad7b56eb9`, and DiscordKit revision
+`2d42c69cafe592300a1a9d3a307bf485294026c7`. The official asset's route
+converters and stores resolved the event shapes and cache ownership without a
+material ambiguity, so this pass required no authenticated action or new live
+traffic capture. Paicord decodes the current lifecycle and secondary-feature
+families. Swiftcord v1 and DiscordKit provide historical lifecycle coverage but
+omit several newer voice, AutoMod, entitlement, subscription, and event-
+exception dispatches.
+
+- `GUILD_CREATE` adds or restores the guild, its rail entry, channels, roles,
+  members, threads, emoji, and voice state. `GUILD_UPDATE` patches every guild
+  field SakuraCord models. `GUILD_DELETE` with `unavailable:true` retains and
+  marks the guild unavailable; an ordinary delete removes its guild-scoped
+  caches, requests, channels, and rail entry. Joining, becoming unavailable,
+  recovering, and leaving issue no compensating REST request.
+- Guild `CHANNEL_CREATE`, `CHANNEL_UPDATE`, and `CHANNEL_DELETE` reconcile a
+  raw per-guild channel catalogue before rebuilding presentation. This retains
+  categories, positions, permission overwrites, pins, and voice metadata, so a
+  permission or category change takes effect without a channel-list reload.
+  `GUILD_ROLE_*`, `GUILD_MEMBER_*`, and `USER_UPDATE` likewise update the
+  shared role, member, permission, current-user, DM-recipient, and loaded-
+  message projections without a REST probe.
+- `MESSAGE_DELETE_BULK` removes every named loaded message and publishes the
+  same per-message deletion boundary as a single delete.
+  `CHANNEL_PINS_UPDATE`, `THREAD_MEMBERS_UPDATE`,
+  `VOICE_CHANNEL_STATUS_UPDATE`, and `VOICE_CHANNEL_START_TIME_UPDATE` update
+  their cached channel or thread fields in place. Voice start times accept the
+  documented Unix-seconds representation; ISO timestamps remain a lossless
+  compatibility input for first-party-normalized channel objects.
+- A `RATE_LIMITED` dispatch records Discord's `retry_after` seconds against
+  the rejected outgoing opcode. A send attempted during that cooldown fails
+  locally, and a rejected member request completes its pending continuation
+  with an error. SakuraCord does not replay, retry early, or speculate about a
+  replacement Gateway request.
+- Sticker snapshots are cached. Soundboard, scheduled-event and exception,
+  Stage, poll-vote, integration, webhook, AutoMod, entitlement, and
+  subscription dispatches cross a typed feature-event boundary with their
+  operation and available guild, channel, entity, related, and user
+  identifiers. These
+  families invalidate only local feature state; they do not enable an
+  unsupported feature, add fan-out, or trigger an authenticated read.
+
+All of these paths use sanitized deterministic dispatch fixtures. Their
+request budget is zero: a received dispatch mutates local state and never
+creates a REST request or an additional outgoing Gateway payload.
 
 ### Other Discord transports
 

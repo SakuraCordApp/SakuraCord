@@ -54,6 +54,7 @@ public actor DiscordRESTProvider: ChatProvider {
     var authorizationValue: String?
     var cachedMessages: [MessageID: Message] = [:]
     var cachedChannels: [GuildID?: [Channel]] = [:]
+    var cachedGuildChannelDTOs: [GuildID: [String: ChannelDTO]] = [:]
     var guildChannelTasks: [GuildID: Task<[Channel], Error>] = [:]
     var messageSendTasks: [String: Task<Message, Error>] = [:]
     var cachedForumPosts: [ChannelID: [ChannelID: ForumPost]] = [:]
@@ -98,6 +99,8 @@ public actor DiscordRESTProvider: ChatProvider {
     var cachedEmojiUserSettings: EmojiUserSettings?
     var emojiUserSettingsTask: Task<EmojiUserSettings, Error>?
     var cachedReactionReactors: [ReactionReactorCacheKey: [ReactionReactor]] = [:]
+    var cachedGuildStickers: [GuildID: [MessageSticker]] = [:]
+    var gatewayOpcodeRateLimitDates: [Int: Date] = [:]
     var reactionReactorCacheOrder: [ReactionReactorCacheKey] = []
     var reactionReactorTasks: [ReactionReactorCacheKey: Task<[ReactionReactor], Error>] =
         [:]
@@ -427,6 +430,10 @@ extension DiscordRESTProvider {
         }
         let task = Task { [self] in
             let values: [ChannelDTO] = try await request("/guilds/\(guildID)/channels")
+            cachedGuildChannelDTOs[guildID] = Dictionary(
+                values.map { ($0.id, $0) },
+                uniquingKeysWith: { _, newer in newer }
+            )
             return try Self.domainChannels(values, guildID: guildID)
         }
         guildChannelTasks[guildID] = task

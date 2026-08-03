@@ -4151,6 +4151,44 @@ private func hiddenMockChannel(
 }
 
 @MainActor
+@Test func `gateway lifecycle projections update app workspace state`() {
+    let model = AppModel(launchMode: .offlineTesting)
+    let oldUser = User(
+        id: UserID(rawValue: 93_001), username: "before", displayName: "Before"
+    )
+    let updatedUser = User(
+        id: oldUser.id, username: "after", displayName: "After"
+    )
+    let guild = Guild(id: GuildID(rawValue: 93_002), name: "Joined Guild")
+    let role = GuildRole(
+        id: RoleID(rawValue: 93_003), name: "Member", position: 1,
+        permissions: 1_024
+    )
+    model.snapshot = BootstrapSnapshot(
+        currentUser: oldUser, guilds: [], channels: [], members: []
+    )
+
+    model.consumePresenceAndCommandEvent(
+        .guildLayoutChanged(guilds: [guild], railItems: [.guild(guild.id)])
+    )
+    model.consumePresenceAndCommandEvent(
+        .guildRolesChanged(guildID: guild.id, roles: [role])
+    )
+    model.consumePresenceAndCommandEvent(.currentUserChanged(updatedUser))
+    let feature = GatewayFeatureEvent(
+        kind: .scheduledEvent, operation: .update, guildID: guild.id,
+        entityID: "93004"
+    )
+    model.consumePresenceAndCommandEvent(.gatewayFeatureChanged(feature))
+
+    #expect(model.snapshot?.guilds == [guild])
+    #expect(model.serverRailGuildsByID[guild.id] == guild)
+    #expect(model.guildRolesByGuildID[guild.id] == [role])
+    #expect(model.snapshot?.currentUser == updatedUser)
+    #expect(model.lastGatewayFeatureEvent == feature)
+}
+
+@MainActor
 @Test func `provider member refresh revokes access during live scrolling`() async {
     let provider = MemberRoleRevocationTestProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)

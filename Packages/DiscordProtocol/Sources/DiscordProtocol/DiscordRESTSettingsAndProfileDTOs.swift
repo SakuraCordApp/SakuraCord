@@ -1150,6 +1150,8 @@ struct ChannelDTO: Decodable {
     var defaultAutoArchiveDuration: Int?
     var defaultThreadRateLimitPerUser: Int?
     var rateLimitPerUser: Int?
+    var status: String?
+    var voiceStartTime: DiscordTimestampDTO?
     var message: MessageDTO?
     enum CodingKeys: String, CodingKey {
         case id
@@ -1176,6 +1178,8 @@ struct ChannelDTO: Decodable {
         case defaultAutoArchiveDuration = "default_auto_archive_duration"
         case defaultThreadRateLimitPerUser = "default_thread_rate_limit_per_user"
         case rateLimitPerUser = "rate_limit_per_user"
+        case status
+        case voiceStartTime = "voice_start_time"
     }
 
     func domain(
@@ -1237,7 +1241,9 @@ struct ChannelDTO: Decodable {
             defaultTagMatch: defaultTagSetting.flatMap(ForumTagMatch.init(rawValue:)) ?? .matchSome,
             defaultAutoArchiveDuration: defaultAutoArchiveDuration,
             defaultThreadRateLimitPerUser: defaultThreadRateLimitPerUser,
-            rateLimitPerUser: rateLimitPerUser ?? 0
+            rateLimitPerUser: rateLimitPerUser ?? 0,
+            voiceStatus: status,
+            voiceStartTime: voiceStartTime?.date
         )
     }
 

@@ -119,12 +119,14 @@ public struct Guild: Identifiable, Codable, Hashable, Sendable {
     public var currentUserPermissions: UInt64?
     public var rulesChannelID: ChannelID?
     public var defaultMessageNotifications: MessageNotificationLevel
+    public var isUnavailable: Bool
 
     public init(
         id: GuildID, name: String, iconURL: URL? = nil, accentHex: UInt32 = 0x5865F2,
         unreadCount: Int = 0, mentionCount: Int = 0, isOwnedByCurrentUser: Bool? = nil,
         currentUserPermissions: UInt64? = nil, rulesChannelID: ChannelID? = nil,
-        defaultMessageNotifications: MessageNotificationLevel = .onlyMentions
+        defaultMessageNotifications: MessageNotificationLevel = .onlyMentions,
+        isUnavailable: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -136,11 +138,12 @@ public struct Guild: Identifiable, Codable, Hashable, Sendable {
         self.currentUserPermissions = currentUserPermissions
         self.rulesChannelID = rulesChannelID
         self.defaultMessageNotifications = defaultMessageNotifications
+        self.isUnavailable = isUnavailable
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, name, iconURL, accentHex, unreadCount, mentionCount, isOwnedByCurrentUser
-        case currentUserPermissions, rulesChannelID, defaultMessageNotifications
+        case currentUserPermissions, rulesChannelID, defaultMessageNotifications, isUnavailable
     }
 
     public init(from decoder: any Decoder) throws {
@@ -157,6 +160,7 @@ public struct Guild: Identifiable, Codable, Hashable, Sendable {
         defaultMessageNotifications =
             try values.decodeIfPresent(MessageNotificationLevel.self, forKey: .defaultMessageNotifications)
                 ?? .onlyMentions
+        isUnavailable = try values.decodeIfPresent(Bool.self, forKey: .isUnavailable) ?? false
     }
 }
 
@@ -468,6 +472,8 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
     public var defaultAutoArchiveDuration: Int?
     public var defaultThreadRateLimitPerUser: Int?
     public var rateLimitPerUser: Int
+    public var voiceStatus: String?
+    public var voiceStartTime: Date?
 
     public init(
         id: ChannelID,
@@ -496,7 +502,9 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         defaultTagMatch: ForumTagMatch = .matchSome,
         defaultAutoArchiveDuration: Int? = nil,
         defaultThreadRateLimitPerUser: Int? = nil,
-        rateLimitPerUser: Int = 0
+        rateLimitPerUser: Int = 0,
+        voiceStatus: String? = nil,
+        voiceStartTime: Date? = nil
     ) {
         self.id = id
         self.guildID = guildID
@@ -525,6 +533,8 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         self.defaultAutoArchiveDuration = defaultAutoArchiveDuration
         self.defaultThreadRateLimitPerUser = defaultThreadRateLimitPerUser
         self.rateLimitPerUser = rateLimitPerUser
+        self.voiceStatus = voiceStatus
+        self.voiceStartTime = voiceStartTime
     }
 
     public var requiresForumTag: Bool {
@@ -541,6 +551,7 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         case flags, availableTags, defaultReaction, defaultSortOrder, defaultForumLayout
         case defaultTagMatch, defaultAutoArchiveDuration, defaultThreadRateLimitPerUser
         case rateLimitPerUser
+        case voiceStatus, voiceStartTime
     }
 
     public init(from decoder: any Decoder) throws {
@@ -587,6 +598,8 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
             Int.self, forKey: .defaultThreadRateLimitPerUser
         )
         rateLimitPerUser = try values.decodeIfPresent(Int.self, forKey: .rateLimitPerUser) ?? 0
+        voiceStatus = try values.decodeIfPresent(String.self, forKey: .voiceStatus)
+        voiceStartTime = try values.decodeIfPresent(Date.self, forKey: .voiceStartTime)
     }
 }
 
@@ -1881,7 +1894,55 @@ public enum ClientEvent: Equatable, Sendable {
     case snapshotChanged(BootstrapSnapshot)
     case guildChanged(Guild)
     case guildLayoutChanged(guilds: [Guild], railItems: [GuildRailItem])
+    case guildRolesChanged(guildID: GuildID, roles: [GuildRole])
+    case currentUserChanged(User)
+    case gatewayFeatureChanged(GatewayFeatureEvent)
     case applicationCommandIndexInvalidated(ApplicationCommandIndexTarget)
     case applicationCommandAutocomplete(ApplicationCommandAutocompleteResult)
     case interaction(InteractionEvent)
+}
+
+public struct GatewayFeatureEvent: Equatable, Sendable {
+    public enum Kind: String, Codable, Equatable, Sendable {
+        case stickers
+        case soundboard
+        case scheduledEvent
+        case stageInstance
+        case pollVote
+        case integration
+        case webhook
+        case autoModeration
+        case entitlement
+        case subscription
+    }
+
+    public enum Operation: String, Codable, Equatable, Sendable {
+        case create, update, delete, replace, add, remove, execute
+    }
+
+    public var kind: Kind
+    public var operation: Operation
+    public var guildID: GuildID?
+    public var channelID: ChannelID?
+    public var entityID: String?
+    public var relatedID: String?
+    public var userID: UserID?
+
+    public init(
+        kind: Kind,
+        operation: Operation,
+        guildID: GuildID? = nil,
+        channelID: ChannelID? = nil,
+        entityID: String? = nil,
+        relatedID: String? = nil,
+        userID: UserID? = nil
+    ) {
+        self.kind = kind
+        self.operation = operation
+        self.guildID = guildID
+        self.channelID = channelID
+        self.entityID = entityID
+        self.relatedID = relatedID
+        self.userID = userID
+    }
 }
