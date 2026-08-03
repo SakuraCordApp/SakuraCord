@@ -563,32 +563,34 @@ struct MessageTimelineLoadingSkeleton: View {
     ]
 
     var body: some View {
-        ZStack {
-            Color(nsColor: .windowBackgroundColor)
-            GeometryReader { geometry in
-                VStack(alignment: .leading, spacing: 20) {
-                    ForEach(
-                        0 ..< MessageTimelineSkeletonLayout.rowCount(
-                            for: max(0, geometry.size.height - bottomContentInset)
-                        ),
-                        id: \.self
-                    ) { index in
-                        MessageTimelineSkeletonMessage(
-                            row: Self.patterns[index % Self.patterns.count],
-                            availableLineWidth: max(120, geometry.size.width - 84)
-                        )
+        SkeletonShimmerTimeline {
+            ZStack {
+                Color(nsColor: .windowBackgroundColor)
+                GeometryReader { geometry in
+                    VStack(alignment: .leading, spacing: 20) {
+                        ForEach(
+                            0 ..< MessageTimelineSkeletonLayout.rowCount(
+                                for: max(0, geometry.size.height - bottomContentInset)
+                            ),
+                            id: \.self
+                        ) { index in
+                            MessageTimelineSkeletonMessage(
+                                row: Self.patterns[index % Self.patterns.count],
+                                availableLineWidth: max(120, geometry.size.width - 84)
+                            )
+                        }
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 18)
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: 0,
+                        maxHeight: max(0, geometry.size.height - bottomContentInset),
+                        alignment: .topLeading
+                    )
+                    .clipped()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 18)
-                .frame(
-                    maxWidth: .infinity,
-                    minHeight: 0,
-                    maxHeight: max(0, geometry.size.height - bottomContentInset),
-                    alignment: .topLeading
-                )
-                .clipped()
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
         // The timeline itself extends through the top scroll-edge safe area so
@@ -684,6 +686,7 @@ private struct MessageTimelineSkeletonMessage: View {
             Circle()
                 .fill(.secondary.opacity(0.16))
                 .frame(width: 40, height: 40)
+                .skeletonShimmer()
 
             VStack(alignment: .leading, spacing: 7) {
                 HStack(spacing: 8) {
@@ -707,6 +710,7 @@ private struct MessageTimelineSkeletonMessage: View {
         Capsule()
             .fill(.secondary.opacity(0.16))
             .frame(width: width, height: height)
+            .skeletonShimmer()
     }
 }
 

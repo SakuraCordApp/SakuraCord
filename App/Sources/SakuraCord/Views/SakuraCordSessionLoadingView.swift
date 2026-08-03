@@ -12,31 +12,33 @@ struct SakuraCordSessionLoadingView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            HStack(spacing: 0) {
-                serverRail
-                channelSidebar
-            }
-            .navigationSplitViewColumnWidth(
-                min: ChatChromeMetrics.serverRailWidth + 190,
-                ideal: ChatChromeMetrics.serverRailWidth + 230,
-                max: ChatChromeMetrics.serverRailWidth + 310
-            )
-        } detail: {
-            workspace
-                .navigationTitle("")
-                .toolbar { detailToolbar }
-        }
-        .toolbar { conversationToolbar }
-        .overlay(alignment: .topLeading) {
-            SkeletonShape(cornerRadius: 4, pulse: pulse)
-                .frame(width: 132, height: 14)
-                .offset(
-                    x: ChatChromeMetrics.sidebarTitleLeadingOffset,
-                    y: ChatChromeMetrics.sidebarTitleTopOffset + 7
+        SkeletonShimmerTimeline {
+            NavigationSplitView(columnVisibility: $columnVisibility) {
+                HStack(spacing: 0) {
+                    serverRail
+                    channelSidebar
+                }
+                .navigationSplitViewColumnWidth(
+                    min: ChatChromeMetrics.serverRailWidth + 190,
+                    ideal: ChatChromeMetrics.serverRailWidth + 230,
+                    max: ChatChromeMetrics.serverRailWidth + 310
                 )
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
+            } detail: {
+                workspace
+                    .navigationTitle("")
+                    .toolbar { detailToolbar }
+            }
+            .toolbar { conversationToolbar }
+            .overlay(alignment: .topLeading) {
+                SkeletonShape(cornerRadius: 4, pulse: pulse)
+                    .frame(width: 132, height: 14)
+                    .offset(
+                        x: ChatChromeMetrics.sidebarTitleLeadingOffset,
+                        y: ChatChromeMetrics.sidebarTitleTopOffset + 7
+                    )
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .preferredColorScheme(.dark)
@@ -252,6 +254,7 @@ private struct SkeletonShape: View {
     var body: some View {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             .fill(.white.opacity(0.09))
+            .skeletonShimmer()
     }
 }
 

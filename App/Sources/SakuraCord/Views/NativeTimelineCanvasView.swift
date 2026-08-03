@@ -131,6 +131,7 @@ final class NativeTimelineCanvasView: NSView {
     var contentOriginY: CGFloat = 0
     var historySkeleton:
         TimelineHistorySkeletonPresentation?
+    var historySkeletonShimmerTask: Task<Void, Never>?
     var minimumHeight: CGFloat = 1
     var bottomSpacerHeight: CGFloat = 0
     var maximumDrawDuration = 0.0
@@ -306,6 +307,7 @@ final class NativeTimelineCanvasView: NSView {
         MainActor.assumeIsolated {
             NotificationCenter.default.removeObserver(self)
             mediaInvalidationTask?.cancel()
+            historySkeletonShimmerTask?.cancel()
             cancelReactionPreviewLoads()
             NativeTimelineMediaStore.shared.removeStaticRequests(
                 owner: visibleMediaPinOwner

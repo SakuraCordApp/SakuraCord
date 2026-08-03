@@ -95,6 +95,7 @@ extension NativeTimelineCanvasView {
             // the bounded canvas clears that transition without touching the
             // rest of the virtual document.
             needsDisplay = true
+            reconcileHistorySkeletonShimmer()
         }
         reconcileReactionCountAnimations(
             storedBeforeUpdate: reactionCountsBeforeUpdate
@@ -135,6 +136,32 @@ extension NativeTimelineCanvasView {
         // disappears, or belongs to a different conversation so no stale
         // placeholder pixels can survive into materialized rows.
         needsDisplay = true
+        reconcileHistorySkeletonShimmer()
+    }
+
+    func reconcileHistorySkeletonShimmer() {
+        historySkeletonShimmerTask?.cancel()
+        historySkeletonShimmerTask = nil
+        guard historySkeleton != nil,
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        else { return }
+
+        historySkeletonShimmerTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                guard let frame = self?.historySkeleton?.frame
+                else { return }
+                self?.setNeedsDisplay(frame)
+                do {
+                    try await Task.sleep(
+                        for: .seconds(
+                            SkeletonShimmerStyle.minimumFrameInterval
+                        )
+                    )
+                } catch {
+                    return
+                }
+            }
+        }
     }
 
     func updateContentOriginY(
@@ -851,17 +878,33 @@ extension NativeTimelineCanvasView {
                 Int(ceil((frame.maxY - clipped.minY) / rowStride))
             )
         )
-        let avatarColor =
-            NSColor.placeholderTextColor.withAlphaComponent(0.18)
-        let primaryBarColor =
-            NSColor.placeholderTextColor.withAlphaComponent(0.16)
-        let secondaryBarColor =
-            NSColor.placeholderTextColor.withAlphaComponent(0.11)
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        NSBezierPath(rect: clipped).addClip()
+        let shimmerMask = NSBezierPath()
+
+        for ordinal in firstOrdinal ... lastOrdinal {
+            let rowTop =
+                frame.maxY - CGFloat(ordinal + 1) * rowStride
+            drawHistorySkeletonRow(
+                ordinal: ordinal,
+                rowTop: rowTop,
+                frameWidth: frame.width,
+                shimmerMask: shimmerMask
+            )
+        }
+
+        drawHistorySkeletonShimmer(mask: shimmerMask, in: frame)
+    }
+
+    private func drawHistorySkeletonRow(
+        ordinal: Int,
+        rowTop: CGFloat,
+        frameWidth: CGFloat,
+        shimmerMask: NSBezierPath
+    ) {
         let contentX: CGFloat = 64
-        let maximumContentWidth = max(
-            80,
-            frame.width - contentX - 14
-        )
+        let maximumContentWidth = max(80, frameWidth - contentX - 14)
         let authorWidths: [CGFloat] = [92, 126, 108, 148]
         let lineFractions: [[CGFloat]] = [
             [0.72],
@@ -869,68 +912,99 @@ extension NativeTimelineCanvasView {
             [0.84, 0.76, 0.42],
             [0.64, 0.88],
         ]
+        let avatarPath = NSBezierPath(ovalIn: CGRect(
+            x: 14,
+            y: rowTop + 11,
+            width: 38,
+            height: 38
+        ))
+        NSColor.placeholderTextColor.withAlphaComponent(0.18).setFill()
+        avatarPath.fill()
+        shimmerMask.append(avatarPath)
+
+        let authorWidth = min(
+            maximumContentWidth * 0.45,
+            authorWidths[ordinal % authorWidths.count]
+        )
+        let authorPath = NSBezierPath(
+            roundedRect: CGRect(
+                x: contentX,
+                y: rowTop + 10,
+                width: authorWidth,
+                height: 10
+            ),
+            xRadius: 5,
+            yRadius: 5
+        )
+        NSColor.placeholderTextColor.withAlphaComponent(0.16).setFill()
+        authorPath.fill()
+        shimmerMask.append(authorPath)
+
+        let timestampPath = NSBezierPath(
+            roundedRect: CGRect(
+                x: contentX + authorWidth + 8,
+                y: rowTop + 12,
+                width: 38,
+                height: 7
+            ),
+            xRadius: 3.5,
+            yRadius: 3.5
+        )
+        NSColor.placeholderTextColor.withAlphaComponent(0.11).setFill()
+        timestampPath.fill()
+        shimmerMask.append(timestampPath)
+
+        let fractions = lineFractions[ordinal % lineFractions.count]
+        for (line, fraction) in fractions.enumerated() {
+            let linePath = NSBezierPath(
+                roundedRect: CGRect(
+                    x: contentX,
+                    y: rowTop + 28 + CGFloat(line) * 13,
+                    width: max(34, maximumContentWidth * fraction),
+                    height: 8
+                ),
+                xRadius: 4,
+                yRadius: 4
+            )
+            linePath.fill()
+            shimmerMask.append(linePath)
+        }
+    }
+
+    private func drawHistorySkeletonShimmer(
+        mask: NSBezierPath,
+        in frame: CGRect
+    ) {
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+              !mask.isEmpty,
+              let gradient = NSGradient(
+                  colorsAndLocations:
+                  (.clear, 0),
+                  (NSColor.labelColor.withAlphaComponent(0.18), 0.25),
+                  (NSColor.labelColor.withAlphaComponent(0.92), 0.5),
+                  (NSColor.labelColor.withAlphaComponent(0.18), 0.75),
+                  (.clear, 1)
+              )
+        else { return }
+
+        let width = max(frame.width, 1)
+        let phase = SkeletonShimmerStyle.phase(at: Date())
+        let bandFrame = CGRect(
+            x: frame.minX
+                + width
+                    * (
+                        SkeletonShimmerStyle.startingOffsetFraction
+                            + SkeletonShimmerStyle.travelFraction * phase
+                    ),
+            y: frame.minY,
+            width: width * SkeletonShimmerStyle.bandWidthFraction,
+            height: frame.height
+        )
 
         NSGraphicsContext.saveGraphicsState()
         defer { NSGraphicsContext.restoreGraphicsState() }
-        NSBezierPath(rect: clipped).addClip()
-
-        for ordinal in firstOrdinal ... lastOrdinal {
-            let rowTop =
-                frame.maxY - CGFloat(ordinal + 1) * rowStride
-            let avatarFrame = CGRect(
-                x: 14,
-                y: rowTop + 11,
-                width: 38,
-                height: 38
-            )
-            avatarColor.setFill()
-            NSBezierPath(ovalIn: avatarFrame).fill()
-
-            let authorWidth = min(
-                maximumContentWidth * 0.45,
-                authorWidths[ordinal % authorWidths.count]
-            )
-            primaryBarColor.setFill()
-            NSBezierPath(
-                roundedRect: CGRect(
-                    x: contentX,
-                    y: rowTop + 10,
-                    width: authorWidth,
-                    height: 10
-                ),
-                xRadius: 5,
-                yRadius: 5
-            ).fill()
-            secondaryBarColor.setFill()
-            NSBezierPath(
-                roundedRect: CGRect(
-                    x: contentX + authorWidth + 8,
-                    y: rowTop + 12,
-                    width: 38,
-                    height: 7
-                ),
-                xRadius: 3.5,
-                yRadius: 3.5
-            ).fill()
-
-            let fractions =
-                lineFractions[ordinal % lineFractions.count]
-            for (line, fraction) in fractions.enumerated() {
-                NSBezierPath(
-                    roundedRect: CGRect(
-                        x: contentX,
-                        y: rowTop + 28 + CGFloat(line) * 13,
-                        width: max(
-                            34,
-                            maximumContentWidth * fraction
-                        ),
-                        height: 8
-                    ),
-                    xRadius: 4,
-                    yRadius: 4
-                ).fill()
-            }
-        }
+        mask.addClip()
+        gradient.draw(in: bandFrame, angle: 0)
     }
 
     func resetDrawTelemetry() {

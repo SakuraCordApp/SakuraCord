@@ -4,6 +4,20 @@ import SakuraCordModels
 import SwiftUI
 import Testing
 
+@Test func `skeleton shimmer follows the SwiftTube cadence without changing layout`() {
+    let start = Date(timeIntervalSinceReferenceDate: 0)
+    let midpoint = Date(
+        timeIntervalSinceReferenceDate: SkeletonShimmerStyle.duration / 2
+    )
+    let wrapped = Date(
+        timeIntervalSinceReferenceDate: SkeletonShimmerStyle.duration
+    )
+
+    #expect(SkeletonShimmerStyle.phase(at: start) == 0)
+    #expect(abs(SkeletonShimmerStyle.phase(at: midpoint) - 0.5) < 0.000_001)
+    #expect(abs(SkeletonShimmerStyle.phase(at: wrapped)) < 0.000_001)
+}
+
 @MainActor
 @Test func `shared conversation skeleton is only visible without presentable messages`() {
     #expect(MessageTimelineLoadingPolicy.showsInitialPlaceholder(isLoading: true, messageCount: 0))
