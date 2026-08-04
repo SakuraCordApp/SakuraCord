@@ -4,7 +4,7 @@ import SakuraCordModels
 import SwiftUI
 import Testing
 
-@Test func `skeleton shimmer follows the SwiftTube cadence without changing layout`() {
+@Test func `skeleton shimmer phase wraps without changing layout`() {
     let start = Date(timeIntervalSinceReferenceDate: 0)
     let midpoint = Date(
         timeIntervalSinceReferenceDate: SkeletonShimmerStyle.duration / 2

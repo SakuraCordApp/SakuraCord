@@ -95,7 +95,6 @@ final class AppModel {
     }
 
     var snapshot: BootstrapSnapshot?
-    var lastGatewayFeatureEvent: GatewayFeatureEvent?
     var serverRailGuildsByID: [GuildID: Guild] = [:]
     var serverRailItems: [GuildRailItem] = [] {
         didSet { updateOrderedCustomEmojis() }

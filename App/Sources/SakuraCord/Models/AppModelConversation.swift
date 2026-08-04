@@ -44,12 +44,9 @@ extension AppModel {
         stopLocalTyping(clearThrottle: true)
         replyingTo = nil
 
-        let canLoadSelectedConversation =
-            selectedChannel?.kind == .voice
-            || selectedConversationAccess.isReadable
         guard let channelID = selectedChannelID,
               selectedChannel?.kind != .voice || isVoiceChatOpen,
-              canLoadSelectedConversation
+              selectedConversationAccess.isReadable
         else {
             replaceSelectedMessages(with: [])
             draft = ""

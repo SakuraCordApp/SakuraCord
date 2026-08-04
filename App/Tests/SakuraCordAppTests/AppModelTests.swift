@@ -431,7 +431,7 @@ import UserNotifications
 }
 
 @MainActor
-@Test func `inaccessible voice keeps chat readable but cannot join`() async throws {
+@Test func `inaccessible voice performs no history read or join`() async throws {
     let provider = InaccessibleChannelRequestCountingProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
@@ -439,7 +439,7 @@ import UserNotifications
 
     model.selectedChannelID = channel.id
     try await Task.sleep(for: .milliseconds(40))
-    #expect(await provider.messageRequestCount(for: channel.id) == 1)
+    #expect(await provider.messageRequestCount(for: channel.id) == 0)
     #expect(!model.isLoadingMessages)
     #expect(model.selectedConversationAccess == .hidden)
     #expect(!model.canJoinVoice(channel))
@@ -2216,6 +2216,30 @@ private actor PendingCredentialRecordingStore: CredentialStore {
     }
 }
 
+private actor FailingRemovalCredentialStore: CredentialStore {
+    private(set) var accountIDs: [String]
+
+    init(accountID: String) {
+        accountIDs = [accountID]
+    }
+
+    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
+        CredentialHandle(accountID: accountID)
+    }
+
+    func credential(for handle: CredentialHandle) async throws -> Data {
+        Data("credential".utf8)
+    }
+
+    func remove(_ handle: CredentialHandle) async throws {
+        throw ChatProviderError.invalidRequest("fixture credential removal failed")
+    }
+
+    func handles() async throws -> [CredentialHandle] {
+        accountIDs.map(CredentialHandle.init(accountID:))
+    }
+}
+
 @MainActor
 @Test func `interactive sign in failure stays signed out and exposes bootstrap error`() async {
     let provider = SuspendedBootstrapTestProvider(bootstrapError: "fixture bootstrap stopped")
@@ -2245,7 +2269,45 @@ private actor PendingCredentialRecordingStore: CredentialStore {
     #expect(await !(connection.value))
     #expect(model.sessionState == .signedOut)
     #expect(model.errorMessage == "fixture bootstrap stopped")
+    #expect(model.provider is SignedOutChatProvider)
+    #expect(model.credentialHandle == nil)
+    #expect(model.database == nil)
+    #expect(await provider.disconnectCount == 1)
     #expect(notifications.authorizationRequestCount == 0)
+}
+
+@MainActor
+@Test func `logout completes locally when saved credential removal fails`() async {
+    let credentials = FailingRemovalCredentialStore(accountID: "93000")
+    let provider = SuspendedBootstrapTestProvider()
+    let model = AppModel(
+        launchMode: .normal,
+        discordNetworkDisabledOverride: false,
+        restoresStoredSession: false,
+        credentialStore: credentials,
+        authenticatedProviderFactory: { _, _ in provider },
+        accountDatabaseFactory: { _ in nil }
+    )
+    await model.start()
+
+    let connection = Task {
+        await model.connectAuthenticatedAccount(
+            CredentialHandle(accountID: "93000")
+        )
+    }
+    await provider.waitUntilBootstrapStarts()
+    await provider.releaseBootstrap()
+    #expect(await connection.value)
+
+    await model.logout()
+
+    #expect(model.sessionState == .signedOut)
+    #expect(!model.isAuthenticated)
+    #expect(model.activeAccountID == nil)
+    #expect(model.credentialHandle == nil)
+    #expect(model.provider is SignedOutChatProvider)
+    #expect(model.errorMessage == "fixture credential removal failed")
+    #expect(await credentials.accountIDs == ["93000"])
 }
 
 @MainActor
@@ -3276,6 +3338,28 @@ private actor PendingCredentialRecordingStore: CredentialStore {
 }
 
 @MainActor
+@Test func `connection gap refreshes the selected session page once`() async throws {
+    let provider = ChannelLoadTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let channelID = ChannelID(rawValue: 91001)
+    model.connectionState = .ready
+
+    model.selectedChannelID = channelID
+    await model.channelLoadTask?.value
+    #expect(await provider.requestCount(for: channelID) == 1)
+
+    model.consumeConnectionChange(.resuming)
+    model.consumeConnectionChange(.ready)
+
+    await model.channelLoadTask?.value
+    #expect(await provider.requestCount(for: channelID) == 2)
+    model.consumeConnectionChange(.ready)
+    try await Task.sleep(for: .milliseconds(40))
+    #expect(await provider.requestCount(for: channelID) == 2)
+}
+
+@MainActor
 @Test func `profile role names remove custom emoji markup and collapse whitespace`() {
     #expect(
         ProfileRolePresentation.normalizedName("  Developers   <:sparkle:123456>   💖  ")
@@ -3729,17 +3813,11 @@ private func hiddenMockChannel(
         .guildRolesChanged(guildID: guild.id, roles: [role])
     )
     model.consumePresenceAndCommandEvent(.currentUserChanged(updatedUser))
-    let feature = GatewayFeatureEvent(
-        kind: .scheduledEvent, operation: .update, guildID: guild.id,
-        entityID: "93004"
-    )
-    model.consumePresenceAndCommandEvent(.gatewayFeatureChanged(feature))
 
     #expect(model.snapshot?.guilds == [guild])
     #expect(model.serverRailGuildsByID[guild.id] == guild)
     #expect(model.guildRolesByGuildID[guild.id] == [role])
     #expect(model.snapshot?.currentUser == updatedUser)
-    #expect(model.lastGatewayFeatureEvent == feature)
 }
 
 @MainActor
@@ -5600,6 +5678,7 @@ private actor SuspendedBootstrapTestProvider: PendingCredentialChatProvider {
     private var nextSentMessageID: UInt64 = 94_000
     private var reactionRequestCount = 0
     private var reactionRequestWaiters: [CheckedContinuation<Void, Never>] = []
+    private(set) var disconnectCount = 0
 
     init(
         bootstrapError: String? = nil,
@@ -5757,7 +5836,9 @@ private actor SuspendedBootstrapTestProvider: PendingCredentialChatProvider {
         AsyncStream { $0.finish() }
     }
 
-    func disconnect() async {}
+    func disconnect() async {
+        disconnectCount += 1
+    }
 }
 
 private actor RestoredCredentialHandleStore: CredentialStore {

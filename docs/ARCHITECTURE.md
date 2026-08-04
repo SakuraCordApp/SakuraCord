@@ -77,7 +77,8 @@ Within the production provider:
   before retaining a bounded in-memory session log. The Diagnostics settings
   pane exports the retained JSON Lines data and reports when older entries were
   dropped. Its optional disk capture is off by default and writes private JSON
-  Lines session files under Application Support only after the user enables it.
+  Lines session files under Application Support only after the user enables it;
+  each opt-in capture stops at a 64 MiB per-session limit.
 
 The current production capability gates and request contracts are documented
 in [PROTOCOL_BASELINE.md](PROTOCOL_BASELINE.md).

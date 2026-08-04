@@ -92,6 +92,50 @@ func `media cache reads do not wait for index maintenance`() async throws {
 }
 
 @Test
+func `media cache clear cannot be undone by an older suspended insert`() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let insertedURL = try #require(URL(string: "https://cdn.example/inserted"))
+    let indexLoad = SuspendedMediaCacheIndexLoad()
+    let cache = try MediaCache(
+        maximumBytes: 1_024,
+        directory: root,
+        beforeIndexLoad: indexLoad.pause
+    )
+    let insert = Task {
+        try await cache.insert(Data("old-media".utf8), for: insertedURL)
+    }
+    #expect(await indexLoad.waitUntilPaused())
+
+    let clear = Task { try await cache.removeAll() }
+    for _ in 0 ..< 20 { await Task.yield() }
+    indexLoad.resume()
+    try await insert.value
+    try await clear.value
+
+    #expect(try await cache.currentByteCount() == 0)
+    #expect(try await cache.data(for: insertedURL) == nil)
+}
+
+@Test
+func `concurrent media cache clears coalesce`() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let cache = try MediaCache(maximumBytes: 1_024, directory: root)
+    let url = try #require(URL(string: "https://cdn.example/cached"))
+    try await cache.insert(Data("cached-media".utf8), for: url)
+
+    async let firstClear: Void = cache.removeAll()
+    async let secondClear: Void = cache.removeAll()
+    _ = try await (firstClear, secondClear)
+
+    #expect(try await cache.currentByteCount() == 0)
+    #expect(try await cache.data(for: url) == nil)
+}
+
+@Test
 func `media cache tracks failed evictions and retries them`() async throws {
     let root = FileManager.default.temporaryDirectory
         .appending(path: UUID().uuidString, directoryHint: .isDirectory)

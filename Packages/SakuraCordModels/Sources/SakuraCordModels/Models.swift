@@ -1896,53 +1896,7 @@ public enum ClientEvent: Equatable, Sendable {
     case guildLayoutChanged(guilds: [Guild], railItems: [GuildRailItem])
     case guildRolesChanged(guildID: GuildID, roles: [GuildRole])
     case currentUserChanged(User)
-    case gatewayFeatureChanged(GatewayFeatureEvent)
     case applicationCommandIndexInvalidated(ApplicationCommandIndexTarget)
     case applicationCommandAutocomplete(ApplicationCommandAutocompleteResult)
     case interaction(InteractionEvent)
-}
-
-public struct GatewayFeatureEvent: Equatable, Sendable {
-    public enum Kind: String, Codable, Equatable, Sendable {
-        case stickers
-        case soundboard
-        case scheduledEvent
-        case stageInstance
-        case pollVote
-        case integration
-        case webhook
-        case autoModeration
-        case entitlement
-        case subscription
-    }
-
-    public enum Operation: String, Codable, Equatable, Sendable {
-        case create, update, delete, replace, add, remove, execute
-    }
-
-    public var kind: Kind
-    public var operation: Operation
-    public var guildID: GuildID?
-    public var channelID: ChannelID?
-    public var entityID: String?
-    public var relatedID: String?
-    public var userID: UserID?
-
-    public init(
-        kind: Kind,
-        operation: Operation,
-        guildID: GuildID? = nil,
-        channelID: ChannelID? = nil,
-        entityID: String? = nil,
-        relatedID: String? = nil,
-        userID: UserID? = nil
-    ) {
-        self.kind = kind
-        self.operation = operation
-        self.guildID = guildID
-        self.channelID = channelID
-        self.entityID = entityID
-        self.relatedID = relatedID
-        self.userID = userID
-    }
 }

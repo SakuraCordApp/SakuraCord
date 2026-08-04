@@ -5,12 +5,6 @@ import Testing
 
 @Suite(.serialized)
 struct GatewayLifecycleEventTests {
-    private struct FeatureCase {
-        var name: String
-        var kind: GatewayFeatureEvent.Kind
-        var operation: GatewayFeatureEvent.Operation
-    }
-
     private let guildID = GuildID(rawValue: 100)
     private let textChannelID = ChannelID(rawValue: 200)
     private let forumChannelID = ChannelID(rawValue: 201)
@@ -292,91 +286,6 @@ struct GatewayLifecycleEventTests {
         )
 
         #expect(GatewayDispatchCountingURLProtocol.requestCount == 0)
-    }
-
-    @Test func `unsupported feature families cross the typed gateway boundary`() async {
-        let provider = makeProvider()
-        let events = await provider.eventStream()
-        var iterator = events.makeAsyncIterator()
-        let cases: [FeatureCase] = [
-            .init(name: "GUILD_SOUNDBOARD_SOUND_CREATE", kind: .soundboard, operation: .create),
-            .init(name: "GUILD_SOUNDBOARD_SOUND_UPDATE", kind: .soundboard, operation: .update),
-            .init(name: "GUILD_SOUNDBOARD_SOUND_DELETE", kind: .soundboard, operation: .delete),
-            .init(name: "GUILD_SOUNDBOARD_SOUNDS_UPDATE", kind: .soundboard, operation: .replace),
-            .init(name: "GUILD_SCHEDULED_EVENT_CREATE", kind: .scheduledEvent, operation: .create),
-            .init(name: "GUILD_SCHEDULED_EVENT_UPDATE", kind: .scheduledEvent, operation: .update),
-            .init(name: "GUILD_SCHEDULED_EVENT_DELETE", kind: .scheduledEvent, operation: .delete),
-            .init(name: "GUILD_SCHEDULED_EVENT_USER_ADD", kind: .scheduledEvent, operation: .add),
-            .init(name: "GUILD_SCHEDULED_EVENT_USER_REMOVE", kind: .scheduledEvent, operation: .remove),
-            .init(name: "GUILD_SCHEDULED_EVENT_EXCEPTION_CREATE", kind: .scheduledEvent, operation: .create),
-            .init(name: "GUILD_SCHEDULED_EVENT_EXCEPTION_UPDATE", kind: .scheduledEvent, operation: .update),
-            .init(name: "GUILD_SCHEDULED_EVENT_EXCEPTION_DELETE", kind: .scheduledEvent, operation: .delete),
-            .init(name: "GUILD_SCHEDULED_EVENT_EXCEPTIONS_DELETE", kind: .scheduledEvent, operation: .delete),
-            .init(name: "STAGE_INSTANCE_CREATE", kind: .stageInstance, operation: .create),
-            .init(name: "STAGE_INSTANCE_UPDATE", kind: .stageInstance, operation: .update),
-            .init(name: "STAGE_INSTANCE_DELETE", kind: .stageInstance, operation: .delete),
-            .init(name: "MESSAGE_POLL_VOTE_ADD", kind: .pollVote, operation: .add),
-            .init(name: "MESSAGE_POLL_VOTE_REMOVE", kind: .pollVote, operation: .remove),
-            .init(name: "INTEGRATION_CREATE", kind: .integration, operation: .create),
-            .init(name: "INTEGRATION_UPDATE", kind: .integration, operation: .update),
-            .init(name: "INTEGRATION_DELETE", kind: .integration, operation: .delete),
-            .init(name: "GUILD_INTEGRATIONS_UPDATE", kind: .integration, operation: .replace),
-            .init(name: "WEBHOOKS_UPDATE", kind: .webhook, operation: .update),
-            .init(name: "AUTO_MODERATION_RULE_CREATE", kind: .autoModeration, operation: .create),
-            .init(name: "AUTO_MODERATION_RULE_UPDATE", kind: .autoModeration, operation: .update),
-            .init(name: "AUTO_MODERATION_RULE_DELETE", kind: .autoModeration, operation: .delete),
-            .init(name: "AUTO_MODERATION_ACTION_EXECUTION", kind: .autoModeration, operation: .execute),
-            .init(name: "AUTO_MODERATION_MENTION_RAID_DETECTION", kind: .autoModeration, operation: .execute),
-            .init(name: "ENTITLEMENT_CREATE", kind: .entitlement, operation: .create),
-            .init(name: "ENTITLEMENT_UPDATE", kind: .entitlement, operation: .update),
-            .init(name: "ENTITLEMENT_DELETE", kind: .entitlement, operation: .delete),
-            .init(name: "SUBSCRIPTION_CREATE", kind: .subscription, operation: .create),
-            .init(name: "SUBSCRIPTION_UPDATE", kind: .subscription, operation: .update),
-            .init(name: "SUBSCRIPTION_DELETE", kind: .subscription, operation: .delete),
-        ]
-
-        for featureCase in cases {
-            var payload: [String: JSONValue] = [
-                "id": .string("900"), "guild_id": .string("100"),
-                "channel_id": .string("200"), "user_id": .string("1"),
-            ]
-            if featureCase.kind == .pollVote { payload["answer_id"] = .number(3) }
-            await provider.receiveGatewayDispatchForTesting(
-                name: featureCase.name,
-                data: .object(payload)
-            )
-            guard case .gatewayFeatureChanged(let event) = await iterator.next() else {
-                Issue.record("\(featureCase.name) did not publish a typed feature event")
-                continue
-            }
-            #expect(event.kind == featureCase.kind)
-            #expect(event.operation == featureCase.operation)
-            #expect(event.guildID == guildID)
-            #expect(event.channelID == textChannelID)
-            #expect(event.entityID == "900")
-            #expect(event.relatedID == (featureCase.kind == .pollVote ? "3" : nil))
-            #expect(event.userID == currentUserID)
-        }
-
-        await provider.receiveGatewayDispatchForTesting(
-            name: "GUILD_STICKERS_UPDATE",
-            data: .object([
-                "guild_id": .string("100"),
-                "stickers": .array([
-                    .object([
-                        "id": .string("901"), "name": .string("Sakura"),
-                        "format_type": .number(1), "guild_id": .string("100"),
-                    ])
-                ]),
-            ])
-        )
-        guard case .gatewayFeatureChanged(let stickerEvent) = await iterator.next() else {
-            Issue.record("GUILD_STICKERS_UPDATE did not publish a typed feature event")
-            return
-        }
-        #expect(stickerEvent.kind == .stickers)
-        #expect(stickerEvent.operation == .replace)
-        #expect(await provider.cachedGuildStickersForTesting(guildID: guildID).first?.name == "Sakura")
     }
 
     private func verifyCreateDispatches(on provider: DiscordRESTProvider) async {

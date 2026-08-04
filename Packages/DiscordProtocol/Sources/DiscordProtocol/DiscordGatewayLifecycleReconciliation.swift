@@ -1,57 +1,7 @@
 import Foundation
 import SakuraCordModels
 
-struct GatewayFeatureMapping {
-    var kind: GatewayFeatureEvent.Kind
-    var operation: GatewayFeatureEvent.Operation
-}
-
 extension DiscordRESTProvider {
-    static let gatewayFeatureMappings: [String: GatewayFeatureMapping] = [
-        "GUILD_SOUNDBOARD_SOUND_CREATE": .init(kind: .soundboard, operation: .create),
-        "GUILD_SOUNDBOARDS_SOUND_CREATE": .init(kind: .soundboard, operation: .create),
-        "GUILD_SOUNDBOARD_SOUND_UPDATE": .init(kind: .soundboard, operation: .update),
-        "GUILD_SOUNDBOARDS_SOUND_UPDATE": .init(kind: .soundboard, operation: .update),
-        "GUILD_SOUNDBOARD_SOUND_DELETE": .init(kind: .soundboard, operation: .delete),
-        "GUILD_SOUNDBOARDS_SOUND_DELETE": .init(kind: .soundboard, operation: .delete),
-        "GUILD_SOUNDBOARD_SOUNDS_UPDATE": .init(kind: .soundboard, operation: .replace),
-        "SOUNDBOARD_SOUNDS": .init(kind: .soundboard, operation: .replace),
-        "GUILD_SCHEDULED_EVENT_CREATE": .init(kind: .scheduledEvent, operation: .create),
-        "GUILD_SCHEDULED_EVENT_UPDATE": .init(kind: .scheduledEvent, operation: .update),
-        "GUILD_SCHEDULED_EVENT_DELETE": .init(kind: .scheduledEvent, operation: .delete),
-        "GUILD_SCHEDULED_EVENT_USER_ADD": .init(kind: .scheduledEvent, operation: .add),
-        "GUILD_SCHEDULED_EVENT_USER_REMOVE": .init(kind: .scheduledEvent, operation: .remove),
-        "GUILD_SCHEDULED_EVENT_EXCEPTION_CREATE": .init(kind: .scheduledEvent, operation: .create),
-        "GUILD_SCHEDULED_EVENT_EXCEPTION_UPDATE": .init(kind: .scheduledEvent, operation: .update),
-        "GUILD_SCHEDULED_EVENT_EXCEPTION_DELETE": .init(kind: .scheduledEvent, operation: .delete),
-        "GUILD_SCHEDULED_EVENT_EXCEPTIONS_DELETE": .init(kind: .scheduledEvent, operation: .delete),
-        "STAGE_INSTANCE_CREATE": .init(kind: .stageInstance, operation: .create),
-        "STAGE_INSTANCE_UPDATE": .init(kind: .stageInstance, operation: .update),
-        "STAGE_INSTANCE_DELETE": .init(kind: .stageInstance, operation: .delete),
-        "MESSAGE_POLL_VOTE_ADD": .init(kind: .pollVote, operation: .add),
-        "MESSAGE_POLL_VOTE_REMOVE": .init(kind: .pollVote, operation: .remove),
-        "INTEGRATION_CREATE": .init(kind: .integration, operation: .create),
-        "INTEGRATION_UPDATE": .init(kind: .integration, operation: .update),
-        "INTEGRATION_DELETE": .init(kind: .integration, operation: .delete),
-        "GUILD_INTEGRATIONS_UPDATE": .init(kind: .integration, operation: .replace),
-        "WEBHOOKS_UPDATE": .init(kind: .webhook, operation: .update),
-        "AUTO_MODERATION_RULE_CREATE": .init(kind: .autoModeration, operation: .create),
-        "AUTO_MODERATION_RULE_UPDATE": .init(kind: .autoModeration, operation: .update),
-        "AUTO_MODERATION_RULE_DELETE": .init(kind: .autoModeration, operation: .delete),
-        "AUTO_MODERATION_ACTION_EXECUTION": .init(kind: .autoModeration, operation: .execute),
-        "AUTO_MODERATION_MENTION_RAID_DETECTION": .init(kind: .autoModeration, operation: .execute),
-        "ENTITLEMENT_CREATE": .init(kind: .entitlement, operation: .create),
-        "ENTITLEMENT_UPDATE": .init(kind: .entitlement, operation: .update),
-        "ENTITLEMENT_DELETE": .init(kind: .entitlement, operation: .delete),
-        "SUBSCRIPTION_CREATE": .init(kind: .subscription, operation: .create),
-        "SUBSCRIPTION_UPDATE": .init(kind: .subscription, operation: .update),
-        "SUBSCRIPTION_DELETE": .init(kind: .subscription, operation: .delete),
-    ]
-
-    static func gatewayFeatureMapping(for eventName: String) -> GatewayFeatureMapping? {
-        gatewayFeatureMappings[eventName]
-    }
-
     func removeGuild(_ guildID: GuildID) {
         var channelIDs = Set(
             (cachedChannels[guildID] ?? []).map(\.id)
@@ -66,7 +16,6 @@ extension DiscordRESTProvider {
         cachedChannels[guildID] = nil
         cachedGuildChannelDTOs[guildID] = nil
         cachedGuildRoles[guildID] = nil
-        cachedGuildStickers[guildID] = nil
         cachedMembers[guildID] = nil
         cachedMemberListItems[guildID] = nil
         cachedMemberListGroups[guildID] = nil

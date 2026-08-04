@@ -306,10 +306,6 @@ extension DiscordRESTProvider {
             cachedMembers[guildID] ?? []
         }
 
-        func cachedGuildStickersForTesting(guildID: GuildID) -> [MessageSticker] {
-            cachedGuildStickers[guildID] ?? []
-        }
-
         func gatewayOpcodeIsRateLimitedForTesting(_ opcode: Int) -> Bool {
             gatewayOpcodeRateLimitDates[opcode].map { $0 > Date() } ?? false
         }
@@ -638,7 +634,6 @@ extension DiscordRESTProvider {
                 cachedMemberListGroups = [:]
                 cachedGuildChannelDTOs = [:]
                 cachedGuildRoles = [:]
-                cachedGuildStickers = [:]
                 cachedForumPosts = [:]
                 gatewayOpcodeRateLimitDates = [:]
                 requestedHistoryMemberIDs = [:]
@@ -989,20 +984,6 @@ extension DiscordRESTProvider {
                 let emojis = update.emojis
             else { return }
             publishEmojiCollection(emojis, guildID: guildID)
-        case "GUILD_STICKERS_UPDATE":
-            guard
-                let update = try? JSONDecoder().decode(
-                    GatewayGuildStickersUpdateDTO.self, from: data
-                ), let guildID = GuildID(update.guildID)
-            else { return }
-            cachedGuildStickers[guildID] = update.stickers.map(\.domain)
-            continuation?.yield(
-                .gatewayFeatureChanged(
-                    GatewayFeatureEvent(
-                        kind: .stickers, operation: .replace, guildID: guildID
-                    )
-                )
-            )
         case "GUILD_ROLE_CREATE", "GUILD_ROLE_UPDATE":
             guard
                 let update = try? JSONDecoder().decode(
@@ -1668,14 +1649,7 @@ extension DiscordRESTProvider {
                 )
             )
         default:
-            guard let mapping = Self.gatewayFeatureMapping(for: name),
-                  let event = try? JSONDecoder().decode(
-                      GatewayFeatureIdentifierDTO.self, from: data
-                  )
-            else { return }
-            publishFeatureEvent(
-                event, kind: mapping.kind, operation: mapping.operation
-            )
+            return
         }
         }
     }
@@ -1831,26 +1805,6 @@ extension DiscordRESTProvider {
             continuation?.yield(.currentUserRolesChanged(guildID: guildID, roleIDs: []))
             clearCurrentUserPermissionSnapshot(guildID)
         }
-    }
-
-    func publishFeatureEvent(
-        _ dto: GatewayFeatureIdentifierDTO,
-        kind: GatewayFeatureEvent.Kind,
-        operation: GatewayFeatureEvent.Operation
-    ) {
-        continuation?.yield(
-            .gatewayFeatureChanged(
-                GatewayFeatureEvent(
-                    kind: kind,
-                    operation: operation,
-                    guildID: dto.guildID.flatMap(GuildID.init),
-                    channelID: dto.channelID.flatMap(ChannelID.init),
-                    entityID: dto.entityID,
-                    relatedID: dto.relatedID,
-                    userID: dto.userID.flatMap(UserID.init)
-                )
-            )
-        )
     }
 
     func applyGuildSettingsProto(

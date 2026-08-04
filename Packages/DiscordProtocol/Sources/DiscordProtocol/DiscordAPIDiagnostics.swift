@@ -11,6 +11,7 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
     private struct DiskCapture {
         let fileURL: URL
         let handle: FileHandle
+        var byteCount: Int
     }
 
     private struct RetainedEntry {
@@ -136,6 +137,7 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
 
     private let lock = NSLock()
     private let maximumRetainedBytes: Int
+    private let maximumDiskBytes: Int
     private let configuredDiskDirectoryURL: URL?
     private var state: State
 
@@ -143,10 +145,12 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
         maximumEntries: Int = 5_000,
         maximumRetainedBytes: Int = 8 * 1_024 * 1_024,
         capturesPayloadDetails: Bool = false,
-        diskDirectoryURL: URL? = nil
+        diskDirectoryURL: URL? = nil,
+        maximumDiskBytes: Int = 64 * 1_024 * 1_024
     ) {
         let capacity = max(1, maximumEntries)
         self.maximumRetainedBytes = max(1, maximumRetainedBytes)
+        self.maximumDiskBytes = max(1, maximumDiskBytes)
         configuredDiskDirectoryURL = diskDirectoryURL
         state = State(
             capacity: capacity,
@@ -199,7 +203,8 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
                 guard state.diskCapture == nil else { return }
                 do {
                     state.diskCapture = try Self.makeDiskCapture(
-                        directoryURL: diskDirectoryURL
+                        directoryURL: diskDirectoryURL,
+                        maximumBytes: maximumDiskBytes
                     )
                 } catch {
                     state.diskLoggingErrorDescription = String(
@@ -471,9 +476,19 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
                 estimatedByteCount: estimatedByteCount,
                 maximumRetainedBytes: maximumRetainedBytes
             )
-            guard let capture = state.diskCapture else { return }
+            guard var capture = state.diskCapture else { return }
             do {
-                try capture.handle.write(contentsOf: Self.encodedJSONLine(entry))
+                let line = try Self.encodedJSONLine(entry)
+                guard capture.byteCount + line.count <= maximumDiskBytes else {
+                    try? capture.handle.close()
+                    state.diskCapture = nil
+                    state.diskLoggingErrorDescription =
+                        "Disk diagnostics reached the per-session size limit and stopped."
+                    return
+                }
+                try capture.handle.write(contentsOf: line)
+                capture.byteCount += line.count
+                state.diskCapture = capture
             } catch {
                 try? capture.handle.close()
                 state.diskCapture = nil
@@ -720,7 +735,10 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
             .appending(path: "Diagnostics", directoryHint: .isDirectory)
     }
 
-    private static func makeDiskCapture(directoryURL: URL) throws -> DiskCapture {
+    private static func makeDiskCapture(
+        directoryURL: URL,
+        maximumBytes: Int
+    ) throws -> DiskCapture {
         let fileManager = FileManager.default
         try fileManager.createDirectory(
             at: directoryURL,
@@ -759,13 +777,21 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
                 redaction:
                     "Sensitive and user-authored values, URLs, IDs, nonces, request IDs, and rate-limit bucket IDs are discarded before writing."
             )
-            try handle.write(contentsOf: encodedJSONLine(metadata))
+            let line = try encodedJSONLine(metadata)
+            guard line.count <= maximumBytes else {
+                throw CocoaError(.fileWriteOutOfSpace)
+            }
+            try handle.write(contentsOf: line)
+            return DiskCapture(
+                fileURL: fileURL,
+                handle: handle,
+                byteCount: line.count
+            )
         } catch {
             try? handle.close()
             try? fileManager.removeItem(at: fileURL)
             throw error
         }
-        return DiskCapture(fileURL: fileURL, handle: handle)
     }
 
     private static func encodedJSONLine<Value: Encodable>(

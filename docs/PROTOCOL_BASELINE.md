@@ -162,7 +162,7 @@ and retained as evidence.
 | `GET /collectibles-products/{product}` | At most one cache-miss read for a profile effect returned by the profile response; query contains the current `locale`. | Current first-party route; P−, S−. The obsolete `/user-profile-effects` fallback was removed. |
 | `GET /guilds/{guild}/emojis` | Stale/missing Gateway and disk-cache fallback; no body, coalesced. | Public emoji semantics and all three client references. |
 | `GET /users/@me/settings-proto/2` | Explicit emoji-settings cache miss; no body, coalesced for the provider session. | Current first-party, Paicord, and Swiftcord's versioned settings-proto path. |
-| `GET /channels/{channel}/messages` | Visible history only; the current clean client uses `limit=10` for a newly selected uncached channel, which SakuraCord matches once per channel per process. Reopening a loaded channel restores its bounded session-memory page and sends no history request. Older-page pagination uses ordered `before` then `limit=50`; no body. | Public message semantics and all three client references. Paicord retains a per-channel in-memory store and uses a historical 50-message initial page. Swiftcord v1 clears and refetches 50 on channel change; the current first-party cache behavior takes precedence. |
+| `GET /channels/{channel}/messages` | Visible history only; guild history requires effective `VIEW_CHANNEL` and `READ_MESSAGE_HISTORY`, and voice-channel history additionally requires `CONNECT`. The current clean client uses `limit=10` for a newly selected uncached channel, which SakuraCord matches once per channel per uninterrupted Gateway connection. Reopening a loaded channel restores its bounded session-memory page and sends no history request. After a Gateway gap, the retained page is presented immediately but its completeness marker is invalidated; returning to Ready refreshes the selected page once and later reopened pages refresh once on selection. Older-page pagination uses ordered `before` then `limit=50`; no body. | Public message semantics, current first-party permission/message paths and stale-connection refresh, and Paicord's permission-checked channel store. Swiftcord v1 checks `VIEW_CHANNEL` before presentation but otherwise supplies only a historical unguarded/refetching history path. Paicord retains a per-channel in-memory store and uses a historical 50-message initial page. The current first-party cache behavior and connection-generation invalidation take precedence. |
 | `GET /channels/{thread}` | One unknown-thread deep-link resolution; no body. | Public channel semantics and all three references. |
 | `POST /channels/{forum}/threads?use_nested_fields=true` | Explicit forum creation; `name`, `auto_archive_duration`, ordered `applied_tags`, nested `message` with `content`, `sticker_ids:[]`, and attachments only when uploaded. | Current first-party action; Paicord and Swiftcord have only partial/historical thread creation. |
 | `GET /channels/{forum}/threads/search` | Forum catalogue: `archived=true`, `sort_by`, `sort_order=desc`, `limit`, `offset`, and optional `tag`/`tag_setting`; name search adds `name`. | Current first-party route; P−, S−. |
@@ -354,13 +354,12 @@ exception dispatches.
   locally, and a rejected member request completes its pending continuation
   with an error. SakuraCord does not replay, retry early, or speculate about a
   replacement Gateway request.
-- Sticker snapshots are cached. Soundboard, scheduled-event and exception,
-  Stage, poll-vote, integration, webhook, AutoMod, entitlement, and
-  subscription dispatches cross a typed feature-event boundary with their
-  operation and available guild, channel, entity, related, and user
-  identifiers. These
-  families invalidate only local feature state; they do not enable an
-  unsupported feature, add fan-out, or trigger an authenticated read.
+- Sticker, soundboard, scheduled-event and exception, Stage, poll-vote,
+  integration, webhook, AutoMod, entitlement, and subscription dispatches have
+  no production state consumer. They are deliberately ignored after sanitized
+  transport diagnostics instead of occupying the application event stream or
+  maintaining unused caches. They do not enable an unsupported feature, add
+  fan-out, or trigger an authenticated read.
 
 All of these paths use sanitized deterministic dispatch fixtures. Their
 request budget is zero: a received dispatch mutates local state and never
@@ -553,8 +552,10 @@ implementation records.
 - Server folders decode from Ready `user_settings_proto` and subsequent
   settings updates. Folder rendering, ordering, and expansion add no REST
   request.
-- Selecting voice-channel text chat uses the ordinary one-page message-history
-  read and does not join voice. Reopening an already open pane adds no request.
+- Selecting accessible voice-channel text chat uses the ordinary one-page
+  message-history read and does not join voice. Effective `VIEW_CHANNEL`,
+  `READ_MESSAGE_HISTORY`, and `CONNECT` are required before that read;
+  reopening an already open pane adds no request.
 
 ### Guild metadata and member lookup
 

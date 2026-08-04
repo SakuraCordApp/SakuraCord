@@ -101,7 +101,6 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var cachedEmojiUserSettings: EmojiUserSettings?
     var emojiUserSettingsTask: Task<EmojiUserSettings, Error>?
     var cachedReactionReactors: [ReactionReactorCacheKey: [ReactionReactor]] = [:]
-    var cachedGuildStickers: [GuildID: [MessageSticker]] = [:]
     var gatewayOpcodeRateLimitDates: [Int: Date] = [:]
     var reactionReactorCacheOrder: [ReactionReactorCacheKey] = []
     var reactionReactorTasks: [ReactionReactorCacheKey: Task<[ReactionReactor], Error>] =

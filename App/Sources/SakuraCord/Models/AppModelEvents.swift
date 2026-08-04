@@ -510,7 +510,7 @@ extension AppModel {
         case .snapshotChanged(let value):
             consumeSnapshotChanged(value)
         case .guildChanged, .guildLayoutChanged, .guildRolesChanged,
-             .currentUserChanged, .gatewayFeatureChanged:
+             .currentUserChanged:
             consumeGatewayWorkspaceStateEvent(event)
         case .applicationCommandIndexInvalidated(let target):
             if commandComposer.invalidated(target) {
@@ -535,11 +535,6 @@ extension AppModel {
             applyGuildRoles(roles, to: guildID)
         case .currentUserChanged(let user):
             consumeCurrentUserChanged(user)
-        case .gatewayFeatureChanged(let feature):
-            // Unsupported feature families still cross the typed event boundary
-            // so they are observable and testable instead of disappearing in
-            // the provider's default Gateway branch.
-            lastGatewayFeatureEvent = feature
         default:
             break
         }
@@ -584,16 +579,33 @@ extension AppModel {
     }
 
     func consumeConnectionChange(_ state: ConnectionState) {
+        let previousState = connectionState
         connectionState = state
         if state != .ready {
+            if previousState == .ready {
+                // A resumed session can reconcile missed messages through the
+                // Gateway, but a failed resume followed by a fresh Ready cannot:
+                // Ready contains channel boundaries, not message history. Keep
+                // the bounded rows for immediate presentation while forcing one
+                // authoritative newest-page refresh per reopened conversation.
+                hasMoreCache.removeAll(keepingCapacity: true)
+            }
             stopLocalTyping(clearThrottle: true)
             typingState.clearAll()
-        } else if let channel = selectedChannel,
-                  channel.kind == .directMessage || channel.kind == .groupDirectMessage
-        {
-            let account = accountSession()
-            startAccountChildTask(account: account) { model, account in
-                await model.observePrivateCall(in: channel, account: account)
+        } else {
+            if previousState != .ready,
+               selectedChannelID != nil,
+               hasCompletedInitialMessageLoad
+            {
+                beginSelectedChannelLoad()
+            }
+            if let channel = selectedChannel,
+               channel.kind == .directMessage || channel.kind == .groupDirectMessage
+            {
+                let account = accountSession()
+                startAccountChildTask(account: account) { model, account in
+                    await model.observePrivateCall(in: channel, account: account)
+                }
             }
         }
     }

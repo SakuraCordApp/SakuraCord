@@ -316,7 +316,6 @@ extension AppModel {
             } catch {
                 guard accountSessionGeneration == transitionGeneration else { return }
                 errorMessage = error.localizedDescription
-                return
             }
         }
         credentialHandle = nil
@@ -433,8 +432,38 @@ extension AppModel {
             )
             guard isCurrentAccountSession(session) else { return }
         } catch {
-            handleSessionStartFailure(error, account: session)
+            await failAuthenticatedSessionStart(error, account: session)
         }
+    }
+
+    func failAuthenticatedSessionStart(
+        _ error: any Error,
+        account session: AppModelAccountSession
+    ) async {
+        guard isCurrentAccountSession(session) else { return }
+        guard launchMode == .normal else {
+            handleSessionStartFailure(error, account: session)
+            return
+        }
+
+        await session.provider.disconnect()
+        eventTask?.cancel()
+        await eventTask?.value
+        guard isCurrentAccountSession(session) else { return }
+        eventTask = nil
+        await drainAccountChildTasks()
+        guard isCurrentAccountSession(session) else { return }
+
+        installAccountSession(provider: SignedOutChatProvider(), database: nil)
+        credentialHandle = nil
+        activeAccountID = nil
+        supportedCapabilities = []
+        connectionState = .disconnected
+        readState.reset(accountID: nil)
+        commandComposer.configureFrecencyScope("signed-out")
+        resetAccountPresentationState()
+        isLoading = false
+        handleSessionStartFailure(error, account: accountSession())
     }
 
     func installEventTask(

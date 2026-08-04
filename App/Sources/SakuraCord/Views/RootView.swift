@@ -120,7 +120,7 @@ private struct ChatRootView: View {
                 if columnVisibility != .detailOnly {
                     if model.isSwitchingAccounts {
                         SkeletonShimmerTimeline {
-                            SkeletonShape(cornerRadius: 4, pulse: false)
+                            SkeletonShape(cornerRadius: 4)
                                 .frame(width: 132, height: 14)
                         }
                         .offset(
@@ -294,9 +294,9 @@ private struct ChatRootView: View {
             ToolbarItem(placement: .navigation) {
                 SkeletonShimmerTimeline {
                     HStack(spacing: 8) {
-                        SkeletonShape(cornerRadius: 4, pulse: false)
+                        SkeletonShape(cornerRadius: 4)
                             .frame(width: 16, height: 16)
-                        SkeletonShape(cornerRadius: 4, pulse: false, delay: 0.08)
+                        SkeletonShape(cornerRadius: 4)
                             .frame(width: 112, height: 13)
                     }
                     .padding(.horizontal, 8)
@@ -359,7 +359,7 @@ private struct ChatRootView: View {
             ToolbarItem {
                 SkeletonShimmerTimeline {
                     HStack(spacing: 0) {
-                        SkeletonShape(cornerRadius: 6, pulse: false)
+                        SkeletonShape(cornerRadius: 6)
                             .frame(width: 20, height: 20)
                     }
                     .padding(.horizontal, 8)

@@ -392,6 +392,35 @@ import Testing
     #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
 }
 
+@Test func `disk diagnostics stop at their per session byte limit`() throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appending(path: "SakuraCordDiagnosticsLimitTests-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let maximumDiskBytes = 1_024
+    let store = DiscordAPIDiagnosticStore(
+        maximumEntries: 10,
+        diskDirectoryURL: directory,
+        maximumDiskBytes: maximumDiskBytes
+    )
+    try store.setSavesDiagnosticsToDisk(true)
+    let fileURL = try #require(store.currentDiskLogURL)
+
+    for _ in 0 ..< 100 {
+        store.recordHTTPRequest(
+            method: "GET",
+            path: "/channels/111111111111111111/messages",
+            body: nil,
+            attempt: 1
+        )
+    }
+
+    #expect(!store.savesDiagnosticsToDisk)
+    #expect(store.diskLoggingErrorDescription != nil)
+    let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+    let byteCount = try #require(attributes[.size] as? NSNumber).intValue
+    #expect(byteCount <= maximumDiskBytes)
+}
+
 @Test func `central REST transport records one request and one response`() async throws {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [DiagnosticsURLProtocol.self]

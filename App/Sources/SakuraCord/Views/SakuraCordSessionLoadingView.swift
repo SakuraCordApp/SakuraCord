@@ -11,7 +11,6 @@ struct SakuraCordSessionLoadingView: View {
     var isEmbeddedInWorkspace = false
     var embeddedSidebarWidth = ChatChromeMetrics.serverRailWidth + 230
 
-    private let pulse = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
@@ -50,7 +49,7 @@ struct SakuraCordSessionLoadingView: View {
             }
         }
         .overlay(alignment: .topLeading) {
-            SkeletonShape(cornerRadius: 4, pulse: pulse)
+            SkeletonShape(cornerRadius: 4)
                 .frame(width: 132, height: 14)
                 .offset(
                     x: ChatChromeMetrics.sidebarTitleLeadingOffset,
@@ -76,13 +75,10 @@ struct SakuraCordSessionLoadingView: View {
     private var serverRail: some View {
         ScrollView {
             VStack(spacing: 10) {
-                railItem(cornerRadius: 14, delay: 0)
+                railItem(cornerRadius: 14)
                 Divider().padding(.horizontal, 12)
                 ForEach(0 ..< 7, id: \.self) { index in
-                    railItem(
-                        cornerRadius: index == 0 ? 14 : 22,
-                        delay: Double(index + 1) * 0.06
-                    )
+                    railItem(cornerRadius: index == 0 ? 14 : 22)
                 }
             }
             .padding(
@@ -97,10 +93,10 @@ struct SakuraCordSessionLoadingView: View {
         .frame(width: ChatChromeMetrics.serverRailWidth)
     }
 
-    private func railItem(cornerRadius: CGFloat, delay: Double) -> some View {
+    private func railItem(cornerRadius: CGFloat) -> some View {
         HStack(spacing: 5) {
             Color.clear.frame(width: 7, height: 40)
-            SkeletonShape(cornerRadius: cornerRadius, pulse: pulse, delay: delay)
+            SkeletonShape(cornerRadius: cornerRadius)
                 .frame(width: 44, height: 44)
         }
         .frame(width: ChatChromeMetrics.serverRailWidth, height: 46, alignment: .leading)
@@ -113,23 +109,15 @@ struct SakuraCordSessionLoadingView: View {
                     Section {
                         ForEach(0 ..< (section == 1 ? 4 : 3), id: \.self) { row in
                             HStack(spacing: 8) {
-                                SkeletonShape(
-                                    cornerRadius: 4,
-                                    pulse: pulse,
-                                    delay: Double(row + section) * 0.05
-                                )
+                                SkeletonShape(cornerRadius: 4)
                                 .frame(width: 16, height: 16)
-                                SkeletonShape(
-                                    cornerRadius: 4,
-                                    pulse: pulse,
-                                    delay: Double(row + section) * 0.05
-                                )
+                                SkeletonShape(cornerRadius: 4)
                                 .frame(width: row.isMultiple(of: 2) ? 112 : 84, height: 12)
                             }
                             .frame(height: 24)
                         }
                     } header: {
-                        SkeletonShape(cornerRadius: 3, pulse: pulse, delay: Double(section) * 0.08)
+                        SkeletonShape(cornerRadius: 3)
                             .frame(width: section == 1 ? 88 : 68, height: 9)
                             .padding(.top, section == 0 ? 0 : 8)
                     }
@@ -141,16 +129,16 @@ struct SakuraCordSessionLoadingView: View {
 
             GlassEffectContainer(spacing: 0) {
                 HStack(spacing: 9) {
-                    SkeletonShape(cornerRadius: 17, pulse: pulse)
+                    SkeletonShape(cornerRadius: 17)
                         .frame(width: 34, height: 34)
                     VStack(alignment: .leading, spacing: 4) {
-                        SkeletonShape(cornerRadius: 4, pulse: pulse)
+                        SkeletonShape(cornerRadius: 4)
                             .frame(width: 88, height: 11)
-                        SkeletonShape(cornerRadius: 3, pulse: pulse, delay: 0.1)
+                        SkeletonShape(cornerRadius: 3)
                             .frame(width: 58, height: 8)
                     }
                     Spacer(minLength: 4)
-                    SkeletonShape(cornerRadius: 7, pulse: pulse, delay: 0.15)
+                    SkeletonShape(cornerRadius: 7)
                         .frame(width: 22, height: 22)
                 }
                 .padding(.horizontal, 10)
@@ -194,10 +182,7 @@ struct SakuraCordSessionLoadingView: View {
             bottomContentInset: ChatDetailLayoutPolicy.defaultFloatingFooterHeight
         )
         .overlay(alignment: .bottom) {
-            SkeletonShape(
-                cornerRadius: ChatChromeMetrics.composerMinimumCornerRadius,
-                pulse: pulse
-            )
+            SkeletonShape(cornerRadius: ChatChromeMetrics.composerMinimumCornerRadius)
             .frame(height: ChatChromeMetrics.controlHeight)
             .padding(.horizontal, ChatChromeMetrics.composerWindowInset)
             .padding(.bottom, ChatChromeMetrics.composerWindowInset)
@@ -208,20 +193,20 @@ struct SakuraCordSessionLoadingView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(0 ..< 2, id: \.self) { section in
-                    SkeletonShape(cornerRadius: 4, pulse: pulse, delay: Double(section) * 0.08)
+                    SkeletonShape(cornerRadius: 4)
                         .frame(width: section == 0 ? 92 : 70, height: 11)
                         .padding(.horizontal, 10)
                         .padding(.top, 12)
                         .padding(.bottom, 5)
                     ForEach(0 ..< (section == 0 ? 4 : 3), id: \.self) { index in
                         HStack(spacing: 10) {
-                            SkeletonShape(cornerRadius: 17, pulse: pulse, delay: Double(index) * 0.05)
+                            SkeletonShape(cornerRadius: 17)
                                 .frame(width: 34, height: 34)
                             VStack(alignment: .leading, spacing: 5) {
-                                SkeletonShape(cornerRadius: 4, pulse: pulse, delay: Double(index) * 0.05)
+                                SkeletonShape(cornerRadius: 4)
                                     .frame(width: index.isMultiple(of: 3) ? 108 : 78, height: 11)
                                 if index.isMultiple(of: 2) {
-                                    SkeletonShape(cornerRadius: 3, pulse: pulse, delay: Double(index) * 0.05)
+                                    SkeletonShape(cornerRadius: 3)
                                         .frame(width: 62, height: 8)
                                 }
                             }
@@ -244,9 +229,9 @@ struct SakuraCordSessionLoadingView: View {
     private var conversationToolbar: some ToolbarContent {
         ToolbarItem(placement: .navigation) {
             HStack(spacing: 8) {
-                SkeletonShape(cornerRadius: 4, pulse: pulse)
+                SkeletonShape(cornerRadius: 4)
                     .frame(width: 16, height: 16)
-                SkeletonShape(cornerRadius: 4, pulse: pulse, delay: 0.08)
+                SkeletonShape(cornerRadius: 4)
                     .frame(width: 112, height: 13)
             }
             .padding(.horizontal, 8)
@@ -260,7 +245,7 @@ struct SakuraCordSessionLoadingView: View {
         ToolbarSpacer(.flexible)
         ToolbarItem {
             HStack(spacing: 0) {
-                SkeletonShape(cornerRadius: 6, pulse: pulse)
+                SkeletonShape(cornerRadius: 6)
                     .frame(width: 20, height: 20)
             }
             .padding(.horizontal, 8)
@@ -284,8 +269,6 @@ struct SakuraCordSessionLoadingView: View {
 
 struct SkeletonShape: View {
     let cornerRadius: CGFloat
-    let pulse: Bool
-    var delay = 0.0
 
     var body: some View {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
