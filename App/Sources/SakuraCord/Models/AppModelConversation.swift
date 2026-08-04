@@ -1480,26 +1480,24 @@ extension AppModel {
     ) -> Bool {
         guard isComposerDropEligible(destination), !urls.isEmpty else { return false }
         var attachments = composerAttachments(for: destination)
-        var seen = Set(attachments.map(\.url.standardizedFileURL))
-        let unique = urls.filter { seen.insert($0.standardizedFileURL).inserted }
         let remaining = max(0, SendMessageDraft.maximumAttachmentCount - attachments.count)
         attachments.append(
-            contentsOf: unique.prefix(remaining).map { ForumPostAttachment(url: $0) }
+            contentsOf: urls.prefix(remaining).map { ForumPostAttachment(url: $0) }
         )
         setComposerAttachments(attachments, for: destination)
-        if unique.count > remaining {
+        if urls.count > remaining {
             errorMessage =
                 "You can attach up to \(SendMessageDraft.maximumAttachmentCount) files to one message."
         }
-        return remaining > 0 && !unique.isEmpty
+        return remaining > 0
     }
 
     func removeComposerAttachment(
-        _ url: URL,
+        _ id: UUID,
         from destination: MessageComposerDestination
     ) {
         var attachments = composerAttachments(for: destination)
-        attachments.removeAll { $0.url.standardizedFileURL == url.standardizedFileURL }
+        attachments.removeAll { $0.id == id }
         setComposerAttachments(attachments, for: destination)
     }
 
@@ -1508,7 +1506,7 @@ extension AppModel {
         in destination: MessageComposerDestination
     ) {
         var attachments = composerAttachments(for: destination)
-        guard let index = attachments.firstIndex(where: { $0.url == attachment.url }) else {
+        guard let index = attachments.firstIndex(where: { $0.id == attachment.id }) else {
             return
         }
         attachments[index] = attachment
@@ -1516,11 +1514,11 @@ extension AppModel {
     }
 
     func toggleComposerAttachmentSpoiler(
-        _ url: URL,
+        _ id: UUID,
         in destination: MessageComposerDestination
     ) {
         var attachments = composerAttachments(for: destination)
-        guard let index = attachments.firstIndex(where: { $0.url == url }) else { return }
+        guard let index = attachments.firstIndex(where: { $0.id == id }) else { return }
         attachments[index].isSpoiler.toggle()
         setComposerAttachments(attachments, for: destination)
     }
@@ -1534,9 +1532,9 @@ extension AppModel {
         to destination: MessageComposerDestination
     ) {
         let current = composerAttachments(for: destination)
-        var seen = Set(current.map(\.url.standardizedFileURL))
+        var seen = Set(current.map(\.id))
         let restored = restoredAttachments.filter {
-            seen.insert($0.url.standardizedFileURL).inserted
+            seen.insert($0.id).inserted
         }
         setComposerAttachments(
             Array((restored + current).prefix(SendMessageDraft.maximumAttachmentCount)),

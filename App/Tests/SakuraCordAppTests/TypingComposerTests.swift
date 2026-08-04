@@ -381,7 +381,7 @@ import Testing
 }
 
 @MainActor
-@Test func `composer stages at most ten unique attachments and clears them on navigation`() async {
+@Test func `composer stages at most ten attachments including repeated files and clears them on navigation`() async throws {
     let provider = TypingTestProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
@@ -389,12 +389,120 @@ import Testing
         URL(fileURLWithPath: "/tmp/sakuracord-composer-\($0)")
     }
 
-    #expect(model.addComposerAttachments(urls + [urls[0]], to: .channel))
-    #expect(model.channelComposerAttachments.map(\.url) == Array(urls.prefix(10)))
+    #expect(model.addComposerAttachments([urls[0], urls[0]] + urls.dropFirst(), to: .channel))
+    #expect(
+        model.channelComposerAttachments.map(\.url)
+            == [urls[0], urls[0]] + Array(urls.dropFirst().prefix(8))
+    )
+    #expect(Set(model.channelComposerAttachments.map(\.id)).count == 10)
     #expect(model.errorMessage?.contains("10") == true)
+
+    let firstID = try #require(model.channelComposerAttachments.first?.id)
+    model.removeComposerAttachment(firstID, from: .channel)
+    #expect(model.channelComposerAttachments.filter { $0.url == urls[0] }.count == 1)
 
     model.selectedChannelID = ChannelID(rawValue: 12)
     #expect(model.channelComposerAttachments.isEmpty)
+}
+
+@MainActor
+@Test func `composer paste prefers arbitrary files over their compatibility path text`() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "sakuracord-paste-file-\(UUID().uuidString)",
+        isDirectory: true
+    )
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = directory.appendingPathComponent("notes.txt")
+    try Data("pasted file".utf8).write(to: file)
+
+    let pasteboard = NSPasteboard(name: .init("sakuracord-paste-file-\(UUID().uuidString)"))
+    defer { pasteboard.clearContents() }
+    pasteboard.clearContents()
+    #expect(pasteboard.writeObjects([file as NSURL]))
+    #expect(pasteboard.setString(file.path, forType: .string))
+
+    let textView = ComposerNSTextView()
+    textView.commandPasteboard = pasteboard
+    var pastedURLs: [URL] = []
+    textView.onPasteAttachments = { pastedURLs = $0 }
+    textView.paste(nil)
+
+    #expect(pastedURLs == [file])
+    #expect(textView.string.isEmpty)
+}
+
+@MainActor
+@Test func `composer paste materializes clipboard image data as a png attachment`() throws {
+    let pasteboard = NSPasteboard(name: .init("sakuracord-paste-image-\(UUID().uuidString)"))
+    defer { pasteboard.clearContents() }
+    let image = NSImage(size: NSSize(width: 2, height: 2), flipped: false) { bounds in
+        NSColor.systemPink.setFill()
+        bounds.fill()
+        return true
+    }
+    pasteboard.clearContents()
+    #expect(pasteboard.writeObjects([image]))
+
+    let url = try #require(ComposerPasteboardAttachments.urls(from: pasteboard).first)
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+    #expect(url.pathExtension == "png")
+    #expect((try Data(contentsOf: url)).isEmpty == false)
+    #expect(NSImage(contentsOf: url)?.isValid == true)
+}
+
+@Test func `unfocused composer offers command v only for ordinary paste`() {
+    #expect(ComposerUnfocusedTypingMonitor.shouldOfferPaste(
+        keyCode: 9,
+        modifierFlags: .command
+    ))
+    #expect(!ComposerUnfocusedTypingMonitor.shouldOfferPaste(
+        keyCode: 9,
+        modifierFlags: [.command, .option]
+    ))
+    #expect(!ComposerUnfocusedTypingMonitor.shouldOfferPaste(
+        keyCode: 8,
+        modifierFlags: .command
+    ))
+
+    var handled = false
+    #expect(ComposerUnfocusedTypingMonitor.handlePaste(
+        keyCode: 9,
+        modifierFlags: .command,
+        onPasteAttachments: {
+            handled = true
+            return true
+        }
+    ))
+    #expect(handled)
+}
+
+@MainActor
+@Test func `promised attachment drops use isolated storage and publish successful files once`() throws {
+    let firstDirectory = try ComposerPromisedFileDropView.makeReceivingDirectory()
+    let secondDirectory = try ComposerPromisedFileDropView.makeReceivingDirectory()
+    defer {
+        try? FileManager.default.removeItem(at: firstDirectory)
+        try? FileManager.default.removeItem(at: secondDirectory)
+    }
+    #expect(firstDirectory != secondDirectory)
+    #expect(FileManager.default.fileExists(atPath: firstDirectory.path))
+    #expect(FileManager.default.fileExists(atPath: secondDirectory.path))
+
+    let screenshot = firstDirectory.appendingPathComponent("Screenshot.png")
+    try Data("promised screenshot".utf8).write(to: screenshot)
+    var completedURLs: [URL]?
+    let collector = ComposerPromisedFileCollector(expectedCount: 2) {
+        completedURLs = $0
+    }
+    collector.receive(url: screenshot, error: nil)
+    #expect(completedURLs == nil)
+    collector.receive(
+        url: secondDirectory.appendingPathComponent("failed.png"),
+        error: CocoaError(.fileReadUnknown)
+    )
+    #expect(completedURLs == [screenshot])
 }
 
 @MainActor
@@ -427,7 +535,7 @@ import Testing
     model.addComposerAttachments([url], to: .channel)
     var attachment = try #require(model.channelComposerAttachments.first)
 
-    model.toggleComposerAttachmentSpoiler(url, in: .channel)
+    model.toggleComposerAttachmentSpoiler(attachment.id, in: .channel)
     #expect(model.channelComposerAttachments.first?.isSpoiler == true)
 
     attachment.filename = "renamed.png"

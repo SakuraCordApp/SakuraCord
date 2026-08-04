@@ -231,6 +231,25 @@ private struct ChatRootView: View {
                 updateModifierPolling(isTargeted: targeted)
             }
         )
+        .overlay {
+            ComposerPromisedFileDropBridge(
+                isEnabled: canAcceptWindowDrops,
+                targetChanged: { targeted, location, instant in
+                    let destination = targeted ? composerDestination(at: location) : nil
+                    isFileDropTargeted = destination != nil
+                    isInstantUpload = destination != nil && instant
+                    hoveredFileDropDestination = destination
+                },
+                receiveFiles: { urls, location, instant in
+                    guard let destination = composerDestination(at: location) else { return }
+                    if instant {
+                        sendDroppedAttachmentsImmediately(urls, to: destination)
+                    } else {
+                        model.addComposerAttachments(urls, to: destination)
+                    }
+                }
+            )
+        }
         .onPreferenceChange(ThreadPaneFramePreferenceKey.self) { frame in
             supplementaryPaneFrame = frame
         }

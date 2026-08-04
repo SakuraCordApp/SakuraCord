@@ -739,22 +739,32 @@ public struct ForumPostPage: Equatable, Sendable {
     }
 }
 
-public struct ForumPostAttachment: Equatable, Sendable {
+public struct ForumPostAttachment: Equatable, Identifiable, Sendable {
+    public let id: UUID
     public var url: URL
     public var filename: String
     public var description: String
     public var isSpoiler: Bool
 
     public init(
+        id: UUID = UUID(),
         url: URL,
         filename: String? = nil,
         description: String = "",
         isSpoiler: Bool = false
     ) {
+        self.id = id
         self.url = url
         self.filename = filename ?? url.lastPathComponent
         self.description = description
         self.isSpoiler = isSpoiler
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.url == rhs.url
+            && lhs.filename == rhs.filename
+            && lhs.description == rhs.description
+            && lhs.isSpoiler == rhs.isSpoiler
     }
 }
 

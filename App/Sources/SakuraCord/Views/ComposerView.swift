@@ -159,11 +159,11 @@ struct ComposerView: View {
                                     onEscape: handleEscapeCommand,
                                     onEditLatestMessage: editLatestMessage,
                                     onAutocompleteCommand: handleAutocomplete,
+                                    onPasteAttachments: addPastedAttachments,
                                     capturesUnfocusedTyping: true,
                                     selection: $draftSelection,
                                     isFocused: $isFocused
                                 )
-
                                 if draft.isEmpty {
                                     Text(composerPlaceholder)
                                         .foregroundStyle(.tertiary)
@@ -949,11 +949,11 @@ struct ComposerView: View {
 
 private struct ComposerAttachmentTray: View {
     let attachments: [ForumPostAttachment]
-    let toggleSpoiler: (URL) -> Void
+    let toggleSpoiler: (UUID) -> Void
     let update: (ForumPostAttachment) -> Void
-    let remove: (URL) -> Void
-    @State private var hoveredURL: URL?
-    @State private var editingTarget: ForumAttachmentEditorTarget?
+    let remove: (UUID) -> Void
+    @State private var hoveredID: UUID?
+    @State private var editingTarget: ComposerAttachmentEditorTarget?
 
     private let tileSize: CGFloat = 230
     private let filenameRowHeight: CGFloat = 38
@@ -961,9 +961,9 @@ private struct ComposerAttachmentTray: View {
     var body: some View {
         ScrollView(.horizontal) {
             HStack(spacing: 12) {
-                ForEach(attachments, id: \.url) { attachment in
+                ForEach(attachments) { attachment in
                     attachmentTile(attachment)
-                        .id(attachment.url)
+                        .id(attachment.id)
                 }
             }
             .padding(.horizontal, 14)
@@ -973,7 +973,7 @@ private struct ComposerAttachmentTray: View {
         .frame(height: tileSize + 28)
         .accessibilityLabel("Message attachments")
         .sheet(item: $editingTarget) { target in
-            if let attachment = attachments.first(where: { $0.url == target.id }) {
+            if let attachment = attachments.first(where: { $0.id == target.id }) {
                 ForumAttachmentEditor(
                     attachment: attachment,
                     cancel: { editingTarget = nil },
@@ -1011,7 +1011,7 @@ private struct ComposerAttachmentTray: View {
             }
             .frame(width: tileSize, height: tileSize - filenameRowHeight)
             .overlay(alignment: .topTrailing) {
-                if hoveredURL == attachment.url {
+                if hoveredID == attachment.id {
                     HoverActionPill(
                         glass: .regular.interactive(),
                         spacing: 1,
@@ -1024,7 +1024,7 @@ private struct ComposerAttachmentTray: View {
                             diameter: 22,
                             iconFont: .caption2.weight(.semibold)
                         ) {
-                            toggleSpoiler(attachment.url)
+                            toggleSpoiler(attachment.id)
                         }
                         HoverActionButton(
                             systemImage: "pencil",
@@ -1032,7 +1032,7 @@ private struct ComposerAttachmentTray: View {
                             diameter: 22,
                             iconFont: .caption2.weight(.semibold)
                         ) {
-                            editingTarget = ForumAttachmentEditorTarget(id: attachment.url)
+                            editingTarget = ComposerAttachmentEditorTarget(id: attachment.id)
                         }
                         HoverActionButton(
                             systemImage: "trash",
@@ -1041,7 +1041,7 @@ private struct ComposerAttachmentTray: View {
                             diameter: 22,
                             iconFont: .caption2.weight(.semibold)
                         ) {
-                            remove(attachment.url)
+                            remove(attachment.id)
                         }
                     }
                     .padding(7)
@@ -1068,10 +1068,10 @@ private struct ComposerAttachmentTray: View {
             }
             .contentShape(ConcentricRectangle(cornerRadius: 14, style: .continuous))
             .onHover { hovering in
-                hoveredURL =
+                hoveredID =
                     hovering
-                        ? attachment.url
-                        : (hoveredURL == attachment.url ? nil : hoveredURL)
+                        ? attachment.id
+                        : (hoveredID == attachment.id ? nil : hoveredID)
             }
             .help(attachment.filename)
             .accessibilityElement(children: .ignore)
@@ -1079,13 +1079,13 @@ private struct ComposerAttachmentTray: View {
             .accessibilityAction(
                 named: attachment.isSpoiler ? "Remove spoiler" : "Mark as spoiler"
             ) {
-                toggleSpoiler(attachment.url)
+                toggleSpoiler(attachment.id)
             }
             .accessibilityAction(named: "Edit attachment") {
-                editingTarget = ForumAttachmentEditorTarget(id: attachment.url)
+                editingTarget = ComposerAttachmentEditorTarget(id: attachment.id)
             }
             .accessibilityAction(named: "Delete attachment") {
-                remove(attachment.url)
+                remove(attachment.id)
             }
     }
 }

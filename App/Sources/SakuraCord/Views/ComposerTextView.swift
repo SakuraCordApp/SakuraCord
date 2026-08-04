@@ -46,6 +46,10 @@ nonisolated enum ComposerLatestMessageEditingPolicy {
 }
 
 extension ComposerView {
+    func addPastedAttachments(_ urls: [URL]) {
+        model.addComposerAttachments(urls, to: conversation)
+    }
+
     func editLatestMessage() -> Bool {
         let messages = switch conversation {
         case .channel: model.messages
@@ -242,6 +246,7 @@ struct ComposerTextView: NSViewRepresentable {
     var onEscape: () -> Void = {}
     var onEditLatestMessage: () -> Bool = { false }
     var onAutocompleteCommand: (ComposerAutocompleteCommand) -> Bool = { _ in false }
+    var onPasteAttachments: (([URL]) -> Void)?
     var capturesUnfocusedTyping = false
     var maximumHeight: CGFloat = 150
     @Binding var selection: NSRange?
@@ -300,6 +305,7 @@ struct ComposerTextView: NSViewRepresentable {
         textView.onEditLatestMessage = { [weak coordinator = context.coordinator] in
             coordinator?.parent.onEditLatestMessage() ?? false
         }
+        textView.onPasteAttachments = onPasteAttachments
         textView.capturesUnfocusedTyping = capturesUnfocusedTyping
 
         let scrollView = NSScrollView()
@@ -330,6 +336,7 @@ struct ComposerTextView: NSViewRepresentable {
         textView.onEditLatestMessage = { [weak coordinator = context.coordinator] in
             coordinator?.parent.onEditLatestMessage() ?? false
         }
+        textView.onPasteAttachments = onPasteAttachments
         textView.capturesUnfocusedTyping = capturesUnfocusedTyping
         textView.setAccessibilityLabel(placeholder)
 
@@ -634,6 +641,8 @@ final class ComposerNSTextView: NSTextView {
     var onEscape: (() -> Void)?
     var onEditLatestMessage: (() -> Bool)?
     var onAutocompleteCommand: ((ComposerAutocompleteCommand) -> Bool)?
+    var onPasteAttachments: (([URL]) -> Void)?
+    var commandPasteboard = NSPasteboard.general
     var plainTypingAttributes: [NSAttributedString.Key: Any] = [:]
     var capturesUnfocusedTyping = false {
         didSet {
@@ -642,7 +651,8 @@ final class ComposerNSTextView: NSTextView {
                 enabled: capturesUnfocusedTyping,
                 onUnfocusedReturn: unfocusedReturnHandler,
                 onEditLatestMessage: unfocusedEditLatestMessageHandler,
-                onEscape: escapeHandler
+                onEscape: escapeHandler,
+                onPasteAttachments: pasteAttachmentsHandler
             )
         }
     }
@@ -666,6 +676,12 @@ final class ComposerNSTextView: NSTextView {
         }
     }
 
+    private var pasteAttachmentsHandler: () -> Bool {
+        { [weak self] in
+            self?.pasteAttachmentsIfAvailable() ?? false
+        }
+    }
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
     }
@@ -677,7 +693,8 @@ final class ComposerNSTextView: NSTextView {
             enabled: capturesUnfocusedTyping,
             onUnfocusedReturn: unfocusedReturnHandler,
             onEditLatestMessage: unfocusedEditLatestMessageHandler,
-            onEscape: escapeHandler
+            onEscape: escapeHandler,
+            onPasteAttachments: pasteAttachmentsHandler
         )
     }
 
@@ -759,13 +776,70 @@ final class ComposerNSTextView: NSTextView {
     }
 
     override func paste(_ sender: Any?) {
-        guard let value = NSPasteboard.general.string(forType: .string) else {
+        if pasteAttachmentsIfAvailable() {
+            return
+        }
+        guard let value = commandPasteboard.string(forType: .string) else {
             super.paste(sender)
             return
         }
         insertText(value, replacementRange: selectedRange())
     }
 
+    private func pasteAttachmentsIfAvailable() -> Bool {
+        guard let onPasteAttachments else { return false }
+        let urls = ComposerPasteboardAttachments.urls(from: commandPasteboard)
+        guard !urls.isEmpty else { return false }
+        onPasteAttachments(urls)
+        return true
+    }
+}
+
+@MainActor
+enum ComposerPasteboardAttachments {
+    static func urls(
+        from pasteboard: NSPasteboard,
+        fileManager: FileManager = .default
+    ) -> [URL] {
+        let objects = pasteboard.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) ?? []
+        var seen: Set<URL> = []
+        let fileURLs = objects.compactMap { object -> URL? in
+            guard let url = (object as? NSURL)?.absoluteURL,
+                  url.isFileURL,
+                  seen.insert(url.standardizedFileURL).inserted
+            else { return nil }
+            return url
+        }
+        if !fileURLs.isEmpty {
+            return fileURLs
+        }
+
+        guard let image = NSImage(pasteboard: pasteboard),
+              let tiff = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff),
+              let data = bitmap.representation(using: .png, properties: [:])
+        else { return [] }
+
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("SakuraCord", isDirectory: true)
+            .appendingPathComponent("Pasted Attachments", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let url = directory.appendingPathComponent("pasted-image.png")
+        do {
+            try fileManager.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+            try data.write(to: url, options: .atomic)
+            return [url]
+        } catch {
+            try? fileManager.removeItem(at: directory)
+            return []
+        }
+    }
 }
 
 @MainActor
@@ -775,6 +849,7 @@ final class ComposerUnfocusedTypingMonitor {
     private var onUnfocusedReturn: ((NSEvent) -> Bool)?
     private var onEditLatestMessage: (() -> Bool)?
     private var onEscape: (() -> Void)?
+    private var onPasteAttachments: (() -> Bool)?
 
     isolated deinit {
         if let eventMonitor {
@@ -787,12 +862,14 @@ final class ComposerUnfocusedTypingMonitor {
         enabled: Bool,
         onUnfocusedReturn: ((NSEvent) -> Bool)? = nil,
         onEditLatestMessage: (() -> Bool)? = nil,
-        onEscape: (() -> Void)? = nil
+        onEscape: (() -> Void)? = nil,
+        onPasteAttachments: (() -> Bool)? = nil
     ) {
         self.textView = textView
         self.onUnfocusedReturn = onUnfocusedReturn
         self.onEditLatestMessage = onEditLatestMessage
         self.onEscape = onEscape
+        self.onPasteAttachments = onPasteAttachments
         guard enabled, textView.window != nil
         else {
             removeMonitor()
@@ -809,6 +886,13 @@ final class ComposerUnfocusedTypingMonitor {
                   !Self.isEditingText(window.firstResponder)
             else { return event }
 
+            if Self.handlePaste(
+                keyCode: event.keyCode,
+                modifierFlags: event.modifierFlags,
+                onPasteAttachments: self.onPasteAttachments
+            ) {
+                return nil
+            }
             if Self.shouldOfferReturn(event.keyCode) {
                 return self.onUnfocusedReturn?(event) == true ? nil : event
             }
@@ -888,6 +972,25 @@ final class ComposerUnfocusedTypingMonitor {
 
     nonisolated static func shouldOfferEscape(_ keyCode: UInt16) -> Bool {
         keyCode == 53
+    }
+
+    nonisolated static func shouldOfferPaste(
+        keyCode: UInt16,
+        modifierFlags: NSEvent.ModifierFlags
+    ) -> Bool {
+        let relevant = modifierFlags.intersection([.command, .option, .control, .shift])
+        return keyCode == 9 && relevant == .command
+    }
+
+    nonisolated static func handlePaste(
+        keyCode: UInt16,
+        modifierFlags: NSEvent.ModifierFlags,
+        onPasteAttachments: (() -> Bool)?
+    ) -> Bool {
+        guard shouldOfferPaste(keyCode: keyCode, modifierFlags: modifierFlags) else {
+            return false
+        }
+        return onPasteAttachments?() == true
     }
 
     private static func shouldRedirect(_ event: NSEvent) -> Bool {
