@@ -341,7 +341,7 @@ struct GatewayReadyGuildsDTO: Decodable {
         var members: [GuildMemberDTO]
 
         enum CodingKeys: String, CodingKey {
-            case id, name, icon, owner, permissions
+            case id, name, icon, owner, permissions, properties
             case ownerID = "owner_id"
             case rulesChannelID = "rules_channel_id"
             case defaultMessageNotifications = "default_message_notifications"
@@ -352,19 +352,25 @@ struct GatewayReadyGuildsDTO: Decodable {
 
         init(from decoder: any Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
+            let nested = try? container.decode(
+                GatewayGuildPropertiesDTO.self, forKey: .properties
+            )
             id = try container.decode(String.self, forKey: .id)
-            name = try? container.decode(String.self, forKey: .name)
-            icon = try? container.decode(String.self, forKey: .icon)
-            owner = try? container.decode(Bool.self, forKey: .owner)
-            ownerID = try? container.decode(String.self, forKey: .ownerID)
-            permissions = try? container.decode(
+            name = (try? container.decode(String.self, forKey: .name)) ?? nested?.name
+            icon = (try? container.decode(String.self, forKey: .icon)) ?? nested?.icon
+            owner = (try? container.decode(Bool.self, forKey: .owner)) ?? nested?.owner
+            ownerID = (try? container.decode(String.self, forKey: .ownerID))
+                ?? nested?.ownerID
+            permissions = (try? container.decode(
                 StringOrIntegerDTO.self, forKey: .permissions
-            ).value
-            rulesChannelID = try? container.decode(String.self, forKey: .rulesChannelID)
-            defaultMessageNotifications = try? container.decode(
+            ).value) ?? nested?.permissions
+            rulesChannelID = (try? container.decode(
+                String.self, forKey: .rulesChannelID
+            )) ?? nested?.rulesChannelID
+            defaultMessageNotifications = (try? container.decode(
                 Int.self,
                 forKey: .defaultMessageNotifications
-            )
+            )) ?? nested?.defaultMessageNotifications
             voiceStates =
                 (try? container.decode(
                     LossyList<VoiceStateUpdateDTO>.self,
@@ -730,10 +736,10 @@ struct ReadyMergedMemberDTO: Decodable {
 struct GatewayGuildCatalogDTO: Decodable {
     var id: String
     var rulesChannelID: String?
-    var channels: [ChannelDTO]
-    var threads: [ChannelDTO]
-    var roles: [GuildRoleDTO]
-    var members: [GuildMemberDTO]
+    var channels: [ChannelDTO]?
+    var threads: [ChannelDTO]?
+    var roles: [GuildRoleDTO]?
+    var members: [GuildMemberDTO]?
 
     enum CodingKeys: String, CodingKey {
         case id, channels, threads, roles, members
@@ -744,22 +750,18 @@ struct GatewayGuildCatalogDTO: Decodable {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         id = try values.decode(String.self, forKey: .id)
         rulesChannelID = try values.decodeIfPresent(String.self, forKey: .rulesChannelID)
-        channels =
-            try values.decodeIfPresent(
-                LossyList<ChannelDTO>.self, forKey: .channels
-            )?.elements ?? []
-        threads =
-            try values.decodeIfPresent(
-                LossyList<ChannelDTO>.self, forKey: .threads
-            )?.elements ?? []
-        roles =
-            try values.decodeIfPresent(
-                LossyList<GuildRoleDTO>.self, forKey: .roles
-            )?.elements ?? []
-        members =
-            try values.decodeIfPresent(
-                LossyList<GuildMemberDTO>.self, forKey: .members
-            )?.elements ?? []
+        channels = try values.decodeIfPresent(
+            LossyList<ChannelDTO>.self, forKey: .channels
+        )?.elements
+        threads = try values.decodeIfPresent(
+            LossyList<ChannelDTO>.self, forKey: .threads
+        )?.elements
+        roles = try values.decodeIfPresent(
+            LossyList<GuildRoleDTO>.self, forKey: .roles
+        )?.elements
+        members = try values.decodeIfPresent(
+            LossyList<GuildMemberDTO>.self, forKey: .members
+        )?.elements
     }
 }
 

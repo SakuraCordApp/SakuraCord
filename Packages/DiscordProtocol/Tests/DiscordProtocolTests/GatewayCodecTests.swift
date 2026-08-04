@@ -274,6 +274,33 @@ private func appendETFBinary(_ value: String, to data: inout Data) {
     #expect(guild.currentUserPermissions == 1_024)
 }
 
+@Test func `desktop ready guild decodes nested properties`() throws {
+    let payload = Data(
+        """
+        {
+          "guilds": [
+            {
+              "id": "100",
+              "data_mode": "full",
+              "properties": {
+                "name": "Nested Properties",
+                "permissions": 2048,
+                "rules_channel_id": "101"
+              },
+              "channels": []
+            }
+          ]
+        }
+        """.utf8
+    )
+
+    let ready = try JSONDecoder().decode(GatewayReadyGuildsDTO.self, from: payload)
+    let guild = try #require(ready.guilds.first?.domain(currentUserID: nil))
+    #expect(guild.name == "Nested Properties")
+    #expect(guild.currentUserPermissions == 2_048)
+    #expect(guild.rulesChannelID == ChannelID(rawValue: 101))
+}
+
 @Test func `settings proto preserves discord guild folder order`() {
     func fixed64(_ value: UInt64) -> [UInt8] {
         (0 ..< 8).map { UInt8(truncatingIfNeeded: value >> UInt64($0 * 8)) }

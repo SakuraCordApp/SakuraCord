@@ -335,11 +335,19 @@ exception dispatches.
   marks the guild unavailable; an ordinary delete removes its guild-scoped
   caches, requests, channels, and rail entry. Joining, becoming unavailable,
   recovering, and leaving issue no compensating REST request.
-  A 4 August 2026 follow-up found that desktop ETF can represent a permission
-  bitfield as an integer even though Discord's public JSON guild schema uses a
-  string. Gateway Ready and Guild Create decoding therefore accept either
-  representation. A numeric-permissions Guild Create fixture proves the new
-  guild and rail entry are reconciled without a REST fallback.
+  A 4 August 2026 follow-up found two desktop-specific decoding boundaries.
+  ETF can represent a permission bitfield as an integer even though Discord's
+  public JSON guild schema uses a string. More importantly, current first-party
+  build `587597` handles Guild Create as an envelope with `id`, `data_mode`, and
+  guild identity nested under `properties`, while the public event description
+  and pinned Paicord model remain flat; pinned Swiftcord v1 has no corresponding
+  current handler. A private sanitized SakuraCord diagnostic recorded the
+  failed live join as sequence 131 `GUILD_CREATE`, followed by guild catalog and
+  member activity, proving the event arrived but its identity was not decoded.
+  Gateway Ready and Guild Create now accept flat or nested identity plus string
+  or integer permissions. Missing collections in a partial event preserve the
+  existing channel and role catalogs. Current-shape fixtures prove the guild and
+  rail entry reconcile without a compensating REST request.
 - Guild `CHANNEL_CREATE`, `CHANNEL_UPDATE`, and `CHANNEL_DELETE` reconcile a
   raw per-guild channel catalogue before rebuilding presentation. This retains
   categories, positions, permission overwrites, pins, and voice metadata, so a

@@ -150,6 +150,45 @@ struct GatewayLifecycleEventTests {
         #expect(await provider.cachedGuildRailItemsForTesting() == [.guild(guildID)])
     }
 
+    @Test func `desktop nested properties guild create adds a new guild`() async {
+        let provider = makeProvider()
+
+        await provider.receiveGatewayDispatchForTesting(
+            name: "GUILD_CREATE",
+            data: desktopGuildCreatePayload()
+        )
+
+        #expect(await provider.cachedGuildForTesting(guildID: guildID)?.name == "Lifecycle Guild")
+        #expect(await provider.cachedGuildForTesting(guildID: guildID)?.currentUserPermissions == 1_024)
+        #expect(await provider.cachedGuildsForTesting().map(\.id) == [guildID])
+        #expect(await provider.cachedGuildRailItemsForTesting() == [.guild(guildID)])
+    }
+
+    @Test func `partial desktop guild create preserves the existing catalog`() async {
+        let provider = makeProvider()
+        await provider.receiveGatewayDispatchForTesting(
+            name: "GUILD_CREATE",
+            data: guildCreatePayload()
+        )
+
+        await provider.receiveGatewayDispatchForTesting(
+            name: "GUILD_CREATE",
+            data: .object([
+                "id": .string("100"),
+                "data_mode": .string("partial"),
+                "properties": .object([
+                    "name": .string("Recovered Guild"),
+                    "permissions": .number(2_048),
+                ]),
+            ])
+        )
+
+        #expect(await provider.cachedGuildForTesting(guildID: guildID)?.name == "Recovered Guild")
+        #expect(await provider.cachedGuildForTesting(guildID: guildID)?.currentUserPermissions == 2_048)
+        #expect(await provider.cachedChannelForTesting(channelID: textChannelID) != nil)
+        #expect(await provider.cachedGuildRolesForTesting(guildID: guildID).count == 2)
+    }
+
     @Test func `pins bulk deletes thread counts and voice metadata reconcile`() async {
         let provider = makeProvider()
         await provider.receiveGatewayDispatchForTesting(
@@ -382,6 +421,20 @@ struct GatewayLifecycleEventTests {
             "threads": .array([]), "voice_states": .array([]), "emojis": .array([]),
         ]
         if includesUnavailable { payload["unavailable"] = .bool(false) }
+        return .object(payload)
+    }
+
+    private func desktopGuildCreatePayload() -> JSONValue {
+        guard case .object(var payload) = guildCreatePayload() else {
+            preconditionFailure("The Guild Create fixture must remain an object.")
+        }
+        payload["name"] = nil
+        payload["permissions"] = nil
+        payload["data_mode"] = .string("full")
+        payload["properties"] = .object([
+            "name": .string("Lifecycle Guild"),
+            "permissions": .number(1_024),
+        ])
         return .object(payload)
     }
 

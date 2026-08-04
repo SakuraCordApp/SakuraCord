@@ -904,22 +904,26 @@ extension DiscordRESTProvider {
             if let catalog = try? JSONDecoder().decode(GatewayGuildCatalogDTO.self, from: data),
                let guildID = GuildID(catalog.id)
             {
-                cachedGuildChannelDTOs[guildID] = Dictionary(
-                    catalog.channels.map { ($0.id, $0) },
-                    uniquingKeysWith: { _, newer in newer }
-                )
-                publishGuildChannels(guildID)
-                cachedGuildRoles[guildID] = catalog.roles
-                publishGuildRoles(guildID)
-                if !catalog.threads.isEmpty {
+                if let channels = catalog.channels {
+                    cachedGuildChannelDTOs[guildID] = Dictionary(
+                        channels.map { ($0.id, $0) },
+                        uniquingKeysWith: { _, newer in newer }
+                    )
+                    publishGuildChannels(guildID)
+                }
+                if let roles = catalog.roles {
+                    cachedGuildRoles[guildID] = roles
+                    publishGuildRoles(guildID)
+                }
+                if let threads = catalog.threads, !threads.isEmpty {
                     ingestForumThreads(
-                        catalog.threads,
+                        threads,
                         fallbackGuildID: guildID,
                         advancesParentLatestThreadID: true
                     )
                 }
-                if !catalog.members.isEmpty {
-                    let members = catalog.members.compactMap {
+                if let catalogMembers = catalog.members, !catalogMembers.isEmpty {
+                    let members = catalogMembers.compactMap {
                         try? $0.domain(
                             currentUserID: currentUser?.id,
                             currentStatus: presenceStatus,
