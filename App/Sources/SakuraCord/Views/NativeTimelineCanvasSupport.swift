@@ -1317,6 +1317,22 @@ nonisolated enum NativeTimelineSpoilerAppearance {
         )
     }
 
+    static func labelFrame(
+        in bounds: CGRect,
+        measuredLabelHeight: CGFloat
+    ) -> CGRect {
+        let height = min(
+            max(1, bounds.height),
+            ceil(measuredLabelHeight)
+        )
+        return CGRect(
+            x: bounds.minX,
+            y: bounds.midY - height / 2,
+            width: bounds.width,
+            height: height
+        )
+    }
+
     static func isActivationKey(_ event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection(
             .deviceIndependentFlagsMask
@@ -1370,12 +1386,15 @@ final class NativeTimelineSpoilerOverlayHost: NSView {
         pillView.setAccessibilityElement(false)
         addSubview(pillView)
 
+        let labelParagraphStyle = NSMutableParagraphStyle()
+        labelParagraphStyle.alignment = .center
         pillLabel.attributedStringValue = NSAttributedString(
             string: "SPOILER",
             attributes: [
                 .font: NSFont.systemFont(ofSize: 11, weight: .bold),
                 .foregroundColor: NSColor.white,
                 .kern: 0.4,
+                .paragraphStyle: labelParagraphStyle,
             ]
         )
         pillLabel.alignment = .center
@@ -1403,7 +1422,10 @@ final class NativeTimelineSpoilerOverlayHost: NSView {
             in: bounds,
             measuredLabelWidth: labelSize.width
         )
-        pillLabel.frame = pillView.bounds
+        pillLabel.frame = NativeTimelineSpoilerAppearance.labelFrame(
+            in: pillView.bounds,
+            measuredLabelHeight: labelSize.height
+        )
     }
 
     override func updateTrackingAreas() {

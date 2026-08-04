@@ -199,6 +199,16 @@ func `spoiler cover centers its pill and owns pointer keyboard and accessibility
             == ceil(47.2)
                 + NativeTimelineSpoilerAppearance.pillHorizontalPadding * 2
     )
+    let label = NativeTimelineSpoilerAppearance.labelFrame(
+        in: CGRect(
+            origin: .zero,
+            size: pill.size
+        ),
+        measuredLabelHeight: 13.2
+    )
+    #expect(label.midX == pill.width / 2)
+    #expect(label.midY == pill.height / 2)
+    #expect(label.height == 14)
     #expect(NativeTimelineSpoilerAppearance.textCornerRadius == 4)
     #expect(
         NativeTimelineSpoilerAppearance.textBackgroundAlpha(
@@ -225,6 +235,19 @@ func `spoiler cover centers its pill and owns pointer keyboard and accessibility
     window.contentView = overlay
     overlay.layoutSubtreeIfNeeded()
     #expect(overlay.hasPersistentPillForTesting)
+    #expect(overlay.pillView.frame.midX == overlay.bounds.midX)
+    #expect(overlay.pillView.frame.midY == overlay.bounds.midY)
+    #expect(overlay.pillLabel.frame.midX == overlay.pillView.bounds.midX)
+    #expect(overlay.pillLabel.frame.midY == overlay.pillView.bounds.midY)
+    #expect(overlay.pillLabel.frame.height < overlay.pillView.bounds.height)
+    let paragraphStyle = try #require(
+        overlay.pillLabel.attributedStringValue.attribute(
+            .paragraphStyle,
+            at: 0,
+            effectiveRange: nil
+        ) as? NSParagraphStyle
+    )
+    #expect(paragraphStyle.alignment == .center)
 
     func mouseEvent(
         _ type: NSEvent.EventType,
