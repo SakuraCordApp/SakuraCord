@@ -848,12 +848,48 @@ extension NativeTimelineCanvasView {
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
+        guard !mediaViewerBlocksInteractions else { return nil }
         let point = convert(event.locationInWindow, from: nil)
         guard let index = rowIndex(at: point.y),
               layouts.indices.contains(index),
-              case let .message(row, _, _) = items[index],
-              let actions
+              case let .message(row, _, _) = items[index]
         else { return nil }
+        let localPoint = CGPoint(
+            x: point.x,
+            y: point.y - displayedRowOrigin(at: index)
+        )
+        if let imageItem = NativeTimelineImageContextMenuPlan.item(
+            in: row.message,
+            layout: layouts[index],
+            at: localPoint,
+            isRevealed: { [spoilerRevealStore] componentID in
+                spoilerRevealStore.isMediaRevealed(
+                    NativeTimelineComponentRevealKey(
+                        messageID: row.message.id,
+                        componentID: componentID
+                    )
+                )
+            }
+        ) {
+            return MediaImageContextMenuBuilder.make(
+                actions: imageContextMenuActions(for: imageItem)
+            )
+        }
+        guard let actions else { return nil }
+        return messageContextMenu(
+            for: row,
+            at: index,
+            point: point,
+            actions: actions
+        )
+    }
+
+    func messageContextMenu(
+        for row: MessageRowPresentation,
+        at index: Int,
+        point: CGPoint,
+        actions: NativeTimelineRowActions
+    ) -> NSMenu? {
         guard TimelineContextMenuHitTesting.contains(
             point,
             rowOrigin: displayedRowOrigin(at: index),
@@ -929,6 +965,48 @@ extension NativeTimelineCanvasView {
             )
         }
         return menu
+    }
+
+    func imageContextMenuActions(
+        for item: RichMediaItem
+    ) -> MediaImageContextMenuActions {
+        MediaImageContextMenuActions(
+            copyImage: { [weak self] in
+                Task { @MainActor [weak self] in
+                    do {
+                        try await MediaViewerActionService.copyImage(
+                            from: item.url
+                        )
+                    } catch {
+                        self?.presentMediaActionError(error)
+                    }
+                }
+            },
+            saveImage: { [weak self] in
+                Task { @MainActor [weak self] in
+                    do {
+                        _ = try await MediaViewerActionService.save(item)
+                    } catch {
+                        self?.presentMediaActionError(error)
+                    }
+                }
+            },
+            copyLink: {
+                MediaViewerActionService.copyText(item.url.absoluteString)
+            },
+            openLink: {
+                MediaViewerActionService.openInBrowser(item.url)
+            }
+        )
+    }
+
+    func presentMediaActionError(_ error: Error) {
+        let alert = NSAlert(error: error)
+        if let window {
+            alert.beginSheetModal(for: window)
+        } else {
+            alert.runModal()
+        }
     }
 
 }

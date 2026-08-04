@@ -10,7 +10,9 @@ import SwiftUI
 
 extension NativeTimelineCanvasView {
     override func updateTrackingAreas() {
-        guard !suppressesHoverPresentation else {
+        guard !suppressesHoverPresentation,
+              !mediaViewerBlocksInteractions
+        else {
             pointer.removeTrackingAreas(from: self)
             return
         }
@@ -33,7 +35,9 @@ extension NativeTimelineCanvasView {
     }
 
     override func resetCursorRects() {
-        guard !suppressesHoverPresentation else { return }
+        guard !suppressesHoverPresentation,
+              !mediaViewerBlocksInteractions
+        else { return }
         super.resetCursorRects()
         guard var index = rowIndex(at: max(0, visibleRect.minY)) else {
             return
@@ -134,6 +138,7 @@ extension NativeTimelineCanvasView {
 
     override func mouseEntered(with event: NSEvent) {
         guard !suppressesHoverPresentation,
+              !mediaViewerBlocksInteractions,
               editingMessageID == nil,
               event.trackingArea?.userInfo?["nativeTimelineTrackingKind"]
                 as? String == "row",
@@ -167,7 +172,10 @@ extension NativeTimelineCanvasView {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        guard !suppressesHoverPresentation, editingMessageID == nil else {
+        guard !suppressesHoverPresentation,
+              !mediaViewerBlocksInteractions,
+              editingMessageID == nil
+        else {
             return
         }
         let point = currentMouseLocationInCanvas()
@@ -264,6 +272,7 @@ extension NativeTimelineCanvasView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        guard !mediaViewerBlocksInteractions else { return }
         window?.makeFirstResponder(self)
         guard event.buttonNumber == 0 else { return }
         let point = convert(event.locationInWindow, from: nil)
@@ -336,6 +345,7 @@ extension NativeTimelineCanvasView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        guard !mediaViewerBlocksInteractions else { return }
         if pressedCodeBlockCopyButton != nil {
             let point = convert(event.locationInWindow, from: nil)
             setHoveredCodeBlock(codeBlockPointerHit(at: point))
@@ -542,7 +552,7 @@ extension NativeTimelineCanvasView {
                     selectedAttachmentID: attachment.id
                 )
             {
-                mediaViewerState.present(presentation)
+                model?.mediaViewerPresentation = presentation
             } else {
                 NSWorkspace.shared.open(attachment.url)
             }
@@ -555,7 +565,7 @@ extension NativeTimelineCanvasView {
                 in: row.message,
                 id: embedRegion.embedID
             ) {
-                mediaViewerState.present(presentation)
+                model?.mediaViewerPresentation = presentation
             } else if let mediaURL = embedRegion.mediaURL {
                 NSWorkspace.shared.open(mediaURL)
             }
@@ -573,6 +583,7 @@ extension NativeTimelineCanvasView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        guard !mediaViewerBlocksInteractions else { return }
         mouseUpOperation(event)
     }
 
@@ -708,6 +719,7 @@ extension NativeTimelineCanvasView {
         ) { [weak self] event in
             guard let self,
                   event.window === self.window,
+                  !self.mediaViewerBlocksInteractions,
                   self.editingMessageID == nil
             else { return event }
             let point = self.convert(event.locationInWindow, from: nil)

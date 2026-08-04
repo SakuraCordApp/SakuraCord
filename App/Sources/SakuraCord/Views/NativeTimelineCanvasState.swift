@@ -56,6 +56,7 @@ final class NativeTimelinePointerState {
     var pressedActivationTarget: NativeTimelinePointerActivationTarget?
     var hoveredReaction: NativeTimelineReactionPointerTarget?
     var suppressesHoverPresentation = false
+    var mediaViewerBlocksInteractions = false
     var textSelection: NativeTimelineTextSelection?
     var textSelectionGesture: NativeTimelineTextSelectionGesture?
     var didDragTextSelection = false
@@ -311,6 +312,11 @@ extension NativeTimelineCanvasView {
     var suppressesHoverPresentation: Bool {
         get { pointer.suppressesHoverPresentation }
         set { pointer.suppressesHoverPresentation = newValue }
+    }
+
+    var mediaViewerBlocksInteractions: Bool {
+        get { pointer.mediaViewerBlocksInteractions }
+        set { pointer.mediaViewerBlocksInteractions = newValue }
     }
 
     var textSelection: NativeTimelineTextSelection? {

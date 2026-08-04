@@ -1410,6 +1410,9 @@ struct NativeTimelineMediaViewerPresentation: Identifiable {
     let id = UUID()
     let items: [RichMediaItem]
     let selection: Int
+    let authorName: String
+    let authorAvatarURL: URL?
+    let timestamp: Date
 }
 
 enum NativeTimelineMediaViewerPlan {
@@ -1422,7 +1425,12 @@ enum NativeTimelineMediaViewerPlan {
         }) else { return nil }
         return NativeTimelineMediaViewerPresentation(
             items: message.attachments.map(RichMediaItem.init),
-            selection: selection
+            selection: selection,
+            authorName: message.guildMember?.nickname
+                ?? message.author.displayName,
+            authorAvatarURL: message.guildMember?.avatarURL
+                ?? message.author.avatarURL,
+            timestamp: message.timestamp
         )
     }
 
@@ -1438,37 +1446,13 @@ enum NativeTimelineMediaViewerPlan {
         else { return nil }
         return NativeTimelineMediaViewerPresentation(
             items: [item],
-            selection: 0
+            selection: 0,
+            authorName: message.guildMember?.nickname
+                ?? message.author.displayName,
+            authorAvatarURL: message.guildMember?.avatarURL
+                ?? message.author.avatarURL,
+            timestamp: message.timestamp
         )
-    }
-}
-
-@MainActor
-final class NativeTimelineMediaViewerState: ObservableObject {
-    @Published var presentation: NativeTimelineMediaViewerPresentation?
-
-    func present(_ value: NativeTimelineMediaViewerPresentation) {
-        presentation = value
-    }
-
-    func dismiss() {
-        presentation = nil
-    }
-}
-
-struct NativeTimelineMediaViewerLayer: View {
-    @ObservedObject var state: NativeTimelineMediaViewerState
-
-    var body: some View {
-        Color.clear
-            .frame(width: 0, height: 0)
-            .sheet(item: $state.presentation) { presentation in
-                MediaViewer(
-                    items: presentation.items,
-                    selection: presentation.selection,
-                    close: state.dismiss
-                )
-            }
     }
 }
 

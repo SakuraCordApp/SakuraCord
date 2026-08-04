@@ -5,6 +5,15 @@ import SakuraCordModels
 import UserNotifications
 
 extension AppModel {
+    /// Gives the media viewer first refusal on Escape before any underlying
+    /// conversation surface interprets the same key as "jump to present".
+    @discardableResult
+    func consumeEscapeForMediaViewer() -> Bool {
+        guard mediaViewerPresentation != nil else { return false }
+        mediaViewerPresentation = nil
+        return true
+    }
+
     func channelMentionCount(_ channelID: ChannelID) -> Int {
         readState.mentions(channelID: channelID)
     }

@@ -3,6 +3,16 @@ import OSLog
 import SakuraCordModels
 import SwiftUI
 
+@MainActor
+private final class NativeTimelineInputShieldScrollView: NSScrollView {
+    weak var model: AppModel?
+
+    override func scrollWheel(with event: NSEvent) {
+        guard model?.mediaViewerPresentation == nil else { return }
+        super.scrollWheel(with: event)
+    }
+}
+
 struct NativeMessageTimelineView: NSViewRepresentable {
     let model: AppModel
     let conversation: NativeTimelineConversation
@@ -263,7 +273,8 @@ extension NativeMessageTimelineCoordinator {
             let documentView = NativeTimelineDocumentView(frame: .zero)
             documentView.addSubview(canvas)
 
-            let scrollView = NSScrollView()
+            let scrollView = NativeTimelineInputShieldScrollView()
+            scrollView.model = parent.model
             scrollView.documentView = documentView
             scrollView.drawsBackground = false
             scrollView.borderType = .noBorder
@@ -621,6 +632,10 @@ extension NativeMessageTimelineCoordinator {
         }
 
         func update(parent: NativeMessageTimelineView, scrollView: NSScrollView) {
+            (scrollView as? NativeTimelineInputShieldScrollView)?.model = parent.model
+            canvas?.setMediaViewerInteractionBlocked(
+                parent.model.mediaViewerPresentation != nil
+            )
             timelineUpdateOperation(parent, scrollView)
         }
 

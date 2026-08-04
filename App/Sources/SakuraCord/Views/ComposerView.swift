@@ -413,8 +413,8 @@ struct ComposerView: View {
             handleEscapeCommand()
         }
     }
-
     private func handleEscapeCommand() {
+        guard !model.consumeEscapeForMediaViewer() else { return }
         if showEmojiPicker {
             showEmojiPicker = false
         } else if let conversationID = activeConversationID {

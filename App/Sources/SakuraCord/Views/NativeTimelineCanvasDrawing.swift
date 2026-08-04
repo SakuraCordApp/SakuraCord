@@ -383,6 +383,22 @@ extension NativeTimelineCanvasView {
         synchronizeHoverWithCurrentPointer()
     }
 
+    func setMediaViewerInteractionBlocked(_ isBlocked: Bool) {
+        guard mediaViewerBlocksInteractions != isBlocked else { return }
+        mediaViewerBlocksInteractions = isBlocked
+        if isBlocked {
+            pointer.clearHoverAndPressTargets()
+            reactionHoverCoordinator.close()
+            closeMessageProfilePopover()
+            closeMentionPopover()
+            closeComponentChoicePopover()
+            removeActionCapsule()
+            needsDisplay = true
+        }
+        updateTrackingAreas()
+        window?.invalidateCursorRects(for: self)
+    }
+
     func installViewportGeometry(frame: CGRect, bounds: CGRect) {
         if self.bounds != bounds {
             self.bounds = bounds

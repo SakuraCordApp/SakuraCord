@@ -129,6 +129,7 @@ final class AppModel {
         [MessageID: Set<MessageID>] = [:]
     var messageNavigationRequest: MessageNavigationRequest?
     var conversationNewestRequest: ConversationNewestRequest?
+    var mediaViewerPresentation: NativeTimelineMediaViewerPresentation?
     var unreadDividerMessageIDs: [ChannelID: MessageID] = [:]
     var members: [Member] = [] {
         didSet {

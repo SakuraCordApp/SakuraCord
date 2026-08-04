@@ -1268,7 +1268,7 @@ extension NativeTimelineCanvasView {
                 selectedAttachmentID: attachment.id
             )
         {
-            mediaViewerState.present(presentation)
+            model?.mediaViewerPresentation = presentation
         } else {
             NSWorkspace.shared.open(attachment.url)
         }
@@ -1283,7 +1283,7 @@ extension NativeTimelineCanvasView {
             in: message,
             id: id
         ) {
-            mediaViewerState.present(presentation)
+            model?.mediaViewerPresentation = presentation
             return true
         }
         guard let region = layouts.lazy

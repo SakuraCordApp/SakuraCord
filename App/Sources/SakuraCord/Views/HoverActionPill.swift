@@ -25,21 +25,20 @@ struct HoverActionButton: View {
     var diameter: CGFloat = 28
     var iconFont: Font = .callout.weight(.medium)
     let action: () -> Void
-    @State private var isHovering = false
 
     var body: some View {
         let button = Button(role: role, action: action) {
-            Image(systemName: systemImage)
-                .symbolVariant(.none)
-                .font(iconFont)
-                .foregroundStyle(iconColor)
-                .frame(width: diameter, height: diameter)
-                .contentShape(Circle())
+            HoverActionControlLabel(
+                role: role,
+                isSelected: isSelected,
+                diameter: diameter
+            ) {
+                Image(systemName: systemImage)
+                    .symbolVariant(.none)
+                    .font(iconFont)
+            }
         }
         .buttonStyle(.plain)
-        .background(backgroundColor, in: Circle())
-        .contentShape(Circle())
-        .onHover { isHovering = $0 }
         .help(help)
         .accessibilityLabel(help)
         if let isSelected {
@@ -47,6 +46,24 @@ struct HoverActionButton: View {
         } else {
             button
         }
+    }
+}
+
+struct HoverActionControlLabel<Content: View>: View {
+    var role: ButtonRole?
+    var isSelected: Bool?
+    var diameter: CGFloat = 28
+    @ViewBuilder let content: () -> Content
+    @State private var isHovering = false
+
+    var body: some View {
+        content()
+            .foregroundStyle(iconColor)
+            .frame(width: diameter, height: diameter)
+            .contentShape(Circle())
+            .background(backgroundColor, in: Circle())
+            .contentShape(Circle())
+            .onHover { isHovering = $0 }
     }
 
     private var iconColor: Color {

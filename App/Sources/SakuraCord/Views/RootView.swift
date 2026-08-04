@@ -193,6 +193,13 @@ private struct ChatRootView: View {
             .frame(width: 0, height: 0)
         }
         .background {
+            MediaViewerWindowOverlay(
+                presentation: model.mediaViewerPresentation,
+                dismiss: { model.mediaViewerPresentation = nil }
+            )
+            .frame(width: 0, height: 0)
+        }
+        .background {
             DisplayCompleteFrameReporter(
                 presentationID: model.selectedChannelID?.rawValue
             ) {
@@ -280,6 +287,7 @@ private struct ChatRootView: View {
         }
         .onChange(of: model.selectedChannelID) { _, channelID in
             presentsForumComposer = false
+            model.mediaViewerPresentation = nil
             AppPerformanceSignposts.expectStartupConversation(channelID)
         }
         .onAppear {
@@ -290,6 +298,7 @@ private struct ChatRootView: View {
         .onDisappear {
             modifierPollingTask?.cancel()
             modifierPollingTask = nil
+            model.mediaViewerPresentation = nil
         }
         .sheet(isPresented: $showAccountSwitcher) {
             AccountSwitcherView(

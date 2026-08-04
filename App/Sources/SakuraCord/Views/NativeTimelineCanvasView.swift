@@ -229,11 +229,8 @@ final class NativeTimelineCanvasView: NSView {
     var mediaInvalidationTask: Task<Void, Never>?
     var pendingMediaInvalidations:
         Set<NativeMessageTimelineItem.Identifier> = []
-    let mediaViewerState = NativeTimelineMediaViewerState()
     lazy var mediaViewerHost = NSHostingView(
-        rootView: AnyView(
-            NativeTimelineMediaViewerLayer(state: mediaViewerState)
-        )
+        rootView: AnyView(Color.clear.frame(width: 0, height: 0))
     )
 
     override var isFlipped: Bool { true }

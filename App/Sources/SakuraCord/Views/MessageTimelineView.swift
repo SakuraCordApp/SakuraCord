@@ -177,6 +177,7 @@ struct MessageTimelineView: View {
             }
         }
         .onExitCommand {
+            guard !model.consumeEscapeForMediaViewer() else { return }
             if let conversationID {
                 model.completeConversationReadingAndAdvance(
                     channelID: conversationID

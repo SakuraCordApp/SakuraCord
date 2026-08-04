@@ -1,171 +1,254 @@
 import AppKit
-import AVKit
 import SwiftUI
 
 struct MediaViewer: View {
-    let items: [RichMediaItem]
-    @State var selection: Int
+    let presentation: NativeTimelineMediaViewerPresentation
+    let isVisible: Bool
     let close: () -> Void
-    @State private var imageScale: CGFloat = 1
+    @State private var interaction: MediaViewerInteractionModel
+    @State private var feedbackTask: Task<Void, Never>?
+    @FocusState private var keyboardNavigationIsFocused: Bool
 
     init(
-        items: [RichMediaItem],
-        selection: Int,
+        presentation: NativeTimelineMediaViewerPresentation,
+        isVisible: Bool = true,
         close: @escaping () -> Void
     ) {
-        self.items = items
-        _selection = State(initialValue: selection)
+        self.presentation = presentation
+        self.isVisible = isVisible
         self.close = close
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text(items[selection].title).font(.headline).lineLimit(1)
-                Spacer()
-                Text("\(selection + 1) of \(items.count)")
-                    .foregroundStyle(.secondary)
-                ShareLink(item: items[selection].url) {
-                    Image(systemName: "square.and.arrow.up")
-                }
-                .help("Share or copy link")
-                Link(destination: items[selection].url) {
-                    Image(systemName: "arrow.up.right.square")
-                }
-                .help("Open media")
-                Button(action: close) {
-                    Image(systemName: "xmark")
-                }
-                .keyboardShortcut(.cancelAction)
-                .help("Close")
-            }
-            .buttonStyle(.borderless)
-            .padding()
-            Divider()
-            ZStack {
-                Color.black.opacity(0.92)
-                viewerContent
-                HStack {
-                    Button {
-                        move(-1)
-                    } label: {
-                        Image(systemName: "chevron.left.circle.fill")
-                            .font(.largeTitle)
-                    }
-                    .disabled(selection == 0)
-                    Spacer()
-                    Button {
-                        move(1)
-                    } label: {
-                        Image(systemName: "chevron.right.circle.fill")
-                            .font(.largeTitle)
-                    }
-                    .disabled(selection == items.count - 1)
-                }
-                .buttonStyle(.plain)
-                .padding()
-            }
-        }
-        .frame(minWidth: 720, minHeight: 520)
-        .onKeyPress(.leftArrow) {
-            move(-1)
-            return .handled
-        }
-        .onKeyPress(.rightArrow) {
-            move(1)
-            return .handled
-        }
-        .accessibilityLabel(
-            """
-            \(items[selection].description ?? items[selection].title), \
-            item \(selection + 1) of \(items.count)
-            """
+        _interaction = State(
+            initialValue: MediaViewerInteractionModel(
+                itemCount: presentation.items.count,
+                selection: presentation.selection
+            )
         )
     }
 
-    @ViewBuilder
-    private var viewerContent: some View {
-        let item = items[selection]
-        switch item.kind {
-        case let .image(animated):
-            AnimatedRemoteImage(
-                url: item.url,
-                isLooping: animated
-            )
-            .scaleEffect(imageScale)
-            .gesture(
-                MagnifyGesture().onChanged {
-                    imageScale = max(
-                        0.5,
-                        min(6, $0.magnification)
+    var body: some View {
+        let item = presentation.items[interaction.selection]
+
+        GlassEffectContainer(spacing: 12) {
+            GeometryReader { proxy in
+                ZStack {
+                    Color.black.opacity(0.91)
+                        .opacity(isVisible ? 1 : 0)
+                        .contentShape(Rectangle())
+                        .onTapGesture(perform: close)
+
+                    MediaViewerStage(
+                        item: item,
+                        scale: interaction.scale,
+                        offset: interaction.offset,
+                        horizontalInset: 66,
+                        topInset: MediaViewerTopChromeMetrics.mediaTopInset,
+                        bottomInset: presentation.items.count > 1 ? 82 : 14,
+                        commitScale: interaction.commitScale,
+                        commitOffset: interaction.commitOffset,
+                        toggleZoom: interaction.toggleZoom,
+                        open: {
+                            MediaViewerActionService.openInBrowser(item.url)
+                        },
+                        imageContextMenuActions: MediaImageContextMenuActions(
+                            copyImage: { copyImage(item) },
+                            saveImage: { save(item) },
+                            copyLink: { copyLink(item) },
+                            openLink: {
+                                MediaViewerActionService.openInBrowser(item.url)
+                            }
+                        )
                     )
+                    .id(item.id)
+                    .scaleEffect(isVisible ? 1 : 0.965)
+                    .opacity(isVisible ? 1 : 0)
+
+                    MediaViewerHeader(
+                        authorName: presentation.authorName,
+                        authorAvatarURL: presentation.authorAvatarURL,
+                        timestamp: presentation.timestamp,
+                        selection: interaction.selection,
+                        itemCount: presentation.items.count
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding(.leading, 72)
+                    .padding(
+                        .top,
+                        MediaViewerTopChromeMetrics.outerPadding
+                    )
+                    .offset(y: isVisible ? 0 : -10)
+                    .opacity(isVisible ? 1 : 0)
+
+                    MediaViewerTopControls(
+                        item: item,
+                        isSaving: interaction.isSaving,
+                        copyImage: { copyImage(item) },
+                        copyLink: { copyLink(item) },
+                        copyAttachmentID: { copyAttachmentID(item) },
+                        save: { save(item) },
+                        open: {
+                            MediaViewerActionService.openInBrowser(item.url)
+                        },
+                        close: close
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .padding(.trailing, 16)
+                    .padding(
+                        .top,
+                        MediaViewerTopChromeMetrics.outerPadding
+                    )
+                    .offset(y: isVisible ? 0 : -10)
+                    .opacity(isVisible ? 1 : 0)
+
+                    if presentation.items.count > 1 {
+                        MediaViewerNavigationButtons(
+                            canMoveBackward: interaction.canMoveBackward,
+                            canMoveForward: interaction.canMoveForward,
+                            moveBackward: { move(-1) },
+                            moveForward: { move(1) }
+                        )
+                        .padding(.horizontal, 18)
+                        .opacity(isVisible ? 1 : 0)
+
+                        MediaViewerThumbnailStrip(
+                            items: presentation.items,
+                            selection: interaction.selection,
+                            select: select
+                        )
+                        .frame(
+                            maxWidth: min(760, proxy.size.width * 0.72),
+                            maxHeight: .infinity,
+                            alignment: .bottom
+                        )
+                        .padding(.bottom, 14)
+                        .offset(y: isVisible ? 0 : 14)
+                        .opacity(isVisible ? 1 : 0)
+                    }
+
+                    if let feedback = interaction.feedback {
+                        MediaViewerFeedbackPill(message: feedback.message)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                            .padding(.bottom, presentation.items.count > 1 ? 86 : 22)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
                 }
-            )
-            .padding(50)
-        case .video, .audio:
-            ViewerAVPlayer(url: item.url)
-                .padding(50)
-        case .file:
-            Link(destination: item.url) {
-                Label("Open \(item.title)", systemImage: "doc")
+                .animation(.easeOut(duration: 0.22), value: isVisible)
             }
-            .font(.title2)
+        }
+        .ignoresSafeArea()
+        .focusable()
+        .focused($keyboardNavigationIsFocused)
+        .focusEffectDisabled()
+        .allowsHitTesting(isVisible)
+        .onExitCommand(perform: close)
+        .onKeyPress(phases: .down) { press in
+            handleKeyPress(press)
+        }
+        .task {
+            await Task.yield()
+            keyboardNavigationIsFocused = true
+        }
+        .onDisappear {
+            feedbackTask?.cancel()
+            feedbackTask = nil
+        }
+        .alert(
+            "Media action failed",
+            isPresented: Binding(
+                get: { interaction.errorMessage != nil },
+                set: { if !$0 { interaction.errorMessage = nil } }
+            )
+        ) {
+            Button("OK") { interaction.errorMessage = nil }
+        } message: {
+            Text(interaction.errorMessage ?? "Unknown error")
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(
+            "Media viewer, item \(interaction.selection + 1) of \(presentation.items.count)"
+        )
+    }
+
+    private func handleKeyPress(_ press: KeyPress) -> KeyPress.Result {
+        switch press.key {
+        case .leftArrow:
+            move(-1)
+            return .handled
+        case .rightArrow:
+            move(1)
+            return .handled
+        default:
+            return .ignored
         }
     }
 
     private func move(_ delta: Int) {
-        selection = min(
-            items.count - 1,
-            max(0, selection + delta)
-        )
-        imageScale = 1
+        guard interaction.move(delta) else { return }
+        announceSelection()
+    }
+
+    private func select(_ index: Int) {
+        guard interaction.select(index) else { return }
+        announceSelection()
+    }
+
+    private func announceSelection() {
         NSAccessibility.post(
             element: NSApplication.shared,
             notification: .announcementRequested,
             userInfo: [
                 .announcement:
-                    "Item \(selection + 1) of \(items.count)"
+                    "Item \(interaction.selection + 1) of \(presentation.items.count)"
             ]
         )
     }
-}
 
-private struct ViewerAVPlayer: NSViewRepresentable {
-    let url: URL
-
-    func makeNSView(context: Context) -> AVPlayerView {
-        let view = AVPlayerView()
-        view.controlsStyle = .inline
-        view.videoGravity = .resizeAspect
-        return view
+    private func copyImage(_ item: RichMediaItem) {
+        Task {
+            do {
+                try await MediaViewerActionService.copyImage(from: item.url)
+                showFeedback("Image copied")
+            } catch {
+                interaction.errorMessage = error.localizedDescription
+            }
+        }
     }
 
-    func updateNSView(
-        _ view: AVPlayerView,
-        context: Context
-    ) {
-        guard context.coordinator.url != url else { return }
-        context.coordinator.player?.pause()
-        let player = AVPlayer(url: url)
-        context.coordinator.url = url
-        context.coordinator.player = player
-        view.player = player
+    private func copyLink(_ item: RichMediaItem) {
+        MediaViewerActionService.copyText(item.url.absoluteString)
+        showFeedback("Media link copied")
     }
 
-    static func dismantleNSView(
-        _ view: AVPlayerView,
-        coordinator: Coordinator
-    ) {
-        coordinator.player?.pause()
-        view.player = nil
+    private func copyAttachmentID(_ item: RichMediaItem) {
+        MediaViewerActionService.copyText(item.id)
+        showFeedback("Attachment ID copied")
     }
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
+    private func save(_ item: RichMediaItem) {
+        guard !interaction.isSaving else { return }
+        interaction.isSaving = true
+        Task {
+            defer { interaction.isSaving = false }
+            do {
+                if let destination = try await MediaViewerActionService.save(item) {
+                    showFeedback("Saved \(destination.lastPathComponent)")
+                }
+            } catch {
+                interaction.errorMessage = error.localizedDescription
+            }
+        }
     }
 
-    final class Coordinator {
-        var url: URL?
-        var player: AVPlayer?
+    private func showFeedback(_ message: String) {
+        feedbackTask?.cancel()
+        withAnimation(.snappy(duration: 0.22)) {
+            interaction.feedback = MediaViewerFeedback(message: message)
+        }
+        feedbackTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.18)) {
+                interaction.feedback = nil
+            }
+        }
     }
 }
