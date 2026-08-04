@@ -173,12 +173,15 @@ extension AppModel {
     func scheduleReactionMutation(for key: ReactionMutationKey) {
         guard let state = reactionMutations[key], !state.isSending else { return }
         let generation = state.generation
+        let debounce = reactionMutationTiming.debounce
         reactionMutationTasks[key]?.cancel()
         reactionMutationTasks[key] = Task { @MainActor [weak self] in
-            do {
-                try await Task.sleep(for: Self.reactionMutationDebounce)
-            } catch {
-                return
+            if debounce > .zero {
+                do {
+                    try await Task.sleep(for: debounce)
+                } catch {
+                    return
+                }
             }
             guard !Task.isCancelled else { return }
             await self?.sendReactionMutation(for: key, generation: generation)

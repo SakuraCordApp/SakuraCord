@@ -938,7 +938,7 @@ import UserNotifications
 @MainActor
 @Test func `rapid reaction clicks publish only the latest state per message and emoji`() async throws {
     let provider = ReactionMutationTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = reactionMutationTestModel(provider: provider)
     await model.start()
     let message = try #require(model.messages.first)
 
@@ -953,14 +953,14 @@ import UserNotifications
     await model.toggleReaction("🔥", on: message)
     #expect(model.messages.first?.reactions.first?.didCurrentUserReact == true)
 
-    try await Task.sleep(for: .milliseconds(260))
+    #expect(await drainReactionMutations(in: model))
     #expect(await provider.requests() == [.init(messageID: message.id, emoji: "🔥", reacted: true)])
 }
 
 @MainActor
 @Test func `reaction clicks that return to confirmed state issue no request`() async throws {
     let provider = ReactionMutationTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = reactionMutationTestModel(provider: provider)
     await model.start()
     let message = try #require(model.messages.first)
 
@@ -968,7 +968,7 @@ import UserNotifications
         await model.toggleReaction("🔥", on: message)
     }
 
-    try await Task.sleep(for: .milliseconds(260))
+    #expect(await drainReactionMutations(in: model))
     #expect(await provider.requests().isEmpty)
     #expect(model.messages.first?.reactions.isEmpty == true)
 }
@@ -976,7 +976,7 @@ import UserNotifications
 @MainActor
 @Test func `reaction mutations stay independent across message and emoji keys`() async throws {
     let provider = ReactionMutationTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = reactionMutationTestModel(provider: provider)
     await model.start()
     let first = try #require(model.messages.first)
     let second = try #require(model.messages.dropFirst().first)
@@ -985,7 +985,7 @@ import UserNotifications
     await model.toggleReaction("✅", on: first)
     await model.toggleReaction("🔥", on: second)
 
-    try await Task.sleep(for: .milliseconds(260))
+    #expect(await drainReactionMutations(in: model))
     let requests = await provider.requests()
     #expect(requests.count == 3)
     #expect(Set(requests.map(\.messageID)) == Set([first.id, second.id]))
@@ -995,7 +995,7 @@ import UserNotifications
 @MainActor
 @Test func `reaction failure reverts only the failed optimistic key`() async throws {
     let provider = ReactionMutationTestProvider(failingEmoji: "🔥")
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let model = reactionMutationTestModel(provider: provider)
     await model.start()
     let message = try #require(model.messages.first)
 
@@ -1003,7 +1003,7 @@ import UserNotifications
     await model.toggleReaction("✅", on: message)
     #expect(model.messages.first?.reactions.count == 2)
 
-    try await Task.sleep(for: .milliseconds(280))
+    #expect(await drainReactionMutations(in: model))
     let reactions = try #require(model.messages.first?.reactions)
     #expect(reactions.contains(where: { $0.id == "unicode:🔥" }) == false)
     #expect(reactions.first(where: { $0.id == "unicode:✅" })?.didCurrentUserReact == true)
@@ -1046,34 +1046,24 @@ import UserNotifications
 
 @MainActor
 @Test func `clicks during an in flight reaction collapse to one latest follow up`() async throws {
-    let provider = ReactionMutationTestProvider(requestDelay: .milliseconds(220))
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let provider = ReactionMutationTestProvider(blocksFirstRequest: true)
+    let model = reactionMutationTestModel(provider: provider)
     await model.start()
     let message = try #require(model.messages.first)
 
     await model.toggleReaction("🔥", on: message)
-    try await Task.sleep(for: .milliseconds(190))
+    #expect(await waitForReactionRequestCount(1, from: provider))
     for _ in 0 ..< 9 {
         await model.toggleReaction("🔥", on: message)
     }
+    await provider.resumeFirstRequest()
 
     let expectedRequests = [
         ReactionMutationRequest(messageID: message.id, emoji: "🔥", reacted: true),
         ReactionMutationRequest(messageID: message.id, emoji: "🔥", reacted: false),
     ]
-    let deadline = ContinuousClock.now + .seconds(3)
-    while await provider.requests() != expectedRequests,
-          ContinuousClock.now < deadline
-    {
-        try await Task.sleep(for: .milliseconds(10))
-    }
+    #expect(await drainReactionMutations(in: model))
     #expect(await provider.requests() == expectedRequests)
-    while !model.reactionMutationTasks.isEmpty,
-          ContinuousClock.now < deadline
-    {
-        try await Task.sleep(for: .milliseconds(10))
-    }
-    #expect(model.reactionMutationTasks.isEmpty)
     #expect(model.messages.first?.reactions.isEmpty == true)
 }
 
@@ -3452,6 +3442,40 @@ private actor FailingRemovalCredentialStore: CredentialStore {
 }
 
 @MainActor
+private func reactionMutationTestModel(provider: any ChatProvider) -> AppModel {
+    AppModel(
+        launchMode: .offlineTesting,
+        provider: provider,
+        reactionMutationTiming: .init(debounce: .zero)
+    )
+}
+
+@MainActor
+private func drainReactionMutations(in model: AppModel) async -> Bool {
+    for _ in 0 ..< 10_000 {
+        if model.reactionMutationTasks.isEmpty, model.reactionMutations.isEmpty {
+            return true
+        }
+        await Task.yield()
+    }
+    return model.reactionMutationTasks.isEmpty && model.reactionMutations.isEmpty
+}
+
+@MainActor
+private func waitForReactionRequestCount(
+    _ expectedCount: Int,
+    from provider: ReactionMutationTestProvider
+) async -> Bool {
+    for _ in 0 ..< 10_000 {
+        if await provider.requests().count >= expectedCount {
+            return true
+        }
+        await Task.yield()
+    }
+    return await provider.requests().count >= expectedCount
+}
+
+@MainActor
 private func eventuallyOnMain(_ condition: @escaping @MainActor () -> Bool) async -> Bool {
     for _ in 0 ..< 200 {
         if condition() {
@@ -4234,18 +4258,20 @@ private actor ReactionMutationTestProvider: ChatProvider {
         guildID: nil,
         name: "reaction-tests"
     )
-    private let requestDelay: Duration
+    private let blocksFirstRequest: Bool
     private let failingEmoji: String?
     private let initialReaction: Reaction?
     private var recordedRequests: [ReactionMutationRequest] = []
     private var continuation: AsyncStream<ClientEvent>.Continuation?
+    private var didBlockFirstRequest = false
+    private var firstRequestContinuation: CheckedContinuation<Void, Never>?
 
     init(
-        requestDelay: Duration = .zero,
+        blocksFirstRequest: Bool = false,
         failingEmoji: String? = nil,
         initialReaction: Reaction? = nil
     ) {
-        self.requestDelay = requestDelay
+        self.blocksFirstRequest = blocksFirstRequest
         self.failingEmoji = failingEmoji
         self.initialReaction = initialReaction
     }
@@ -4316,8 +4342,11 @@ private actor ReactionMutationTestProvider: ChatProvider {
         recordedRequests.append(
             ReactionMutationRequest(messageID: messageID, emoji: emoji, reacted: reacted)
         )
-        if requestDelay > .zero {
-            try await Task.sleep(for: requestDelay)
+        if blocksFirstRequest, !didBlockFirstRequest {
+            didBlockFirstRequest = true
+            await withCheckedContinuation { continuation in
+                firstRequestContinuation = continuation
+            }
         }
         if failingEmoji == emoji {
             throw ChatProviderError.invalidRequest("Synthetic reaction failure.")
@@ -4329,8 +4358,15 @@ private actor ReactionMutationTestProvider: ChatProvider {
     }
 
     func disconnect() async {
+        firstRequestContinuation?.resume()
+        firstRequestContinuation = nil
         continuation?.finish()
         continuation = nil
+    }
+
+    func resumeFirstRequest() {
+        firstRequestContinuation?.resume()
+        firstRequestContinuation = nil
     }
 
     func requests() -> [ReactionMutationRequest] {

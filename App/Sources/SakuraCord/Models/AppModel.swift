@@ -68,7 +68,6 @@ final class AppModel {
         category: "PointsOfInterest"
     )
     nonisolated static let maximumConcurrentReactionReactorLoads = 4
-    nonisolated static let reactionMutationDebounce: Duration = .milliseconds(160)
 
     enum SessionState: Equatable {
         case restoring
@@ -80,6 +79,10 @@ final class AppModel {
     struct LocalTypingTiming: Sendable {
         var debounce: Duration = .seconds(1.5)
         var throttle: Duration = .seconds(8)
+    }
+
+    struct ReactionMutationTiming: Sendable {
+        var debounce: Duration = .milliseconds(160)
     }
 
     struct ReadAcknowledgementTiming: Sendable {
@@ -695,6 +698,7 @@ final class AppModel {
         [ReactionMutationKey: ReactionMutationState] = [:]
     @ObservationIgnored var reactionMutationTasks:
         [ReactionMutationKey: Task<Void, Never>] = [:]
+    @ObservationIgnored let reactionMutationTiming: ReactionMutationTiming
     @ObservationIgnored var guildActivationTask: Task<Void, Never>?
     @ObservationIgnored var memberLoadTask: Task<Void, Never>?
     @ObservationIgnored var memberLoadGeneration: UInt64 = 0
@@ -760,6 +764,7 @@ final class AppModel {
         notificationPreferences: NotificationPreferences? = nil,
         typingExpiry: Duration = .seconds(10),
         localTypingTiming: LocalTypingTiming = LocalTypingTiming(),
+        reactionMutationTiming: ReactionMutationTiming = ReactionMutationTiming(),
         readAcknowledgementTiming: ReadAcknowledgementTiming = ReadAcknowledgementTiming(),
         runsChatPerformanceBenchmarkOverride: Bool? = nil
     ) {
@@ -774,6 +779,7 @@ final class AppModel {
         sessionState = launchMode == .offlineTesting ? .connecting : .restoring
         typingState = TypingStateModel(expiry: typingExpiry)
         self.localTypingTiming = localTypingTiming
+        self.reactionMutationTiming = reactionMutationTiming
         self.readAcknowledgementTiming = readAcknowledgementTiming
         runsChatPerformanceBenchmark =
             runsChatPerformanceBenchmarkOverride
