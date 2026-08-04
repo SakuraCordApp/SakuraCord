@@ -769,20 +769,7 @@ extension NativeMessageTimelineCoordinator {
                     queue: .main
                 ) { [weak self] _ in
                     MainActor.assumeIsolated {
-                        guard let self else { return }
-                        self.canvas?.dismissHoverPresentationForScroll()
-                        self.noteScrollActivity()
-                        self.isEarlierHistoryScrollGestureActive = true
-                        self.hasEarlierHistoryScrollIntent = true
-                        if self.scrollState().isNearTop {
-                            // Trackpad gestures may begin while AppKit is
-                            // already constrained at the materialized top and
-                            // therefore produce no bounds notification at all.
-                            // Re-arm automatic pagination from the gesture
-                            // itself in that case.
-                            self.reportScrollState(force: true)
-                        }
-                        self.parent.onUserScrollBegan()
+                        self?.liveScrollTrackingWillBegin()
                     }
                 },
                 center.addObserver(
@@ -852,9 +839,42 @@ extension NativeMessageTimelineCoordinator {
             let state = scrollState()
             isEarlierHistoryScrollGestureActive = false
             hasEarlierHistoryScrollIntent = state.isInProvisionalHistory
+            if !state.isInProvisionalHistory,
+               followsMaterializedHistoryBoundary
+            {
+                followsMaterializedHistoryBoundary = false
+                updateHistorySkeletonPresentation()
+            }
             finishScrollActivity()
             parent.onUserScrollEnded(state)
             requestEarlierHistoryIfNeeded(for: state)
+        }
+
+        func liveScrollTrackingWillBegin() {
+            canvas?.dismissHoverPresentationForScroll()
+            noteScrollActivity()
+            isEarlierHistoryScrollGestureActive = true
+            hasEarlierHistoryScrollIntent = true
+            if scrollState().isNearTop {
+                // Activate the reserved coordinates before AppKit handles the
+                // first upward delta. Initial ten-message pages can otherwise
+                // visibly pin at their oldest row until the loading-state
+                // update arrives, even though later pages already have ample
+                // provisional history above them.
+                if parent.hasMoreMessages,
+                   leadingHistoryReserve > 0,
+                   !followsMaterializedHistoryBoundary
+                {
+                    followsMaterializedHistoryBoundary = true
+                    updateHistorySkeletonPresentation()
+                }
+                // Trackpad gestures may begin while AppKit is already
+                // constrained at the materialized top and therefore produce
+                // no bounds notification at all. Re-arm automatic pagination
+                // from the gesture itself in that case.
+                reportScrollState(force: true)
+            }
+            parent.onUserScrollBegan()
         }
 
         func finishScrollActivity() {

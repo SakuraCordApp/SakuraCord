@@ -483,6 +483,10 @@ extension NativeMessageTimelineCoordinator {
                 } else if appendedLayoutCount > 0 {
                     appendOrigins(count: appendedLayoutCount)
                 }
+                let establishesLeadingHistoryBoundary =
+                    oldItemCount == 0
+                        || conversationChanged
+                        || !oldParent.hasMoreMessages
                 if didPrependItems, parent.hasMoreMessages {
                     let reserveUpdate =
                         NativeMessageTimelineLayoutPolicy
@@ -514,9 +518,9 @@ extension NativeMessageTimelineCoordinator {
                                     )
                         )
                     }
-                } else if oldItemCount == 0 || conversationChanged,
-                          parent.hasMoreMessages,
-                          leadingHistoryReserve == 0
+                } else if establishesLeadingHistoryBoundary,
+                    parent.hasMoreMessages,
+                    leadingHistoryReserve == 0
                 {
                     leadingHistoryReserve =
                         Self.leadingHistoryReserveChunk

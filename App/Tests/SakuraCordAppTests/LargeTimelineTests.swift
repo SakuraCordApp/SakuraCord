@@ -3352,6 +3352,102 @@ func `live scroll end restores hover presentation`() throws {
 }
 
 @MainActor @Test
+func `completed initial ten message page exposes history reserve before first upward delta`() throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    let channelID = ChannelID(rawValue: 99_221)
+    let author = User(
+        id: UserID(rawValue: 99_222),
+        username: "initial-page",
+        displayName: "Initial Page"
+    )
+    let messages = (0 ..< 10).map { index in
+        Message(
+            id: MessageID(rawValue: UInt64(99_230 + index)),
+            channelID: channelID,
+            author: author,
+            content: "Initial page message \(index)"
+        )
+    }
+    model.replaceSelectedMessages(with: messages)
+    var loadEarlierCount = 0
+    var userScrollBeganCount = 0
+    func timeline(
+        hasMoreMessages: Bool,
+        isLoadingEarlier: Bool
+    ) -> NativeMessageTimelineView {
+        NativeMessageTimelineView(
+            model: model,
+            conversation: .channel(channelID),
+            beginning: nil,
+            firstMessageStartsDayOverride: nil,
+            hasMoreMessages: hasMoreMessages,
+            isLoadingEarlier: isLoadingEarlier,
+            bottomContentInset: 0,
+            unreadMessageID: nil,
+            highlightedMessageID: nil,
+            initialScrollTarget: .bottom,
+            scrollRequest: nil,
+            runsPerformanceAutoScroll: false,
+            loadEarlier: { loadEarlierCount += 1 },
+            openReply: { _ in },
+            onScrollActivityChange: { _ in },
+            onScrollStateChange: { _ in },
+            onUserScrollBegan: { userScrollBeganCount += 1 },
+            onUserScrollEnded: { _ in }
+        )
+    }
+    // The model publishes the ten messages before it publishes the page's
+    // has-more boundary. That intermediate update already contains the
+    // leading loader and all ten rows, which was the transition the previous
+    // regression test failed to represent.
+    let loadingTimeline = timeline(
+        hasMoreMessages: false,
+        isLoadingEarlier: true
+    )
+    let coordinator = loadingTimeline.makeCoordinator()
+    let scrollView = coordinator.makeScrollView()
+    scrollView.frame = CGRect(x: 0, y: 0, width: 820, height: 700)
+    scrollView.tile()
+    scrollView.layoutSubtreeIfNeeded()
+    coordinator.update(parent: loadingTimeline, scrollView: scrollView)
+    coordinator.reconcileViewportGeometryForTesting()
+    let canvas = try #require(coordinator.canvas)
+
+    #expect(coordinator.rowCount == 10)
+    #expect(coordinator.leadingHistoryReserve == 0)
+
+    let completedTimeline = timeline(
+        hasMoreMessages: true,
+        isLoadingEarlier: false
+    )
+    coordinator.update(parent: completedTimeline, scrollView: scrollView)
+
+    #expect(
+        coordinator.leadingHistoryReserve
+            == NativeMessageTimelineCoordinator.leadingHistoryReserveChunk
+    )
+    #expect(!coordinator.followsMaterializedHistoryBoundary)
+    #expect(canvas.historySkeleton == nil)
+
+    coordinator.liveScrollTrackingWillBegin()
+
+    #expect(coordinator.followsMaterializedHistoryBoundary)
+    #expect(canvas.historySkeleton != nil)
+    #expect(
+        coordinator.provisionalHistoryMinimumY(
+            viewportHeight: scrollView.contentView.bounds.height
+        ) == 0
+    )
+    #expect(loadEarlierCount == 1)
+    #expect(userScrollBeganCount == 1)
+
+    coordinator.liveScrollTrackingDidEnd()
+    #expect(!coordinator.followsMaterializedHistoryBoundary)
+    #expect(canvas.historySkeleton == nil)
+    coordinator.stopObserving()
+}
+
+@MainActor @Test
 func `native thread beginning and loader preserve thread surface configuration`() {
     let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
     let title = "Media viewer should use a native presentation"
