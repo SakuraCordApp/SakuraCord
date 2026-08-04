@@ -680,6 +680,9 @@ extension AppModel {
         if replyingTo?.id == messageID {
             replyingTo = nil
         }
+        if threadReplyingTo?.id == messageID {
+            threadReplyingTo = nil
+        }
         if channelID == openThread?.id {
             threadMessages.removeAll { $0.id == messageID }
         }

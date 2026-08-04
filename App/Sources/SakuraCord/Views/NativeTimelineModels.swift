@@ -144,12 +144,7 @@ enum NativeTimelineConversation: Hashable {
     }
 
     var supportsReply: Bool {
-        switch self {
-        case .channel:
-            true
-        case .thread:
-            false
-        }
+        true
     }
 
     var loaderKind: NativeTimelineLoaderKind {

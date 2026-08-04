@@ -3380,7 +3380,7 @@ func `native thread beginning and loader preserve thread surface configuration`(
         NativeTimelineLoaderKind.replies.loadingLabel
             == "Loading earlier replies…"
     )
-    #expect(!NativeTimelineConversation.thread(ChannelID(rawValue: 43)).supportsReply)
+    #expect(NativeTimelineConversation.thread(ChannelID(rawValue: 43)).supportsReply)
     #expect(NativeTimelineConversation.channel(nil).supportsReply)
 }
 

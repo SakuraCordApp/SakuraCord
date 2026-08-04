@@ -255,7 +255,12 @@ struct ComposerView: View {
                 model.addComposerAttachments(urls, to: conversation)
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .sakuracordFocusComposer)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .sakuracordFocusComposer)) { note in
+            if let destination = note.object as? MessageComposerDestination,
+               destination != conversation
+            {
+                return
+            }
             isFocused = true
         }
         .onChange(of: showEmojiPicker) { wasPresented, isPresented in
@@ -911,7 +916,10 @@ struct ComposerView: View {
     }
 
     private var activeReply: Message? {
-        conversation == .channel ? model.replyingTo : nil
+        switch conversation {
+        case .channel: model.replyingTo
+        case .thread: model.threadReplyingTo
+        }
     }
 
     private var attachments: [ForumPostAttachment] {
@@ -935,8 +943,7 @@ struct ComposerView: View {
     }
 
     private func cancelReply() {
-        guard conversation == .channel else { return }
-        model.cancelReply()
+        model.cancelReply(in: conversation)
     }
 }
 

@@ -250,6 +250,7 @@ final class AppModel {
     var forumLayout: ForumLayout = .list
     var forumTagMatch: ForumTagMatch = .matchSome
     var replyingTo: Message?
+    var threadReplyingTo: Message?
     var presentedInteractionModal: InteractionModal?
     var interactionModalNonce: String?
     var interactionErrorMessage: String?

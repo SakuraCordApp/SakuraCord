@@ -2913,6 +2913,50 @@ private actor FailingRemovalCredentialStore: CredentialStore {
 }
 
 @MainActor
+@Test func `replying in a forum post targets the thread message and clears after sending`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let forum = try #require(
+        model.snapshot?.channels.first(where: { $0.kind == .forum })
+    )
+    model.selectedChannelID = forum.id
+    #expect(
+        await eventuallyOnMain {
+            model.hasLoadedForumPosts
+                && model.forumPosts.contains(where: { !$0.thread.isLocked })
+        }
+    )
+    let post = try #require(
+        model.forumPosts.first(where: { !$0.thread.isLocked })
+    )
+    model.open(post)
+    #expect(
+        await eventuallyOnMain {
+            model.hasCompletedInitialThreadLoad
+                && model.openThreadAccess.canSend
+                && !model.threadMessages.isEmpty
+        }
+    )
+    let target = try #require(model.threadMessages.first)
+
+    model.reply(to: target)
+    #expect(model.threadReplyingTo?.id == target.id)
+    #expect(model.replyingTo == nil)
+
+    model.threadDraft = "forum reply from test"
+    #expect(await model.sendThreadComposerMessage(attachments: []))
+    #expect(
+        await eventuallyOnMain {
+            model.threadMessages.last?.replyTo == target.id
+        }
+    )
+    #expect(model.threadMessages.last?.replyPreview?.messageID == target.id)
+    #expect(model.threadMessages.last?.replyPreview?.content == target.content)
+    #expect(model.threadReplyingTo == nil)
+}
+
+@MainActor
 @Test func `message grouping matches discord continuation rules`() {
     let author = User(id: UserID(rawValue: 1), username: "one", displayName: "One")
     let other = User(id: UserID(rawValue: 2), username: "two", displayName: "Two")

@@ -391,14 +391,33 @@ extension AppModel {
     }
 
     func reply(to message: Message) {
-        guard message.channelID == selectedChannelID else { return }
-        replyingTo = message
-        NotificationCenter.default.post(name: .sakuracordFocusComposer, object: nil)
+        let destination: MessageComposerDestination
+        if message.channelID == selectedChannelID {
+            replyingTo = message
+            destination = .channel
+        } else if message.channelID == openThread?.id {
+            threadReplyingTo = message
+            destination = .thread
+        } else {
+            return
+        }
+        NotificationCenter.default.post(
+            name: .sakuracordFocusComposer,
+            object: destination
+        )
     }
 
-    func cancelReply() {
-        replyingTo = nil
-        NotificationCenter.default.post(name: .sakuracordFocusComposer, object: nil)
+    func cancelReply(in destination: MessageComposerDestination = .channel) {
+        switch destination {
+        case .channel:
+            replyingTo = nil
+        case .thread:
+            threadReplyingTo = nil
+        }
+        NotificationCenter.default.post(
+            name: .sakuracordFocusComposer,
+            object: destination
+        )
     }
 
     func open(_ thread: MessageThreadSummary) {
@@ -451,6 +470,7 @@ extension AppModel {
             fresh: cachedMessages
         )
         threadDraft = ""
+        threadReplyingTo = nil
         threadComposerAttachments = []
         hasMoreThreadMessages = cachedBoundary ?? false
         beginInitialThreadLoad(thread)
@@ -573,6 +593,7 @@ extension AppModel {
         openThreadStartedAt = nil
         threadMessages = []
         threadDraft = ""
+        threadReplyingTo = nil
         threadComposerAttachments = []
         isLoadingThread = false
         hasCompletedInitialThreadLoad = false
@@ -678,8 +699,10 @@ extension AppModel {
         let content = threadDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !content.isEmpty || !attachments.isEmpty else { return false }
         guard validateAttachmentCount(attachments) else { return false }
+        let replyTo = threadReplyingTo?.id
         return await sendThreadMessage(
             content: content,
+            replyTo: replyTo,
             attachments: attachments,
             thread: thread,
             clearsComposer: true
@@ -689,6 +712,7 @@ extension AppModel {
     @discardableResult
     func sendThreadMessage(
         content: String,
+        replyTo: MessageID? = nil,
         attachments: [ForumPostAttachment],
         thread: MessageThreadSummary,
         clearsComposer: Bool
@@ -697,12 +721,14 @@ extension AppModel {
         let draft = SendMessageDraft(
             channelID: thread.id,
             content: content,
+            replyTo: replyTo,
             attachments: attachments
         )
         threadErrorMessage = nil
         threadErrorScope = nil
         if clearsComposer {
             threadDraft = ""
+            threadReplyingTo = nil
         }
         let session = accountSession()
         do {

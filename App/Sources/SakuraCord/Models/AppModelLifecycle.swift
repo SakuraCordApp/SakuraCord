@@ -1188,6 +1188,8 @@ extension AppModel {
         channelLoadGeneration &+= 1
         threadLoadTask?.cancel()
         threadLoadTask = nil
+        replyingTo = nil
+        threadReplyingTo = nil
         conversationRefreshJournals.removeAll(keepingCapacity: false)
         memberLoadTask?.cancel()
         memberLoadTask = nil
