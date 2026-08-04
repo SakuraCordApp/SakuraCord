@@ -142,11 +142,12 @@ nonisolated enum NativeTimelineCompactTimestampHitTesting {
     static func contains(
         _ point: CGPoint,
         rowOrigin: CGFloat,
-        frame: CGRect?
+        highlightFrame: CGRect?
     ) -> Bool {
-        frame?
-            .offsetBy(dx: 0, dy: rowOrigin)
-            .contains(point) == true
+        NativeTimelineHoverHitTesting.contains(
+            CGPoint(x: point.x, y: point.y - rowOrigin),
+            in: highlightFrame
+        )
     }
 }
 

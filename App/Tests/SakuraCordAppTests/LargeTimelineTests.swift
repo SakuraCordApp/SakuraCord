@@ -2229,7 +2229,7 @@ func `completed call system messages include the bounded discord duration`() {
 }
 
 @MainActor @Test
-func `native compact timestamp preserves the pre CoreText hover column`() {
+func `native compact timestamp follows the full message hover area`() {
     let author = User(
         id: UserID(rawValue: 51),
         username: "rowan",
@@ -2285,14 +2285,21 @@ func `native compact timestamp preserves the pre CoreText hover column`() {
         NativeTimelineCompactTimestampHitTesting.contains(
             CGPoint(x: 15, y: 107),
             rowOrigin: 100,
-            frame: frame
+            highlightFrame: compact.highlightFrame
+        )
+    )
+    #expect(
+        NativeTimelineCompactTimestampHitTesting.contains(
+            CGPoint(x: 540, y: 107),
+            rowOrigin: 100,
+            highlightFrame: compact.highlightFrame
         )
     )
     #expect(
         !NativeTimelineCompactTimestampHitTesting.contains(
-            CGPoint(x: 64, y: 107),
+            CGPoint(x: 621, y: 107),
             rowOrigin: 100,
-            frame: frame
+            highlightFrame: compact.highlightFrame
         )
     )
 }

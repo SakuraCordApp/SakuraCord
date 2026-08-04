@@ -750,10 +750,11 @@ extension NativeTimelineCanvasView {
               items.indices.contains(index),
               layouts.indices.contains(index),
               case .message = items[index],
+              layouts[index].compactTimestampFrame != nil,
               NativeTimelineCompactTimestampHitTesting.contains(
                   point,
                   rowOrigin: displayedRowOrigin(at: index),
-                  frame: layouts[index].compactTimestampFrame
+                  highlightFrame: layouts[index].highlightFrame
               )
         else { return nil }
         return index
