@@ -312,6 +312,16 @@ public struct ReadAcknowledgementResponse: Codable, Equatable, Sendable {
     }
 }
 
+public struct BulkReadStateAcknowledgement: Codable, Equatable, Sendable {
+    public var channelID: ChannelID
+    public var messageID: MessageID
+
+    public init(channelID: ChannelID, messageID: MessageID) {
+        self.channelID = channelID
+        self.messageID = messageID
+    }
+}
+
 public struct DiscordEmoji: Identifiable, Codable, Hashable, Sendable {
     public let id: String
     public var name: String

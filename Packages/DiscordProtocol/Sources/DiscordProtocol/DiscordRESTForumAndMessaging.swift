@@ -906,6 +906,79 @@ extension DiscordRESTProvider {
         )
     }
 
+    public func acknowledgeBulk(
+        _ readStates: [BulkReadStateAcknowledgement]
+    ) async throws {
+        for batch in readStates.chunked(maximumCount: 100) {
+            try await requestEmpty(
+                "/read-states/ack-bulk",
+                method: "POST",
+                body: [
+                    "read_states": .array(
+                        batch.map { readState in
+                            .object([
+                                "channel_id": .string(readState.channelID.description),
+                                "message_id": .string(readState.messageID.description),
+                                "read_state_type": .number(0),
+                            ])
+                        }
+                    )
+                ]
+            )
+        }
+    }
+
+    public func updateGuildNotificationLevel(
+        guildID: GuildID,
+        level: MessageNotificationLevel
+    ) async throws {
+        try await updateGuildNotificationSettings(
+            guildID: guildID,
+            settings: [
+                "message_notifications": .number(Double(level.rawValue))
+            ]
+        )
+    }
+
+    public func updateGuildMute(
+        guildID: GuildID,
+        isMuted: Bool,
+        until: Date?
+    ) async throws {
+        var settings: [String: JSONValue] = ["muted": .bool(isMuted)]
+        if isMuted, let until {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            settings["mute_config"] = .object([
+                "end_time": .string(formatter.string(from: until)),
+            ])
+        } else {
+            settings["mute_config"] = .null
+        }
+        try await updateGuildNotificationSettings(
+            guildID: guildID,
+            settings: settings
+        )
+    }
+
+    func updateGuildNotificationSettings(
+        guildID: GuildID,
+        settings: [String: JSONValue]
+    ) async throws {
+        // The current first-party client sends one partial guild entry through
+        // the bulk user-guild settings route and reconciles the accepted value
+        // through USER_GUILD_SETTINGS_UPDATE.
+        try await requestEmpty(
+            "/users/@me/guilds/settings",
+            method: "PATCH",
+            body: [
+                "guilds": .object([
+                    guildID.description: .object(settings),
+                ])
+            ]
+        )
+    }
+
     public func updateChannelMute(
         guildID: GuildID?,
         channelID: ChannelID,
@@ -1668,4 +1741,13 @@ extension DiscordRESTProvider {
         return String(withoutAnimationPrefix)
     }
 
+}
+
+private extension Array {
+    func chunked(maximumCount: Int) -> [[Element]] {
+        guard maximumCount > 0 else { return [] }
+        return stride(from: 0, to: count, by: maximumCount).map { start in
+            Array(self[start ..< Swift.min(start + maximumCount, count)])
+        }
+    }
 }

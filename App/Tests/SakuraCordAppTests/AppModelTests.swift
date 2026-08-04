@@ -480,6 +480,95 @@ import UserNotifications
 }
 
 @MainActor
+@Test func `gateway guild metadata update preserves projected server unread`() async throws {
+    let provider = StartupUnreadTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+
+    let guildID = GuildID(rawValue: 77_000)
+    var gatewayGuild = try #require(model.snapshot?.guilds.first { $0.id == guildID })
+    gatewayGuild.unreadCount = 0
+    gatewayGuild.mentionCount = 0
+
+    model.consumeGuildChanged(gatewayGuild)
+
+    #expect(model.serverRailGuildsByID[guildID]?.unreadCount == 1)
+    #expect(model.serverRailGuildsByID[guildID]?.mentionCount == 2)
+    #expect(model.snapshot?.guilds.first { $0.id == guildID }?.unreadCount == 1)
+}
+
+@MainActor
+@Test func `gateway guild layout update preserves projected server unread`() async throws {
+    let provider = StartupUnreadTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+
+    let guildID = GuildID(rawValue: 77_000)
+    var gatewayGuild = try #require(model.snapshot?.guilds.first { $0.id == guildID })
+    gatewayGuild.unreadCount = 0
+    gatewayGuild.mentionCount = 0
+    let railItems = model.serverRailItems
+
+    model.consumeGuildLayoutChanged(guilds: [gatewayGuild], railItems: railItems)
+
+    #expect(model.serverRailGuildsByID[guildID]?.unreadCount == 1)
+    #expect(model.serverRailGuildsByID[guildID]?.mentionCount == 2)
+    #expect(model.snapshot?.guilds.first { $0.id == guildID }?.unreadCount == 1)
+}
+
+@MainActor
+@Test func `untouched server keeps authoritative unread while permissions are checking`() async
+    throws
+{
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+
+    let guildID = GuildID(rawValue: 77_100)
+    let unreadChannelID = ChannelID(rawValue: 77_101)
+    let unknownChannelID = ChannelID(rawValue: 77_102)
+    var refreshed = try #require(model.snapshot)
+    refreshed.guilds.append(
+        Guild(
+            id: guildID,
+            name: "Untouched server",
+            defaultMessageNotifications: .allMessages
+        )
+    )
+    refreshed.guildRailItems.append(.guild(guildID))
+    refreshed.channels.append(contentsOf: [
+        Channel(
+            id: unreadChannelID,
+            guildID: guildID,
+            name: "authoritative-unread",
+            lastMessageID: MessageID(rawValue: 12)
+        ),
+        Channel(
+            id: unknownChannelID,
+            guildID: guildID,
+            name: "no-read-state",
+            lastMessageID: MessageID(rawValue: 22)
+        ),
+    ])
+    refreshed.readStates.append(
+        ChannelReadState(
+            channelID: unreadChannelID,
+            lastAcknowledgedMessageID: MessageID(rawValue: 10),
+            mentionCount: 2
+        )
+    )
+
+    model.consumeSnapshotChanged(refreshed)
+
+    #expect(model.checkingChannelIDs.contains(unreadChannelID))
+    #expect(model.checkingChannelIDs.contains(unknownChannelID))
+    #expect(model.readState.entries[unreadChannelID]?.isAccessible == true)
+    #expect(model.readState.entries[unknownChannelID]?.isAccessible == false)
+    #expect(model.serverRailGuildsByID[guildID]?.unreadCount == 1)
+    #expect(model.serverRailGuildsByID[guildID]?.mentionCount == 2)
+}
+
+@MainActor
 @Test func `workspace remains a skeleton until live bootstrap completes`() async throws {
     let handle = CredentialHandle(accountID: "77110")
     let credentials = RestoredCredentialHandleStore(handle: handle)

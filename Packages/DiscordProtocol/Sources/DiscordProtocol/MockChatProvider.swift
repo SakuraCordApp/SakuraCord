@@ -25,6 +25,16 @@ public actor MockChatProvider: ChatProvider {
     }
 
     public private(set) var acknowledgementRequests: [AcknowledgementRequest] = []
+    public private(set) var bulkAcknowledgementRequests:
+        [[BulkReadStateAcknowledgement]] = []
+    public struct GuildNotificationRequest: Equatable, Sendable {
+        public var guildID: GuildID
+        public var level: MessageNotificationLevel?
+        public var isMuted: Bool?
+        public var muteEndTime: Date?
+    }
+
+    public private(set) var guildNotificationRequests: [GuildNotificationRequest] = []
     public struct ChannelNotificationRequest: Equatable, Sendable {
         public var guildID: GuildID?
         public var channelID: ChannelID
@@ -242,6 +252,35 @@ public actor MockChatProvider: ChatProvider {
                 guildID: guildID,
                 channelID: channelID,
                 level: level
+            )
+        )
+    }
+
+    public func acknowledgeBulk(
+        _ readStates: [BulkReadStateAcknowledgement]
+    ) async throws {
+        bulkAcknowledgementRequests.append(readStates)
+    }
+
+    public func updateGuildNotificationLevel(
+        guildID: GuildID,
+        level: MessageNotificationLevel
+    ) async throws {
+        guildNotificationRequests.append(
+            GuildNotificationRequest(guildID: guildID, level: level)
+        )
+    }
+
+    public func updateGuildMute(
+        guildID: GuildID,
+        isMuted: Bool,
+        until: Date?
+    ) async throws {
+        guildNotificationRequests.append(
+            GuildNotificationRequest(
+                guildID: guildID,
+                isMuted: isMuted,
+                muteEndTime: until
             )
         )
     }

@@ -1310,6 +1310,41 @@ final class AccountReadStateModel {
     }
 }
 
+extension AccountReadStateModel {
+    /// Discord's account read-state snapshot is authoritative evidence that
+    /// the account can see that conversation. Include the parent so joined
+    /// thread read states keep their server unread marker while the parent
+    /// guild's roles and overwrites are still loading.
+    func authoritativeAccessEvidenceChannelIDs() -> Set<ChannelID> {
+        var channelIDs = Set<ChannelID>()
+        channelIDs.reserveCapacity(entries.count)
+        for entry in entries.values where entry.hasAuthoritativeReadState {
+            channelIDs.insert(entry.channelID)
+            if let parentID = entry.parentID {
+                channelIDs.insert(parentID)
+            }
+        }
+        return channelIDs
+    }
+
+    func bulkAcknowledgements(
+        for guildID: GuildID,
+        now: Date = .now
+    ) -> [BulkReadStateAcknowledgement] {
+        entries.values.compactMap { entry in
+            guard entry.guildID == guildID,
+                  unread(channelID: entry.channelID, now: now),
+                  let messageID = entry.latestKnownMessageID
+            else { return nil }
+            return BulkReadStateAcknowledgement(
+                channelID: entry.channelID,
+                messageID: messageID
+            )
+        }
+        .sorted { $0.channelID.rawValue < $1.channelID.rawValue }
+    }
+}
+
 private func maximum<T: Comparable>(_ lhs: T?, _ rhs: T?) -> T? {
     switch (lhs, rhs) {
     case (.some(let lhs), .some(let rhs)): max(lhs, rhs)

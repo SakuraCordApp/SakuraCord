@@ -1810,6 +1810,19 @@ extension AppModel {
         channelNotificationMutationTasks[channelID] != nil
     }
 
+    func guildNotificationSettings(for guild: Guild) -> GuildNotificationSettings {
+        readState.notificationSettings(guildID: guild.id)
+            ?? GuildNotificationSettings(
+                guildID: guild.id,
+                messageNotifications: guild.defaultMessageNotifications
+            )
+    }
+
+    func isGuildNotificationMutationPending(_ guildID: GuildID) -> Bool {
+        guildNotificationMutationTasks[guildID] != nil
+            || guildAcknowledgementTasks[guildID] != nil
+    }
+
     func isForumPostUnread(_ post: ForumPost) -> Bool {
         readState.entries[post.id]?.isUnread ?? post.isUnread
     }

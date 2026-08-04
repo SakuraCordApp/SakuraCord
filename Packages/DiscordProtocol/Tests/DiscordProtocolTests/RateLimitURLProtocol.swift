@@ -54,6 +54,13 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var ackPath: String?
     nonisolated(unsafe) static var ackBody: [String: Any]?
     nonisolated(unsafe) static var ackStatus = 200
+    nonisolated(unsafe) static var bulkAckRequestCount = 0
+    nonisolated(unsafe) static var bulkAckMethods: [String] = []
+    nonisolated(unsafe) static var bulkAckBodies: [[String: Any]] = []
+    nonisolated(unsafe) static var guildNotificationRequestCount = 0
+    nonisolated(unsafe) static var guildNotificationMethod: String?
+    nonisolated(unsafe) static var guildNotificationBody: [String: Any]?
+    nonisolated(unsafe) static var guildNotificationStatus = 200
     nonisolated(unsafe) static var channelNotificationRequestCount = 0
     nonisolated(unsafe) static var channelNotificationMethod: String?
     nonisolated(unsafe) static var channelNotificationPath: String?
@@ -120,6 +127,13 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
         ackPath = nil
         ackBody = nil
         ackStatus = 200
+        bulkAckRequestCount = 0
+        bulkAckMethods = []
+        bulkAckBodies = []
+        guildNotificationRequestCount = 0
+        guildNotificationMethod = nil
+        guildNotificationBody = nil
+        guildNotificationStatus = 200
         channelNotificationRequestCount = 0
         channelNotificationMethod = nil
         channelNotificationPath = nil
@@ -289,6 +303,28 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
             json =
                 status == 200
                 ? #"{"token":"next-token"}"#
+                : #"{"retry_after":0.01,"global":false}"#
+        case "/api/v9/read-states/ack-bulk":
+            RateLimitURLProtocol.bulkAckRequestCount += 1
+            RateLimitURLProtocol.bulkAckMethods.append(request.httpMethod ?? "")
+            if let body = RateLimitURLProtocol.requestBody(request),
+               let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any]
+            {
+                RateLimitURLProtocol.bulkAckBodies.append(object)
+            }
+            status = 204
+            json = ""
+        case "/api/v9/users/@me/guilds/settings":
+            RateLimitURLProtocol.guildNotificationRequestCount += 1
+            RateLimitURLProtocol.guildNotificationMethod = request.httpMethod
+            RateLimitURLProtocol.guildNotificationBody =
+                RateLimitURLProtocol.requestBody(request).flatMap {
+                    try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
+                }
+            status = RateLimitURLProtocol.guildNotificationStatus
+            json =
+                status == 200
+                ? #"[{"guild_id":"100"}]"#
                 : #"{"retry_after":0.01,"global":false}"#
         case "/api/v9/users/@me/guilds/100/settings",
              "/api/v9/users/@me/guilds/@me/settings":

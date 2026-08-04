@@ -73,12 +73,16 @@ extension AppModel {
         acknowledgementTasks.removeAll()
         acknowledgementProcessorTask?.cancel()
         acknowledgementProcessorTask = nil
+        guildAcknowledgementTasks.values.forEach { $0.cancel() }
+        guildAcknowledgementTasks.removeAll()
         queuedAcknowledgements.removeAll()
         acknowledgementQueueOrder.removeAll()
     }
 
     func resetChannelNotificationMutations() {
         channelNotificationMutationGeneration &+= 1
+        guildNotificationMutationTasks.values.forEach { $0.cancel() }
+        guildNotificationMutationTasks.removeAll()
         channelNotificationMutationTasks.values.forEach { $0.cancel() }
         channelNotificationMutationTasks.removeAll()
         forumNotificationMutationGeneration &+= 1
@@ -255,12 +259,21 @@ extension AppModel {
         var accessibilityByChannelID = [ChannelID: Bool](
             minimumCapacity: channels.count
         )
+        let authoritativeAccessEvidence =
+            readState.authoritativeAccessEvidenceChannelIDs()
         for channel in channels {
             let access = conversationAccess(for: channel)
             accessByChannelID[channel.id] = access
             switch access {
-            case .hidden, .checking:
+            case .hidden:
                 accessibilityByChannelID[channel.id] = false
+            case .checking:
+                // Untouched guilds can remain in permission-checking state
+                // until activation loads their member roles. Preserve unread
+                // supplied by Discord's authoritative account read state,
+                // without admitting channels for which no such evidence exists.
+                accessibilityByChannelID[channel.id] =
+                    authoritativeAccessEvidence.contains(channel.id)
             case .readable:
                 accessibilityByChannelID[channel.id] = true
             }
@@ -955,8 +968,11 @@ extension AppModel {
         else { return }
         value.guilds[index] = guild
         snapshot = value
-        serverRailGuildsByID[guild.id] = guild
         readState.merge(guilds: [guild])
+        // Gateway guild payloads do not carry SakuraCord's presentation-only
+        // unread and mention counts. Re-project them after every metadata
+        // update instead of replacing the rail entry with raw zero values.
+        refreshUnreadPresentation(appliesAccessImmediately: true)
     }
 
     func consumeGuildLayoutChanged(guilds: [Guild], railItems: [GuildRailItem]) {
@@ -967,6 +983,9 @@ extension AppModel {
         readState.retainGuilds(Set(guilds.map(\.id)))
         readState.merge(guilds: guilds)
         updateServerRail(from: value)
+        // Layout events likewise contain raw guild models. Preserve the
+        // account read-state projection when rebuilding the server rail.
+        refreshUnreadPresentation(appliesAccessImmediately: true)
         if let selectedGuildID,
            !guilds.contains(where: { $0.id == selectedGuildID })
         {

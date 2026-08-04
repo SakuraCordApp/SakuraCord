@@ -172,7 +172,9 @@ and retained as evidence.
 | `PATCH /channels/{thread}/thread-members/@me/settings` | Explicit thread notification change; only reviewed `flags`, `muted`, and `mute_config` keys. | Current first-party route; P−, S−. |
 | `POST /channels/{channel}/typing` | Empty body after the local 1.5-second delay and eight-second coalescing window. | Public typing semantics and all three references. |
 | `POST /channels/{channel}/messages/{message}/ack` | One viewport-qualified acknowledgement; `token` is always present (null before Discord issues one), `last_viewed` is the current Discord-epoch day, and `flags` is sent only when the recomputed guild/thread value differs from Ready state. Manual-unread fields remain explicit-action-only. | Current first-party and Paicord; S−. |
-| `PATCH /users/@me/guilds/{guild-or-@me}/settings` | One explicit notification change; a single partial `channel_overrides` entry. | Current first-party; P− and S− for the private `@me` scope. |
+| `POST /read-states/ack-bulk` | Explicit “Mark Server as Read”; at most 100 unread channel/thread entries per sequential request, each containing `channel_id`, `message_id`, and channel `read_state_type:0`. | Current first-party; P−, S−. |
+| `PATCH /users/@me/guilds/{guild-or-@me}/settings` | One explicit channel notification change; a single partial `channel_overrides` entry. | Current first-party; P− and S− for the private `@me` scope. |
+| `PATCH /users/@me/guilds/settings` | One explicit server notification change; `guilds` contains exactly one partial guild entry with only the selected notification or mute fields. | Current first-party; P−, S−. |
 | `GET /guilds/{guild}/application-command-index`, `/channels/{channel}/application-command-index`, `/users/@me/application-command-index`, or `/applications/{application}/application-command-index` | Target-specific index; at most three created GETs for the reviewed `202`/`429` readiness flow. | Current first-party route family; P−, S−. |
 | `POST /interactions` | One explicit type-2 execution, type-4 autocomplete, or returned modal submission; nonce-keyed, one attempt. | Current first-party and Paicord command model; Swiftcord has no current index/interaction path. |
 | `POST /channels/{channel}/messages` | One explicit send; `content`, nonce, `tts:false`, `flags:0`, macOS `mobile_network_type:"unknown"`, optional reply/attachments, and `X-Context-Properties` location `chat_input`. SakuraCord deliberately adds `enforce_nonce:true`. | Current first-party build and clean macOS Network Information result; Paicord supplies the nonce-oriented reference; Swiftcord is historical and nonce-less. |
@@ -712,6 +714,24 @@ capture was used for this recheck.
   `@me` user-guild settings through `USER_GUILD_SETTINGS(@me)` rather than the
   bulk guild endpoint. No authenticated account action or traffic capture was
   used.
+- A user-selected server notification or mute change sends one immediate
+  `PATCH /users/@me/guilds/settings` through the same central transport. Its
+  body contains one guild ID under `guilds` and only the selected
+  `message_notifications`, or `muted` plus `mute_config`, fields. A server
+  “Mark as Read” action sends only SakuraCord's currently unread, accessible
+  channel and joined-thread states to `POST /read-states/ack-bulk`, with at
+  most 100 entries in each sequential request. The UI applies those read
+  boundaries optimistically and rolls them back on failure; notification
+  settings apply locally only after success. Authoritative
+  `USER_GUILD_SETTINGS_UPDATE` events still reconcile notification state.
+  This contract was statically checked on 2026-08-04 against Discord public
+  web build `588119` and asset `web.1f98726096a7c0ce.js`, Discord's current
+  public rate-limit and status-code documentation, Paicord revision
+  `694761c1938b73bb60bd58942674dfe73aab1135`, and Swiftcord v1 revision
+  `14465d927ebe1ba34b3befa00f9365fad7b56eb9`. The public documentation does
+  not describe either user-client route. Paicord's server-icon menu only
+  copies the guild ID and neither pinned reference implements these server
+  mutations. No authenticated request or traffic capture was used.
 - Forum-post notification settings are current-user thread-member state, not
   parent-forum channel overrides. Joined posts send one
   `PATCH /channels/{thread_id}/thread-members/@me/settings`; an unjoined post

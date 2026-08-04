@@ -6,6 +6,7 @@ struct ServerFolderRailView: View {
     let guildsByID: [GuildID: Guild]
     let selectedGuildID: GuildID?
     let selectGuild: (GuildID?) -> Void
+    let contextMenuActions: ServerRailContextMenuActions
     let expansionChanged: () -> Void
 
     @AppStorage private var isExpanded: Bool
@@ -16,12 +17,14 @@ struct ServerFolderRailView: View {
         guildsByID: [GuildID: Guild],
         selectedGuildID: GuildID?,
         selectGuild: @escaping (GuildID?) -> Void,
+        contextMenuActions: ServerRailContextMenuActions,
         expansionChanged: @escaping () -> Void
     ) {
         self.folder = folder
         self.guildsByID = guildsByID
         self.selectedGuildID = selectedGuildID
         self.selectGuild = selectGuild
+        self.contextMenuActions = contextMenuActions
         self.expansionChanged = expansionChanged
         _isExpanded = AppStorage(
             wrappedValue: false,
@@ -38,7 +41,8 @@ struct ServerFolderRailView: View {
                     guildIDs: folder.guildIDs,
                     guildsByID: guildsByID,
                     selectedGuildID: selectedGuildID,
-                    selectGuild: selectGuild
+                    selectGuild: selectGuild,
+                    contextMenuActions: contextMenuActions
                 )
                 .transition(.offset(y: -10).combined(with: .opacity))
             }
@@ -167,12 +171,17 @@ private struct ExpandedFolderGuilds: View {
     let guildsByID: [GuildID: Guild]
     let selectedGuildID: GuildID?
     let selectGuild: (GuildID?) -> Void
+    let contextMenuActions: ServerRailContextMenuActions
 
     var body: some View {
         VStack(spacing: 8) {
             ForEach(guildIDs, id: \.self) { guildID in
                 if let guild = guildsByID[guildID] {
-                    GuildRailButton(guild: guild, isSelected: selectedGuildID == guild.id) {
+                    GuildRailButton(
+                        guild: guild,
+                        isSelected: selectedGuildID == guild.id,
+                        contextMenuActions: contextMenuActions
+                    ) {
                         selectGuild(guild.id)
                     }
                 }

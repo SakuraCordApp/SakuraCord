@@ -66,7 +66,27 @@ private struct ChatRootView: View {
                     selectedGuildID: model.selectedGuildID,
                     homeIsUnread: model.directMessageUnread,
                     homeMentionCount: model.directMessageMentionCount,
-                    selectHome: { model.selectGuild(nil) }, selectGuild: model.selectGuild
+                    selectHome: { model.selectGuild(nil) },
+                    selectGuild: model.selectGuild,
+                    contextMenuActions: ServerRailContextMenuActions(
+                        allowsMutations: !model.presentsCachedStartup,
+                        settings: model.guildNotificationSettings,
+                        isMutationPending: model.isGuildNotificationMutationPending,
+                        markRead: model.markGuildRead,
+                        mute: { guild, duration in
+                            model.setGuildMute(
+                                true,
+                                until: duration.endDate(),
+                                for: guild
+                            )
+                        },
+                        unmute: { guild in
+                            model.setGuildMute(false, until: nil, for: guild)
+                        },
+                        setNotificationLevel: { guild, level in
+                            model.setGuildNotificationLevel(level, for: guild)
+                        }
+                    )
                 )
                 .zIndex(200)
                 ChannelSidebarView(

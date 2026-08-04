@@ -300,6 +300,152 @@ extension AppModel {
         )
     }
 
+    func markGuildRead(_ guildID: GuildID) {
+        guard !runsChatPerformanceBenchmark, !presentsCachedStartup else { return }
+        guard guildAcknowledgementTasks[guildID] == nil else { return }
+        let targets = readState.bulkAcknowledgements(for: guildID)
+        guard !targets.isEmpty else { return }
+
+        for target in targets {
+            preserveUnreadDividerIfNeeded(channelID: target.channelID)
+            acknowledgementTasks[target.channelID]?.cancel()
+            acknowledgementTasks[target.channelID] = nil
+            queuedAcknowledgements[target.channelID] = nil
+            acknowledgementQueueOrder.removeAll { $0 == target.channelID }
+            readState.unblockAutomaticAcknowledgement(channelID: target.channelID)
+            readState.markAcknowledgementPending(
+                channelID: target.channelID,
+                messageID: target.messageID
+            )
+            cancelNativeNotifications(channelID: target.channelID)
+        }
+        refreshUnreadPresentation()
+
+        let generation = acknowledgementGeneration
+        let session = accountSession()
+        let activeProvider = session.provider
+        guildAcknowledgementTasks[guildID] = Task { [weak self] in
+            do {
+                try await activeProvider.acknowledgeBulk(targets)
+                guard let self,
+                      self.isCurrentAccountSession(session),
+                      generation == self.acknowledgementGeneration
+                else { return }
+                for target in targets {
+                    self.readState.completeAcknowledgement(
+                        channelID: target.channelID,
+                        messageID: target.messageID,
+                        token: nil
+                    )
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                guard let self,
+                      self.isCurrentAccountSession(session),
+                      generation == self.acknowledgementGeneration
+                else { return }
+                for target in targets {
+                    self.readState.failAcknowledgement(
+                        channelID: target.channelID,
+                        messageID: target.messageID
+                    )
+                }
+                self.errorMessage = "Discord did not accept the server read-state update."
+            }
+            guard let self,
+                  self.isCurrentAccountSession(session),
+                  generation == self.acknowledgementGeneration
+            else { return }
+            self.refreshUnreadPresentation()
+            self.guildAcknowledgementTasks[guildID] = nil
+        }
+    }
+
+    func setGuildNotificationLevel(
+        _ level: MessageNotificationLevel,
+        for guild: Guild
+    ) {
+        guard !presentsCachedStartup else { return }
+        guard guildNotificationMutationTasks[guild.id] == nil else { return }
+        let guildID = guild.id
+        let generation = channelNotificationMutationGeneration
+        let session = accountSession()
+        let activeProvider = session.provider
+        guildNotificationMutationTasks[guildID] = Task { [weak self] in
+            do {
+                try await activeProvider.updateGuildNotificationLevel(
+                    guildID: guildID,
+                    level: level
+                )
+                guard let self,
+                      self.isCurrentAccountSession(session),
+                      generation == self.channelNotificationMutationGeneration
+                else { return }
+                self.updateLocalGuildNotificationSettings(guild: guild) {
+                    $0.messageNotifications = level
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                guard let self,
+                      self.isCurrentAccountSession(session),
+                      generation == self.channelNotificationMutationGeneration
+                else { return }
+                self.errorMessage = "Discord did not accept the server notification setting."
+            }
+            guard let self,
+                  self.isCurrentAccountSession(session),
+                  generation == self.channelNotificationMutationGeneration
+            else { return }
+            self.guildNotificationMutationTasks[guildID] = nil
+        }
+    }
+
+    func setGuildMute(
+        _ isMuted: Bool,
+        until: Date?,
+        for guild: Guild
+    ) {
+        guard !presentsCachedStartup else { return }
+        guard guildNotificationMutationTasks[guild.id] == nil else { return }
+        let guildID = guild.id
+        let generation = channelNotificationMutationGeneration
+        let session = accountSession()
+        let activeProvider = session.provider
+        guildNotificationMutationTasks[guildID] = Task { [weak self] in
+            do {
+                try await activeProvider.updateGuildMute(
+                    guildID: guildID,
+                    isMuted: isMuted,
+                    until: until
+                )
+                guard let self,
+                      self.isCurrentAccountSession(session),
+                      generation == self.channelNotificationMutationGeneration
+                else { return }
+                self.updateLocalGuildNotificationSettings(guild: guild) {
+                    $0.isMuted = isMuted
+                    $0.muteConfiguration =
+                        isMuted ? DiscordMuteConfiguration(endTime: until) : nil
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                guard let self,
+                      self.isCurrentAccountSession(session),
+                      generation == self.channelNotificationMutationGeneration
+                else { return }
+                self.errorMessage = "Discord did not accept the server mute setting."
+            }
+            guard let self,
+                  self.isCurrentAccountSession(session),
+                  generation == self.channelNotificationMutationGeneration
+            else { return }
+            self.guildNotificationMutationTasks[guildID] = nil
+        }
+    }
+
     func setChannelNotificationLevel(
         _ level: MessageNotificationLevel,
         for channel: Channel
@@ -506,6 +652,21 @@ extension AppModel {
         mutation(&override)
         settings.channelOverrides.removeAll { $0.channelID == channel.id }
         settings.channelOverrides.append(override)
+        applyNotificationSettings(settings)
+        refreshUnreadPresentation()
+    }
+
+    func updateLocalGuildNotificationSettings(
+        guild: Guild,
+        mutation: (inout GuildNotificationSettings) -> Void
+    ) {
+        var settings =
+            readState.notificationSettings(guildID: guild.id)
+            ?? GuildNotificationSettings(
+                guildID: guild.id,
+                messageNotifications: guild.defaultMessageNotifications
+            )
+        mutation(&settings)
         applyNotificationSettings(settings)
         refreshUnreadPresentation()
     }

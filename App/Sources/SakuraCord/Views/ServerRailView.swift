@@ -9,6 +9,7 @@ struct ServerRailView: View {
     let homeMentionCount: Int
     let selectHome: () -> Void
     let selectGuild: (GuildID?) -> Void
+    let contextMenuActions: ServerRailContextMenuActions
     @State private var folderLayoutRevision = 0
 
     var body: some View {
@@ -29,6 +30,7 @@ struct ServerRailView: View {
                         guildsByID: guildsByID,
                         selectedGuildID: selectedGuildID,
                         selectGuild: selectGuild,
+                        contextMenuActions: contextMenuActions,
                         folderExpansionChanged: {
                             folderLayoutRevision &+= 1
                         }
@@ -56,11 +58,22 @@ struct ServerRailView: View {
     }
 }
 
+struct ServerRailContextMenuActions {
+    let allowsMutations: Bool
+    let settings: (Guild) -> GuildNotificationSettings
+    let isMutationPending: (GuildID) -> Bool
+    let markRead: (GuildID) -> Void
+    let mute: (Guild, ChannelMuteDuration) -> Void
+    let unmute: (Guild) -> Void
+    let setNotificationLevel: (Guild, MessageNotificationLevel) -> Void
+}
+
 private struct ServerRailItemView: View {
     let item: GuildRailItem
     let guildsByID: [GuildID: Guild]
     let selectedGuildID: GuildID?
     let selectGuild: (GuildID?) -> Void
+    let contextMenuActions: ServerRailContextMenuActions
     let folderExpansionChanged: () -> Void
 
     var body: some View {
@@ -68,7 +81,11 @@ private struct ServerRailItemView: View {
             switch item {
             case let .guild(id):
                 if let guild = guildsByID[id] {
-                    GuildRailButton(guild: guild, isSelected: selectedGuildID == guild.id) {
+                    GuildRailButton(
+                        guild: guild,
+                        isSelected: selectedGuildID == guild.id,
+                        contextMenuActions: contextMenuActions
+                    ) {
                         selectGuild(guild.id)
                     }
                 }
@@ -78,6 +95,7 @@ private struct ServerRailItemView: View {
                     guildsByID: guildsByID,
                     selectedGuildID: selectedGuildID,
                     selectGuild: selectGuild,
+                    contextMenuActions: contextMenuActions,
                     expansionChanged: folderExpansionChanged
                 )
             }
@@ -92,6 +110,7 @@ enum ServerRailAnimations {
 struct GuildRailButton: View {
     let guild: Guild
     let isSelected: Bool
+    let contextMenuActions: ServerRailContextMenuActions
     let action: () -> Void
     @State private var isHovering = false
 
@@ -125,6 +144,23 @@ struct GuildRailButton: View {
                     }
             }
             .buttonStyle(.plain)
+            .overlay {
+                ServerContextMenuBridge(
+                    isUnread: guild.unreadCount > 0,
+                    isMutationPending: contextMenuActions.isMutationPending(guild.id),
+                    allowsMutations: contextMenuActions.allowsMutations,
+                    notificationSettings: contextMenuActions.settings(guild),
+                    markRead: { contextMenuActions.markRead(guild.id) },
+                    mute: { contextMenuActions.mute(guild, $0) },
+                    unmute: { contextMenuActions.unmute(guild) },
+                    setNotificationLevel: {
+                        contextMenuActions.setNotificationLevel(guild, $0)
+                    },
+                    copyServerID: {
+                        ChannelContextMenuValue.copy(guild.id.description)
+                    }
+                )
+            }
             .accessibilityLabel(displayName)
             .accessibilityValue(
                 guild.mentionCount > 0

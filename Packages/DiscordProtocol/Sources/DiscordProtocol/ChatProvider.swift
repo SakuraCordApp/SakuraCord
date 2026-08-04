@@ -70,6 +70,16 @@ public protocol ChatProvider: Sendable {
         flags: UInt64?,
         lastViewed: Int?
     ) async throws -> ReadAcknowledgementResponse
+    func acknowledgeBulk(_ readStates: [BulkReadStateAcknowledgement]) async throws
+    func updateGuildNotificationLevel(
+        guildID: GuildID,
+        level: MessageNotificationLevel
+    ) async throws
+    func updateGuildMute(
+        guildID: GuildID,
+        isMuted: Bool,
+        until: Date?
+    ) async throws
     func updateChannelNotificationLevel(
         guildID: GuildID?,
         channelID: ChannelID,
@@ -250,6 +260,19 @@ public extension ChatProvider {
         guildID: GuildID?,
         channelID: ChannelID,
         level: MessageNotificationLevel
+    ) async throws {}
+
+    func acknowledgeBulk(_ readStates: [BulkReadStateAcknowledgement]) async throws {}
+
+    func updateGuildNotificationLevel(
+        guildID: GuildID,
+        level: MessageNotificationLevel
+    ) async throws {}
+
+    func updateGuildMute(
+        guildID: GuildID,
+        isMuted: Bool,
+        until: Date?
     ) async throws {}
 
     func updateChannelMute(
