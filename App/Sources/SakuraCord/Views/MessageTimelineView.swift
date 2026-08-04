@@ -444,7 +444,7 @@ struct UnreadMessagesBanner: View {
         let count = summary.loadedUnreadCount.formatted()
         let noun = summary.loadedUnreadCount == 1 ? "message" : "messages"
         if summary.isLowerBound {
-            return "\(count)+ new \(noun) in loaded history"
+            return "\(count)+ new \(noun)"
         }
         let time = summary.firstUnreadTimestamp.formatted(
             date: .omitted,
