@@ -618,6 +618,12 @@ nonisolated struct NativeTimelineMentionHover: Equatable {
     let rawToken: String
 }
 
+nonisolated struct NativeTimelineTextLinkHover: Equatable {
+    let itemIdentifier: NativeMessageTimelineItem.Identifier
+    let region: NativeTimelineTextRegion
+    let characterIndex: Int
+}
+
 nonisolated struct NativeTimelineTextSpoilerHover: Equatable {
     let itemIdentifier: NativeMessageTimelineItem.Identifier
     let region: NativeTimelineTextRegion

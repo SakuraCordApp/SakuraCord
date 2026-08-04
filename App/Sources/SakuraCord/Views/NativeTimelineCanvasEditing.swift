@@ -37,6 +37,22 @@ extension NativeTimelineCanvasView {
         }
     }
 
+    func setHoveredTextLink(
+        _ value: NativeTimelineTextLinkHover?
+    ) {
+        guard hoveredTextLink != value else { return }
+        let oldIdentifier = hoveredTextLink?.itemIdentifier
+        hoveredTextLink = value
+        for identifier
+            in [oldIdentifier, value?.itemIdentifier].compactMap({ $0 })
+        {
+            guard let index = items.firstIndex(where: {
+                $0.identifier == identifier
+            }) else { continue }
+            setNeedsDisplay(rowFrame(at: index))
+        }
+    }
+
     func setHoveredTextSpoiler(
         _ value: NativeTimelineTextSpoilerHover?
     ) {
@@ -336,6 +352,29 @@ extension NativeTimelineCanvasView {
         for item: NativeMessageTimelineItem,
         layout: NativeTimelineRowLayout
     ) -> [SelectableTextRegion] {
+        textRegions(
+            for: item,
+            layout: layout,
+            includesNonSelectable: false
+        )
+    }
+
+    func linkPointerTextRegions(
+        for item: NativeMessageTimelineItem,
+        layout: NativeTimelineRowLayout
+    ) -> [SelectableTextRegion] {
+        textRegions(
+            for: item,
+            layout: layout,
+            includesNonSelectable: true
+        )
+    }
+
+    private func textRegions(
+        for item: NativeMessageTimelineItem,
+        layout: NativeTimelineRowLayout,
+        includesNonSelectable: Bool
+    ) -> [SelectableTextRegion] {
         var result: [SelectableTextRegion] = []
         if case let .beginning(beginning) = item,
            let beginningLayout = layout.beginningLayout
@@ -378,7 +417,7 @@ extension NativeTimelineCanvasView {
         for embed in layout.embedRegions {
             for (textIndex, textRegion) in
                 embed.textRegions.enumerated()
-            where textRegion.isSelectable {
+            where includesNonSelectable || textRegion.isSelectable {
                 var frame = textRegion.frame
                 frame.size.height +=
                     textRegion.text.layoutHeightAdjustment
@@ -399,7 +438,7 @@ extension NativeTimelineCanvasView {
         {
             for (textIndex, textRegion) in
                 component.textRegions.enumerated()
-            where textRegion.isSelectable {
+            where includesNonSelectable || textRegion.isSelectable {
                 var frame = textRegion.frame
                 frame.size.height +=
                     textRegion.text.layoutHeightAdjustment
@@ -574,6 +613,7 @@ extension NativeTimelineCanvasView {
         hoveredRow = nil
         hoveredCompactTimestampRow = nil
         setHoveredMention(nil)
+        setHoveredTextLink(nil)
         setHoveredTextSpoiler(nil)
         setHoveredCodeBlock(nil)
         setHoveredComponentButton(nil)

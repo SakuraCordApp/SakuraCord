@@ -195,6 +195,7 @@ extension NativeTimelineRowPainter {
         model: AppModel?,
         selectionRange: NSRange? = nil,
         hoveredMentionCharacterIndex: Int? = nil,
+        hoveredLinkCharacterIndex: Int? = nil,
         hoveredSpoilerRangeLocation: Int? = nil,
         revealedSpoilerLocations: Set<Int> = []
     ) {
@@ -208,6 +209,8 @@ extension NativeTimelineRowPainter {
             selectionRange: selectionRange,
             hoveredMentionCharacterIndex:
                 hoveredMentionCharacterIndex,
+            hoveredLinkCharacterIndex:
+                hoveredLinkCharacterIndex,
             hoveredSpoilerRangeLocation:
                 hoveredSpoilerRangeLocation,
             revealedSpoilerLocations: revealedSpoilerLocations
@@ -236,10 +239,11 @@ extension NativeTimelineRowPainter {
             NSRange?,
             Int?,
             Int?,
+            Int?,
             Set<Int>
         ) -> Void
     {
-        { value, framesetter, frame, model, selectionRange, hoveredMentionCharacterIndex, hoveredSpoilerRangeLocation, revealedSpoilerLocations in
+        { value, framesetter, frame, model, selectionRange, hoveredMentionCharacterIndex, hoveredLinkCharacterIndex, hoveredSpoilerRangeLocation, revealedSpoilerLocations in
         guard frame.width > 0, frame.height > 0,
               let context = NSGraphicsContext.current?.cgContext
         else { return }
@@ -255,7 +259,7 @@ extension NativeTimelineRowPainter {
                 spoilerRanges.append(range)
             }
         }
-        if spoilerRanges.isEmpty {
+        if spoilerRanges.isEmpty, hoveredLinkCharacterIndex == nil {
             drawingValue = value
             drawingFramesetter = framesetter
         } else {
@@ -295,6 +299,10 @@ extension NativeTimelineRowPainter {
                     range: range
                 )
             }
+            NativeTimelineLinkAppearance.applyHover(
+                to: revealed,
+                characterIndex: hoveredLinkCharacterIndex
+            )
             drawingValue = revealed
             drawingFramesetter =
                 CTFramesetterCreateWithAttributedString(revealed)
@@ -359,12 +367,14 @@ extension NativeTimelineRowPainter {
         model: AppModel?,
         selectionRange: NSRange? = nil,
         hoveredMentionCharacterIndex: Int? = nil,
+        hoveredLinkCharacterIndex: Int? = nil,
         hoveredSpoilerRangeLocation: Int? = nil,
         revealedSpoilerLocations: Set<Int> = []
     ) {
         attributedTextDrawOperation(
             value, framesetter, frame, model, selectionRange,
-            hoveredMentionCharacterIndex, hoveredSpoilerRangeLocation,
+            hoveredMentionCharacterIndex, hoveredLinkCharacterIndex,
+            hoveredSpoilerRangeLocation,
             revealedSpoilerLocations
         )
     }

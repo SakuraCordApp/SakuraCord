@@ -354,6 +354,7 @@ enum NativeTimelineRowPainter {
         isHovered: Bool,
         showsCompactTimestamp: Bool = false,
         hoveredMention: NativeTimelineMentionHover? = nil,
+        hoveredTextLink: NativeTimelineTextLinkHover? = nil,
         hoveredTextSpoiler: NativeTimelineTextSpoilerHover? = nil,
         hoveredComponentButton:
             NativeTimelineComponentButtonTarget? = nil,
@@ -436,6 +437,7 @@ enum NativeTimelineRowPainter {
                 isHovered: isHovered,
                 showsCompactTimestamp: showsCompactTimestamp,
                 hoveredMention: hoveredMention,
+                hoveredTextLink: hoveredTextLink,
                 hoveredTextSpoiler: hoveredTextSpoiler,
                 hoveredComponentButton: hoveredComponentButton,
                 pressedComponentButton: pressedComponentButton,

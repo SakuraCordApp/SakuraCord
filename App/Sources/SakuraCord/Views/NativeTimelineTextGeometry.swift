@@ -27,11 +27,42 @@ struct NativeTimelineTextHit {
     let spoilerRange: NSRange?
 }
 
+private struct NativeTimelineTextLinkHitRegion {
+    let characterIndex: Int
+    let url: URL
+    let spoilerRange: NSRange?
+    let frame: CGRect
+}
+
 enum NativeTimelineTextGeometry {
     static func messageContentDrawingFrame(_ frame: CGRect) -> CGRect {
         var drawingFrame = frame
         drawingFrame.size.height = max(drawingFrame.height + 1, 20)
         return drawingFrame
+    }
+}
+
+enum NativeTimelineLinkAppearance {
+    static func applyHover(
+        to value: NSMutableAttributedString,
+        characterIndex: Int?
+    ) {
+        guard let characterIndex,
+              characterIndex >= 0,
+              characterIndex < value.length
+        else { return }
+        var linkRange = NSRange(location: 0, length: 0)
+        guard value.attribute(
+            .link,
+            at: characterIndex,
+            effectiveRange: &linkRange
+        ) != nil, linkRange.length > 0
+        else { return }
+        value.addAttribute(
+            .underlineStyle,
+            value: NSUnderlineStyle.single.rawValue,
+            range: linkRange
+        )
     }
 }
 
@@ -366,6 +397,114 @@ nonisolated enum NativeTimelineCodeBlockGeometry {
 }
 
 enum NativeTimelineTextHitTester {
+    static func linkFrames(
+        value: NSAttributedString,
+        framesetter: CTFramesetter,
+        frame: CGRect
+    ) -> [CGRect] {
+        guard value.length > 0,
+              frame.width > 0,
+              frame.height > 0
+        else { return [] }
+        let path = CGPath(
+            rect: CGRect(origin: .zero, size: frame.size),
+            transform: nil
+        )
+        let textFrame = CTFramesetterCreateFrame(
+            framesetter,
+            CFRange(location: 0, length: value.length),
+            path,
+            nil
+        )
+        return linkRegions(
+            value: value,
+            textFrame: textFrame,
+            outerFrame: frame
+        ).map(\.frame)
+    }
+
+    private static func linkRegions(
+        value: NSAttributedString,
+        textFrame: CTFrame,
+        outerFrame: CGRect
+    ) -> [NativeTimelineTextLinkHitRegion] {
+        var result: [NativeTimelineTextLinkHitRegion] = []
+        value.enumerateAttribute(
+            .link,
+            in: NSRange(location: 0, length: value.length)
+        ) { rawLink, range, _ in
+            guard let url = linkURL(from: rawLink) else { return }
+            var spoilerRange = NSRange(location: 0, length: 0)
+            let isSpoiler = (
+                value.attribute(
+                    .discordMarkdownSpoiler,
+                    at: range.location,
+                    effectiveRange: &spoilerRange
+                ) as? NSNumber
+            )?.boolValue == true
+            let frames = bridgedLinkFrames(
+                NativeTimelineTextSelectionGeometry.rects(
+                    in: textFrame,
+                    outerFrame: outerFrame,
+                    range: range
+                )
+            )
+            result.append(contentsOf: frames.map {
+                NativeTimelineTextLinkHitRegion(
+                    characterIndex: range.location,
+                    url: url,
+                    spoilerRange:
+                        isSpoiler && spoilerRange.length > 0
+                            ? spoilerRange
+                            : nil,
+                    frame: $0
+                )
+            })
+        }
+        return result
+    }
+
+    private static func bridgedLinkFrames(
+        _ frames: [CGRect]
+    ) -> [CGRect] {
+        let frames = frames.sorted {
+            $0.minY == $1.minY
+                ? $0.minX < $1.minX
+                : $0.minY < $1.minY
+        }
+        guard var previous = frames.first else { return [] }
+        var result = [previous]
+        for current in frames.dropFirst() {
+            let gapHeight = current.minY - previous.maxY
+            if gapHeight > 0 {
+                let minX = min(previous.minX, current.minX)
+                let maxX = max(previous.maxX, current.maxX)
+                result.append(CGRect(
+                    x: minX,
+                    y: previous.maxY,
+                    width: max(1, maxX - minX),
+                    height: gapHeight
+                ))
+            }
+            result.append(current)
+            previous = current
+        }
+        return result
+    }
+
+    private static func linkURL(from rawLink: Any?) -> URL? {
+        switch rawLink {
+        case let value as URL:
+            value
+        case let value as NSURL:
+            value as URL
+        case let value as String:
+            URL(string: value)
+        default:
+            nil
+        }
+    }
+
     static func mention(
         value: NSAttributedString,
         framesetter: CTFramesetter,
@@ -741,6 +880,18 @@ enum NativeTimelineTextHitTester {
                 )
             }
         }
+        if let link = linkRegions(
+            value: value,
+            textFrame: textFrame,
+            outerFrame: frame
+        ).first(where: { $0.frame.contains(point) }) {
+            return NativeTimelineTextHit(
+                characterIndex: link.characterIndex,
+                url: link.url,
+                mention: nil,
+                spoilerRange: link.spoilerRange
+            )
+        }
         let local = CGPoint(
             x: point.x - frame.minX,
             y: frame.maxY - point.y
@@ -800,16 +951,7 @@ enum NativeTimelineTextHitTester {
                     effectiveRange: &spoilerRange
                 ) as? NSNumber
             )?.boolValue == true
-            let url: URL? = switch rawLink {
-            case let value as URL:
-                value
-            case let value as NSURL:
-                value as URL
-            case let value as String:
-                URL(string: value)
-            default:
-                nil
-            }
+            let url = linkURL(from: rawLink)
             return NativeTimelineTextHit(
                 characterIndex: characterIndex,
                 url: url,

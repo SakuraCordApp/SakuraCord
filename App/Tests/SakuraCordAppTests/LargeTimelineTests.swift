@@ -4387,10 +4387,12 @@ func `native timeline embed layout renders rich text mentions and media`() throw
     )
     let mediaURL = try #require(URL(string: "https://example.com/embed.png"))
     let thumbnailURL = try #require(URL(string: "https://example.com/thumb.png"))
+    let titleURL = try #require(URL(string: "https://example.com/release"))
     let embed = MessageEmbed(
         id: "rich-embed",
         title: "Release notes",
         description: "Hello <@&10> — **everything is native**.",
+        url: titleURL,
         color: 0x5865F2,
         footer: MessageEmbedFooter(text: "SakuraCord"),
         image: MessageEmbedMedia(
@@ -4455,6 +4457,34 @@ func `native timeline embed layout renders rich text mentions and media`() throw
     #expect(!selectableText.contains("Release notes"))
     #expect(!selectableText.contains("Status"))
     #expect(!selectableText.contains("SakuraCord"))
+    let item = NativeMessageTimelineItem.message(
+        row,
+        isUnreadBoundary: false,
+        isHighlighted: false
+    )
+    let canvas = NativeTimelineCanvasView(frame: .zero)
+    let titlePointerRegion = try #require(
+        canvas.linkPointerTextRegions(
+            for: item,
+            layout: layout
+        ).first(where: {
+            $0.value.string == "Release notes"
+        })
+    )
+    #expect(
+        titlePointerRegion.value.attribute(
+            .link,
+            at: 0,
+            effectiveRange: nil
+        ) as? URL == titleURL
+    )
+    #expect(
+        NativeTimelineTextHitTester.linkFrames(
+            value: titlePointerRegion.value,
+            framesetter: titlePointerRegion.framesetter,
+            frame: titlePointerRegion.frame
+        ).isEmpty == false
+    )
     #expect(region.imageRegions.contains { $0.url == thumbnailURL })
     #expect(region.mediaURL == mediaURL)
     #expect(region.imageRegions.contains {
@@ -5286,6 +5316,70 @@ func `native timeline activation requires the same stable press target`() {
             released: movedMention
         )
     )
+}
+
+@MainActor @Test
+func `native timeline links use standard underline hover and exact pointer regions`() throws {
+    let url = try #require(URL(
+        string: "https://example.com/a_b/c_d/e_f/g_h/i_j/k_l"
+    ))
+    let value = NSMutableAttributedString(
+        attributedString: DiscordMarkdown.appKitAttributed(
+            "Open \(url.absoluteString) now"
+        )
+    )
+    let range = (value.string as NSString).range(of: url.absoluteString)
+    #expect(
+        value.attribute(
+            .underlineStyle,
+            at: range.location,
+            effectiveRange: nil
+        ) == nil
+    )
+
+    NativeTimelineLinkAppearance.applyHover(
+        to: value,
+        characterIndex: range.location + 1
+    )
+
+    #expect(
+        value.attribute(
+            .underlineStyle,
+            at: range.location,
+            effectiveRange: nil
+        ) as? Int == NSUnderlineStyle.single.rawValue
+    )
+    #expect(
+        value.attribute(
+            .underlineStyle,
+            at: NSMaxRange(range) - 1,
+            effectiveRange: nil
+        ) as? Int == NSUnderlineStyle.single.rawValue
+    )
+    let framesetter = CTFramesetterCreateWithAttributedString(value)
+    let textFrame = CGRect(x: 0, y: 0, width: 180, height: 120)
+    let linkFrames = NativeTimelineTextHitTester.linkFrames(
+        value: value,
+        framesetter: framesetter,
+        frame: textFrame
+    )
+    try #require(linkFrames.count >= 3)
+    let interlineBridge = linkFrames[1]
+    #expect(interlineBridge.height > 0)
+
+    let bridgeHit = try #require(
+        NativeTimelineTextHitTester.hit(
+            value: value,
+            framesetter: framesetter,
+            frame: textFrame,
+            point: CGPoint(
+                x: interlineBridge.midX,
+                y: interlineBridge.midY
+            )
+        )
+    )
+    #expect(bridgeHit.url == url)
+    #expect(bridgeHit.characterIndex == range.location)
 }
 
 @MainActor @Test

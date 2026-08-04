@@ -61,6 +61,22 @@ extension NativeTimelineCanvasView {
                         cursor: .pointingHand
                     )
                 }
+                let rowOrigin = displayedRowOrigin(at: index)
+                for selectable in linkPointerTextRegions(
+                    for: items[index],
+                    layout: layouts[index]
+                ) {
+                    for frame in NativeTimelineTextHitTester.linkFrames(
+                        value: selectable.value,
+                        framesetter: selectable.framesetter,
+                        frame: selectable.frame
+                    ) {
+                        addCursorRect(
+                            frame.offsetBy(dx: 0, dy: rowOrigin),
+                            cursor: .pointingHand
+                        )
+                    }
+                }
                 for codeBlock in codeBlockPointerTargets(at: index) {
                     addCursorRect(
                         codeBlock.copyButtonFrame,
@@ -134,6 +150,9 @@ extension NativeTimelineCanvasView {
         setHoveredMention(
             mentionPointerHit(at: currentMouseLocationInCanvas())
         )
+        setHoveredTextLink(
+            textLinkPointerHit(at: currentMouseLocationInCanvas())
+        )
         setHoveredTextSpoiler(
             textSpoilerPointerHit(at: currentMouseLocationInCanvas())
         )
@@ -156,6 +175,7 @@ extension NativeTimelineCanvasView {
             compactTimestampRowIndex(at: point)
         )
         setHoveredMention(mentionPointerHit(at: point))
+        setHoveredTextLink(textLinkPointerHit(at: point))
         setHoveredTextSpoiler(textSpoilerPointerHit(at: point))
         setHoveredCodeBlock(codeBlockPointerHit(at: point))
         setHoveredComponentButton(
@@ -198,6 +218,14 @@ extension NativeTimelineCanvasView {
                 "nativeTimelineRowIndex"
             ] as? Int,
                items.indices.contains(index),
+               hoveredTextLink?.itemIdentifier == items[index].identifier
+            {
+                setHoveredTextLink(nil)
+            }
+            if let index = event.trackingArea?.userInfo?[
+                "nativeTimelineRowIndex"
+            ] as? Int,
+               items.indices.contains(index),
                hoveredTextSpoiler?.itemIdentifier
                     == items[index].identifier
             {
@@ -226,6 +254,7 @@ extension NativeTimelineCanvasView {
         if kind == "canvas" {
             setHoveredCompactTimestampRow(nil)
             setHoveredMention(nil)
+            setHoveredTextLink(nil)
             setHoveredTextSpoiler(nil)
             setHoveredCodeBlock(nil)
             setHoveredComponentButton(nil)
@@ -793,6 +822,11 @@ extension NativeTimelineCanvasView {
                 ? mentionPointerHit(at: point)
                 : nil
         )
+        setHoveredTextLink(
+            visibleRect.contains(point)
+                ? textLinkPointerHit(at: point)
+                : nil
+        )
         setHoveredTextSpoiler(
             visibleRect.contains(point)
                 ? textSpoilerPointerHit(at: point)
@@ -832,6 +866,30 @@ extension NativeTimelineCanvasView {
             )
         }
         return nil
+    }
+
+    func textLinkPointerHit(
+        at point: CGPoint
+    ) -> NativeTimelineTextLinkHover? {
+        guard let index = rowIndex(at: point.y),
+              items.indices.contains(index),
+              layouts.indices.contains(index),
+              items[index].messageID != nil
+        else { return nil }
+        let local = CGPoint(
+            x: point.x,
+            y: point.y - displayedRowOrigin(at: index)
+        )
+        guard let hit = textPointerHit(
+            in: layouts[index],
+            point: local
+        ), hit.hit.url != nil
+        else { return nil }
+        return NativeTimelineTextLinkHover(
+            itemIdentifier: items[index].identifier,
+            region: hit.region,
+            characterIndex: hit.hit.characterIndex
+        )
     }
 
     func textSpoilerPointerHit(

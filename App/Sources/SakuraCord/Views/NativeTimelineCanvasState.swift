@@ -34,6 +34,7 @@ final class NativeTimelinePointerState {
         let row: Int?
         let compactTimestampRow: Int?
         let mention: NativeTimelineMentionHover?
+        let textLink: NativeTimelineTextLinkHover?
         let textSpoiler: NativeTimelineTextSpoilerHover?
         let codeBlock: NativeTimelineCodeBlockPointerTarget?
         let componentButton: NativeTimelineComponentButtonTarget?
@@ -42,6 +43,7 @@ final class NativeTimelinePointerState {
     var hoveredRow: Int?
     var hoveredCompactTimestampRow: Int?
     var hoveredMention: NativeTimelineMentionHover?
+    var hoveredTextLink: NativeTimelineTextLinkHover?
     var hoveredTextSpoiler: NativeTimelineTextSpoilerHover?
     var hoveredCodeBlock: NativeTimelineCodeBlockPointerTarget?
     var pressedCodeBlockCopyButton: NativeTimelineCodeBlockPointerTarget?
@@ -68,6 +70,7 @@ final class NativeTimelinePointerState {
             row: hoveredRow,
             compactTimestampRow: hoveredCompactTimestampRow,
             mention: hoveredMention,
+            textLink: hoveredTextLink,
             textSpoiler: hoveredTextSpoiler,
             codeBlock: hoveredCodeBlock,
             componentButton:
@@ -76,6 +79,7 @@ final class NativeTimelinePointerState {
         hoveredRow = nil
         hoveredCompactTimestampRow = nil
         hoveredMention = nil
+        hoveredTextLink = nil
         hoveredTextSpoiler = nil
         hoveredCodeBlock = nil
         pressedCodeBlockCopyButton = nil
@@ -117,6 +121,7 @@ final class NativeTimelinePointerState {
         hoveredRow != nil
             || hoveredCompactTimestampRow != nil
             || hoveredMention != nil
+            || hoveredTextLink != nil
             || hoveredTextSpoiler != nil
             || hoveredCodeBlock != nil
             || pressedCodeBlockCopyButton != nil
@@ -241,6 +246,11 @@ extension NativeTimelineCanvasView {
     var hoveredMention: NativeTimelineMentionHover? {
         get { pointer.hoveredMention }
         set { pointer.hoveredMention = newValue }
+    }
+
+    var hoveredTextLink: NativeTimelineTextLinkHover? {
+        get { pointer.hoveredTextLink }
+        set { pointer.hoveredTextLink = newValue }
     }
 
     var hoveredTextSpoiler: NativeTimelineTextSpoilerHover? {

@@ -334,6 +334,15 @@ extension NativeTimelineCanvasView {
         {
             setNeedsDisplay(rowFrame(at: oldMentionIndex))
         }
+        if let oldTextLink = clearedTargets.textLink,
+           let oldTextLinkIndex = items.firstIndex(where: {
+               $0.identifier == oldTextLink.itemIdentifier
+           }),
+           oldTextLinkIndex != clearedTargets.row,
+           oldTextLinkIndex != clearedTargets.compactTimestampRow
+        {
+            setNeedsDisplay(rowFrame(at: oldTextLinkIndex))
+        }
         if let oldTextSpoiler = clearedTargets.textSpoiler,
            let oldTextSpoilerIndex = items.firstIndex(where: {
                $0.identifier == oldTextSpoiler.itemIdentifier
@@ -605,6 +614,8 @@ extension NativeTimelineCanvasView {
                     || hoveredCompactTimestampRow == index
                     || hoveredMention?.itemIdentifier
                         == items[index].identifier
+                    || hoveredTextLink?.itemIdentifier
+                        == items[index].identifier
                     || hoveredTextSpoiler?.itemIdentifier
                         == items[index].identifier
                     || hoveredComponentButton?.messageID
@@ -628,6 +639,11 @@ extension NativeTimelineCanvasView {
                             hoveredMention?.itemIdentifier
                                 == items[index].identifier
                             ? hoveredMention
+                            : nil,
+                        hoveredTextLink:
+                            hoveredTextLink?.itemIdentifier
+                                == items[index].identifier
+                            ? hoveredTextLink
                             : nil,
                         hoveredTextSpoiler:
                             hoveredTextSpoiler?.itemIdentifier
