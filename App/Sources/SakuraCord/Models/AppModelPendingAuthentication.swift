@@ -156,6 +156,7 @@ extension AppModel {
         installAccountSession(provider: nextProvider, database: nil)
         accountTransitionIsActive = false
         credentialHandle = nil
+        activeAccountID = nil
         didAttemptSessionRestore = true
         resetAccountPresentationState()
         let session = accountSession()
@@ -196,6 +197,7 @@ extension AppModel {
         eventTask = nil
         installAccountSession(provider: SignedOutChatProvider(), database: nil)
         credentialHandle = nil
+        activeAccountID = nil
         handleSessionStartFailure(error, account: accountSession())
     }
 

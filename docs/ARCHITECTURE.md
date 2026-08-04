@@ -96,6 +96,17 @@ credential through the login flow.
 Passwords, cookies, captured authorization headers, and analytics identifiers
 are not persisted.
 
+Multiple account credentials may coexist as separate Keychain items. The app
+keeps only the saved account's display name, username, avatar URL, last-used
+date, and preferred account identifier in user defaults so the account picker
+can identify sessions without reading every secret or issuing profile probes.
+Switching accounts disconnects and drains the current account-scoped work,
+then bootstraps the selected existing credential through the same provider
+path used for launch restore. It does not replay the login exchange. Logging
+out from account management removes only the selected account's Keychain item
+and picker metadata; logging out the active account also disconnects its live
+session before returning to the remaining saved accounts.
+
 An explicitly insecure, debug-only build flag can migrate the credential once
 from Keychain into a mode-`0600` file within the app's sandbox Application
 Support container. It is excluded from release and update-enabled packages and

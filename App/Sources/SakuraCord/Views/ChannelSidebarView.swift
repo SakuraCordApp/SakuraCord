@@ -96,7 +96,6 @@ struct ChannelSidebarView: View {
     let isOfflineTesting: Bool
     let activeVoiceChannelID: ChannelID?
     let connectAccount: () -> Void
-    let logout: () async -> Void
     let updateStatus: (PresenceStatus) async -> Void
     @Environment(\.displayScale) private var displayScale
     @State private var selectionCommitter =
@@ -155,7 +154,6 @@ struct ChannelSidebarView: View {
                 isCachedStartup: isCachedStartup,
                 isOfflineTesting: isOfflineTesting,
                 connectAccount: connectAccount,
-                logout: logout,
                 updateStatus: updateStatus
             )
         }
@@ -485,9 +483,7 @@ private struct AccountControlView: View {
     let isCachedStartup: Bool
     let isOfflineTesting: Bool
     let connectAccount: () -> Void
-    let logout: () async -> Void
     let updateStatus: (PresenceStatus) async -> Void
-    @State private var confirmLogout = false
 
     var body: some View {
         GlassEffectContainer(spacing: 0) {
@@ -509,8 +505,12 @@ private struct AccountControlView: View {
                         isCachedStartup: isCachedStartup,
                         isOfflineTesting: isOfflineTesting,
                         currentStatus: currentStatus,
-                        connectAccount: connectAccount,
-                        requestLogout: { confirmLogout = true },
+                        savedAccounts: voiceModel.savedAccounts,
+                        activeAccountID: voiceModel.activeAccountID,
+                        manageAccounts: connectAccount,
+                        switchAccount: { accountID in
+                            await voiceModel.switchAccount(to: accountID)
+                        },
                         updateStatus: updateStatus
                     )
                 }
@@ -532,12 +532,6 @@ private struct AccountControlView: View {
         .padding(.horizontal, 8)
         .padding(.top, 8)
         .padding(.bottom, 12)
-        .confirmationDialog("Log out of Discord?", isPresented: $confirmLogout) {
-            Button("Log Out", role: .destructive) { Task { await logout() } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("SakuraCord will remove this account's saved session from Keychain.")
-        }
     }
 
     private var displayName: String {
@@ -584,52 +578,34 @@ private struct AccountMenu: View {
     let isCachedStartup: Bool
     let isOfflineTesting: Bool
     let currentStatus: PresenceStatus
-    let connectAccount: () -> Void
-    let requestLogout: () -> Void
+    let savedAccounts: [SavedAccount]
+    let activeAccountID: String?
+    let manageAccounts: () -> Void
+    let switchAccount: (String) async -> Bool
     let updateStatus: (PresenceStatus) async -> Void
 
+    @Environment(\.openSettings) private var openSettings
+
     var body: some View {
-        Menu {
-            if isOfflineTesting {
-                Text("Discord networking is disabled")
-            } else if isCachedStartup {
-                Text("Cached data is read-only while Discord reconnects")
-                Button(
-                    "Log Out",
-                    systemImage: "rectangle.portrait.and.arrow.right",
-                    role: .destructive,
-                    action: requestLogout
-                )
-            } else if isAuthenticated {
-                Menu("Set Status", systemImage: "circle.dotted") {
-                    ForEach(PresenceStatus.allCases.filter { $0 != .offline }, id: \.self) { status in
-                        Button {
-                            Task { await updateStatus(status) }
-                        } label: {
-                            if status == currentStatus {
-                                Label(status.label, systemImage: "checkmark")
-                            } else {
-                                Text(status.label)
-                            }
-                        }
-                    }
-                }
-                Button("Switch Account…", systemImage: "person.2", action: connectAccount)
-                Divider()
-                Button("Log Out", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive, action: requestLogout)
-            } else {
-                Button("Connect Discord Account…", systemImage: "person.crop.circle.badge.plus", action: connectAccount)
-            }
-            Divider()
-            SettingsLink { Label("Settings…", systemImage: "gearshape") }
-        } label: {
+        ZStack {
             Image(systemName: "gearshape.fill")
                 .font(.body)
-                .frame(width: 28, height: 28)
-                .contentShape(Rectangle())
+                .foregroundStyle(.secondary)
+                .allowsHitTesting(false)
+            NativeAccountMenuButton(
+                isAuthenticated: isAuthenticated,
+                isCachedStartup: isCachedStartup,
+                isOfflineTesting: isOfflineTesting,
+                currentStatus: currentStatus,
+                savedAccounts: savedAccounts,
+                activeAccountID: activeAccountID,
+                manageAccounts: manageAccounts,
+                switchAccount: switchAccount,
+                updateStatus: updateStatus,
+                openSettings: { openSettings() }
+            )
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
+        .frame(width: 28, height: 28)
         .help("Account and Settings")
     }
 }

@@ -58,6 +58,7 @@ struct SakuraCordSessionLoadingView: View {
                     )
                 }
             }
+            .padding(.top, ChatChromeMetrics.controlHeight)
             .padding(.bottom, 12)
         }
         .scrollIndicators(.hidden)

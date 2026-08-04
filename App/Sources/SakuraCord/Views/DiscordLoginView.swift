@@ -71,7 +71,7 @@ struct DiscordLoginView: View {
 
             GeometryReader { geometry in
                 ScrollView {
-                    DiscordLoginCard {
+                    SakuraCordAuthenticationCard {
                         if let challenge {
                             VStack(alignment: .leading, spacing: 18) {
                                 DiscordLoginHeader()
@@ -132,15 +132,7 @@ struct DiscordLoginView: View {
             windowDragRegion
 
             if showsCancel {
-                Button { dismiss() } label: {
-                    Image(systemName: "xmark")
-                        .font(.body.weight(.semibold))
-                        .frame(width: 32, height: 32)
-                        .background(.white.opacity(0.08), in: Circle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.white.opacity(0.72))
-                .keyboardShortcut(.cancelAction)
+                SakuraCordAuthenticationCloseButton { dismiss() }
                 .padding(20)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             }
@@ -451,7 +443,7 @@ private struct DiscordLoginHeader: View {
     }
 }
 
-private struct DiscordLoginCard<Content: View>: View {
+struct SakuraCordAuthenticationCard<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -477,6 +469,47 @@ private struct DiscordLoginCard<Content: View>: View {
                     )
             }
             .shadow(color: Color(hex: 0x07040A).opacity(0.58), radius: 30, y: 18)
+    }
+}
+
+struct SakuraCordAuthenticationCloseButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.body.weight(.semibold))
+                .frame(width: 32, height: 32)
+                .background(.white.opacity(0.08), in: Circle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.white.opacity(0.72))
+        .keyboardShortcut(.cancelAction)
+    }
+}
+
+struct SakuraCordAuthPrimaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.body.weight(.semibold))
+            .frame(maxWidth: .infinity)
+            .frame(height: 44)
+            .contentShape(Rectangle())
+            .foregroundStyle(.white)
+            .background(
+                LinearGradient(
+                    colors: [Color(hex: 0xFF659F), Color(hex: 0xE84778)],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                ),
+                in: ConcentricRectangle(cornerRadius: 10, style: .continuous)
+            )
+            .shadow(
+                color: Color(hex: 0xE84778).opacity(0.28),
+                radius: 12,
+                y: 6
+            )
+            .opacity(configuration.isPressed ? 0.82 : 1)
     }
 }
 
@@ -517,22 +550,8 @@ private struct DiscordCredentialForm: View {
             }
             Button(action: submit) {
                 Text(isWorking ? "Signing in…" : "Sign in")
-                    .font(.body.weight(.semibold))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 44)
-                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.white)
-            .background(
-                LinearGradient(
-                    colors: [Color(hex: 0xFF659F), Color(hex: 0xE84778)],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                ),
-                in: ConcentricRectangle(cornerRadius: 10, style: .continuous)
-            )
-            .shadow(color: Color(hex: 0xE84778).opacity(0.28), radius: 12, y: 6)
+            .buttonStyle(SakuraCordAuthPrimaryButtonStyle())
             .opacity(identifier.isEmpty || password.count < 8 || isWorking ? 0.45 : 1)
             .disabled(identifier.isEmpty || password.count < 8 || isWorking)
         }

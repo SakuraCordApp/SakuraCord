@@ -12,16 +12,20 @@ struct RootView: View {
             ChatRootView(model: model)
         case .signedOut:
             if model.launchMode == .normal {
-                DiscordLoginView(
-                    showsCancel: false,
-                    networkingEnabled: !model.isDiscordNetworkingDisabled
-                ) { credential in
-                    await model.connectPendingAuthenticatedAccount(
-                        credential,
-                        preservesInteractivePresentation: true
-                    )
-                        ? nil
-                        : (model.errorMessage ?? "Discord account bootstrap failed for an unknown reason.")
+                if model.savedAccounts.isEmpty {
+                    DiscordLoginView(
+                        showsCancel: false,
+                        networkingEnabled: !model.isDiscordNetworkingDisabled
+                    ) { credential in
+                        await model.connectPendingAuthenticatedAccount(
+                            credential,
+                            preservesInteractivePresentation: true
+                        )
+                            ? nil
+                            : (model.errorMessage ?? "Discord account bootstrap failed for an unknown reason.")
+                    }
+                } else {
+                    AccountSwitcherView(model: model, showsCancel: false)
                 }
             } else {
                 SakuraCordSessionLoadingView(
@@ -40,7 +44,7 @@ struct RootView: View {
 
 private struct ChatRootView: View {
     let model: AppModel
-    @State private var showLogin = false
+    @State private var showAccountSwitcher = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var supplementaryPaneFrame = CGRect.zero
     @State private var workspaceFrame = CGRect.zero
@@ -77,10 +81,9 @@ private struct ChatRootView: View {
                     activeVoiceChannelID: model.activeVoiceChannel?.id,
                     connectAccount: {
                         if !model.isOfflineTesting {
-                            showLogin = true
+                            showAccountSwitcher = true
                         }
                     },
-                    logout: { await model.logout() },
                     updateStatus: { await model.updateStatus($0) }
                 )
             }
@@ -216,18 +219,12 @@ private struct ChatRootView: View {
             modifierPollingTask?.cancel()
             modifierPollingTask = nil
         }
-        .sheet(isPresented: $showLogin) {
-            DiscordLoginView(
+        .sheet(isPresented: $showAccountSwitcher) {
+            AccountSwitcherView(
+                model: model,
                 showsCancel: true,
-                networkingEnabled: !model.isDiscordNetworkingDisabled
-            ) { credential in
-                await model.connectPendingAuthenticatedAccount(
-                    credential,
-                    preservesInteractivePresentation: true
-                )
-                    ? nil
-                    : (model.errorMessage ?? "Discord account bootstrap failed for an unknown reason.")
-            }
+                accountActivated: { showAccountSwitcher = false }
+            )
         }
         .alert("SakuraCord", isPresented: Binding(get: { model.errorMessage != nil }, set: {
             if !$0 {
@@ -387,7 +384,7 @@ private struct ChatRootView: View {
 
     private var canAcceptWindowDrops: Bool {
         !presentsForumComposer
-            && !showLogin
+            && !showAccountSwitcher
             && model.presentedInteractionModal == nil
             && (model.isComposerDropEligible(.channel)
                 || model.isComposerDropEligible(.thread))

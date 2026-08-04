@@ -208,6 +208,8 @@ final class AppModel {
     var currentStatus: PresenceStatus = .offline
     var connectionState: ConnectionState = .disconnected
     var isAuthenticated = false
+    var savedAccounts: [SavedAccount] = []
+    var activeAccountID: String?
     var sessionState: SessionState
     let launchMode: AppLaunchMode
     let typingState: TypingStateModel
@@ -714,6 +716,7 @@ final class AppModel {
     @ObservationIgnored let usesInsecureDebugCredentials: Bool
     @ObservationIgnored let restoresStoredSession: Bool
     @ObservationIgnored let credentialStore: any CredentialStore
+    @ObservationIgnored let savedAccountStore: any SavedAccountStoring
     @ObservationIgnored let authenticatedProviderFactory:
         (CredentialHandle, String?) -> any ChatProvider
     @ObservationIgnored let pendingAuthenticatedProviderFactory:
@@ -747,6 +750,7 @@ final class AppModel {
         usesInsecureDebugCredentialsOverride: Bool? = nil,
         restoresStoredSession: Bool = true,
         credentialStore: (any CredentialStore)? = nil,
+        savedAccountStore: (any SavedAccountStoring)? = nil,
         authenticatedProviderFactory: ((CredentialHandle, String?) -> any ChatProvider)? = nil,
         pendingAuthenticatedProviderFactory:
             ((PendingDiscordCredential, String?) -> any PendingCredentialChatProvider)? = nil,
@@ -797,6 +801,7 @@ final class AppModel {
         }
         let resolvedCredentialStore = credentialStore ?? defaultCredentialStore
         self.credentialStore = resolvedCredentialStore
+        self.savedAccountStore = savedAccountStore ?? UserDefaultsSavedAccountStore.shared
         self.authenticatedProviderFactory =
             authenticatedProviderFactory ?? { handle, installationID in
                 DiscordRESTProvider(

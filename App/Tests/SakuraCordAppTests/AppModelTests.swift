@@ -1793,6 +1793,117 @@ private func forumPresentationPost(
     )
 }
 
+@Test func `saved account registry filters removed credentials and remembers the newest account`()
+    async throws
+{
+    let suiteName = "dev.sakuracord.tests.saved-accounts.\(UUID().uuidString)"
+    let store = UserDefaultsSavedAccountStore(suiteName: suiteName)
+    let older = SavedAccount(
+        accountID: "100",
+        username: "older",
+        displayName: "Older",
+        lastUsedAt: Date(timeIntervalSince1970: 100)
+    )
+    let newer = SavedAccount(
+        accountID: "200",
+        username: "newer",
+        displayName: "Newer",
+        lastUsedAt: Date(timeIntervalSince1970: 200)
+    )
+
+    await store.record(older)
+    await store.record(newer)
+    let accounts = await store.accounts(matching: [
+        CredentialHandle(accountID: "100"),
+        CredentialHandle(accountID: "200"),
+        CredentialHandle(accountID: "300"),
+    ])
+
+    #expect(accounts.map(\.accountID) == ["200", "100", "300"])
+    #expect(accounts.last?.resolvedSubtitle == "Saved account ••••300")
+    #expect(await store.preferredAccountID() == "200")
+
+    await store.remove(accountID: "200")
+    #expect(await store.preferredAccountID() == nil)
+    #expect(
+        await store.accounts(matching: [CredentialHandle(accountID: "100")])
+            == [older]
+    )
+    await store.removePersistentDomain(named: suiteName)
+}
+
+@MainActor
+@Test func `saved account switch reuses credentials and account management logs out selected sessions`()
+    async
+{
+    let firstUser = User(
+        id: UserID(rawValue: 93_000),
+        username: "first",
+        displayName: "First Account"
+    )
+    let secondUser = User(
+        id: UserID(rawValue: 94_000),
+        username: "second",
+        displayName: "Second Account"
+    )
+    let firstProvider = SuspendedBootstrapTestProvider(user: firstUser)
+    let secondProvider = SuspendedBootstrapTestProvider(user: secondUser)
+    let credentials = MultiAccountCredentialStore(accountIDs: ["93000", "94000"])
+    let savedAccounts = SavedAccountStoreSpy()
+    let model = AppModel(
+        launchMode: .normal,
+        discordNetworkDisabledOverride: false,
+        restoresStoredSession: false,
+        credentialStore: credentials,
+        savedAccountStore: savedAccounts,
+        authenticatedProviderFactory: { handle, _ in
+            handle.accountID == "93000" ? firstProvider : secondProvider
+        },
+        accountDatabaseFactory: { _ in nil }
+    )
+    await model.start()
+    await model.refreshSavedAccounts()
+    #expect(model.savedAccounts.map(\.accountID) == ["93000", "94000"])
+
+    let firstConnection = Task {
+        await model.switchAccount(to: "93000")
+    }
+    await firstProvider.waitUntilBootstrapStarts()
+    #expect(model.sessionState == .connecting)
+    await firstProvider.releaseBootstrap()
+    #expect(await firstConnection.value)
+    #expect(model.activeAccountID == "93000")
+    #expect(model.savedAccounts.first?.displayName == "First Account")
+
+    let secondConnection = Task {
+        await model.switchAccount(to: "94000")
+    }
+    await secondProvider.waitUntilBootstrapStarts()
+    #expect(model.sessionState == .connecting)
+    await secondProvider.releaseBootstrap()
+    #expect(await secondConnection.value)
+    #expect(model.activeAccountID == "94000")
+    #expect(await credentials.accountIDs == ["93000", "94000"])
+    #expect(await credentials.removedAccountIDs.isEmpty)
+    #expect(await savedAccounts.preferredAccountID() == "94000")
+
+    await model.logout(accountID: "93000")
+    #expect(model.sessionState == .workspace)
+    #expect(model.activeAccountID == "94000")
+    #expect(model.savedAccounts.map(\.accountID) == ["94000"])
+    #expect(await credentials.accountIDs == ["94000"])
+    #expect(await credentials.removedAccountIDs == ["93000"])
+    #expect(await savedAccounts.preferredAccountID() == "94000")
+
+    await model.logout()
+    #expect(model.sessionState == .signedOut)
+    #expect(model.activeAccountID == nil)
+    #expect(model.savedAccounts.isEmpty)
+    #expect(await credentials.accountIDs.isEmpty)
+    #expect(await credentials.removedAccountIDs == ["93000", "94000"])
+    #expect(await savedAccounts.preferredAccountID() == nil)
+}
+
 @MainActor
 @Test func `workspace presentation does not wait for initial history`() async {
     let provider = SuspendedBootstrapTestProvider(suspendsMessages: true)
@@ -2007,6 +2118,70 @@ private actor CredentialAccessProbeStore: CredentialStore {
     func handles() async throws -> [CredentialHandle] {
         accessCount += 1
         return []
+    }
+}
+
+private actor MultiAccountCredentialStore: CredentialStore {
+    private(set) var accountIDs: [String]
+    private(set) var removedAccountIDs: [String] = []
+
+    init(accountIDs: [String]) {
+        self.accountIDs = accountIDs.sorted()
+    }
+
+    func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
+        if !accountIDs.contains(accountID) {
+            accountIDs.append(accountID)
+            accountIDs.sort()
+        }
+        return CredentialHandle(accountID: accountID)
+    }
+
+    func credential(for handle: CredentialHandle) async throws -> Data {
+        guard accountIDs.contains(handle.accountID) else {
+            throw PendingDiscordCredentialError.unavailable
+        }
+        return Data("stored-account-credential".utf8)
+    }
+
+    func remove(_ handle: CredentialHandle) async throws {
+        accountIDs.removeAll { $0 == handle.accountID }
+        removedAccountIDs.append(handle.accountID)
+    }
+
+    func handles() async throws -> [CredentialHandle] {
+        accountIDs.map(CredentialHandle.init(accountID:))
+    }
+}
+
+private actor SavedAccountStoreSpy: SavedAccountStoring {
+    private var accountsByID: [String: SavedAccount] = [:]
+    private var preferredID: String?
+
+    func accounts(matching handles: [CredentialHandle]) -> [SavedAccount] {
+        handles.map { handle in
+            accountsByID[handle.accountID] ?? SavedAccount(handle: handle)
+        }
+    }
+
+    func preferredAccountID() -> String? {
+        preferredID
+    }
+
+    func record(_ account: SavedAccount) {
+        accountsByID[account.accountID] = account
+        preferredID = account.accountID
+    }
+
+    func remove(accountID: String) {
+        accountsByID.removeValue(forKey: accountID)
+        if preferredID == accountID {
+            preferredID = nil
+        }
+    }
+
+    func setPreferredAccountID(_ accountID: String?) {
+        preferredID = accountID
     }
 }
 
@@ -5401,7 +5576,7 @@ private actor LinkedChannelNavigationTestProvider: ChatProvider {
 }
 
 private actor SuspendedBootstrapTestProvider: PendingCredentialChatProvider {
-    private let user = User(id: UserID(rawValue: 93000), username: "tester", displayName: "Tester")
+    private let user: User
     private let channel = Channel(id: ChannelID(rawValue: 93001), guildID: nil, name: "general")
     private var bootstrapStarted = false
     private var startWaiters: [CheckedContinuation<Void, Never>] = []
@@ -5427,8 +5602,14 @@ private actor SuspendedBootstrapTestProvider: PendingCredentialChatProvider {
         pendingCredential: PendingDiscordCredential? = nil,
         suspendsAuthentication: Bool = false,
         suspendsMessages: Bool = false,
-        messagePage: MessagePage = MessagePage(messages: [], hasMoreBefore: false)
+        messagePage: MessagePage = MessagePage(messages: [], hasMoreBefore: false),
+        user: User = User(
+            id: UserID(rawValue: 93000),
+            username: "tester",
+            displayName: "Tester"
+        )
     ) {
+        self.user = user
         self.bootstrapError = bootstrapError
         self.pendingCredential = pendingCredential
         self.suspendsAuthentication = suspendsAuthentication

@@ -37,6 +37,39 @@ extension AppModel {
         discordNetworkDisabled
     }
 
+    func refreshSavedAccounts() async {
+        guard launchMode == .normal else {
+            savedAccounts = []
+            return
+        }
+        do {
+            let handles = try await credentialStore.handles()
+            savedAccounts = await savedAccountStore.accounts(matching: handles)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func switchAccount(to accountID: String) async -> Bool {
+        guard accountID != activeAccountID else { return true }
+        do {
+            let handles = try await credentialStore.handles()
+            guard let handle = handles.first(where: { $0.accountID == accountID }) else {
+                savedAccounts.removeAll { $0.accountID == accountID }
+                await savedAccountStore.remove(accountID: accountID)
+                errorMessage = "That saved Discord account is no longer available."
+                return false
+            }
+            return await connectAuthenticatedAccount(
+                handle,
+                preservesInteractivePresentation: false
+            )
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
     func connectAuthenticatedAccount(
         _ handle: CredentialHandle,
         preservesInteractivePresentation: Bool = false
@@ -172,6 +205,7 @@ extension AppModel {
         componentErrors = [:]
         componentKeyByNonce = [:]
         credentialHandle = handle
+        activeAccountID = handle.accountID
         didAttemptSessionRestore = true
         commandComposer.configureFrecencyScope(handle.accountID)
     }
@@ -225,6 +259,31 @@ extension AppModel {
         await accountTransitionCoordinator.release()
     }
 
+    func logout(accountID: String) async {
+        guard accountID != activeAccountID else {
+            await logout()
+            return
+        }
+        guard await accountTransitionCoordinator.acquireIfAvailable() else { return }
+        accountTransitionIsActive = true
+        do {
+            let handles = try await credentialStore.handles()
+            if let handle = handles.first(where: { $0.accountID == accountID }) {
+                try await removeSavedAccount(handle)
+            } else {
+                savedAccounts.removeAll { $0.accountID == accountID }
+                await savedAccountStore.remove(accountID: accountID)
+                await savedAccountStore.setPreferredAccountID(
+                    activeAccountID ?? savedAccounts.first?.accountID
+                )
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        accountTransitionIsActive = false
+        await accountTransitionCoordinator.release()
+    }
+
     func performLogout(transitionGeneration: UInt64) async {
         let previousAccount = accountSession(allowsTransition: true)
         let previousProvider = previousAccount.provider
@@ -249,7 +308,7 @@ extension AppModel {
         typingState.clearAll()
         if let previousCredentialHandle {
             do {
-                try await credentialStore.remove(previousCredentialHandle)
+                try await removeSavedAccount(previousCredentialHandle)
                 guard accountSessionGeneration == transitionGeneration else { return }
             } catch {
                 guard accountSessionGeneration == transitionGeneration else { return }
@@ -258,6 +317,7 @@ extension AppModel {
             }
         }
         credentialHandle = nil
+        activeAccountID = nil
         resetAcknowledgementWork()
         resetChannelNotificationMutations()
         readState.reset(accountID: launchMode == .offlineTesting ? "offline" : nil)
@@ -321,6 +381,15 @@ extension AppModel {
             await start()
             guard accountSessionGeneration == transitionGeneration else { return }
         }
+    }
+
+    private func removeSavedAccount(_ handle: CredentialHandle) async throws {
+        try await credentialStore.remove(handle)
+        await savedAccountStore.remove(accountID: handle.accountID)
+        savedAccounts.removeAll { $0.accountID == handle.accountID }
+        await savedAccountStore.setPreferredAccountID(
+            savedAccounts.first?.accountID
+        )
     }
 
     func start(
@@ -408,6 +477,7 @@ extension AppModel {
         presentsCachedStartup = false
         snapshot = nil
         isAuthenticated = false
+        activeAccountID = nil
         sessionState = .signedOut
     }
 
@@ -436,16 +506,25 @@ extension AppModel {
             } else {
                 nil
             }
+            if let handles {
+                savedAccounts = await savedAccountStore.accounts(
+                    matching: handles
+                )
+            }
             let preferredPerformanceAccountID =
                 runsChatPerformanceBenchmark
                     ? ProcessInfo.processInfo.environment[
                         "SAKURACORD_PERFORMANCE_ACCOUNT_ID"
                     ]
                     : nil
+            let preferredStoredAccountID = await savedAccountStore
+                .preferredAccountID()
             if let handles,
                let handle = RestoredCredentialSelectionPolicy.handle(
                    from: handles,
-                   preferredAccountID: preferredPerformanceAccountID
+                   preferredAccountID:
+                       preferredPerformanceAccountID
+                       ?? preferredStoredAccountID
                )
             {
                 _ = await connectAuthenticatedAccount(handle)
@@ -468,6 +547,15 @@ extension AppModel {
     ) async {
         if let account, !isCurrentAccountSession(account) { return }
         snapshot = value
+        if let handle = credentialHandle,
+           handle.accountID == value.currentUser.id.description
+        {
+            let account = SavedAccount(user: value.currentUser)
+            await savedAccountStore.record(account)
+            savedAccounts.removeAll { $0.accountID == account.accountID }
+            savedAccounts.insert(account, at: 0)
+            activeAccountID = account.accountID
+        }
         reconcilePrivateCallSounds()
         readState.configure(
             accountID: credentialHandle?.accountID ?? (launchMode == .offlineTesting ? "offline" : nil),

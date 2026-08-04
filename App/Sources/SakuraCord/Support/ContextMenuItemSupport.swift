@@ -36,4 +36,12 @@ enum ContextMenuItemSupport {
             )
         }
     }
+
+    static func configure(_ item: NSMenuItem, image: NSImage) {
+        image.isTemplate = false
+        item.image = image
+        if #available(macOS 27.0, *) {
+            item.preferredImageVisibility = .visible
+        }
+    }
 }
