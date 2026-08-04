@@ -239,7 +239,7 @@ extension AppModel {
             if selectedChannel?.kind == .forum {
                 beginForumLoad()
             } else if selectedChannel?.kind != .voice {
-                beginSelectedChannelLoad()
+                refreshSelectedChannelPreservingHistory()
             }
         }
         readState.applyAccessibility(
@@ -610,7 +610,7 @@ extension AppModel {
                selectedChannelID != nil,
                hasCompletedInitialMessageLoad
             {
-                beginSelectedChannelLoad()
+                refreshSelectedChannelPreservingHistory()
             }
             if let channel = selectedChannel,
                channel.kind == .directMessage || channel.kind == .groupDirectMessage

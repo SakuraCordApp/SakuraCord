@@ -1025,7 +1025,7 @@ extension AppModel {
         }
         if !visibleChannels.contains(where: { $0.id == selectedChannelID }) {
             let selectableChannels = visibleChannels.filter {
-                conversationAccess(for: $0).isReadable
+                conversationAccess(for: $0) != .hidden
             }
             selectedChannelID = Self.preferredInitialChannelID(in: selectableChannels)
         }

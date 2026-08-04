@@ -3410,6 +3410,30 @@ private actor FailingRemovalCredentialStore: CredentialStore {
 }
 
 @MainActor
+@Test func `first guild visit keeps its channel selected while permissions load`() async {
+    let provider = FirstGuildVisitPermissionTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+
+    await model.start()
+
+    #expect(model.selectedGuildID == provider.guildID)
+    #expect(model.selectedChannelID == provider.channelID)
+    #expect(model.selectedChannel?.id == provider.channelID)
+    #expect(model.selectedConversationAccess == .checking)
+    #expect(model.messages.isEmpty)
+    #expect(await provider.messageRequestCount() == 0)
+    #expect(await provider.waitUntilRoleRequestStarts())
+
+    await provider.releaseRoles()
+
+    #expect(await eventuallyOnMain {
+        model.selectedConversationAccess.isReadable
+            && model.messages.map(\.content) == ["Loaded automatically"]
+    })
+    #expect(await provider.messageRequestCount() == 1)
+}
+
+@MainActor
 @Test func `selecting voice channel opens its text chat by default without joining`() async throws {
     let model = AppModel(launchMode: .offlineTesting)
     await model.start()
@@ -3471,9 +3495,17 @@ private actor FailingRemovalCredentialStore: CredentialStore {
     model.selectedChannelID = channelID
     await model.channelLoadTask?.value
     #expect(await provider.requestCount(for: channelID) == 1)
+    let loadedMessages = model.messages
+    #expect(!loadedMessages.isEmpty)
+    #expect(model.readState.presentations[channelID]?.initialHistoryLoaded == true)
 
     model.consumeConnectionChange(.resuming)
     model.consumeConnectionChange(.ready)
+
+    #expect(model.messages == loadedMessages)
+    #expect(!model.isLoadingMessages)
+    model.consumeReadStateSnapshot([], version: nil)
+    #expect(model.readState.presentations[channelID]?.initialHistoryLoaded == true)
 
     await model.channelLoadTask?.value
     #expect(await provider.requestCount(for: channelID) == 2)
@@ -5383,6 +5415,133 @@ private actor SuspendedAccountLoadTestProvider: ChatProvider {
     }
 
     func disconnect() async {}
+}
+
+private actor FirstGuildVisitPermissionTestProvider: ChatProvider {
+    nonisolated let guildID = GuildID(rawValue: 77_200)
+    nonisolated let channelID = ChannelID(rawValue: 77_202)
+
+    private let user = User(
+        id: UserID(rawValue: 77_201),
+        username: "permission-loading-user",
+        displayName: "Permission Loading User"
+    )
+    private var roleContinuation: CheckedContinuation<[GuildRole], Never>?
+    private var recordedMessageRequestCount = 0
+
+    private var guild: Guild {
+        Guild(id: guildID, name: "Permission Loading Guild")
+    }
+
+    private var channel: Channel {
+        Channel(id: channelID, guildID: guildID, name: "general")
+    }
+
+    private var everyoneRole: GuildRole {
+        GuildRole(
+            id: RoleID(rawValue: guildID.rawValue),
+            name: "@everyone",
+            permissions: DiscordPermissionBits.viewChannel
+                | DiscordPermissionBits.readMessageHistory
+                | DiscordPermissionBits.sendMessages
+        )
+    }
+
+    func bootstrap() async throws -> BootstrapSnapshot {
+        BootstrapSnapshot(
+            currentUser: user,
+            guilds: [guild],
+            channels: [channel],
+            members: []
+        )
+    }
+
+    func channels(in guildID: GuildID?) async throws -> [Channel] {
+        guildID == self.guildID ? [channel] : []
+    }
+
+    func members(in guildID: GuildID?) async throws -> [Member] {
+        guard guildID == self.guildID else { return [] }
+        return [Member(user: user, roleName: "Member", status: .online)]
+    }
+
+    func roles(in guildID: GuildID) async throws -> [GuildRole] {
+        guard guildID == self.guildID else { return [] }
+        return await withCheckedContinuation { continuation in
+            roleContinuation = continuation
+        }
+    }
+
+    func waitUntilRoleRequestStarts() async -> Bool {
+        for _ in 0 ..< 500 {
+            if roleContinuation != nil { return true }
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        return false
+    }
+
+    func releaseRoles() {
+        roleContinuation?.resume(returning: [everyoneRole])
+        roleContinuation = nil
+    }
+
+    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
+        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
+    }
+
+    func currentStatus() async -> PresenceStatus { .online }
+    func updateStatus(_ status: PresenceStatus) async throws {}
+
+    func messages(
+        in channelID: ChannelID,
+        before: MessageID?,
+        limit: Int
+    ) async throws -> MessagePage {
+        recordedMessageRequestCount += 1
+        return MessagePage(
+            messages: [
+                Message(
+                    id: MessageID(rawValue: 77_203),
+                    channelID: channelID,
+                    author: user,
+                    content: "Loaded automatically",
+                    guildID: guildID
+                ),
+            ],
+            hasMoreBefore: false
+        )
+    }
+
+    func send(_ draft: SendMessageDraft) async throws -> Message {
+        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
+    }
+
+    func edit(
+        messageID: MessageID,
+        channelID: ChannelID,
+        content: String
+    ) async throws -> Message {
+        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
+    }
+
+    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
+    func toggleReaction(
+        _ emoji: String,
+        messageID: MessageID,
+        channelID: ChannelID
+    ) async throws {}
+
+    func eventStream() async -> AsyncStream<ClientEvent> {
+        AsyncStream { $0.finish() }
+    }
+
+    func disconnect() async {
+        releaseRoles()
+    }
+
+    func messageRequestCount() -> Int {
+        recordedMessageRequestCount
+    }
 }
 
 private actor StartupUnreadTestProvider: ChatProvider {

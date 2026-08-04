@@ -94,6 +94,33 @@ extension AppModel {
         }
     }
 
+    func refreshSelectedChannelPreservingHistory() {
+        guard let channelID = selectedChannelID,
+              selectedChannel?.kind != .voice || isVoiceChatOpen,
+              selectedConversationAccess.isReadable
+        else { return }
+
+        channelLoadTask?.cancel()
+        channelLoadGeneration &+= 1
+        let generation = channelLoadGeneration
+        messageLoadError = nil
+        messageLoadErrorIsEarlierPage = false
+        isLoadingEarlier = false
+        let preservesLoadedHistory = !messages.isEmpty
+            && messages.allSatisfy { $0.channelID == channelID }
+        isLoadingMessages = !preservesLoadedHistory
+        hasCompletedInitialMessageLoad = preservesLoadedHistory
+
+        let account = accountSession()
+        channelLoadTask = startAccountChildTask(account: account) { model, account in
+            await model.loadSelectedChannel(
+                channelID,
+                generation: generation,
+                account: account
+            )
+        }
+    }
+
     func loadSelectedChannel(
         _ channelID: ChannelID,
         generation: Int,
