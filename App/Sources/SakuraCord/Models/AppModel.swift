@@ -208,6 +208,7 @@ final class AppModel {
     var currentStatus: PresenceStatus = .offline
     var connectionState: ConnectionState = .disconnected
     var isAuthenticated = false
+    var isSwitchingAccounts = false
     var savedAccounts: [SavedAccount] = []
     var activeAccountID: String?
     var sessionState: SessionState

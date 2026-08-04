@@ -52,6 +52,9 @@ extension AppModel {
 
     func switchAccount(to accountID: String) async -> Bool {
         guard accountID != activeAccountID else { return true }
+        let preservesWorkspace = sessionState == .workspace
+        isSwitchingAccounts = true
+        defer { isSwitchingAccounts = false }
         do {
             let handles = try await credentialStore.handles()
             guard let handle = handles.first(where: { $0.accountID == accountID }) else {
@@ -62,7 +65,7 @@ extension AppModel {
             }
             return await connectAuthenticatedAccount(
                 handle,
-                preservesInteractivePresentation: false
+                preservesInteractivePresentation: preservesWorkspace
             )
         } catch {
             errorMessage = error.localizedDescription

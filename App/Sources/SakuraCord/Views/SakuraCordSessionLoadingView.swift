@@ -1,49 +1,76 @@
 import AppKit
 import SwiftUI
 
-/// A data-free representation of the complete chat chrome. The authenticated
-/// workspace is not mounted until the live bootstrap has completed, so none of
-/// these placeholders can expose stale account state from a previous process.
+/// A data-free representation of the complete chat chrome. Startup owns a
+/// standalone navigation container; account switching overlays these same
+/// placeholders inside the already-mounted workspace navigation container.
 struct SakuraCordSessionLoadingView: View {
     let state: AppModel.SessionState
     let isOfflineTesting: Bool
+    var isAccountSwitch = false
+    var isEmbeddedInWorkspace = false
+    var embeddedSidebarWidth = ChatChromeMetrics.serverRailWidth + 230
 
     private let pulse = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
         SkeletonShimmerTimeline {
-            NavigationSplitView(columnVisibility: $columnVisibility) {
-                HStack(spacing: 0) {
-                    serverRail
-                    channelSidebar
-                }
-                .navigationSplitViewColumnWidth(
-                    min: ChatChromeMetrics.serverRailWidth + 190,
-                    ideal: ChatChromeMetrics.serverRailWidth + 230,
-                    max: ChatChromeMetrics.serverRailWidth + 310
-                )
-            } detail: {
-                workspace
-                    .navigationTitle("")
-                    .toolbar { detailToolbar }
-            }
-            .toolbar { conversationToolbar }
-            .overlay(alignment: .topLeading) {
-                SkeletonShape(cornerRadius: 4, pulse: pulse)
-                    .frame(width: 132, height: 14)
-                    .offset(
-                        x: ChatChromeMetrics.sidebarTitleLeadingOffset,
-                        y: ChatChromeMetrics.sidebarTitleTopOffset + 7
-                    )
-                    .ignoresSafeArea()
-                    .allowsHitTesting(false)
+            if isEmbeddedInWorkspace {
+                embeddedChrome
+            } else {
+                sessionChrome
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .preferredColorScheme(.dark)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Opening SakuraCord. \(detail)")
+    }
+
+    private var sessionChrome: some View {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            HStack(spacing: 0) {
+                serverRail
+                channelSidebar
+            }
+            .navigationSplitViewColumnWidth(
+                min: ChatChromeMetrics.serverRailWidth + 190,
+                ideal: ChatChromeMetrics.serverRailWidth + 230,
+                max: ChatChromeMetrics.serverRailWidth + 310
+            )
+        } detail: {
+            workspace
+                .navigationTitle("")
+                .toolbar { detailToolbar }
+        }
+        .toolbar {
+            if !isAccountSwitch {
+                conversationToolbar
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            SkeletonShape(cornerRadius: 4, pulse: pulse)
+                .frame(width: 132, height: 14)
+                .offset(
+                    x: ChatChromeMetrics.sidebarTitleLeadingOffset,
+                    y: ChatChromeMetrics.sidebarTitleTopOffset + 7
+                )
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+        }
+    }
+
+    private var embeddedChrome: some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 0) {
+                serverRail
+                channelSidebar
+            }
+            .frame(width: embeddedSidebarWidth)
+            workspace
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var serverRail: some View {
@@ -58,7 +85,12 @@ struct SakuraCordSessionLoadingView: View {
                     )
                 }
             }
-            .padding(.top, ChatChromeMetrics.controlHeight)
+            .padding(
+                .top,
+                isAccountSwitch && !isEmbeddedInWorkspace
+                    ? ChatChromeMetrics.controlHeight
+                    : 0
+            )
             .padding(.bottom, 12)
         }
         .scrollIndicators(.hidden)
@@ -226,11 +258,14 @@ struct SakuraCordSessionLoadingView: View {
     @ToolbarContentBuilder
     private var detailToolbar: some ToolbarContent {
         ToolbarSpacer(.flexible)
-        ToolbarItemGroup {
-            ForEach(0 ..< 3, id: \.self) { index in
-                SkeletonShape(cornerRadius: 6, pulse: pulse, delay: Double(index) * 0.05)
+        ToolbarItem {
+            HStack(spacing: 0) {
+                SkeletonShape(cornerRadius: 6, pulse: pulse)
                     .frame(width: 20, height: 20)
             }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .fixedSize()
         }
         .visibilityPriority(.high)
     }
@@ -247,7 +282,7 @@ struct SakuraCordSessionLoadingView: View {
     }
 }
 
-private struct SkeletonShape: View {
+struct SkeletonShape: View {
     let cornerRadius: CGFloat
     let pulse: Bool
     var delay = 0.0

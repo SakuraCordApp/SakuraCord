@@ -254,10 +254,15 @@ struct AccountSwitcherView: View {
     private func switchToAccount(_ account: SavedAccount) {
         guard switchingAccountID == nil, loggingOutAccountID == nil else { return }
         switchingAccountID = account.accountID
+        let dismissesManagerImmediately = showsCancel
+        if dismissesManagerImmediately {
+            accountActivated()
+            dismiss()
+        }
         Task {
             let connected = await model.switchAccount(to: account.accountID)
             switchingAccountID = nil
-            if connected {
+            if connected, !dismissesManagerImmediately {
                 accountActivated()
                 dismiss()
             }

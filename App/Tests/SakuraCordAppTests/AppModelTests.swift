@@ -1870,8 +1870,10 @@ private func forumPresentationPost(
     }
     await firstProvider.waitUntilBootstrapStarts()
     #expect(model.sessionState == .connecting)
+    #expect(model.isSwitchingAccounts)
     await firstProvider.releaseBootstrap()
     #expect(await firstConnection.value)
+    #expect(!model.isSwitchingAccounts)
     #expect(model.activeAccountID == "93000")
     #expect(model.savedAccounts.first?.displayName == "First Account")
 
@@ -1879,9 +1881,11 @@ private func forumPresentationPost(
         await model.switchAccount(to: "94000")
     }
     await secondProvider.waitUntilBootstrapStarts()
-    #expect(model.sessionState == .connecting)
+    #expect(model.sessionState == .workspace)
+    #expect(model.isSwitchingAccounts)
     await secondProvider.releaseBootstrap()
     #expect(await secondConnection.value)
+    #expect(!model.isSwitchingAccounts)
     #expect(model.activeAccountID == "94000")
     #expect(await credentials.accountIDs == ["93000", "94000"])
     #expect(await credentials.removedAccountIDs.isEmpty)
