@@ -335,6 +335,11 @@ exception dispatches.
   marks the guild unavailable; an ordinary delete removes its guild-scoped
   caches, requests, channels, and rail entry. Joining, becoming unavailable,
   recovering, and leaving issue no compensating REST request.
+  A 4 August 2026 follow-up found that desktop ETF can represent a permission
+  bitfield as an integer even though Discord's public JSON guild schema uses a
+  string. Gateway Ready and Guild Create decoding therefore accept either
+  representation. A numeric-permissions Guild Create fixture proves the new
+  guild and rail entry are reconciled without a REST fallback.
 - Guild `CHANNEL_CREATE`, `CHANNEL_UPDATE`, and `CHANNEL_DELETE` reconcile a
   raw per-guild channel catalogue before rebuilding presentation. This retains
   categories, positions, permission overwrites, pins, and voice metadata, so a

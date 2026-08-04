@@ -357,7 +357,9 @@ struct GatewayReadyGuildsDTO: Decodable {
             icon = try? container.decode(String.self, forKey: .icon)
             owner = try? container.decode(Bool.self, forKey: .owner)
             ownerID = try? container.decode(String.self, forKey: .ownerID)
-            permissions = try? container.decode(String.self, forKey: .permissions)
+            permissions = try? container.decode(
+                StringOrIntegerDTO.self, forKey: .permissions
+            ).value
             rulesChannelID = try? container.decode(String.self, forKey: .rulesChannelID)
             defaultMessageNotifications = try? container.decode(
                 Int.self,

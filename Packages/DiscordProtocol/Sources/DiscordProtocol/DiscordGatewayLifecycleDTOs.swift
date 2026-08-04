@@ -51,7 +51,9 @@ struct GatewayGuildPatchDTO: Decodable {
         icon = try values.decodeIfPresent(String.self, forKey: .icon)
         owner = try values.decodeIfPresent(Bool.self, forKey: .owner)
         ownerID = try values.decodeIfPresent(String.self, forKey: .ownerID)
-        permissions = try values.decodeIfPresent(String.self, forKey: .permissions)
+        permissions = try values.decodeIfPresent(
+            StringOrIntegerDTO.self, forKey: .permissions
+        )?.value
         rulesChannelID = try values.decodeIfPresent(String.self, forKey: .rulesChannelID)
         defaultMessageNotifications = try values.decodeIfPresent(
             Int.self, forKey: .defaultMessageNotifications

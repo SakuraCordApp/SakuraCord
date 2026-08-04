@@ -101,6 +101,33 @@ import Testing
     ))
 }
 
+@Test func `desktop ETF integer guild permissions decode as a numeric field`() throws {
+    var fixture = Data([131, 116, 0, 0, 0, 4])
+    appendETFBinary("op", to: &fixture)
+    fixture.append(contentsOf: [97, 0])
+    appendETFBinary("d", to: &fixture)
+    fixture.append(contentsOf: [116, 0, 0, 0, 3])
+    appendETFBinary("id", to: &fixture)
+    appendETFBinary("100", to: &fixture)
+    appendETFBinary("name", to: &fixture)
+    appendETFBinary("Numeric Permissions", to: &fixture)
+    appendETFBinary("permissions", to: &fixture)
+    fixture.append(contentsOf: [98, 0, 0, 4, 0])
+    appendETFBinary("s", to: &fixture)
+    fixture.append(contentsOf: [97, 1])
+    appendETFBinary("t", to: &fixture)
+    appendETFBinary("GUILD_CREATE", to: &fixture)
+
+    let envelope = try ETFGatewayCodec().decode(fixture)
+
+    #expect(envelope.eventName == "GUILD_CREATE")
+    guard case .object(let guild) = envelope.data else {
+        Issue.record("Guild Create data must remain an object")
+        return
+    }
+    #expect(guild["permissions"] == .number(1_024))
+}
+
 private func appendETFBinary(_ value: String, to data: inout Data) {
     let bytes = Data(value.utf8)
     data.append(109)
@@ -225,6 +252,26 @@ private func appendETFBinary(_ value: String, to data: inout Data) {
     let guild = try #require(ready.guilds.first)
     #expect(guild.rulesChannelID == "101")
     #expect(guild.channels.map(\.id) == ["101", "102"])
+}
+
+@Test func `desktop ETF numeric guild permissions remain available after ready decoding`() throws {
+    let payload = Data(
+        """
+        {
+          "guilds": [
+            {
+              "id": "100",
+              "name": "Numeric Permissions",
+              "permissions": 1024
+            }
+          ]
+        }
+        """.utf8
+    )
+
+    let ready = try JSONDecoder().decode(GatewayReadyGuildsDTO.self, from: payload)
+    let guild = try #require(ready.guilds.first?.domain(currentUserID: nil))
+    #expect(guild.currentUserPermissions == 1_024)
 }
 
 @Test func `settings proto preserves discord guild folder order`() {

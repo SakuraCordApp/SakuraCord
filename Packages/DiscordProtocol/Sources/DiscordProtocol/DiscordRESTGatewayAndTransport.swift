@@ -298,6 +298,10 @@ extension DiscordRESTProvider {
             guildsInCurrentRailOrder()
         }
 
+        func cachedGuildRailItemsForTesting() -> [GuildRailItem] {
+            cachedGuildRailItems
+        }
+
         func cachedGuildRolesForTesting(guildID: GuildID) -> [GuildRole] {
             (cachedGuildRoles[guildID] ?? []).compactMap(\.domain)
         }

@@ -136,6 +136,20 @@ struct GatewayLifecycleEventTests {
         #expect(await provider.cachedChannelForTesting(channelID: textChannelID) == nil)
     }
 
+    @Test func `desktop ETF numeric permissions guild create adds a new guild`() async {
+        let provider = makeProvider()
+
+        await provider.receiveGatewayDispatchForTesting(
+            name: "GUILD_CREATE",
+            data: guildCreatePayload(permissions: .number(1_024))
+        )
+
+        #expect(await provider.cachedGuildForTesting(guildID: guildID)?.name == "Lifecycle Guild")
+        #expect(await provider.cachedGuildForTesting(guildID: guildID)?.currentUserPermissions == 1_024)
+        #expect(await provider.cachedGuildsForTesting().map(\.id) == [guildID])
+        #expect(await provider.cachedGuildRailItemsForTesting() == [.guild(guildID)])
+    }
+
     @Test func `pins bulk deletes thread counts and voice metadata reconcile`() async {
         let provider = makeProvider()
         await provider.receiveGatewayDispatchForTesting(
@@ -338,10 +352,13 @@ struct GatewayLifecycleEventTests {
         )
     }
 
-    private func guildCreatePayload(includesUnavailable: Bool = true) -> JSONValue {
+    private func guildCreatePayload(
+        includesUnavailable: Bool = true,
+        permissions: JSONValue = .string("1024")
+    ) -> JSONValue {
         var payload: [String: JSONValue] = [
             "id": .string("100"), "name": .string("Lifecycle Guild"),
-            "permissions": .string("1024"),
+            "permissions": permissions,
             "channels": .array([
                 channel(id: "299", type: 4, name: "Info", position: 0),
                 channel(
