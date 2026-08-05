@@ -1297,6 +1297,10 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
     public var globalDisplayName: String?
     public var activityText: String?
     public var customStatus: String?
+    /// Absolute row index in Discord's virtualized guild member list. This is
+    /// absent for DMs, fallback stores, and member lookups that are not backed
+    /// by a `GUILD_MEMBER_LIST_UPDATE` range.
+    public var memberListIndex: Int?
 
     public var isOnline: Bool {
         status.isVisibleOnline
@@ -1314,7 +1318,8 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
         guildAvatarURL: URL? = nil,
         globalDisplayName: String? = nil,
         activityText: String? = nil,
-        customStatus: String? = nil
+        customStatus: String? = nil,
+        memberListIndex: Int? = nil
     ) {
         self.user = user
         self.roleName = roleName
@@ -1328,6 +1333,7 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
         self.globalDisplayName = globalDisplayName
         self.activityText = activityText
         self.customStatus = customStatus
+        self.memberListIndex = memberListIndex
     }
 
     public init(
@@ -1342,7 +1348,8 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
         guildAvatarURL: URL? = nil,
         globalDisplayName: String? = nil,
         activityText: String? = nil,
-        customStatus: String? = nil
+        customStatus: String? = nil,
+        memberListIndex: Int? = nil
     ) {
         self.user = user
         self.roleName = roleName
@@ -1356,12 +1363,13 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
         self.globalDisplayName = globalDisplayName
         self.activityText = activityText
         self.customStatus = customStatus
+        self.memberListIndex = memberListIndex
     }
 
     private enum CodingKeys: String, CodingKey {
         case user, roleName, roleID, rolePosition, isRoleCategory, status, roleIDs, roles,
              guildAvatarURL,
-             globalDisplayName, activityText, customStatus
+             globalDisplayName, activityText, customStatus, memberListIndex
     }
 
     public init(from decoder: Decoder) throws {
@@ -1378,6 +1386,7 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
         globalDisplayName = try container.decodeIfPresent(String.self, forKey: .globalDisplayName)
         activityText = try container.decodeIfPresent(String.self, forKey: .activityText)
         customStatus = try container.decodeIfPresent(String.self, forKey: .customStatus)
+        memberListIndex = try container.decodeIfPresent(Int.self, forKey: .memberListIndex)
     }
 }
 

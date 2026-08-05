@@ -6,6 +6,11 @@ public protocol ChatProvider: Sendable {
     func bootstrap() async throws -> BootstrapSnapshot
     func channels(in guildID: GuildID?) async throws -> [Channel]
     func members(in guildID: GuildID?) async throws -> [Member]
+    func updateMemberListViewport(
+        in guildID: GuildID,
+        channelID: ChannelID,
+        visibleRange: ClosedRange<Int>
+    ) async throws
     func resolveMembers(in guildID: GuildID, userIDs: [UserID]) async throws -> [Member]
     func searchMembers(in guildID: GuildID, query: String, limit: Int) async throws -> [Member]
     func roles(in guildID: GuildID) async throws -> [GuildRole]
@@ -138,6 +143,12 @@ public extension ChatProvider {
     func prepareAuthentication() async throws {}
 
     func updateClientAppState(isFocused: Bool) async {}
+
+    func updateMemberListViewport(
+        in guildID: GuildID,
+        channelID: ChannelID,
+        visibleRange: ClosedRange<Int>
+    ) async throws {}
 
     func resolveMembers(in guildID: GuildID, userIDs: [UserID]) async throws -> [Member] {
         let requested = Set(userIDs.prefix(100))

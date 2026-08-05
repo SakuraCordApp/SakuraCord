@@ -737,6 +737,32 @@ extension AppModel {
         )
     }
 
+    func updateMemberListViewport(_ visibleRange: ClosedRange<Int>) {
+        guard let guildID = selectedGuildID,
+              let channelID = selectedChannelID
+        else { return }
+        let session = accountSession()
+        Task { [weak self] in
+            guard let self,
+                  isCurrentAccountSession(session),
+                  selectedGuildID == guildID,
+                  selectedChannelID == channelID
+            else { return }
+            do {
+                try await session.provider.updateMemberListViewport(
+                    in: guildID,
+                    channelID: channelID,
+                    visibleRange: visibleRange
+                )
+            } catch {
+                guard isCurrentAccountSession(session) else { return }
+                AppModel.memberListLogger.debug(
+                    "Member-list viewport subscription failed: \(error.localizedDescription, privacy: .public)"
+                )
+            }
+        }
+    }
+
     func mergedMemberStore(with updates: [Member]) -> [UserID: Member] {
         guard let guildID = selectedGuildID else {
             return Dictionary(

@@ -524,6 +524,105 @@ private func appendETFBinary(_ value: String, to data: inout Data) {
     #expect(channels["200"] as? [[Int]] == [[0, 99]])
 }
 
+@Test func `member list viewport ranges retain initial block and prewarm adjacent blocks`() {
+    #expect(DiscordMemberListRangePolicy.ranges(around: 0 ... 16) == [0 ... 99])
+    #expect(DiscordMemberListRangePolicy.ranges(around: 94 ... 111) == [
+        0 ... 99, 100 ... 199,
+    ])
+    #expect(DiscordMemberListRangePolicy.ranges(around: 205 ... 221) == [
+        0 ... 99, 100 ... 199, 200 ... 299,
+    ])
+}
+
+@Test func `member list viewport payload is bounded deduplicated and channel scoped`() throws {
+    let ranges = DiscordMemberListRangePolicy.ranges(around: 10_000 ... 20_000)
+    #expect(ranges.count == DiscordMemberListRangePolicy.maximumRangePairs)
+    #expect(ranges.first == 0 ... 99)
+    #expect(Set(ranges).count == ranges.count)
+
+    let payload = DiscordGatewayPayloadFactory.guildSubscriptions(
+        guildID: GuildID(rawValue: 100),
+        channelID: ChannelID(rawValue: 200),
+        ranges: [0 ... 99, 200 ... 299]
+    )
+    let data = try #require(payload["d"] as? [String: Any])
+    let subscriptions = try #require(data["subscriptions"] as? [String: Any])
+    let guild = try #require(subscriptions["100"] as? [String: Any])
+    let channels = try #require(guild["channels"] as? [String: Any])
+    #expect(channels["200"] as? [[Int]] == [[0, 99], [200, 299]])
+}
+
+@Test func `member list subscription channel cache is a five channel lru`() {
+    let channels = (1 ... 6).map { ChannelID(rawValue: UInt64($0)) }
+    var retained: [ChannelID] = []
+    for channel in channels {
+        retained = DiscordMemberListRangePolicy.retainedChannelOrder(
+            selecting: channel,
+            from: retained
+        )
+    }
+    #expect(retained == Array(channels.suffix(5)))
+
+    retained = DiscordMemberListRangePolicy.retainedChannelOrder(
+        selecting: channels[2],
+        from: retained
+    )
+    #expect(retained == [channels[1], channels[3], channels[4], channels[5], channels[2]])
+}
+
+@Test func `member list subscription update sends the complete retained channel map`() throws {
+    let channels = (1 ... 6).map { ChannelID(rawValue: UInt64($0)) }
+    let existing = Dictionary(
+        uniqueKeysWithValues: channels.prefix(5).map { ($0, [0 ... 99]) }
+    )
+    let state = DiscordMemberListRangePolicy.subscriptionState(
+        selecting: channels[5],
+        ranges: [0 ... 99, 200 ... 299],
+        currentRanges: existing,
+        currentOrder: Array(channels.prefix(5))
+    )
+
+    #expect(state.channelOrder == Array(channels.suffix(5)))
+    #expect(state.rangesByChannel[channels[0]] == nil)
+    #expect(state.rangesByChannel[channels[5]] == [0 ... 99, 200 ... 299])
+
+    let payload = DiscordGatewayPayloadFactory.guildSubscriptions(
+        guildID: GuildID(rawValue: 100),
+        channelRanges: state.rangesByChannel
+    )
+    let data = try #require(payload["d"] as? [String: Any])
+    let subscriptions = try #require(data["subscriptions"] as? [String: Any])
+    let guild = try #require(subscriptions["100"] as? [String: Any])
+    let payloadChannels = try #require(guild["channels"] as? [String: Any])
+
+    #expect(payloadChannels.count == DiscordMemberListRangePolicy.maximumSubscribedChannels)
+    #expect(payloadChannels[channels[0].description] == nil)
+    #expect(payloadChannels[channels[1].description] as? [[Int]] == [[0, 99]])
+    #expect(payloadChannels[channels[5].description] as? [[Int]] == [
+        [0, 99], [200, 299],
+    ])
+}
+
+@Test func `revisited member list channel refresh stays aligned with wire state`() {
+    let first = ChannelID(rawValue: 1)
+    let revisited = ChannelID(rawValue: 2)
+    let initial = DiscordMemberListRangePolicy.subscriptionState(
+        selecting: revisited,
+        ranges: [0 ... 99],
+        currentRanges: [:],
+        currentOrder: []
+    )
+    let afterFirstChannel = DiscordMemberListRangePolicy.subscriptionState(
+        selecting: first,
+        ranges: [0 ... 99],
+        currentRanges: initial.rangesByChannel,
+        currentOrder: initial.channelOrder
+    )
+
+    #expect(afterFirstChannel.rangesByChannel[revisited] == [0 ... 99])
+    #expect(afterFirstChannel.rangesByChannel[first] == [0 ... 99])
+}
+
 @Test func `guild member list update retains authoritative group counts and order`() throws {
     let payloadText =
         #"{"guild_id":"100","ops":[],"member_count":500,"online_count":388,"groups":["# +
@@ -814,7 +913,8 @@ private func appendETFBinary(_ value: String, to data: inout Data) {
         )
     }
 
-    let first = member(1, "first")
+    var first = member(1, "first")
+    first.memberListIndex = 41
     let second = member(2, "second")
     let third = member(3, "third")
     let updatedFirst = member(1, "updated-first")
@@ -826,6 +926,7 @@ private func appendETFBinary(_ value: String, to data: inout Data) {
     )
 
     #expect(merged.map(\.user.username) == ["updated-first", "second", "third"])
+    #expect(merged.first?.memberListIndex == 41)
     #expect(search.map(\.user.username) == ["updated-first", "third"])
 }
 

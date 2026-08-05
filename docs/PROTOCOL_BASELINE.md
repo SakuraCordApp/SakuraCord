@@ -629,15 +629,54 @@ implementation records.
   implementation removes that invalid field, matches the first-party and
   Paicord request shape, and reconciles the observed nonce-less response by
   guild plus the returned and `not_found` user IDs.
-- The channel member inspector keeps the official client's single initial
-  `0...99` member-list range and treats `GUILD_MEMBER_LIST_UPDATE.groups` as
-  the authority for group order and counts. Loaded member rows retain their
-  Gateway order; SakuraCord does not infer totals from the virtualized slice.
-  This was rechecked on 31 July 2026 against public web asset
-  `web.505415119e321976.js` and pinned Paicord's member-list store. Discord's
-  public Gateway documentation does not describe opcode 37 or this dispatch;
-  Swiftcord v1 has no corresponding implementation. The change adds no
-  request and preserves the existing one-payload subscription budget.
+- The channel member inspector always retains the official client's initial
+  `0...99` member-list range, then adds only the 100-aligned blocks intersecting
+  the visible rows plus half a viewport of prefetch on either side. A payload
+  contains at most five range pairs, channel subscriptions use a five-channel
+  LRU, and scrolling samples the latest viewport at most once every 300
+  milliseconds. Equal range sets are not resent. Each update remains one
+  guild-scoped opcode-37 payload containing the complete retained channel LRU;
+  sending only the newest channel would make local deduplication diverge from
+  the Gateway subscription state. It is not an opcode-8 member request, REST
+  read, or account mutation. `GUILD_MEMBER_LIST_UPDATE.groups` remains
+  authoritative for group order and counts, while loaded members retain their
+  absolute Gateway list indexes. The renderer preserves `MemberSection.make`
+  order and keeps unresolved capacity after the currently loaded members in
+  each authoritative section, so sparse Gateway indexes cannot create blank
+  rows between already resolved members.
+
+  This contract was statically rechecked on 5 August 2026 against current
+  first-party asset `web.1f98726096a7c0ce.js` (SHA-256
+  `592320633d203814eb03f5127552985ca335bb9e4c7eb3ab3aa0a76a0173c80a`).
+  Its modules `36124`, `361610`, and `63238` respectively establish the
+  100-row block and initial range, half-viewport/100-boundary range planning,
+  and equality-deduplicated channel subscription store with five-channel LRU;
+  module `63238` enqueues the complete map returned by module `36124` whenever
+  one channel changes.
+  Pinned Paicord's `GuildMemberList.swift` independently keeps `0...99`, adds
+  viewport-derived 100-row blocks with at most three pairs, and debounces for
+  300 milliseconds; its `GuildStore.updateSubscriptions` deduplicates and
+  sends the current channel subscription. Pinned Swiftcord v1 has no opcode-37,
+  member-list update, or virtual member-range implementation.
+  Discord's current public Gateway documentation describes the distinct
+  opcode-8 Request Guild Members contract, a 4,096-byte payload ceiling, and
+  120 outgoing Gateway events per 60 seconds, but does not document opcode 37
+  or `GUILD_MEMBER_LIST_UPDATE`. Static first-party behavior was unambiguous,
+  so no authenticated traffic capture was required to resolve protocol shape.
+- Nameplate media follows the current first-party SKU asset resolver. A decoded
+  `collectibles.nameplate.sku_id` maps to
+  `https://cdn.discordapp.com/media/v1/collectibles-shop/{sku}/static` for the
+  resting frame and the sibling `/animated` asset for hover. Response-provided
+  asset URLs and the historical asset-path convention remain compatibility
+  fallbacks only when `sku_id` is absent. Discord's public User resource defines
+  `sku_id`, `asset`, `label`, and `palette`. Current first-party asset
+  `web.1f98726096a7c0ce.js` modules `746002`, `253292`, and `174755` establish
+  the SKU URL, static-first presentation, and hover animation selection. Pinned
+  Paicord still derives `assets/collectibles/{asset}/static.png` and `img.png`;
+  that historical path fails for some current nameplates. Pinned Swiftcord v1
+  has no collectibles/nameplate implementation. This was statically rechecked
+  on 5 August 2026 after a live SakuraCord member showed an absent resting asset
+  but a working hover animation.
 - Hidden-channel metadata and effective access are derived from cached guild,
   role, member, and permission-overwrite data. Displaying the last-message
   snowflake time or allowed overwrite identities does not load hidden content.

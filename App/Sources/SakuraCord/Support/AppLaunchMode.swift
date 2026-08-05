@@ -13,6 +13,7 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
     let includesChatMediaPerformanceFixture: Bool
     let includesIncomingPrivateCallFixture: Bool
     let runsChatPerformanceAutoScroll: Bool
+    let runsMemberListPerformanceAutoScroll: Bool
     let runsChatLiveArrivalStress: Bool
 
     init(arguments: [String]) {
@@ -24,6 +25,13 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
 #else
         let runsAuthenticatedAutoScroll = false
 #endif
+        #if DEBUG
+            runsMemberListPerformanceAutoScroll = arguments.contains(
+                "--debug-authenticated-member-list-performance-autoscroll"
+            )
+        #else
+            runsMemberListPerformanceAutoScroll = false
+        #endif
         includesLongServerList = arguments.contains("--offline-long-server-list")
         includesForumPerformanceFixture = arguments.contains("--offline-forum-performance")
         includesChatMediaPerformanceFixture =

@@ -63,6 +63,10 @@ final class AppModel {
         subsystem: "dev.sakuracord.SakuraCord",
         category: "Unread"
     )
+    static let memberListLogger = Logger(
+        subsystem: "dev.sakuracord.SakuraCord",
+        category: "MemberList"
+    )
     static let forumPerformanceSignposter = OSSignposter(
         subsystem: "dev.sakuracord.SakuraCord",
         category: "PointsOfInterest"

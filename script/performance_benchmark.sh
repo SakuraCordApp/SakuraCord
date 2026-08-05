@@ -45,6 +45,14 @@ usage() {
 #       enables an offline fixture. Set SAKURACORD_PERFORMANCE_ACCOUNT_ID to a
 #       stored debug account ID to compare accounts; otherwise the most recently
 #       selected account is used. Defaults: 35 seconds.
+#   authenticated-member-list-scroll [seconds]
+#       Relaunch the authenticated debug app and run the same deterministic
+#       20-second display-link workload through the native member list. The
+#       workload waits until you select a real server exposing at least 24,000
+#       points of authoritative member-list rows. Server selection and viewport
+#       subscriptions are read-only; this scenario never sends messages,
+#       acknowledgements, reactions, or account mutations. Defaults: 70 seconds
+#       so an authenticated workspace can be selected before measurement.
 #   snapshot
 #       Print a one-shot CPU, RSS, thread, footprint, and network sample.
 #   summarize <artifact-directory>
@@ -365,10 +373,12 @@ record_launch() {
     write_recording_metadata "$output" "$scenario" "Time Profiler"
     case "$scenario" in
         authenticated-scroll) resource_window_name="MessageTimelineAutoScrollBenchmark" ;;
+        authenticated-member-list-scroll) resource_window_name="MemberListAutoScrollBenchmark" ;;
         *) resource_window_name="" ;;
     esac
     performance_account_id="${SAKURACORD_PERFORMANCE_ACCOUNT_ID:-}"
-    if [[ "$scenario" == "authenticated-scroll" ]]; then
+    if [[ "$scenario" == "authenticated-scroll" \
+          || "$scenario" == "authenticated-member-list-scroll" ]]; then
         debug_credential_directory="$HOME/Library/Containers/$bundle_id/Data/Library/Application Support/SakuraCord/InsecureDebugCredentials"
         if [[ -z "$performance_account_id" ]]; then
             newest_credential="$(
@@ -439,7 +449,9 @@ record_launch() {
         exit 7
     fi
     kill -CONT "$pid"
-    if [[ "$scenario" == "authenticated-scroll" && -n "$pid" ]]; then
+    if [[ ( "$scenario" == "authenticated-scroll" \
+            || "$scenario" == "authenticated-member-list-scroll" ) \
+          && -n "$pid" ]]; then
         top -pid "$pid" -l "$seconds" -s 1 \
             -stats pid,cpu,mem,threads,power -o cpu \
             >"$output/activity-monitor.txt" &
@@ -454,7 +466,9 @@ record_launch() {
         local nettop_pid=$!
     fi
     wait "$trace_pid"
-    if [[ "$scenario" == "authenticated-scroll" && -n "$pid" ]]; then
+    if [[ ( "$scenario" == "authenticated-scroll" \
+            || "$scenario" == "authenticated-member-list-scroll" ) \
+          && -n "$pid" ]]; then
         wait "$top_pid" || true
         wait "$energy_pid" || true
         wait "$nettop_pid" || true
@@ -482,6 +496,11 @@ record_startup() {
 record_authenticated_scroll() {
     record_launch authenticated-scroll "$1" \
         --debug-authenticated-chat-performance-autoscroll
+}
+
+record_authenticated_member_list_scroll() {
+    record_launch authenticated-member-list-scroll "$1" \
+        --debug-authenticated-member-list-performance-autoscroll
 }
 
 summarize_recording() {
@@ -729,9 +748,15 @@ if File.file?(benchmark_result_path)
     benchmark_result[key] = value if key && value
   end
 end
+scroll_benchmark = [
+  "authenticated-scroll",
+  "authenticated-member-list-scroll",
+].include?(scenario)
 measurement_interval = case scenario
                        when "authenticated-scroll"
                          "MessageTimelineAutoScrollBenchmark"
+                       when "authenticated-member-list-scroll"
+                         "MemberListAutoScrollBenchmark"
                        when "startup"
                          "StartupToWorkspace"
                        end
@@ -741,27 +766,26 @@ reports_resource_metrics = scenario != "startup"
 benchmark_elapsed = nil
 benchmark_nominal_duration = nil
 benchmark_overshoot = nil
-if scenario == "authenticated-scroll" &&
-   event_counts["MessageTimelineAutoScrollBenchmarkInsufficientHistory"].positive?
+if scroll_benchmark &&
+   event_counts["#{measurement_interval}InsufficientHistory"].positive?
   raise "Authenticated scroll benchmark exhausted history before completing its workload"
 end
-if scenario == "authenticated-scroll" &&
-   event_counts["MessageTimelineAutoScrollBenchmarkCancelled"].positive?
+if scroll_benchmark &&
+   event_counts["#{measurement_interval}Cancelled"].positive?
   raise "Authenticated scroll benchmark was cancelled before completing its workload"
 end
-if scenario == "authenticated-scroll" &&
-   event_counts["MessageTimelineAutoScrollBenchmarkPaginationFailed"].positive?
+if scroll_benchmark &&
+   event_counts["#{measurement_interval}PaginationFailed"].positive?
   raise "Authenticated scroll benchmark pagination failed"
 end
-if scenario == "authenticated-scroll" &&
-   event_counts["MessageTimelineAutoScrollBenchmarkCompleted"] != 1
+if scroll_benchmark &&
+   event_counts["#{measurement_interval}Completed"] != 1
   raise "Authenticated scroll benchmark requires exactly one completion event"
 end
-if scenario == "authenticated-scroll" &&
-   interval_bounds["MessageTimelineAutoScrollBenchmark"].length != 1
+if scroll_benchmark && interval_bounds[measurement_interval].length != 1
   raise "Authenticated scroll benchmark requires exactly one measurement interval"
 end
-if scenario == "authenticated-scroll"
+if scroll_benchmark
   benchmark_elapsed = Float(benchmark_result["elapsed_seconds"], exception: false)
   benchmark_nominal_duration = Float(
     benchmark_result["nominal_duration_seconds"], exception: false
@@ -773,7 +797,7 @@ if scenario == "authenticated-scroll"
   nominal_distance = Float(benchmark_result["nominal_distance_points"], exception: false)
   distance_deficit = Float(benchmark_result["distance_deficit_points"], exception: false)
   spatial_quality = Float(benchmark_result["spatial_quality_ratio"], exception: false)
-  signpost_elapsed = intervals["MessageTimelineAutoScrollBenchmark"].first.to_f / 1_000.0
+  signpost_elapsed = intervals[measurement_interval].first.to_f / 1_000.0
   unless benchmark_result["outcome"] == "completed" &&
          benchmark_elapsed&.finite? && benchmark_elapsed >= 20 &&
          benchmark_nominal_duration&.finite? &&
@@ -820,7 +844,7 @@ elsif measurement_interval
   resource_bounds =
     File.file?(resource_window_path) ? File.read(resource_window_path).split.map(&:to_i) : []
   lower_ns, upper_ns = resource_bounds
-  if scenario == "authenticated-scroll"
+  if scroll_benchmark
     resource_elapsed =
       resource_bounds.length == 2 && upper_ns > lower_ns ?
         (upper_ns - lower_ns).to_f / 1_000_000_000.0 : nil
@@ -923,7 +947,7 @@ puts "SakuraCord performance summary"
 puts "artifact\t#{directory}"
 puts "measurement.window\t#{measurement_window_label}"
 puts "resources.window\t#{resource_window_label}"
-if scenario == "authenticated-scroll"
+if scroll_benchmark
   puts "duration.nominal\t#{benchmark_result["nominal_duration_seconds"]} s"
   puts "duration.ui-stop\t#{benchmark_result["elapsed_seconds"]} s"
   puts "duration.overshoot\t#{benchmark_result["elapsed_overshoot_seconds"]} s"
@@ -1006,6 +1030,10 @@ case "$command" in
     authenticated-scroll)
         require_main_checkout
         record_authenticated_scroll "${2:-35}"
+        ;;
+    authenticated-member-list-scroll)
+        require_main_checkout
+        record_authenticated_member_list_scroll "${2:-70}"
         ;;
     snapshot)
         pid="$(require_running_pid)"

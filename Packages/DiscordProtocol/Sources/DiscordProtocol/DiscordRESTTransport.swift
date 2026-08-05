@@ -32,9 +32,9 @@ extension DiscordRESTProvider {
 
     func decodedMemberListMembers(guildID: GuildID) -> [Member] {
         var seen = Set<UserID>()
-        return (cachedMemberListItems[guildID] ?? []).compactMap { item -> Member? in
+        return (cachedMemberListItems[guildID] ?? []).enumerated().compactMap { index, item -> Member? in
             guard let memberDTO = item?.member,
-                  let member = try? memberDTO.domain(
+                  var member = try? memberDTO.domain(
                       currentUserID: currentUser?.id,
                       currentStatus: presenceStatus,
                       presence: item?.presence,
@@ -43,6 +43,7 @@ extension DiscordRESTProvider {
                   ),
                   seen.insert(member.id).inserted
             else { return nil }
+            member.memberListIndex = index
             return member
         }
     }
@@ -53,8 +54,12 @@ extension DiscordRESTProvider {
             (cachedMembers[guildID] ?? []).map { ($0.id, $0) },
             uniquingKeysWith: { _, newer in newer }
         )
-        return decodedMemberListMembers(guildID: guildID).map {
-            cachedByID[$0.id] ?? $0
+        return decodedMemberListMembers(guildID: guildID).map { indexedMember in
+            guard var cached = cachedByID[indexedMember.id] else {
+                return indexedMember
+            }
+            cached.memberListIndex = indexedMember.memberListIndex
+            return cached
         }
     }
 

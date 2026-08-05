@@ -423,15 +423,34 @@ extension DiscordRESTProvider {
         }
     }
 
-    func subscribeToMemberList(guildID: GuildID) async throws {
+    func subscribeToMemberList(
+        guildID: GuildID,
+        channelID requestedChannelID: ChannelID? = nil,
+        ranges: [ClosedRange<Int>] = [0 ... 99]
+    ) async throws {
         let channel = cachedChannels[guildID]?.first(where: { $0.kind != .voice })
+        let channelID = requestedChannelID ?? channel?.id
+        let subscriptionState = channelID.map {
+            DiscordMemberListRangePolicy.subscriptionState(
+                selecting: $0,
+                ranges: ranges,
+                currentRanges: memberListSubscriptionRanges[guildID] ?? [:],
+                currentOrder: memberListSubscriptionChannelOrder[guildID] ?? []
+            )
+        }
         try await sendGateway(
             DiscordGatewayPayloadFactory.guildSubscriptions(
                 guildID: guildID,
-                channelID: channel?.id
+                channelRanges: subscriptionState?.rangesByChannel ?? [:]
             )
         )
-        gatewayLogger.info("Sent current bulk guild subscription with member-list range")
+        if let subscriptionState {
+            memberListSubscriptionChannelOrder[guildID] = subscriptionState.channelOrder
+            memberListSubscriptionRanges[guildID] = subscriptionState.rangesByChannel
+        }
+        gatewayLogger.info(
+            "Sent current bulk guild subscription; member-list ranges=\(ranges.count)"
+        )
     }
 
     func attemptMemberSubscription(guildID: GuildID) async {
@@ -440,6 +459,21 @@ extension DiscordRESTProvider {
                 "Lazy member-list subscription failed: \(error.localizedDescription, privacy: .public)"
             )
         }
+    }
+
+    public func updateMemberListViewport(
+        in guildID: GuildID,
+        channelID: ChannelID,
+        visibleRange: ClosedRange<Int>
+    ) async throws {
+        guard pendingMemberGuildID == guildID else { return }
+        let ranges = DiscordMemberListRangePolicy.ranges(around: visibleRange)
+        guard memberListSubscriptionRanges[guildID]?[channelID] != ranges else { return }
+        try await subscribeToMemberList(
+            guildID: guildID,
+            channelID: channelID,
+            ranges: ranges
+        )
     }
 
     func sendGateway(_ payload: [String: Any]) async throws {
@@ -636,6 +670,8 @@ extension DiscordRESTProvider {
                 cachedMembers = [:]
                 cachedMemberListItems = [:]
                 cachedMemberListGroups = [:]
+                memberListSubscriptionRanges = [:]
+                memberListSubscriptionChannelOrder = [:]
                 cachedGuildChannelDTOs = [:]
                 cachedGuildRoles = [:]
                 cachedForumPosts = [:]

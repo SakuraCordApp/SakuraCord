@@ -2,8 +2,29 @@ import Foundation
 import SakuraCordModels
 
 enum DiscordGatewayPayloadFactory {
-    static func guildSubscriptions(guildID: GuildID, channelID: ChannelID?) -> [String: Any] {
-        let channels: [String: Any] = channelID.map { [$0.description: [[0, 99]]] } ?? [:]
+    static func guildSubscriptions(
+        guildID: GuildID,
+        channelID: ChannelID?,
+        ranges: [ClosedRange<Int>] = [0 ... 99]
+    ) -> [String: Any] {
+        guildSubscriptions(
+            guildID: guildID,
+            channelRanges: channelID.map { [$0: ranges] } ?? [:]
+        )
+    }
+
+    static func guildSubscriptions(
+        guildID: GuildID,
+        channelRanges: [ChannelID: [ClosedRange<Int>]]
+    ) -> [String: Any] {
+        let channels = Dictionary(
+            uniqueKeysWithValues: channelRanges.map { channelID, ranges in
+                (
+                    channelID.description,
+                    ranges.map { [$0.lowerBound, $0.upperBound] }
+                )
+            }
+        )
         return [
             "op": 37,
             "d": [
@@ -69,6 +90,67 @@ enum DiscordGatewayPayloadFactory {
                 "channel_id": channelID.description
             ] as [String: Any],
         ]
+    }
+}
+
+enum DiscordMemberListRangePolicy {
+    struct SubscriptionState: Equatable {
+        let channelOrder: [ChannelID]
+        let rangesByChannel: [ChannelID: [ClosedRange<Int>]]
+    }
+
+    static let blockSize = 100
+    static let maximumRangePairs = 5
+    static let maximumSubscribedChannels = 5
+    static let initialRange = 0 ... 99
+
+    static func ranges(around visibleRange: ClosedRange<Int>) -> [ClosedRange<Int>] {
+        let lower = max(0, visibleRange.lowerBound)
+        let upper = max(lower, visibleRange.upperBound)
+        let viewportCount = max(1, upper - lower + 1)
+        let prefetch = Int(ceil(Double(viewportCount) / 2))
+        let prefetchLower = max(0, lower - prefetch)
+        let prefetchUpper = upper + prefetch
+
+        var ranges = [initialRange]
+        var blockStart = max(blockSize, (prefetchLower / blockSize) * blockSize)
+        while blockStart <= prefetchUpper {
+            ranges.append(blockStart ... (blockStart + blockSize - 1))
+            blockStart += blockSize
+        }
+        guard ranges.count > maximumRangePairs else { return ranges }
+        let nonInitial = Array(ranges.dropFirst())
+        let leadingCount = (maximumRangePairs - 1) / 2
+        let trailingCount = maximumRangePairs - 1 - leadingCount
+        return [initialRange]
+            + nonInitial.prefix(leadingCount)
+            + nonInitial.suffix(trailingCount)
+    }
+
+    static func retainedChannelOrder(
+        selecting channelID: ChannelID,
+        from current: [ChannelID]
+    ) -> [ChannelID] {
+        Array(
+            (current.filter { $0 != channelID } + [channelID])
+                .suffix(maximumSubscribedChannels)
+        )
+    }
+
+    static func subscriptionState(
+        selecting channelID: ChannelID,
+        ranges: [ClosedRange<Int>],
+        currentRanges: [ChannelID: [ClosedRange<Int>]],
+        currentOrder: [ChannelID]
+    ) -> SubscriptionState {
+        let channelOrder = retainedChannelOrder(selecting: channelID, from: currentOrder)
+        var rangesByChannel = currentRanges
+        rangesByChannel[channelID] = ranges
+        rangesByChannel = rangesByChannel.filter { channelOrder.contains($0.key) }
+        return SubscriptionState(
+            channelOrder: channelOrder,
+            rangesByChannel: rangesByChannel
+        )
     }
 }
 
@@ -170,8 +252,11 @@ enum DiscordMemberStoreOrdering {
     static func merging(existing: [Member], updates: [Member]) -> [Member] {
         var result = existing
         var indexByID = Dictionary(uniqueKeysWithValues: result.indices.map { (result[$0].id, $0) })
-        for member in updates {
+        for var member in updates {
             if let index = indexByID[member.id] {
+                if member.memberListIndex == nil {
+                    member.memberListIndex = result[index].memberListIndex
+                }
                 result[index] = member
             } else {
                 indexByID[member.id] = result.endIndex

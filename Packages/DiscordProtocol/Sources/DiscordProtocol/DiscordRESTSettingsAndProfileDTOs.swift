@@ -534,10 +534,28 @@ struct UserNameplateAssetsDTO: Decodable {
 }
 
 struct UserNameplateDTO: Decodable {
+    var skuID: String?
     var asset: String?
     var label: String?
     var palette: String?
     var assets: UserNameplateAssetsDTO?
+
+    enum CodingKeys: String, CodingKey {
+        case skuID = "sku_id"
+        case asset, label, palette, assets
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        skuID = try? container.decode(String.self, forKey: .skuID)
+        if skuID == nil, let numericSKU = try? container.decode(UInt64.self, forKey: .skuID) {
+            skuID = numericSKU.description
+        }
+        asset = try container.decodeIfPresent(String.self, forKey: .asset)
+        label = try container.decodeIfPresent(String.self, forKey: .label)
+        palette = try container.decodeIfPresent(String.self, forKey: .palette)
+        assets = try container.decodeIfPresent(UserNameplateAssetsDTO.self, forKey: .assets)
+    }
 }
 
 struct UserCollectiblesDTO: Decodable {
@@ -613,13 +631,26 @@ struct UserDTO: Decodable {
             URL(string: "https://cdn.discordapp.com/avatar-decoration-presets/\($0).png?size=160")
         }
         let nameplate = collectibles?.nameplate.flatMap { value -> Nameplate? in
-            guard let asset = value.asset else { return nil }
-            let path = asset.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            let legacyPath = value.asset?.trimmingCharacters(
+                in: CharacterSet(charactersIn: "/")
+            )
+            let officialBase = value.skuID.map {
+                "https://cdn.discordapp.com/media/v1/collectibles-shop/\($0)"
+            }
+            let staticURL = officialBase.flatMap { URL(string: "\($0)/static") }
+                ?? value.assets?.staticImageURL.flatMap(URL.init)
+                ?? legacyPath.flatMap {
+                    URL(string: "https://cdn.discordapp.com/assets/collectibles/\($0)/static.png")
+                }
+            let animatedURL = officialBase.flatMap { URL(string: "\($0)/animated") }
+                ?? value.assets?.animatedImageURL.flatMap(URL.init)
+                ?? legacyPath.flatMap {
+                    URL(string: "https://cdn.discordapp.com/assets/collectibles/\($0)/img.png")
+                }
+            guard staticURL != nil || animatedURL != nil else { return nil }
             return Nameplate(
-                staticURL: URL(
-                    string: "https://cdn.discordapp.com/assets/collectibles/\(path)/static.png"),
-                animatedURL: URL(
-                    string: "https://cdn.discordapp.com/assets/collectibles/\(path)/img.png"),
+                staticURL: staticURL,
+                animatedURL: animatedURL,
                 label: value.label ?? "",
                 palette: value.palette ?? "none"
             )

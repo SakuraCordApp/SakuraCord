@@ -4,6 +4,7 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fixture="$root/script/fixtures/performance-overlap"
 temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-performance-test.XXXXXX")"
+member_list_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-member-list-performance-test.XXXXXX")"
 startup_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-startup-test.XXXXXX")"
 insufficient_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-insufficient-test.XXXXXX")"
 cancelled_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-cancelled-test.XXXXXX")"
@@ -15,7 +16,7 @@ late_tick_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-late-tick-test.XXXX
 missing_profiler_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-missing-profiler-test.XXXXXX")"
 provenance_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-provenance-test.XXXXXX")"
 source_marker="$root/.performance-provenance-test.$$"
-trap 'rm -rf "$temporary" "$startup_temporary" "$insufficient_temporary" "$cancelled_temporary" "$missing_outcome_temporary" "$pagination_failed_temporary" "$short_distance_temporary" "$missing_elapsed_temporary" "$late_tick_temporary" "$missing_profiler_temporary" "$provenance_temporary"; rm -f "$source_marker"' EXIT
+trap 'rm -rf "$temporary" "$member_list_temporary" "$startup_temporary" "$insufficient_temporary" "$cancelled_temporary" "$missing_outcome_temporary" "$pagination_failed_temporary" "$short_distance_temporary" "$missing_elapsed_temporary" "$late_tick_temporary" "$missing_profiler_temporary" "$provenance_temporary"; rm -f "$source_marker"' EXIT
 
 cp "$fixture"/* "$temporary"/
 "$root/script/performance_benchmark.sh" summarize "$temporary" >/dev/null
@@ -46,6 +47,18 @@ if grep -F 'signpost.OverlappingWork.unmatched' "$summary" >/dev/null; then
     printf '%s\n' 'overlap fixture produced unmatched signposts' >&2
     exit 1
 fi
+
+cp "$fixture"/* "$member_list_temporary"/
+perl -0pi -e \
+    's/scenario\tauthenticated-scroll/scenario\tauthenticated-member-list-scroll/; s/MessageTimelineAutoScrollBenchmark/MemberListAutoScrollBenchmark/g' \
+    "$member_list_temporary/metadata.tsv" "$member_list_temporary/signposts.xml"
+"$root/script/performance_benchmark.sh" summarize "$member_list_temporary" >/dev/null
+member_list_summary="$member_list_temporary/summary.txt"
+grep -F $'measurement.window\tMemberListAutoScrollBenchmark' \
+    "$member_list_summary" >/dev/null
+grep -F $'resources.window\tMemberListAutoScrollBenchmark nominal 20.000 s' \
+    "$member_list_summary" >/dev/null
+grep -F $'spatial.quality\t1.0 ratio' "$member_list_summary" >/dev/null
 
 cp "$root/script/fixtures/performance-startup-order"/* "$startup_temporary"/
 "$root/script/performance_benchmark.sh" summarize "$startup_temporary" >/dev/null

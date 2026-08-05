@@ -18,6 +18,8 @@ extension DiscordRESTProvider {
         cachedGuildRoles[guildID] = nil
         cachedMembers[guildID] = nil
         cachedMemberListItems[guildID] = nil
+        memberListSubscriptionRanges[guildID] = nil
+        memberListSubscriptionChannelOrder[guildID] = nil
         cachedMemberListGroups[guildID] = nil
         requestedHistoryMemberIDs[guildID] = nil
         cachedEmojis[guildID] = nil

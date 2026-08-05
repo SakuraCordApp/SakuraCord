@@ -83,6 +83,9 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var cachedPrivateMembersByID: [UserID: Member] = [:]
     var cachedMemberListItems: [GuildID: [GuildMemberListUpdateDTO.Item?]] = [:]
     var cachedMemberListGroups: [GuildID: [GuildMemberListGroup]] = [:]
+    var memberListSubscriptionRanges:
+        [GuildID: [ChannelID: [ClosedRange<Int>]]] = [:]
+    var memberListSubscriptionChannelOrder: [GuildID: [ChannelID]] = [:]
     var cachedGatewayUsersByID: [String: UserDTO] = [:]
     var cachedGuildRoles: [GuildID: [GuildRoleDTO]] = [:]
     var guildRoleTasks: [GuildID: Task<[GuildRoleDTO], Error>] = [:]

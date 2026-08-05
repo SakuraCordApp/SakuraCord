@@ -56,41 +56,46 @@ nonisolated enum DirectMessageMemberResolver {
 }
 
 struct MemberInspectorView: View {
+    private let runsPerformanceAutoScroll =
+        AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments)
+        .runsMemberListPerformanceAutoScroll
     let sections: [MemberSection]
     let profilePresentation: ProfilePresentationState?
     let isProfilePresented: Bool
     let selectMember: (Member) -> Void
     let dismissProfile: () -> Void
+    let viewportIdentity: ChannelID?
+    let updateViewport: (ClosedRange<Int>) -> Void
+
+    init(
+        sections: [MemberSection],
+        profilePresentation: ProfilePresentationState?,
+        isProfilePresented: Bool,
+        selectMember: @escaping (Member) -> Void,
+        dismissProfile: @escaping () -> Void,
+        viewportIdentity: ChannelID? = nil,
+        updateViewport: @escaping (ClosedRange<Int>) -> Void = { _ in }
+    ) {
+        self.sections = sections
+        self.profilePresentation = profilePresentation
+        self.isProfilePresented = isProfilePresented
+        self.selectMember = selectMember
+        self.dismissProfile = dismissProfile
+        self.viewportIdentity = viewportIdentity
+        self.updateViewport = updateViewport
+    }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                ForEach(sections) { section in
-                    MemberSectionHeader(section: section)
-                    ForEach(section.members) { member in
-                        MemberRow(
-                            member: member,
-                            isSelected:
-                                profilePresentation?.member.id
-                                    == member.id,
-                            isProfilePresented:
-                                isProfilePresented
-                                && profilePresentation?.member.id
-                                    == member.id,
-                            profilePresentation:
-                                profilePresentation?.member.id == member.id
-                                    ? profilePresentation
-                                    : nil,
-                            select: { selectMember(member) },
-                            dismissProfile: dismissProfile
-                        )
-                    }
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 10)
-        }
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.45))
+        NativeMemberListView(
+            sections: sections,
+            profilePresentation: profilePresentation,
+            isProfilePresented: isProfilePresented,
+            selectMember: selectMember,
+            dismissProfile: dismissProfile,
+            runsPerformanceAutoScroll: runsPerformanceAutoScroll,
+            viewportIdentity: viewportIdentity,
+            onViewportRange: updateViewport
+        )
     }
 }
 
@@ -106,6 +111,23 @@ struct MemberSection: Identifiable, Equatable {
     let colorHex: UInt32?
     let totalCount: Int
     let members: [Member]
+    let gatewayStartIndex: Int?
+
+    init(
+        id: SectionIdentifier,
+        title: String,
+        colorHex: UInt32?,
+        totalCount: Int,
+        members: [Member],
+        gatewayStartIndex: Int? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.colorHex = colorHex
+        self.totalCount = totalCount
+        self.members = members
+        self.gatewayStartIndex = gatewayStartIndex
+    }
 
     static func make(
         from members: [Member],
@@ -200,28 +222,52 @@ struct MemberSection: Identifiable, Equatable {
         let membersByGroup = Dictionary(grouping: members) { member in
             member.roleID?.description ?? (member.isOnline ? "online" : "offline")
         }
-        return groups.compactMap { group in
-            let loadedMembers = membersByGroup[group.id] ?? []
+        var startIndex = 0
+        var sections: [MemberSection] = []
+        sections.reserveCapacity(groups.count)
+        for group in groups {
+            defer { startIndex += group.count + 1 }
+            let memberRange: ClosedRange<Int>? = if group.count > 0 {
+                (startIndex + 1) ... (startIndex + group.count)
+            } else {
+                nil
+            }
+            let indexedMembers = members
+                .filter { member in
+                    guard let memberRange else { return false }
+                    return member.memberListIndex.map(memberRange.contains) == true
+                }
+                .sorted {
+                    ($0.memberListIndex ?? .max) < ($1.memberListIndex ?? .max)
+                }
+            let inferredMembers = (membersByGroup[group.id] ?? []).filter {
+                $0.memberListIndex == nil
+            }
+            let loadedMembers = indexedMembers + inferredMembers
             if group.id == "online" || group.id == "offline" {
-                return MemberSection(
+                sections.append(MemberSection(
                     id: group.id == "online" ? .online : .offline,
                     title: group.id == "online" ? "Online" : "Offline",
                     colorHex: nil,
                     totalCount: group.count,
-                    members: loadedMembers
-                )
+                    members: loadedMembers,
+                    gatewayStartIndex: startIndex
+                ))
+                continue
             }
-            guard let roleID = RoleID(group.id) else { return nil }
+            guard let roleID = RoleID(group.id) else { continue }
             let role = rolesByID[roleID]
             let title = role?.name ?? loadedMembers.first?.roleName ?? "Members"
-            return MemberSection(
+            sections.append(MemberSection(
                 id: .role(name: title, position: role?.position ?? 0),
                 title: title,
                 colorHex: role?.colorHex,
                 totalCount: group.count,
-                members: loadedMembers
-            )
+                members: loadedMembers,
+                gatewayStartIndex: startIndex
+            ))
         }
+        return sections
     }
 
     private static func memberNameSort(_ lhs: Member, _ rhs: Member) -> Bool {
@@ -244,11 +290,12 @@ private struct MemberSectionHeader: View {
     }
 }
 
-private struct MemberRow: View {
+struct MemberRow: View {
     let member: Member
     let isSelected: Bool
     let isProfilePresented: Bool
     let profilePresentation: ProfilePresentationState?
+    var showsContents = true
     let select: () -> Void
     let dismissProfile: () -> Void
     @State private var isHovered = false
@@ -272,41 +319,43 @@ private struct MemberRow: View {
                     Color.primary.opacity(0.07)
                 }
 
-                HStack(spacing: 8) {
-                    MemberAvatar(member: member)
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 5) {
-                            Text(member.user.displayName)
-                                .font(.body.weight(.semibold))
-                                .foregroundStyle(nameColor)
-                                .lineLimit(1)
-                            if member.user.isBot {
-                                Text("APP")
-                                    .font(.caption2.weight(.bold))
-                                    .padding(.horizontal, 5)
-                                    .padding(.vertical, 2)
-                                    .foregroundStyle(.white)
-                                    .background(.indigo, in: ConcentricRectangle(cornerRadius: 4))
+                if showsContents {
+                    HStack(spacing: 8) {
+                        MemberAvatar(member: member)
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 5) {
+                                Text(member.user.displayName)
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(nameColor)
+                                    .lineLimit(1)
+                                if member.user.isBot {
+                                    Text("APP")
+                                        .font(.caption2.weight(.bold))
+                                        .padding(.horizontal, 5)
+                                        .padding(.vertical, 2)
+                                        .foregroundStyle(.white)
+                                        .background(.indigo, in: ConcentricRectangle(cornerRadius: 4))
+                                }
+                                if let identity = member.user.primaryGuild, let tag = identity.tag {
+                                    PrimaryGuildTag(identity: identity, tag: tag)
+                                }
                             }
-                            if let identity = member.user.primaryGuild, let tag = identity.tag {
-                                PrimaryGuildTag(identity: identity, tag: tag)
+                            if let activity = member.activityText, !activity.isEmpty {
+                                ProfileStatusTextView(
+                                    source: activity,
+                                    isExpanded: false,
+                                    fontSize: 12,
+                                    usesSecondaryColor: true
+                                )
+                                .frame(maxWidth: .infinity, minHeight: 14, maxHeight: 16, alignment: .leading)
+                                .allowsHitTesting(false)
                             }
                         }
-                        if let activity = member.activityText, !activity.isEmpty {
-                            ProfileStatusTextView(
-                                source: activity,
-                                isExpanded: false,
-                                fontSize: 12,
-                                usesSecondaryColor: true
-                            )
-                            .frame(maxWidth: .infinity, minHeight: 14, maxHeight: 16, alignment: .leading)
-                            .allowsHitTesting(false)
-                        }
+                        .opacity(member.isOnline ? 1 : 0.55)
+                        Spacer(minLength: 0)
                     }
-                    .opacity(member.isOnline ? 1 : 0.55)
-                    Spacer(minLength: 0)
+                    .padding(.horizontal, 4)
                 }
-                .padding(.horizontal, 4)
             }
             .frame(height: 44)
             .padding(.vertical, 1)
@@ -339,7 +388,7 @@ private struct MemberRow: View {
     }
 }
 
-private struct MemberAvatar: View {
+struct MemberAvatar: View {
     let member: Member
 
     var body: some View {

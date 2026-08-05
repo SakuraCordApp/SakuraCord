@@ -10,7 +10,10 @@ nonisolated enum MemberStoreMerge {
         updates: [Member]
     ) -> [UserID: Member] {
         var result = existing
-        for member in updates {
+        for var member in updates {
+            if member.memberListIndex == nil {
+                member.memberListIndex = result[member.id]?.memberListIndex
+            }
             result[member.id] = member
         }
         return result

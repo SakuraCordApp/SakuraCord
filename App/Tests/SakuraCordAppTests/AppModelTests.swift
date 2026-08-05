@@ -1816,7 +1816,17 @@ private func forumPresentationPost(
     #expect(authenticatedAutoScroll.mode == .normal)
     #expect(!authenticatedAutoScroll.includesChatPerformanceFixture)
     #expect(authenticatedAutoScroll.runsChatPerformanceAutoScroll)
+    #expect(!authenticatedAutoScroll.runsMemberListPerformanceAutoScroll)
     #expect(!authenticatedAutoScroll.runsChatLiveArrivalStress)
+    let authenticatedMemberListAutoScroll = AppLaunchConfiguration(
+        arguments: [
+            "SakuraCord",
+            "--debug-authenticated-member-list-performance-autoscroll",
+        ]
+    )
+    #expect(authenticatedMemberListAutoScroll.mode == .normal)
+    #expect(authenticatedMemberListAutoScroll.runsMemberListPerformanceAutoScroll)
+    #expect(!authenticatedMemberListAutoScroll.runsChatPerformanceAutoScroll)
     let incomingPrivateCall = AppLaunchConfiguration(
         arguments: ["SakuraCord", "--offline-incoming-private-call"]
     )
@@ -3223,7 +3233,7 @@ private actor FailingRemovalCredentialStore: CredentialStore {
         id: RoleID(rawValue: 10), name: "Orange", position: 10,
         colorHex: 0xFF8800
     )
-    let existing = Member(
+    var existing = Member(
         user: User(id: UserID(rawValue: 1), username: "first", displayName: "First"),
         roleName: orangeRole.name,
         status: .online,
@@ -3232,6 +3242,7 @@ private actor FailingRemovalCredentialStore: CredentialStore {
         isRoleCategory: true,
         roles: [orangeRole]
     )
+    existing.memberListIndex = 73
     let replacement = Member(
         user: existing.user,
         roleName: "Member",
@@ -3249,7 +3260,8 @@ private actor FailingRemovalCredentialStore: CredentialStore {
     )
 
     #expect(merged.count == 2)
-    #expect(merged[existing.id] == replacement)
+    #expect(merged[existing.id]?.status == replacement.status)
+    #expect(merged[existing.id]?.memberListIndex == 73)
     #expect(merged[other.id] == other)
 }
 

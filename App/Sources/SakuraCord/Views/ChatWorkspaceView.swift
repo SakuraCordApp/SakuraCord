@@ -170,7 +170,9 @@ private struct ChatWorkspaceSupplementaryContent: View {
                         model.inspectorProfilePresentation,
                     isProfilePresented: model.isInspectorProfilePresented,
                     selectMember: model.selectMember,
-                    dismissProfile: model.dismissInspectorProfile
+                    dismissProfile: model.dismissInspectorProfile,
+                    viewportIdentity: model.selectedChannelID,
+                    updateViewport: model.updateMemberListViewport
                 )
                 .frame(width: ChatChromeMetrics.memberListWidth)
                 .frame(maxHeight: .infinity)
