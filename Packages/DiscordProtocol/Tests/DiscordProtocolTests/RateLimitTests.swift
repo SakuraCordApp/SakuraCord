@@ -179,6 +179,39 @@ struct ProviderRequestContractTests {
         #expect(RateLimitURLProtocol.messageRequestCount == 0)
     }
 
+    @Test func `message send rejects an oversized base tier attachment before reservation`() async throws {
+        RateLimitURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RateLimitURLProtocol.self]
+        let provider = DiscordRESTProvider(
+            credentials: TestCredentialStore(),
+            handle: CredentialHandle(accountID: "1"),
+            session: URLSession(configuration: configuration)
+        )
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "sakuracord-provider-oversized-\(UUID().uuidString).bin"
+        )
+        guard FileManager.default.createFile(atPath: file.path, contents: nil) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        defer { try? FileManager.default.removeItem(at: file) }
+        let handle = try FileHandle(forWritingTo: file)
+        try handle.truncate(atOffset: UInt64(DiscordAttachmentUploadPolicy.baseLimit + 1))
+        try handle.close()
+
+        await #expect(throws: ChatProviderError.self) {
+            try await provider.send(
+                SendMessageDraft(
+                    channelID: ChannelID(rawValue: 200),
+                    content: "",
+                    attachmentURLs: [file]
+                )
+            )
+        }
+        #expect(RateLimitURLProtocol.totalRequestCount == 0)
+        #expect(RateLimitURLProtocol.messageRequestCount == 0)
+    }
+
     @Test func `acknowledgement uses exact route token body response and one mutation attempt`() async throws {
         RateLimitURLProtocol.reset()
         let configuration = URLSessionConfiguration.ephemeral

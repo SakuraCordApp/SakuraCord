@@ -245,7 +245,7 @@ struct ComposerView: View {
             guard case let .success(urls) = result else { return }
             if hasActiveCommand,
                let option = model.commandComposer.focusedOption, option.type == .attachment,
-               let url = urls.first
+               let url = urls.first, !model.attachmentURLsWithinDiscordLimit([url]).isEmpty
             {
                 model.commandComposer.setValue(
                     .attachment(url), displayText: url.lastPathComponent, for: option

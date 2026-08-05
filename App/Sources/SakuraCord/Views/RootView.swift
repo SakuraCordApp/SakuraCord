@@ -307,6 +307,59 @@ private struct ChatRootView: View {
                 accountActivated: { showAccountSwitcher = false }
             )
         }
+        .alert(
+            "File Too Large",
+            isPresented: Binding(
+                get: { model.oversizedAttachmentPrompt != nil },
+                set: {
+                    if !$0 {
+                        model.oversizedAttachmentPrompt = nil
+                    }
+                }
+            ),
+            presenting: model.oversizedAttachmentPrompt
+        ) { prompt in
+            if prompt.availableServices.contains(.catbox) {
+                Button("Upload to Catbox (Permanent)") {
+                    model.uploadOversizedAttachment(prompt, using: .catbox)
+                }
+            }
+            if prompt.availableServices.contains(.litterbox) {
+                Button("Upload to Litterbox (24 Hours)") {
+                    model.uploadOversizedAttachment(prompt, using: .litterbox)
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                model.dismissOversizedAttachmentPrompt()
+            }
+        } message: { prompt in
+            Text(model.oversizedAttachmentMessage(prompt))
+        }
+        .overlay {
+            if let upload = model.externalAttachmentUploadPresentation {
+                ZStack {
+                    Color.black.opacity(0.28)
+                        .ignoresSafeArea()
+                    VStack(spacing: 14) {
+                        ProgressView()
+                            .controlSize(.large)
+                        Text("Uploading to \(upload.service.displayName)…")
+                            .font(.headline)
+                        Text(upload.fileName)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        Button("Cancel", role: .cancel) {
+                            model.cancelExternalAttachmentUpload()
+                        }
+                    }
+                    .padding(24)
+                    .frame(minWidth: 280)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                    .shadow(radius: 18)
+                }
+            }
+        }
         .alert("SakuraCord", isPresented: Binding(get: { model.errorMessage != nil }, set: {
             if !$0 {
                 model.dismissError()
@@ -530,16 +583,20 @@ private struct ChatRootView: View {
         _ urls: [URL],
         to destination: MessageComposerDestination
     ) {
-        guard !urls.isEmpty else { return }
+        let acceptedURLs = model.attachmentURLsWithinDiscordLimit(
+            urls,
+            offeringExternalUploadFor: destination
+        )
+        guard !acceptedURLs.isEmpty else { return }
         Task {
-            let scopedURLs = urls.filter { $0.startAccessingSecurityScopedResource() }
+            let scopedURLs = acceptedURLs.filter { $0.startAccessingSecurityScopedResource() }
             defer {
                 for url in scopedURLs {
                     url.stopAccessingSecurityScopedResource()
                 }
             }
             await model.sendAttachmentsImmediately(
-                urls.map { ForumPostAttachment(url: $0) },
+                acceptedURLs.map { ForumPostAttachment(url: $0) },
                 to: destination
             )
         }

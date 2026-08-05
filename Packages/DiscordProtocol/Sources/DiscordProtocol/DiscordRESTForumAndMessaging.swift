@@ -1459,6 +1459,9 @@ extension DiscordRESTProvider {
     {
         { [self] files, channelID, progress in
         var descriptors: [JSONValue] = []
+        let maximumFileSize = DiscordAttachmentUploadPolicy.maximumFileSize(
+            premiumType: currentUser?.premiumType ?? 0
+        )
         for (index, file) in files.enumerated() {
             let url = file.url
             let accessed = url.startAccessingSecurityScopedResource()
@@ -1469,6 +1472,11 @@ extension DiscordRESTProvider {
             }
             let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
             let size = (attributes[.size] as? NSNumber)?.intValue ?? 0
+            guard Int64(size) <= maximumFileSize else {
+                throw ChatProviderError.invalidRequest(
+                    "\(file.name) exceeds the account's Discord upload limit."
+                )
+            }
             descriptors.append(
                 .object([
                     "filename": .string(file.name),

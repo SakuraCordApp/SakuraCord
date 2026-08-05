@@ -1659,9 +1659,10 @@ private struct ForumPostComposer: View {
     }
 
     private func addAttachments(_ urls: [URL]) {
+        let allowedURLs = model.attachmentURLsWithinDiscordLimit(urls)
         let count = max(0, 10 - attachments.count)
         let existingURLs = Set(attachments.map(\.url))
-        let uniqueURLs = urls.filter { !existingURLs.contains($0) }
+        let uniqueURLs = allowedURLs.filter { !existingURLs.contains($0) }
         let addedURLs = Array(uniqueURLs.prefix(count))
         for url in addedURLs
             where !securityScopedAttachmentURLs.contains(url)

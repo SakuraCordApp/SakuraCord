@@ -56,7 +56,7 @@ struct InteractionModalSheet: View {
         ) { result in
             guard let id = activeFileControlID else { return }
             if case let .success(urls) = result {
-                fileURLs[id] = urls
+                fileURLs[id] = model.attachmentURLsWithinDiscordLimit(urls)
             }
             activeFileControlID = nil
         }

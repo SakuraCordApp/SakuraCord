@@ -1506,17 +1506,23 @@ extension AppModel {
         to destination: MessageComposerDestination
     ) -> Bool {
         guard isComposerDropEligible(destination), !urls.isEmpty else { return false }
+        let acceptedURLs = attachmentURLsWithinDiscordLimit(
+            urls,
+            offeringExternalUploadFor: destination
+        )
         var attachments = composerAttachments(for: destination)
         let remaining = max(0, SendMessageDraft.maximumAttachmentCount - attachments.count)
         attachments.append(
-            contentsOf: urls.prefix(remaining).map { ForumPostAttachment(url: $0) }
+            contentsOf: acceptedURLs.prefix(remaining).map { ForumPostAttachment(url: $0) }
         )
         setComposerAttachments(attachments, for: destination)
-        if urls.count > remaining {
+        if acceptedURLs.count > remaining {
             errorMessage =
                 "You can attach up to \(SendMessageDraft.maximumAttachmentCount) files to one message."
         }
-        return remaining > 0
+        // Claim a valid drop even when every file was rejected, preventing its path
+        // from being inserted into the text field by the system fallback.
+        return remaining > 0 || !urls.isEmpty
     }
 
     func removeComposerAttachment(

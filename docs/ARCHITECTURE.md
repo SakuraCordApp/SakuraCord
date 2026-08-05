@@ -70,6 +70,10 @@ Within the production provider:
   app networking.
 - Every authenticated REST route uses the central transport. Views and feature
   helpers do not create one-off authenticated `URLSession` paths.
+- `CatboxAttachmentUploader` is a separate unauthenticated app service used
+  only after an explicit choice in the oversized-attachment warning. It never
+  receives Discord credentials or sends a Discord message; its validated HTTPS
+  result is inserted into the originating draft.
 - `DiscordAPIDiagnosticStore` receives REST attempts and responses, attachment
   uploads, native-authentication traffic, and main, voice, and remote-auth
   Gateway envelopes at those transport boundaries. It discards user-authored and

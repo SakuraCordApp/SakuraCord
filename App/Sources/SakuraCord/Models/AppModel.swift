@@ -641,6 +641,8 @@ final class AppModel {
     var threadDraft = ""
     var channelComposerAttachments: [ForumPostAttachment] = []
     var threadComposerAttachments: [ForumPostAttachment] = []
+    var oversizedAttachmentPrompt: OversizedAttachmentPrompt?
+    var externalAttachmentUploadPresentation: ExternalAttachmentUploadPresentation?
     var showInspector = true
     var errorMessage: String?
 
@@ -772,6 +774,9 @@ final class AppModel {
     @ObservationIgnored var clientAppStateUpdateTask: Task<Void, Never>?
     @ObservationIgnored var currentUserRoleIDsByGuild: [GuildID: Set<RoleID>] = [:]
     @ObservationIgnored let readAcknowledgementTiming: ReadAcknowledgementTiming
+    @ObservationIgnored let externalAttachmentUploader: any ExternalAttachmentUploading
+    @ObservationIgnored var queuedOversizedAttachmentPrompts: [OversizedAttachmentPrompt] = []
+    @ObservationIgnored var externalAttachmentUploadTask: Task<Void, Never>?
 
     init(
         launchMode: AppLaunchMode,
@@ -792,7 +797,8 @@ final class AppModel {
         localTypingTiming: LocalTypingTiming = LocalTypingTiming(),
         reactionMutationTiming: ReactionMutationTiming = ReactionMutationTiming(),
         readAcknowledgementTiming: ReadAcknowledgementTiming = ReadAcknowledgementTiming(),
-        runsChatPerformanceBenchmarkOverride: Bool? = nil
+        runsChatPerformanceBenchmarkOverride: Bool? = nil,
+        externalAttachmentUploader: (any ExternalAttachmentUploading)? = nil
     ) {
         self.launchMode = launchMode
         self.notificationService =
@@ -807,6 +813,7 @@ final class AppModel {
         self.localTypingTiming = localTypingTiming
         self.reactionMutationTiming = reactionMutationTiming
         self.readAcknowledgementTiming = readAcknowledgementTiming
+        self.externalAttachmentUploader = externalAttachmentUploader ?? CatboxAttachmentUploader()
         runsChatPerformanceBenchmark =
             runsChatPerformanceBenchmarkOverride
                 ?? AppLaunchConfiguration(

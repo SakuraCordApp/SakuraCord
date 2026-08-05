@@ -406,6 +406,95 @@ import Testing
 }
 
 @MainActor
+@Test func `oversized attachment is rejected at selection and external upload stays opt in`() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "sakuracord-attachment-limit-\(UUID().uuidString)",
+        isDirectory: true
+    )
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let exact = directory.appendingPathComponent("exact.bin")
+    let oversized = directory.appendingPathComponent("oversized.bin")
+    try createSparseFile(exact, size: DiscordAttachmentUploadPolicy.baseLimit)
+    try createSparseFile(oversized, size: DiscordAttachmentUploadPolicy.baseLimit + 1)
+
+    let uploader = AttachmentUploadTestUploader(
+        result: URL(string: "https://files.catbox.moe/test.bin")!
+    )
+    let model = AppModel(
+        launchMode: .offlineTesting,
+        provider: TypingTestProvider(),
+        externalAttachmentUploader: uploader
+    )
+    await model.start()
+    model.snapshot?.currentUser.premiumType = 0
+
+    #expect(model.addComposerAttachments([exact, oversized], to: .channel))
+    #expect(model.channelComposerAttachments.map(\.url) == [exact])
+    let prompt = try #require(model.oversizedAttachmentPrompt)
+    #expect(prompt.fileURL == oversized)
+    #expect(prompt.discordLimit == DiscordAttachmentUploadPolicy.baseLimit)
+    #expect(prompt.availableServices == [.catbox, .litterbox])
+    #expect(await uploader.callCount == 0)
+
+    model.updateDraft("look")
+    model.uploadOversizedAttachment(prompt, using: .catbox)
+    #expect(await eventuallyOnMain { model.externalAttachmentUploadPresentation == nil })
+    #expect(await uploader.callCount == 1)
+    #expect(model.draft == "look https://files.catbox.moe/test.bin")
+}
+
+@Test func `external attachment hosts enforce size type and request contracts`() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "sakuracord-host-contract-\(UUID().uuidString)",
+        isDirectory: true
+    )
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = directory.appendingPathComponent("notes.txt")
+    try Data("hello".utf8).write(to: file)
+    let blocked = directory.appendingPathComponent("unsafe.jar")
+
+    #expect(ExternalAttachmentHostingService.catbox.canUpload(
+        fileURL: file,
+        size: 200_000_000
+    ))
+    #expect(!ExternalAttachmentHostingService.catbox.canUpload(
+        fileURL: file,
+        size: 200_000_001
+    ))
+    #expect(ExternalAttachmentHostingService.litterbox.canUpload(
+        fileURL: file,
+        size: 1_000_000_000
+    ))
+    #expect(!ExternalAttachmentHostingService.litterbox.canUpload(
+        fileURL: file,
+        size: 1_000_000_001
+    ))
+    #expect(!ExternalAttachmentHostingService.litterbox.canUpload(fileURL: blocked, size: 1))
+
+    let catboxBody = try CatboxAttachmentUploader.makeMultipartFile(
+        sourceURL: file,
+        service: .catbox,
+        boundary: "test-boundary"
+    )
+    defer { try? FileManager.default.removeItem(at: catboxBody.deletingLastPathComponent()) }
+    let catboxText = String(decoding: try Data(contentsOf: catboxBody), as: UTF8.self)
+    #expect(catboxText.contains("name=\"reqtype\"\r\n\r\nfileupload"))
+    #expect(catboxText.contains("name=\"fileToUpload\"; filename=\"notes.txt\""))
+    #expect(!catboxText.contains("name=\"time\""))
+
+    let litterboxBody = try CatboxAttachmentUploader.makeMultipartFile(
+        sourceURL: file,
+        service: .litterbox,
+        boundary: "test-boundary"
+    )
+    defer { try? FileManager.default.removeItem(at: litterboxBody.deletingLastPathComponent()) }
+    let litterboxText = String(decoding: try Data(contentsOf: litterboxBody), as: UTF8.self)
+    #expect(litterboxText.contains("name=\"time\"\r\n\r\n24h"))
+}
+
+@MainActor
 @Test func `composer paste prefers arbitrary files over their compatibility path text`() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "sakuracord-paste-file-\(UUID().uuidString)",
@@ -1865,6 +1954,32 @@ private func eventuallyTypingCount(
         try? await Task.sleep(for: .milliseconds(5))
     } while ContinuousClock.now < deadline
     return await provider.typingCount == expectedCount
+}
+
+private func createSparseFile(_ url: URL, size: Int64) throws {
+    guard FileManager.default.createFile(atPath: url.path, contents: nil) else {
+        throw CocoaError(.fileWriteUnknown)
+    }
+    let handle = try FileHandle(forWritingTo: url)
+    defer { try? handle.close() }
+    try handle.truncate(atOffset: UInt64(size))
+}
+
+private actor AttachmentUploadTestUploader: ExternalAttachmentUploading {
+    let result: URL
+    private(set) var callCount = 0
+
+    init(result: URL) {
+        self.result = result
+    }
+
+    func upload(
+        fileURL _: URL,
+        using _: ExternalAttachmentHostingService
+    ) async throws -> URL {
+        callCount += 1
+        return result
+    }
 }
 
 private actor TypingTestProvider: ChatProvider {

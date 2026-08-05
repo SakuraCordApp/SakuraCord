@@ -187,6 +187,53 @@ and retained as evidence.
 | `POST /channels/{dm}/call/ring` | Explicit call start after pushed call creation; `recipients:null` or the explicit recipient list. | Current first-party; Paicord partial, S−. |
 | `POST /channels/{dm}/call/stop-ringing` | Explicit decline; nonempty `recipients` list. | Current first-party; Paicord partial, S−. |
 
+### Attachment selection and external-host fallback
+
+Before an attachment enters a composer, SakuraCord applies Discord's current
+per-file account cap using binary byte counts: 10 MiB for a base account,
+50 MiB for Nitro Basic or legacy Nitro Classic, and 500 MiB for Nitro. A file
+at the exact boundary is accepted. A larger file is rejected during selection,
+before `/channels/{channel}/attachments` can be reserved; the provider repeats
+the check as a fail-closed guard.
+
+The 5 August 2026 evidence for this mapping is Discord's public
+[account-caps article](https://support.discord.com/hc/en-us/articles/33694251638295-Discord-Account-Caps-Server-Caps-and-More),
+the public [user resource](https://docs.discord.com/developers/resources/user)
+premium-type values, and current production web asset
+`web.d96787f461ff77e9.js` (SHA-256
+`216e7f6ce5c61983a33254229f76773984545f0a35402dca7c3376176573215e`).
+That asset maps premium types 1 and 3 to `0x3200000`, type 2 to
+`524288000`, and the default to `0xa00000`, and rejects only when
+`file.size > maximum`. Paicord revision
+`694761c1938b73bb60bd58942674dfe73aab1135` independently performs its size
+check before staging in `Common/Chat/Input/InputBar.swift` and uses the same
+tier values in `Utilities/PaicordLib++/NitroHelper.swift`. Swiftcord v1 revision
+`14465d927ebe1ba34b3befa00f9365fad7b56eb9` has a corresponding pre-attach
+check in `Swiftcord/Utils/Extensions/MessagesView+.swift`, but its fixed 8 MiB
+value is historical and was not adopted. Static first-party and public evidence
+left no material request-shape ambiguity, so no authenticated upload was made
+for this audit.
+
+An oversized ordinary-message attachment may expose these separate,
+user-selected third-party actions:
+
+| Endpoint | Bound and body | Result handling |
+| --- | --- | --- |
+| `POST https://catbox.moe/user/api.php` | At most 200,000,000 bytes (advertised as 200 MB); anonymous multipart `reqtype=fileupload` and `fileToUpload`. | Accept only an HTTPS `files.catbox.moe` response; the file is permanent. |
+| `POST https://litterbox.catbox.moe/resources/internals/api.php` | At most 1,000,000,000 bytes (advertised as 1 GB); anonymous multipart `reqtype=fileupload`, `time=24h`, and `fileToUpload`. | Accept only an HTTPS `litter.catbox.moe` response; the file expires after 24 hours. |
+
+These requests never carry a Discord credential, cookie, message body, or
+Discord client metadata. Nothing is uploaded until the user chooses a named
+host in the size warning. Success adds the returned URL to the same draft for
+review; it never sends a Discord message. Cancellation or failure performs no
+Discord mutation. Catbox's documented blocked executable and document
+extensions are rejected locally. The implementation was cross-checked against
+Equicord's GPL-licensed
+[`FileUpload` plugin](https://github.com/Equicord/Equicord/tree/main/src/equicordplugins/fileUpload)
+for behavior only and independently implemented against Catbox's official
+[tools/API documentation](https://catbox.moe/tools.php),
+[service limits](https://catbox.moe/), and [FAQ](https://catbox.moe/faq.php).
+
 Shared request metadata now matches the non-secret fields observed from the
 clean host: product OS version rather than Darwin kernel version, actual system
 locale, Chromium's ordered language preference header, current client/build

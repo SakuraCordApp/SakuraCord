@@ -105,7 +105,7 @@ complete parity with Discord:
 | Area | Current implementation |
 | --- | --- |
 | **Navigation and conversations** | Server and channel navigation with guild text and announcement channels, DMs and group DMs, voice-channel chat, threads, and forum-post conversations. |
-| **Messages** | Paginated history, sending, editing, deleting, replies, attachments, drafts, reactions, typing state, read state, and unread navigation. |
+| **Messages** | Paginated history, sending, editing, deleting, replies, attachments with per-tier size checks and an opt-in Catbox/Litterbox link fallback, drafts, reactions, typing state, read state, and unread navigation. |
 | **Discord content** | Embeds, custom emoji, stickers, GIF search, slash commands and autocomplete, Components V2, dynamic component choices, and interaction modals. Availability is capability-gated where Discord requires it. |
 | **Voice, video, and media** | Native guild voice and video, direct-message calls, device selection, Opus and H.264 transport, DAVE integration, media previews, playback, and a bounded on-device media cache. |
 | **macOS integration** | Native windows, menus, settings, notifications and sounds, notification deep links, Keychain-backed credentials, and account-scoped local persistence. |
