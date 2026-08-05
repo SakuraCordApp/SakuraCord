@@ -429,13 +429,22 @@ extension DiscordRESTProvider {
         ranges: [ClosedRange<Int>] = [0 ... 99]
     ) async throws {
         let channel = cachedChannels[guildID]?.first(where: { $0.kind != .voice })
-        let channelID = requestedChannelID ?? channel?.id
-        let subscriptionState = channelID.map {
-            DiscordMemberListRangePolicy.subscriptionState(
-                selecting: $0,
+        let selectedChannel = requestedChannelID.flatMap { requestedID in
+            cachedChannels[guildID]?.first(where: { $0.id == requestedID })
+        } ?? channel
+        let subscriptionState = selectedChannel.map { channel in
+            let memberListID = DiscordMemberListIdentity.id(
+                for: channel,
+                guildID: guildID,
+                roles: cachedGuildRoles[guildID] ?? []
+            )
+            selectedMemberListID[guildID] = memberListID
+            return DiscordMemberListRangePolicy.subscriptionState(
+                selecting: memberListID,
+                channelID: channel.id,
                 ranges: ranges,
-                currentRanges: memberListSubscriptionRanges[guildID] ?? [:],
-                currentOrder: memberListSubscriptionChannelOrder[guildID] ?? []
+                currentSubscriptions: memberListSubscriptions[guildID] ?? [:],
+                currentOrder: memberListSubscriptionOrder[guildID] ?? []
             )
         }
         try await sendGateway(
@@ -445,8 +454,9 @@ extension DiscordRESTProvider {
             )
         )
         if let subscriptionState {
-            memberListSubscriptionChannelOrder[guildID] = subscriptionState.channelOrder
-            memberListSubscriptionRanges[guildID] = subscriptionState.rangesByChannel
+            memberListSubscriptionOrder[guildID] = subscriptionState.memberListOrder
+            memberListSubscriptions[guildID] =
+                subscriptionState.subscriptionsByMemberListID
         }
         gatewayLogger.info(
             "Sent current bulk guild subscription; member-list ranges=\(ranges.count)"
@@ -468,7 +478,33 @@ extension DiscordRESTProvider {
     ) async throws {
         guard pendingMemberGuildID == guildID else { return }
         let ranges = DiscordMemberListRangePolicy.ranges(around: visibleRange)
-        guard memberListSubscriptionRanges[guildID]?[channelID] != ranges else { return }
+        guard let channel = cachedChannels[guildID]?.first(where: { $0.id == channelID })
+        else { return }
+        let memberListID = DiscordMemberListIdentity.id(
+            for: channel,
+            guildID: guildID,
+            roles: cachedGuildRoles[guildID] ?? []
+        )
+        let changedSelection = selectedMemberListID[guildID] != memberListID
+        selectedMemberListID[guildID] = memberListID
+        if changedSelection {
+            continuation?.yield(
+                .membersChanged(
+                    guildID: guildID,
+                    members: orderedMemberListMembers(
+                        guildID: guildID, memberListID: memberListID
+                    ) ?? [],
+                    groups: cachedMemberListGroups[guildID]?[memberListID] ?? []
+                )
+            )
+        }
+        if !DiscordMemberListRangePolicy.requiresSubscriptionUpdate(
+            memberListID: memberListID,
+            ranges: ranges,
+            currentSubscriptions: memberListSubscriptions[guildID] ?? [:]
+        ) {
+            return
+        }
         try await subscribeToMemberList(
             guildID: guildID,
             channelID: channelID,
@@ -670,8 +706,9 @@ extension DiscordRESTProvider {
                 cachedMembers = [:]
                 cachedMemberListItems = [:]
                 cachedMemberListGroups = [:]
-                memberListSubscriptionRanges = [:]
-                memberListSubscriptionChannelOrder = [:]
+                selectedMemberListID = [:]
+                memberListSubscriptions = [:]
+                memberListSubscriptionOrder = [:]
                 cachedGuildChannelDTOs = [:]
                 cachedGuildRoles = [:]
                 cachedForumPosts = [:]
@@ -974,7 +1011,7 @@ extension DiscordRESTProvider {
                         .membersChanged(
                             guildID: guildID,
                             members: cachedMembers[guildID] ?? [],
-                            groups: cachedMemberListGroups[guildID] ?? []
+                            groups: selectedMemberListGroups(guildID: guildID)
                         )
                     )
                     if let currentUserID = currentUser?.id,
@@ -1495,22 +1532,28 @@ extension DiscordRESTProvider {
             if syncItemCount > 0 {
                 gatewayLogger.info("Member-list range synchronized; items=\(syncItemCount)")
             }
-            applyMemberListOperations(update.ops, guildID: guildID)
+            applyMemberListOperations(
+                update.ops, guildID: guildID, memberListID: update.id
+            )
             if let groups = update.groups {
-                cachedMemberListGroups[guildID] = groups.map {
+                cachedMemberListGroups[guildID, default: [:]][update.id] = groups.map {
                     GuildMemberListGroup(id: $0.id, count: $0.count)
                 }
             }
-            let members = decodedMemberListMembers(guildID: guildID)
+            let members = decodedMemberListMembers(
+                guildID: guildID, memberListID: update.id
+            )
             cachedMembers[guildID] = DiscordMemberStoreOrdering.merging(
                 existing: cachedMembers[guildID] ?? [], updates: members
             )
-            if guildID == pendingMemberGuildID {
+            if guildID == pendingMemberGuildID,
+               update.id == selectedMemberListID[guildID]
+            {
                 continuation?.yield(
                     .membersChanged(
                         guildID: guildID,
                         members: orderedMemberListMembers(guildID: guildID) ?? members,
-                        groups: cachedMemberListGroups[guildID] ?? []
+                        groups: cachedMemberListGroups[guildID]?[update.id] ?? []
                     )
                 )
             }
@@ -1597,7 +1640,7 @@ extension DiscordRESTProvider {
                     .membersChanged(
                         guildID: guildID,
                         members: orderedMemberListMembers(guildID: guildID) ?? members,
-                        groups: cachedMemberListGroups[guildID] ?? []
+                        groups: selectedMemberListGroups(guildID: guildID)
                     )
                 )
             }
@@ -1803,7 +1846,7 @@ extension DiscordRESTProvider {
             .membersChanged(
                 guildID: guildID,
                 members: members,
-                groups: cachedMemberListGroups[guildID] ?? []
+                groups: selectedMemberListGroups(guildID: guildID)
             )
         )
     }
@@ -1817,7 +1860,7 @@ extension DiscordRESTProvider {
             .membersChanged(
                 guildID: guildID,
                 members: members,
-                groups: cachedMemberListGroups[guildID] ?? []
+                groups: selectedMemberListGroups(guildID: guildID)
             )
         )
         if member.id == currentUser?.id {
@@ -1834,15 +1877,18 @@ extension DiscordRESTProvider {
 
     func removeMember(userID: UserID, guildID: GuildID) {
         cachedMembers[guildID]?.removeAll { $0.id == userID }
-        cachedMemberListItems[guildID]?.removeAll {
-            $0?.member?.user.id == userID.description
+        let memberListIDs = cachedMemberListItems[guildID].map { Array($0.keys) } ?? []
+        for memberListID in memberListIDs {
+            cachedMemberListItems[guildID]?[memberListID]?.removeAll {
+                $0?.member?.user.id == userID.description
+            }
         }
         let members = cachedMembers[guildID] ?? []
         continuation?.yield(
             .membersChanged(
                 guildID: guildID,
                 members: members,
-                groups: cachedMemberListGroups[guildID] ?? []
+                groups: selectedMemberListGroups(guildID: guildID)
             )
         )
         if userID == currentUser?.id {

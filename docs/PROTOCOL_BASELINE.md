@@ -632,32 +632,41 @@ implementation records.
 - The channel member inspector always retains the official client's initial
   `0...99` member-list range, then adds only the 100-aligned blocks intersecting
   the visible rows plus half a viewport of prefetch on either side. A payload
-  contains at most five range pairs, channel subscriptions use a five-channel
+  contains at most five range pairs, subscriptions use a five-member-list-ID
   LRU, and scrolling samples the latest viewport at most once every 300
-  milliseconds. Equal range sets are not resent. Each update remains one
-  guild-scoped opcode-37 payload containing the complete retained channel LRU;
-  sending only the newest channel would make local deduplication diverge from
-  the Gateway subscription state. It is not an opcode-8 member request, REST
-  read, or account mutation. `GUILD_MEMBER_LIST_UPDATE.groups` remains
-  authoritative for group order and counts, while loaded members retain their
-  absolute Gateway list indexes. The renderer preserves `MemberSection.make`
-  order and keeps unresolved capacity after the currently loaded members in
-  each authoritative section, so sparse Gateway indexes cannot create blank
-  rows between already resolved members.
+  milliseconds. Channels with the same permission view share one list ID and
+  one request-budget slot. The server-provided `member_list_id` is
+  authoritative; its deterministic permission-overwrite hash is used only as
+  the first-party-compatible fallback. Equal range sets for the same list ID
+  are not resent. Each update remains one guild-scoped opcode-37 payload
+  containing one representative channel per retained list ID. It is not an
+  opcode-8 member request, REST read, or account mutation.
+  `GUILD_MEMBER_LIST_UPDATE.id` routes operations and authoritative group order
+  and counts into separate per-ID accumulators. Changing between a public and
+  permission-overwritten channel immediately selects that accumulator, so
+  revisiting a public channel cannot retain a restricted channel's members or
+  counts. Loaded members retain their absolute Gateway list indexes. The
+  renderer preserves `MemberSection.make` order and keeps unresolved capacity
+  after the currently loaded members in each authoritative section, so sparse
+  Gateway indexes cannot create blank rows between already resolved members.
 
   This contract was statically rechecked on 5 August 2026 against current
   first-party asset `web.1f98726096a7c0ce.js` (SHA-256
   `592320633d203814eb03f5127552985ca335bb9e4c7eb3ab3aa0a76a0173c80a`).
   Its modules `36124`, `361610`, and `63238` respectively establish the
   100-row block and initial range, half-viewport/100-boundary range planning,
-  and equality-deduplicated channel subscription store with five-channel LRU;
-  module `63238` enqueues the complete map returned by module `36124` whenever
-  one channel changes.
+  and equality-deduplicated subscription store. Module `202613` preserves the
+  server `memberListId`; otherwise it returns `everyone` for a public
+  permission view or the unsigned MurmurHash3 value of sorted `allow:<id>` and
+  `deny:<id>` VIEW_CHANNEL overwrite entries.
   Pinned Paicord's `GuildMemberList.swift` independently keeps `0...99`, adds
   viewport-derived 100-row blocks with at most three pairs, and debounces for
-  300 milliseconds; its `GuildStore.updateSubscriptions` deduplicates and
-  sends the current channel subscription. Pinned Swiftcord v1 has no opcode-37,
-  member-list update, or virtual member-range implementation.
+  300 milliseconds. Its `GuildStore` stores accumulators and a bounded
+  subscription LRU by member-list ID, converts each ID to one representative
+  channel for the wire payload, and applies an update only to the accumulator
+  matching `update.id`. Its `ChannelStore` uses the same server-ID-first,
+  permission-hash fallback. Pinned Swiftcord v1 has no opcode-37, member-list
+  ID, member-list update, or virtual member-range implementation.
   Discord's current public Gateway documentation describes the distinct
   opcode-8 Request Guild Members contract, a 4,096-byte payload ceiling, and
   120 outgoing Gateway events per 60 seconds, but does not document opcode 37

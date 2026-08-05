@@ -136,6 +136,45 @@ struct GatewayLifecycleEventTests {
         #expect(await provider.cachedChannelForTesting(channelID: textChannelID) == nil)
     }
 
+    @Test func `permission scoped member lists remain isolated when revisited`() async {
+        let provider = makeProvider()
+        await provider.receiveGatewayDispatchForTesting(
+            name: "READY",
+            data: .object([
+                "user": user(id: "1", username: "current", globalName: "Current"),
+                "guilds": .array([]),
+            ])
+        )
+        await provider.receiveGatewayDispatchForTesting(
+            name: "GUILD_CREATE", data: guildCreatePayload()
+        )
+        await provider.receiveGatewayDispatchForTesting(
+            name: "GUILD_MEMBER_LIST_UPDATE",
+            data: memberListUpdate(
+                id: "everyone", userIDs: ["1", "2", "3"], groupCount: 3
+            )
+        )
+        await provider.receiveGatewayDispatchForTesting(
+            name: "GUILD_MEMBER_LIST_UPDATE",
+            data: memberListUpdate(
+                id: "restricted", userIDs: ["1"], groupCount: 1
+            )
+        )
+
+        #expect(await provider.orderedMemberListIDsForTesting(
+            guildID: guildID, memberListID: "restricted"
+        ) == [UserID(rawValue: 1)])
+        #expect(await provider.orderedMemberListIDsForTesting(
+            guildID: guildID, memberListID: "everyone"
+        ) == [UserID(rawValue: 1), UserID(rawValue: 2), UserID(rawValue: 3)])
+        #expect(await provider.memberListGroupsForTesting(
+            guildID: guildID, memberListID: "restricted"
+        ).map(\.count) == [1])
+        #expect(await provider.memberListGroupsForTesting(
+            guildID: guildID, memberListID: "everyone"
+        ).map(\.count) == [3])
+    }
+
     @Test func `desktop ETF numeric permissions guild create adds a new guild`() async {
         let provider = makeProvider()
 
@@ -457,6 +496,38 @@ struct GatewayLifecycleEventTests {
             "id": .string(id), "name": .string(name),
             "position": .number(Double(position)), "hoist": .bool(hoist),
             "permissions": .string("1024"),
+        ])
+    }
+
+    private func memberListUpdate(
+        id: String, userIDs: [String], groupCount: Int
+    ) -> JSONValue {
+        .object([
+            "guild_id": .string("100"),
+            "id": .string(id),
+            "groups": .array([
+                .object(["id": .string("online"), "count": .number(Double(groupCount))])
+            ]),
+            "ops": .array([
+                .object([
+                    "op": .string("SYNC"),
+                    "range": .array([
+                        .number(0), .number(Double(max(0, userIDs.count - 1))),
+                    ]),
+                    "items": .array(userIDs.map { userID in
+                        .object([
+                            "member": .object([
+                                "user": user(
+                                    id: userID,
+                                    username: "member-\(userID)",
+                                    globalName: "Member \(userID)"
+                                ),
+                                "roles": .array([]),
+                            ])
+                        ])
+                    }),
+                ])
+            ]),
         ])
     }
 

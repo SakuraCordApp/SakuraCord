@@ -2930,6 +2930,7 @@ func `short timeline is bottom aligned on its first frame and stays there while 
 func `fitting exact unread run opens at true bottom and reports newest boundary`() async throws {
     let model = AppModel(launchMode: .offlineTesting)
     await model.start()
+    model.navigate(to: ChannelID(rawValue: 210))
     let deadline = ContinuousClock.now + .seconds(1)
     while model.messages.count < 9,
           ContinuousClock.now < deadline
@@ -3011,6 +3012,7 @@ func `fitting exact unread run opens at true bottom and reports newest boundary`
 func `scrolling a tall unread timeline to bottom publishes the read boundary`() async throws {
     let model = AppModel(launchMode: .offlineTesting)
     await model.start()
+    model.navigate(to: ChannelID(rawValue: 210))
     let deadline = ContinuousClock.now + .seconds(1)
     while model.messages.count < 9,
           ContinuousClock.now < deadline
@@ -3089,6 +3091,7 @@ func `scrolling a tall unread timeline to bottom publishes the read boundary`() 
 func `media rich timeline establishes unread context before display and preserves it while resizing`() async throws {
     let model = AppModel(launchMode: .offlineTesting)
     await model.start()
+    model.navigate(to: ChannelID(rawValue: 210))
     let deadline = ContinuousClock.now + .seconds(1)
     while model.messages.count < 9,
           ContinuousClock.now < deadline

@@ -35,6 +35,12 @@ final class AppModel {
         var storedAt: Date
     }
 
+    struct MemberListViewportRequest: Equatable {
+        var guildID: GuildID
+        var channelID: ChannelID
+        var visibleRange: ClosedRange<Int>
+    }
+
     struct ReactionReactorLoadKey: Hashable {
         var channelID: ChannelID
         var messageID: MessageID
@@ -560,6 +566,14 @@ final class AppModel {
     var selectedChannelID: ChannelID? {
         didSet {
             guard selectedChannelID != oldValue else { return }
+            if pendingAutomaticChannelAccessID != selectedChannelID {
+                pendingAutomaticChannelAccessID = nil
+            }
+            let retainedMemberViewport = memberListViewportRequest?.visibleRange
+            memberListViewportRequest = nil
+            if let retainedMemberViewport {
+                updateMemberListViewport(retainedMemberViewport)
+            }
             if let selectedChannelID {
                 AppPerformanceSignposts.ensureConversationNavigation(
                     to: selectedChannelID
@@ -708,6 +722,8 @@ final class AppModel {
     @ObservationIgnored var guildActivationTask: Task<Void, Never>?
     @ObservationIgnored var memberLoadTask: Task<Void, Never>?
     @ObservationIgnored var memberLoadGeneration: UInt64 = 0
+    @ObservationIgnored var memberListViewportRequest: MemberListViewportRequest?
+    @ObservationIgnored var pendingAutomaticChannelAccessID: ChannelID?
     @ObservationIgnored var voiceEventTask: Task<Void, Never>?
     @ObservationIgnored var voiceMigrationTask: Task<Void, Never>?
     @ObservationIgnored var voiceSession: DiscordVoiceSession?

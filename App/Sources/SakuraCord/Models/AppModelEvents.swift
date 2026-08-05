@@ -225,7 +225,22 @@ extension AppModel {
         if projectedCheckingChannelIDs != checkingChannelIDs {
             checkingChannelIDs = projectedCheckingChannelIDs
         }
-        if selectedChannelBecameHidden {
+        let redirectsAutomaticSelection =
+            pendingAutomaticChannelAccessID == selectedChannelID
+            && selectedChannelID.map(projectedHiddenChannelIDs.contains) == true
+        if redirectsAutomaticSelection {
+            pendingAutomaticChannelAccessID = nil
+            selectedChannelID = Self.preferredInitialChannelID(
+                in: visibleChannels.filter {
+                    projection.accessByChannelID[$0.id]?.isReadable == true
+                }
+            )
+        } else if pendingAutomaticChannelAccessID == selectedChannelID,
+                  selectedChannelID.map(projectedCheckingChannelIDs.contains) != true
+        {
+            pendingAutomaticChannelAccessID = nil
+        }
+        if selectedChannelBecameHidden, !redirectsAutomaticSelection {
             switch selectedChannel?.kind {
             case .forum:
                 beginForumLoad()

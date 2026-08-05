@@ -3266,6 +3266,53 @@ private actor FailingRemovalCredentialStore: CredentialStore {
 }
 
 @MainActor
+@Test func `member viewport reported before guild member load is replayed after subscription arms`() async throws {
+    let provider = DelayedMemberViewportTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let snapshot = try await provider.bootstrap()
+    let guild = try #require(snapshot.guilds.first)
+    let channel = try #require(snapshot.channels.first { $0.guildID == guild.id })
+    model.snapshot = snapshot
+    model.selectedGuildID = guild.id
+    model.visibleChannels = snapshot.channels.filter { $0.guildID == guild.id }
+    model.selectedChannelID = channel.id
+    model.beginMemberLoad(for: guild.id)
+
+    #expect(await provider.waitUntilMemberLoadStarts())
+    let visibleRange = 200 ... 219
+
+    model.updateMemberListViewport(visibleRange)
+    #expect(await provider.waitUntilViewportAttemptCount(1))
+    #expect(await provider.acceptedViewportRequests().isEmpty)
+
+    await provider.releaseMemberLoad()
+    #expect(await provider.waitUntilAcceptedViewportCount(1))
+
+    #expect(await provider.acceptedViewportRequests() == [
+        DelayedMemberViewportTestProvider.ViewportRequest(
+            guildID: guild.id,
+            channelID: channel.id,
+            visibleRange: visibleRange
+        )
+    ])
+
+    let replacementChannel = try #require(
+        snapshot.channels.first {
+            $0.guildID == guild.id && $0.id != channel.id && $0.kind != .voice
+        }
+    )
+    model.selectedChannelID = replacementChannel.id
+    #expect(await provider.waitUntilAcceptedViewportCount(2))
+    #expect(await provider.acceptedViewportRequests().last ==
+        DelayedMemberViewportTestProvider.ViewportRequest(
+            guildID: guild.id,
+            channelID: replacementChannel.id,
+            visibleRange: visibleRange
+        )
+    )
+}
+
+@MainActor
 @Test func `member list churn invalidates only presentation dependent messages`() throws {
     let model = AppModel(launchMode: .offlineTesting)
     let channelID = ChannelID(rawValue: 70_001)
@@ -3385,7 +3432,7 @@ private actor FailingRemovalCredentialStore: CredentialStore {
 }
 
 @MainActor
-@Test func `automatic guild selection prefers a text conversation over general voice`() {
+@Test func `automatic guild selection follows visible order without preferring general`() {
     let guildID = GuildID(rawValue: 7)
     let voiceGeneral = Channel(
         id: ChannelID(rawValue: 70),
@@ -3409,7 +3456,7 @@ private actor FailingRemovalCredentialStore: CredentialStore {
     #expect(
         AppModel.preferredInitialChannelID(
             in: [voiceGeneral, welcome, textGeneral]
-        ) == textGeneral.id
+        ) == welcome.id
     )
     #expect(
         AppModel.preferredInitialChannelID(in: [voiceGeneral, welcome])
@@ -3443,6 +3490,37 @@ private actor FailingRemovalCredentialStore: CredentialStore {
             && model.messages.map(\.content) == ["Loaded automatically"]
     })
     #expect(await provider.messageRequestCount() == 1)
+}
+
+@MainActor
+@Test func `automatic first channel moves to first readable channel when access resolves hidden`() {
+    let model = AppModel(launchMode: .offlineTesting)
+    let guildID = GuildID(rawValue: 77_300)
+    let privateChannel = Channel(
+        id: ChannelID(rawValue: 77_301), guildID: guildID, name: "staff"
+    )
+    let welcomeChannel = Channel(
+        id: ChannelID(rawValue: 77_302), guildID: guildID, name: "welcome"
+    )
+    model.selectedGuildID = guildID
+    model.visibleChannels = [privateChannel, welcomeChannel]
+    model.pendingAutomaticChannelAccessID = privateChannel.id
+    model.selectedChannelID = privateChannel.id
+    model.checkingChannelIDs = [privateChannel.id, welcomeChannel.id]
+
+    model.applyUnreadAccessProjection(UnreadAccessProjection(
+        accessByChannelID: [
+            privateChannel.id: .hidden,
+            welcomeChannel.id: .readable(canSend: false),
+        ],
+        accessibilityByChannelID: [
+            privateChannel.id: false,
+            welcomeChannel.id: true,
+        ]
+    ))
+
+    #expect(model.selectedChannelID == welcomeChannel.id)
+    #expect(model.pendingAutomaticChannelAccessID == nil)
 }
 
 @MainActor
@@ -3827,7 +3905,12 @@ private func hiddenMockChannel(
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
 
-    #expect(model.selectedChannelID == ChannelID(rawValue: 210))
+    let timelineChannelID = ChannelID(rawValue: 210)
+    model.navigate(to: timelineChannelID)
+    #expect(await eventuallyOnMain {
+        model.selectedChannelID == timelineChannelID
+            && model.hasCompletedInitialMessageLoad
+    })
     let initialCount = model.messages.count
     for _ in 0 ..< 5 {
         await model.loadEarlier()
@@ -6552,5 +6635,143 @@ private actor PrivateCallActionTestProvider: ChatProvider {
     func releaseDecline() {
         declineContinuation?.resume()
         declineContinuation = nil
+    }
+}
+
+private actor DelayedMemberViewportTestProvider: ChatProvider {
+    struct ViewportRequest: Equatable, Sendable {
+        let guildID: GuildID
+        let channelID: ChannelID
+        let visibleRange: ClosedRange<Int>
+    }
+
+    private let base = MockChatProvider()
+    private var memberLoadStarted = false
+    private var memberLoadReleased = false
+    private var memberSubscriptionArmed = false
+    private var memberLoadContinuation: CheckedContinuation<Void, Never>?
+    private var viewportAttempts: [ViewportRequest] = []
+    private var acceptedViewports: [ViewportRequest] = []
+
+    func bootstrap() async throws -> BootstrapSnapshot {
+        try await base.bootstrap()
+    }
+
+    func channels(in guildID: GuildID?) async throws -> [Channel] {
+        try await base.channels(in: guildID)
+    }
+
+    func members(in guildID: GuildID?) async throws -> [Member] {
+        memberLoadStarted = true
+        if !memberLoadReleased {
+            await withCheckedContinuation { continuation in
+                memberLoadContinuation = continuation
+            }
+        }
+        memberSubscriptionArmed = true
+        return try await base.members(in: guildID)
+    }
+
+    func updateMemberListViewport(
+        in guildID: GuildID,
+        channelID: ChannelID,
+        visibleRange: ClosedRange<Int>
+    ) async throws {
+        let request = ViewportRequest(
+            guildID: guildID,
+            channelID: channelID,
+            visibleRange: visibleRange
+        )
+        viewportAttempts.append(request)
+        if memberSubscriptionArmed {
+            acceptedViewports.append(request)
+        }
+    }
+
+    func profile(
+        for userID: UserID,
+        in guildID: GuildID?
+    ) async throws -> UserProfile {
+        try await base.profile(for: userID, in: guildID)
+    }
+
+    func currentStatus() async -> PresenceStatus {
+        await base.currentStatus()
+    }
+
+    func updateStatus(_ status: PresenceStatus) async throws {
+        try await base.updateStatus(status)
+    }
+
+    func messages(
+        in channelID: ChannelID,
+        before: MessageID?,
+        limit: Int
+    ) async throws -> MessagePage {
+        try await base.messages(in: channelID, before: before, limit: limit)
+    }
+
+    func send(_ draft: SendMessageDraft) async throws -> Message {
+        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
+    }
+
+    func edit(
+        messageID: MessageID,
+        channelID: ChannelID,
+        content: String
+    ) async throws -> Message {
+        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
+    }
+
+    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
+
+    func toggleReaction(
+        _ emoji: String,
+        messageID: MessageID,
+        channelID: ChannelID
+    ) async throws {}
+
+    func eventStream() async -> AsyncStream<ClientEvent> {
+        await base.eventStream()
+    }
+
+    func disconnect() async {
+        memberLoadContinuation?.resume()
+        memberLoadContinuation = nil
+        await base.disconnect()
+    }
+
+    func waitUntilMemberLoadStarts() async -> Bool {
+        for _ in 0 ..< 5_000 {
+            if memberLoadStarted { return true }
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        return memberLoadStarted
+    }
+
+    func waitUntilViewportAttemptCount(_ expectedCount: Int) async -> Bool {
+        for _ in 0 ..< 5_000 {
+            if viewportAttempts.count >= expectedCount { return true }
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        return viewportAttempts.count >= expectedCount
+    }
+
+    func waitUntilAcceptedViewportCount(_ expectedCount: Int) async -> Bool {
+        for _ in 0 ..< 5_000 {
+            if acceptedViewports.count >= expectedCount { return true }
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        return acceptedViewports.count >= expectedCount
+    }
+
+    func acceptedViewportRequests() -> [ViewportRequest] {
+        acceptedViewports
+    }
+
+    func releaseMemberLoad() {
+        memberLoadReleased = true
+        memberLoadContinuation?.resume()
+        memberLoadContinuation = nil
     }
 }

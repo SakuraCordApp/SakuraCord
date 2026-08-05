@@ -95,13 +95,20 @@ enum DiscordGatewayPayloadFactory {
 
 enum DiscordMemberListRangePolicy {
     struct SubscriptionState: Equatable {
-        let channelOrder: [ChannelID]
-        let rangesByChannel: [ChannelID: [ClosedRange<Int>]]
+        let memberListOrder: [String]
+        let subscriptionsByMemberListID: [String: DiscordMemberListSubscription]
+
+        var rangesByChannel: [ChannelID: [ClosedRange<Int>]] {
+            Dictionary(
+                subscriptionsByMemberListID.values.map { ($0.channelID, $0.ranges) },
+                uniquingKeysWith: { _, newer in newer }
+            )
+        }
     }
 
     static let blockSize = 100
     static let maximumRangePairs = 5
-    static let maximumSubscribedChannels = 5
+    static let maximumSubscribedMemberLists = 5
     static let initialRange = 0 ... 99
 
     static func ranges(around visibleRange: ClosedRange<Int>) -> [ClosedRange<Int>] {
@@ -127,30 +134,116 @@ enum DiscordMemberListRangePolicy {
             + nonInitial.suffix(trailingCount)
     }
 
-    static func retainedChannelOrder(
-        selecting channelID: ChannelID,
-        from current: [ChannelID]
-    ) -> [ChannelID] {
+    static func retainedMemberListOrder(
+        selecting memberListID: String,
+        from current: [String]
+    ) -> [String] {
         Array(
-            (current.filter { $0 != channelID } + [channelID])
-                .suffix(maximumSubscribedChannels)
+            (current.filter { $0 != memberListID } + [memberListID])
+                .suffix(maximumSubscribedMemberLists)
         )
     }
 
     static func subscriptionState(
-        selecting channelID: ChannelID,
+        selecting memberListID: String,
+        channelID: ChannelID,
         ranges: [ClosedRange<Int>],
-        currentRanges: [ChannelID: [ClosedRange<Int>]],
-        currentOrder: [ChannelID]
+        currentSubscriptions: [String: DiscordMemberListSubscription],
+        currentOrder: [String]
     ) -> SubscriptionState {
-        let channelOrder = retainedChannelOrder(selecting: channelID, from: currentOrder)
-        var rangesByChannel = currentRanges
-        rangesByChannel[channelID] = ranges
-        rangesByChannel = rangesByChannel.filter { channelOrder.contains($0.key) }
-        return SubscriptionState(
-            channelOrder: channelOrder,
-            rangesByChannel: rangesByChannel
+        let memberListOrder = retainedMemberListOrder(
+            selecting: memberListID, from: currentOrder
         )
+        var subscriptions = currentSubscriptions
+        subscriptions[memberListID] = DiscordMemberListSubscription(
+            channelID: channelID, ranges: ranges
+        )
+        subscriptions = subscriptions.filter { memberListOrder.contains($0.key) }
+        return SubscriptionState(
+            memberListOrder: memberListOrder,
+            subscriptionsByMemberListID: subscriptions
+        )
+    }
+
+    static func requiresSubscriptionUpdate(
+        memberListID: String,
+        ranges: [ClosedRange<Int>],
+        currentSubscriptions: [String: DiscordMemberListSubscription]
+    ) -> Bool {
+        currentSubscriptions[memberListID]?.ranges != ranges
+    }
+}
+
+struct DiscordMemberListSubscription: Equatable {
+    let channelID: ChannelID
+    let ranges: [ClosedRange<Int>]
+}
+
+enum DiscordMemberListIdentity {
+    private static let viewChannel: UInt64 = 1 << 10
+
+    static func id(for channel: Channel, guildID: GuildID, roles: [GuildRoleDTO]) -> String {
+        if let memberListID = channel.memberListID, !memberListID.isEmpty {
+            return memberListID
+        }
+        let everyonePermissions = roles.first(where: { $0.id == guildID.description })
+            .flatMap(\.permissions).flatMap(UInt64.init) ?? 0
+        let everyoneCanView = everyonePermissions & viewChannel != 0
+        let overwrites = channel.permissionOverwrites ?? []
+        if everyoneCanView, !overwrites.contains(where: { $0.deny & viewChannel != 0 }) {
+            return "everyone"
+        }
+        let permissionShape = overwrites.compactMap { overwrite -> String? in
+            if overwrite.allow & viewChannel != 0 { return "allow:\(overwrite.id)" }
+            if overwrite.deny & viewChannel != 0 { return "deny:\(overwrite.id)" }
+            return nil
+        }.sorted().joined(separator: ",")
+        return String(murmurHash3(permissionShape.utf8))
+    }
+
+    private static func murmurHash3(_ bytes: String.UTF8View) -> UInt32 {
+        let data = Array(bytes)
+        var hash: UInt32 = 0
+        let count = data.count
+        let blockCount = count / 4
+        for block in 0 ..< blockCount {
+            let offset = block * 4
+            var key = UInt32(data[offset])
+                | (UInt32(data[offset + 1]) << 8)
+                | (UInt32(data[offset + 2]) << 16)
+                | (UInt32(data[offset + 3]) << 24)
+            key &*= 0xcc9e2d51
+            key = (key << 15) | (key >> 17)
+            key &*= 0x1b873593
+            hash ^= key
+            hash = (hash << 13) | (hash >> 19)
+            hash = hash &* 5 &+ 0xe6546b64
+        }
+        var tail: UInt32 = 0
+        let tailOffset = blockCount * 4
+        switch count & 3 {
+        case 3:
+            tail ^= UInt32(data[tailOffset + 2]) << 16
+            fallthrough
+        case 2:
+            tail ^= UInt32(data[tailOffset + 1]) << 8
+            fallthrough
+        case 1:
+            tail ^= UInt32(data[tailOffset])
+            tail &*= 0xcc9e2d51
+            tail = (tail << 15) | (tail >> 17)
+            tail &*= 0x1b873593
+            hash ^= tail
+        default:
+            break
+        }
+        hash ^= UInt32(count)
+        hash ^= hash >> 16
+        hash &*= 0x85ebca6b
+        hash ^= hash >> 13
+        hash &*= 0xc2b2ae35
+        hash ^= hash >> 16
+        return hash
     }
 }
 

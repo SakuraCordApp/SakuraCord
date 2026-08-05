@@ -552,37 +552,44 @@ private func appendETFBinary(_ value: String, to data: inout Data) {
     #expect(channels["200"] as? [[Int]] == [[0, 99], [200, 299]])
 }
 
-@Test func `member list subscription channel cache is a five channel lru`() {
-    let channels = (1 ... 6).map { ChannelID(rawValue: UInt64($0)) }
-    var retained: [ChannelID] = []
-    for channel in channels {
-        retained = DiscordMemberListRangePolicy.retainedChannelOrder(
-            selecting: channel,
+@Test func `member list subscription cache is a five list id lru`() {
+    let memberListIDs = (1 ... 6).map { "list-\($0)" }
+    var retained: [String] = []
+    for memberListID in memberListIDs {
+        retained = DiscordMemberListRangePolicy.retainedMemberListOrder(
+            selecting: memberListID,
             from: retained
         )
     }
-    #expect(retained == Array(channels.suffix(5)))
+    #expect(retained == Array(memberListIDs.suffix(5)))
 
-    retained = DiscordMemberListRangePolicy.retainedChannelOrder(
-        selecting: channels[2],
+    retained = DiscordMemberListRangePolicy.retainedMemberListOrder(
+        selecting: memberListIDs[2],
         from: retained
     )
-    #expect(retained == [channels[1], channels[3], channels[4], channels[5], channels[2]])
+    #expect(retained == [
+        memberListIDs[1], memberListIDs[3], memberListIDs[4],
+        memberListIDs[5], memberListIDs[2],
+    ])
 }
 
-@Test func `member list subscription update sends the complete retained channel map`() throws {
+@Test func `member list subscription update sends one channel per retained list id`() throws {
     let channels = (1 ... 6).map { ChannelID(rawValue: UInt64($0)) }
+    let memberListIDs = (1 ... 6).map { "list-\($0)" }
     let existing = Dictionary(
-        uniqueKeysWithValues: channels.prefix(5).map { ($0, [0 ... 99]) }
+        uniqueKeysWithValues: zip(memberListIDs.prefix(5), channels.prefix(5)).map {
+            ($0, DiscordMemberListSubscription(channelID: $1, ranges: [0 ... 99]))
+        }
     )
     let state = DiscordMemberListRangePolicy.subscriptionState(
-        selecting: channels[5],
+        selecting: memberListIDs[5],
+        channelID: channels[5],
         ranges: [0 ... 99, 200 ... 299],
-        currentRanges: existing,
-        currentOrder: Array(channels.prefix(5))
+        currentSubscriptions: existing,
+        currentOrder: Array(memberListIDs.prefix(5))
     )
 
-    #expect(state.channelOrder == Array(channels.suffix(5)))
+    #expect(state.memberListOrder == Array(memberListIDs.suffix(5)))
     #expect(state.rangesByChannel[channels[0]] == nil)
     #expect(state.rangesByChannel[channels[5]] == [0 ... 99, 200 ... 299])
 
@@ -595,7 +602,7 @@ private func appendETFBinary(_ value: String, to data: inout Data) {
     let guild = try #require(subscriptions["100"] as? [String: Any])
     let payloadChannels = try #require(guild["channels"] as? [String: Any])
 
-    #expect(payloadChannels.count == DiscordMemberListRangePolicy.maximumSubscribedChannels)
+    #expect(payloadChannels.count == DiscordMemberListRangePolicy.maximumSubscribedMemberLists)
     #expect(payloadChannels[channels[0].description] == nil)
     #expect(payloadChannels[channels[1].description] as? [[Int]] == [[0, 99]])
     #expect(payloadChannels[channels[5].description] as? [[Int]] == [
@@ -603,34 +610,95 @@ private func appendETFBinary(_ value: String, to data: inout Data) {
     ])
 }
 
-@Test func `revisited member list channel refresh stays aligned with wire state`() {
-    let first = ChannelID(rawValue: 1)
-    let revisited = ChannelID(rawValue: 2)
+@Test func `channels sharing a list id consume one request budget slot`() {
+    let general = ChannelID(rawValue: 1)
+    let anotherPublicChannel = ChannelID(rawValue: 2)
     let initial = DiscordMemberListRangePolicy.subscriptionState(
-        selecting: revisited,
+        selecting: "everyone",
+        channelID: general,
         ranges: [0 ... 99],
-        currentRanges: [:],
+        currentSubscriptions: [:],
         currentOrder: []
     )
-    let afterFirstChannel = DiscordMemberListRangePolicy.subscriptionState(
-        selecting: first,
+    let samePermissionView = DiscordMemberListRangePolicy.subscriptionState(
+        selecting: "everyone",
+        channelID: anotherPublicChannel,
         ranges: [0 ... 99],
-        currentRanges: initial.rangesByChannel,
-        currentOrder: initial.channelOrder
+        currentSubscriptions: initial.subscriptionsByMemberListID,
+        currentOrder: initial.memberListOrder
     )
 
-    #expect(afterFirstChannel.rangesByChannel[revisited] == [0 ... 99])
-    #expect(afterFirstChannel.rangesByChannel[first] == [0 ... 99])
+    #expect(samePermissionView.memberListOrder == ["everyone"])
+    #expect(samePermissionView.rangesByChannel.count == 1)
+    #expect(samePermissionView.rangesByChannel[anotherPublicChannel] == [0 ... 99])
+    #expect(!DiscordMemberListRangePolicy.requiresSubscriptionUpdate(
+        memberListID: "everyone",
+        ranges: [0 ... 99],
+        currentSubscriptions: initial.subscriptionsByMemberListID
+    ))
+}
+
+@Test func `member list identity follows server id and permission fallback`() throws {
+    let guildID = GuildID(rawValue: 100)
+    let roles = try JSONDecoder().decode(
+        [GuildRoleDTO].self,
+        from: Data(
+            #"[{"id":"100","name":"@everyone","position":0,"hoist":false,"permissions":"1024"}]"#.utf8
+        )
+    )
+    let publicChannel = Channel(
+        id: ChannelID(rawValue: 1), guildID: guildID, name: "general"
+    )
+    let restrictedA = Channel(
+        id: ChannelID(rawValue: 2), guildID: guildID, name: "og-members",
+        permissionOverwrites: [
+            ChannelPermissionOverwrite(id: "100", type: 0, deny: 1 << 10),
+            ChannelPermissionOverwrite(id: "200", type: 0, allow: 1 << 10),
+        ]
+    )
+    let restrictedB = Channel(
+        id: ChannelID(rawValue: 3), guildID: guildID, name: "staff-copy",
+        permissionOverwrites: restrictedA.permissionOverwrites
+    )
+    let serverIdentified = Channel(
+        id: ChannelID(rawValue: 4), guildID: guildID, name: "server-id",
+        memberListID: "provided-by-gateway"
+    )
+
+    #expect(DiscordMemberListIdentity.id(
+        for: publicChannel, guildID: guildID, roles: roles
+    ) == "everyone")
+    let restrictedID = DiscordMemberListIdentity.id(
+        for: restrictedA, guildID: guildID, roles: roles
+    )
+    #expect(restrictedID == "2500999677")
+    #expect(restrictedID == DiscordMemberListIdentity.id(
+        for: restrictedB, guildID: guildID, roles: roles
+    ))
+    #expect(DiscordMemberListIdentity.id(
+        for: serverIdentified, guildID: guildID, roles: roles
+    ) == "provided-by-gateway")
+
+    let decodedChannel = try JSONDecoder().decode(
+        ChannelDTO.self,
+        from: Data(
+            #"{"id":"5","guild_id":"100","name":"decoded","type":0,"member_list_id":"gateway-list"}"#.utf8
+        )
+    )
+    #expect(try decodedChannel.domain(guildID: guildID).memberListID == "gateway-list")
 }
 
 @Test func `guild member list update retains authoritative group counts and order`() throws {
     let payloadText =
-        #"{"guild_id":"100","ops":[],"member_count":500,"online_count":388,"groups":["# +
+        #"{"guild_id":"100","id":"everyone","ops":[],"member_count":500,"online_count":388,"groups":["# +
         #"{"id":"20","count":1},{"id":"10","count":2},{"id":"online","count":388}]}"#
     let payload = Data(payloadText.utf8)
 
     let update = try JSONDecoder().decode(GuildMemberListUpdateDTO.self, from: payload)
 
+    #expect(update.id == "everyone")
+    #expect(update.memberCount == 500)
+    #expect(update.onlineCount == 388)
     #expect(update.groups?.map(\.id) == ["20", "10", "online"])
     #expect(update.groups?.map(\.count) == [1, 2, 388])
 }

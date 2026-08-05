@@ -243,6 +243,7 @@ extension AppModel {
         membersByGuildID = [:]
         memberListsByGuildID = [:]
         memberListGroupsByGuildID = [:]
+        memberListViewportRequest = nil
         guildRolesByGuildID = [:]
         membersByID = [:]
         memberListGroups = []
@@ -369,6 +370,7 @@ extension AppModel {
         membersByGuildID = [:]
         memberListsByGuildID = [:]
         memberListGroupsByGuildID = [:]
+        memberListViewportRequest = nil
         guildRolesByGuildID = [:]
         membersByID = [:]
         memberListGroups = []
@@ -742,17 +744,31 @@ extension AppModel {
               let channelID = selectedChannelID
         else { return }
         let session = accountSession()
+        let request = MemberListViewportRequest(
+            guildID: guildID,
+            channelID: channelID,
+            visibleRange: visibleRange
+        )
+        memberListViewportRequest = request
+        submitMemberListViewport(request, account: session)
+    }
+
+    func submitMemberListViewport(
+        _ request: MemberListViewportRequest,
+        account session: AppModelAccountSession
+    ) {
         Task { [weak self] in
             guard let self,
                   isCurrentAccountSession(session),
-                  selectedGuildID == guildID,
-                  selectedChannelID == channelID
+                  memberListViewportRequest == request,
+                  selectedGuildID == request.guildID,
+                  selectedChannelID == request.channelID
             else { return }
             do {
                 try await session.provider.updateMemberListViewport(
-                    in: guildID,
-                    channelID: channelID,
-                    visibleRange: visibleRange
+                    in: request.guildID,
+                    channelID: request.channelID,
+                    visibleRange: request.visibleRange
                 )
             } catch {
                 guard isCurrentAccountSession(session) else { return }
@@ -760,6 +776,29 @@ extension AppModel {
                     "Member-list viewport subscription failed: \(error.localizedDescription, privacy: .public)"
                 )
             }
+        }
+    }
+
+    func replayMemberListViewportIfNeeded(
+        for guildID: GuildID,
+        account session: AppModelAccountSession
+    ) async {
+        guard let request = memberListViewportRequest,
+              request.guildID == guildID,
+              request.channelID == selectedChannelID,
+              isCurrentAccountSession(session)
+        else { return }
+        do {
+            try await session.provider.updateMemberListViewport(
+                in: request.guildID,
+                channelID: request.channelID,
+                visibleRange: request.visibleRange
+            )
+        } catch {
+            guard isCurrentAccountSession(session) else { return }
+            AppModel.memberListLogger.debug(
+                "Member-list viewport replay failed: \(error.localizedDescription, privacy: .public)"
+            )
         }
     }
 
@@ -1053,7 +1092,13 @@ extension AppModel {
             let selectableChannels = visibleChannels.filter {
                 conversationAccess(for: $0) != .hidden
             }
-            selectedChannelID = Self.preferredInitialChannelID(in: selectableChannels)
+            let preferredChannelID = Self.preferredInitialChannelID(in: selectableChannels)
+            pendingAutomaticChannelAccessID = preferredChannelID.flatMap { id in
+                selectableChannels.first(where: { $0.id == id }).flatMap { channel in
+                    conversationAccess(for: channel) == .checking ? id : nil
+                }
+            }
+            selectedChannelID = preferredChannelID
         }
         if !presentsCachedStartup {
             beginMemberLoad(for: guildID)
@@ -1094,10 +1139,7 @@ extension AppModel {
                 false
             }
         }
-        return textChannels.first(where: { $0.name == "general" })?.id
-            ?? textChannels.first?.id
-            ?? channels.first(where: { $0.name == "general" })?.id
-            ?? channels.first?.id
+        return textChannels.first?.id ?? channels.first?.id
     }
 
     func loadEmojis(for guildID: GuildID) async {
@@ -1323,6 +1365,12 @@ extension AppModel {
                 // inspector, but Discord does not use their visual list order
                 // as autocomplete's candidate store.
                 mentionAutocompleteMembers = value
+                if let guildID {
+                    await replayMemberListViewportIfNeeded(
+                        for: guildID,
+                        account: session
+                    )
+                }
                 if let guildID {
                     if let roles = try? await requestProvider.roles(in: guildID),
                        !Task.isCancelled,

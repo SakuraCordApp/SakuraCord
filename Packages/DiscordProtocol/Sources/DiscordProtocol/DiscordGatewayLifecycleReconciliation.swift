@@ -18,8 +18,9 @@ extension DiscordRESTProvider {
         cachedGuildRoles[guildID] = nil
         cachedMembers[guildID] = nil
         cachedMemberListItems[guildID] = nil
-        memberListSubscriptionRanges[guildID] = nil
-        memberListSubscriptionChannelOrder[guildID] = nil
+        selectedMemberListID[guildID] = nil
+        memberListSubscriptions[guildID] = nil
+        memberListSubscriptionOrder[guildID] = nil
         cachedMemberListGroups[guildID] = nil
         requestedHistoryMemberIDs[guildID] = nil
         cachedEmojis[guildID] = nil
@@ -124,7 +125,7 @@ extension DiscordRESTProvider {
                 .membersChanged(
                     guildID: guildID,
                     members: members,
-                    groups: cachedMemberListGroups[guildID] ?? []
+                    groups: selectedMemberListGroups(guildID: guildID)
                 )
             )
         }

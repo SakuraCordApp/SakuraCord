@@ -2,6 +2,22 @@ import Foundation
 import SakuraCordModels
 
 extension DiscordRESTProvider {
+    #if DEBUG
+        func orderedMemberListIDsForTesting(
+            guildID: GuildID, memberListID: String
+        ) -> [UserID] {
+            orderedMemberListMembers(
+                guildID: guildID, memberListID: memberListID
+            )?.map(\.id) ?? []
+        }
+
+        func memberListGroupsForTesting(
+            guildID: GuildID, memberListID: String
+        ) -> [GuildMemberListGroup] {
+            cachedMemberListGroups[guildID]?[memberListID] ?? []
+        }
+    #endif
+
     func finishVoiceNegotiationIfReady() {
         guard let pending = pendingVoiceNegotiation,
               let sessionID = pending.sessionID,
@@ -30,9 +46,9 @@ extension DiscordRESTProvider {
         pending.continuation.resume(throwing: error)
     }
 
-    func decodedMemberListMembers(guildID: GuildID) -> [Member] {
+    func decodedMemberListMembers(guildID: GuildID, memberListID: String) -> [Member] {
         var seen = Set<UserID>()
-        return (cachedMemberListItems[guildID] ?? []).enumerated().compactMap { index, item -> Member? in
+        return (cachedMemberListItems[guildID]?[memberListID] ?? []).enumerated().compactMap { index, item -> Member? in
             guard let memberDTO = item?.member,
                   var member = try? memberDTO.domain(
                       currentUserID: currentUser?.id,
@@ -48,13 +64,15 @@ extension DiscordRESTProvider {
         }
     }
 
-    func orderedMemberListMembers(guildID: GuildID) -> [Member]? {
-        guard cachedMemberListItems[guildID] != nil else { return nil }
+    func orderedMemberListMembers(guildID: GuildID, memberListID: String? = nil) -> [Member]? {
+        guard let memberListID = memberListID ?? selectedMemberListID[guildID],
+              cachedMemberListItems[guildID]?[memberListID] != nil
+        else { return nil }
         let cachedByID = Dictionary(
             (cachedMembers[guildID] ?? []).map { ($0.id, $0) },
             uniquingKeysWith: { _, newer in newer }
         )
-        return decodedMemberListMembers(guildID: guildID).map { indexedMember in
+        return decodedMemberListMembers(guildID: guildID, memberListID: memberListID).map { indexedMember in
             guard var cached = cachedByID[indexedMember.id] else {
                 return indexedMember
             }
@@ -118,13 +136,20 @@ extension DiscordRESTProvider {
     }
 
     func applyMemberListOperations(
-        _ operations: [GuildMemberListUpdateDTO.Operation], guildID: GuildID
+        _ operations: [GuildMemberListUpdateDTO.Operation],
+        guildID: GuildID,
+        memberListID: String
     ) {
-        var items = cachedMemberListItems[guildID] ?? []
+        var items = cachedMemberListItems[guildID]?[memberListID] ?? []
         for operation in operations {
             Self.memberListOperationApplication(&items, operation)
         }
-        cachedMemberListItems[guildID] = items
+        cachedMemberListItems[guildID, default: [:]][memberListID] = items
+    }
+
+    func selectedMemberListGroups(guildID: GuildID) -> [GuildMemberListGroup] {
+        guard let memberListID = selectedMemberListID[guildID] else { return [] }
+        return cachedMemberListGroups[guildID]?[memberListID] ?? []
     }
 
     func request<Response: Decodable>(

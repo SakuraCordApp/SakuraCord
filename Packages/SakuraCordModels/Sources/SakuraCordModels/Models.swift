@@ -471,6 +471,7 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
     public var isMuted: Bool
     public var recipients: [User]
     public var permissionOverwrites: [ChannelPermissionOverwrite]?
+    public var memberListID: String?
     public var lastMessageID: MessageID?
     public var lastPinTimestamp: Date?
     public var flags: UInt64
@@ -502,6 +503,7 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         isMuted: Bool = false,
         recipients: [User] = [],
         permissionOverwrites: [ChannelPermissionOverwrite]? = nil,
+        memberListID: String? = nil,
         lastMessageID: MessageID? = nil,
         lastPinTimestamp: Date? = nil,
         flags: UInt64 = 0,
@@ -532,6 +534,7 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         self.isMuted = isMuted
         self.recipients = recipients
         self.permissionOverwrites = permissionOverwrites
+        self.memberListID = memberListID
         self.lastMessageID = lastMessageID
         self.lastPinTimestamp = lastPinTimestamp
         self.flags = flags
@@ -557,7 +560,7 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case id, guildID, name, iconURL, ownerID, topic, kind, category, categoryID, position, categoryPosition
-        case unreadCount, mentionCount, isMuted, recipients, permissionOverwrites, lastMessageID, lastPinTimestamp
+        case unreadCount, mentionCount, isMuted, recipients, permissionOverwrites, memberListID, lastMessageID, lastPinTimestamp
         case flags, availableTags, defaultReaction, defaultSortOrder, defaultForumLayout
         case defaultTagMatch, defaultAutoArchiveDuration, defaultThreadRateLimitPerUser
         case rateLimitPerUser
@@ -584,6 +587,7 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         permissionOverwrites = try values.decodeIfPresent(
             [ChannelPermissionOverwrite].self, forKey: .permissionOverwrites
         )
+        memberListID = try values.decodeIfPresent(String.self, forKey: .memberListID)
         lastMessageID = try values.decodeIfPresent(MessageID.self, forKey: .lastMessageID)
         lastPinTimestamp = try values.decodeIfPresent(Date.self, forKey: .lastPinTimestamp)
         flags = try values.decodeIfPresent(UInt64.self, forKey: .flags) ?? 0

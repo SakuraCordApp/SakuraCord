@@ -1162,6 +1162,7 @@ struct ChannelDTO: Decodable {
     var recipients: [UserDTO]?
     var recipientIDs: [String]?
     var permissionOverwrites: [PermissionOverwriteDTO]?
+    var memberListID: String?
     var lastMessageID: String?
     var lastPinTimestamp: String?
     var ownerID: String?
@@ -1192,6 +1193,7 @@ struct ChannelDTO: Decodable {
         case position, recipients
         case recipientIDs = "recipient_ids"
         case permissionOverwrites = "permission_overwrites"
+        case memberListID = "member_list_id"
         case lastMessageID = "last_message_id"
         case lastPinTimestamp = "last_pin_timestamp"
         case ownerID = "owner_id"
@@ -1259,6 +1261,7 @@ struct ChannelDTO: Decodable {
             categoryPosition: categoryPosition,
             recipients: users,
             permissionOverwrites: permissionOverwrites?.map(\.domain),
+            memberListID: memberListID,
             lastMessageID: lastMessageID.flatMap(MessageID.init),
             lastPinTimestamp: lastPinTimestamp.flatMap(DiscordDate.parse),
             flags: flags ?? 0,
@@ -1739,10 +1742,16 @@ struct GuildMemberListUpdateDTO: Decodable {
     }
 
     var guildID: String
+    var id: String
+    var memberCount: Int?
+    var onlineCount: Int?
     var ops: [Operation]
     var groups: [Group]?
     enum CodingKeys: String, CodingKey {
         case guildID = "guild_id"
+        case id
+        case memberCount = "member_count"
+        case onlineCount = "online_count"
         case ops
         case groups
     }
