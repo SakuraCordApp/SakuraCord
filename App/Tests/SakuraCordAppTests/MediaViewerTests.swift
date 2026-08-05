@@ -303,6 +303,149 @@ struct MediaViewerTests {
         #expect(presentation.timestamp == timestamp)
     }
 
+    @Test func `linked images open as one in app viewer gallery`() throws {
+        let firstURL = try #require(URL(
+            string: "https://cdn.discordapp.com/attachments/1/2/first.png"
+        ))
+        let secondURL = try #require(URL(
+            string: "https://media.discordapp.net/attachments/1/2/second.webp"
+        ))
+        let content = "[First](\(firstURL.absoluteString)) [Second](\(secondURL.absoluteString))"
+        let references = LinkedImagePresentation(content: content).images
+        let second = try #require(references.last)
+        let message = Message(
+            id: MessageID(rawValue: 55),
+            channelID: ChannelID(rawValue: 56),
+            author: User(
+                id: UserID(rawValue: 57),
+                username: "author",
+                displayName: "Author"
+            ),
+            content: content,
+            timestamp: .now
+        )
+
+        let presentation = try #require(
+            NativeTimelineMediaViewerPlan.linkedImages(
+                in: message,
+                selectedReferenceID: second.id
+            )
+        )
+
+        #expect(presentation.items.map(\.url) == [firstURL, secondURL])
+        #expect(presentation.selection == 1)
+    }
+
+    @Test func `component images use the viewer while ordinary files stay external`() throws {
+        let visibleURL = try #require(URL(
+            string: "https://cdn.example/visible.png"
+        ))
+        let hiddenURL = try #require(URL(
+            string: "https://cdn.example/hidden.png"
+        ))
+        let fileImageURL = try #require(URL(
+            string: "https://cdn.example/file-image.webp"
+        ))
+        let documentURL = try #require(URL(
+            string: "https://cdn.example/disguised-document.png"
+        ))
+        let message = Message(
+            id: MessageID(rawValue: 58),
+            channelID: ChannelID(rawValue: 59),
+            author: User(
+                id: UserID(rawValue: 60),
+                username: "author",
+                displayName: "Author"
+            ),
+            content: "",
+            timestamp: .now,
+            attachments: [
+                Attachment(
+                    id: "document-attachment",
+                    filename: "document.txt",
+                    url: documentURL,
+                    mediaType: "text/plain"
+                )
+            ],
+            flags: [.isComponentsV2],
+            components: [
+                .mediaGallery(
+                    id: "gallery",
+                    items: [
+                        ComponentGalleryItem(
+                            id: "visible",
+                            media: ComponentMedia(
+                                url: visibleURL,
+                                contentType: "image/png"
+                            )
+                        ),
+                        ComponentGalleryItem(
+                            id: "hidden",
+                            media: ComponentMedia(
+                                url: hiddenURL,
+                                contentType: "image/png",
+                                isSpoiler: true
+                            )
+                        ),
+                    ]
+                ),
+                .file(
+                    id: "image-file",
+                    media: ComponentMedia(url: fileImageURL)
+                ),
+                .file(
+                    id: "document",
+                    media: ComponentMedia(
+                        url: documentURL,
+                        attachmentName: "document.txt"
+                    )
+                ),
+            ]
+        )
+        let layout = NativeTimelineRowLayout.make(
+            item: .message(
+                MessageRowPresentation(
+                    message: message,
+                    startsGroup: true,
+                    startsDay: false,
+                    replyPreview: nil,
+                    isReplyAvailable: false
+                ),
+                isUnreadBoundary: false,
+                isHighlighted: false
+            ),
+            width: 700
+        )
+
+        let presentation = try #require(
+            NativeTimelineMediaViewerPlan.components(
+                in: message,
+                layouts: layout.componentLayouts,
+                selectedComponentID: "image-file",
+                isRevealed: { _ in false }
+            )
+        )
+
+        #expect(presentation.items.map(\.id) == ["visible", "image-file"])
+        #expect(presentation.selection == 1)
+        #expect(
+            NativeTimelineMediaViewerPlan.components(
+                in: message,
+                layouts: layout.componentLayouts,
+                selectedComponentID: "hidden",
+                isRevealed: { _ in false }
+            ) == nil
+        )
+        #expect(
+            NativeTimelineMediaViewerPlan.components(
+                in: message,
+                layouts: layout.componentLayouts,
+                selectedComponentID: "document",
+                isRevealed: { _ in true }
+            ) == nil
+        )
+    }
+
     @Test func `timeline image right click resolves the image instead of its message`() throws {
         let mediaURL = try #require(URL(string: "https://cdn.example/image.png"))
         let attachment = Attachment(

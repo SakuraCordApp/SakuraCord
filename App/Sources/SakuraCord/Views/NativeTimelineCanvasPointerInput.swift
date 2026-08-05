@@ -532,7 +532,14 @@ extension NativeTimelineCanvasView {
         if let linkedImage = layout.linkedImageRegions.first(
             where: { $0.frame.contains(local) }
         ) {
-            NSWorkspace.shared.open(linkedImage.reference.url)
+            if let presentation = NativeTimelineMediaViewerPlan.linkedImages(
+                in: row.message,
+                selectedReferenceID: linkedImage.reference.id
+            ) {
+                model?.mediaViewerPresentation = presentation
+            } else {
+                NSWorkspace.shared.open(linkedImage.reference.url)
+            }
             return
         }
         if let attachment = layout.attachmentRegions.first(
@@ -549,7 +556,15 @@ extension NativeTimelineCanvasView {
             } else if let presentation =
                 NativeTimelineMediaViewerPlan.attachments(
                     in: row.message,
-                    selectedAttachmentID: attachment.id
+                    selectedAttachmentID: attachment.id,
+                    isRevealed: { [spoilerRevealStore] componentID in
+                        spoilerRevealStore.isMediaRevealed(
+                            NativeTimelineComponentRevealKey(
+                                messageID: row.id,
+                                componentID: componentID
+                            )
+                        )
+                    }
                 )
             {
                 model?.mediaViewerPresentation = presentation

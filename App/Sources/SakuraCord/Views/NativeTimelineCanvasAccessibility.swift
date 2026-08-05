@@ -30,6 +30,7 @@ struct ComponentMediaA11yInput {
     let rowIndex: Int
     let parent: NSAccessibilityElement
     let usesFileActionLabels: Bool
+    let viewerPresentation: NativeTimelineMediaViewerPresentation?
 }
 
 extension NativeTimelineCanvasView {
@@ -489,7 +490,16 @@ extension NativeTimelineCanvasView {
                 ),
                 parent: element
             ) {
-                NSWorkspace.shared.open(region.reference.url)
+                if let presentation =
+                    NativeTimelineMediaViewerPlan.linkedImages(
+                        in: message,
+                        selectedReferenceID: region.reference.id
+                    )
+                {
+                    self.model?.mediaViewerPresentation = presentation
+                } else {
+                    NSWorkspace.shared.open(region.reference.url)
+                }
                 return true
             })
         }
@@ -976,7 +986,21 @@ extension NativeTimelineCanvasView {
                     message: message,
                     rowIndex: rowIndex,
                     parent: parent,
-                    usesFileActionLabels: false
+                    usesFileActionLabels: false,
+                    viewerPresentation:
+                        NativeTimelineMediaViewerPlan.components(
+                            in: message,
+                            layouts: layout.componentLayouts,
+                            selectedComponentID: region.componentID,
+                            isRevealed: { [spoilerRevealStore] componentID in
+                                spoilerRevealStore.isMediaRevealed(
+                                    NativeTimelineComponentRevealKey(
+                                        messageID: message.id,
+                                        componentID: componentID
+                                    )
+                                )
+                            }
+                        )
                 ))
             }
             for region in component.media
@@ -990,7 +1014,21 @@ extension NativeTimelineCanvasView {
                     message: message,
                     rowIndex: rowIndex,
                     parent: parent,
-                    usesFileActionLabels: false
+                    usesFileActionLabels: false,
+                    viewerPresentation:
+                        NativeTimelineMediaViewerPlan.components(
+                            in: message,
+                            layouts: layout.componentLayouts,
+                            selectedComponentID: region.componentID,
+                            isRevealed: { [spoilerRevealStore] componentID in
+                                spoilerRevealStore.isMediaRevealed(
+                                    NativeTimelineComponentRevealKey(
+                                        messageID: message.id,
+                                        componentID: componentID
+                                    )
+                                )
+                            }
+                        )
                 ))
             }
             for region in component.files
@@ -1004,7 +1042,21 @@ extension NativeTimelineCanvasView {
                     message: message,
                     rowIndex: rowIndex,
                     parent: parent,
-                    usesFileActionLabels: true
+                    usesFileActionLabels: true,
+                    viewerPresentation:
+                        NativeTimelineMediaViewerPlan.components(
+                            in: message,
+                            layouts: layout.componentLayouts,
+                            selectedComponentID: region.componentID,
+                            isRevealed: { [spoilerRevealStore] componentID in
+                                spoilerRevealStore.isMediaRevealed(
+                                    NativeTimelineComponentRevealKey(
+                                        messageID: message.id,
+                                        componentID: componentID
+                                    )
+                                )
+                            }
+                        )
                 ))
             }
         }
@@ -1040,6 +1092,7 @@ extension NativeTimelineCanvasView {
             let rowIndex = input.rowIndex
             let parent = input.parent
             let usesFileActionLabels = input.usesFileActionLabels
+            let viewerPresentation = input.viewerPresentation
         let key = NativeTimelineComponentRevealKey(
             messageID: message.id,
             componentID: componentID
@@ -1068,6 +1121,8 @@ extension NativeTimelineCanvasView {
             guard let self else { return false }
             if isHiddenSpoiler {
                 self.reveal(key, rowIndex: rowIndex)
+            } else if let viewerPresentation {
+                self.model?.mediaViewerPresentation = viewerPresentation
             } else {
                 NSWorkspace.shared.open(openURL)
             }
@@ -1265,7 +1320,15 @@ extension NativeTimelineCanvasView {
         } else if let presentation =
             NativeTimelineMediaViewerPlan.attachments(
                 in: message,
-                selectedAttachmentID: attachment.id
+                selectedAttachmentID: attachment.id,
+                isRevealed: { [spoilerRevealStore] componentID in
+                    spoilerRevealStore.isMediaRevealed(
+                        NativeTimelineComponentRevealKey(
+                            messageID: message.id,
+                            componentID: componentID
+                        )
+                    )
+                }
             )
         {
             model?.mediaViewerPresentation = presentation

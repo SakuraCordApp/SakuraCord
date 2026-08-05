@@ -407,45 +407,36 @@ extension NativeTimelineCanvasView {
             }
             for region in componentLayout.images
             where region.frame.contains(point) {
-                let key = NativeTimelineComponentRevealKey(
-                    messageID: message.id,
-                    componentID: region.componentID
+                return activateComponentMedia(
+                    id: region.componentID,
+                    openURL: region.openURL,
+                    isSpoiler: region.isSpoiler,
+                    layout: layout,
+                    message: message,
+                    rowIndex: rowIndex
                 )
-                if region.isSpoiler,
-                   !spoilerRevealStore.isMediaRevealed(key) {
-                    reveal(key, rowIndex: rowIndex)
-                } else {
-                    NSWorkspace.shared.open(region.openURL)
-                }
-                return true
             }
             for region in componentLayout.media
             where region.frame.contains(point) {
-                let key = NativeTimelineComponentRevealKey(
-                    messageID: message.id,
-                    componentID: region.componentID
+                return activateComponentMedia(
+                    id: region.componentID,
+                    openURL: region.openURL,
+                    isSpoiler: region.isSpoiler,
+                    layout: layout,
+                    message: message,
+                    rowIndex: rowIndex
                 )
-                if region.isSpoiler,
-                   !spoilerRevealStore.isMediaRevealed(key) {
-                    reveal(key, rowIndex: rowIndex)
-                } else {
-                    NSWorkspace.shared.open(region.openURL)
-                }
-                return true
             }
             for region in componentLayout.files
             where region.frame.contains(point) {
-                let key = NativeTimelineComponentRevealKey(
-                    messageID: message.id,
-                    componentID: region.componentID
+                return activateComponentMedia(
+                    id: region.componentID,
+                    openURL: region.openURL,
+                    isSpoiler: region.isSpoiler,
+                    layout: layout,
+                    message: message,
+                    rowIndex: rowIndex
                 )
-                if region.isSpoiler,
-                   !spoilerRevealStore.isMediaRevealed(key) {
-                    reveal(key, rowIndex: rowIndex)
-                } else {
-                    NSWorkspace.shared.open(region.openURL)
-                }
-                return true
             }
             for region in componentLayout.selects
             where region.frame.contains(point) {
@@ -459,6 +450,40 @@ extension NativeTimelineCanvasView {
             }
         }
         return false
+    }
+
+    private func activateComponentMedia(
+        id: String,
+        openURL: URL,
+        isSpoiler: Bool,
+        layout: NativeTimelineRowLayout,
+        message: Message,
+        rowIndex: Int
+    ) -> Bool {
+        let key = NativeTimelineComponentRevealKey(
+            messageID: message.id,
+            componentID: id
+        )
+        if isSpoiler, !spoilerRevealStore.isMediaRevealed(key) {
+            reveal(key, rowIndex: rowIndex)
+        } else if let presentation = NativeTimelineMediaViewerPlan.components(
+            in: message,
+            layouts: layout.componentLayouts,
+            selectedComponentID: id,
+            isRevealed: { [spoilerRevealStore] componentID in
+                spoilerRevealStore.isMediaRevealed(
+                    NativeTimelineComponentRevealKey(
+                        messageID: message.id,
+                        componentID: componentID
+                    )
+                )
+            }
+        ) {
+            model?.mediaViewerPresentation = presentation
+        } else {
+            NSWorkspace.shared.open(openURL)
+        }
+        return true
     }
 
     func handleTextClick(

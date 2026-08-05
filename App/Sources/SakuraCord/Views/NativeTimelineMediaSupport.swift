@@ -1418,19 +1418,109 @@ struct NativeTimelineMediaViewerPresentation: Identifiable {
 enum NativeTimelineMediaViewerPlan {
     static func attachments(
         in message: Message,
-        selectedAttachmentID: String
+        selectedAttachmentID: String,
+        isRevealed: (String) -> Bool = { _ in true }
     ) -> NativeTimelineMediaViewerPresentation? {
-        guard let selection = message.attachments.firstIndex(where: {
-            $0.id == selectedAttachmentID
-        }) else { return nil }
-        return NativeTimelineMediaViewerPresentation(
-            items: message.attachments.map(RichMediaItem.init),
-            selection: selection,
-            authorName: message.guildMember?.nickname
-                ?? message.author.displayName,
-            authorAvatarURL: message.guildMember?.avatarURL
-                ?? message.author.avatarURL,
-            timestamp: message.timestamp
+        let items = message.attachments.filter { attachment in
+            !attachment.isSpoiler
+                || isRevealed(
+                    NativeTimelineComponentRevealKey
+                        .attachmentComponentID(attachment.id)
+                )
+        }.map(RichMediaItem.init)
+        return presentation(
+            items: items,
+            selectedID: selectedAttachmentID,
+            message: message
+        )
+    }
+
+    static func linkedImages(
+        in message: Message,
+        selectedReferenceID: String
+    ) -> NativeTimelineMediaViewerPresentation? {
+        let items = LinkedImagePresentation(content: message.content)
+            .images.map { reference in
+                RichMediaItem(
+                    imageID: reference.id,
+                    url: reference.url,
+                    previewURL: reference.displayURL == reference.url
+                        ? nil
+                        : reference.displayURL,
+                    title: reference.label
+                )
+            }
+        return presentation(
+            items: items,
+            selectedID: selectedReferenceID,
+            message: message
+        )
+    }
+
+    static func components(
+        in message: Message,
+        layouts: [NativeTimelineComponentLayout],
+        selectedComponentID: String,
+        isRevealed: (String) -> Bool
+    ) -> NativeTimelineMediaViewerPresentation? {
+        let items = layouts.flatMap { layout -> [RichMediaItem] in
+            let hiddenContainers = layout.containers.filter {
+                $0.isSpoiler && !isRevealed($0.componentID)
+            }
+            func isVisible(_ frame: CGRect, isSpoiler: Bool, id: String) -> Bool {
+                (!isSpoiler || isRevealed(id))
+                    && !hiddenContainers.contains(where: {
+                        $0.frame.contains(frame)
+                    })
+            }
+
+            let images: [RichMediaItem] = layout.images.compactMap { region in
+                guard isVisible(
+                    region.frame,
+                    isSpoiler: region.isSpoiler,
+                    id: region.componentID
+                ) else { return nil }
+                return componentItem(
+                    id: region.componentID,
+                    url: region.openURL,
+                    previewURL: region.displayURL,
+                    title: region.description,
+                    isVideo: false,
+                    message: message
+                )
+            }
+            let media: [RichMediaItem] = layout.media.compactMap { region in
+                guard isVisible(
+                    region.frame,
+                    isSpoiler: region.isSpoiler,
+                    id: region.componentID
+                ) else { return nil }
+                return componentItem(
+                    id: region.componentID,
+                    url: region.openURL,
+                    previewURL: region.displayURL,
+                    title: region.description,
+                    isVideo: region.isVideo,
+                    message: message
+                )
+            }
+            let files: [RichMediaItem] = layout.files.compactMap { region in
+                guard isVisible(
+                    region.frame,
+                    isSpoiler: region.isSpoiler,
+                    id: region.componentID
+                ) else { return nil }
+                return componentImageFileItem(
+                    region,
+                    message: message
+                )
+            }
+            return images + media + files
+        }
+        return presentation(
+            items: items,
+            selectedID: selectedComponentID,
+            message: message
         )
     }
 
@@ -1444,14 +1534,80 @@ enum NativeTimelineMediaViewerPlan {
                   attachments: message.attachments
               )
         else { return nil }
-        return NativeTimelineMediaViewerPresentation(
+        return presentation(
             items: [item],
-            selection: 0,
+            selectedID: item.id,
+            message: message
+        )
+    }
+
+    private static func presentation(
+        items: [RichMediaItem],
+        selectedID: String,
+        message: Message
+    ) -> NativeTimelineMediaViewerPresentation? {
+        guard let selection = items.firstIndex(where: {
+            $0.id == selectedID
+        }) else { return nil }
+        return NativeTimelineMediaViewerPresentation(
+            items: items,
+            selection: selection,
             authorName: message.guildMember?.nickname
                 ?? message.author.displayName,
             authorAvatarURL: message.guildMember?.avatarURL
                 ?? message.author.avatarURL,
             timestamp: message.timestamp
+        )
+    }
+
+    private static func componentItem(
+        id: String,
+        url: URL,
+        previewURL: URL,
+        title: String,
+        isVideo: Bool,
+        message: Message
+    ) -> RichMediaItem {
+        if var item = message.attachments
+            .first(where: { $0.url == url })
+            .map(RichMediaItem.init)
+        {
+            item.id = id
+            item.title = title
+            item.previewURL = previewURL == url ? item.previewURL : previewURL
+            return item
+        }
+        return RichMediaItem(
+            componentID: id,
+            url: url,
+            previewURL: previewURL == url ? nil : previewURL,
+            title: title,
+            isVideo: isVideo
+        )
+    }
+
+    private static func componentImageFileItem(
+        _ region: NativeTimelineComponentLayout.FileRegion,
+        message: Message
+    ) -> RichMediaItem? {
+        if let attachment = message.attachments.first(where: {
+            $0.url == region.openURL
+        }) {
+            var item = RichMediaItem(attachment)
+            guard case .image = item.kind else { return nil }
+            item.id = region.componentID
+            item.title = region.title
+            item.description = region.description
+            return item
+        }
+        guard RichMediaItem.isSupportedImageURL(region.openURL) else {
+            return nil
+        }
+        return RichMediaItem(
+            imageID: region.componentID,
+            url: region.openURL,
+            title: region.title,
+            description: region.description
         )
     }
 }
