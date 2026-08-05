@@ -219,6 +219,20 @@ import Testing
 }
 
 @MainActor
+@Test func `native member names reserve trailing room for every tag`() {
+    let layout = NativeMemberNameLayout.layout(
+        measuredNameWidth: 260,
+        availableWidth: 150,
+        accessoryWidths: [30, 54]
+    )
+
+    #expect(layout.nameWidth == 56)
+    #expect(layout.accessoryFrames.count == 2)
+    #expect(layout.accessoryFrames[0] == CGRect(x: 61, y: 0, width: 30, height: 0))
+    #expect(layout.accessoryFrames[1].maxX == 150)
+}
+
+@MainActor
 @Test func `native member status lays out static and animated custom emoji as inline media`() {
     let font = NSFont.systemFont(ofSize: 12)
     let line = NativeMemberActivityPresentation.line(

@@ -1048,30 +1048,78 @@ private struct ConnectionLogo: View {
     }
 }
 
+nonisolated enum ProfileEffectLayout {
+    // Some profile-effect products omit geometry from every layer. Discord's
+    // fully specified products use this canvas, and dimensionless layers use
+    // the same coordinate space rather than the profile view's live height.
+    static let defaultCanvasSize = CGSize(width: 450, height: 880)
+
+    static func designWidth(for animations: [ProfileEffectAnimation]) -> CGFloat {
+        let maximumRightEdge = animations.compactMap { animation -> CGFloat? in
+            guard let width = animation.width, width > 0 else { return nil }
+            return CGFloat(animation.positionX + width)
+        }.max() ?? 0
+        return max(defaultCanvasSize.width, maximumRightEdge)
+    }
+
+    static func frames(
+        for animations: [ProfileEffectAnimation],
+        containerWidth: CGFloat
+    ) -> [CGRect] {
+        guard containerWidth.isFinite, containerWidth > 0 else { return [] }
+        let designWidth = designWidth(for: animations)
+        return animations.map { animation in
+            frame(
+                for: animation,
+                designWidth: designWidth,
+                containerWidth: containerWidth
+            )
+        }
+    }
+
+    static func frame(
+        for animation: ProfileEffectAnimation,
+        designWidth: CGFloat,
+        containerWidth: CGFloat
+    ) -> CGRect {
+        let scale = containerWidth / designWidth
+        return CGRect(
+            x: CGFloat(animation.positionX) * scale,
+            y: CGFloat(animation.positionY) * scale,
+            width: CGFloat(animation.width ?? Int(defaultCanvasSize.width)) * scale,
+            height: CGFloat(animation.height ?? Int(defaultCanvasSize.height)) * scale
+        )
+    }
+}
+
 private struct ProfileEffectOverlay: View {
     let effect: ProfileEffect
 
     var body: some View {
         GeometryReader { proxy in
             if !effect.animations.isEmpty {
-                let canvasWidth = effect.animations.reduce(CGFloat(390)) { current, animation in
-                    max(current, CGFloat(animation.positionX + (animation.width ?? 0)))
-                }
-                let scale = proxy.size.width / canvasWidth
+                let designWidth = ProfileEffectLayout.designWidth(for: effect.animations)
                 ZStack(alignment: .topLeading) {
                     ForEach(effect.animations) { animation in
+                        let frame = ProfileEffectLayout.frame(
+                            for: animation,
+                            designWidth: designWidth,
+                            containerWidth: proxy.size.width
+                        )
                         AnimatedRemoteImage(url: animation.sourceURL, isLooping: animation.isLooping)
                             .frame(
-                                width: CGFloat(animation.width ?? Int(canvasWidth)) * scale,
-                                height: CGFloat(animation.height ?? Int(proxy.size.height / scale)) * scale
+                                width: frame.width,
+                                height: frame.height
                             )
                             .offset(
-                                x: CGFloat(animation.positionX) * scale,
-                                y: CGFloat(animation.positionY) * scale
+                                x: frame.minX,
+                                y: frame.minY
                             )
                             .zIndex(Double(animation.zIndex))
                     }
                 }
+                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+                .clipped()
             } else if let url = effect.reducedMotionURL {
                 AnimatedRemoteImage(url: url)
                     .frame(width: proxy.size.width, height: proxy.size.height)
@@ -1084,6 +1132,7 @@ private struct ProfileEffectOverlay: View {
                 .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
             }
         }
+        .clipped()
         .allowsHitTesting(false)
         .accessibilityLabel(effect.accessibilityLabel ?? "Profile effect")
     }

@@ -288,6 +288,35 @@ func `large direct message inbox filtering remains bounded`() {
 }
 
 @MainActor
+@Test func `positioned profile effect layers retain the canonical canvas`() throws {
+    let animation = ProfileEffectAnimation(
+        sourceURL: try #require(URL(string: "https://cdn.example/profile-effect.png")),
+        width: 250,
+        height: 400
+    )
+
+    let frame = try #require(ProfileEffectLayout.frames(
+        for: [animation],
+        containerWidth: MemberProfilePopover.preferredWidth
+    ).first)
+
+    #expect(ProfileEffectLayout.designWidth(for: [animation]) == 450)
+    #expect(frame.width == 183.33333333333331)
+    #expect(frame.height == 293.3333333333333)
+}
+
+@MainActor
+@Test func `dimensionless profile effect layers use the canonical profile canvas`() throws {
+    let animation = ProfileEffectAnimation(
+        sourceURL: try #require(URL(string: "https://cdn.example/dimensionless-effect.png"))
+    )
+    let frame = try #require(ProfileEffectLayout.frames(for: [animation], containerWidth: 330).first)
+
+    #expect(ProfileEffectLayout.designWidth(for: [animation]) == 450)
+    #expect(frame == CGRect(x: 0, y: 0, width: 330, height: 645.3333333333333))
+}
+
+@MainActor
 @Test func `official Discord system direct messages are read only`() {
     let model = AppModel(
         launchMode: .offlineTesting,

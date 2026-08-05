@@ -18,6 +18,40 @@ nonisolated enum NativeMemberListMetrics {
     static let maximumVisibleAnimatedEmojiCount = 64
 }
 
+nonisolated enum NativeMemberNameLayout {
+    struct Result: Equatable {
+        let nameWidth: CGFloat
+        let accessoryFrames: [CGRect]
+    }
+
+    static let accessorySpacing: CGFloat = 5
+
+    static func layout(
+        measuredNameWidth: CGFloat,
+        availableWidth: CGFloat,
+        accessoryWidths: [CGFloat]
+    ) -> Result {
+        let availableWidth = max(0, availableWidth)
+        let accessoryWidths = accessoryWidths.map { max(0, $0) }
+        let totalAccessoryWidth = accessoryWidths.reduce(0, +)
+        let totalSpacing = accessorySpacing * CGFloat(accessoryWidths.count)
+        let nameWidth = min(
+            max(0, measuredNameWidth),
+            max(0, availableWidth - totalAccessoryWidth - totalSpacing)
+        )
+        var cursor = nameWidth
+        let frames = accessoryWidths.map { width in
+            cursor += accessorySpacing
+            let remainingWidth = max(0, availableWidth - cursor)
+            let visibleWidth = min(width, remainingWidth)
+            let frame = CGRect(x: cursor, y: 0, width: visibleWidth, height: 0)
+            cursor += visibleWidth
+            return frame
+        }
+        return Result(nameWidth: nameWidth, accessoryFrames: frames)
+    }
+}
+
 struct NativeMemberListView: NSViewRepresentable {
     let sections: [MemberSection]
     let customEmojiURLsByID: [String: URL]
@@ -318,6 +352,7 @@ final class NativeMemberListCanvasView: NSView {
 
     struct PreparedText {
         let name: CTLine
+        let nameTruncationToken: CTLine
         let nameWidth: CGFloat
         let activity: CTLine?
         let activityTruncationToken: CTLine?
@@ -332,6 +367,13 @@ final class NativeMemberListCanvasView: NSView {
     struct ActivityEmojiOverlayConfiguration: Equatable {
         let url: URL
         let opacity: CGFloat
+    }
+
+    struct GuildTagPresentation {
+        let line: CTLine
+        let width: CGFloat
+        let iconWidth: CGFloat
+        let image: CGImage?
     }
 
     override var isFlipped: Bool { true }
@@ -508,6 +550,11 @@ final class NativeMemberListCanvasView: NSView {
             }
             prepared[item.id] = PreparedText(
                 name: name,
+                nameTruncationToken: Self.line(
+                    "…",
+                    font: nameFont,
+                    color: nameColor.withAlphaComponent(alpha)
+                ),
                 nameWidth: CGFloat(CTLineGetTypographicBounds(name, nil, nil, nil)),
                 activity: activity,
                 activityTruncationToken: activityTruncationToken,
@@ -604,46 +651,51 @@ final class NativeMemberListCanvasView: NSView {
     func drawMemberForeground(_ member: Member, at index: Int, context: CGContext) {
         let row = paintedRowRect(at: index)
         guard let prepared = preparedText[items[index].id] else { return }
+        context.saveGState()
+        context.clip(to: row)
+        defer { context.restoreGState() }
+
         let textX = row.minX + 4 + NativeMemberListMetrics.avatarContainerSize + 8
         let nameY = member.activityText?.isEmpty == false ? row.minY + 5 : row.minY + 13
-        Self.draw(line: prepared.name, at: CGPoint(x: textX, y: nameY), context: context)
-        var badgeX = textX + prepared.nameWidth + 5
-        if member.user.isBot {
-            badgeX = drawBotBadge(at: badgeX, nameY: nameY, context: context)
+        let botBadgeWidth: CGFloat = 30
+        let tagPresentation = member.user.primaryGuild.flatMap(guildTagPresentation)
+        let accessoryWidths = (member.user.isBot ? [botBadgeWidth] : [])
+            + (tagPresentation.map { [$0.width] } ?? [])
+        let nameLayout = NativeMemberNameLayout.layout(
+            measuredNameWidth: prepared.nameWidth,
+            availableWidth: max(0, row.maxX - 4 - textX),
+            accessoryWidths: accessoryWidths
+        )
+        if nameLayout.nameWidth > 0 {
+            let visibleName = Self.truncatedLine(
+                prepared.name,
+                token: prepared.nameTruncationToken,
+                maximumWidth: nameLayout.nameWidth
+            )
+            Self.draw(line: visibleName, at: CGPoint(x: textX, y: nameY), context: context)
         }
-        if let identity = member.user.primaryGuild, let tag = identity.tag {
-            let badgeImage = identity.badgeURL.flatMap { images[$0] }
-            let tagLine = Self.line(
-                tag,
-                font: .systemFont(ofSize: 11, weight: .bold),
-                color: .labelColor
-            )
-            let iconWidth: CGFloat = badgeImage == nil ? 0 : 17
-            let badgeWidth = CGFloat(CTLineGetTypographicBounds(tagLine, nil, nil, nil))
-                + 10 + iconWidth
-            let badge = CGRect(x: badgeX, y: nameY - 1, width: badgeWidth, height: 17)
-            Self.fillRounded(
-                badge,
-                radius: 5,
-                color: .black.withAlphaComponent(0.32),
+
+        var accessoryIndex = 0
+        if member.user.isBot, nameLayout.accessoryFrames.indices.contains(accessoryIndex) {
+            let accessory = nameLayout.accessoryFrames[accessoryIndex]
+            if accessory.width >= botBadgeWidth {
+                drawBotBadge(at: textX + accessory.minX, nameY: nameY, context: context)
+            }
+            accessoryIndex += 1
+        }
+        if let identity = member.user.primaryGuild,
+           let tagPresentation,
+           nameLayout.accessoryFrames.indices.contains(accessoryIndex)
+        {
+            drawGuildTag(
+                tagPresentation,
+                identity: identity,
+                accessoryFrame: nameLayout.accessoryFrames[accessoryIndex],
+                textX: textX,
+                nameY: nameY,
+                itemIndex: index,
                 context: context
             )
-            if let badgeImage {
-                Self.draw(
-                    image: badgeImage,
-                    in: CGRect(x: badge.minX + 5, y: badge.minY + 1.5, width: 14, height: 14),
-                    context: context,
-                    fills: false
-                )
-            }
-            Self.draw(
-                line: tagLine,
-                at: CGPoint(x: badge.minX + 5 + iconWidth, y: badge.minY + 2),
-                context: context
-            )
-            if let badgeURL = identity.badgeURL {
-                requestImageIfNeeded(url: badgeURL, index: index, priority: .visible)
-            }
         }
         if let activity = prepared.activity,
            let truncationToken = prepared.activityTruncationToken
@@ -674,7 +726,63 @@ final class NativeMemberListCanvasView: NSView {
         }
     }
 
-    func drawBotBadge(at badgeX: CGFloat, nameY: CGFloat, context: CGContext) -> CGFloat {
+    func guildTagPresentation(for identity: PrimaryGuildIdentity) -> GuildTagPresentation? {
+        guard let tag = identity.tag else { return nil }
+        let image = identity.badgeURL.flatMap { images[$0] }
+        let line = Self.line(
+            tag,
+            font: .systemFont(ofSize: 11, weight: .bold),
+            color: .labelColor
+        )
+        let iconWidth: CGFloat = image == nil ? 0 : 17
+        return GuildTagPresentation(
+            line: line,
+            width: CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil)) + 10 + iconWidth,
+            iconWidth: iconWidth,
+            image: image
+        )
+    }
+
+    func drawGuildTag(
+        _ presentation: GuildTagPresentation,
+        identity: PrimaryGuildIdentity,
+        accessoryFrame: CGRect,
+        textX: CGFloat,
+        nameY: CGFloat,
+        itemIndex: Int,
+        context: CGContext
+    ) {
+        let badge = CGRect(
+            x: textX + accessoryFrame.minX,
+            y: nameY - 1,
+            width: accessoryFrame.width,
+            height: 17
+        )
+        Self.fillRounded(
+            badge,
+            radius: 5,
+            color: .black.withAlphaComponent(0.32),
+            context: context
+        )
+        if let image = presentation.image, accessoryFrame.width >= 24 {
+            Self.draw(
+                image: image,
+                in: CGRect(x: badge.minX + 5, y: badge.minY + 1.5, width: 14, height: 14),
+                context: context,
+                fills: false
+            )
+        }
+        Self.draw(
+            line: presentation.line,
+            at: CGPoint(x: badge.minX + 5 + presentation.iconWidth, y: badge.minY + 2),
+            context: context
+        )
+        if let badgeURL = identity.badgeURL {
+            requestImageIfNeeded(url: badgeURL, index: itemIndex, priority: .visible)
+        }
+    }
+
+    func drawBotBadge(at badgeX: CGFloat, nameY: CGFloat, context: CGContext) {
         let badge = CGRect(x: badgeX, y: nameY - 1, width: 30, height: 17)
         Self.fillRounded(badge, radius: 4, color: .systemIndigo, context: context)
         let line = Self.line(
@@ -683,7 +791,6 @@ final class NativeMemberListCanvasView: NSView {
             color: .white
         )
         Self.draw(line: line, at: CGPoint(x: badge.minX + 5, y: badge.minY + 2), context: context)
-        return badge.maxX + 5
     }
 
     func drawPlaceholder(at index: Int, context: CGContext) {
