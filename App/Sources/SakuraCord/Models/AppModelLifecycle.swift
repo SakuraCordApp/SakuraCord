@@ -244,6 +244,7 @@ extension AppModel {
         memberListsByGuildID = [:]
         memberListGroupsByGuildID = [:]
         memberListViewportRequest = nil
+        lastMemberListVisibleRange = nil
         guildRolesByGuildID = [:]
         membersByID = [:]
         memberListGroups = []
@@ -371,6 +372,7 @@ extension AppModel {
         memberListsByGuildID = [:]
         memberListGroupsByGuildID = [:]
         memberListViewportRequest = nil
+        lastMemberListVisibleRange = nil
         guildRolesByGuildID = [:]
         membersByID = [:]
         memberListGroups = []
@@ -743,6 +745,7 @@ extension AppModel {
         guard let guildID = selectedGuildID,
               let channelID = selectedChannelID
         else { return }
+        lastMemberListVisibleRange = visibleRange
         let session = accountSession()
         let request = MemberListViewportRequest(
             guildID: guildID,
@@ -783,11 +786,16 @@ extension AppModel {
         for guildID: GuildID,
         account session: AppModelAccountSession
     ) async {
-        guard let request = memberListViewportRequest,
-              request.guildID == guildID,
-              request.channelID == selectedChannelID,
+        guard let channelID = selectedChannelID,
+              let visibleRange = lastMemberListVisibleRange,
               isCurrentAccountSession(session)
         else { return }
+        let request = MemberListViewportRequest(
+            guildID: guildID,
+            channelID: channelID,
+            visibleRange: visibleRange
+        )
+        memberListViewportRequest = request
         do {
             try await session.provider.updateMemberListViewport(
                 in: request.guildID,

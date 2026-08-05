@@ -3266,7 +3266,7 @@ private actor FailingRemovalCredentialStore: CredentialStore {
 }
 
 @MainActor
-@Test func `member viewport reported before guild member load is replayed after subscription arms`() async throws {
+@Test func `member viewport replays after subscription arming and guild reentry`() async throws {
     let provider = DelayedMemberViewportTestProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     let snapshot = try await provider.bootstrap()
@@ -3303,6 +3303,53 @@ private actor FailingRemovalCredentialStore: CredentialStore {
     )
     model.selectedChannelID = replacementChannel.id
     #expect(await provider.waitUntilAcceptedViewportCount(2))
+    #expect(await provider.acceptedViewportRequests().last ==
+        DelayedMemberViewportTestProvider.ViewportRequest(
+            guildID: guild.id,
+            channelID: replacementChannel.id,
+            visibleRange: visibleRange
+        )
+    )
+
+    let directMessage = try #require(
+        snapshot.channels.first { $0.guildID == nil }
+    )
+    await provider.disarmMemberSubscription()
+    model.selectedGuildID = nil
+    model.selectedChannelID = directMessage.id
+    model.selectedGuildID = guild.id
+    model.selectedChannelID = channel.id
+    model.beginMemberLoad(for: guild.id)
+
+    #expect(await provider.waitUntilAcceptedViewportCount(3))
+    #expect(await provider.acceptedViewportRequests().last ==
+        DelayedMemberViewportTestProvider.ViewportRequest(
+            guildID: guild.id,
+            channelID: channel.id,
+            visibleRange: visibleRange
+        )
+    )
+
+    let otherGuildID = GuildID(rawValue: 88_100)
+    let otherChannel = Channel(
+        id: ChannelID(rawValue: 88_101),
+        guildID: otherGuildID,
+        name: "other-public"
+    )
+    await provider.disarmMemberSubscription()
+    model.selectedGuildID = otherGuildID
+    model.visibleChannels = [otherChannel]
+    model.selectedChannelID = otherChannel.id
+    model.beginMemberLoad(for: otherGuildID)
+    #expect(await provider.waitUntilAcceptedViewportCount(4))
+
+    await provider.disarmMemberSubscription()
+    model.selectedGuildID = guild.id
+    model.visibleChannels = snapshot.channels.filter { $0.guildID == guild.id }
+    model.selectedChannelID = replacementChannel.id
+    model.beginMemberLoad(for: guild.id)
+
+    #expect(await provider.waitUntilAcceptedViewportCount(5))
     #expect(await provider.acceptedViewportRequests().last ==
         DelayedMemberViewportTestProvider.ViewportRequest(
             guildID: guild.id,
@@ -6767,6 +6814,10 @@ private actor DelayedMemberViewportTestProvider: ChatProvider {
 
     func acceptedViewportRequests() -> [ViewportRequest] {
         acceptedViewports
+    }
+
+    func disarmMemberSubscription() {
+        memberSubscriptionArmed = false
     }
 
     func releaseMemberLoad() {

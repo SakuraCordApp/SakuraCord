@@ -569,9 +569,8 @@ final class AppModel {
             if pendingAutomaticChannelAccessID != selectedChannelID {
                 pendingAutomaticChannelAccessID = nil
             }
-            let retainedMemberViewport = memberListViewportRequest?.visibleRange
             memberListViewportRequest = nil
-            if let retainedMemberViewport {
+            if let retainedMemberViewport = lastMemberListVisibleRange {
                 updateMemberListViewport(retainedMemberViewport)
             }
             if let selectedChannelID {
@@ -723,6 +722,7 @@ final class AppModel {
     @ObservationIgnored var memberLoadTask: Task<Void, Never>?
     @ObservationIgnored var memberLoadGeneration: UInt64 = 0
     @ObservationIgnored var memberListViewportRequest: MemberListViewportRequest?
+    @ObservationIgnored var lastMemberListVisibleRange: ClosedRange<Int>?
     @ObservationIgnored var pendingAutomaticChannelAccessID: ChannelID?
     @ObservationIgnored var voiceEventTask: Task<Void, Never>?
     @ObservationIgnored var voiceMigrationTask: Task<Void, Never>?
