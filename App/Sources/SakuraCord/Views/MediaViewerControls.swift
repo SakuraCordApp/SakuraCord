@@ -1,5 +1,27 @@
 import SwiftUI
 
+nonisolated enum MediaViewerThumbnailMetrics {
+    static let width: CGFloat = 58
+    static let height: CGFloat = 42
+    static let spacing: CGFloat = 6
+    static let edgePadding: CGFloat = 3
+    static let cornerRadius: CGFloat = 7
+    static let selectedBorderWidth: CGFloat = 3
+    static let ordinaryBorderWidth: CGFloat = 1
+    static let railHeight = height + edgePadding * 2
+
+    static func contentWidth(itemCount: Int) -> CGFloat {
+        guard itemCount > 0 else { return 0 }
+        return CGFloat(itemCount) * width
+            + CGFloat(itemCount - 1) * spacing
+            + edgePadding * 2
+    }
+
+    static func railWidth(itemCount: Int, maximumWidth: CGFloat) -> CGFloat {
+        min(contentWidth(itemCount: itemCount), max(0, maximumWidth))
+    }
+}
+
 nonisolated enum MediaViewerTopChromeMetrics {
     static let outerPadding: CGFloat = 18
     static let height: CGFloat = 36
@@ -184,12 +206,13 @@ struct MediaViewerNavigationButtons: View {
 struct MediaViewerThumbnailStrip: View {
     let items: [RichMediaItem]
     let selection: Int
+    let maximumWidth: CGFloat
     let select: (Int) -> Void
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
-                HStack(spacing: 5) {
+                HStack(spacing: MediaViewerThumbnailMetrics.spacing) {
                     ForEach(items.enumerated(), id: \.element.id) { index, item in
                         MediaViewerThumbnail(
                             item: item,
@@ -199,17 +222,37 @@ struct MediaViewerThumbnailStrip: View {
                         .id(item.id)
                     }
                 }
-                .padding(6)
+                .padding(MediaViewerThumbnailMetrics.edgePadding)
             }
             .scrollIndicators(.hidden)
-            .fixedSize(horizontal: false, vertical: true)
-            .glassEffect(.regular, in: Capsule())
+            .frame(
+                width: MediaViewerThumbnailMetrics.railWidth(
+                    itemCount: items.count,
+                    maximumWidth: maximumWidth
+                ),
+                height: MediaViewerThumbnailMetrics.railHeight
+            )
+            .onAppear {
+                scrollToSelection(using: proxy, animated: false)
+            }
             .onChange(of: selection) { _, index in
                 guard items.indices.contains(index) else { return }
-                withAnimation(.snappy(duration: 0.2)) {
-                    proxy.scrollTo(items[index].id, anchor: .center)
-                }
+                scrollToSelection(using: proxy, animated: true)
             }
+        }
+    }
+
+    private func scrollToSelection(
+        using proxy: ScrollViewProxy,
+        animated: Bool
+    ) {
+        guard items.indices.contains(selection) else { return }
+        if animated {
+            withAnimation(.snappy(duration: 0.2)) {
+                proxy.scrollTo(items[selection].id, anchor: .center)
+            }
+        } else {
+            proxy.scrollTo(items[selection].id, anchor: .center)
         }
     }
 }
@@ -242,21 +285,33 @@ private struct MediaViewerThumbnail: View {
                         .font(.title3)
                 }
             }
-            .frame(width: 58, height: 42)
-            .clipShape(ConcentricRectangle(cornerRadius: 8, style: .continuous))
+            .frame(
+                width: MediaViewerThumbnailMetrics.width,
+                height: MediaViewerThumbnailMetrics.height
+            )
+            .clipShape(thumbnailShape)
             .overlay {
-                ConcentricRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(
+                thumbnailShape
+                    .strokeBorder(
                         isSelected ? Color.accentColor : Color.white.opacity(0.16),
-                        lineWidth: isSelected ? 2.5 : 1
+                        lineWidth: isSelected
+                            ? MediaViewerThumbnailMetrics.selectedBorderWidth
+                            : MediaViewerThumbnailMetrics.ordinaryBorderWidth
                     )
             }
-            .contentShape(ConcentricRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(thumbnailShape)
         }
         .buttonStyle(.plain)
         .help(item.title)
         .accessibilityLabel(item.title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private var thumbnailShape: RoundedRectangle {
+        RoundedRectangle(
+            cornerRadius: MediaViewerThumbnailMetrics.cornerRadius,
+            style: .continuous
+        )
     }
 }
 

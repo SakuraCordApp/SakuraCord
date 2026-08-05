@@ -20,12 +20,15 @@ final class MediaViewerInteractionModel {
         self.selection = min(max(0, selection), max(0, itemCount - 1))
     }
 
-    var canMoveBackward: Bool { selection > 0 }
-    var canMoveForward: Bool { selection + 1 < itemCount }
+    var canMoveBackward: Bool { itemCount > 1 }
+    var canMoveForward: Bool { itemCount > 1 }
 
     @discardableResult
     func move(_ delta: Int) -> Bool {
-        select(selection + delta)
+        guard itemCount > 1 else { return false }
+        let destination = ((selection + delta) % itemCount + itemCount)
+            % itemCount
+        return select(destination)
     }
 
     @discardableResult

@@ -112,13 +112,13 @@ struct MediaViewer: View {
                         MediaViewerThumbnailStrip(
                             items: presentation.items,
                             selection: interaction.selection,
+                            maximumWidth: max(
+                                120,
+                                min(760, proxy.size.width - 180)
+                            ),
                             select: select
                         )
-                        .frame(
-                            maxWidth: min(760, proxy.size.width * 0.72),
-                            maxHeight: .infinity,
-                            alignment: .bottom
-                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                         .padding(.bottom, 14)
                         .offset(y: isVisible ? 0 : 14)
                         .opacity(isVisible ? 1 : 0)

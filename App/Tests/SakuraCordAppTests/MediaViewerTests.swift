@@ -134,7 +134,7 @@ struct MediaViewerTests {
         )
     }
 
-    @Test func `interaction clamps navigation and resets zoom between media`() {
+    @Test func `interaction loops navigation and resets zoom between media`() {
         let model = MediaViewerInteractionModel(itemCount: 3, selection: 1)
         model.commitScale(4)
         model.commitOffset(CGSize(width: 90, height: -40))
@@ -143,8 +143,29 @@ struct MediaViewerTests {
         #expect(model.selection == 2)
         #expect(model.scale == 1)
         #expect(model.offset == .zero)
-        #expect(!model.move(1))
+        #expect(model.move(1))
+        #expect(model.selection == 0)
+        #expect(model.move(-1))
         #expect(model.selection == 2)
+    }
+
+    @Test func `thumbnail rail hugs short sets and only scrolls when needed`() {
+        #expect(
+            MediaViewerThumbnailMetrics.contentWidth(itemCount: 3)
+                == 192
+        )
+        #expect(
+            MediaViewerThumbnailMetrics.railWidth(
+                itemCount: 3,
+                maximumWidth: 760
+            ) == 192
+        )
+        #expect(
+            MediaViewerThumbnailMetrics.railWidth(
+                itemCount: 20,
+                maximumWidth: 760
+            ) == 760
+        )
     }
 
     @Test func `fit policy uses all available space without cropping`() {
