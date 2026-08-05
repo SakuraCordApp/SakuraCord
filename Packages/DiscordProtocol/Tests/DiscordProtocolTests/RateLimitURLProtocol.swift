@@ -39,6 +39,7 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var restrictMessageSend = false
     nonisolated(unsafe) static var forbidMemberSearch = false
     nonisolated(unsafe) static var unauthorizeMemberSearch = false
+    nonisolated(unsafe) static var unavailableProfileRequestCount = 0
     nonisolated(unsafe) static var settingsRequestCount = 0
     nonisolated(unsafe) static var settingsMethod: String?
     nonisolated(unsafe) static var guildCommandIndexRequests = 0
@@ -112,6 +113,7 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
         restrictMessageSend = false
         forbidMemberSearch = false
         unauthorizeMemberSearch = false
+        unavailableProfileRequestCount = 0
         settingsRequestCount = 0
         settingsMethod = nil
         guildCommandIndexRequests = 0
@@ -258,6 +260,11 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
                 status = 200
                 json = #"[{"member":{"user":{"id":"2","username":"maya","global_name":"Maya","avatar":null},"nick":"Maya","roles":["101"]}}]"#
             }
+        case "/api/v9/users/111111111111111111/profile",
+             "/api/v9/users/222222222222222222/profile":
+            RateLimitURLProtocol.unavailableProfileRequestCount += 1
+            status = 404
+            json = #"{"message":"Unknown User","code":10013}"#
         case "/api/v9/guilds/100/application-command-index":
             RateLimitURLProtocol.guildCommandIndexRequests += 1
             status = 200

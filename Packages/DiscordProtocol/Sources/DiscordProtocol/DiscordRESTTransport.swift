@@ -354,12 +354,16 @@ extension DiscordRESTProvider {
                 )
             }
             if response.statusCode == 404 {
-                unexpectedNotFoundCounts[route, default: 0] += 1
-                if unexpectedNotFoundCounts[route, default: 0] >= 2 {
-                    await openSafetyCircuit(status: 404, discordCode: discordCode, route: route)
-                    throw ChatProviderError.invalidRequest(
-                        "Discord networking was stopped after this route repeatedly returned an unexpected not-found response."
-                    )
+                if Self.isExpectedResourceNotFound(method: method, path: path) {
+                    unexpectedNotFoundCounts[route] = nil
+                } else {
+                    unexpectedNotFoundCounts[route, default: 0] += 1
+                    if unexpectedNotFoundCounts[route, default: 0] >= 2 {
+                        await openSafetyCircuit(status: 404, discordCode: discordCode, route: route)
+                        throw ChatProviderError.invalidRequest(
+                            "Discord networking was stopped after this route repeatedly returned an unexpected not-found response."
+                        )
+                    }
                 }
             } else if (200 ..< 300).contains(response.statusCode) {
                 unexpectedNotFoundCounts[route] = nil
@@ -476,6 +480,15 @@ extension DiscordRESTProvider {
 
     static func isAuthenticationFailure(status: Int, discordCode: Int?) -> Bool {
         status == 401 || discordCode == 40001 || discordCode == 50014
+    }
+
+    static func isExpectedResourceNotFound(method: String, path: String) -> Bool {
+        guard method == "GET" else { return false }
+        let segments = path.split(separator: "/")
+        return segments.count == 3
+            && segments[0] == "users"
+            && UInt64(segments[1]) != nil
+            && segments[2] == "profile"
     }
 
     static func safetyStopMessage(status: Int, discordCode: Int?) -> String {

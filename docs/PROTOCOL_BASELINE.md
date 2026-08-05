@@ -158,7 +158,7 @@ and retained as evidence.
 | `GET /guilds/{guild}/channels` | Cache-miss fallback only; no body, coalesced by guild. | Public channel semantics and all three client references. |
 | `GET /guilds/{guild}/roles` | Visible role/member UI cache miss; no body, coalesced. | Public guild semantics and all three client references. |
 | `GET /guilds/{guild}/roles/{role}/member-ids` | Explicit role inspection; no body; result display capped at 1,000. | Current first-party route; P−, S−. |
-| `GET /users/{user}/profile` | Explicit profile; `with_mutual_guilds=true`, `with_mutual_friends=true`, `with_mutual_friends_count=true`, plus `guild_id` only in guild context; coalesced by user and guild context. | Current first-party and Paicord; Swiftcord has historical profile data but no equivalent complete route. |
+| `GET /users/{user}/profile` | Explicit profile; `with_mutual_guilds=true`, `with_mutual_friends=true`, `with_mutual_friends_count=true`, plus `guild_id` only in guild context; coalesced by user and guild context. A `404` for an unavailable user remains scoped to the profile presentation and does not stop the session. | Current first-party and Paicord; Swiftcord has historical profile data but no equivalent complete route. |
 | `GET /collectibles-products/{product}` | At most one cache-miss read for a profile effect returned by the profile response; query contains the current `locale`. | Current first-party route; P−, S−. The obsolete `/user-profile-effects` fallback was removed. |
 | `GET /guilds/{guild}/emojis` | Stale/missing Gateway and disk-cache fallback; no body, coalesced. | Public emoji semantics and all three client references. |
 | `GET /users/@me/settings-proto/2` | Explicit emoji-settings cache miss; no body, coalesced for the provider session. | Current first-party, Paicord, and Swiftcord's versioned settings-proto path. |
@@ -234,7 +234,9 @@ Authentication failures, account restrictions, verification/challenge
 responses, invalid client metadata, malformed mutation responses, and repeated
 unexpected not-found responses can open the session-wide safety circuit.
 Ordinary resource-scoped permission failures remain scoped when the decoded
-Discord error does not indicate an account/session condition.
+Discord error does not indicate an account/session condition. Expected
+resource-scoped not-found responses, including an unavailable user profile,
+remain scoped to the initiating presentation.
 
 ## Gateway contract
 

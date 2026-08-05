@@ -889,7 +889,14 @@ extension DiscordRESTProvider {
         if let guildID {
             query.append(URLQueryItem(name: "guild_id", value: guildID.description))
         }
-        let dto: UserProfileDTO = try await request("/users/\(userID)/profile", query: query)
+        let dto: UserProfileDTO
+        do {
+            dto = try await request("/users/\(userID)/profile", query: query)
+        } catch ChatProviderError.transport(status: 404, requestID: _) {
+            throw ChatProviderError.invalidRequest(
+                "This profile is unavailable. You may no longer share a server or friendship with this user."
+            )
+        }
 
         let effectID =
             dto.guildMemberProfile?.profileEffect?.resolvedID

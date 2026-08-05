@@ -818,6 +818,42 @@ extension ProviderRequestContractTests {
         #expect(RateLimitURLProtocol.messageRequestCount == 1)
         #expect(await socket.closeCodes.isEmpty)
     }
+
+    @Test func `unavailable profiles remain scoped and do not stop the session`() async throws {
+        RateLimitURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RateLimitURLProtocol.self]
+        let socket = RestrictionGatewaySocket()
+        let provider = DiscordRESTProvider(
+            credentials: TestCredentialStore(),
+            handle: CredentialHandle(accountID: "1"),
+            session: URLSession(configuration: configuration),
+            gatewayTransport: RestrictionGatewayTransport(socket: socket)
+        )
+
+        _ = try await provider.bootstrap()
+        #expect(await eventually { await socket.receiveStarted })
+        let unavailableMessage =
+            "This profile is unavailable. You may no longer share a server or friendship with this user."
+        for userID in [
+            UserID(rawValue: 111_111_111_111_111_111),
+            UserID(rawValue: 222_222_222_222_222_222),
+        ] {
+            await #expect(throws: ChatProviderError.invalidRequest(unavailableMessage)) {
+                try await provider.profile(for: userID, in: GuildID(rawValue: 100))
+            }
+        }
+
+        let message = try await provider.send(SendMessageDraft(
+            channelID: ChannelID(rawValue: 200),
+            content: "still connected",
+            nonce: "profile-not-found-scope-nonce"
+        ))
+        #expect(message.content == "still connected")
+        #expect(RateLimitURLProtocol.unavailableProfileRequestCount == 2)
+        #expect(RateLimitURLProtocol.messageRequestCount == 1)
+        #expect(await socket.closeCodes.isEmpty)
+    }
 }
 
 private func readyWorkspaceReplayEvents(
