@@ -219,6 +219,120 @@ import Testing
 }
 
 @MainActor
+@Test func `native member status lays out static and animated custom emoji as inline media`() {
+    let font = NSFont.systemFont(ofSize: 12)
+    let line = NativeMemberActivityPresentation.line(
+        "<:still:123> hello <a:wave:456>",
+        font: font,
+        color: NativeMemberListCanvasView.memberActivityColor
+    )
+    let regions = NativeMemberActivityPresentation.emojiRegions(
+        in: line,
+        origin: CGPoint(x: 50, y: 24)
+    )
+
+    #expect(regions.map(\.rawToken) == ["<:still:123>", "<a:wave:456>"])
+    #expect(regions.map(\.reference.isAnimated) == [false, true])
+    #expect(regions.allSatisfy {
+        abs($0.frame.width - NativeMemberListMetrics.activityEmojiSize) < 0.001
+            && abs($0.frame.height - NativeMemberListMetrics.activityEmojiSize) < 0.001
+    })
+    #expect(regions[0].frame.minX == 50)
+    #expect(regions[1].frame.minX > regions[0].frame.maxX)
+}
+
+@MainActor
+@Test func `native member status truncation excludes custom emoji beyond the visible width`() {
+    let font = NSFont.systemFont(ofSize: 12)
+    let source = NativeMemberActivityPresentation.line(
+        "<a:first:123> a long status before <a:last:456>",
+        font: font,
+        color: NativeMemberListCanvasView.memberActivityColor
+    )
+    let token = NativeMemberListCanvasView.line(
+        "…",
+        font: font,
+        color: NativeMemberListCanvasView.memberActivityColor
+    )
+    let truncated = NativeMemberListCanvasView.truncatedLine(
+        source,
+        token: token,
+        maximumWidth: 90
+    )
+    let regions = NativeMemberActivityPresentation.emojiRegions(
+        in: truncated,
+        origin: .zero
+    )
+
+    #expect(regions.map(\.rawToken) == ["<a:first:123>"])
+    #expect(CTLineGetTypographicBounds(truncated, nil, nil, nil) <= 90.5)
+}
+
+@MainActor
+@Test func `native member status exposes emoji names instead of protocol tokens to accessibility`() {
+    #expect(
+        NativeMemberActivityPresentation.accessibilityText(
+            "<:still:123> hello <a:wave:456>"
+        ) == ":still: hello :wave:"
+    )
+}
+
+@MainActor
+@Test func `native member status prefers catalog emoji assets over the CDN fallback`() throws {
+    let localURL = URL(fileURLWithPath: "/tmp/member-status-emoji.png")
+    let canvas = NativeMemberListCanvasView()
+    canvas.customEmojiURLsByID = ["123": localURL]
+
+    let resolved = canvas.activityEmojiURL(
+        for: EmojiReference(rawToken: "<a:wave:123>")
+    )
+    let fallback = try #require(canvas.activityEmojiURL(
+        for: EmojiReference(rawToken: "<:still:456>")
+    ))
+
+    #expect(resolved == localURL)
+    #expect(fallback.host == "cdn.discordapp.com")
+    #expect(fallback.path == "/emojis/456.png")
+}
+
+@MainActor
+@Test func `native member canvas mounts animated status emoji only while its row is visible`() {
+    let animatedURL = URL(fileURLWithPath: "/tmp/member-status-animated.gif")
+    var animatedMember = member(1, "Animated", status: .online)
+    animatedMember.activityText = "<a:wave:123> hello"
+    let canvas = NativeMemberListCanvasView(
+        frame: CGRect(x: 0, y: 0, width: 250, height: 180)
+    )
+    let scrollView = NSScrollView(frame: canvas.frame)
+    scrollView.documentView = canvas
+    canvas.update(
+        sections: [MemberSection(
+            id: .online,
+            title: "Online",
+            colorHex: nil,
+            totalCount: 1,
+            members: [animatedMember]
+        )],
+        customEmojiURLsByID: ["123": animatedURL],
+        profilePresentation: nil,
+        isProfilePresented: false,
+        dismissProfile: {}
+    )
+    canvas.frame.size.height = canvas.contentHeight
+    canvas.updateVisibleOverlaysAndPrewarming()
+
+    #expect(canvas.activityEmojiOverlays.count == 1)
+    #expect(canvas.activityEmojiOverlayConfigurations.values.first?.url == animatedURL)
+    #expect(canvas.activityEmojiOverlays.values.first?.frame.width == NativeMemberListMetrics.activityEmojiSize)
+
+    canvas.installActivityEmojiOverlays(in: 0 ..< 0)
+
+    #expect(canvas.activityEmojiOverlays.isEmpty)
+    #expect(canvas.activityEmojiOverlayConfigurations.isEmpty)
+    canvas.tearDown()
+}
+
+@MainActor
 @Test func `native member profile anchor survives hovering another row`() {
     let members = (1 ... 3).map {
         member(UInt64($0), "Member \($0)", status: .online)

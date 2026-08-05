@@ -60,6 +60,7 @@ struct MemberInspectorView: View {
         AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments)
         .runsMemberListPerformanceAutoScroll
     let sections: [MemberSection]
+    let customEmojiURLsByID: [String: URL]
     let profilePresentation: ProfilePresentationState?
     let isProfilePresented: Bool
     let selectMember: (Member) -> Void
@@ -69,6 +70,7 @@ struct MemberInspectorView: View {
 
     init(
         sections: [MemberSection],
+        customEmojiURLsByID: [String: URL] = [:],
         profilePresentation: ProfilePresentationState?,
         isProfilePresented: Bool,
         selectMember: @escaping (Member) -> Void,
@@ -77,6 +79,7 @@ struct MemberInspectorView: View {
         updateViewport: @escaping (ClosedRange<Int>) -> Void = { _ in }
     ) {
         self.sections = sections
+        self.customEmojiURLsByID = customEmojiURLsByID
         self.profilePresentation = profilePresentation
         self.isProfilePresented = isProfilePresented
         self.selectMember = selectMember
@@ -88,6 +91,7 @@ struct MemberInspectorView: View {
     var body: some View {
         NativeMemberListView(
             sections: sections,
+            customEmojiURLsByID: customEmojiURLsByID,
             profilePresentation: profilePresentation,
             isProfilePresented: isProfilePresented,
             selectMember: selectMember,

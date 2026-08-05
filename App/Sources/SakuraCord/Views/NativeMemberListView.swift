@@ -14,10 +14,13 @@ nonisolated enum NativeMemberListMetrics {
     static let avatarContainerSize: CGFloat = 38.08
     static let rowCornerRadius: CGFloat = 9
     static let prewarmItemCount = 8
+    static let activityEmojiSize: CGFloat = 15
+    static let maximumVisibleAnimatedEmojiCount = 64
 }
 
 struct NativeMemberListView: NSViewRepresentable {
     let sections: [MemberSection]
+    let customEmojiURLsByID: [String: URL]
     let profilePresentation: ProfilePresentationState?
     let isProfilePresented: Bool
     let selectMember: (Member) -> Void
@@ -111,6 +114,7 @@ final class NativeMemberListCoordinator: NSObject {
         }
         canvas.update(
             sections: parent.sections,
+            customEmojiURLsByID: parent.customEmojiURLsByID,
             profilePresentation: parent.profilePresentation,
             isProfilePresented: parent.isProfilePresented,
             dismissProfile: parent.dismissProfile
@@ -320,10 +324,21 @@ final class NativeMemberListCanvasView: NSView {
         let activityWidth: CGFloat
     }
 
+    struct ActivityEmojiOverlayID: Hashable {
+        let itemID: ItemID
+        let ordinal: Int
+    }
+
+    struct ActivityEmojiOverlayConfiguration: Equatable {
+        let url: URL
+        let opacity: CGFloat
+    }
+
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
 
     var items: [Item] = []
+    var customEmojiURLsByID: [String: URL] = [:]
     var origins: [CGFloat] = []
     var contentHeight: CGFloat = 1
     var preparedText: [ItemID: PreparedText] = [:]
@@ -343,8 +358,13 @@ final class NativeMemberListCanvasView: NSView {
     var profileAnchorNeedsUpdate = false
     var avatarOverlays: [ItemID: NSHostingView<AnyView>] = [:]
     var avatarOverlayMembers: [ItemID: Member] = [:]
+    var activityEmojiOverlays: [ActivityEmojiOverlayID: NSHostingView<AnyView>] = [:]
+    var activityEmojiOverlayConfigurations: [
+        ActivityEmojiOverlayID: ActivityEmojiOverlayConfiguration
+    ] = [:]
     var accessibilityRows: [ItemID: NativeMemberAccessibilityProxyView] = [:]
     var imageTasks: [URL: Task<Void, Never>] = [:]
+    var imageRequestIndexes: [URL: Set<Int>] = [:]
     var images: [URL: CGImage] = [:]
     var prewarmedURLs: Set<URL> = []
 
@@ -361,11 +381,14 @@ final class NativeMemberListCanvasView: NSView {
 
     func update(
         sections: [MemberSection],
+        customEmojiURLsByID: [String: URL] = [:],
         profilePresentation: ProfilePresentationState?,
         isProfilePresented: Bool,
         dismissProfile: @escaping () -> Void
     ) {
         let previousItems = items
+        let previousCustomEmojiURLsByID = self.customEmojiURLsByID
+        self.customEmojiURLsByID = customEmojiURLsByID
         self.profilePresentation = profilePresentation
         self.isProfilePresented = isProfilePresented
         self.dismissProfile = dismissProfile
@@ -381,7 +404,9 @@ final class NativeMemberListCanvasView: NSView {
         }
         rebuildOrigins()
         prepareRows()
-        if previousItems.count == items.count {
+        if previousCustomEmojiURLsByID != customEmojiURLsByID {
+            needsDisplay = true
+        } else if previousItems.count == items.count {
             for index in items.indices where items[index] != previousItems[index] {
                 setNeedsDisplay(itemRect(at: index))
             }
@@ -468,7 +493,7 @@ final class NativeMemberListCanvasView: NSView {
             )
             let activity = member.activityText.flatMap { text -> CTLine? in
                 guard !text.isEmpty else { return nil }
-                return Self.line(
+                return NativeMemberActivityPresentation.line(
                     text,
                     font: activityFont,
                     color: Self.memberActivityColor.withAlphaComponent(alpha)
@@ -629,11 +654,23 @@ final class NativeMemberListCanvasView: NSView {
                 token: truncationToken,
                 maximumWidth: maximumWidth
             )
-            Self.draw(
-                line: visibleActivity,
-                at: CGPoint(x: textX, y: row.minY + 24),
-                context: context
-            )
+            let origin = CGPoint(x: textX, y: row.minY + 24)
+            Self.draw(line: visibleActivity, at: origin, context: context)
+            for region in NativeMemberActivityPresentation.emojiRegions(
+                in: visibleActivity,
+                origin: origin
+            ) {
+                guard let url = activityEmojiURL(for: region.reference) else { continue }
+                if let image = images[url] {
+                    Self.draw(
+                        image: image,
+                        aspectFitIn: region.frame,
+                        context: context
+                    )
+                } else {
+                    requestImageIfNeeded(url: url, index: index, priority: .visible)
+                }
+            }
         }
     }
 
@@ -765,6 +802,7 @@ final class NativeMemberListCanvasView: NSView {
         let prewarmRange = prewarmLower ..< prewarmUpper
         installRowOverlayIfNeeded()
         installAvatarOverlays(in: visible)
+        installActivityEmojiOverlays(in: visible)
         installAccessibilityRows(in: visible)
         prewarmImages(in: prewarmRange, visible: visible)
     }
@@ -804,6 +842,73 @@ final class NativeMemberListCanvasView: NSView {
             host.removeFromSuperview()
             avatarOverlays[id] = nil
             avatarOverlayMembers[id] = nil
+        }
+    }
+
+    func installActivityEmojiOverlays(in range: Range<Int>) {
+        var visibleIDs: Set<ActivityEmojiOverlayID> = []
+        var overlayCount = 0
+        for index in range {
+            guard overlayCount < NativeMemberListMetrics.maximumVisibleAnimatedEmojiCount,
+                  case .member(let member, _) = items[index],
+                  let prepared = preparedText[items[index].id],
+                  let activity = prepared.activity,
+                  let truncationToken = prepared.activityTruncationToken
+            else { continue }
+            let row = paintedRowRect(at: index)
+            let textX = row.minX + 4 + NativeMemberListMetrics.avatarContainerSize + 8
+            let visibleActivity = Self.truncatedLine(
+                activity,
+                token: truncationToken,
+                maximumWidth: max(0, row.maxX - textX - 4)
+            )
+            let origin = CGPoint(x: textX, y: row.minY + 24)
+            for (ordinal, region) in NativeMemberActivityPresentation.emojiRegions(
+                in: visibleActivity,
+                origin: origin
+            ).enumerated() {
+                guard overlayCount < NativeMemberListMetrics.maximumVisibleAnimatedEmojiCount,
+                      region.reference.isAnimated,
+                      let url = activityEmojiURL(for: region.reference)
+                else { continue }
+                overlayCount += 1
+                let id = ActivityEmojiOverlayID(
+                    itemID: items[index].id,
+                    ordinal: ordinal
+                )
+                visibleIDs.insert(id)
+                let host = activityEmojiOverlays[id] ?? {
+                    let value = NSHostingView(rootView: AnyView(EmptyView()))
+                    value.sizingOptions = []
+                    value.wantsLayer = true
+                    addSubview(value)
+                    activityEmojiOverlays[id] = value
+                    return value
+                }()
+                let configuration = ActivityEmojiOverlayConfiguration(
+                    url: url,
+                    opacity: member.isOnline ? 1 : 0.55
+                )
+                if activityEmojiOverlayConfigurations[id] != configuration {
+                    host.rootView = AnyView(
+                        AnimatedRemoteImage(
+                            url: url,
+                            maximumPixelDimension: 64
+                        )
+                        .opacity(configuration.opacity)
+                        .allowsHitTesting(false)
+                    )
+                    activityEmojiOverlayConfigurations[id] = configuration
+                }
+                host.frame = region.frame
+                host.layer?.zPosition = 11
+                host.setAccessibilityHidden(true)
+            }
+        }
+        for (id, host) in activityEmojiOverlays where !visibleIDs.contains(id) {
+            host.removeFromSuperview()
+            activityEmojiOverlays[id] = nil
+            activityEmojiOverlayConfigurations[id] = nil
         }
     }
 
@@ -970,7 +1075,9 @@ final class NativeMemberListCanvasView: NSView {
                 member.user.avatarDecorationURL,
                 member.user.nameplate?.staticURL,
                 member.user.primaryGuild?.badgeURL,
-            ].compactMap(\.self)
+            ].compactMap(\.self) + NativeMemberActivityPresentation.references(
+                in: member.activityText
+            ).compactMap(activityEmojiURL)
             wanted.formUnion(urls)
             let priority: MediaLoadPriority = visible.contains(index) ? .visible : .prefetch
             for url in urls { requestImageIfNeeded(url: url, index: index, priority: priority) }
@@ -979,11 +1086,14 @@ final class NativeMemberListCanvasView: NSView {
         for (url, task) in imageTasks where !wanted.contains(url) {
             task.cancel()
             imageTasks[url] = nil
+            imageRequestIndexes[url] = nil
         }
     }
 
     func requestImageIfNeeded(url: URL?, index: Int, priority: MediaLoadPriority) {
-        guard let url, images[url] == nil, imageTasks[url] == nil else { return }
+        guard let url, images[url] == nil else { return }
+        imageRequestIndexes[url, default: []].insert(index)
+        guard imageTasks[url] == nil else { return }
         imageTasks[url] = Task { [weak self] in
             let image = await SharedDecodedImageLoader.shared.image(
                 for: url,
@@ -992,26 +1102,36 @@ final class NativeMemberListCanvasView: NSView {
             )
             guard !Task.isCancelled, let self else { return }
             imageTasks[url] = nil
+            let indexes = imageRequestIndexes.removeValue(forKey: url) ?? [index]
             guard let image else { return }
             images[url] = image
-            if items.indices.contains(index) {
-                setNeedsDisplay(itemRect(at: index))
-                if rowOverlayIndex == index {
+            for requestedIndex in indexes where items.indices.contains(requestedIndex) {
+                setNeedsDisplay(itemRect(at: requestedIndex))
+                if rowOverlayIndex == requestedIndex {
                     rowForegroundOverlay?.needsDisplay = true
                 }
             }
         }
     }
 
+    func activityEmojiURL(for reference: EmojiReference) -> URL? {
+        reference.id.flatMap { customEmojiURLsByID[$0] }
+            ?? reference.imageURL(size: 64)
+    }
+
     func tearDown() {
         for task in imageTasks.values { task.cancel() }
         imageTasks.removeAll()
+        imageRequestIndexes.removeAll()
         removeRowOverlay()
         removeProfileAnchor()
         for host in avatarOverlays.values { host.removeFromSuperview() }
+        for host in activityEmojiOverlays.values { host.removeFromSuperview() }
         avatarOverlayMembers.removeAll()
+        activityEmojiOverlayConfigurations.removeAll()
         for proxy in accessibilityRows.values { proxy.removeFromSuperview() }
         avatarOverlays.removeAll()
+        activityEmojiOverlays.removeAll()
         accessibilityRows.removeAll()
     }
 
@@ -1095,6 +1215,24 @@ final class NativeMemberListCanvasView: NSView {
         context.restoreGState()
     }
 
+    static func draw(image: CGImage, aspectFitIn rect: CGRect, context: CGContext) {
+        let imageSize = CGSize(width: image.width, height: image.height)
+        guard imageSize.width > 0, imageSize.height > 0 else { return }
+        let scale = min(rect.width / imageSize.width, rect.height / imageSize.height)
+        let size = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
+        draw(
+            image: image,
+            in: CGRect(
+                x: rect.midX - size.width / 2,
+                y: rect.midY - size.height / 2,
+                width: size.width,
+                height: size.height
+            ),
+            context: context,
+            fills: false
+        )
+    }
+
     static func color(hex: UInt32) -> NSColor {
         NSColor(
             srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
@@ -1174,7 +1312,9 @@ final class NativeMemberAccessibilityProxyView: NSButton {
             guard let member else { return }
             setAccessibilityLabel(member.user.displayName)
             setAccessibilityHelp(member.user.username)
-            let activity = member.activityText?.isEmpty == false ? member.activityText : nil
+            let activity = member.activityText.flatMap {
+                $0.isEmpty ? nil : NativeMemberActivityPresentation.accessibilityText($0)
+            }
             setAccessibilityValue(activity)
             toolTip = member.user.username
         }

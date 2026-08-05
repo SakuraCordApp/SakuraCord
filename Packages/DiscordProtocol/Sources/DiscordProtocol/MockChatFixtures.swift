@@ -716,7 +716,8 @@ private struct MockFixtureAssembly {
                 rolePosition: 14,
                 isRoleCategory: true,
                 roles: [qualityRole],
-                customStatus: "Reproduced it twice, therefore science"
+                activityText: "<:bug_hunt:900000000000000103> Reproduced it twice, therefore science",
+                customStatus: "<:bug_hunt:900000000000000103> Reproduced it twice, therefore science"
             ),
             Member(
                 user: rowan,

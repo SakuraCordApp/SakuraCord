@@ -166,6 +166,7 @@ private struct ChatWorkspaceSupplementaryContent: View {
             } else {
                 MemberInspectorView(
                     sections: model.directMessageInspectorSections,
+                    customEmojiURLsByID: model.customEmojiURLsByID,
                     profilePresentation:
                         model.inspectorProfilePresentation,
                     isProfilePresented: model.isInspectorProfilePresented,
