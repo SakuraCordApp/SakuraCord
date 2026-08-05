@@ -105,6 +105,7 @@ nonisolated enum TimelineInitialPositionPolicy {
 nonisolated enum TimelineEarlierHistoryLoadingPolicy {
     static func shouldLoad(
         isNearTop: Bool,
+        contentFitsViewport: Bool,
         allowsAutomaticLoading: Bool,
         hasMoreMessages: Bool,
         isLoading: Bool,
@@ -118,7 +119,9 @@ nonisolated enum TimelineEarlierHistoryLoadingPolicy {
         else {
             return false
         }
-        return !hasUnresolvedUnreadBoundary || hasUserScrollIntent
+        return contentFitsViewport
+            || !hasUnresolvedUnreadBoundary
+            || hasUserScrollIntent
     }
 }
 

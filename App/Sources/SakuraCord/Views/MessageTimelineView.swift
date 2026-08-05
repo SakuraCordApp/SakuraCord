@@ -330,6 +330,7 @@ struct MessageTimelineView: View {
     private func loadEarlierIfNeeded(for state: TimelineScrollState) {
         guard TimelineEarlierHistoryLoadingPolicy.shouldLoad(
             isNearTop: state.isNearTop,
+            contentFitsViewport: state.contentFitsViewport,
             allowsAutomaticLoading: allowsAutomaticHistoryLoading,
             hasMoreMessages: model.hasMoreMessages,
             isLoading: model.isLoadingEarlier,

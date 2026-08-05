@@ -519,6 +519,7 @@ private struct ThreadMessageTimelineView: View {
         }
         if TimelineEarlierHistoryLoadingPolicy.shouldLoad(
             isNearTop: state.isNearTop,
+            contentFitsViewport: state.contentFitsViewport,
             allowsAutomaticLoading: true,
             hasMoreMessages: model.hasMoreThreadMessages,
             isLoading: model.isLoadingEarlierThread,

@@ -201,10 +201,25 @@ private final class MessageTimelineSkeletonSafeAreaHost<Content: View>:
     )
 }
 
-@Test func `unresolved unread history requires user scroll intent before loading`() {
+@Test func `underfilled unread history loads without user scroll intent`() {
+    #expect(
+        TimelineEarlierHistoryLoadingPolicy.shouldLoad(
+            isNearTop: true,
+            contentFitsViewport: true,
+            allowsAutomaticLoading: true,
+            hasMoreMessages: true,
+            isLoading: false,
+            hasUnresolvedUnreadBoundary: true,
+            hasUserScrollIntent: false
+        )
+    )
+}
+
+@Test func `filled unresolved unread history requires user scroll intent before loading`() {
     #expect(
         !TimelineEarlierHistoryLoadingPolicy.shouldLoad(
             isNearTop: true,
+            contentFitsViewport: false,
             allowsAutomaticLoading: true,
             hasMoreMessages: true,
             isLoading: false,
@@ -215,6 +230,7 @@ private final class MessageTimelineSkeletonSafeAreaHost<Content: View>:
     #expect(
         TimelineEarlierHistoryLoadingPolicy.shouldLoad(
             isNearTop: true,
+            contentFitsViewport: false,
             allowsAutomaticLoading: true,
             hasMoreMessages: true,
             isLoading: false,
@@ -225,6 +241,7 @@ private final class MessageTimelineSkeletonSafeAreaHost<Content: View>:
     #expect(
         TimelineEarlierHistoryLoadingPolicy.shouldLoad(
             isNearTop: true,
+            contentFitsViewport: false,
             allowsAutomaticLoading: true,
             hasMoreMessages: true,
             isLoading: false,
@@ -235,6 +252,7 @@ private final class MessageTimelineSkeletonSafeAreaHost<Content: View>:
     #expect(
         !TimelineEarlierHistoryLoadingPolicy.shouldLoad(
             isNearTop: true,
+            contentFitsViewport: true,
             allowsAutomaticLoading: true,
             hasMoreMessages: true,
             isLoading: true,
