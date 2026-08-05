@@ -2648,6 +2648,8 @@ func `channel and thread configurations instantiate the same native canvas engin
         let coordinator = timeline.makeCoordinator()
         let scrollView = coordinator.makeScrollView()
 
+        #expect(scrollView.horizontalScrollElasticity == .none)
+
         let documentView =
             scrollView.documentView as? NativeTimelineDocumentView
         #expect(
@@ -2684,7 +2686,7 @@ func `first viewport layout keeps bounded canvas frame and bounds synchronized`(
     )
     let coordinator = timeline.makeCoordinator()
     let scrollView = coordinator.makeScrollView()
-    scrollView.frame = CGRect(x: 0, y: 0, width: 820, height: 700)
+    scrollView.frame = CGRect(x: 0, y: 0, width: 820.6, height: 700)
     scrollView.tile()
     scrollView.layoutSubtreeIfNeeded()
     coordinator.update(parent: timeline, scrollView: scrollView)
@@ -2698,6 +2700,12 @@ func `first viewport layout keeps bounded canvas frame and bounds synchronized`(
         } as? NativeTimelineCanvasView
     )
 
+    #expect(
+        abs(
+            documentView.frame.width
+                - scrollView.contentView.bounds.width
+        ) < 0.01
+    )
     #expect(abs(canvas.frame.width - scrollView.contentView.bounds.width) < 0.5)
     #expect(abs(canvas.frame.origin.y - canvas.bounds.origin.y) < 0.5)
     #expect(abs(canvas.frame.height - canvas.bounds.height) < 0.5)

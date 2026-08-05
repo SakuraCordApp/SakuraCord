@@ -280,6 +280,10 @@ extension NativeMessageTimelineCoordinator {
             scrollView.borderType = .noBorder
             scrollView.hasVerticalScroller = false
             scrollView.hasHorizontalScroller = false
+            // The timeline has no horizontal navigation. AppKit's automatic
+            // policy enables sideways rubber-banding whenever a relayout
+            // briefly leaves the document wider than the viewport.
+            scrollView.horizontalScrollElasticity = .none
             scrollView.autohidesScrollers = true
             scrollView.scrollerStyle = .overlay
             scrollView.contentView.postsBoundsChangedNotifications = true

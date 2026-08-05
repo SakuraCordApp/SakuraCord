@@ -245,7 +245,12 @@ extension NativeMessageTimelineCoordinator {
             }
             let viewport = scrollView.contentView.bounds
             let size = NSSize(
-                width: max(1, max(proposedSize.width, viewport.width)),
+                // Row layout may deliberately retain its previous width
+                // while a resize is coalesced, but this remains a vertical-
+                // only document. Pinning the document to the viewport keeps
+                // that transient backing width from becoming a real
+                // horizontal scroll range.
+                width: max(1, viewport.width),
                 height: max(1, max(proposedSize.height, viewport.height))
             )
             if documentView.frame.size != size {
