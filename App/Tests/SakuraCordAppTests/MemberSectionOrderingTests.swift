@@ -88,7 +88,7 @@ import Testing
 }
 
 @MainActor
-@Test func `native member canvas preserves section order and keeps unresolved rows trailing`() {
+@Test func `native member canvas preserves section order and absolute gateway slots`() {
     let role = GuildRole(
         id: RoleID(rawValue: 10),
         name: "Contributor",
@@ -115,9 +115,31 @@ import Testing
 
     #expect(items.count == 6)
     #expect(items[1] == .member(online, gatewayIndex: 1))
-    #expect(items[2] == .member(fallback, gatewayIndex: nil))
+    #expect(items[2] == .member(fallback, gatewayIndex: 2))
     #expect(items[3] == .placeholder(gatewayIndex: 3))
     #expect(items[5] == .member(offline, gatewayIndex: 5))
+}
+
+@MainActor
+@Test func `native member canvas does not compact sparse gateway ranges`() {
+    var first = member(1, "First", status: .online)
+    first.memberListIndex = 1
+    var distant = member(2, "Distant", status: .online)
+    distant.memberListIndex = 205
+    let sections = MemberSection.make(
+        from: [first, distant],
+        groups: [GuildMemberListGroup(id: "online", count: 300)]
+    )
+
+    let items = NativeMemberListCanvasView.makeItems(sections: sections)
+
+    #expect(items.count == 301)
+    #expect(items[1] == .member(first, gatewayIndex: 1))
+    #expect(items[2] == .placeholder(gatewayIndex: 2))
+    #expect(items[204] == .placeholder(gatewayIndex: 204))
+    #expect(items[205] == .member(distant, gatewayIndex: 205))
+    #expect(items[206] == .placeholder(gatewayIndex: 206))
+    #expect(items[300] == .placeholder(gatewayIndex: 300))
 }
 
 @MainActor

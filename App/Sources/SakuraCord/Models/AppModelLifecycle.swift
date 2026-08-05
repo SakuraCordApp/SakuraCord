@@ -787,9 +787,13 @@ extension AppModel {
         account session: AppModelAccountSession
     ) async {
         guard let channelID = selectedChannelID,
-              let visibleRange = lastMemberListVisibleRange,
               isCurrentAccountSession(session)
         else { return }
+        // An empty cold member list has no native row from which the canvas can
+        // derive a viewport. Seed the first Gateway block after members(in:)
+        // arms the subscription; subsequent reports replace this with the real
+        // visible range.
+        let visibleRange = lastMemberListVisibleRange ?? 0 ... 0
         let request = MemberListViewportRequest(
             guildID: guildID,
             channelID: channelID,

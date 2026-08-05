@@ -3360,6 +3360,32 @@ private actor FailingRemovalCredentialStore: CredentialStore {
 }
 
 @MainActor
+@Test func `empty member load bootstraps the initial viewport`() async throws {
+    let provider = DelayedMemberViewportTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let snapshot = try await provider.bootstrap()
+    let guild = try #require(snapshot.guilds.first)
+    let channel = try #require(snapshot.channels.first { $0.guildID == guild.id })
+    model.snapshot = snapshot
+    model.selectedGuildID = guild.id
+    model.visibleChannels = snapshot.channels.filter { $0.guildID == guild.id }
+    model.selectedChannelID = channel.id
+
+    model.beginMemberLoad(for: guild.id)
+    #expect(await provider.waitUntilMemberLoadStarts())
+    await provider.releaseMemberLoad()
+
+    #expect(await provider.waitUntilAcceptedViewportCount(1))
+    #expect(await provider.acceptedViewportRequests() == [
+        DelayedMemberViewportTestProvider.ViewportRequest(
+            guildID: guild.id,
+            channelID: channel.id,
+            visibleRange: 0 ... 0
+        ),
+    ])
+}
+
+@MainActor
 @Test func `member list churn invalidates only presentation dependent messages`() throws {
     let model = AppModel(launchMode: .offlineTesting)
     let channelID = ChannelID(rawValue: 70_001)

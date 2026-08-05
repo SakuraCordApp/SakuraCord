@@ -397,16 +397,37 @@ final class NativeMemberListCanvasView: NSView {
         for section in sections {
             result.append(.header(section))
             let visibleMembers = section.members.prefix(max(0, section.totalCount))
-            result.append(contentsOf: visibleMembers.map { member in
-                .member(member, gatewayIndex: member.memberListIndex)
-            })
-            let unresolvedCount = max(0, section.totalCount - visibleMembers.count)
-            if unresolvedCount > 0, let sectionStart = section.gatewayStartIndex {
-                result.append(contentsOf: (0 ..< unresolvedCount).map { offset in
-                    .placeholder(
-                        gatewayIndex: sectionStart + 1 + visibleMembers.count + offset
-                    )
+            guard let sectionStart = section.gatewayStartIndex else {
+                result.append(contentsOf: visibleMembers.map { member in
+                    .member(member, gatewayIndex: member.memberListIndex)
                 })
+                continue
+            }
+            guard section.totalCount > 0 else { continue }
+
+            let gatewayRange = (sectionStart + 1) ... (sectionStart + section.totalCount)
+            var indexedMembers: [Int: Member] = [:]
+            var inferredMembers: [Member] = []
+            inferredMembers.reserveCapacity(visibleMembers.count)
+            for member in visibleMembers {
+                if let index = member.memberListIndex, gatewayRange.contains(index) {
+                    indexedMembers[index] = indexedMembers[index] ?? member
+                } else {
+                    inferredMembers.append(member)
+                }
+            }
+            var inferredIndex = inferredMembers.startIndex
+            for gatewayIndex in gatewayRange {
+                if let member = indexedMembers[gatewayIndex] {
+                    result.append(.member(member, gatewayIndex: gatewayIndex))
+                } else if inferredIndex < inferredMembers.endIndex {
+                    result.append(.member(
+                        inferredMembers[inferredIndex], gatewayIndex: gatewayIndex
+                    ))
+                    inferredMembers.formIndex(after: &inferredIndex)
+                } else {
+                    result.append(.placeholder(gatewayIndex: gatewayIndex))
+                }
             }
         }
         return result
