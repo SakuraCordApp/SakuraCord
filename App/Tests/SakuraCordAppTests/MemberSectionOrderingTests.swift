@@ -166,6 +166,89 @@ import Testing
 }
 
 @MainActor
+@Test func `native member status uses discord muted color and truncates to the row width`() {
+    let color = NativeMemberListCanvasView.memberActivityColor.usingColorSpace(.sRGB)
+    #expect(abs((color?.redComponent ?? 0) - 122.0 / 255.0) < 0.000_001)
+    #expect(abs((color?.greenComponent ?? 0) - 123.0 / 255.0) < 0.000_001)
+    #expect(abs((color?.blueComponent ?? 0) - 131.0 / 255.0) < 0.000_001)
+
+    let font = NSFont.systemFont(ofSize: 12)
+    let source = NativeMemberListCanvasView.line(
+        "what if i start having lovey statuses about this very long activity",
+        font: font,
+        color: NativeMemberListCanvasView.memberActivityColor
+    )
+    let token = NativeMemberListCanvasView.line(
+        "…",
+        font: font,
+        color: NativeMemberListCanvasView.memberActivityColor
+    )
+    let truncated = NativeMemberListCanvasView.truncatedLine(
+        source,
+        token: token,
+        maximumWidth: 140
+    )
+
+    #expect(CTLineGetTypographicBounds(truncated, nil, nil, nil) <= 140.5)
+    #expect(
+        CTLineGetTypographicBounds(truncated, nil, nil, nil)
+            < CTLineGetTypographicBounds(source, nil, nil, nil)
+    )
+}
+
+@MainActor
+@Test func `native member profile anchor survives hovering another row`() {
+    let members = (1 ... 3).map {
+        member(UInt64($0), "Member \($0)", status: .online)
+    }
+    let presentation = ProfilePresentationState(
+        requestID: UUID(),
+        member: members[0],
+        profile: nil,
+        isLoading: true,
+        errorMessage: nil
+    )
+    let canvas = NativeMemberListCanvasView(
+        frame: CGRect(x: 0, y: 0, width: 250, height: 300)
+    )
+    let scrollView = NSScrollView(frame: canvas.frame)
+    scrollView.documentView = canvas
+    canvas.update(
+        sections: [MemberSection(
+            id: .online,
+            title: "Online",
+            colorHex: nil,
+            totalCount: members.count,
+            members: members
+        )],
+        profilePresentation: presentation,
+        isProfilePresented: true,
+        dismissProfile: {}
+    )
+    canvas.frame.size.height = canvas.contentHeight
+    canvas.updateVisibleOverlaysAndPrewarming()
+
+    let anchorID = canvas.profileAnchorOverlay.map(ObjectIdentifier.init)
+    #expect(anchorID != nil)
+    #expect(canvas.profileAnchorIndex == 1)
+
+    canvas.hoveredIndex = 2
+    canvas.updateVisibleOverlaysAndPrewarming()
+
+    #expect(canvas.rowOverlayIndex == 2)
+    #expect(canvas.profileAnchorIndex == 1)
+    #expect(anchorID == canvas.profileAnchorOverlay.map(ObjectIdentifier.init))
+
+    canvas.hoveredIndex = 3
+    canvas.updateVisibleOverlaysAndPrewarming()
+
+    #expect(canvas.rowOverlayIndex == 3)
+    #expect(canvas.profileAnchorIndex == 1)
+    #expect(anchorID == canvas.profileAnchorOverlay.map(ObjectIdentifier.init))
+    canvas.tearDown()
+}
+
+@MainActor
 @Test func `native member canvas discards stale hover when a gateway snapshot shrinks`() {
     let members = (1 ... 3).map {
         member(UInt64($0), "Member \($0)", status: .online)

@@ -316,6 +316,7 @@ final class NativeMemberListCanvasView: NSView {
         let name: CTLine
         let nameWidth: CGFloat
         let activity: CTLine?
+        let activityTruncationToken: CTLine?
         let activityWidth: CGFloat
     }
 
@@ -337,6 +338,9 @@ final class NativeMemberListCanvasView: NSView {
     var rowOverlay: NSHostingView<AnyView>?
     var rowForegroundOverlay: NativeMemberForegroundOverlayView?
     var rowOverlayIndex: Int?
+    var profileAnchorOverlay: NativeMemberProfileAnchorHostingView?
+    var profileAnchorIndex: Int?
+    var profileAnchorNeedsUpdate = false
     var avatarOverlays: [ItemID: NSHostingView<AnyView>] = [:]
     var avatarOverlayMembers: [ItemID: Member] = [:]
     var accessibilityRows: [ItemID: NativeMemberAccessibilityProxyView] = [:]
@@ -366,6 +370,7 @@ final class NativeMemberListCanvasView: NSView {
         self.isProfilePresented = isProfilePresented
         self.dismissProfile = dismissProfile
         selectedMemberID = profilePresentation?.member.id
+        profileAnchorNeedsUpdate = true
         items = Self.makeItems(sections: sections)
         if let hoveredIndex,
            !items.indices.contains(hoveredIndex) ||
@@ -445,13 +450,21 @@ final class NativeMemberListCanvasView: NSView {
                 return Self.line(
                     text,
                     font: activityFont,
-                    color: NSColor.secondaryLabelColor.withAlphaComponent(alpha)
+                    color: Self.memberActivityColor.withAlphaComponent(alpha)
+                )
+            }
+            let activityTruncationToken = activity.map { _ in
+                Self.line(
+                    "…",
+                    font: activityFont,
+                    color: Self.memberActivityColor.withAlphaComponent(alpha)
                 )
             }
             prepared[item.id] = PreparedText(
                 name: name,
                 nameWidth: CGFloat(CTLineGetTypographicBounds(name, nil, nil, nil)),
                 activity: activity,
+                activityTruncationToken: activityTruncationToken,
                 activityWidth: activity.map {
                     CGFloat(CTLineGetTypographicBounds($0, nil, nil, nil))
                 } ?? 0
@@ -586,9 +599,17 @@ final class NativeMemberListCanvasView: NSView {
                 requestImageIfNeeded(url: badgeURL, index: index, priority: .visible)
             }
         }
-        if let activity = prepared.activity {
+        if let activity = prepared.activity,
+           let truncationToken = prepared.activityTruncationToken
+        {
+            let maximumWidth = max(0, row.maxX - textX - 4)
+            let visibleActivity = Self.truncatedLine(
+                activity,
+                token: truncationToken,
+                maximumWidth: maximumWidth
+            )
             Self.draw(
-                line: activity,
+                line: visibleActivity,
                 at: CGPoint(x: textX, y: row.minY + 24),
                 context: context
             )
@@ -791,6 +812,7 @@ final class NativeMemberListCanvasView: NSView {
     }
 
     func installRowOverlayIfNeeded() {
+        installProfileAnchorIfNeeded()
         let requestedIndex: Int? = if isScrolling {
             nil
         } else if let hoveredIndex,
@@ -834,11 +856,11 @@ final class NativeMemberListCanvasView: NSView {
         host.rootView = AnyView(MemberRow(
             member: member,
             isSelected: isSelected,
-            isProfilePresented: isSelected && isProfilePresented,
-            profilePresentation: isSelected ? profilePresentation : nil,
+            isProfilePresented: false,
+            profilePresentation: nil,
             showsContents: false,
             select: { [weak self] in self?.selectMember(member) },
-            dismissProfile: { [weak self] in self?.dismissProfile() }
+            dismissProfile: {}
         ))
         host.frame = CGRect(
             x: NativeMemberListMetrics.horizontalInset,
@@ -858,6 +880,52 @@ final class NativeMemberListCanvasView: NSView {
         foreground.frame = host.frame
         foreground.layer?.zPosition = 12
         foreground.needsDisplay = true
+    }
+
+    func installProfileAnchorIfNeeded() {
+        guard isProfilePresented,
+              let presentation = profilePresentation,
+              let index = items.firstIndex(where: {
+                  if case .member(let member, _) = $0 {
+                      member.id == presentation.member.id
+                  } else {
+                      false
+                  }
+              }),
+              enclosingScrollView?.documentVisibleRect.intersects(itemRect(at: index)) == true
+        else {
+            removeProfileAnchor()
+            return
+        }
+        let host = profileAnchorOverlay ?? {
+            let value = NativeMemberProfileAnchorHostingView(
+                rootView: AnyView(EmptyView())
+            )
+            value.sizingOptions = []
+            value.wantsLayer = true
+            addSubview(value)
+            profileAnchorOverlay = value
+            profileAnchorNeedsUpdate = true
+            return value
+        }()
+        profileAnchorIndex = index
+        if profileAnchorNeedsUpdate {
+            host.rootView = AnyView(NativeMemberProfileAnchorView(
+                presentation: presentation,
+                isPresented: true,
+                dismiss: { [weak self] in self?.dismissProfile() }
+            ))
+            profileAnchorNeedsUpdate = false
+        }
+        host.frame = paintedRowRect(at: index)
+        host.layer?.zPosition = 13
+    }
+
+    func removeProfileAnchor() {
+        profileAnchorOverlay?.removeFromSuperview()
+        profileAnchorOverlay = nil
+        profileAnchorIndex = nil
+        profileAnchorNeedsUpdate = false
     }
 
     func removeRowOverlay() {
@@ -918,6 +986,7 @@ final class NativeMemberListCanvasView: NSView {
         for task in imageTasks.values { task.cancel() }
         imageTasks.removeAll()
         removeRowOverlay()
+        removeProfileAnchor()
         for host in avatarOverlays.values { host.removeFromSuperview() }
         avatarOverlayMembers.removeAll()
         for proxy in accessibilityRows.values { proxy.removeFromSuperview() }
@@ -942,6 +1011,30 @@ final class NativeMemberListCanvasView: NSView {
         CTLineDraw(line, context)
         context.restoreGState()
     }
+
+    static func truncatedLine(
+        _ line: CTLine,
+        token: CTLine,
+        maximumWidth: CGFloat
+    ) -> CTLine {
+        guard maximumWidth > 0,
+              CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil)) > maximumWidth,
+              let truncated = CTLineCreateTruncatedLine(
+                  line,
+                  Double(maximumWidth),
+                  .end,
+                  token
+              )
+        else { return line }
+        return truncated
+    }
+
+    static let memberActivityColor = NSColor(
+        srgbRed: 122 / 255,
+        green: 123 / 255,
+        blue: 131 / 255,
+        alpha: 1
+    )
 
     static func fillRounded(
         _ rect: CGRect,
@@ -1022,6 +1115,34 @@ final class NativeMemberForegroundOverlayView: NSView {
         context.translateBy(x: -frame.minX, y: -frame.minY)
         canvas.drawMemberForeground(member, at: itemIndex, context: context)
         context.restoreGState()
+    }
+}
+
+private struct NativeMemberProfileAnchorView: View {
+    let presentation: ProfilePresentationState
+    let isPresented: Bool
+    let dismiss: () -> Void
+
+    var body: some View {
+        Color.clear
+            .accessibilityHidden(true)
+            .popover(
+                isPresented: Binding(
+                    get: { isPresented },
+                    set: { if !$0 { dismiss() } }
+                ),
+                attachmentAnchor: .rect(.bounds),
+                arrowEdge: .trailing
+            ) {
+                ProfilePresentationContent(presentation: presentation)
+            }
+    }
+}
+
+@MainActor
+final class NativeMemberProfileAnchorHostingView: NSHostingView<AnyView> {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
     }
 }
 
