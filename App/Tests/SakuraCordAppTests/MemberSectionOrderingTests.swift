@@ -347,7 +347,7 @@ import Testing
 }
 
 @MainActor
-@Test func `native member profile anchor survives hovering another row`() {
+@Test func `native member profile popover keeps its anchor while hovering another row`() {
     let members = (1 ... 3).map {
         member(UInt64($0), "Member \($0)", status: .online)
     }
@@ -378,8 +378,7 @@ import Testing
     canvas.frame.size.height = canvas.contentHeight
     canvas.updateVisibleOverlaysAndPrewarming()
 
-    let anchorID = canvas.profileAnchorOverlay.map(ObjectIdentifier.init)
-    #expect(anchorID != nil)
+    let anchorID = ObjectIdentifier(canvas.profilePopoverAnchor)
     #expect(canvas.profileAnchorIndex == 1)
 
     canvas.hoveredIndex = 2
@@ -387,14 +386,72 @@ import Testing
 
     #expect(canvas.rowOverlayIndex == 2)
     #expect(canvas.profileAnchorIndex == 1)
-    #expect(anchorID == canvas.profileAnchorOverlay.map(ObjectIdentifier.init))
+    #expect(anchorID == ObjectIdentifier(canvas.profilePopoverAnchor))
 
     canvas.hoveredIndex = 3
     canvas.updateVisibleOverlaysAndPrewarming()
 
     #expect(canvas.rowOverlayIndex == 3)
     #expect(canvas.profileAnchorIndex == 1)
-    #expect(anchorID == canvas.profileAnchorOverlay.map(ObjectIdentifier.init))
+    #expect(anchorID == ObjectIdentifier(canvas.profilePopoverAnchor))
+    canvas.tearDown()
+}
+
+@MainActor
+@Test func `native member selection invalidates both the old and new rows`() {
+    let members = (1 ... 3).map {
+        member(UInt64($0), "Member \($0)", status: .online)
+    }
+    let items = NativeMemberListCanvasView.makeItems(sections: [
+        MemberSection(
+            id: .online,
+            title: "Online",
+            colorHex: nil,
+            totalCount: members.count,
+            members: members
+        ),
+    ])
+
+    #expect(NativeMemberListCanvasView.selectionInvalidationIndexes(
+        in: items,
+        previous: members[0].id,
+        current: members[1].id
+    ) == [1, 2])
+    #expect(NativeMemberListCanvasView.selectionInvalidationIndexes(
+        in: items,
+        previous: members[1].id,
+        current: nil
+    ) == [2])
+    #expect(NativeMemberListCanvasView.selectionInvalidationIndexes(
+        in: items,
+        previous: members[1].id,
+        current: members[1].id
+    ).isEmpty)
+}
+
+@MainActor
+@Test func `stale member profile dismissal cannot close its replacement`() {
+    let members = (1 ... 2).map {
+        member(UInt64($0), "Member \($0)", status: .online)
+    }
+    let oldRequestID = UUID()
+    let newRequestID = UUID()
+    let canvas = NativeMemberListCanvasView()
+    var dismissalCount = 0
+    canvas.dismissProfile = { dismissalCount += 1 }
+    canvas.profilePresentation = ProfilePresentationState(
+        requestID: newRequestID,
+        member: members[1],
+        profile: nil,
+        isLoading: true,
+        errorMessage: nil
+    )
+
+    canvas.dismissProfile(ifCurrent: oldRequestID)
+    #expect(dismissalCount == 0)
+
+    canvas.dismissProfile(ifCurrent: newRequestID)
+    #expect(dismissalCount == 1)
     canvas.tearDown()
 }
 

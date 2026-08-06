@@ -12,6 +12,16 @@ import Testing
     #expect(NativeHoverPopoverPolicy.usesIntrinsicContentSize)
 }
 
+@MainActor
+@Test func `member profile popovers stabilize their size before animating`() {
+    #expect(StablePopoverConfiguration.memberProfile.animates)
+    #expect(StablePopoverConfiguration.memberProfile.stabilizesInitialContentSize)
+    #expect(
+        StablePopoverConfiguration.memberProfile.dismissalBehavior
+            == .outsideSourceView
+    )
+}
+
 @Test func `stable hover placement chooses an edge that fits before presentation`() {
     let screen = CGRect(x: 0, y: 0, width: 1_000, height: 800)
     let content = CGSize(width: 240, height: 110)

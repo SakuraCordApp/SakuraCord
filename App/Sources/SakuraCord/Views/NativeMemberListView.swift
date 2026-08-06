@@ -395,9 +395,19 @@ final class NativeMemberListCanvasView: NSView {
     var rowOverlay: NSHostingView<AnyView>?
     var rowForegroundOverlay: NativeMemberForegroundOverlayView?
     var rowOverlayIndex: Int?
-    var profileAnchorOverlay: NativeMemberProfileAnchorHostingView?
     var profileAnchorIndex: Int?
-    var profileAnchorNeedsUpdate = false
+    let profilePopoverCoordinator =
+        StableAnchoredPopoverPresenter<AnyView>.Coordinator()
+    lazy var profilePopoverAnchor = StablePopoverAnchor(
+        sourceView: self,
+        sourceRect: { [weak self] in
+            guard let self,
+                  let index = self.profileAnchorIndex,
+                  self.items.indices.contains(index)
+            else { return nil }
+            return self.paintedRowRect(at: index)
+        }
+    )
     var avatarOverlays: [ItemID: NSHostingView<AnyView>] = [:]
     var avatarOverlayMembers: [ItemID: Member] = [:]
     var activityEmojiOverlays: [ActivityEmojiOverlayID: NSHostingView<AnyView>] = [:]
@@ -429,13 +439,15 @@ final class NativeMemberListCanvasView: NSView {
         dismissProfile: @escaping () -> Void
     ) {
         let previousItems = items
+        let previousSelectedMemberID = selectedMemberID
         let previousCustomEmojiURLsByID = self.customEmojiURLsByID
         self.customEmojiURLsByID = customEmojiURLsByID
         self.profilePresentation = profilePresentation
         self.isProfilePresented = isProfilePresented
         self.dismissProfile = dismissProfile
-        selectedMemberID = profilePresentation?.member.id
-        profileAnchorNeedsUpdate = true
+        selectedMemberID = isProfilePresented
+            ? profilePresentation?.member.id
+            : nil
         items = Self.makeItems(sections: sections)
         if let hoveredIndex,
            !items.indices.contains(hoveredIndex) ||
@@ -455,7 +467,28 @@ final class NativeMemberListCanvasView: NSView {
         } else {
             needsDisplay = true
         }
+        for index in Self.selectionInvalidationIndexes(
+            in: items,
+            previous: previousSelectedMemberID,
+            current: selectedMemberID
+        ) {
+            setNeedsDisplay(itemRect(at: index))
+        }
         updateVisibleOverlaysAndPrewarming()
+    }
+
+    static func selectionInvalidationIndexes(
+        in items: [Item],
+        previous: UserID?,
+        current: UserID?
+    ) -> [Int] {
+        guard previous != current else { return [] }
+        return items.indices.filter { index in
+            guard case .member(let member, _) = items[index] else {
+                return false
+            }
+            return member.id == previous || member.id == current
+        }
     }
 
     static func makeItems(sections: [MemberSection]) -> [Item] {
@@ -1130,35 +1163,32 @@ final class NativeMemberListCanvasView: NSView {
             removeProfileAnchor()
             return
         }
-        let host = profileAnchorOverlay ?? {
-            let value = NativeMemberProfileAnchorHostingView(
-                rootView: AnyView(EmptyView())
-            )
-            value.sizingOptions = []
-            value.wantsLayer = true
-            addSubview(value)
-            profileAnchorOverlay = value
-            profileAnchorNeedsUpdate = true
-            return value
-        }()
         profileAnchorIndex = index
-        if profileAnchorNeedsUpdate {
-            host.rootView = AnyView(NativeMemberProfileAnchorView(
-                presentation: presentation,
-                isPresented: true,
-                dismiss: { [weak self] in self?.dismissProfile() }
-            ))
-            profileAnchorNeedsUpdate = false
-        }
-        host.frame = paintedRowRect(at: index)
-        host.layer?.zPosition = 13
+        profilePopoverCoordinator.update(
+            anchor: profilePopoverAnchor,
+            anchorSnapshot: nil,
+            isPresented: true,
+            configuration: .memberProfile,
+            onDismiss: { [weak self] in
+                self?.dismissProfile(ifCurrent: presentation.requestID)
+            },
+            presentationIdentity: AnyHashable(presentation.member.id),
+            content: AnyView(ProfilePresentationContent(presentation: presentation))
+        )
     }
 
-    func removeProfileAnchor() {
-        profileAnchorOverlay?.removeFromSuperview()
-        profileAnchorOverlay = nil
+    func removeProfileAnchor(immediately: Bool = false) {
+        if immediately {
+            profilePopoverCoordinator.close()
+        } else {
+            profilePopoverCoordinator.scheduleClose()
+        }
         profileAnchorIndex = nil
-        profileAnchorNeedsUpdate = false
+    }
+
+    func dismissProfile(ifCurrent requestID: UUID) {
+        guard profilePresentation?.requestID == requestID else { return }
+        dismissProfile()
     }
 
     func removeRowOverlay() {
@@ -1231,7 +1261,7 @@ final class NativeMemberListCanvasView: NSView {
         imageTasks.removeAll()
         imageRequestIndexes.removeAll()
         removeRowOverlay()
-        removeProfileAnchor()
+        removeProfileAnchor(immediately: true)
         for host in avatarOverlays.values { host.removeFromSuperview() }
         for host in activityEmojiOverlays.values { host.removeFromSuperview() }
         avatarOverlayMembers.removeAll()
@@ -1381,34 +1411,6 @@ final class NativeMemberForegroundOverlayView: NSView {
         context.translateBy(x: -frame.minX, y: -frame.minY)
         canvas.drawMemberForeground(member, at: itemIndex, context: context)
         context.restoreGState()
-    }
-}
-
-private struct NativeMemberProfileAnchorView: View {
-    let presentation: ProfilePresentationState
-    let isPresented: Bool
-    let dismiss: () -> Void
-
-    var body: some View {
-        Color.clear
-            .accessibilityHidden(true)
-            .popover(
-                isPresented: Binding(
-                    get: { isPresented },
-                    set: { if !$0 { dismiss() } }
-                ),
-                attachmentAnchor: .rect(.bounds),
-                arrowEdge: .trailing
-            ) {
-                ProfilePresentationContent(presentation: presentation)
-            }
-    }
-}
-
-@MainActor
-final class NativeMemberProfileAnchorHostingView: NSHostingView<AnyView> {
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        nil
     }
 }
 

@@ -110,19 +110,28 @@ enum StablePopoverContentSizing {
     case constrained(CGSize)
 }
 
+enum StablePopoverDismissalBehavior: Equatable {
+    case native
+    case outsideSourceView
+}
+
 struct StablePopoverConfiguration {
     let preferredEdge: NSRectEdge
     let behavior: NSPopover.Behavior
     let animates: Bool
     let ignoresMouseEvents: Bool
     let contentSizing: StablePopoverContentSizing
+    let dismissalBehavior: StablePopoverDismissalBehavior
+    let stabilizesInitialContentSize: Bool
 
     static let hover = StablePopoverConfiguration(
         preferredEdge: .minY,
         behavior: .applicationDefined,
         animates: true,
         ignoresMouseEvents: true,
-        contentSizing: .constrained(CGSize(width: 400, height: 600))
+        contentSizing: .constrained(CGSize(width: 400, height: 600)),
+        dismissalBehavior: .native,
+        stabilizesInitialContentSize: false
     )
 
     static let intrinsicHoverLabel = StablePopoverConfiguration(
@@ -130,7 +139,9 @@ struct StablePopoverConfiguration {
         behavior: .applicationDefined,
         animates: true,
         ignoresMouseEvents: true,
-        contentSizing: .intrinsic
+        contentSizing: .intrinsic,
+        dismissalBehavior: .native,
+        stabilizesInitialContentSize: false
     )
 
     static let interactive = StablePopoverConfiguration(
@@ -138,7 +149,19 @@ struct StablePopoverConfiguration {
         behavior: .transient,
         animates: true,
         ignoresMouseEvents: false,
-        contentSizing: .constrained(CGSize(width: 520, height: 760))
+        contentSizing: .constrained(CGSize(width: 520, height: 760)),
+        dismissalBehavior: .native,
+        stabilizesInitialContentSize: false
+    )
+
+    static let memberProfile = StablePopoverConfiguration(
+        preferredEdge: .maxX,
+        behavior: .applicationDefined,
+        animates: true,
+        ignoresMouseEvents: false,
+        contentSizing: .constrained(CGSize(width: 520, height: 760)),
+        dismissalBehavior: .outsideSourceView,
+        stabilizesInitialContentSize: true
     )
 }
 
@@ -361,15 +384,24 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
         private var configuration = StablePopoverConfiguration.hover
         private var onDismiss: () -> Void = {}
         private var showIsScheduled = false
+        private var presentationIsScheduled = false
         private var refreshIsScheduled = false
+        private var closeIsScheduled = false
         private var shouldPresent = false
-        private var closesProgrammatically = false
         private var generation: UInt64 = 0
         private var geometryObserverTokens: [NSObjectProtocol] = []
+        private var dismissalEventMonitor: Any?
+        private var latestContent: Content?
+        private var presentationIdentity: AnyHashable?
+        private var programmaticallyClosingPopovers:
+            [ObjectIdentifier: NSPopover] = [:]
 
         isolated deinit {
             for token in geometryObserverTokens {
                 NotificationCenter.default.removeObserver(token)
+            }
+            if let dismissalEventMonitor {
+                NSEvent.removeMonitor(dismissalEventMonitor)
             }
         }
 
@@ -379,14 +411,22 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
             isPresented: Bool,
             configuration: StablePopoverConfiguration,
             onDismiss: @escaping () -> Void,
+            presentationIdentity: AnyHashable? = nil,
             content: Content
         ) {
             let sourceChanged = self.anchor?.sourceView !== anchor.sourceView
+            let replacesPresentedContent = isPresented
+                && presentationIdentity != nil
+                && self.presentationIdentity != nil
+                && self.presentationIdentity != presentationIdentity
+                && popover != nil
             self.anchor = anchor
             self.anchorSnapshot = anchorSnapshot
             self.configuration = configuration
             self.onDismiss = onDismiss
             shouldPresent = isPresented
+            latestContent = content
+            self.presentationIdentity = presentationIdentity
 
             if sourceChanged {
                 generation &+= 1
@@ -394,12 +434,19 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
                 installGeometryTracking()
             }
             guard isPresented else {
-                close()
+                scheduleClose()
+                return
+            }
+            closeIsScheduled = false
+            if replacesPresentedContent {
+                generation &+= 1
+                resetPresentation()
+                installGeometryTracking()
                 return
             }
             if let hostingController {
                 hostingController.rootView = content
-                refreshPresentation()
+                scheduleRefresh()
             } else {
                 scheduleShow(content: content)
             }
@@ -410,7 +457,7 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
             showIsScheduled = true
             let scheduledGeneration = generation
             Task { @MainActor [weak self] in
-                await Task.yield()
+                try? await Task.sleep(for: .milliseconds(20))
                 guard let self else { return }
                 self.showIsScheduled = false
                 guard self.shouldPresent, self.generation == scheduledGeneration else { return }
@@ -420,6 +467,7 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
         }
 
         private func show(content: Content) {
+            guard programmaticallyClosingPopovers.isEmpty else { return }
             guard attachAnchor() != nil else {
                 dismissBecauseAnchorIsUnavailable()
                 return
@@ -432,7 +480,94 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
             popover.contentViewController = hostingController
             self.hostingController = hostingController
             self.popover = popover
-            showPopover()
+            installDismissalMonitorIfNeeded()
+            if configuration.stabilizesInitialContentSize {
+                warmInitialContentSize(
+                    popover: popover,
+                    hostingController: hostingController
+                )
+                schedulePopoverPresentation()
+            } else {
+                showPopover()
+            }
+        }
+
+        private func warmInitialContentSize(
+            popover: NSPopover,
+            hostingController: NSHostingController<Content>
+        ) {
+            switch configuration.contentSizing {
+            case .intrinsic:
+                sizeIntrinsicPopover(popover, hostingController: hostingController)
+            case let .constrained(maximumContentSize):
+                sizeStablePopover(
+                    popover,
+                    hostingController: hostingController,
+                    maximumContentSize: maximumContentSize
+                )
+            }
+            hostingController.view.layoutSubtreeIfNeeded()
+        }
+
+        private func schedulePopoverPresentation() {
+            guard !presentationIsScheduled else { return }
+            presentationIsScheduled = true
+            let scheduledGeneration = generation
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(20))
+                guard let self else { return }
+                self.presentationIsScheduled = false
+                guard self.shouldPresent,
+                      self.generation == scheduledGeneration,
+                      self.popover != nil
+                else { return }
+                self.hostingController?.view.layoutSubtreeIfNeeded()
+                self.showPopover()
+            }
+        }
+
+        private func installDismissalMonitorIfNeeded() {
+            removeDismissalMonitor()
+            guard configuration.dismissalBehavior == .outsideSourceView else { return }
+            dismissalEventMonitor = NSEvent.addLocalMonitorForEvents(
+                matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown]
+            ) { [weak self] event in
+                self?.handleDismissalEvent(event) ?? event
+            }
+        }
+
+        private func handleDismissalEvent(_ event: NSEvent) -> NSEvent? {
+            guard shouldPresent else { return event }
+            if event.type == .keyDown {
+                guard event.keyCode == 53 else { return event }
+                dismissFromEventMonitor()
+                return nil
+            }
+            if event.window === popover?.contentViewController?.view.window {
+                return event
+            }
+            if let sourceView = anchor?.sourceView,
+               event.window === sourceView.window,
+               sourceView.bounds.contains(
+                   sourceView.convert(event.locationInWindow, from: nil)
+               )
+            {
+                return event
+            }
+            dismissFromEventMonitor()
+            return event
+        }
+
+        private func dismissFromEventMonitor() {
+            let onDismiss = onDismiss
+            close()
+            onDismiss()
+        }
+
+        private func removeDismissalMonitor() {
+            guard let dismissalEventMonitor else { return }
+            NSEvent.removeMonitor(dismissalEventMonitor)
+            self.dismissalEventMonitor = nil
         }
 
         private func showPopover() {
@@ -577,7 +712,7 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
             refreshIsScheduled = true
             let scheduledGeneration = generation
             Task { @MainActor [weak self] in
-                await Task.yield()
+                try? await Task.sleep(for: .milliseconds(20))
                 guard let self else { return }
                 self.refreshIsScheduled = false
                 guard self.shouldPresent, self.generation == scheduledGeneration else { return }
@@ -586,33 +721,76 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
             }
         }
 
-        func popoverDidClose(_ notification: Notification) {
-            popover = nil
-            hostingController = nil
-            anchorTracker.detach()
-            guard shouldPresent, !closesProgrammatically else { return }
+        func scheduleClose() {
             shouldPresent = false
+            guard !closeIsScheduled else { return }
+            closeIsScheduled = true
+            let scheduledGeneration = generation
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(20))
+                guard let self else { return }
+                self.closeIsScheduled = false
+                guard !self.shouldPresent,
+                      self.generation == scheduledGeneration
+                else { return }
+                self.resetPresentation()
+                self.anchor = nil
+                self.latestContent = nil
+                self.presentationIdentity = nil
+            }
+        }
+
+        func popoverDidClose(_ notification: Notification) {
+            guard let closedPopover = notification.object as? NSPopover else { return }
+            let identifier = ObjectIdentifier(closedPopover)
+            let closedProgrammatically =
+                programmaticallyClosingPopovers.removeValue(forKey: identifier) != nil
+            let closedCurrentPopover = popover === closedPopover
+            if closedCurrentPopover {
+                popover = nil
+                hostingController = nil
+                anchorTracker.detach()
+            }
+            if closedProgrammatically {
+                if shouldPresent,
+                   programmaticallyClosingPopovers.isEmpty,
+                   let latestContent
+                {
+                    scheduleShow(content: latestContent)
+                }
+                return
+            }
+            guard closedCurrentPopover, shouldPresent else { return }
+            shouldPresent = false
+            presentationIdentity = nil
             onDismiss()
         }
 
         func close() {
             shouldPresent = false
             generation &+= 1
+            closeIsScheduled = false
             resetPresentation()
             anchor = nil
+            latestContent = nil
+            presentationIdentity = nil
         }
 
         private func resetPresentation() {
             showIsScheduled = false
+            presentationIsScheduled = false
             refreshIsScheduled = false
-            closesProgrammatically = true
-            popover?.close()
-            closesProgrammatically = false
+            closeIsScheduled = false
+            if let popover {
+                programmaticallyClosingPopovers[ObjectIdentifier(popover)] = popover
+                popover.close()
+            }
             popover = nil
             hostingController = nil
             anchorSnapshot = nil
             anchorTracker.detach()
             removeGeometryObservers()
+            removeDismissalMonitor()
             if let sourceView = anchor?.sourceView as? StablePopoverSourceView {
                 sourceView.geometryDidChange = nil
                 sourceView.hierarchyDidChange = nil
