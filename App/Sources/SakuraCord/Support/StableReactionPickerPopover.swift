@@ -52,7 +52,7 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
         private var shouldPresent = false
 
         func update(
-            sourceView: NSView,
+            sourceView: StableReactionPickerSourceView,
             isPresented: Bool,
             preferredEdge: NSRectEdge,
             accessibilityIdentifier: String,
@@ -82,20 +82,18 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
         }
 
         private func show(
-            sourceView: NSView,
+            sourceView: StableReactionPickerSourceView,
             preferredEdge: NSRectEdge,
             accessibilityIdentifier: String,
             content: Content
         ) {
             guard popover == nil,
                   let window = sourceView.window,
-                  let contentView = window.contentView
+                  !sourceView.bounds.isEmpty
             else { return }
 
-            let anchorRectInWindow = sourceView.convert(sourceView.bounds, to: nil)
-            let frozenFrame = contentView.convert(anchorRectInWindow, from: nil)
-            let snapshotAnchor = StableReactionPickerSnapshotView(frame: frozenFrame)
-            contentView.addSubview(snapshotAnchor, positioned: .above, relativeTo: nil)
+            sourceView.layoutSubtreeIfNeeded()
+            let snapshotAnchor = sourceView.installSnapshotAnchor(in: window)
 
             let hostingController = NSHostingController(rootView: content)
             hostingController.view.setAccessibilityIdentifier(accessibilityIdentifier)
@@ -173,12 +171,40 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
 }
 
 final class StableReactionPickerSourceView: NSView {
+    private let snapshotAnchor = StableReactionPickerSnapshotView()
+
+    func installSnapshotAnchor(in window: NSWindow) -> NSView {
+        let rectInWindow = convert(bounds, to: nil)
+        if let contentView = window.contentView,
+           let container = contentView.superview
+        {
+            let rectInContent = contentView.convert(rectInWindow, from: nil)
+            let frozenFrame = container.convert(rectInContent, from: contentView)
+            if snapshotAnchor.superview !== container {
+                snapshotAnchor.removeFromSuperview()
+                container.addSubview(
+                    snapshotAnchor,
+                    positioned: .above,
+                    relativeTo: contentView
+                )
+            }
+            snapshotAnchor.frame = frozenFrame
+        } else {
+            if snapshotAnchor.superview !== self {
+                snapshotAnchor.removeFromSuperview()
+                addSubview(snapshotAnchor)
+            }
+            snapshotAnchor.frame = bounds
+        }
+        return snapshotAnchor
+    }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         nil
     }
 }
 
-private final class StableReactionPickerSnapshotView: NSView {
+final class StableReactionPickerSnapshotView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? {
         nil
     }

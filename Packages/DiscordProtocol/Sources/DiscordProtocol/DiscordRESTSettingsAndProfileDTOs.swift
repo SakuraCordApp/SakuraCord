@@ -109,6 +109,243 @@ enum DiscordSettingsProto {
         )
     }
 
+    static func gifFavorites(from data: Data) -> [GIFSearchResult] {
+        decodedGIFFavoriteContainer(from: data).favorites
+            .enumerated()
+            .sorted { left, right in
+                left.element.order == right.element.order
+                    ? left.offset < right.offset
+                    : left.element.order > right.element.order
+            }
+            .compactMap { $0.element.domain }
+    }
+
+    static func updatingGIFFavorite(
+        in data: Data,
+        gif: GIFSearchResult,
+        isFavorite: Bool
+    ) throws -> (data: Data, favorites: [GIFSearchResult]) {
+        var container = decodedGIFFavoriteContainer(from: data)
+        let key = gif.url.absoluteString
+        container.favorites.removeAll { $0.key == key }
+        if isFavorite {
+            let order = (container.favorites.map(\.order).max() ?? 0) + 1
+            let source = gif.previewURL ?? gif.mediaURL ?? gif.url
+            container.favorites.append(
+                StoredGIFFavorite(
+                    key: key,
+                    format: DiscordGIFFavoriteMediaPolicy.persistedFormat(
+                        for: source,
+                        declaredKind: source == gif.mediaURL
+                            ? gif.mediaKind
+                            : nil
+                    ),
+                    src: source.absoluteString,
+                    width: UInt64(clamping: max(0, gif.width ?? 0)),
+                    height: UInt64(clamping: max(0, gif.height ?? 0)),
+                    order: order
+                )
+            )
+            if container.favorites.count > 2 {
+                container.hideTooltip = true
+            }
+        }
+
+        let favoritePayload = encodedGIFFavoriteContainer(container)
+        guard favoritePayload.count <= 762_880 else {
+            throw ChatProviderError.invalidRequest(
+                "Discord's GIF favorites storage limit has been reached."
+            )
+        }
+        let updated = replacingLengthDelimitedField(
+            2,
+            in: data,
+            with: favoritePayload
+        )
+        return (updated, gifFavorites(from: updated))
+    }
+
+    private struct StoredGIFFavorite {
+        var key: String
+        var format: UInt64
+        var src: String
+        var width: UInt64
+        var height: UInt64
+        var order: UInt64
+
+        var domain: GIFSearchResult? {
+            guard let url = normalizedURL(key),
+                  let source = normalizedURL(src)
+            else { return nil }
+            let preview = DiscordGIFFavoriteMediaPolicy.previewURL(for: source)
+            let mediaKind: GIFMediaKind? = switch format {
+            case 1: .image
+            case 2: .video
+            default: nil
+            }
+            return GIFSearchResult(
+                id: key,
+                title: "Favorite GIF",
+                url: url,
+                previewURL: preview,
+                width: Int(clamping: width),
+                height: Int(clamping: height),
+                mediaURL: source,
+                mediaKind: mediaKind
+            )
+        }
+    }
+
+    private struct StoredGIFFavoriteContainer {
+        var favorites: [StoredGIFFavorite] = []
+        var hideTooltip = false
+    }
+
+    private static func decodedGIFFavoriteContainer(
+        from data: Data
+    ) -> StoredGIFFavoriteContainer {
+        var topLevel = ProtoReader(data: data)
+        while let field = topLevel.readRawField() {
+            guard field.field == 2, field.wireType == 2, let payload = field.payload else {
+                continue
+            }
+            return decodedGIFFavoriteContainerPayload(payload)
+        }
+        return StoredGIFFavoriteContainer()
+    }
+
+    private static func decodedGIFFavoriteContainerPayload(
+        _ data: Data
+    ) -> StoredGIFFavoriteContainer {
+        var container = StoredGIFFavoriteContainer()
+        var reader = ProtoReader(data: data)
+        while let field = reader.readRawField() {
+            if field.field == 1, field.wireType == 2, let payload = field.payload,
+               let favorite = decodedGIFFavoriteMapEntry(payload)
+            {
+                container.favorites.append(favorite)
+            } else if field.field == 2, field.wireType == 0 {
+                container.hideTooltip = field.varint != 0
+            }
+        }
+        return container
+    }
+
+    private static func decodedGIFFavoriteMapEntry(_ data: Data) -> StoredGIFFavorite? {
+        var reader = ProtoReader(data: data)
+        var key: String?
+        var favoriteData: Data?
+        while let field = reader.readRawField() {
+            if field.field == 1, field.wireType == 2, let payload = field.payload {
+                key = String(data: payload, encoding: .utf8)
+            } else if field.field == 2, field.wireType == 2 {
+                favoriteData = field.payload
+            }
+        }
+        guard let key, let favoriteData else { return nil }
+        var favorite = StoredGIFFavorite(
+            key: key,
+            format: 0,
+            src: "",
+            width: 0,
+            height: 0,
+            order: 0
+        )
+        var favoriteReader = ProtoReader(data: favoriteData)
+        while let field = favoriteReader.readRawField() {
+            switch (field.field, field.wireType) {
+            case (1, 0): favorite.format = field.varint ?? 0
+            case (2, 2):
+                favorite.src = field.payload.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+            case (3, 0): favorite.width = field.varint ?? 0
+            case (4, 0): favorite.height = field.varint ?? 0
+            case (5, 0): favorite.order = field.varint ?? 0
+            default: break
+            }
+        }
+        return favorite.src.isEmpty ? nil : favorite
+    }
+
+    private static func encodedGIFFavoriteContainer(
+        _ container: StoredGIFFavoriteContainer
+    ) -> Data {
+        var data = Data()
+        for favorite in container.favorites {
+            var value = Data()
+            value.append(protoVarintField(1, favorite.format))
+            value.append(protoStringField(2, favorite.src))
+            value.append(protoVarintField(3, favorite.width))
+            value.append(protoVarintField(4, favorite.height))
+            value.append(protoVarintField(5, favorite.order))
+
+            var mapEntry = Data()
+            mapEntry.append(protoStringField(1, favorite.key))
+            mapEntry.append(protoLengthDelimitedField(2, value))
+            data.append(protoLengthDelimitedField(1, mapEntry))
+        }
+        if container.hideTooltip {
+            data.append(protoVarintField(2, 1))
+        }
+        return data
+    }
+
+    private static func replacingLengthDelimitedField(
+        _ fieldNumber: Int,
+        in data: Data,
+        with payload: Data
+    ) -> Data {
+        var reader = ProtoReader(data: data)
+        var result = Data()
+        var replaced = false
+        while let field = reader.readRawField() {
+            if field.field == fieldNumber, field.wireType == 2 {
+                if !replaced {
+                    result.append(protoLengthDelimitedField(fieldNumber, payload))
+                    replaced = true
+                }
+            } else {
+                result.append(field.raw)
+            }
+        }
+        if !replaced {
+            result.append(protoLengthDelimitedField(fieldNumber, payload))
+        }
+        return result
+    }
+
+    private static func protoStringField(_ field: Int, _ value: String) -> Data {
+        protoLengthDelimitedField(field, Data(value.utf8))
+    }
+
+    private static func protoLengthDelimitedField(_ field: Int, _ value: Data) -> Data {
+        var data = protoVarint(UInt64(field << 3 | 2))
+        data.append(protoVarint(UInt64(value.count)))
+        data.append(value)
+        return data
+    }
+
+    private static func protoVarintField(_ field: Int, _ value: UInt64) -> Data {
+        var data = protoVarint(UInt64(field << 3))
+        data.append(protoVarint(value))
+        return data
+    }
+
+    private static func protoVarint(_ value: UInt64) -> Data {
+        var value = value
+        var data = Data()
+        repeat {
+            var byte = UInt8(value & 0x7F)
+            value >>= 7
+            if value != 0 { byte |= 0x80 }
+            data.append(byte)
+        } while value != 0
+        return data
+    }
+
+    private static func normalizedURL(_ value: String) -> URL? {
+        URL(string: value.hasPrefix("//") ? "https:\(value)" : value)
+    }
+
     private static func guildAndChannelFrecencyScores(
         from data: Data,
         nowMilliseconds: UInt64
@@ -492,6 +729,44 @@ struct ProtoReader {
         default: return false
         }
     }
+
+    mutating func readRawField() -> RawProtoField? {
+        let start = index
+        guard let tag = readTag() else { return nil }
+        var payload: Data?
+        var varint: UInt64?
+        switch tag.wireType {
+        case 0:
+            varint = readVarint()
+            guard varint != nil else { return nil }
+        case 1:
+            guard index + 8 <= data.count else { return nil }
+            index += 8
+        case 2:
+            payload = readLengthDelimited()
+            guard payload != nil else { return nil }
+        case 5:
+            guard index + 4 <= data.count else { return nil }
+            index += 4
+        default:
+            return nil
+        }
+        return RawProtoField(
+            field: tag.field,
+            wireType: tag.wireType,
+            payload: payload,
+            varint: varint,
+            raw: Data(data[start ..< index])
+        )
+    }
+}
+
+struct RawProtoField {
+    var field: Int
+    var wireType: Int
+    var payload: Data?
+    var varint: UInt64?
+    var raw: Data
 }
 
 struct LossyList<Element: Decodable>: Decodable {
@@ -1719,40 +1994,5 @@ struct MessageUpdateDTO: Decodable {
         if let mentionEveryone {
             message.mentionsEveryone = mentionEveryone
         }
-    }
-}
-
-struct GuildMemberListUpdateDTO: Decodable {
-    struct Group: Decodable {
-        var id: String
-        var count: Int
-    }
-
-    struct Operation: Decodable {
-        var op: String
-        var range: [Int]?
-        var index: Int?
-        var items: [Item]?
-        var item: Item?
-    }
-
-    struct Item: Decodable {
-        var member: GuildMemberDTO?
-        var presence: GuildPresenceDTO?
-    }
-
-    var guildID: String
-    var id: String
-    var memberCount: Int?
-    var onlineCount: Int?
-    var ops: [Operation]
-    var groups: [Group]?
-    enum CodingKeys: String, CodingKey {
-        case guildID = "guild_id"
-        case id
-        case memberCount = "member_count"
-        case onlineCount = "online_count"
-        case ops
-        case groups
     }
 }

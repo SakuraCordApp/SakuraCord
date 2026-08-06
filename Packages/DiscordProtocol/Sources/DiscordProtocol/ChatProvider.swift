@@ -58,6 +58,10 @@ public protocol ChatProvider: Sendable {
     ) async throws -> [ComponentSelectOption]
     func searchGIFs(query: String) async throws -> [GIFSearchResult]
     func trendingGIFs() async throws -> [GIFSearchResult]
+    func gifPickerLanding() async throws -> GIFPickerLanding
+    func favoriteGIFs() async throws -> [GIFSearchResult]
+    func setGIFFavorite(_ gif: GIFSearchResult, isFavorite: Bool) async throws
+        -> [GIFSearchResult]
     func stickers(in guildID: GuildID) async throws -> [MessageSticker]
     func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message
     func delete(messageID: MessageID, channelID: ChannelID) async throws
@@ -230,6 +234,20 @@ public extension ChatProvider {
     }
 
     func trendingGIFs() async throws -> [GIFSearchResult] {
+        throw ChatProviderError.capabilityDisabled(.gifs)
+    }
+
+    func gifPickerLanding() async throws -> GIFPickerLanding {
+        throw ChatProviderError.capabilityDisabled(.gifs)
+    }
+
+    func favoriteGIFs() async throws -> [GIFSearchResult] {
+        throw ChatProviderError.capabilityDisabled(.gifs)
+    }
+
+    func setGIFFavorite(_ gif: GIFSearchResult, isFavorite: Bool) async throws
+        -> [GIFSearchResult]
+    {
         throw ChatProviderError.capabilityDisabled(.gifs)
     }
 

@@ -175,7 +175,7 @@ extension NativeTimelineCanvasView {
               let model,
               let actions
         else {
-            if actionCapsuleState?.isReactionPickerPresented != true {
+            if actionCapsuleState?.isPresentationActive != true {
                 removeActionCapsule()
             }
             return
@@ -192,6 +192,11 @@ extension NativeTimelineCanvasView {
             guard let self else { return }
             if !isPresented, self.hoveredRow == nil {
                 self.removeActionCapsule()
+            } else {
+                Task { @MainActor [weak self] in
+                    await Task.yield()
+                    self?.refreshActionCapsuleSizeAndPosition()
+                }
             }
         }
         let canEdit = row.message.author.id == model.snapshot?.currentUser.id
@@ -218,7 +223,7 @@ extension NativeTimelineCanvasView {
             openThread: row.message.thread.map { thread in
                 { actions.openThread(thread) }
             },
-            delete: { [weak self] in self?.confirmDelete(row.message) }
+            delete: { actions.delete(row.message) }
         )
         // The canvas owns the capsule's exact document-coordinate frame.
         // Nested thread timelines extend beneath their top toolbar, so this
@@ -233,13 +238,18 @@ extension NativeTimelineCanvasView {
         actionCapsuleState = state
         actionCapsuleHost = host
         actionCapsuleMessageID = row.id
+        refreshActionCapsuleSizeAndPosition(at: index)
+    }
+
+    func refreshActionCapsuleSizeAndPosition(at knownIndex: Int? = nil) {
+        guard let host = actionCapsuleHost else { return }
         host.layoutSubtreeIfNeeded()
         let fitting = host.fittingSize
         actionCapsuleSize = NSSize(
             width: max(36, fitting.width),
             height: max(36, fitting.height)
         )
-        positionActionCapsule(at: index)
+        positionActionCapsule(at: knownIndex)
     }
 
     func positionActionCapsule(at knownIndex: Int? = nil) {
@@ -1095,6 +1105,7 @@ extension NativeTimelineCanvasView {
 
     func confirmDelete(_ message: Message) {
         guard let window, let actions else { return }
+        removeActionCapsule()
         let alert = NSAlert()
         alert.messageText = "Delete this message?"
         alert.informativeText = "This action cannot be undone."
@@ -1102,9 +1113,18 @@ extension NativeTimelineCanvasView {
         alert.addButton(withTitle: "Delete Message")
         alert.addButton(withTitle: "Cancel")
         alert.buttons.first?.hasDestructiveAction = true
-        alert.beginSheetModal(for: window) { response in
-            guard response == .alertFirstButtonReturn else { return }
-            actions.delete(message)
+        // Do not order a sheet synchronously from a SwiftUI-hosted button
+        // transaction. AppKit can throw while remote media views are being
+        // reconciled during that same update group.
+        Task { @MainActor [weak self, weak window] in
+            await Task.yield()
+            guard let self, let window, self.window === window,
+                  window.attachedSheet == nil
+            else { return }
+            alert.beginSheetModal(for: window) { response in
+                guard response == .alertFirstButtonReturn else { return }
+                actions.delete(message)
+            }
         }
     }
 }

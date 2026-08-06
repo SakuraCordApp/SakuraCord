@@ -1278,8 +1278,15 @@ extension AppModel {
         guildActivationTask = nil
         gifSearchTask?.cancel()
         gifSearchTask = nil
+        gifPickerLoadTask?.cancel()
+        gifPickerLoadTask = nil
         gifResults = []
+        gifCategories = []
+        gifTrendingPreviewURL = nil
+        favoriteGIFs = []
         isLoadingGIFs = false
+        isLoadingGIFPicker = false
+        gifFavoriteMutationURL = nil
         gifErrorMessage = nil
         commandLoadTask?.cancel()
         commandLoadTask = nil

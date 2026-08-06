@@ -106,6 +106,11 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var emojiTasks: [GuildID: Task<[DiscordEmoji], Error>] = [:]
     var cachedEmojiUserSettings: EmojiUserSettings?
     var emojiUserSettingsTask: Task<EmojiUserSettings, Error>?
+    var cachedFrecencySettingsProto: Data?
+    var frecencySettingsTask: Task<Data, Error>?
+    var cachedGIFPickerLanding: GIFPickerLanding?
+    var cachedGIFFavorites: [GIFSearchResult]?
+    var isMutatingGIFFavorite = false
     var cachedReactionReactors: [ReactionReactorCacheKey: [ReactionReactor]] = [:]
     var gatewayOpcodeRateLimitDates: [Int: Date] = [:]
     var reactionReactorCacheOrder: [ReactionReactorCacheKey] = []
@@ -994,10 +999,7 @@ extension DiscordRESTProvider {
             return try await task.value
         }
         let task = Task { [self] in
-            let response: UserSettingsProtoDTO = try await request("/users/@me/settings-proto/2")
-            guard let data = Data(base64Encoded: response.settings) else {
-                return EmojiUserSettings()
-            }
+            let data = try await frecencySettingsProto()
             return DiscordSettingsProto.emojiSettings(from: data)
         }
         emojiUserSettingsTask = task

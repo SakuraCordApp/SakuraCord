@@ -317,8 +317,13 @@ final class AppModel {
     }
     var outgoingDraftsByNonce: [String: SendMessageDraft] = [:]
     var gifResults: [GIFSearchResult] = []
+    var gifCategories: [GIFPickerCategory] = []
+    var gifTrendingPreviewURL: URL?
+    var favoriteGIFs: [GIFSearchResult] = []
     var isLoadingGIFs = false
+    var isLoadingGIFPicker = false
     var gifErrorMessage: String?
+    var gifFavoriteMutationURL: URL?
     var stickersByGuild: [GuildID: [MessageSticker]] = [:]
     var supportedCapabilities: Set<ChatCapability> = []
     var pendingComponentControls: Set<ComponentControlKey> = []
@@ -693,6 +698,7 @@ final class AppModel {
     @ObservationIgnored var forumLoadGeneration: UInt64 = 0
     @ObservationIgnored var threadLoadTask: Task<Void, Never>?
     @ObservationIgnored var gifSearchTask: Task<Void, Never>?
+    @ObservationIgnored var gifPickerLoadTask: Task<Void, Never>?
     @ObservationIgnored var commandLoadTask: Task<Void, Never>?
     @ObservationIgnored var commandAutocompleteTask: Task<Void, Never>?
     @ObservationIgnored var commandMemberSearchTask: Task<Void, Never>?

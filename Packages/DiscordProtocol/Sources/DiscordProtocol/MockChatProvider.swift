@@ -11,6 +11,7 @@ public actor MockChatProvider: ChatProvider {
     private var forumPostsByChannel: [ChannelID: [ForumPost]]
     private var profilesByUser: [UserID: UserProfile]
     private var privateCallsByChannel: [ChannelID: PrivateCall] = [:]
+    private var favoriteGIFValues: [GIFSearchResult] = []
     private var continuation: AsyncStream<ClientEvent>.Continuation?
     private var nextMessageID: UInt64
     public private(set) var typingRequests: [ChannelID] = []
@@ -1178,6 +1179,34 @@ public extension MockChatProvider {
         try Self.demoGIFs(query: query.isEmpty ? "GIF" : query)
     }
 
+    func gifPickerLanding() async throws -> GIFPickerLanding {
+        let preview = try Self.demoGIFs(query: "Category").first?.previewURL
+        return GIFPickerLanding(
+            categories: [
+                "hello", "lol", "love", "happy birthday", "thank you", "excited",
+                "yes", "no", "sorry", "happy", "sad", "thumbs up",
+            ]
+                .map {
+                    GIFPickerCategory(id: $0, name: $0, query: $0, previewURL: preview)
+                },
+            trendingPreviewURL: preview
+        )
+    }
+
+    func favoriteGIFs() async throws -> [GIFSearchResult] {
+        favoriteGIFValues
+    }
+
+    func setGIFFavorite(_ gif: GIFSearchResult, isFavorite: Bool) async throws
+        -> [GIFSearchResult]
+    {
+        favoriteGIFValues.removeAll { $0.url == gif.url }
+        if isFavorite {
+            favoriteGIFValues.insert(gif, at: 0)
+        }
+        return favoriteGIFValues
+    }
+
     func stickers(in guildID: GuildID) async throws -> [MessageSticker] {
         try [
             MessageSticker(
@@ -1200,12 +1229,20 @@ public extension MockChatProvider {
             )!
             try data.write(to: url, options: .atomic)
         }
-        return [
-            GIFSearchResult(
-                id: "demo-gif", title: "\(query) demo", url: url, previewURL: url, width: 1,
-                height: 1
+        let sizes = [(640, 640), (498, 210), (374, 352), (498, 498), (200, 150), (640, 492)]
+        return (0 ..< 50).map { index in
+            let size = sizes[index % sizes.count]
+            return GIFSearchResult(
+                id: "demo-gif-\(index)",
+                title: "\(query) demo \(index + 1)",
+                url: URL(string: "https://example.invalid/mock-gif/\(index)")!,
+                previewURL: url,
+                width: size.0,
+                height: size.1,
+                thumbnailURL: url,
+                mediaURL: url
             )
-        ]
+        }
     }
 
     private static func stageAttachment(_ sourceURL: URL, messageID: UInt64, index: Int) throws

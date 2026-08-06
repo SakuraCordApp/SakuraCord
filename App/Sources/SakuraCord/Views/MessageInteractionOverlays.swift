@@ -292,6 +292,7 @@ struct MessageActionCapsule: View {
     let message: Message
     let canEdit: Bool
     @Binding var isReactionPickerPresented: Bool
+    @Binding var isDeleteConfirmationPresented: Bool
     let retry: (() -> Void)?
     let edit: () -> Void
     let reply: (() -> Void)?
@@ -302,6 +303,14 @@ struct MessageActionCapsule: View {
     let delete: () -> Void
 
     var body: some View {
+        if isDeleteConfirmationPresented {
+            deleteConfirmation
+        } else {
+            actions
+        }
+    }
+
+    private var actions: some View {
         HoverActionPill {
             if let retry {
                 HoverActionButton(
@@ -332,8 +341,34 @@ struct MessageActionCapsule: View {
             }
             if canEdit {
                 HoverActionButton(
-                    systemImage: "trash", help: "Delete message", role: .destructive, action: delete
-                )
+                    systemImage: "trash",
+                    help: "Delete message",
+                    role: .destructive
+                ) {
+                    isDeleteConfirmationPresented = true
+                }
+            }
+        }
+    }
+
+    private var deleteConfirmation: some View {
+        HoverActionPill {
+            Text("Delete message?")
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 4)
+            HoverActionButton(
+                systemImage: "xmark",
+                help: "Cancel deletion"
+            ) {
+                isDeleteConfirmationPresented = false
+            }
+            HoverActionButton(
+                systemImage: "trash.fill",
+                help: "Delete message",
+                role: .destructive
+            ) {
+                isDeleteConfirmationPresented = false
+                delete()
             }
         }
     }

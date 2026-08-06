@@ -152,6 +152,7 @@ struct AnimatedRemoteImage: View {
     var fallbackInset: CGFloat = 2
     var maximumPixelDimension: Int?
     var contentMode: ContentMode = .fit
+    var onFailure: (() -> Void)?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("reduceAnimatedMedia") private var reduceAnimatedMedia = false
@@ -166,7 +167,8 @@ struct AnimatedRemoteImage: View {
         fallbackSystemImage: String? = nil,
         fallbackInset: CGFloat = 2,
         maximumPixelDimension: Int? = nil,
-        contentMode: ContentMode = .fit
+        contentMode: ContentMode = .fit,
+        onFailure: (() -> Void)? = nil
     ) {
         self.url = url
         self.animates = animates
@@ -175,6 +177,7 @@ struct AnimatedRemoteImage: View {
         self.fallbackInset = fallbackInset
         self.maximumPixelDimension = maximumPixelDimension
         self.contentMode = contentMode
+        self.onFailure = onFailure
 
         let loadID = AnimatedRemoteImageRequestIdentity(
             url: url,
@@ -247,6 +250,7 @@ struct AnimatedRemoteImage: View {
                 decodedImage = nil
                 displayedLoadID = nil
                 didFail = true
+                onFailure?()
             }
         }
     }
@@ -1241,6 +1245,229 @@ struct LoopingRemoteWebMedia: NSViewRepresentable {
             guard isReady else { return }
             webView?.evaluateJavaScript(
                 "window.setPlaybackEnabled(\(isPlaying ? "true" : "false"))"
+            )
+        }
+    }
+}
+
+nonisolated enum LoopingRemoteVideoPolicy {
+    static func documentBaseURL(for source: URL) -> URL? {
+        guard let scheme = source.scheme,
+              let host = source.host()
+        else { return nil }
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = host
+        components.port = source.port
+        components.path = "/"
+        return components.url
+    }
+}
+
+/// Plays remote WebM and MP4 GIF media using WebKit's native video pipeline.
+/// This is reserved for Discord favourites whose persisted source has no GIF
+/// fallback; ordinary GIF/APNG/WebP media stays on the lower-overhead ImageIO
+/// path.
+struct LoopingRemoteVideo: NSViewRepresentable {
+    let url: URL
+    let isPlaying: Bool
+    let contentMode: ContentMode
+
+    private static let mediaDataStore = WKWebsiteDataStore.nonPersistent()
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> PassthroughWebView {
+        let configuration = WKWebViewConfiguration()
+        configuration.mediaTypesRequiringUserActionForPlayback = []
+        configuration.allowsAirPlayForMediaPlayback = false
+        configuration.websiteDataStore = Self.mediaDataStore
+        configuration.userContentController.add(
+            context.coordinator,
+            name: Coordinator.mediaStatusHandler
+        )
+        let webView = PassthroughWebView(frame: .zero, configuration: configuration)
+        webView.setValue(false, forKey: "drawsBackground")
+        webView.underPageBackgroundColor = .clear
+        webView.navigationDelegate = context.coordinator
+        context.coordinator.webView = webView
+        context.coordinator.isPlaying = isPlaying
+        load(in: webView, coordinator: context.coordinator)
+        return webView
+    }
+
+    func updateNSView(_ webView: PassthroughWebView, context: Context) {
+        load(in: webView, coordinator: context.coordinator)
+        context.coordinator.setPlaying(isPlaying)
+    }
+
+    static func dismantleNSView(_ webView: PassthroughWebView, coordinator: Coordinator) {
+        coordinator.setPlaying(false)
+        webView.stopLoading()
+        webView.navigationDelegate = nil
+        webView.configuration.userContentController
+            .removeScriptMessageHandler(forName: Coordinator.mediaStatusHandler)
+        coordinator.webView = nil
+        coordinator.currentKey = nil
+    }
+
+    private func load(in webView: WKWebView, coordinator: Coordinator) {
+        let key = "\(url.absoluteString)|\(contentMode)"
+        guard coordinator.currentKey != key else { return }
+        coordinator.currentKey = key
+        coordinator.isReady = false
+        coordinator.didRetryMediaLoad = false
+        coordinator.sourceHost = url.host() ?? "unknown"
+        coordinator.sourceExtension = url.pathExtension.lowercased()
+        webView.loadHTMLString(
+            html,
+            baseURL: LoopingRemoteVideoPolicy.documentBaseURL(for: url)
+        )
+    }
+
+    private var html: String {
+        let fit = contentMode == .fill ? "cover" : "contain"
+        return """
+        <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+        <style>
+        html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}
+        video{display:block;width:100%;height:100%;object-fit:\(fit);pointer-events:none;background:transparent}
+        </style></head><body>
+        <video id="animation" src="\(escapedURL)" autoplay loop muted playsinline preload="auto"></video>
+        <script>
+        const animation = document.getElementById('animation');
+        let playbackEnabled = \(isPlaying ? "true" : "false");
+        const syncPlayback = () => {
+          if (playbackEnabled && document.visibilityState === 'visible') {
+            animation.play().catch(() => {});
+          } else {
+            animation.pause();
+          }
+        };
+        window.setPlaybackEnabled = enabled => { playbackEnabled = enabled; syncPlayback(); };
+        const report = (event, code = 0) => {
+          try { window.webkit.messageHandlers.mediaStatus.postMessage({event, code}); } catch (_) {}
+        };
+        animation.addEventListener('loadeddata', () => report('loaded'));
+        animation.addEventListener('canplay', () => { report('ready'); syncPlayback(); });
+        animation.addEventListener('error', () => report('error', animation.error?.code ?? 0));
+        document.addEventListener('visibilitychange', syncPlayback);
+        syncPlayback();
+        </script></body></html>
+        """
+    }
+
+    private var escapedURL: String {
+        url.absoluteString
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+        static let mediaStatusHandler = "mediaStatus"
+        private static let logger = Logger(
+            subsystem: "dev.sakuracord.SakuraCord",
+            category: "GIFPickerMedia"
+        )
+
+        var currentKey: String?
+        weak var webView: WKWebView?
+        var isPlaying = false
+        var isReady = false
+        var didRetryMediaLoad = false
+        var sourceHost = "unknown"
+        var sourceExtension = "unknown"
+
+        func setPlaying(_ value: Bool) {
+            guard isPlaying != value else { return }
+            isPlaying = value
+            applyPlaybackState()
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {
+            isReady = true
+            applyPlaybackState()
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            didFail navigation: WKNavigation?,
+            withError error: Error
+        ) {
+            reportNavigationFailure(error)
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            didFailProvisionalNavigation navigation: WKNavigation?,
+            withError error: Error
+        ) {
+            reportNavigationFailure(error)
+        }
+
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            Self.logger.error(
+                "GIF video web process terminated; host=\(self.sourceHost, privacy: .public) extension=\(self.sourceExtension, privacy: .public)"
+            )
+            webView.reload()
+        }
+
+        func userContentController(
+            _ userContentController: WKUserContentController,
+            didReceive message: WKScriptMessage
+        ) {
+            guard message.name == Self.mediaStatusHandler,
+                  let payload = message.body as? [String: Any],
+                  let event = payload["event"] as? String
+            else { return }
+
+            switch event {
+            case "ready":
+                isReady = true
+                applyPlaybackState()
+            case "error":
+                let code = payload["code"] as? Int ?? 0
+                retryMediaElementOnce(errorCode: code)
+            default:
+                break
+            }
+        }
+
+        private func applyPlaybackState() {
+            guard isReady else { return }
+            webView?.evaluateJavaScript(
+                "window.setPlaybackEnabled(\(isPlaying ? "true" : "false"))"
+            )
+        }
+
+        private func retryMediaElementOnce(errorCode: Int) {
+            guard !didRetryMediaLoad else {
+                Self.logger.error(
+                    "GIF video failed after bounded retry; host=\(self.sourceHost, privacy: .public) extension=\(self.sourceExtension, privacy: .public) mediaError=\(errorCode, privacy: .public)"
+                )
+                return
+            }
+            didRetryMediaLoad = true
+            Self.logger.notice(
+                "Retrying GIF video once; host=\(self.sourceHost, privacy: .public) extension=\(self.sourceExtension, privacy: .public) mediaError=\(errorCode, privacy: .public)"
+            )
+            webView?.evaluateJavaScript(
+                "animation.load(); syncPlayback();"
+            )
+        }
+
+        private func reportNavigationFailure(_ error: Error) {
+            let nsError = error as NSError
+            Self.logger.error(
+                """
+                GIF video document failed; host=\(self.sourceHost, privacy: .public) \
+                extension=\(self.sourceExtension, privacy: .public) \
+                domain=\(nsError.domain, privacy: .public) \
+                code=\(nsError.code, privacy: .public)
+                """
             )
         }
     }

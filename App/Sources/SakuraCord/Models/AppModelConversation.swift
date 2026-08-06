@@ -1123,7 +1123,7 @@ extension AppModel {
         gifSearchTask = Task { [weak self] in
             guard let self else { return }
             do {
-                try await Task.sleep(for: .milliseconds(300))
+                try await Task.sleep(for: .milliseconds(250))
                 guard await session.provider.supports(.gifs),
                       isCurrentAccountSession(session)
                 else {
@@ -1147,6 +1147,66 @@ extension AppModel {
                 gifResults = []
                 gifErrorMessage = error.localizedDescription
                 isLoadingGIFs = false
+            }
+        }
+    }
+
+    func loadGIFPicker() {
+        gifPickerLoadTask?.cancel()
+        isLoadingGIFPicker = true
+        gifErrorMessage = nil
+        let session = accountSession()
+        gifPickerLoadTask = Task { [weak self] in
+            guard let self else { return }
+            defer {
+                if isCurrentAccountSession(session) {
+                    gifPickerLoadTask = nil
+                    isLoadingGIFPicker = false
+                }
+            }
+            do {
+                guard await session.provider.supports(.gifs),
+                      isCurrentAccountSession(session)
+                else {
+                    throw ChatProviderError.capabilityDisabled(.gifs)
+                }
+                async let landing = session.provider.gifPickerLanding()
+                async let favorites = session.provider.favoriteGIFs()
+                let (loadedLanding, loadedFavorites) = try await (landing, favorites)
+                guard !Task.isCancelled, isCurrentAccountSession(session) else { return }
+                gifCategories = loadedLanding.categories
+                gifTrendingPreviewURL = loadedLanding.trendingPreviewURL
+                favoriteGIFs = loadedFavorites
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled, isCurrentAccountSession(session) else { return }
+                gifErrorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func setGIFFavorite(_ gif: GIFSearchResult, isFavorite: Bool) {
+        guard gifFavoriteMutationURL == nil else { return }
+        gifFavoriteMutationURL = gif.url
+        let session = accountSession()
+        Task { [weak self] in
+            guard let self else { return }
+            defer {
+                if isCurrentAccountSession(session) {
+                    gifFavoriteMutationURL = nil
+                }
+            }
+            do {
+                let favorites = try await session.provider.setGIFFavorite(
+                    gif,
+                    isFavorite: isFavorite
+                )
+                guard isCurrentAccountSession(session) else { return }
+                favoriteGIFs = favorites
+            } catch {
+                guard isCurrentAccountSession(session) else { return }
+                gifErrorMessage = error.localizedDescription
             }
         }
     }

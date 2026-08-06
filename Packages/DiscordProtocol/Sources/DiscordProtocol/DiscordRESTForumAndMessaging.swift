@@ -1030,7 +1030,7 @@ extension DiscordRESTProvider {
     }
 
     public func supports(_ capability: ChatCapability) async -> Bool {
-        capability == .slashCommands || capability == .forums
+        capability == .slashCommands || capability == .forums || capability == .gifs
     }
 
     public func applicationCommandCatalog(for target: ApplicationCommandIndexTarget) async throws

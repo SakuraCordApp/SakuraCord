@@ -1,6 +1,6 @@
 # Discord production protocol baseline
 
-Last repository audit: 4 August 2026, in a working tree based on SakuraCord
+Last repository audit: 6 August 2026, in a working tree based on SakuraCord
 commit `5a2f42d`.
 
 This document describes SakuraCord's durable network contract and the dated
@@ -41,6 +41,19 @@ No token, cookie, authorization header, message body, personal payload,
 fingerprint, installation identifier, or unsanitized traffic is stored in this
 repository. Treat every build number and observed payload as a dated snapshot,
 not current official behavior.
+
+The GIF-picker surface was re-audited on 6 August 2026 against clean, signed,
+notarized Discord desktop `0.0.406` and production asset
+`web.b96889ed56c413ab.js` (SHA-256
+`1990d86f35f4e4071ff499fcd0f18c04b44a27fdbfafd61b80011c67c10b1654`).
+The clean host used the existing authenticated Discord profile while the
+installed modified Discord/Equicord bundle remained untouched. Sanitized CDP
+observation covered opening the picker, opening trending and favourites,
+searching for `hello`, and one add-then-remove favourite restoration. No GIF
+was sent and no content, credential, cookie, or authorization value was
+retained. Paicord has a placeholder picker and the matching generated
+favourites protobuf schema but no GIF HTTP implementation. Swiftcord v1 has no
+corresponding GIF picker, search, or favourites path.
 
 The clean desktop observation covered sign-in restoration, Gateway startup,
 opening a public guild and its default channel, history loading, and a renderer
@@ -88,7 +101,7 @@ request-contract and request-budget tests.
 | Slash commands | Enabled | Enabled |
 | Message components and returned modals | Disabled | Enabled with fixtures |
 | Remote component choices | Disabled | Enabled with local fixtures |
-| GIF search | Disabled | Enabled with fixtures |
+| GIF picker, search, favourites, and sending | Enabled | Enabled with fixtures |
 | Guild sticker catalog and sticker sending | Disabled | Enabled with fixtures |
 
 Rendering decoded embeds, Components V2, stickers, attachments, and interaction
@@ -161,7 +174,11 @@ and retained as evidence.
 | `GET /users/{user}/profile` | Explicit profile; `with_mutual_guilds=true`, `with_mutual_friends=true`, `with_mutual_friends_count=true`, plus `guild_id` only in guild context; coalesced by user and guild context. A `404` for an unavailable user remains scoped to the profile presentation and does not stop the session. | Current first-party and Paicord; Swiftcord has historical profile data but no equivalent complete route. |
 | `GET /collectibles-products/{product}` | At most one cache-miss read for a profile effect returned by the profile response; query contains the current `locale`. | Current first-party route; P−, S−. The obsolete `/user-profile-effects` fallback was removed. |
 | `GET /guilds/{guild}/emojis` | Stale/missing Gateway and disk-cache fallback; no body, coalesced. | Public emoji semantics and all three client references. |
-| `GET /users/@me/settings-proto/2` | Explicit emoji-settings cache miss; no body, coalesced for the provider session. | Current first-party, Paicord, and Swiftcord's versioned settings-proto path. |
+| `GET /users/@me/settings-proto/2` | Explicit emoji- or GIF-favourites-settings cache miss; no body, coalesced for the provider session. | Current first-party and Paicord's generated Frecency settings schema; Swiftcord has the versioned settings-proto path but no GIF picker. |
+| `PATCH /users/@me/settings-proto/2` | One explicit GIF favourite add or remove; JSON contains only `settings`, whose value is the complete updated base64 Frecency proto. The favourite map key is the canonical GIF URL. Its value contains format (`IMAGE = 1`, `VIDEO = 2`), source URL, width, height, and monotonically increasing order; display order is descending order. The declared format is preserved on reads, including for extensionless CDN sources. Unrelated and unknown top-level proto fields are preserved. | Current first-party action and generated Paicord schema; Swiftcord v1 has no GIF favourite mutation. |
+| `GET /gifs/trending?locale={locale}&media_format=webm` | Opening the GIF picker; one cacheable landing read returning the current base categories in server order and their preview media. | Current first-party route and clean-client request; P−, S−. |
+| `GET /gifs/trending-gifs?media_format=webm&locale={locale}` | Explicit Trending GIFs selection; no body. The returned order is preserved. | Current first-party route and clean-client request; P−, S−. |
+| `GET /gifs/search?q={query}&media_format=webm&locale={locale}` | Nonempty picker search after the current 250 ms debounce; no speculative or paginated follow-up. The live default response is 50 results and its order is preserved. | Current first-party route/action and clean-client `hello` request; P−, S−. |
 | `GET /channels/{channel}/messages` | Visible history only; guild history requires effective `VIEW_CHANNEL` and `READ_MESSAGE_HISTORY`, and voice-channel history additionally requires `CONNECT`. The current clean client uses `limit=10` for a newly selected uncached channel, which SakuraCord matches once per channel per uninterrupted Gateway connection. Reopening a loaded channel restores its bounded session-memory page and sends no history request. After a Gateway gap, the retained page is presented immediately but its completeness marker is invalidated; returning to Ready refreshes the selected page once and later reopened pages refresh once on selection. Older-page pagination uses ordered `before` then `limit=50`; no body. | Public message semantics, current first-party permission/message paths and stale-connection refresh, and Paicord's permission-checked channel store. Swiftcord v1 checks `VIEW_CHANNEL` before presentation but otherwise supplies only a historical unguarded/refetching history path. Paicord retains a per-channel in-memory store and uses a historical 50-message initial page. The current first-party cache behavior and connection-generation invalidation take precedence. |
 | `GET /channels/{thread}` | One unknown-thread deep-link resolution; no body. | Public channel semantics and all three references. |
 | `POST /channels/{forum}/threads?use_nested_fields=true` | Explicit forum creation; `name`, `auto_archive_duration`, ordered `applied_tags`, nested `message` with `content`, `sticker_ids:[]`, and attachments only when uploaded. | Current first-party action; Paicord and Swiftcord have only partial/historical thread creation. |
@@ -186,6 +203,13 @@ and retained as evidence.
 | `GET /channels/{dm}/call` | One-to-one explicit call start readiness read only; no body. | Current first-party; P−, S− for the current readiness contract. |
 | `POST /channels/{dm}/call/ring` | Explicit call start after pushed call creation; `recipients:null` or the explicit recipient list. | Current first-party; Paicord partial, S−. |
 | `POST /channels/{dm}/call/stop-ringing` | Explicit decline; nonempty `recipients` list. | Current first-party; Paicord partial, S−. |
+
+The first-party asset also defines `/gifs/select`, `/gifs/suggest`, and
+`/gifs/trending-search`. They are not required for picker content, search,
+favourite persistence, or message sending and SakuraCord deliberately does not
+issue those analytics/suggestion requests. A picker open creates the landing
+read and the shared settings read only. Search and trending each create one
+GET, and each favourite action creates one non-retried PATCH.
 
 ### Attachment selection and external-host fallback
 

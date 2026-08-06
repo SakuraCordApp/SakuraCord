@@ -1382,7 +1382,7 @@ extension NativeTimelineCanvasView {
         if let value {
             setNeedsDisplay(rowFrame(at: value))
         }
-        if value == nil, actionCapsuleState?.isReactionPickerPresented == true {
+        if value == nil, actionCapsuleState?.isPresentationActive == true {
             return
         }
         reconcileActionCapsule()

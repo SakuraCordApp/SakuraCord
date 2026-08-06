@@ -507,23 +507,59 @@ public indirect enum MessageComponent: Identifiable, Codable, Hashable, Sendable
     }
 }
 
+public enum GIFMediaKind: String, Codable, Hashable, Sendable {
+    case image
+    case video
+}
+
 public struct GIFSearchResult: Identifiable, Codable, Hashable, Sendable {
     public var id: String
     public var title: String
     public var url: URL
     public var previewURL: URL?
+    public var thumbnailURL: URL?
+    public var mediaURL: URL?
+    public var mediaKind: GIFMediaKind?
     public var width: Int?
     public var height: Int?
     public init(
         id: String, title: String, url: URL, previewURL: URL? = nil, width: Int? = nil,
-        height: Int? = nil
+        height: Int? = nil, thumbnailURL: URL? = nil, mediaURL: URL? = nil,
+        mediaKind: GIFMediaKind? = nil
     ) {
         self.id = id
         self.title = title
         self.url = url
         self.previewURL = previewURL
+        self.thumbnailURL = thumbnailURL
+        self.mediaURL = mediaURL
+        self.mediaKind = mediaKind
         self.width = width
         self.height = height
+    }
+}
+
+public struct GIFPickerCategory: Identifiable, Codable, Hashable, Sendable {
+    public var id: String
+    public var name: String
+    public var query: String
+    public var previewURL: URL?
+
+    public init(id: String, name: String, query: String, previewURL: URL? = nil) {
+        self.id = id
+        self.name = name
+        self.query = query
+        self.previewURL = previewURL
+    }
+}
+
+public struct GIFPickerLanding: Codable, Hashable, Sendable {
+    public var categories: [GIFPickerCategory]
+    public var trendingPreviewURL: URL?
+
+    public init(categories: [GIFPickerCategory], trendingPreviewURL: URL? = nil) {
+        self.categories = categories
+        self.trendingPreviewURL = trendingPreviewURL
     }
 }
 

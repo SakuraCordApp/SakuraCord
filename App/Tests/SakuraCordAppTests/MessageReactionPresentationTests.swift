@@ -412,6 +412,30 @@ import Testing
         == "reaction-picker-toolbar")
 }
 
+@MainActor
+@Test func `reaction picker snapshot never becomes a child of the window content root`() throws {
+    let window = NSWindow(
+        contentRect: CGRect(x: 40, y: 40, width: 320, height: 160),
+        styleMask: [.borderless],
+        backing: .buffered,
+        defer: false
+    )
+    let contentView = NSView(frame: window.contentLayoutRect)
+    let sourceView = StableReactionPickerSourceView(
+        frame: CGRect(x: 180, y: 80, width: 36, height: 36)
+    )
+    contentView.addSubview(sourceView)
+    window.contentView = contentView
+    window.orderFrontRegardless()
+    defer { window.orderOut(nil) }
+
+    let snapshot = sourceView.installSnapshotAnchor(in: window)
+    let contentContainer = try #require(contentView.superview)
+
+    #expect(snapshot.superview === contentContainer)
+    #expect(snapshot.superview !== contentView)
+}
+
 @Test func `visible reaction preview loading is stable and skips known reactors`() {
     let missing = Reaction(emoji: "🔥", count: 8)
     let known = Reaction(emoji: "✅", count: 2, reactors: [reactor(1, "One")])

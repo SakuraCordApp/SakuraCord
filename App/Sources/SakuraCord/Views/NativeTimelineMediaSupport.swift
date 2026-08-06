@@ -1366,8 +1366,19 @@ final class NativeTimelineActionCapsuleState: ObservableObject {
     @Published var isReactionPickerPresented = false {
         didSet {
             guard oldValue != isReactionPickerPresented else { return }
-            presentationDidChange?(isReactionPickerPresented)
+            presentationDidChange?(isPresentationActive)
         }
+    }
+
+    @Published var isDeleteConfirmationPresented = false {
+        didSet {
+            guard oldValue != isDeleteConfirmationPresented else { return }
+            presentationDidChange?(isPresentationActive)
+        }
+    }
+
+    var isPresentationActive: Bool {
+        isReactionPickerPresented || isDeleteConfirmationPresented
     }
 
     var presentationDidChange: ((Bool) -> Void)?
@@ -1393,6 +1404,8 @@ struct NativeTimelineActionCapsuleOverlay: View {
             message: message,
             canEdit: canEdit,
             isReactionPickerPresented: $state.isReactionPickerPresented,
+            isDeleteConfirmationPresented:
+                $state.isDeleteConfirmationPresented,
             retry: retry,
             edit: edit,
             reply: reply,
