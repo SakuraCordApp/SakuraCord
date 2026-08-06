@@ -728,11 +728,13 @@ private struct InlineEditKeycap: View {
 struct MessageProfilePopoverContent: View {
     let model: AppModel
     let userID: UserID
+    let requestID: UUID
 
     var body: some View {
         Group {
             if let presentation = model.contextualProfilePresentation,
-               presentation.member.id == userID
+               presentation.member.id == userID,
+               presentation.requestID == requestID
             {
                 ProfilePresentationContent(presentation: presentation)
             } else {
@@ -740,7 +742,7 @@ struct MessageProfilePopoverContent: View {
             }
         }
         .onDisappear {
-            model.dismissContextualProfile(for: userID)
+            model.dismissContextualProfile(requestID: requestID)
         }
     }
 }

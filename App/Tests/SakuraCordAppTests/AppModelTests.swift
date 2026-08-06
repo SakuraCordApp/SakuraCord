@@ -3770,6 +3770,24 @@ private actor FailingRemovalCredentialStore: CredentialStore {
 }
 
 @MainActor
+@Test func `stale message profile disappearance cannot clear a repeated click`() async throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    await model.start()
+    let member = try #require(model.members.first)
+
+    let firstRequestID = model.showProfile(for: member.user)
+    let secondRequestID = model.showProfile(for: member.user)
+    #expect(firstRequestID != secondRequestID)
+    #expect(model.contextualProfilePresentation?.requestID == secondRequestID)
+
+    model.dismissContextualProfile(requestID: firstRequestID)
+    #expect(model.contextualProfilePresentation?.requestID == secondRequestID)
+
+    model.dismissContextualProfile(requestID: secondRequestID)
+    #expect(model.contextualProfilePresentation == nil)
+}
+
+@MainActor
 private func reactionMutationTestModel(provider: any ChatProvider) -> AppModel {
     AppModel(
         launchMode: .offlineTesting,

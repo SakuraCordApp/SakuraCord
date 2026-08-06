@@ -1520,11 +1520,12 @@ extension AppModel {
         presentProfile(for: member, destination: .inspector)
     }
 
-    func showProfile(for user: User) {
+    @discardableResult
+    func showProfile(for user: User) -> UUID {
         let member =
             membersByID[user.id]
                 ?? Member(user: user, roleName: "Member", status: .offline)
-        presentProfile(for: member, destination: .contextual)
+        return presentProfile(for: member, destination: .contextual)
     }
 
     func showInspectorProfile(for user: User) {
@@ -1557,10 +1558,11 @@ extension AppModel {
         )
     }
 
+    @discardableResult
     func presentProfile(
         for member: Member,
         destination: ProfilePresentationDestination
-    ) {
+    ) -> UUID {
         let requestID = UUID()
         let guildID = selectedGuildID
         let cacheKey = ProfileCacheKey(
@@ -1585,7 +1587,7 @@ extension AppModel {
             contextualProfileTask?.cancel()
             contextualProfilePresentation = presentation
         }
-        guard cachedProfile == nil else { return }
+        guard cachedProfile == nil else { return requestID }
         let session = accountSession()
 
         let task = Task { [weak self] in
@@ -1635,6 +1637,7 @@ extension AppModel {
         case .contextual:
             contextualProfileTask = task
         }
+        return requestID
     }
 
     func dismissInspectorProfile() {
@@ -1653,6 +1656,13 @@ extension AppModel {
         contextualProfileTask?.cancel()
         contextualProfileTask = nil
         contextualProfilePresentation = nil
+    }
+
+    func dismissContextualProfile(requestID: UUID) {
+        guard contextualProfilePresentation?.requestID == requestID else {
+            return
+        }
+        dismissContextualProfile()
     }
 
     func dismissAllProfiles(clearsCache: Bool = false) {

@@ -638,14 +638,15 @@ extension NativeTimelineCanvasView {
         guard let model else { return }
         closeMentionPopover()
         closeMessageProfilePopover()
-        model.showProfile(for: user)
+        let requestID = model.showProfile(for: user)
         let popover = NSPopover()
         popover.behavior = .transient
         popover.animates = true
         popover.contentViewController = NSHostingController(
             rootView: MessageProfilePopoverContent(
                 model: model,
-                userID: user.id
+                userID: user.id,
+                requestID: requestID
             )
         )
         messageProfilePopover = popover
@@ -667,12 +668,13 @@ extension NativeTimelineCanvasView {
     ) {
         guard let model else { return }
         closeMessageProfilePopover()
-        model.showProfile(for: user)
+        let requestID = model.showProfile(for: user)
         showMentionPopover(
             AnyView(
                 MessageProfilePopoverContent(
                     model: model,
-                    userID: user.id
+                    userID: user.id,
+                    requestID: requestID
                 )
             ),
             anchor: anchor
