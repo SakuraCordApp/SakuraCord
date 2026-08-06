@@ -59,12 +59,135 @@ nonisolated enum GIFMasonryLayout {
 }
 
 nonisolated enum GIFPickerMediaPolicy {
-    static func requiresWebVideoPlayback(
+    private static let videoExtensions = ["webm", "mp4"]
+
+    static func isVideo(
         _ url: URL,
         declaredKind: GIFMediaKind? = nil
     ) -> Bool {
         declaredKind == .video
-            || ["webm", "mp4"].contains(url.pathExtension.lowercased())
+            || videoExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    static func nativeAnimationURL(for gif: GIFSearchResult) -> URL? {
+        nativeAnimationURLs(for: gif).first
+    }
+
+    static func nativeAnimationURLs(for gif: GIFSearchResult) -> [URL] {
+        var candidates: [URL] = []
+        for candidate in [gif.previewURL, gif.mediaURL].compactMap(\.self) {
+            if isVideo(
+                candidate,
+                declaredKind: candidate == gif.mediaURL ? gif.mediaKind : nil
+            ) {
+                if let alternate = alternateURL(
+                    for: candidate,
+                    pathExtension: "gif",
+                    tenorFormatSuffix: "AM"
+                ) {
+                    candidates.append(alternate)
+                }
+            } else {
+                candidates.append(candidate)
+            }
+        }
+        return candidates.reduce(into: []) { unique, candidate in
+            if !unique.contains(candidate) { unique.append(candidate) }
+        }
+    }
+
+    static func nativeVideoURL(for gif: GIFSearchResult) -> URL? {
+        guard let source = gif.mediaURL,
+              isVideo(source, declaredKind: gif.mediaKind)
+        else { return nil }
+        switch source.pathExtension.lowercased() {
+        case "webm":
+            return alternateURL(
+                for: source,
+                pathExtension: "mp4",
+                tenorFormatSuffix: tenorMP4Suffix(for: source)
+            )
+        case "mp4", "":
+            return source
+        default:
+            return nil
+        }
+    }
+
+    static func staticFallbackURL(for gif: GIFSearchResult) -> URL? {
+        let candidates = [gif.thumbnailURL, gif.previewURL, gif.mediaURL]
+            .compactMap(\.self)
+        return candidates.first { candidate in
+            !isVideo(
+                candidate,
+                declaredKind: candidate == gif.mediaURL ? gif.mediaKind : nil
+            )
+        }
+    }
+
+    private static func tenorMP4Suffix(for url: URL) -> String? {
+        guard isTenor(url),
+              let mediaID = mediaID(in: url)
+        else { return nil }
+        if mediaID.hasSuffix("P3") { return "P1" }
+        if mediaID.hasSuffix("P4") { return "P2" }
+        return "Po"
+    }
+
+    private static func alternateURL(
+        for source: URL,
+        pathExtension: String,
+        tenorFormatSuffix: String?
+    ) -> URL? {
+        guard var components = URLComponents(
+            url: source,
+            resolvingAgainstBaseURL: false
+        ) else { return nil }
+        var pathComponents = components.percentEncodedPath.split(
+            separator: "/",
+            omittingEmptySubsequences: true
+        ).map(String.init)
+        guard !pathComponents.isEmpty else { return nil }
+
+        if let tenorFormatSuffix,
+           isTenor(source),
+           pathComponents.count >= 2
+        {
+            let mediaIndex = pathComponents.index(before: pathComponents.endIndex - 1)
+            let mediaID = pathComponents[mediaIndex]
+            if knownTenorVideoSuffixes.contains(where: mediaID.hasSuffix) {
+                pathComponents[mediaIndex] = String(mediaID.dropLast(2))
+                    + tenorFormatSuffix
+            }
+        }
+
+        let filename = pathComponents[pathComponents.index(before: pathComponents.endIndex)]
+        guard let alternateFilename = ((filename as NSString)
+            .deletingPathExtension as NSString)
+            .appendingPathExtension(pathExtension)
+        else { return nil }
+        pathComponents[pathComponents.index(before: pathComponents.endIndex)] =
+            alternateFilename
+        components.percentEncodedPath = "/" + pathComponents.joined(separator: "/")
+        return components.url
+    }
+
+    private static let knownTenorVideoSuffixes = [
+        "Ps", "P3", "P4", "Po", "P1", "P2",
+    ]
+
+    private static func mediaID(in url: URL) -> String? {
+        let components = url.pathComponents.filter { $0 != "/" }
+        guard components.count >= 2 else { return nil }
+        return components[components.index(before: components.endIndex - 1)]
+    }
+
+    private static func isTenor(_ url: URL) -> Bool {
+        guard let host = url.host()?.lowercased() else { return false }
+        return host == "tenor.com"
+            || host.hasSuffix(".tenor.com")
+            || host == "tenor.co"
+            || host.hasSuffix(".tenor.co")
     }
 }
 
@@ -112,38 +235,41 @@ struct GIFPickerView: View {
 
     private var landing: some View {
         ScrollView {
-            LazyVGrid(
-                columns: [
-                    GridItem(.flexible(), spacing: GIFMasonryLayout.spacing),
-                    GridItem(.flexible(), spacing: GIFMasonryLayout.spacing),
-                ],
-                spacing: GIFMasonryLayout.spacing
+            Grid(
+                horizontalSpacing: GIFMasonryLayout.spacing,
+                verticalSpacing: GIFMasonryLayout.spacing
             ) {
-                GIFCategoryButton(
-                    title: "Favourites",
-                    systemImage: "star.fill",
-                    previewURL: model.favoriteGIFs.first?.previewURL
-                ) {
-                    page = .favorites
-                }
-                GIFCategoryButton(
-                    title: "Trending GIFs",
-                    systemImage: "arrow.up.right",
-                    previewURL: model.gifTrendingPreviewURL
-                ) {
-                    page = .trending
-                    model.searchGIFs("")
-                }
-                ForEach(model.gifCategories) { category in
+                GridRow {
                     GIFCategoryButton(
-                        title: category.name,
-                        systemImage: nil,
-                        previewURL: category.previewURL
+                        title: "Favourites",
+                        systemImage: "star.fill",
+                        previewURL: model.favoriteGIFs.first?.previewURL
                     ) {
-                        query = category.query
+                        page = .favorites
+                    }
+                    GIFCategoryButton(
+                        title: "Trending GIFs",
+                        systemImage: "arrow.up.right",
+                        previewURL: model.gifTrendingPreviewURL
+                    ) {
+                        page = .trending
+                        model.searchGIFs("")
+                    }
+                }
+                ForEach(categoryRowStarts, id: \.self) { start in
+                    GridRow {
+                        categoryButton(model.gifCategories[start])
+                        if model.gifCategories.indices.contains(start + 1) {
+                            categoryButton(model.gifCategories[start + 1])
+                        } else {
+                            Color.clear
+                                .frame(maxWidth: .infinity, minHeight: 102)
+                                .accessibilityHidden(true)
+                        }
                     }
                 }
             }
+            .frame(maxWidth: .infinity)
             .padding(.horizontal, 12)
             .padding(.top, 10)
             .padding(.bottom, 10)
@@ -158,38 +284,32 @@ struct GIFPickerView: View {
         }
     }
 
+    private var categoryRowStarts: [Int] {
+        Array(stride(from: 0, to: model.gifCategories.count, by: 2))
+    }
+
+    private func categoryButton(_ category: GIFPickerCategory) -> some View {
+        GIFCategoryButton(
+            title: category.name,
+            systemImage: nil,
+            previewURL: category.previewURL
+        ) {
+            query = category.query
+        }
+    }
+
     private var resultsPage: some View {
         GeometryReader { geometry in
             let available = max(1, geometry.size.width - 24 - GIFMasonryLayout.spacing)
             let columnWidth = available / 2
-            let columns = GIFMasonryLayout.columns(
-                for: visibleResults,
-                columnWidth: columnWidth
+            GIFPickerNativeGrid(
+                results: visibleResults,
+                columnWidth: columnWidth,
+                favorites: favoriteURLs,
+                mutatingURL: model.gifFavoriteMutationURL,
+                choose: choose,
+                toggleFavorite: toggleFavorite
             )
-            ScrollView {
-                HStack(alignment: .top, spacing: GIFMasonryLayout.spacing) {
-                    GIFMasonryColumn(
-                        items: columns.leading,
-                        width: columnWidth,
-                        favorites: favoriteURLs,
-                        mutatingURL: model.gifFavoriteMutationURL,
-                        choose: choose,
-                        toggleFavorite: toggleFavorite
-                    )
-                    GIFMasonryColumn(
-                        items: columns.trailing,
-                        width: columnWidth,
-                        favorites: favoriteURLs,
-                        mutatingURL: model.gifFavoriteMutationURL,
-                        choose: choose,
-                        toggleFavorite: toggleFavorite
-                    )
-                }
-                .padding(.horizontal, 12)
-                .padding(.top, 10)
-                .padding(.bottom, 10)
-            }
-            .scrollIndicators(.hidden)
             .overlay {
                 if model.isLoadingGIFs, visibleResults.isEmpty {
                     ProgressView().controlSize(.small)
@@ -331,12 +451,23 @@ private struct GIFCategoryButton: View {
             ZStack {
                 Color.primary.opacity(0.06)
                 if let previewURL {
-                    AnimatedRemoteImage(
-                        url: previewURL,
-                        animates: true,
-                        maximumPixelDimension: 420,
-                        contentMode: .fill
-                    )
+                    ZStack {
+                        // Keep a decoded first frame mounted underneath the
+                        // animation so categories never flash empty while the
+                        // animated representation is loading or reconnecting.
+                        StaticRemoteImage(
+                            url: previewURL,
+                            maximumPixelDimension: 420,
+                            contentMode: .fill
+                        )
+                        AnimatedRemoteImage(
+                            url: previewURL,
+                            maximumPixelDimension: 420,
+                            contentMode: .fill
+                        )
+                    }
+                    .scaleEffect(hovering ? 1.04 : 1)
+                    .blur(radius: hovering ? 4 : 0)
                     .opacity(0.78)
                 }
                 Color.black.opacity(hovering ? 0.28 : 0.40)
@@ -352,10 +483,11 @@ private struct GIFCategoryButton: View {
                 .foregroundStyle(.white)
                 .shadow(color: .black.opacity(0.65), radius: 4, y: 1)
             }
-            .frame(height: 102)
+            .frame(maxWidth: .infinity, minHeight: 102, maxHeight: 102)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
         .clipShape(ConcentricRectangle(cornerRadius: 13, style: .continuous))
         .overlay {
             ConcentricRectangle(cornerRadius: 13, style: .continuous)
@@ -364,161 +496,6 @@ private struct GIFCategoryButton: View {
         .scaleEffect(hovering ? 1.012 : 1)
         .animation(.snappy(duration: 0.16), value: hovering)
         .onHover { hovering = $0 }
-    }
-}
-
-private struct GIFMasonryColumn: View {
-    let items: [GIFMasonryItem]
-    let width: CGFloat
-    let favorites: Set<URL>
-    let mutatingURL: URL?
-    let choose: (GIFSearchResult) -> Void
-    let toggleFavorite: (GIFSearchResult) -> Void
-
-    var body: some View {
-        LazyVStack(spacing: GIFMasonryLayout.spacing) {
-            ForEach(items) { item in
-                GIFPickerCell(
-                    gif: item.result,
-                    isFavorite: favorites.contains(item.result.url),
-                    isMutatingFavorite: mutatingURL == item.result.url,
-                    choose: { choose(item.result) },
-                    toggleFavorite: { toggleFavorite(item.result) }
-                )
-                .frame(width: width, height: item.height)
-            }
-        }
-    }
-}
-
-private struct GIFPickerCell: View {
-    let gif: GIFSearchResult
-    let isFavorite: Bool
-    let isMutatingFavorite: Bool
-    let choose: () -> Void
-    let toggleFavorite: () -> Void
-
-    @State private var hovering = false
-
-    var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Button(action: choose) {
-                ZStack {
-                    Color.primary.opacity(0.07)
-                    GIFPickerMedia(gif: gif)
-                    Color.white.opacity(hovering ? 0.12 : 0)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            Button(action: toggleFavorite) {
-                Group {
-                    if isMutatingFavorite {
-                        ProgressView().controlSize(.mini)
-                    } else {
-                        Image(systemName: isFavorite ? "star.fill" : "star")
-                            .symbolRenderingMode(.hierarchical)
-                    }
-                }
-                .foregroundStyle(isFavorite ? .yellow : .white)
-                .frame(width: 28, height: 28)
-                .glassEffect(.regular.interactive(), in: Circle())
-            }
-            .buttonStyle(.plain)
-            .disabled(isMutatingFavorite)
-            .opacity(hovering ? 1 : 0)
-            .allowsHitTesting(hovering)
-            .padding(7)
-            .help(isFavorite ? "Remove from favourites" : "Add to favourites")
-        }
-        .clipShape(ConcentricRectangle(cornerRadius: 11, style: .continuous))
-        .overlay {
-            ConcentricRectangle(cornerRadius: 11, style: .continuous)
-                .stroke(
-                    .white.opacity(hovering ? 0.48 : 0.07),
-                    lineWidth: hovering ? 1.5 : 1
-                )
-        }
-        .animation(.easeOut(duration: 0.12), value: hovering)
-        .onHover { hovering = $0 }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(gif.title)
-    }
-}
-
-private struct GIFPickerMedia: View {
-    let gif: GIFSearchResult
-
-    @State private var isVisible = false
-    @State private var failedNativePreview = false
-
-    var body: some View {
-        ZStack {
-            if let fallbackURL = staticFallbackURL {
-                StaticRemoteImage(
-                    url: fallbackURL,
-                    maximumPixelDimension: 520,
-                    contentMode: .fit
-                )
-            }
-            if let animatedURL = gif.previewURL ?? gif.mediaURL {
-                if let fallbackVideoURL {
-                    LoopingRemoteVideo(
-                        url: fallbackVideoURL,
-                        isPlaying: isVisible,
-                        contentMode: .fit
-                    )
-                } else if GIFPickerMediaPolicy.requiresWebVideoPlayback(
-                    animatedURL,
-                    declaredKind: animatedURL == gif.mediaURL
-                        ? gif.mediaKind
-                        : nil
-                ) {
-                    LoopingRemoteVideo(
-                        url: animatedURL,
-                        isPlaying: isVisible,
-                        contentMode: .fit
-                    )
-                } else {
-                    AnimatedRemoteImage(
-                        url: animatedURL,
-                        animates: true,
-                        maximumPixelDimension: 520,
-                        contentMode: .fit,
-                        onFailure: {
-                            failedNativePreview = true
-                        }
-                    )
-                }
-            }
-        }
-        .onAppear { isVisible = true }
-        .onDisappear { isVisible = false }
-    }
-
-    private var fallbackVideoURL: URL? {
-        guard failedNativePreview,
-              let mediaURL = gif.mediaURL,
-              GIFPickerMediaPolicy.requiresWebVideoPlayback(
-                  mediaURL,
-                  declaredKind: gif.mediaKind
-              )
-        else { return nil }
-        return mediaURL
-    }
-
-    private var staticFallbackURL: URL? {
-        let candidate = gif.thumbnailURL ?? gif.previewURL ?? gif.mediaURL
-        guard let candidate,
-              !GIFPickerMediaPolicy.requiresWebVideoPlayback(
-                  candidate,
-                  declaredKind: candidate == gif.mediaURL
-                      ? gif.mediaKind
-                      : nil
-              )
-        else { return nil }
-        return candidate
     }
 }
 

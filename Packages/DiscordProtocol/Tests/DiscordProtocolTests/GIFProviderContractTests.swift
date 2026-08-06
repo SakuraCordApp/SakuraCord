@@ -77,10 +77,10 @@ struct GIFProviderContractTests {
 
     @Test func `persisted Tenor video favourites use native GIF previews`() throws {
         let webM = try #require(URL(
-            string: "https://media.tenor.com/a%20b/AAAPo/favorite.WEBM?size=2"
+            string: "https://media.tenor.com/a%20b/AAAPs/favorite.WEBM?size=2"
         ))
         let mp4 = try #require(URL(
-            string: "https://media.tenor.co/asset/AAAPo/favorite.mp4"
+            string: "https://media1.tenor.co/asset/AAAPo/favorite.mp4"
         ))
         let unrelated = try #require(URL(
             string: "https://cdn.example/favorite.webm"
@@ -88,11 +88,11 @@ struct GIFProviderContractTests {
 
         #expect(
             DiscordGIFFavoriteMediaPolicy.previewURL(for: webM).absoluteString
-                == "https://media.tenor.com/a%20b/AAAPo/favorite.gif?size=2"
+                == "https://media.tenor.com/a%20b/AAAAM/favorite.gif?size=2"
         )
         #expect(
             DiscordGIFFavoriteMediaPolicy.previewURL(for: mp4).absoluteString
-                == "https://media.tenor.co/asset/AAAPo/favorite.gif"
+                == "https://media1.tenor.co/asset/AAAAM/favorite.gif"
         )
         #expect(
             DiscordGIFFavoriteMediaPolicy.previewURL(for: unrelated)

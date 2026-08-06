@@ -103,6 +103,68 @@ import Testing
     })
 }
 
+@Test func `visible media displaces saturated prefetch instead of staying blank`() async throws {
+    let probe = SuspendedRemoteMediaFetch()
+    let loader = SharedMediaDataLoader(remoteFetch: probe.fetch)
+    let activeRequests = try makeMediaRequests(
+        count: SharedMediaRequestSchedulingPolicy.maximumConcurrentRemoteLoads,
+        offset: 0,
+        loader: loader
+    )
+    #expect(await waitUntil {
+        await loader.remoteLoadSnapshot().activeCount
+            == SharedMediaRequestSchedulingPolicy.maximumConcurrentRemoteLoads
+    })
+
+    let prefetchRequests = try makeMediaRequests(
+        count: SharedMediaRequestSchedulingPolicy.maximumPendingPrefetchLoads,
+        offset: 1_000,
+        priority: .prefetch,
+        loader: loader
+    )
+    #expect(await waitUntil {
+        await loader.remoteLoadSnapshot().pendingCount
+            == SharedMediaRequestSchedulingPolicy.maximumPendingPrefetchLoads
+    })
+    let visibleFillCount =
+        SharedMediaRequestSchedulingPolicy.maximumPendingRemoteLoads
+        - SharedMediaRequestSchedulingPolicy.maximumPendingPrefetchLoads
+    let queuedVisibleRequests = try makeMediaRequests(
+        count: visibleFillCount,
+        offset: 2_000,
+        loader: loader
+    )
+    #expect(await waitUntil {
+        await loader.remoteLoadSnapshot().pendingCount
+            == SharedMediaRequestSchedulingPolicy.maximumPendingRemoteLoads
+    })
+
+    let newestURL = try #require(URL(
+        string: "https://cdn.example/visible-after-saturation.png"
+    ))
+    let newestVisible = Task {
+        try await loader.data(for: newestURL, priority: .visible)
+    }
+    #expect(await waitUntil {
+        await loader.remotePriorityForTesting(newestURL) == .visible
+    })
+    #expect(
+        await loader.remoteLoadSnapshot().pendingCount
+            == SharedMediaRequestSchedulingPolicy.maximumPendingRemoteLoads
+    )
+    await expectCancellation(of: prefetchRequests[0])
+
+    newestVisible.cancel()
+    await expectCancellation(of: newestVisible)
+    await cancelAndAwait(prefetchRequests)
+    await cancelAndAwait(queuedVisibleRequests)
+    await cancelAndAwait(activeRequests)
+    #expect(await waitUntil {
+        await loader.remoteLoadSnapshot()
+            == .init(pendingCount: 0, activeCount: 0, waiterCount: 0)
+    })
+}
+
 @Test func `simultaneous image waiters create one queued decode`() async throws {
     let probe = SuspendedRemoteMediaFetch()
     let dataLoader = SharedMediaDataLoader(remoteFetch: probe.fetch)
@@ -423,6 +485,7 @@ private actor SuspendedRemoteMediaFetch {
 private func makeMediaRequests(
     count: Int,
     offset: Int,
+    priority: MediaLoadPriority = .visible,
     loader: SharedMediaDataLoader
 ) throws -> [Task<Data, any Error>] {
     try (0 ..< count).map { index in
@@ -430,7 +493,7 @@ private func makeMediaRequests(
             URL(string: "https://cdn.example/\(offset + index).png")
         )
         return Task {
-            try await loader.data(for: url)
+            try await loader.data(for: url, priority: priority)
         }
     }
 }

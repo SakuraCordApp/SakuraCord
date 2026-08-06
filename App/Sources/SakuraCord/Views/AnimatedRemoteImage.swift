@@ -3,7 +3,6 @@ import ImageIO
 import OSLog
 import QuartzCore
 import SwiftUI
-import WebKit
 
 nonisolated struct AnimatedRemoteImageRequestIdentity: Hashable {
     let url: URL
@@ -910,7 +909,7 @@ struct AnimatedImageRepresentable: NSViewRepresentable {
 }
 
 final class AnimatedImageCanvas: NSView {
-    private var displayedImage: DecodedAnimatedImage?
+    private(set) var displayedImage: DecodedAnimatedImage?
     private var displayedAnimationPreference: (animates: Bool, isLooping: Bool)?
     private var displayedContentMode: ContentMode?
     private var displayedPlaybackEnabled: Bool?
@@ -990,6 +989,21 @@ final class AnimatedImageCanvas: NSView {
         if isSuppressed, let frozenContents {
             layer?.contents = frozenContents
         }
+    }
+
+    func displayStatic(_ image: CGImage?) {
+        guard displayedImage == nil else { return }
+        layer?.contents = image
+    }
+
+    func clear() {
+        displayedImage = nil
+        displayedAnimationPreference = nil
+        displayedContentMode = nil
+        displayedPlaybackEnabled = nil
+        isPlaybackSuppressed = false
+        layer?.removeAnimation(forKey: "remoteAnimatedImage")
+        layer?.contents = nil
     }
 
     @objc
@@ -1113,369 +1127,6 @@ enum AnimatedImageFrameTiming {
     nonisolated private static func normalizedWebP(_ value: TimeInterval) -> TimeInterval {
         guard value.isFinite, value > 0.01 else { return 0.1 }
         return value
-    }
-}
-
-struct LoopingRemoteWebMedia: NSViewRepresentable {
-    let url: URL
-    let backgroundURL: URL?
-    let backgroundCSS: String
-    let isPlaying: Bool
-
-    private static let mediaDataStore = WKWebsiteDataStore.nonPersistent()
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
-
-    func makeNSView(context: Context) -> PassthroughWebView {
-        let configuration = WKWebViewConfiguration()
-        configuration.mediaTypesRequiringUserActionForPlayback = []
-        configuration.allowsAirPlayForMediaPlayback = false
-        configuration.websiteDataStore = Self.mediaDataStore
-        let webView = PassthroughWebView(frame: .zero, configuration: configuration)
-        webView.setValue(false, forKey: "drawsBackground")
-        webView.underPageBackgroundColor = .clear
-        webView.wantsLayer = true
-        webView.layer?.cornerRadius = 9
-        webView.layer?.cornerCurve = .continuous
-        webView.layer?.masksToBounds = true
-        webView.navigationDelegate = context.coordinator
-        context.coordinator.webView = webView
-        context.coordinator.isPlaying = isPlaying
-        load(url: url, in: webView, coordinator: context.coordinator)
-        return webView
-    }
-
-    func updateNSView(_ webView: PassthroughWebView, context: Context) {
-        load(url: url, in: webView, coordinator: context.coordinator)
-        context.coordinator.setPlaying(isPlaying)
-    }
-
-    static func dismantleNSView(_ webView: PassthroughWebView, coordinator: Coordinator) {
-        coordinator.setPlaying(false)
-        webView.stopLoading()
-        webView.navigationDelegate = nil
-        coordinator.webView = nil
-        coordinator.currentKey = nil
-    }
-
-    private func load(url: URL, in webView: WKWebView, coordinator: Coordinator) {
-        let key = "\(url.absoluteString)|\(backgroundURL?.absoluteString ?? "")|\(backgroundCSS)"
-        guard coordinator.currentKey != key else { return }
-        coordinator.currentKey = key
-        coordinator.isReady = false
-        webView.loadHTMLString(
-            html(
-                source: escaped(url),
-                backgroundSource: backgroundURL.map(escaped),
-                backgroundCSS: backgroundCSS,
-                initiallyPlaying: coordinator.isPlaying
-            ),
-            baseURL: nil
-        )
-    }
-
-    private func html(
-        source: String,
-        backgroundSource: String?,
-        backgroundCSS: String,
-        initiallyPlaying: Bool
-    ) -> String {
-        let background =
-            backgroundSource.map {
-            #"<img id="background" src="\#($0)" alt="">"#
-        } ?? ""
-        return """
-        <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-        <style>
-        html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}
-        body{position:relative}
-        #plate{position:absolute;inset:0;background:\(backgroundCSS);\
-        mask-image:linear-gradient(to right,transparent 0%,transparent 42%,rgba(0,0,0,.18) 52%,rgba(0,0,0,.72) 66%,#000 76%);\
-        -webkit-mask-image:linear-gradient(to right,transparent 0%,transparent 42%,rgba(0,0,0,.18) 52%,rgba(0,0,0,.72) 66%,#000 76%);\
-        mask-size:100% 100%;-webkit-mask-size:100% 100%;mask-repeat:no-repeat;-webkit-mask-repeat:no-repeat}
-        #plate img,#plate video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-        video{mix-blend-mode:screen;pointer-events:none;background:transparent}
-        </style>
-        </head><body><div id="plate">\(background)<video id="animation" src="\(source)" autoplay loop muted playsinline preload="auto"></video></div>
-        <script>
-        const animation = document.getElementById('animation');
-        let playbackEnabled = \(initiallyPlaying ? "true" : "false");
-        const syncPlayback = () => {
-          if (playbackEnabled && document.visibilityState === 'visible') {
-            animation.play().catch(() => {});
-          } else {
-            animation.pause();
-          }
-        };
-        window.setPlaybackEnabled = enabled => { playbackEnabled = enabled; syncPlayback(); };
-        animation.addEventListener('canplay', syncPlayback);
-        document.addEventListener('visibilitychange', syncPlayback);
-        syncPlayback();
-        </script></body></html>
-        """
-    }
-
-    private func escaped(_ url: URL) -> String {
-        url.absoluteString
-            .replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "\"", with: "&quot;")
-    }
-
-    @MainActor
-    final class Coordinator: NSObject, WKNavigationDelegate {
-        var currentKey: String?
-        weak var webView: WKWebView?
-        var isPlaying = true
-        var isReady = false
-
-        func setPlaying(_ value: Bool) {
-            guard isPlaying != value else { return }
-            isPlaying = value
-            applyPlaybackState()
-        }
-
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {
-            isReady = true
-            applyPlaybackState()
-        }
-
-        private func applyPlaybackState() {
-            guard isReady else { return }
-            webView?.evaluateJavaScript(
-                "window.setPlaybackEnabled(\(isPlaying ? "true" : "false"))"
-            )
-        }
-    }
-}
-
-nonisolated enum LoopingRemoteVideoPolicy {
-    static func documentBaseURL(for source: URL) -> URL? {
-        guard let scheme = source.scheme,
-              let host = source.host()
-        else { return nil }
-        var components = URLComponents()
-        components.scheme = scheme
-        components.host = host
-        components.port = source.port
-        components.path = "/"
-        return components.url
-    }
-}
-
-/// Plays remote WebM and MP4 GIF media using WebKit's native video pipeline.
-/// This is reserved for Discord favourites whose persisted source has no GIF
-/// fallback; ordinary GIF/APNG/WebP media stays on the lower-overhead ImageIO
-/// path.
-struct LoopingRemoteVideo: NSViewRepresentable {
-    let url: URL
-    let isPlaying: Bool
-    let contentMode: ContentMode
-
-    private static let mediaDataStore = WKWebsiteDataStore.nonPersistent()
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
-
-    func makeNSView(context: Context) -> PassthroughWebView {
-        let configuration = WKWebViewConfiguration()
-        configuration.mediaTypesRequiringUserActionForPlayback = []
-        configuration.allowsAirPlayForMediaPlayback = false
-        configuration.websiteDataStore = Self.mediaDataStore
-        configuration.userContentController.add(
-            context.coordinator,
-            name: Coordinator.mediaStatusHandler
-        )
-        let webView = PassthroughWebView(frame: .zero, configuration: configuration)
-        webView.setValue(false, forKey: "drawsBackground")
-        webView.underPageBackgroundColor = .clear
-        webView.navigationDelegate = context.coordinator
-        context.coordinator.webView = webView
-        context.coordinator.isPlaying = isPlaying
-        load(in: webView, coordinator: context.coordinator)
-        return webView
-    }
-
-    func updateNSView(_ webView: PassthroughWebView, context: Context) {
-        load(in: webView, coordinator: context.coordinator)
-        context.coordinator.setPlaying(isPlaying)
-    }
-
-    static func dismantleNSView(_ webView: PassthroughWebView, coordinator: Coordinator) {
-        coordinator.setPlaying(false)
-        webView.stopLoading()
-        webView.navigationDelegate = nil
-        webView.configuration.userContentController
-            .removeScriptMessageHandler(forName: Coordinator.mediaStatusHandler)
-        coordinator.webView = nil
-        coordinator.currentKey = nil
-    }
-
-    private func load(in webView: WKWebView, coordinator: Coordinator) {
-        let key = "\(url.absoluteString)|\(contentMode)"
-        guard coordinator.currentKey != key else { return }
-        coordinator.currentKey = key
-        coordinator.isReady = false
-        coordinator.didRetryMediaLoad = false
-        coordinator.sourceHost = url.host() ?? "unknown"
-        coordinator.sourceExtension = url.pathExtension.lowercased()
-        webView.loadHTMLString(
-            html,
-            baseURL: LoopingRemoteVideoPolicy.documentBaseURL(for: url)
-        )
-    }
-
-    private var html: String {
-        let fit = contentMode == .fill ? "cover" : "contain"
-        return """
-        <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-        <style>
-        html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}
-        video{display:block;width:100%;height:100%;object-fit:\(fit);pointer-events:none;background:transparent}
-        </style></head><body>
-        <video id="animation" src="\(escapedURL)" autoplay loop muted playsinline preload="auto"></video>
-        <script>
-        const animation = document.getElementById('animation');
-        let playbackEnabled = \(isPlaying ? "true" : "false");
-        const syncPlayback = () => {
-          if (playbackEnabled && document.visibilityState === 'visible') {
-            animation.play().catch(() => {});
-          } else {
-            animation.pause();
-          }
-        };
-        window.setPlaybackEnabled = enabled => { playbackEnabled = enabled; syncPlayback(); };
-        const report = (event, code = 0) => {
-          try { window.webkit.messageHandlers.mediaStatus.postMessage({event, code}); } catch (_) {}
-        };
-        animation.addEventListener('loadeddata', () => report('loaded'));
-        animation.addEventListener('canplay', () => { report('ready'); syncPlayback(); });
-        animation.addEventListener('error', () => report('error', animation.error?.code ?? 0));
-        document.addEventListener('visibilitychange', syncPlayback);
-        syncPlayback();
-        </script></body></html>
-        """
-    }
-
-    private var escapedURL: String {
-        url.absoluteString
-            .replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "\"", with: "&quot;")
-    }
-
-    @MainActor
-    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
-        static let mediaStatusHandler = "mediaStatus"
-        private static let logger = Logger(
-            subsystem: "dev.sakuracord.SakuraCord",
-            category: "GIFPickerMedia"
-        )
-
-        var currentKey: String?
-        weak var webView: WKWebView?
-        var isPlaying = false
-        var isReady = false
-        var didRetryMediaLoad = false
-        var sourceHost = "unknown"
-        var sourceExtension = "unknown"
-
-        func setPlaying(_ value: Bool) {
-            guard isPlaying != value else { return }
-            isPlaying = value
-            applyPlaybackState()
-        }
-
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {
-            isReady = true
-            applyPlaybackState()
-        }
-
-        func webView(
-            _ webView: WKWebView,
-            didFail navigation: WKNavigation?,
-            withError error: Error
-        ) {
-            reportNavigationFailure(error)
-        }
-
-        func webView(
-            _ webView: WKWebView,
-            didFailProvisionalNavigation navigation: WKNavigation?,
-            withError error: Error
-        ) {
-            reportNavigationFailure(error)
-        }
-
-        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-            Self.logger.error(
-                "GIF video web process terminated; host=\(self.sourceHost, privacy: .public) extension=\(self.sourceExtension, privacy: .public)"
-            )
-            webView.reload()
-        }
-
-        func userContentController(
-            _ userContentController: WKUserContentController,
-            didReceive message: WKScriptMessage
-        ) {
-            guard message.name == Self.mediaStatusHandler,
-                  let payload = message.body as? [String: Any],
-                  let event = payload["event"] as? String
-            else { return }
-
-            switch event {
-            case "ready":
-                isReady = true
-                applyPlaybackState()
-            case "error":
-                let code = payload["code"] as? Int ?? 0
-                retryMediaElementOnce(errorCode: code)
-            default:
-                break
-            }
-        }
-
-        private func applyPlaybackState() {
-            guard isReady else { return }
-            webView?.evaluateJavaScript(
-                "window.setPlaybackEnabled(\(isPlaying ? "true" : "false"))"
-            )
-        }
-
-        private func retryMediaElementOnce(errorCode: Int) {
-            guard !didRetryMediaLoad else {
-                Self.logger.error(
-                    "GIF video failed after bounded retry; host=\(self.sourceHost, privacy: .public) extension=\(self.sourceExtension, privacy: .public) mediaError=\(errorCode, privacy: .public)"
-                )
-                return
-            }
-            didRetryMediaLoad = true
-            Self.logger.notice(
-                "Retrying GIF video once; host=\(self.sourceHost, privacy: .public) extension=\(self.sourceExtension, privacy: .public) mediaError=\(errorCode, privacy: .public)"
-            )
-            webView?.evaluateJavaScript(
-                "animation.load(); syncPlayback();"
-            )
-        }
-
-        private func reportNavigationFailure(_ error: Error) {
-            let nsError = error as NSError
-            Self.logger.error(
-                """
-                GIF video document failed; host=\(self.sourceHost, privacy: .public) \
-                extension=\(self.sourceExtension, privacy: .public) \
-                domain=\(nsError.domain, privacy: .public) \
-                code=\(nsError.code, privacy: .public)
-                """
-            )
-        }
-    }
-}
-
-final class PassthroughWebView: WKWebView {
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        nil
     }
 }
 

@@ -211,11 +211,20 @@ actor SharedMediaDataLoader {
             pending.waiters[waiterID] = waiter
             pendingRemoteLoads[url] = pending
         } else {
-            guard SharedMediaRequestSchedulingPolicy.acceptsRemoteLoad(
+            if !SharedMediaRequestSchedulingPolicy.acceptsRemoteLoad(
                 pendingRemoteCount: pendingRemoteLoads.count
-            ) else {
-                continuation.resume(throwing: CancellationError())
-                return
+            ) {
+                // A disconnected or very slow network can fill the bounded
+                // queue with speculative offscreen work. A newly mounted,
+                // user-visible image must displace that prefetch instead of
+                // failing once and remaining blank until the view or app is
+                // recreated.
+                guard priority == .visible,
+                      discardOldestPendingPrefetch()
+                else {
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
             }
             if priority == .prefetch {
                 let pendingPrefetchCount =
@@ -235,6 +244,19 @@ actor SharedMediaDataLoader {
             pendingRemoteOrder.append(url)
         }
         startEligibleRemoteLoads()
+    }
+
+    @discardableResult
+    private func discardOldestPendingPrefetch() -> Bool {
+        guard let url = pendingRemoteOrder.first(where: {
+            pendingRemoteLoads[$0]?.priority == .prefetch
+        }), let pending = pendingRemoteLoads.removeValue(forKey: url)
+        else { return false }
+        pendingRemoteOrder.removeAll { $0 == url }
+        for waiter in pending.waiters.values {
+            waiter.continuation.resume(throwing: CancellationError())
+        }
+        return true
     }
 
     private func startEligibleRemoteLoads() {
