@@ -55,6 +55,113 @@ struct DiscordSessionAuthenticatorTests {
         await credential.discard()
     }
 
+    @Test func `cold password login falls back when apex omits installation`() async throws {
+        AuthenticationURLProtocol.reset(mode: .apexMissingInstallation)
+        let fingerprints = TestFingerprintStore()
+        let authenticator = DiscordSessionAuthenticator(
+            session: Self.session(),
+            fingerprints: fingerprints
+        )
+
+        let step = try await authenticator.login(
+            identifier: "person@example.com",
+            password: "correct horse battery staple"
+        )
+
+        let credential = try #require({
+            if case let .authenticated(credential) = step {
+                return credential
+            }
+            return nil
+        }())
+        #expect(AuthenticationURLProtocol.paths == [
+            "/api/v9/apex/experiments",
+            "/api/v9/experiments",
+            "/api/v9/auth/login"
+        ])
+        #expect(AuthenticationURLProtocol.experimentsInstallationID == nil)
+        #expect(AuthenticationURLProtocol.loginFingerprint == "server-issued-fingerprint")
+        #expect(AuthenticationURLProtocol.loginInstallationID == "fallback-installation")
+        #expect(await fingerprints.load() == "server-issued-fingerprint")
+        #expect(await fingerprints.loadInstallationID() == "fallback-installation")
+        await credential.discard()
+    }
+
+    @Test func `stored public release fingerprint uses installation fallback`() async throws {
+        AuthenticationURLProtocol.reset(mode: .apexMissingInstallation)
+        let fingerprints = TestFingerprintStore(
+            value: "existing-fingerprint",
+            installationID: ""
+        )
+        let authenticator = DiscordSessionAuthenticator(
+            session: Self.session(),
+            fingerprints: fingerprints
+        )
+
+        let step = try await authenticator.login(
+            identifier: "person@example.com",
+            password: "correct horse battery staple"
+        )
+
+        let credential = try #require({
+            if case let .authenticated(credential) = step {
+                return credential
+            }
+            return nil
+        }())
+        #expect(AuthenticationURLProtocol.paths == [
+            "/api/v9/apex/experiments",
+            "/api/v9/experiments",
+            "/api/v9/auth/login"
+        ])
+        #expect(AuthenticationURLProtocol.experimentsInstallationID == nil)
+        #expect(AuthenticationURLProtocol.loginFingerprint == "existing-fingerprint")
+        #expect(AuthenticationURLProtocol.loginInstallationID == "fallback-installation")
+        #expect(await fingerprints.load() == "existing-fingerprint")
+        #expect(await fingerprints.loadInstallationID() == "fallback-installation")
+        await credential.discard()
+    }
+
+    @Test func `cold password login still requires installation after fallback`() async throws {
+        AuthenticationURLProtocol.reset(mode: .installationMissing)
+        let authenticator = DiscordSessionAuthenticator(
+            session: Self.session(),
+            fingerprints: TestFingerprintStore()
+        )
+
+        await #expect(throws: AuthenticationError.installationUnavailable) {
+            try await authenticator.login(
+                identifier: "person@example.com",
+                password: "correct horse battery staple"
+            )
+        }
+
+        #expect(AuthenticationURLProtocol.paths == [
+            "/api/v9/apex/experiments",
+            "/api/v9/experiments"
+        ])
+    }
+
+    @Test func `installation fallback preserves experiments HTTP failure`() async throws {
+        AuthenticationURLProtocol.reset(mode: .installationFallbackRejected)
+        let authenticator = DiscordSessionAuthenticator(
+            session: Self.session(),
+            fingerprints: TestFingerprintStore()
+        )
+
+        await #expect(throws: AuthenticationError.transport(status: 403)) {
+            try await authenticator.login(
+                identifier: "person@example.com",
+                password: "correct horse battery staple"
+            )
+        }
+
+        #expect(AuthenticationURLProtocol.paths == [
+            "/api/v9/apex/experiments",
+            "/api/v9/experiments"
+        ])
+    }
+
     @Test func `mfa uses issued ticket and stops before gateway identity`() async throws {
         AuthenticationURLProtocol.reset(mode: .mfaSuccess)
         let fingerprints = TestFingerprintStore(value: "existing-fingerprint")
@@ -276,6 +383,9 @@ private actor TestFingerprintStore: DiscordFingerprintStoring {
 private final class AuthenticationURLProtocol: URLProtocol, @unchecked Sendable {
     enum Mode {
         case passwordSuccess
+        case apexMissingInstallation
+        case installationMissing
+        case installationFallbackRejected
         case mfaSuccess
         case captchaThenSuccess
         case loginServerFailure
@@ -368,13 +478,27 @@ private final class AuthenticationURLProtocol: URLProtocol, @unchecked Sendable 
             Self.apexQuery = Self.query(from: request)
             Self.apexInstallationID = request.value(forHTTPHeaderField: "X-Installation-ID")
             status = 200
-            body = #"{"installation":"server-issued-installation","assignments":{}}"#
+            switch Self.mode {
+            case .apexMissingInstallation, .installationMissing, .installationFallbackRejected:
+                body = #"{"assignments":{}}"#
+            default:
+                body = #"{"installation":"server-issued-installation","assignments":{}}"#
+            }
         case "/api/v9/experiments":
             Self.experimentsQuery = Self.query(from: request)
             Self.experimentsInstallationID = request.value(forHTTPHeaderField: "X-Installation-ID")
             Self.experimentsContext = request.value(forHTTPHeaderField: "X-Context-Properties")
-            status = 200
-            body = #"{"fingerprint":"server-issued-fingerprint","assignments":[],"guild_experiments":[]}"#
+            if Self.mode == .installationFallbackRejected {
+                status = 403
+                body = #"{"message":"request rejected"}"#
+            } else {
+                status = 200
+                let installation = Self.mode == .installationMissing
+                    ? ""
+                    : #","installation":"fallback-installation""#
+                body = #"{"fingerprint":"server-issued-fingerprint","assignments":[],"guild_experiments":[]"#
+                    + installation + "}"
+            }
         case "/api/v9/auth/login":
             Self.loginRequestCount += 1
             Self.loginBody = Self.bodyData(from: request).flatMap {
@@ -391,7 +515,8 @@ private final class AuthenticationURLProtocol: URLProtocol, @unchecked Sendable 
             Self.captchaRQToken = request.value(forHTTPHeaderField: "X-Captcha-Rqtoken")
             Self.captchaSessionID = request.value(forHTTPHeaderField: "X-Captcha-Session-Id")
             switch Self.mode {
-            case .passwordSuccess:
+            case .passwordSuccess, .apexMissingInstallation, .installationMissing,
+                 .installationFallbackRejected:
                 status = 200
                 body = #"{"token":"test-session-credential-value"}"#
             case .mfaSuccess:

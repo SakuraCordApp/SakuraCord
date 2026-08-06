@@ -55,6 +55,22 @@ retained. Paicord has a placeholder picker and the matching generated
 favourites protobuf schema but no GIF HTTP implementation. Swiftcord v1 has no
 corresponding GIF picker, search, or favourites path.
 
+The native sign-in preflight was re-audited on 7 August 2026 against production
+asset `web.3cd0f98a15f63be2.js` (SHA-256
+`a77974b18a92b7d5452d4138b0b276f380ac498fd7fefa1b9aa7e183ace0f4f0`).
+The first-party Apex action requests the integer `APP` surface, accepts an
+optional returned installation, and records a fetch failure without blocking
+the independent authentication-store `/experiments` request. That request
+accepts both `fingerprint` and `installation`. Sanitized unauthenticated checks
+confirmed that `surface=2` and an installation-free
+`with_guild_experiments=true` request each returned a nonempty server-issued
+installation; the latter also returned a nonempty fingerprint. Public Discord
+documentation has no corresponding normal-user authentication endpoints.
+Pinned Paicord performs only its fingerprint `/experiments` request and has no
+Apex path. Pinned Swiftcord v1 delegates sign-in to Discord's embedded web
+flow. No credential, authenticated login, or personal response value was used
+or retained for this re-audit.
+
 The clean desktop observation covered sign-in restoration, Gateway startup,
 opening a public guild and its default channel, history loading, and a renderer
 reload. Selecting the guild caused one newest-history GET and no read
@@ -143,12 +159,14 @@ are Gateway-owned after connection, but its login view model is the documented
 outlier that reads `/users/@me` before storing an account. Paicord also treats
 the Ready settings proto as the authoritative guild-folder order.
 
-The 3 August 2026 first-party web asset defines the Apex experiment surface
+The current first-party web asset defines the Apex experiment surface
 `APP` as integer `2` and sends that value on the current login path. A sanitized
 unauthenticated production check returned `400` / Discord error `50035` for the
 obsolete string `discord_app`, while `surface=2` returned `200` with the
-expected installation field. Discord's public API documentation, pinned
-Paicord, and pinned Swiftcord v1 have no corresponding Apex implementation.
+expected installation field. The first-party action does not make that fetch a
+prerequisite for its independent `/experiments` path, which also accepts a
+returned installation. Discord's public API documentation, pinned Paicord, and
+pinned Swiftcord v1 have no corresponding Apex implementation.
 
 ### Audited HTTP route surface
 
@@ -160,8 +178,8 @@ and retained as evidence.
 
 | Method and route template | Trigger and exact supported request shape | Cross-reference result |
 | --- | --- | --- |
-| `GET /apex/experiments?surface=2` | Cold native password/MFA installation preflight, or one stored-session repair when an older credential lacks its installation identity; unauthenticated, no body, Authorization, fingerprint, installation header, or heartbeat session. Only the returned installation ID is retained. The obsolete string surface is rejected with `400` / `50035`. | Current official login; P−, S−. |
-| `GET /experiments?with_guild_experiments=true` | Cold native password/MFA fingerprint preflight only; unauthenticated, no body, carries the server-issued installation ID and `X-Context-Properties` location `Login`. Stored-session repair does not repeat this request. | Current official login and Paicord; Swiftcord v1 has no native-login counterpart. Paicord lacks the current Apex preflight and query/context shape. |
+| `GET /apex/experiments?surface=2` | Primary cold native password/MFA installation preflight, or one stored-session repair when an older credential lacks its installation identity; unauthenticated, no body, Authorization, fingerprint, installation header, or heartbeat session. Only the returned installation ID is retained. If the cold-login request fails or omits a usable installation, the existing `/experiments` preflight is allowed to resolve both identifiers; stored-session repair remains Apex-only. The obsolete string surface is rejected with `400` / `50035`. | Current official login treats Apex failure as non-blocking before its independent authentication-store preflight; P−, S−. |
+| `GET /experiments?with_guild_experiments=true` | Cold native password/MFA fingerprint preflight only; unauthenticated, no body, and `X-Context-Properties` location `Login`. Normally it carries the Apex-issued installation ID. The bounded Apex-failure compatibility path omits that header and requires this response to provide both a nonempty installation and fingerprint before login. Stored-session repair does not repeat this request. | Current official login accepts both response fields and does not block this path on Apex success; Paicord supplies the installation-free fingerprint cross-check; Swiftcord v1 has no native-login counterpart. Paicord lacks the current query/context shape. |
 | `POST /auth/login` | Explicit login; `login`, `password`, `undelete:false`, `login_source:null`, and `gift_code_sku_id:null`; one user-completed CAPTCHA replay may add challenge headers. | Current official live password login and web action; Paicord omits the null keys; S−. |
 | `POST /auth/mfa/{totp,sms,backup}` | Explicit MFA; `code`, `ticket`, optional `login_instance_id`, `login_source:null`, and `gift_code_sku_id:null`. | Current official web action and Paicord; no live MFA challenge occurred in the 3 August clean-client pass; S−. |
 | `POST /auth/mfa/sms/send` | Explicit SMS choice; `ticket`. | Current official and Paicord; S−. |
@@ -286,7 +304,7 @@ The default attempt budget is exact:
 | Ordinary authenticated GET | 2; the second attempt occurs only after a server `429` cooldown. |
 | Authenticated mutation | 1; no automatic replay after `429`, timeout, or ambiguous failure. |
 | Application-command index readiness | 3 created GETs for the separately tested `202`/`429` flow. |
-| Cold native installation/fingerprint preflight status retry | Original plus at most 3 bounded retries for `429`, `500`, `502`, or `504`, subject to the established delay ceiling. |
+| Cold native installation/fingerprint preflight status retry | Each created preflight request has its original attempt plus at most 3 bounded retries for `429`, `500`, `502`, or `504`, subject to the established delay ceiling. A missing Apex installation creates only the already-required `/experiments` request, without an additional probe. |
 | Stored-session missing-installation repair | 1 unauthenticated Apex GET; no automatic retry. |
 | Native password/MFA status retry | Original plus at most 2 current-official retries for `429`, `500`, `502`, or `504`, subject to the established delay ceiling. |
 | Remote-auth ticket status retry | Original plus at most 3 Paicord-policy retries for `429`, `500`, `502`, or `504`, subject to its delay ceiling. |
@@ -494,6 +512,9 @@ Native authentication is implemented without an embedded Discord login page:
 
 - a cold password login performs the Apex installation preflight, the
   installation-bearing fingerprint preflight, login, then connects Gateway;
+  when Apex alone fails or omits its installation, that same fingerprint
+  preflight may resolve both identifiers without an installation header before
+  login;
 - a warm password login performs login and then connects Gateway;
 - a stored credential missing only its installation identity performs one
   unauthenticated Apex lookup and then connects Gateway without repeating the

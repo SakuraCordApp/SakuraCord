@@ -355,26 +355,47 @@ actor DiscordSessionAuthenticator {
     private func resolvedClientIdentifiers() async throws -> DiscordAuthClientIdentifiers {
         let storedFingerprint = await fingerprints.load().flatMap { $0.isEmpty ? nil : $0 }
         let storedInstallationID = await fingerprints.loadInstallationID().flatMap { $0.isEmpty ? nil : $0 }
+        var experimentsPayload: ExperimentsResponse?
         let installationID: String
         if let storedInstallationID {
             installationID = storedInstallationID
         } else {
-            let (data, response) = try await send(
-                path: "/apex/experiments",
-                method: "GET",
-                queryItems: [URLQueryItem(
-                    name: "surface",
-                    value: String(DiscordProductionBaseline.august2026.apexAppSurface)
-                )],
-                requestContext: .appBootstrap
-            )
-            guard response.statusCode == 200,
-                  let payload = try? JSONDecoder().decode(ApexExperimentsResponse.self, from: data),
-                  !payload.installation.isEmpty
-            else {
+            var apexInstallationID: String?
+            do {
+                let (data, response) = try await send(
+                    path: "/apex/experiments",
+                    method: "GET",
+                    queryItems: [URLQueryItem(
+                        name: "surface",
+                        value: String(DiscordProductionBaseline.august2026.apexAppSurface)
+                    )],
+                    requestContext: .appBootstrap
+                )
+                if (200 ..< 300).contains(response.statusCode),
+                   let payload = try? JSONDecoder().decode(ApexExperimentsResponse.self, from: data),
+                   !payload.installation.isEmpty
+                {
+                    apexInstallationID = payload.installation
+                }
+            } catch {
+                try Task.checkCancellation()
+            }
+
+            if let apexInstallationID {
+                installationID = apexInstallationID
+            } else {
+                let payload = try await fetchExperiments(installationID: nil)
+                guard let fallbackInstallationID = payload.installation,
+                      !fallbackInstallationID.isEmpty
+                else {
+                    throw AuthenticationError.installationUnavailable
+                }
+                experimentsPayload = payload
+                installationID = fallbackInstallationID
+            }
+            guard !installationID.isEmpty else {
                 throw AuthenticationError.installationUnavailable
             }
-            installationID = payload.installation
             await fingerprints.saveInstallationID(installationID)
         }
 
@@ -385,16 +406,13 @@ actor DiscordSessionAuthenticator {
             )
         }
 
-        let (data, response) = try await send(
-            path: "/experiments",
-            method: "GET",
-            installationID: installationID,
-            queryItems: [URLQueryItem(name: "with_guild_experiments", value: "true")],
-            requestContext: .loginExperiments
-        )
-        guard response.statusCode == 200,
-              let payload = try? JSONDecoder().decode(ExperimentsResponse.self, from: data),
-              let fingerprint = payload.fingerprint,
+        let payload: ExperimentsResponse
+        if let experimentsPayload {
+            payload = experimentsPayload
+        } else {
+            payload = try await fetchExperiments(installationID: installationID)
+        }
+        guard let fingerprint = payload.fingerprint,
               !fingerprint.isEmpty
         else {
             throw AuthenticationError.fingerprintUnavailable
@@ -404,6 +422,29 @@ actor DiscordSessionAuthenticator {
             fingerprint: fingerprint,
             installationID: installationID
         )
+    }
+
+    private func fetchExperiments(installationID: String?) async throws -> ExperimentsResponse {
+        let (data, response) = try await send(
+            path: "/experiments",
+            method: "GET",
+            installationID: installationID,
+            queryItems: [URLQueryItem(name: "with_guild_experiments", value: "true")],
+            requestContext: .loginExperiments
+        )
+        guard (200 ..< 300).contains(response.statusCode) else {
+            if response.statusCode == 429 {
+                throw AuthenticationError.rateLimited(Self.retryAfter(
+                    data: data,
+                    response: response
+                ))
+            }
+            throw AuthenticationError.transport(status: response.statusCode)
+        }
+        guard let payload = try? JSONDecoder().decode(ExperimentsResponse.self, from: data) else {
+            throw AuthenticationError.invalidResponse
+        }
+        return payload
     }
 
     private func pendingCredential(token: String) throws -> PendingDiscordCredential {
@@ -662,6 +703,7 @@ private nonisolated struct SMSSendPayload: Encodable {
 
 private nonisolated struct ExperimentsResponse: Decodable {
     let fingerprint: String?
+    let installation: String?
 }
 
 private nonisolated struct ApexExperimentsResponse: Decodable {
