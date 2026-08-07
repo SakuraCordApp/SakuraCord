@@ -75,7 +75,7 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var gatewayEventTask: Task<Void, Never>?
     var gatewayGuildIDs: [GuildID] = []
     var gatewayReady = false
-    var initialGatewaySnapshot: InitialGatewaySnapshot?
+    var initialGatewaySnapshotResult: Result<InitialGatewaySnapshot, any Error>?
     var initialGatewaySnapshotContinuation:
         CheckedContinuation<InitialGatewaySnapshot, any Error>?
     var pendingMemberGuildID: GuildID?
@@ -487,8 +487,8 @@ extension DiscordRESTProvider {
     }
 
     func waitForInitialGatewaySnapshot() async throws -> InitialGatewaySnapshot {
-        if let initialGatewaySnapshot {
-            return initialGatewaySnapshot
+        if let initialGatewaySnapshotResult {
+            return try initialGatewaySnapshotResult.get()
         }
         return try await withCheckedThrowingContinuation { continuation in
             initialGatewaySnapshotContinuation = continuation
@@ -496,18 +496,30 @@ extension DiscordRESTProvider {
     }
 
     func finishInitialGatewaySnapshot(_ snapshot: InitialGatewaySnapshot) {
+        guard initialGatewaySnapshotResult == nil else { return }
         // GatewaySession emits READY dispatch before its `.ready` state event.
         // Bootstrap resumes here, so immediate channel loads must already be
         // allowed to resolve missing message authors through the Gateway.
         gatewayReady = true
-        initialGatewaySnapshot = snapshot
+        initialGatewaySnapshotResult = .success(snapshot)
         initialGatewaySnapshotContinuation?.resume(returning: snapshot)
         initialGatewaySnapshotContinuation = nil
     }
 
     func failInitialGatewaySnapshot(_ error: any Error) {
+        guard initialGatewaySnapshotResult == nil else { return }
+        initialGatewaySnapshotResult = .failure(error)
         initialGatewaySnapshotContinuation?.resume(throwing: error)
         initialGatewaySnapshotContinuation = nil
+    }
+
+    func failInitialGatewaySnapshotOnTerminalDisconnect(_ state: ConnectionState) {
+        guard state == .disconnected else { return }
+        failInitialGatewaySnapshot(
+            ChatProviderError.invalidRequest(
+                "Discord's Gateway disconnected before initial state was ready."
+            )
+        )
     }
 
     static func applyingGuildLayout(

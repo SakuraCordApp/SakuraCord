@@ -146,28 +146,26 @@ extension NativeTimelineCanvasView {
                 "nativeTimelineRowIndex"
               ] as? Int
         else { return }
+        let point = currentMouseLocationInCanvas()
+        guard !actionCapsuleContains(point) else { return }
         setHoveredRow(index)
         setHoveredCompactTimestampRow(
-            compactTimestampRowIndex(
-                at: currentMouseLocationInCanvas()
-            )
+            compactTimestampRowIndex(at: point)
         )
         setHoveredMention(
-            mentionPointerHit(at: currentMouseLocationInCanvas())
+            mentionPointerHit(at: point)
         )
         setHoveredTextLink(
-            textLinkPointerHit(at: currentMouseLocationInCanvas())
+            textLinkPointerHit(at: point)
         )
         setHoveredTextSpoiler(
-            textSpoilerPointerHit(at: currentMouseLocationInCanvas())
+            textSpoilerPointerHit(at: point)
         )
         setHoveredCodeBlock(
-            codeBlockPointerHit(at: currentMouseLocationInCanvas())
+            codeBlockPointerHit(at: point)
         )
         setHoveredComponentButton(
-            componentButtonPointerHit(
-                at: currentMouseLocationInCanvas()
-            )?.target
+            componentButtonPointerHit(at: point)?.target
         )
     }
 
@@ -179,6 +177,8 @@ extension NativeTimelineCanvasView {
             return
         }
         let point = currentMouseLocationInCanvas()
+        guard !actionCapsuleContains(point) else { return }
+        synchronizeHoveredRow(at: point)
         setHoveredCompactTimestampRow(
             compactTimestampRowIndex(at: point)
         )
@@ -200,6 +200,9 @@ extension NativeTimelineCanvasView {
             "nativeTimelineTrackingKind"
         ] as? String
         if kind == "row" {
+            guard !actionCapsuleContains(currentMouseLocationInCanvas()) else {
+                return
+            }
             if let index = event.trackingArea?.userInfo?[
                 "nativeTimelineRowIndex"
             ] as? Int,
@@ -837,11 +840,8 @@ extension NativeTimelineCanvasView {
               window?.isKeyWindow == true
         else { return }
         let point = currentMouseLocationInCanvas()
-        setHoveredRow(
-            visibleRect.contains(point)
-                ? hoveredRowIndex(at: point)
-                : nil
-        )
+        guard !actionCapsuleContains(point) else { return }
+        synchronizeHoveredRow(at: point)
         setHoveredCompactTimestampRow(
             visibleRect.contains(point)
                 ? compactTimestampRowIndex(at: point)
@@ -875,6 +875,18 @@ extension NativeTimelineCanvasView {
         setHoveredReaction(
             reactionPointerHit(at: point),
             mouseLocationInScreen: NSEvent.mouseLocation
+        )
+    }
+
+    func actionCapsuleContains(_ point: CGPoint) -> Bool {
+        actionCapsuleHost?.frame.contains(point) == true
+    }
+
+    func synchronizeHoveredRow(at point: CGPoint) {
+        setHoveredRow(
+            visibleRect.contains(point)
+                ? hoveredRowIndex(at: point)
+                : nil
         )
     }
 

@@ -909,22 +909,32 @@ extension DiscordRESTProvider {
     public func acknowledgeBulk(
         _ readStates: [BulkReadStateAcknowledgement]
     ) async throws {
+        var acceptedReadStates: [BulkReadStateAcknowledgement] = []
         for batch in readStates.chunked(maximumCount: 100) {
-            try await requestEmpty(
-                "/read-states/ack-bulk",
-                method: "POST",
-                body: [
-                    "read_states": .array(
-                        batch.map { readState in
-                            .object([
-                                "channel_id": .string(readState.channelID.description),
-                                "message_id": .string(readState.messageID.description),
-                                "read_state_type": .number(0),
-                            ])
-                        }
-                    )
-                ]
-            )
+            do {
+                try await requestEmpty(
+                    "/read-states/ack-bulk",
+                    method: "POST",
+                    body: [
+                        "read_states": .array(
+                            batch.map { readState in
+                                .object([
+                                    "channel_id": .string(readState.channelID.description),
+                                    "message_id": .string(readState.messageID.description),
+                                    "read_state_type": .number(0),
+                                ])
+                            }
+                        )
+                    ]
+                )
+                acceptedReadStates.append(contentsOf: batch)
+            } catch {
+                guard !acceptedReadStates.isEmpty else { throw error }
+                throw PartialBulkReadAcknowledgementError(
+                    acceptedReadStates: acceptedReadStates,
+                    failureDescription: error.localizedDescription
+                )
+            }
         }
     }
 
@@ -1569,7 +1579,9 @@ extension DiscordRESTProvider {
         for pair in zip(files, reservation.attachments) {
             let (file, slot) = pair
             let fileURL = file.url
-            guard let uploadURL = URL(string: slot.uploadURL) else {
+            guard let uploadURL = Self.validatedAttachmentUploadURL(
+                from: slot.uploadURL
+            ) else {
                 throw ChatProviderError.invalidRequest(
                     "Discord returned an invalid attachment upload URL.")
             }
@@ -1651,6 +1663,16 @@ extension DiscordRESTProvider {
         }
         return uploaded
         }
+    }
+
+    nonisolated static func validatedAttachmentUploadURL(
+        from value: String
+    ) -> URL? {
+        guard let url = URL(string: value),
+              url.scheme?.lowercased() == "https",
+              url.host?.isEmpty == false
+        else { return nil }
+        return url
     }
 
     func uploadAttachmentFiles(

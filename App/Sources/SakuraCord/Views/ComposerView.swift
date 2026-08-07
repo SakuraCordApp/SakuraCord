@@ -449,8 +449,12 @@ struct ComposerView: View {
         selectionBeforeEmojiPicker = nil
         let staged = attachments
         let conversationID = activeConversationID
+        model.beginUsingOwnedPromisedFiles(staged.map(\.url))
         model.clearComposerAttachments(for: conversation)
         Task {
+            defer {
+                model.endUsingOwnedPromisedFiles(staged.map(\.url))
+            }
             let scopedURLs = staged.map(\.url).filter {
                 $0.startAccessingSecurityScopedResource()
             }

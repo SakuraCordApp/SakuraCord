@@ -28,6 +28,7 @@ public actor MockChatProvider: ChatProvider {
     public private(set) var acknowledgementRequests: [AcknowledgementRequest] = []
     public private(set) var bulkAcknowledgementRequests:
         [[BulkReadStateAcknowledgement]] = []
+    private var bulkAckAcceptedPrefixBeforeFailure: Int?
     public struct GuildNotificationRequest: Equatable, Sendable {
         public var guildID: GuildID
         public var level: MessageNotificationLevel?
@@ -271,6 +272,16 @@ public actor MockChatProvider: ChatProvider {
         _ readStates: [BulkReadStateAcknowledgement]
     ) async throws {
         bulkAcknowledgementRequests.append(readStates)
+        if let acceptedCount = bulkAckAcceptedPrefixBeforeFailure {
+            throw PartialBulkReadAcknowledgementError(
+                acceptedReadStates: Array(readStates.prefix(acceptedCount)),
+                failureDescription: "Synthetic later-batch failure"
+            )
+        }
+    }
+
+    public func failBulkAcknowledgement(afterAcceptedCount acceptedCount: Int) {
+        bulkAckAcceptedPrefixBeforeFailure = max(0, acceptedCount)
     }
 
     public func updateGuildNotificationLevel(

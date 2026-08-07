@@ -75,30 +75,24 @@ private struct ChatDetailFooter: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if model.presentsCachedStartup {
-                DisabledComposerView(
-                    message: "Messages are read-only while Discord reconnects."
+            switch access {
+            case .checking:
+                DisabledComposerView(message: "Checking channel permissions…")
+            case .readable(canSend: true):
+                TypingIndicatorView(typingState: model.typingState, channelID: channel.id)
+                ComposerView(
+                    model: model,
+                    channelName: channel.name,
+                    onEditMessage: onEditMessage
                 )
-            } else {
-                switch access {
-                case .checking:
-                    DisabledComposerView(message: "Checking channel permissions…")
-                case .readable(canSend: true):
-                    TypingIndicatorView(typingState: model.typingState, channelID: channel.id)
-                    ComposerView(
-                        model: model,
-                        channelName: channel.name,
-                        onEditMessage: onEditMessage
-                    )
-                case .readable(canSend: false):
-                    DisabledComposerView(
-                        message: channel.isOfficialSystemDirectMessage
-                            ? "This chat is reserved for official Discord notifications."
-                            : "You do not have permission to send messages in this channel."
-                    )
-                case .hidden:
-                    EmptyView()
-                }
+            case .readable(canSend: false):
+                DisabledComposerView(
+                    message: channel.isOfficialSystemDirectMessage
+                        ? "This chat is reserved for official Discord notifications."
+                        : "You do not have permission to send messages in this channel."
+                )
+            case .hidden:
+                EmptyView()
             }
         }
     }

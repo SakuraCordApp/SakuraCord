@@ -27,6 +27,28 @@ extension ProviderRequestContractTests {
         #expect((batches.first?.first?["read_state_type"] as? NSNumber)?.intValue == 0)
     }
 
+    @Test func `bulk read acknowledgement reports completed batches on later failure`() async throws {
+        RateLimitURLProtocol.reset()
+        RateLimitURLProtocol.bulkAckStatuses = [204, 400]
+        let provider = makeProvider()
+        let readStates = (0 ..< 101).map { offset in
+            BulkReadStateAcknowledgement(
+                channelID: ChannelID(rawValue: UInt64(200 + offset)),
+                messageID: MessageID(rawValue: UInt64(500 + offset))
+            )
+        }
+
+        do {
+            try await provider.acknowledgeBulk(readStates)
+            Issue.record("A rejected second batch was reported as fully accepted.")
+        } catch let error as PartialBulkReadAcknowledgementError {
+            #expect(error.acceptedReadStates == Array(readStates.prefix(100)))
+        } catch {
+            Issue.record("The completed first batch was not preserved: \(error)")
+        }
+        #expect(RateLimitURLProtocol.bulkAckRequestCount == 2)
+    }
+
     @Test func `guild notification mutations use one partial bulk settings entry`() async throws {
         RateLimitURLProtocol.reset()
         let provider = makeProvider()

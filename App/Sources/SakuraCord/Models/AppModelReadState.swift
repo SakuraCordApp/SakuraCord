@@ -163,7 +163,7 @@ extension AppModel {
     }
 
     func scheduleAcknowledgement(channelID: ChannelID, messageID: MessageID) {
-        guard !runsChatPerformanceBenchmark, !presentsCachedStartup else { return }
+        guard !runsChatPerformanceBenchmark else { return }
         if let pending = readState.entries[channelID]?.pendingAcknowledgementID,
            pending >= messageID
         {
@@ -203,7 +203,7 @@ extension AppModel {
         channelID: ChannelID,
         mutation: ReadStateMutation
     ) {
-        guard !runsChatPerformanceBenchmark, !presentsCachedStartup else { return }
+        guard !runsChatPerformanceBenchmark else { return }
         if let queued = queuedAcknowledgements[channelID] {
             if mutation.manual || !queued.manual {
                 queuedAcknowledgements[channelID] =
@@ -285,7 +285,7 @@ extension AppModel {
     }
 
     func markConversationRead(channelID: ChannelID) {
-        guard !runsChatPerformanceBenchmark, !presentsCachedStartup else { return }
+        guard !runsChatPerformanceBenchmark else { return }
         guard readState.unread(channelID: channelID),
               let target = readState.entries[channelID]?.latestKnownMessageID
         else { return }
@@ -310,7 +310,7 @@ extension AppModel {
     }
 
     func markGuildRead(_ guildID: GuildID) {
-        guard !runsChatPerformanceBenchmark, !presentsCachedStartup else { return }
+        guard !runsChatPerformanceBenchmark else { return }
         guard guildAcknowledgementTasks[guildID] == nil else { return }
         let targets = readState.bulkAcknowledgements(for: guildID)
         guard !targets.isEmpty else { return }
@@ -349,6 +349,14 @@ extension AppModel {
                 }
             } catch is CancellationError {
                 return
+            } catch let partial as PartialBulkReadAcknowledgementError {
+                guard let self,
+                      self.isCurrentAccountSession(session),
+                      generation == self.acknowledgementGeneration
+                else { return }
+                self.resolvePartialBulkAcknowledgement(partial, targets: targets)
+                self.errorMessage =
+                    "Discord accepted part of the server read-state update, but not the remaining updates."
             } catch {
                 guard let self,
                       self.isCurrentAccountSession(session),
@@ -372,7 +380,7 @@ extension AppModel {
     }
 
     func markCategoryRead(categoryID: ChannelID, guildID: GuildID) {
-        guard !runsChatPerformanceBenchmark, !presentsCachedStartup else { return }
+        guard !runsChatPerformanceBenchmark else { return }
         guard categoryAcknowledgementTasks[categoryID] == nil else { return }
         let targets = readState.bulkAcknowledgements(
             for: categoryID,
@@ -414,6 +422,14 @@ extension AppModel {
                 }
             } catch is CancellationError {
                 return
+            } catch let partial as PartialBulkReadAcknowledgementError {
+                guard let self,
+                      self.isCurrentAccountSession(session),
+                      generation == self.acknowledgementGeneration
+                else { return }
+                self.resolvePartialBulkAcknowledgement(partial, targets: targets)
+                self.errorMessage =
+                    "Discord accepted part of the category read-state update, but not the remaining updates."
             } catch {
                 guard let self,
                       self.isCurrentAccountSession(session),
@@ -436,11 +452,34 @@ extension AppModel {
         }
     }
 
+    private func resolvePartialBulkAcknowledgement(
+        _ partial: PartialBulkReadAcknowledgementError,
+        targets: [BulkReadStateAcknowledgement]
+    ) {
+        let acceptedByChannelID = Dictionary(
+            partial.acceptedReadStates.map { ($0.channelID, $0.messageID) },
+            uniquingKeysWith: { _, later in later }
+        )
+        for target in targets {
+            if acceptedByChannelID[target.channelID] == target.messageID {
+                readState.completeAcknowledgement(
+                    channelID: target.channelID,
+                    messageID: target.messageID,
+                    token: nil
+                )
+            } else {
+                readState.failAcknowledgement(
+                    channelID: target.channelID,
+                    messageID: target.messageID
+                )
+            }
+        }
+    }
+
     func setGuildNotificationLevel(
         _ level: MessageNotificationLevel,
         for guild: Guild
     ) {
-        guard !presentsCachedStartup else { return }
         guard guildNotificationMutationTasks[guild.id] == nil else { return }
         let guildID = guild.id
         let generation = channelNotificationMutationGeneration
@@ -481,7 +520,6 @@ extension AppModel {
         until: Date?,
         for guild: Guild
     ) {
-        guard !presentsCachedStartup else { return }
         guard guildNotificationMutationTasks[guild.id] == nil else { return }
         let guildID = guild.id
         let generation = channelNotificationMutationGeneration
@@ -524,7 +562,6 @@ extension AppModel {
         _ level: MessageNotificationLevel,
         for channel: Channel
     ) {
-        guard !presentsCachedStartup else { return }
         guard channelNotificationMutationTasks[channel.id] == nil
         else { return }
         let guildID = channel.guildID
@@ -568,7 +605,6 @@ extension AppModel {
         until: Date?,
         for channel: Channel
     ) {
-        guard !presentsCachedStartup else { return }
         guard channelNotificationMutationTasks[channel.id] == nil
         else { return }
         let guildID = channel.guildID
@@ -615,7 +651,6 @@ extension AppModel {
         guildID: GuildID,
         categoryID: ChannelID
     ) {
-        guard !presentsCachedStartup else { return }
         guard channelNotificationMutationTasks[categoryID] == nil else { return }
         let generation = channelNotificationMutationGeneration
         let session = accountSession()
@@ -658,7 +693,6 @@ extension AppModel {
         guildID: GuildID,
         categoryID: ChannelID
     ) {
-        guard !presentsCachedStartup else { return }
         guard channelNotificationMutationTasks[categoryID] == nil else { return }
         let generation = channelNotificationMutationGeneration
         let session = accountSession()
@@ -706,8 +740,10 @@ extension AppModel {
         categoryID: ChannelID,
         completion: @escaping @MainActor (Bool) -> Void = { _ in }
     ) {
-        guard !presentsCachedStartup else { return }
-        guard channelNotificationMutationTasks[categoryID] == nil else { return }
+        guard channelNotificationMutationTasks[categoryID] == nil else {
+            completion(false)
+            return
+        }
         let generation = channelNotificationMutationGeneration
         let session = accountSession()
         let activeProvider = session.provider
@@ -750,7 +786,6 @@ extension AppModel {
         _ level: MessageNotificationLevel,
         for post: ForumPost
     ) {
-        guard !presentsCachedStartup else { return }
         guard forumNotificationMutationTasks[post.id] == nil else { return }
         let generation = forumNotificationMutationGeneration
         let session = accountSession()
@@ -791,7 +826,6 @@ extension AppModel {
         until: Date?,
         for post: ForumPost
     ) {
-        guard !presentsCachedStartup else { return }
         guard forumNotificationMutationTasks[post.id] == nil else { return }
         let generation = forumNotificationMutationGeneration
         let session = accountSession()

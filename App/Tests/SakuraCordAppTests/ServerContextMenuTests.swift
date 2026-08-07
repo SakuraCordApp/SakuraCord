@@ -13,7 +13,6 @@ import Testing
     let bridge = ServerContextMenuBridge(
         isUnread: true,
         isMutationPending: false,
-        allowsMutations: true,
         notificationSettings: GuildNotificationSettings(
             guildID: GuildID(rawValue: 100),
             messageNotifications: .onlyMentions
@@ -78,7 +77,6 @@ import Testing
     let bridge = ServerContextMenuBridge(
         isUnread: false,
         isMutationPending: false,
-        allowsMutations: true,
         notificationSettings: GuildNotificationSettings(
             guildID: GuildID(rawValue: 100),
             isMuted: true,
@@ -144,6 +142,53 @@ import Testing
     #expect(requests[0].level == .allMessages)
     #expect(requests[1].isMuted == true)
     #expect(requests[1].muteEndTime == endTime)
+}
+
+@MainActor
+@Test func `server read partial bulk failure keeps the accepted first batch read`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let guild = try #require(model.snapshot?.guilds.first)
+    let channels = (0 ..< 101).map { offset in
+        Channel(
+            id: ChannelID(rawValue: UInt64(10_000 + offset)),
+            guildID: guild.id,
+            name: "bulk-\(offset)",
+            lastMessageID: MessageID(rawValue: UInt64(20_000 + offset))
+        )
+    }
+    let readStates = channels.map {
+        ChannelReadState(
+            channelID: $0.id,
+            lastAcknowledgedMessageID: MessageID(rawValue: 1),
+            mentionCount: 1
+        )
+    }
+    model.readState.configure(
+        accountID: "offline",
+        guilds: [guild],
+        channels: channels,
+        readStates: readStates,
+        notificationSettings: []
+    )
+    await provider.failBulkAcknowledgement(afterAcceptedCount: 100)
+
+    model.markGuildRead(guild.id)
+
+    #expect(await eventuallyServerMenu {
+        await provider.bulkAcknowledgementRequests.count == 1
+            && model.errorMessage?.contains("accepted part") == true
+    })
+    let requested = try #require(await provider.bulkAcknowledgementRequests.first)
+    #expect(requested.count >= 101)
+    #expect(requested.prefix(100).allSatisfy {
+        !model.readState.unread(channelID: $0.channelID)
+    })
+    #expect(requested.dropFirst(100).allSatisfy {
+        model.readState.unread(channelID: $0.channelID)
+    })
+    #expect(model.errorMessage?.contains("did not accept the server") == false)
 }
 
 @MainActor

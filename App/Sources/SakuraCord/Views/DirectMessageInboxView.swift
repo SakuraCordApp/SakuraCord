@@ -161,7 +161,6 @@ private struct DirectMessageInboxRow: View {
                 isUnread: model.isChannelUnread(channel.id),
                 isMutationPending:
                     model.isChannelNotificationMutationPending(channel.id),
-                allowsMutations: !model.presentsCachedStartup,
                 directOverride: model.channelNotificationOverride(for: channel),
                 inheritedLevel:
                     model.inheritedChannelNotificationLevel(for: channel),

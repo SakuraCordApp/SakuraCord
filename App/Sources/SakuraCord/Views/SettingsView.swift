@@ -232,7 +232,7 @@ struct SettingsView: View {
                             + "Detailed sanitized payload capture is off by default because processing large responses increases CPU and energy use. "
                             + "Message text, names, usernames, profile text, credentials, cookies, challenge data, filenames, and URLs are discarded before logging. "
                             + "IDs, nonces, request IDs, and rate-limit bucket IDs are always redacted. "
-                            + "Disk capture is off by default and writes a private JSON Lines file in Application Support/SakuraCord/Diagnostics."
+                            + "Disk capture is off by default and keeps at most four private JSON Lines session files of up to 64 MiB each in Application Support/SakuraCord/Diagnostics."
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -242,9 +242,7 @@ struct SettingsView: View {
                             Task { await exportAPILogs() }
                         }
                         Button("Clear Logs", role: .destructive) {
-                            DiscordAPIDiagnosticStore.shared.clear()
-                            apiDiagnosticEntryCount = 0
-                            apiDiagnosticStatus = "The retained API log was cleared."
+                            clearAPILogs()
                         }
                     }
 
@@ -278,6 +276,25 @@ struct SettingsView: View {
     private func refreshAPIDiagnosticCount() {
         apiDiagnosticEntryCount =
             DiscordAPIDiagnosticStore.shared.retainedEntryCount
+    }
+
+    private func clearAPILogs() {
+        let store = DiscordAPIDiagnosticStore.shared
+        let wasSavingToDisk = store.savesDiagnosticsToDisk
+        do {
+            try store.clearMemoryAndDisk()
+            apiDiagnosticEntryCount = 0
+            if wasSavingToDisk, let fileURL = store.currentDiskLogURL {
+                apiDiagnosticStatus =
+                    "Retained and saved API logs were cleared. Saving continues to \(fileURL.lastPathComponent)."
+            } else {
+                apiDiagnosticStatus = "Retained and saved API logs were cleared."
+            }
+        } catch {
+            savesAPIDiagnosticsToDisk = store.savesDiagnosticsToDisk
+            apiDiagnosticStatus =
+                "Could not clear every saved API log: \(error.localizedDescription)"
+        }
     }
 
     private func updateDiskLogging(_ savesToDisk: Bool) {

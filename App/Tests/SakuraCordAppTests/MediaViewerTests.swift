@@ -6,6 +6,77 @@ import Testing
 
 @MainActor
 struct MediaViewerTests {
+    @Test func `media save copies local files without loading them into the media cache`() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "sakuracord-media-save-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appendingPathComponent("source.bin")
+        let destination = directory.appendingPathComponent("destination.bin")
+        let bytes = Data((0 ..< 4_096).map { UInt8($0 % 251) })
+        try bytes.write(to: source)
+        try Data("old".utf8).write(to: destination)
+
+        try await MediaViewerActionService.copyMedia(
+            from: source,
+            to: destination
+        )
+
+        #expect(try Data(contentsOf: destination) == bytes)
+        #expect(try Data(contentsOf: source) == bytes)
+        #expect(
+            try FileManager.default.contentsOfDirectory(atPath: directory.path)
+                .allSatisfy { !$0.hasPrefix(".sakuracord-save-") }
+        )
+    }
+
+    @Test func `remote media save uses the shared streamed download path`() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "sakuracord-remote-media-save-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let downloadedFile = directory.appendingPathComponent("downloaded.bin")
+        let destination = directory.appendingPathComponent("saved.bin")
+        let bytes = Data((0 ..< 8_192).map { UInt8($0 % 239) })
+        try bytes.write(to: downloadedFile)
+        let probe = MediaViewerRemoteDownloadProbe(fileURL: downloadedFile)
+        let loader = SharedMediaDataLoader(
+            remoteFetch: { url in
+                try await probe.fetch(url)
+            },
+            remoteDownload: { url in
+                await probe.download(url)
+            }
+        )
+        let source = try #require(URL(
+            string: "https://cdn.example/large-video.mp4"
+        ))
+
+        try await MediaViewerActionService.copyMedia(
+            from: source,
+            to: destination,
+            dataLoader: loader
+        )
+
+        #expect(try Data(contentsOf: destination) == bytes)
+        #expect(await probe.downloadedURLs == [source])
+        #expect(await probe.dataFetchCount == 0)
+        #expect(
+            await loader.remoteLoadSnapshot()
+                == .init(pendingCount: 0, activeCount: 0, waiterCount: 0)
+        )
+    }
+
     @Test func `top chrome uses equal padding above and below matching controls`() {
         #expect(
             MediaViewerTopChromeMetrics.actionDiameter
@@ -520,5 +591,29 @@ struct MediaViewerTests {
         #expect(model.consumeEscapeForMediaViewer())
         #expect(model.mediaViewerPresentation == nil)
         #expect(!model.consumeEscapeForMediaViewer())
+    }
+
+}
+
+private actor MediaViewerRemoteDownloadProbe {
+    let fileURL: URL
+    private(set) var downloadedURLs: [URL] = []
+    private(set) var dataFetchCount = 0
+
+    init(fileURL: URL) {
+        self.fileURL = fileURL
+    }
+
+    func fetch(_ url: URL) throws -> Data {
+        dataFetchCount += 1
+        return try Data(contentsOf: fileURL)
+    }
+
+    func download(_ url: URL) -> SharedMediaDownloadedFile {
+        downloadedURLs.append(url)
+        return SharedMediaDownloadedFile(
+            url: fileURL,
+            cleanupDirectory: nil
+        )
     }
 }

@@ -58,6 +58,7 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var bulkAckRequestCount = 0
     nonisolated(unsafe) static var bulkAckMethods: [String] = []
     nonisolated(unsafe) static var bulkAckBodies: [[String: Any]] = []
+    nonisolated(unsafe) static var bulkAckStatuses: [Int] = []
     nonisolated(unsafe) static var guildNotificationRequestCount = 0
     nonisolated(unsafe) static var guildNotificationMethod: String?
     nonisolated(unsafe) static var guildNotificationBody: [String: Any]?
@@ -132,6 +133,7 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
         bulkAckRequestCount = 0
         bulkAckMethods = []
         bulkAckBodies = []
+        bulkAckStatuses = []
         guildNotificationRequestCount = 0
         guildNotificationMethod = nil
         guildNotificationBody = nil
@@ -319,8 +321,10 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
             {
                 RateLimitURLProtocol.bulkAckBodies.append(object)
             }
-            status = 204
-            json = ""
+            let requestIndex = RateLimitURLProtocol.bulkAckRequestCount - 1
+            status = RateLimitURLProtocol.bulkAckStatuses.indices.contains(requestIndex)
+                ? RateLimitURLProtocol.bulkAckStatuses[requestIndex] : 204
+            json = status == 204 ? "" : #"{"message":"Synthetic rejection"}"#
         case "/api/v9/users/@me/guilds/settings":
             RateLimitURLProtocol.guildNotificationRequestCount += 1
             RateLimitURLProtocol.guildNotificationMethod = request.httpMethod

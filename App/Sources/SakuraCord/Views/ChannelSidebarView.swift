@@ -92,7 +92,6 @@ struct ChannelSidebarView: View {
     let connectionState: ConnectionState
     let currentStatus: PresenceStatus
     let isAuthenticated: Bool
-    var isCachedStartup = false
     let isOfflineTesting: Bool
     let activeVoiceChannelID: ChannelID?
     let connectAccount: () -> Void
@@ -151,7 +150,6 @@ struct ChannelSidebarView: View {
                 connectionState: connectionState,
                 currentStatus: currentStatus,
                 isAuthenticated: isAuthenticated,
-                isCachedStartup: isCachedStartup,
                 isOfflineTesting: isOfflineTesting,
                 connectAccount: connectAccount,
                 updateStatus: updateStatus
@@ -479,7 +477,6 @@ private struct ChannelGroupRows: View {
                                 model.isChannelNotificationMutationPending(
                                     categoryID
                                 ),
-                            allowsMutations: !model.presentsCachedStartup,
                             directOverride: model.categoryNotificationOverride(
                                 guildID: guildID,
                                 categoryID: categoryID
@@ -594,7 +591,6 @@ private struct AccountControlView: View {
     let connectionState: ConnectionState
     let currentStatus: PresenceStatus
     let isAuthenticated: Bool
-    let isCachedStartup: Bool
     let isOfflineTesting: Bool
     let connectAccount: () -> Void
     let updateStatus: (PresenceStatus) async -> Void
@@ -616,7 +612,6 @@ private struct AccountControlView: View {
                     Spacer(minLength: 4)
                     AccountMenu(
                         isAuthenticated: isAuthenticated,
-                        isCachedStartup: isCachedStartup,
                         isOfflineTesting: isOfflineTesting,
                         currentStatus: currentStatus,
                         savedAccounts: voiceModel.savedAccounts,
@@ -652,7 +647,7 @@ private struct AccountControlView: View {
         if isOfflineTesting {
             return "Offline Testing"
         }
-        return isAuthenticated || isCachedStartup
+        return isAuthenticated
             ? (user?.displayName ?? "Discord Account")
             : "Connect Account"
     }
@@ -660,9 +655,6 @@ private struct AccountControlView: View {
     private var accountSubtitle: String {
         if isOfflineTesting {
             return "Mock data • networking disabled"
-        }
-        if isCachedStartup {
-            return "Cached data • reconnecting"
         }
         if isAuthenticated {
             return user.map { "@\($0.username)" } ?? connectionState.rawValue
@@ -689,7 +681,6 @@ private struct AccountAvatar: View {
 
 private struct AccountMenu: View {
     let isAuthenticated: Bool
-    let isCachedStartup: Bool
     let isOfflineTesting: Bool
     let currentStatus: PresenceStatus
     let savedAccounts: [SavedAccount]
@@ -708,7 +699,6 @@ private struct AccountMenu: View {
                 .allowsHitTesting(false)
             NativeAccountMenuButton(
                 isAuthenticated: isAuthenticated,
-                isCachedStartup: isCachedStartup,
                 isOfflineTesting: isOfflineTesting,
                 currentStatus: currentStatus,
                 savedAccounts: savedAccounts,
@@ -807,7 +797,7 @@ private struct ChannelRow: View {
                 isUnread: model.isChannelUnread(channel.id),
                 isMutationPending:
                     model.isChannelNotificationMutationPending(channel.id),
-                allowsMutations: !model.presentsCachedStartup && !isChecking,
+                allowsMutations: !isChecking,
                 directOverride: model.channelNotificationOverride(for: channel),
                 inheritedLevel:
                     model.inheritedChannelNotificationLevel(for: channel),

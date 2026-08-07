@@ -90,6 +90,7 @@ final class NativeMemberListCoordinator: NSObject {
     weak var canvas: NativeMemberListCanvasView?
     var observations: [NSObjectProtocol] = []
     var scrollIdleTask: Task<Void, Never>?
+    var scrollIdleDeadline = ContinuousClock.now
     var viewportTask: Task<Void, Never>?
     var lastViewportRange: ClosedRange<Int>?
     var pendingViewportRange: ClosedRange<Int>?
@@ -157,6 +158,7 @@ final class NativeMemberListCoordinator: NSObject {
         let height = max(1, canvas.contentHeight)
         if canvas.frame.size != NSSize(width: width, height: height) {
             canvas.frame = NSRect(x: 0, y: 0, width: width, height: height)
+            canvas.updateVisibleOverlaysAndPrewarming(force: true)
         }
         reportViewport(debounced: false)
         startPerformanceBenchmarkIfReady()
@@ -165,14 +167,24 @@ final class NativeMemberListCoordinator: NSObject {
     func viewportDidScroll() {
         guard let canvas else { return }
         canvas.setScrolling(true)
-        scrollIdleTask?.cancel()
-        scrollIdleTask = Task {
-            try? await Task.sleep(for: .milliseconds(180))
-            guard !Task.isCancelled else { return }
-            canvas.setScrolling(false)
+        let clock = ContinuousClock()
+        scrollIdleDeadline = clock.now.advanced(by: .milliseconds(180))
+        if scrollIdleTask == nil {
+            scrollIdleTask = Task { [weak self] in
+                guard let self else { return }
+                while !Task.isCancelled {
+                    let deadline = scrollIdleDeadline
+                    try? await Task.sleep(until: deadline, clock: clock)
+                    guard !Task.isCancelled else { return }
+                    guard scrollIdleDeadline <= clock.now else { continue }
+                    scrollIdleTask = nil
+                    canvas.setScrolling(false)
+                    return
+                }
+            }
         }
         reportViewport(debounced: true)
-        canvas.updateVisibleOverlaysAndPrewarming()
+        canvas.updateVisibleOverlaysAndPrewarming(reconcileInteraction: false)
     }
 
     func reportViewport(debounced: Bool) {
@@ -380,6 +392,8 @@ final class NativeMemberListCanvasView: NSView {
     override var acceptsFirstResponder: Bool { true }
 
     var items: [Item] = []
+    var presentedSections: [MemberSection] = []
+    var itemIndexesByID: [ItemID: Int] = [:]
     var customEmojiURLsByID: [String: URL] = [:]
     var origins: [CGFloat] = []
     var contentHeight: CGFloat = 1
@@ -416,9 +430,17 @@ final class NativeMemberListCanvasView: NSView {
     ] = [:]
     var accessibilityRows: [ItemID: NativeMemberAccessibilityProxyView] = [:]
     var imageTasks: [URL: Task<Void, Never>] = [:]
-    var imageRequestIndexes: [URL: Set<Int>] = [:]
+    var imageTaskPriorities: [URL: MediaLoadPriority] = [:]
+    var imageRequestItemIDs: [URL: Set<ItemID>] = [:]
     var images: [URL: CGImage] = [:]
-    var prewarmedURLs: Set<URL> = []
+    var reconciledVisibleRange: Range<Int>?
+    var reconciledViewportWidth: CGFloat?
+    var imageLoadPromotion: @Sendable (URL, Int) async -> Void = { url, dimension in
+        await SharedDecodedImageLoader.shared.promoteImageLoad(
+            for: url,
+            maximumPixelDimension: dimension
+        )
+    }
 
     override func updateTrackingAreas() {
         if let trackingArea { removeTrackingArea(trackingArea) }
@@ -448,7 +470,38 @@ final class NativeMemberListCanvasView: NSView {
         selectedMemberID = isProfilePresented
             ? profilePresentation?.member.id
             : nil
+        let documentChanged = updateDocumentIfNeeded(
+            sections: sections,
+            previousItems: previousItems
+        )
+        if previousCustomEmojiURLsByID != customEmojiURLsByID {
+            needsDisplay = true
+        }
+        for index in selectionInvalidationIndexes(
+            previous: previousSelectedMemberID,
+            current: selectedMemberID
+        ) {
+            setNeedsDisplay(itemRect(at: index))
+        }
+        updateVisibleOverlaysAndPrewarming(
+            force: documentChanged || previousCustomEmojiURLsByID != customEmojiURLsByID
+        )
+    }
+
+    @discardableResult
+    func updateDocumentIfNeeded(
+        sections: [MemberSection],
+        previousItems: [Item]? = nil
+    ) -> Bool {
+        guard sections != presentedSections else { return false }
+        let previousItems = previousItems ?? items
+        presentedSections = sections
         items = Self.makeItems(sections: sections)
+        itemIndexesByID.removeAll(keepingCapacity: true)
+        itemIndexesByID.reserveCapacity(items.count)
+        for index in items.indices {
+            itemIndexesByID[items[index].id] = index
+        }
         if let hoveredIndex,
            !items.indices.contains(hoveredIndex) ||
            !previousItems.indices.contains(hoveredIndex) ||
@@ -458,37 +511,35 @@ final class NativeMemberListCanvasView: NSView {
         }
         rebuildOrigins()
         prepareRows()
-        if previousCustomEmojiURLsByID != customEmojiURLsByID {
-            needsDisplay = true
-        } else if previousItems.count == items.count {
+        if previousItems.count == items.count {
             for index in items.indices where items[index] != previousItems[index] {
                 setNeedsDisplay(itemRect(at: index))
             }
         } else {
             needsDisplay = true
         }
-        for index in Self.selectionInvalidationIndexes(
-            in: items,
-            previous: previousSelectedMemberID,
-            current: selectedMemberID
-        ) {
-            setNeedsDisplay(itemRect(at: index))
-        }
-        updateVisibleOverlaysAndPrewarming()
+        reconciledVisibleRange = nil
+        return true
     }
 
-    static func selectionInvalidationIndexes(
-        in items: [Item],
+    func selectionInvalidationIndexes(
         previous: UserID?,
         current: UserID?
     ) -> [Int] {
         guard previous != current else { return [] }
-        return items.indices.filter { index in
-            guard case .member(let member, _) = items[index] else {
-                return false
-            }
-            return member.id == previous || member.id == current
+        var indexes: [Int] = []
+        if let previous,
+           let index = itemIndexesByID[.member(previous)]
+        {
+            indexes.append(index)
         }
+        if let current,
+           let index = itemIndexesByID[.member(current)],
+           !indexes.contains(index)
+        {
+            indexes.append(index)
+        }
+        return indexes.sorted()
     }
 
     static func makeItems(sections: [MemberSection]) -> [Item] {
@@ -934,17 +985,29 @@ final class NativeMemberListCanvasView: NSView {
         updateVisibleOverlaysAndPrewarming()
     }
 
-    func updateVisibleOverlaysAndPrewarming() {
-        guard let scrollView = enclosingScrollView else { return }
+    @discardableResult
+    func updateVisibleOverlaysAndPrewarming(
+        force: Bool = false,
+        reconcileInteraction: Bool = true
+    ) -> Bool {
+        guard let scrollView = enclosingScrollView else { return false }
         let visible = itemRange(intersecting: scrollView.documentVisibleRect)
+        let viewportChanged = visible != reconciledVisibleRange
+            || bounds.width != reconciledViewportWidth
+        if reconcileInteraction || viewportChanged || force {
+            installRowOverlayIfNeeded()
+        }
+        guard force || viewportChanged else { return false }
+        reconciledVisibleRange = visible
+        reconciledViewportWidth = bounds.width
         let prewarmLower = max(0, visible.lowerBound - NativeMemberListMetrics.prewarmItemCount)
         let prewarmUpper = min(items.count, visible.upperBound + NativeMemberListMetrics.prewarmItemCount)
         let prewarmRange = prewarmLower ..< prewarmUpper
-        installRowOverlayIfNeeded()
         installAvatarOverlays(in: visible)
         installActivityEmojiOverlays(in: visible)
         installAccessibilityRows(in: visible)
         prewarmImages(in: prewarmRange, visible: visible)
+        return true
     }
 
     func installAvatarOverlays(in range: Range<Int>) {
@@ -1087,13 +1150,7 @@ final class NativeMemberListCanvasView: NSView {
         {
             hoveredIndex
         } else if let selectedMemberID {
-            items.firstIndex {
-                if case .member(let member, _) = $0 {
-                    member.id == selectedMemberID
-                } else {
-                    false
-                }
-            }
+            itemIndexesByID[.member(selectedMemberID)]
         } else {
             nil
         }
@@ -1151,13 +1208,7 @@ final class NativeMemberListCanvasView: NSView {
     func installProfileAnchorIfNeeded() {
         guard isProfilePresented,
               let presentation = profilePresentation,
-              let index = items.firstIndex(where: {
-                  if case .member(let member, _) = $0 {
-                      member.id == presentation.member.id
-                  } else {
-                      false
-                  }
-              }),
+              let index = itemIndexesByID[.member(presentation.member.id)],
               enclosingScrollView?.documentVisibleRect.intersects(itemRect(at: index)) == true
         else {
             removeProfileAnchor()
@@ -1219,18 +1270,38 @@ final class NativeMemberListCanvasView: NSView {
             let priority: MediaLoadPriority = visible.contains(index) ? .visible : .prefetch
             for url in urls { requestImageIfNeeded(url: url, index: index, priority: priority) }
         }
-        prewarmedURLs = wanted
         for (url, task) in imageTasks where !wanted.contains(url) {
             task.cancel()
             imageTasks[url] = nil
-            imageRequestIndexes[url] = nil
+            imageTaskPriorities[url] = nil
+            imageRequestItemIDs[url] = nil
+        }
+        // The shared loader owns the bounded decoded cache. Retaining every
+        // image encountered by a long member-list scroll here would defeat
+        // that budget, so the canvas keeps only its visible/prewarmed window.
+        for url in images.keys.filter({ !wanted.contains($0) }) {
+            images[url] = nil
         }
     }
 
     func requestImageIfNeeded(url: URL?, index: Int, priority: MediaLoadPriority) {
-        guard let url, images[url] == nil else { return }
-        imageRequestIndexes[url, default: []].insert(index)
-        guard imageTasks[url] == nil else { return }
+        guard let url,
+              items.indices.contains(index),
+              images[url] == nil
+        else { return }
+        imageRequestItemIDs[url, default: []].insert(items[index].id)
+        guard imageTasks[url] == nil else {
+            guard priority == .visible,
+                  imageTaskPriorities[url] == .prefetch
+            else { return }
+            imageTaskPriorities[url] = .visible
+            let imageLoadPromotion = imageLoadPromotion
+            Task {
+                await imageLoadPromotion(url, 512)
+            }
+            return
+        }
+        imageTaskPriorities[url] = priority
         imageTasks[url] = Task { [weak self] in
             let image = await SharedDecodedImageLoader.shared.image(
                 for: url,
@@ -1239,10 +1310,13 @@ final class NativeMemberListCanvasView: NSView {
             )
             guard !Task.isCancelled, let self else { return }
             imageTasks[url] = nil
-            let indexes = imageRequestIndexes.removeValue(forKey: url) ?? [index]
+            imageTaskPriorities[url] = nil
+            let requestedItemIDs = imageRequestItemIDs.removeValue(forKey: url)
+                ?? []
             guard let image else { return }
             images[url] = image
-            for requestedIndex in indexes where items.indices.contains(requestedIndex) {
+            for itemID in requestedItemIDs {
+                guard let requestedIndex = itemIndexesByID[itemID] else { continue }
                 setNeedsDisplay(itemRect(at: requestedIndex))
                 if rowOverlayIndex == requestedIndex {
                     rowForegroundOverlay?.needsDisplay = true
@@ -1259,7 +1333,10 @@ final class NativeMemberListCanvasView: NSView {
     func tearDown() {
         for task in imageTasks.values { task.cancel() }
         imageTasks.removeAll()
-        imageRequestIndexes.removeAll()
+        imageTaskPriorities.removeAll()
+        imageRequestItemIDs.removeAll()
+        reconciledVisibleRange = nil
+        reconciledViewportWidth = nil
         removeRowOverlay()
         removeProfileAnchor(immediately: true)
         for host in avatarOverlays.values { host.removeFromSuperview() }

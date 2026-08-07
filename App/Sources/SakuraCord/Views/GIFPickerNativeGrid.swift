@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import Foundation
 import SakuraCordModels
 import SwiftUI
 
@@ -543,7 +544,7 @@ private final class GIFPickerCollectionCellView: NSView {
            !GIFPickerVideoFallbackRegistry.shared.contains(videoURL)
         {
             startVideoLoad(url: videoURL, gif: gif)
-            startStaticLoad(url: gif.thumbnailURL)
+            startStaticLoad(url: GIFPickerMediaPolicy.staticFallbackURL(for: gif))
         } else {
             startStaticLoad(url: GIFPickerMediaPolicy.staticFallbackURL(for: gif))
             startAnimatedLoad(
@@ -563,6 +564,7 @@ private final class GIFPickerCollectionCellView: NSView {
         mediaCanvas.clear()
         videoCanvas.clear()
         mediaCanvas.setPlaybackSuppressed(true)
+        setAccessibilityCustomActions(nil)
         setHovered(false)
     }
 
@@ -643,9 +645,6 @@ private final class GIFPickerCollectionCellView: NSView {
             guard let self, self.representedGIFURL == gif.url else { return }
             GIFPickerVideoFallbackRegistry.shared.insert(url)
             self.videoCanvas.clear()
-            self.startStaticLoad(
-                url: GIFPickerMediaPolicy.staticFallbackURL(for: gif)
-            )
             self.startAnimatedLoad(
                 urls: GIFPickerMediaPolicy.nativeAnimationURLs(for: gif),
                 gifURL: gif.url
@@ -784,11 +783,61 @@ private final class GIFPickerCollectionCellView: NSView {
         favoriteButton.toolTip = isFavorite
             ? "Remove from favourites" : "Add to favourites"
         favoriteButton.setAccessibilityLabel(favoriteButton.toolTip)
+        if isMutating {
+            setAccessibilityCustomActions(nil)
+        } else {
+            setAccessibilityCustomActions([
+                NSAccessibilityCustomAction(
+                    name: favoriteButton.toolTip ?? "Toggle favourite"
+                ) { [weak self] in
+                    guard let self else { return false }
+                    self.toggleFavorite?()
+                    return true
+                },
+            ])
+        }
     }
 
     @objc
     private func toggleFavoritePressed() {
         toggleFavorite?()
+    }
+}
+
+nonisolated struct GIFPickerStagedVideo: Sendable {
+    let fileURL: URL
+    let directory: URL
+
+    nonisolated func discard(fileManager: FileManager = .default) {
+        try? fileManager.removeItem(at: directory)
+    }
+}
+
+nonisolated enum GIFPickerVideoTransport {
+    static func stage(
+        _ url: URL,
+        dataLoader: SharedMediaDataLoader = .shared,
+        fileManager: FileManager = .default
+    ) async throws -> GIFPickerStagedVideo {
+        guard let approvedURL = GIFMediaURLPolicy.approved(url) else {
+            throw URLError(.unsupportedURL)
+        }
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("SakuraCord", isDirectory: true)
+            .appendingPathComponent("GIF Video", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        do {
+            try fileManager.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+            let fileURL = directory.appendingPathComponent("video.mp4")
+            try await dataLoader.copyRemoteMedia(from: approvedURL, to: fileURL)
+            return GIFPickerStagedVideo(fileURL: fileURL, directory: directory)
+        } catch {
+            try? fileManager.removeItem(at: directory)
+            throw error
+        }
     }
 }
 
@@ -814,6 +863,7 @@ private final class GIFPickerVideoCanvas: NSView {
     private var looper: AVPlayerLooper?
     private var loadTask: Task<Void, Never>?
     private var representedURL: URL?
+    private var stagedPlaybackDirectory: URL?
     private var failure: (() -> Void)?
     private var isViewportVisible = false
     private var playbackWatchdogTask: Task<Void, Never>?
@@ -908,25 +958,36 @@ private final class GIFPickerVideoCanvas: NSView {
               let url = representedURL
         else { return }
         loadTask = Task { [weak self] in
-            let asset = AVURLAsset(url: url)
             do {
+                let staged = try await GIFPickerVideoTransport.stage(url)
+                var retainsStagedFile = false
+                defer {
+                    if !retainsStagedFile {
+                        staged.discard()
+                    }
+                }
+                try Task.checkCancellation()
+                guard let self, self.representedURL == url else { return }
+                self.stagedPlaybackDirectory = staged.directory
+                retainsStagedFile = true
+                let asset = AVURLAsset(url: staged.fileURL)
                 async let playable = asset.load(.isPlayable)
                 async let duration = asset.load(.duration)
                 guard try await playable,
                       (try await duration).isValid
                 else { throw CocoaError(.fileReadCorruptFile) }
                 try Task.checkCancellation()
-                guard let self, self.representedURL == url else { return }
+                guard self.representedURL == url else { return }
                 let item = AVPlayerItem(asset: asset)
                 NotificationCenter.default.addObserver(
                     self,
-                    selector: #selector(playerItemFailed(_:)),
+                    selector: #selector(GIFPickerVideoCanvas.playerItemFailed(_:)),
                     name: AVPlayerItem.failedToPlayToEndTimeNotification,
                     object: item
                 )
                 NotificationCenter.default.addObserver(
                     self,
-                    selector: #selector(playerItemStalled(_:)),
+                    selector: #selector(GIFPickerVideoCanvas.playerItemStalled(_:)),
                     name: AVPlayerItem.playbackStalledNotification,
                     object: item
                 )
@@ -974,6 +1035,10 @@ private final class GIFPickerVideoCanvas: NSView {
         player.pause()
         player.removeAllItems()
         looper = nil
+        if let stagedPlaybackDirectory {
+            try? FileManager.default.removeItem(at: stagedPlaybackDirectory)
+            self.stagedPlaybackDirectory = nil
+        }
     }
 
     @objc

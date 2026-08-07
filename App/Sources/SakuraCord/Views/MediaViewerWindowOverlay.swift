@@ -101,7 +101,7 @@ struct MediaViewerWindowOverlay: NSViewRepresentable {
                 presentation: presentation,
                 dismiss: dismiss,
                 didFinishDismissal: { [weak self] in
-                    self?.removeOverlay()
+                    self?.removeOverlay(ifPresentationID: presentation.id)
                 }
             )
             overlay.frame = container.bounds
@@ -138,6 +138,11 @@ struct MediaViewerWindowOverlay: NSViewRepresentable {
                 NSEvent.removeMonitor(keyMonitor)
                 self.keyMonitor = nil
             }
+        }
+
+        private func removeOverlay(ifPresentationID presentationID: UUID) {
+            guard overlayView?.presentationID == presentationID else { return }
+            removeOverlay()
         }
     }
 }

@@ -764,40 +764,39 @@ extension NativeMessageTimelineCoordinator {
         static func makeActions(
             from parent: NativeMessageTimelineView
         ) -> NativeTimelineRowActions {
-            let allowsMutations = !parent.model.presentsCachedStartup
             return NativeTimelineRowActions(
                 loadEarlier: parent.loadEarlier,
                 openReply: parent.openReply,
-                reply: parent.conversation.supportsReply && allowsMutations
+                reply: parent.conversation.supportsReply
                     ? { [weak model = parent.model] message in
                         model?.reply(to: message)
                     }
                     : nil,
                 retry: { [weak model = parent.model] message in
-                    guard let model, !model.presentsCachedStartup else { return }
+                    guard let model else { return }
                     Task { await model.retrySending(message) }
                 },
                 edit: { [weak model = parent.model] message, content in
-                    guard let model, !model.presentsCachedStartup else { return }
+                    guard let model else { return }
                     Task { await model.edit(message, content: content) }
                 },
                 markUnread: { [weak model = parent.model] message in
-                    guard let model, !model.presentsCachedStartup else { return }
+                    guard let model else { return }
                     model.markMessageAndFollowingUnread(message)
                 },
                 delete: { [weak model = parent.model] message in
-                    guard let model, !model.presentsCachedStartup else { return }
+                    guard let model else { return }
                     Task { await model.delete(message) }
                 },
                 react: { [weak model = parent.model] emoji, message in
-                    guard let model, !model.presentsCachedStartup else { return }
+                    guard let model else { return }
                     Task { await model.toggleReaction(emoji, on: message) }
                 },
                 openThread: { [weak model = parent.model] thread in
                     model?.open(thread)
                 },
                 submitComponent: { [weak model = parent.model] message, customID, kind, values in
-                    guard let model, !model.presentsCachedStartup else { return }
+                    guard let model else { return }
                     Task {
                         await model.submitComponent(
                             on: message,

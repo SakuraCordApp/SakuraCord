@@ -143,6 +143,26 @@ import Testing
 }
 
 @MainActor
+@Test func `native member canvas indexes a large sparse document once`() {
+    var first = member(1, "First", status: .online)
+    first.memberListIndex = 1
+    var distant = member(2, "Distant", status: .online)
+    distant.memberListIndex = 50_000
+    let sections = MemberSection.make(
+        from: [first, distant],
+        groups: [GuildMemberListGroup(id: "online", count: 50_000)]
+    )
+    let canvas = NativeMemberListCanvasView()
+
+    #expect(canvas.updateDocumentIfNeeded(sections: sections))
+    #expect(canvas.items.count == 50_001)
+    #expect(canvas.itemIndexesByID[.member(first.id)] == 1)
+    #expect(canvas.itemIndexesByID[.member(distant.id)] == 50_000)
+    #expect(!canvas.updateDocumentIfNeeded(sections: sections))
+    canvas.tearDown()
+}
+
+@MainActor
 @Test func `native member hover preserves avatar overlays and native foreground`() {
     let members = (1 ... 3).map {
         member(UInt64($0), "Member \($0)", status: .online)
@@ -310,6 +330,33 @@ import Testing
 }
 
 @MainActor
+@Test func `visible member image request promotes an in flight prefetch`() async throws {
+    let url = try #require(URL(string: "https://cdn.example/member-avatar.png"))
+    var visibleMember = member(1, "Visible", status: .online)
+    visibleMember.user.avatarURL = url
+    let canvas = NativeMemberListCanvasView()
+    let probe = MemberImagePromotionProbe()
+    canvas.items = [.member(visibleMember, gatewayIndex: 0)]
+    canvas.imageTasks[url] = Task {
+        try? await Task.sleep(for: .seconds(60))
+    }
+    canvas.imageTaskPriorities[url] = .prefetch
+    canvas.imageLoadPromotion = { url, dimension in
+        await probe.record(url: url, dimension: dimension)
+    }
+
+    canvas.requestImageIfNeeded(url: url, index: 0, priority: .visible)
+    for _ in 0 ..< 20 {
+        if await probe.calls.count == 1 { break }
+        await Task.yield()
+    }
+
+    #expect(await probe.calls == [.init(url: url, dimension: 512)])
+    #expect(canvas.imageTaskPriorities[url] == .visible)
+    canvas.tearDown()
+}
+
+@MainActor
 @Test func `native member canvas mounts animated status emoji only while its row is visible`() {
     let animatedURL = URL(fileURLWithPath: "/tmp/member-status-animated.gif")
     var animatedMember = member(1, "Animated", status: .online)
@@ -402,7 +449,7 @@ import Testing
     let members = (1 ... 3).map {
         member(UInt64($0), "Member \($0)", status: .online)
     }
-    let items = NativeMemberListCanvasView.makeItems(sections: [
+    let sections = [
         MemberSection(
             id: .online,
             title: "Online",
@@ -410,23 +457,23 @@ import Testing
             totalCount: members.count,
             members: members
         ),
-    ])
+    ]
+    let canvas = NativeMemberListCanvasView()
+    canvas.updateDocumentIfNeeded(sections: sections)
 
-    #expect(NativeMemberListCanvasView.selectionInvalidationIndexes(
-        in: items,
+    #expect(canvas.selectionInvalidationIndexes(
         previous: members[0].id,
         current: members[1].id
     ) == [1, 2])
-    #expect(NativeMemberListCanvasView.selectionInvalidationIndexes(
-        in: items,
+    #expect(canvas.selectionInvalidationIndexes(
         previous: members[1].id,
         current: nil
     ) == [2])
-    #expect(NativeMemberListCanvasView.selectionInvalidationIndexes(
-        in: items,
+    #expect(canvas.selectionInvalidationIndexes(
         previous: members[1].id,
         current: members[1].id
     ).isEmpty)
+    canvas.tearDown()
 }
 
 @MainActor
@@ -573,4 +620,17 @@ private func user(_ id: UInt64, _ displayName: String) -> User {
         username: "user-\(id)",
         displayName: displayName
     )
+}
+
+private actor MemberImagePromotionProbe {
+    struct Call: Equatable {
+        let url: URL
+        let dimension: Int
+    }
+
+    private(set) var calls: [Call] = []
+
+    func record(url: URL, dimension: Int) {
+        calls.append(Call(url: url, dimension: dimension))
+    }
 }

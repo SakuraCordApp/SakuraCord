@@ -81,9 +81,12 @@ extension AppModel {
         return accepted
     }
 
-    func dismissOversizedAttachmentPrompt() {
+    func dismissOversizedAttachmentPrompt(id expectedID: UUID? = nil) {
+        guard let prompt = oversizedAttachmentPrompt else { return }
+        if let expectedID, prompt.id != expectedID { return }
         oversizedAttachmentPrompt = nil
         presentNextOversizedAttachmentPrompt()
+        pruneOwnedPromisedAttachmentFiles()
     }
 
     func uploadOversizedAttachment(
@@ -94,12 +97,22 @@ extension AppModel {
               conversationChannelID(for: prompt.destination) == prompt.channelID
         else { return }
 
-        oversizedAttachmentPrompt = nil
+        externalAttachmentUploadTask?.cancel()
+        if let externalAttachmentUploadFileURL {
+            endUsingOwnedPromisedFiles([externalAttachmentUploadFileURL])
+        }
+        externalAttachmentUploadFileURL = nil
+        externalAttachmentUploadGeneration &+= 1
+        let generation = externalAttachmentUploadGeneration
+        beginUsingOwnedPromisedFiles([prompt.fileURL])
+        externalAttachmentUploadFileURL = prompt.fileURL
+        if oversizedAttachmentPrompt?.id == prompt.id {
+            oversizedAttachmentPrompt = nil
+        }
         externalAttachmentUploadPresentation = ExternalAttachmentUploadPresentation(
             fileName: prompt.fileURL.lastPathComponent,
             service: service
         )
-        externalAttachmentUploadTask?.cancel()
         externalAttachmentUploadTask = Task { [weak self] in
             guard let self else { return }
             let accessed = prompt.fileURL.startAccessingSecurityScopedResource()
@@ -121,19 +134,100 @@ extension AppModel {
             } catch is CancellationError {
                 // Cancellation is an explicit no-send action.
             } catch {
-                errorMessage = "The (service.displayName) upload failed: \(error.localizedDescription)"
+                guard externalAttachmentUploadGeneration == generation else { return }
+                errorMessage = "The \(service.displayName) upload failed: \(error.localizedDescription)"
             }
+            guard externalAttachmentUploadGeneration == generation else { return }
             externalAttachmentUploadPresentation = nil
             externalAttachmentUploadTask = nil
+            externalAttachmentUploadFileURL = nil
+            endUsingOwnedPromisedFiles([prompt.fileURL])
             presentNextOversizedAttachmentPrompt()
         }
     }
 
     func cancelExternalAttachmentUpload() {
+        externalAttachmentUploadGeneration &+= 1
         externalAttachmentUploadTask?.cancel()
         externalAttachmentUploadTask = nil
         externalAttachmentUploadPresentation = nil
+        if let externalAttachmentUploadFileURL {
+            endUsingOwnedPromisedFiles([externalAttachmentUploadFileURL])
+        }
+        externalAttachmentUploadFileURL = nil
         presentNextOversizedAttachmentPrompt()
+    }
+
+    func adoptPromisedFileBatch(_ batch: ComposerPromisedFileBatch) -> [URL] {
+        let directory = batch.directory.standardizedFileURL
+        guard ComposerPromisedFileStorage.isManagedDirectory(directory) else {
+            batch.discard()
+            return []
+        }
+        let adoptedURLs = batch.urls.compactMap {
+            ComposerPromisedFileStorage.approvedRegularFile($0, in: directory)
+        }
+        for url in adoptedURLs {
+            promisedAttachmentDirectoryByFileURL[url] = directory
+        }
+        if adoptedURLs.isEmpty {
+            batch.discard()
+        }
+        return adoptedURLs
+    }
+
+    func beginUsingOwnedPromisedFiles(_ urls: [URL]) {
+        promisedAttachmentFilesInFlight.formUnion(
+            urls.map(\.standardizedFileURL).filter {
+                promisedAttachmentDirectoryByFileURL[$0] != nil
+            }
+        )
+    }
+
+    func endUsingOwnedPromisedFiles(_ urls: [URL]) {
+        promisedAttachmentFilesInFlight.subtract(
+            urls.map(\.standardizedFileURL)
+        )
+        pruneOwnedPromisedAttachmentFiles()
+    }
+
+    func pruneOwnedPromisedAttachmentFiles() {
+        var retainedFileURLs = Set(
+            (channelComposerAttachments + threadComposerAttachments)
+                .map { $0.url.standardizedFileURL }
+        )
+        retainedFileURLs.formUnion(
+            queuedOversizedAttachmentPrompts.map {
+                $0.fileURL.standardizedFileURL
+            }
+        )
+        if let oversizedAttachmentPrompt {
+            retainedFileURLs.insert(
+                oversizedAttachmentPrompt.fileURL.standardizedFileURL
+            )
+        }
+        retainedFileURLs.formUnion(promisedAttachmentFilesInFlight)
+
+        let staleFileURLs = promisedAttachmentDirectoryByFileURL.keys.filter {
+            !retainedFileURLs.contains($0)
+        }
+        let candidateDirectories = Set(staleFileURLs.compactMap {
+            promisedAttachmentDirectoryByFileURL.removeValue(forKey: $0)
+        })
+        let retainedDirectories = Set(promisedAttachmentDirectoryByFileURL.values)
+        for directory in candidateDirectories where !retainedDirectories.contains(directory) {
+            ComposerPromisedFileStorage.removeDirectory(directory)
+        }
+    }
+
+    func releaseAllOwnedPromisedFiles() {
+        let directories = Set(promisedAttachmentDirectoryByFileURL.values)
+        promisedAttachmentDirectoryByFileURL.removeAll()
+        promisedAttachmentFilesInFlight.removeAll()
+        externalAttachmentUploadFileURL = nil
+        for directory in directories {
+            ComposerPromisedFileStorage.removeDirectory(directory)
+        }
     }
 
     func oversizedAttachmentMessage(_ prompt: OversizedAttachmentPrompt) -> String {

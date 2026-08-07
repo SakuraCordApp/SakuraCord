@@ -18,6 +18,7 @@ public final class DiscordClientMetadata: @unchecked Sendable {
     let acceptLanguage: String
     let userAgent: String
     let fingerprint: String?
+    private let clientHintsUserAgent: String
     private let baseProperties: [String: JSONValue]
     private let heartbeatLock = NSLock()
     private var storedInstallationID: String?
@@ -46,6 +47,10 @@ public final class DiscordClientMetadata: @unchecked Sendable {
         userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/\(webKitVersion) "
             + "(KHTML, like Gecko) discord/\(baseline.desktopVersion) Chrome/\(baseline.chromiumVersion) "
             + "Electron/\(baseline.electronVersion) Safari/\(webKitVersion)"
+        let chromiumMajorVersion = baseline.chromiumVersion.split(separator: ".").first
+            .map(String.init) ?? baseline.chromiumVersion
+        clientHintsUserAgent =
+            "\"Not)A;Brand\";v=\"8\", \"Chromium\";v=\"\(chromiumMajorVersion)\""
         self.fingerprint = fingerprint?.isEmpty == false ? fingerprint : nil
         storedInstallationID = installationID?.isEmpty == false ? installationID : nil
         heartbeatSession = DiscordHeartbeatSession(
@@ -184,10 +189,7 @@ public final class DiscordClientMetadata: @unchecked Sendable {
         request.setValue("same-origin", forHTTPHeaderField: "Sec-Fetch-Site")
         request.setValue("?0", forHTTPHeaderField: "Sec-CH-UA-Mobile")
         request.setValue("\"macOS\"", forHTTPHeaderField: "Sec-CH-UA-Platform")
-        request.setValue(
-            "\"Not)A;Brand\";v=\"8\", \"Chromium\";v=\"148\"",
-            forHTTPHeaderField: "Sec-CH-UA"
-        )
+        request.setValue(clientHintsUserAgent, forHTTPHeaderField: "Sec-CH-UA")
         request.setValue("https://discord.com/channels/@me", forHTTPHeaderField: "Referer")
         if let fingerprint {
             request.setValue(fingerprint, forHTTPHeaderField: "X-Fingerprint")

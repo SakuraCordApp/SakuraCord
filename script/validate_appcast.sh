@@ -180,8 +180,11 @@ fi
 THIRD_PARTY_NOTICES="$APP_BUNDLE/Contents/Resources/THIRD_PARTY_NOTICES.md"
 if [[ ! -f "$THIRD_PARTY_NOTICES" ]] \
   || ! grep -Fq "## Sparkle" "$THIRD_PARTY_NOTICES" \
-  || ! grep -Fq "Copyright (c) 2006-2013 Andy Matuschak." "$THIRD_PARTY_NOTICES"; then
-  echo "The packaged app is missing the complete Sparkle third-party notices." >&2
+  || ! grep -Fq "Copyright (c) 2006-2013 Andy Matuschak." "$THIRD_PARTY_NOTICES" \
+  || ! grep -Fq "## Zstandard" "$THIRD_PARTY_NOTICES" \
+  || ! grep -Fq "Copyright (c) Meta Platforms, Inc. and affiliates." \
+    "$THIRD_PARTY_NOTICES"; then
+  echo "The packaged app is missing required third-party notices." >&2
   exit 1
 fi
 

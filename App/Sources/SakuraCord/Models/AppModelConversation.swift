@@ -486,7 +486,7 @@ extension AppModel {
             initialPositionEstablished: false,
             windowIsActive: mainWindowIsActive,
             hasReachedReadBoundary: false,
-            blocksAutomaticAcknowledgement: presentsCachedStartup
+            blocksAutomaticAcknowledgement: false
         )
         openThreadStarter = starter
         openThreadStartedAt = startedAt
@@ -498,7 +498,7 @@ extension AppModel {
         )
         threadDraft = ""
         threadReplyingTo = nil
-        threadComposerAttachments = []
+        clearComposerAttachments(for: .thread)
         hasMoreThreadMessages = cachedBoundary ?? false
         beginInitialThreadLoad(thread)
     }
@@ -621,7 +621,7 @@ extension AppModel {
         threadMessages = []
         threadDraft = ""
         threadReplyingTo = nil
-        threadComposerAttachments = []
+        clearComposerAttachments(for: .thread)
         isLoadingThread = false
         hasCompletedInitialThreadLoad = false
         isLoadingEarlierThread = false
@@ -721,7 +721,6 @@ extension AppModel {
 
     @discardableResult
     func sendThreadComposerMessage(attachments: [ForumPostAttachment]) async -> Bool {
-        guard !presentsCachedStartup else { return false }
         guard let thread = openThread, openThreadAccess.canSend else { return false }
         let content = threadDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !content.isEmpty || !attachments.isEmpty else { return false }
@@ -744,7 +743,6 @@ extension AppModel {
         thread: MessageThreadSummary,
         clearsComposer: Bool
     ) async -> Bool {
-        guard !presentsCachedStartup else { return false }
         let draft = SendMessageDraft(
             channelID: thread.id,
             content: content,
@@ -1079,7 +1077,6 @@ extension AppModel {
     }
 
     func executeApplicationCommand() {
-        guard !presentsCachedStartup else { return }
         guard commandExecutionTask == nil,
               let channelID = selectedChannelID,
               let invocation = commandComposer.invocation(
@@ -1153,13 +1150,17 @@ extension AppModel {
 
     func loadGIFPicker() {
         gifPickerLoadTask?.cancel()
+        gifPickerLoadGeneration &+= 1
+        let generation = gifPickerLoadGeneration
         isLoadingGIFPicker = true
         gifErrorMessage = nil
         let session = accountSession()
         gifPickerLoadTask = Task { [weak self] in
             guard let self else { return }
             defer {
-                if isCurrentAccountSession(session) {
+                if isCurrentAccountSession(session),
+                   gifPickerLoadGeneration == generation
+                {
                     gifPickerLoadTask = nil
                     isLoadingGIFPicker = false
                 }
@@ -1173,14 +1174,20 @@ extension AppModel {
                 async let landing = session.provider.gifPickerLanding()
                 async let favorites = session.provider.favoriteGIFs()
                 let (loadedLanding, loadedFavorites) = try await (landing, favorites)
-                guard !Task.isCancelled, isCurrentAccountSession(session) else { return }
+                guard !Task.isCancelled,
+                      isCurrentAccountSession(session),
+                      gifPickerLoadGeneration == generation
+                else { return }
                 gifCategories = loadedLanding.categories
                 gifTrendingPreviewURL = loadedLanding.trendingPreviewURL
                 favoriteGIFs = loadedFavorites
             } catch is CancellationError {
                 return
             } catch {
-                guard !Task.isCancelled, isCurrentAccountSession(session) else { return }
+                guard !Task.isCancelled,
+                      isCurrentAccountSession(session),
+                      gifPickerLoadGeneration == generation
+                else { return }
                 gifErrorMessage = error.localizedDescription
             }
         }
@@ -1213,7 +1220,6 @@ extension AppModel {
 
     @discardableResult
     func sendGIF(_ gif: GIFSearchResult) async -> Bool {
-        guard !presentsCachedStartup else { return false }
         guard selectedChannelID != nil else { return false }
         let session = accountSession()
         let priorDraft = draft
@@ -1261,7 +1267,6 @@ extension AppModel {
 
     @discardableResult
     func sendSticker(_ sticker: MessageSticker) async -> Bool {
-        guard !presentsCachedStartup else { return false }
         let session = accountSession()
         guard let channelID = selectedChannelID,
               await session.provider.supports(.stickerSending),
@@ -1288,7 +1293,6 @@ extension AppModel {
     func submitComponent(
         on message: Message, customID: String, kind: ComponentInteractionKind, values: [String] = []
     ) async {
-        guard !presentsCachedStartup else { return }
         let key = ComponentControlKey(messageID: message.id, customID: customID)
         guard !pendingComponentControls.contains(key) else { return }
         guard supportedCapabilities.contains(.components) else {
@@ -1360,7 +1364,6 @@ extension AppModel {
     }
 
     func submitModal(values: [String: [String]], fileURLs: [String: [URL]]) async -> Bool {
-        guard !presentsCachedStartup else { return false }
         guard let modal = presentedInteractionModal, let nonce = interactionModalNonce else {
             return false
         }
@@ -1410,8 +1413,7 @@ extension AppModel {
     }
 
     func performLocalTyping(channelID: ChannelID, generation: UInt64) async {
-        guard !presentsCachedStartup,
-              generation == localTypingGeneration,
+        guard generation == localTypingGeneration,
               localTypingChannelID == channelID,
               selectedChannelID == channelID,
               !draft.isEmpty,
@@ -1471,7 +1473,6 @@ extension AppModel {
 
     @discardableResult
     func sendComposerMessage(attachments: [ForumPostAttachment]) async -> Bool {
-        guard !presentsCachedStartup else { return false }
         guard let channelID = selectedChannelID, selectedConversationAccess.canSend else {
             return false
         }
@@ -1501,7 +1502,6 @@ extension AppModel {
         attachments: [ForumPostAttachment],
         clearsComposer: Bool
     ) async -> Bool {
-        guard !presentsCachedStartup else { return false }
         let outgoing = SendMessageDraft(
             channelID: channelID, content: content, replyTo: replyTo, attachments: attachments
         )
@@ -1547,7 +1547,6 @@ extension AppModel {
     }
 
     func isComposerDropEligible(_ destination: MessageComposerDestination) -> Bool {
-        guard !presentsCachedStartup else { return false }
         switch destination {
         case .channel:
             guard commandComposer.activeCommand == nil,
@@ -1558,6 +1557,42 @@ extension AppModel {
         case .thread:
             return openThread != nil && openThreadAccess.canSend
         }
+    }
+
+    @discardableResult
+    func addPromisedComposerAttachments(
+        _ batch: ComposerPromisedFileBatch,
+        to destination: MessageComposerDestination
+    ) -> Bool {
+        let adoptedURLs = adoptPromisedFileBatch(batch)
+        let didHandle = addComposerAttachments(adoptedURLs, to: destination)
+        pruneOwnedPromisedAttachmentFiles()
+        return didHandle
+    }
+
+    func preparePromisedAttachmentsForImmediateSend(
+        _ batch: ComposerPromisedFileBatch,
+        to destination: MessageComposerDestination
+    ) -> [URL] {
+        let adoptedURLs = adoptPromisedFileBatch(batch)
+        guard isComposerDropEligible(destination) else {
+            pruneOwnedPromisedAttachmentFiles()
+            return []
+        }
+        let acceptedURLs = attachmentURLsWithinDiscordLimit(
+            adoptedURLs,
+            offeringExternalUploadFor: destination
+        )
+        let sentURLs = Array(
+            acceptedURLs.prefix(SendMessageDraft.maximumAttachmentCount)
+        )
+        if acceptedURLs.count > sentURLs.count {
+            errorMessage =
+                "You can attach up to \(SendMessageDraft.maximumAttachmentCount) files to one message."
+        }
+        beginUsingOwnedPromisedFiles(sentURLs)
+        pruneOwnedPromisedAttachmentFiles()
+        return sentURLs
     }
 
     @discardableResult
@@ -1640,7 +1675,6 @@ extension AppModel {
         _ attachments: [ForumPostAttachment],
         to destination: MessageComposerDestination
     ) async -> Bool {
-        guard !presentsCachedStartup else { return false }
         guard isComposerDropEligible(destination), !attachments.isEmpty,
               validateAttachmentCount(attachments)
         else { return false }
@@ -1676,6 +1710,7 @@ extension AppModel {
         case .thread:
             threadComposerAttachments = attachments
         }
+        pruneOwnedPromisedAttachmentFiles()
     }
 
     func validateAttachmentCount(_ attachments: [ForumPostAttachment]) -> Bool {
@@ -1689,7 +1724,6 @@ extension AppModel {
 
     @discardableResult
     func retrySending(_ message: Message) async -> Bool {
-        guard !presentsCachedStartup else { return false }
         guard message.outboxState == .failed,
               let nonce = message.nonce,
               outgoingState(nonce: nonce, channelID: message.channelID) == .failed
@@ -1710,7 +1744,6 @@ extension AppModel {
     }
 
     func performOutgoingSend(_ outgoing: SendMessageDraft, isRetry: Bool) async -> Bool {
-        guard !presentsCachedStartup else { return false }
         let session = accountSession()
         Self.messageSendLogger.info(
             """

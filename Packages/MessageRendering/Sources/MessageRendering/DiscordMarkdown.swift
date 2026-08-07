@@ -752,14 +752,29 @@ public enum DiscordMarkdown {
             $0.lowerBound < $1.lowerBound
         }) else { return nil }
         var end = prefix.upperBound
-        while end < source.endIndex,
-              !source[end].isWhitespace,
-              !")]>".contains(source[end])
-        {
+        var parenthesisDepth = 0
+        scan: while end < source.endIndex {
+            let character = source[end]
+            if character.isWhitespace || "]<>".contains(character) {
+                break
+            }
+            if character == ")" {
+                guard parenthesisDepth > 0 else { break scan }
+                parenthesisDepth -= 1
+            } else if character == "(" {
+                parenthesisDepth += 1
+            }
             end = source.index(after: end)
         }
+        while end > prefix.upperBound {
+            let previous = source.index(before: end)
+            guard ".,!?;:".contains(source[previous]) else { break }
+            end = previous
+        }
         let range = prefix.lowerBound ..< end
-        guard let url = URL(string: String(source[range])) else {
+        guard let url = MessageLinkPolicy.allowedURL(
+            from: String(source[range])
+        ) else {
             return nil
         }
         return (range, url)

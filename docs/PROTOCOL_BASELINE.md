@@ -1,6 +1,6 @@
 # Discord production protocol baseline
 
-Last repository audit: 6 August 2026, in a working tree based on SakuraCord
+Last repository audit: 7 August 2026, in a working tree based on SakuraCord
 commit `5a2f42d`.
 
 This document describes SakuraCord's durable network contract and the dated
@@ -54,6 +54,24 @@ was sent and no content, credential, cookie, or authorization value was
 retained. Paicord has a placeholder picker and the matching generated
 favourites protobuf schema but no GIF HTTP implementation. Swiftcord v1 has no
 corresponding GIF picker, search, or favourites path.
+
+The native GIF media follow-up was rechecked on 7 August 2026 against that same
+first-party asset (the fetched asset still matched the recorded SHA-256). Its
+picker result normalizer consumes the response-provided `src` and `gif_src`
+media URLs; the selected format for these routes is WebM. A sanitized current
+SakuraCord response confirmed that Discord search and landing results now use
+`static.klipy.com` WebM and WebP media. The first-party picker assigns those
+response URLs directly to its image and video elements without applying
+Discord's separate `isAllowedGifProviderUrl` asset-action helper. Discord's current
+public developer-documentation index, API reference, and message resource do
+not document the normal-user GIF-picker routes or its media providers.
+Klipy's current [API documentation](https://docs.klipy.com/getting-started)
+and Google's current [Tenor response documentation](https://developers.google.com/tenor/guides/response-objects-and-errors)
+confirm that media responses contain separate format-specific URLs. The pinned Paicord
+revision still has only its placeholder picker and generated favourites
+schema, with no GIF media fetch. The pinned Swiftcord v1 and DiscordKit
+revisions still have no GIF picker or media path. Those absences provide no
+alternative origin, header, retry, or fallback behavior to copy.
 
 The native sign-in preflight was re-audited on 7 August 2026 against production
 asset `web.3cd0f98a15f63be2.js` (SHA-256
@@ -500,6 +518,22 @@ is not the whole network surface. The remaining production connections are:
   linked images are accepted only on those exact HTTPS hosts, without
   credentials or a custom port; SakuraCord does not fetch arbitrary
   third-party link previews.
+- unauthenticated GIF-picker media GETs use the response-provided HTTPS
+  origins, without credentials or a nonstandard port, matching the current
+  first-party picker rather than Discord's separate asset-action host helper.
+  Response-provided and locally derived media URLs pass this transport-safety
+  policy before any image loader or AVFoundation use. These GETs use the same
+  isolated ephemeral, cookie-free,
+  bounded coalescing/cancellation queue as Discord media. Native video is
+  streamed through that queue to an app-controlled temporary file before
+  AVFoundation opens the local file; AVFoundation never receives a remote
+  URL. Tenor WebM results may use corresponding MP4 and GIF representations.
+  Klipy results use the response-provided WebP directly; SakuraCord does not
+  invent an MP4 URL by changing the Klipy WebM extension. A visible result
+  creates at most three distinct media requests. Cell reuse, viewport exit,
+  or picker dismissal cancels
+  waiters and removes staged video files. No Authorization, client metadata,
+  fingerprint, installation, Discord routing, or cookie header is added.
 
 The current official desktop and SakuraCord use ETF with `zstd-stream` for the
 main Gateway. The public web client uses JSON with compressed Gateway

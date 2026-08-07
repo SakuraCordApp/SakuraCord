@@ -15,6 +15,7 @@ struct SakuraCordApp: App {
 
     init() {
         AppPerformanceSignposts.beginStartup()
+        ComposerPromisedFileStorage.removeAbandonedFilesAtStartup()
         let savesDiagnosticsToDisk = UserDefaults.standard.bool(
             forKey: "saveAPIDiagnosticsToDisk"
         )

@@ -120,56 +120,6 @@ final class AccountReadStateModel {
         usesNewNotifications = true
     }
 
-    func cacheSnapshot(updating snapshot: BootstrapSnapshot) -> BootstrapSnapshot {
-        var value = snapshot
-        let representedChannelIDs = Set(value.channels.map(\.id))
-            .union(value.threads.map(\.id))
-        var readStatesByChannelID = Dictionary(
-            value.readStates.map { ($0.channelID, $0) },
-            uniquingKeysWith: { _, newer in newer }
-        )
-        for entry in entries.values where representedChannelIDs.contains(entry.channelID) {
-            // Never turn an in-flight optimistic acknowledgement into durable
-            // startup presentation. The last cached server state remains safer
-            // until Discord accepts or reconciles the mutation.
-            guard entry.pendingAcknowledgementID == nil else { continue }
-            readStatesByChannelID[entry.channelID] = ChannelReadState(
-                channelID: entry.channelID,
-                lastAcknowledgedMessageID: entry.lastAcknowledgedMessageID,
-                mentionCount: entry.mentionCount,
-                flags: entry.flags,
-                lastViewed: entry.lastViewed,
-                version: readStateVersion
-            )
-        }
-        value.readStates = readStatesByChannelID.values.sorted {
-            $0.channelID.rawValue < $1.channelID.rawValue
-        }
-        value.channels = value.channels.map { channel in
-            guard let entry = entries[channel.id],
-                  entry.pendingAcknowledgementID == nil
-            else { return channel }
-            var channel = channel
-            channel.lastMessageID = maximum(
-                channel.lastMessageID,
-                entry.latestKnownMessageID
-            )
-            return channel
-        }
-        value.threads = value.threads.map { thread in
-            guard let entry = entries[thread.id],
-                  entry.pendingAcknowledgementID == nil
-            else { return thread }
-            var thread = thread
-            thread.lastMessageID = maximum(
-                thread.lastMessageID,
-                entry.latestKnownMessageID
-            )
-            return thread
-        }
-        return value
-    }
-
     func configure(
         accountID: String?,
         guilds: [Guild],

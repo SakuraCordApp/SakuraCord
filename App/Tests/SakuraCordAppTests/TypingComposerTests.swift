@@ -444,6 +444,125 @@ import Testing
     #expect(model.draft == "look https://files.catbox.moe/test.bin")
 }
 
+@MainActor
+@Test func `repeated alert dismissal cannot skip the next oversized attachment`() async throws {
+    let model = AppModel(
+        launchMode: .offlineTesting,
+        provider: TypingTestProvider()
+    )
+    await model.start()
+    let channelID = try #require(model.selectedChannelID)
+    let first = OversizedAttachmentPrompt(
+        fileURL: URL(fileURLWithPath: "/tmp/first-oversized.bin"),
+        fileSize: DiscordAttachmentUploadPolicy.baseLimit + 1,
+        discordLimit: DiscordAttachmentUploadPolicy.baseLimit,
+        premiumType: 0,
+        destination: .channel,
+        channelID: channelID
+    )
+    let second = OversizedAttachmentPrompt(
+        fileURL: URL(fileURLWithPath: "/tmp/second-oversized.bin"),
+        fileSize: DiscordAttachmentUploadPolicy.baseLimit + 1,
+        discordLimit: DiscordAttachmentUploadPolicy.baseLimit,
+        premiumType: 0,
+        destination: .channel,
+        channelID: channelID
+    )
+    model.oversizedAttachmentPrompt = first
+    model.queuedOversizedAttachmentPrompts = [second]
+
+    model.dismissOversizedAttachmentPrompt(id: first.id)
+    model.dismissOversizedAttachmentPrompt(id: first.id)
+
+    #expect(model.oversizedAttachmentPrompt?.id == second.id)
+    #expect(model.queuedOversizedAttachmentPrompts.isEmpty)
+}
+
+@MainActor
+@Test func `cancelled external upload cannot clear or populate its replacement`() async throws {
+    let uploader = SequencedAttachmentUploadTestUploader()
+    let model = AppModel(
+        launchMode: .offlineTesting,
+        provider: TypingTestProvider(),
+        externalAttachmentUploader: uploader
+    )
+    await model.start()
+    let channelID = try #require(model.selectedChannelID)
+    let first = OversizedAttachmentPrompt(
+        fileURL: URL(fileURLWithPath: "/tmp/first.bin"),
+        fileSize: DiscordAttachmentUploadPolicy.baseLimit + 1,
+        discordLimit: DiscordAttachmentUploadPolicy.baseLimit,
+        premiumType: 0,
+        destination: .channel,
+        channelID: channelID
+    )
+    let second = OversizedAttachmentPrompt(
+        fileURL: URL(fileURLWithPath: "/tmp/second.bin"),
+        fileSize: DiscordAttachmentUploadPolicy.baseLimit + 1,
+        discordLimit: DiscordAttachmentUploadPolicy.baseLimit,
+        premiumType: 0,
+        destination: .channel,
+        channelID: channelID
+    )
+    model.oversizedAttachmentPrompt = first
+    model.queuedOversizedAttachmentPrompts = [second]
+
+    model.uploadOversizedAttachment(first, using: .catbox)
+    #expect(await eventuallyUploadCallCount(1, from: uploader))
+    model.cancelExternalAttachmentUpload()
+    #expect(model.oversizedAttachmentPrompt?.fileURL == second.fileURL)
+
+    model.uploadOversizedAttachment(second, using: .catbox)
+    #expect(await eventuallyUploadCallCount(2, from: uploader))
+    await uploader.release(
+        call: 1,
+        with: URL(string: "https://files.catbox.moe/first.bin")!
+    )
+    #expect(await eventuallyOnMain {
+        model.externalAttachmentUploadPresentation?.fileName == "second.bin"
+    })
+    #expect(model.draft.isEmpty)
+
+    await uploader.release(
+        call: 2,
+        with: URL(string: "https://files.catbox.moe/second.bin")!
+    )
+    #expect(await eventuallyOnMain { model.externalAttachmentUploadPresentation == nil })
+    #expect(model.draft == "https://files.catbox.moe/second.bin")
+}
+
+@MainActor
+@Test func `account reset invalidates an external upload result`() async throws {
+    let uploader = SequencedAttachmentUploadTestUploader()
+    let model = AppModel(
+        launchMode: .offlineTesting,
+        provider: TypingTestProvider(),
+        externalAttachmentUploader: uploader
+    )
+    await model.start()
+    let channelID = try #require(model.selectedChannelID)
+    let prompt = OversizedAttachmentPrompt(
+        fileURL: URL(fileURLWithPath: "/tmp/account-reset.bin"),
+        fileSize: DiscordAttachmentUploadPolicy.baseLimit + 1,
+        discordLimit: DiscordAttachmentUploadPolicy.baseLimit,
+        premiumType: 0,
+        destination: .channel,
+        channelID: channelID
+    )
+    model.oversizedAttachmentPrompt = prompt
+    model.uploadOversizedAttachment(prompt, using: .catbox)
+    #expect(await eventuallyUploadCallCount(1, from: uploader))
+
+    model.resetAccountScopedLoadsAndForumState()
+    await uploader.release(
+        call: 1,
+        with: URL(string: "https://files.catbox.moe/stale.bin")!
+    )
+    #expect(await eventuallyOnMain { model.externalAttachmentUploadTask == nil })
+    #expect(model.externalAttachmentUploadPresentation == nil)
+    #expect(model.draft.isEmpty)
+}
+
 @Test func `external attachment hosts enforce size type and request contracts`() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "sakuracord-host-contract-\(UUID().uuidString)",
@@ -581,17 +700,21 @@ import Testing
 
     let screenshot = firstDirectory.appendingPathComponent("Screenshot.png")
     try Data("promised screenshot".utf8).write(to: screenshot)
-    var completedURLs: [URL]?
-    let collector = ComposerPromisedFileCollector(expectedCount: 2) {
-        completedURLs = $0
+    var completedBatch: ComposerPromisedFileBatch?
+    let collector = ComposerPromisedFileCollector(
+        expectedCount: 2,
+        directory: firstDirectory
+    ) {
+        completedBatch = $0
     }
     collector.receive(url: screenshot, error: nil)
-    #expect(completedURLs == nil)
+    #expect(completedBatch == nil)
     collector.receive(
         url: secondDirectory.appendingPathComponent("failed.png"),
         error: CocoaError(.fileReadUnknown)
     )
-    #expect(completedURLs == [screenshot])
+    #expect(completedBatch?.urls == [screenshot])
+    #expect(completedBatch?.directory == firstDirectory)
 }
 
 @MainActor
@@ -648,27 +771,6 @@ import Testing
     #expect(
         !model.addComposerAttachments(
             [URL(fileURLWithPath: "/tmp/not-for-voice")],
-            to: .channel
-        )
-    )
-}
-
-@MainActor
-@Test func `window attachment drops reject cached startup surfaces`() async {
-    let model = AppModel(
-        launchMode: .offlineTesting,
-        provider: TypingTestProvider()
-    )
-    await model.start()
-    #expect(model.isComposerDropEligible(.channel))
-
-    model.presentsCachedStartup = true
-
-    #expect(!model.isComposerDropEligible(.channel))
-    #expect(!model.isComposerDropEligible(.thread))
-    #expect(
-        !model.addComposerAttachments(
-            [URL(fileURLWithPath: "/tmp/cached-startup-drop")],
             to: .channel
         )
     )
@@ -1956,6 +2058,19 @@ private func eventuallyTypingCount(
     return await provider.typingCount == expectedCount
 }
 
+private func eventuallyUploadCallCount(
+    _ expectedCount: Int,
+    from uploader: SequencedAttachmentUploadTestUploader
+) async -> Bool {
+    for _ in 0 ..< 200 {
+        if await uploader.callCount == expectedCount {
+            return true
+        }
+        try? await Task.sleep(for: .milliseconds(1))
+    }
+    return await uploader.callCount == expectedCount
+}
+
 private func createSparseFile(_ url: URL, size: Int64) throws {
     guard FileManager.default.createFile(atPath: url.path, contents: nil) else {
         throw CocoaError(.fileWriteUnknown)
@@ -1979,6 +2094,26 @@ private actor AttachmentUploadTestUploader: ExternalAttachmentUploading {
     ) async throws -> URL {
         callCount += 1
         return result
+    }
+}
+
+private actor SequencedAttachmentUploadTestUploader: ExternalAttachmentUploading {
+    private(set) var callCount = 0
+    private var continuations: [Int: CheckedContinuation<URL, Never>] = [:]
+
+    func upload(
+        fileURL _: URL,
+        using _: ExternalAttachmentHostingService
+    ) async throws -> URL {
+        callCount += 1
+        let call = callCount
+        return await withCheckedContinuation { continuation in
+            continuations[call] = continuation
+        }
+    }
+
+    func release(call: Int, with url: URL) {
+        continuations.removeValue(forKey: call)?.resume(returning: url)
     }
 }
 

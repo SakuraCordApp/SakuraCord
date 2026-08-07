@@ -18,16 +18,17 @@ private struct DiscordGIFDTO: Decodable {
 
     var domain: GIFSearchResult? {
         guard let canonicalURL = Self.url(from: url),
-              let mediaURL = Self.url(from: src)
+              let mediaURL = GIFMediaURLPolicy.approved(Self.url(from: src))
         else { return nil }
         return GIFSearchResult(
             id: id,
             title: title.isEmpty ? "GIF" : title,
             url: canonicalURL,
-            previewURL: gifSrc.flatMap(Self.url(from:)) ?? mediaURL,
+            previewURL: GIFMediaURLPolicy.approved(gifSrc.flatMap(Self.url(from:)))
+                ?? mediaURL,
             width: width,
             height: height,
-            thumbnailURL: preview.flatMap(Self.url(from:)),
+            thumbnailURL: GIFMediaURLPolicy.approved(preview.flatMap(Self.url(from:))),
             mediaURL: mediaURL
         )
     }
@@ -53,9 +54,9 @@ private struct DiscordGIFCategoryDTO: Decodable {
             id: type.map { "\($0):\(name)" } ?? name,
             name: name,
             query: name,
-            previewURL: (gifSrc ?? src).flatMap {
+            previewURL: GIFMediaURLPolicy.approved((gifSrc ?? src).flatMap {
                 URL(string: $0.hasPrefix("//") ? "https:\($0)" : $0)
-            }
+            })
         )
     }
 }

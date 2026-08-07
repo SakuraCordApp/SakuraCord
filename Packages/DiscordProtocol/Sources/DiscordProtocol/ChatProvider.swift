@@ -1,6 +1,19 @@
 import Foundation
 import SakuraCordModels
 
+public struct PartialBulkReadAcknowledgementError: Error, Sendable {
+    public let acceptedReadStates: [BulkReadStateAcknowledgement]
+    public let failureDescription: String
+
+    public init(
+        acceptedReadStates: [BulkReadStateAcknowledgement],
+        failureDescription: String
+    ) {
+        self.acceptedReadStates = acceptedReadStates
+        self.failureDescription = failureDescription
+    }
+}
+
 public protocol ChatProvider: Sendable {
     func prepareAuthentication() async throws
     func bootstrap() async throws -> BootstrapSnapshot

@@ -7,6 +7,8 @@ import Foundation
 /// other user-authored strings that were deliberately discarded here.
 public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
     public static let shared = DiscordAPIDiagnosticStore()
+    public static let defaultMaximumDiskBytes = 64 * 1_024 * 1_024
+    public static let defaultMaximumDiskSessionFileCount = 4
 
     private struct DiskCapture {
         let fileURL: URL
@@ -138,6 +140,7 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
     private let lock = NSLock()
     private let maximumRetainedBytes: Int
     private let maximumDiskBytes: Int
+    private let maximumDiskSessionFileCount: Int
     private let configuredDiskDirectoryURL: URL?
     private var state: State
 
@@ -146,11 +149,16 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
         maximumRetainedBytes: Int = 8 * 1_024 * 1_024,
         capturesPayloadDetails: Bool = false,
         diskDirectoryURL: URL? = nil,
-        maximumDiskBytes: Int = 64 * 1_024 * 1_024
+        maximumDiskBytes: Int = defaultMaximumDiskBytes,
+        maximumDiskSessionFileCount: Int = defaultMaximumDiskSessionFileCount
     ) {
         let capacity = max(1, maximumEntries)
         self.maximumRetainedBytes = max(1, maximumRetainedBytes)
         self.maximumDiskBytes = max(1, maximumDiskBytes)
+        self.maximumDiskSessionFileCount = max(
+            1,
+            maximumDiskSessionFileCount
+        )
         configuredDiskDirectoryURL = diskDirectoryURL
         state = State(
             capacity: capacity,
@@ -204,7 +212,8 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
                 do {
                     state.diskCapture = try Self.makeDiskCapture(
                         directoryURL: diskDirectoryURL,
-                        maximumBytes: maximumDiskBytes
+                        maximumBytes: maximumDiskBytes,
+                        maximumFileCount: maximumDiskSessionFileCount
                     )
                 } catch {
                     state.diskLoggingErrorDescription = String(
@@ -221,6 +230,35 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
 
     public func clear() {
         withLock { $0.clear() }
+    }
+
+    /// Clears the in-memory ring and every managed session file. If disk
+    /// capture was active, it resumes in a fresh bounded file.
+    public func clearMemoryAndDisk() throws {
+        try withLock { state in
+            state.clear()
+            let resumesDiskCapture = state.diskCapture != nil
+            if let capture = state.diskCapture {
+                state.diskCapture = nil
+                try capture.handle.close()
+            }
+            do {
+                try Self.removeDiskCaptures(in: diskDirectoryURL)
+                if resumesDiskCapture {
+                    state.diskCapture = try Self.makeDiskCapture(
+                        directoryURL: diskDirectoryURL,
+                        maximumBytes: maximumDiskBytes,
+                        maximumFileCount: maximumDiskSessionFileCount
+                    )
+                }
+                state.diskLoggingErrorDescription = nil
+            } catch {
+                state.diskLoggingErrorDescription = String(
+                    reflecting: type(of: error)
+                )
+                throw error
+            }
+        }
     }
 
     public func recordHTTPRequest(
@@ -737,7 +775,8 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
 
     private static func makeDiskCapture(
         directoryURL: URL,
-        maximumBytes: Int
+        maximumBytes: Int,
+        maximumFileCount: Int
     ) throws -> DiskCapture {
         let fileManager = FileManager.default
         try fileManager.createDirectory(
@@ -748,6 +787,10 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
         try fileManager.setAttributes(
             [.posixPermissions: 0o700],
             ofItemAtPath: directoryURL.path
+        )
+        try pruneDiskCaptures(
+            in: directoryURL,
+            keepingExistingCount: max(0, maximumFileCount - 1)
         )
 
         let formatter = DateFormatter()
@@ -791,6 +834,57 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
             try? handle.close()
             try? fileManager.removeItem(at: fileURL)
             throw error
+        }
+    }
+
+    private static func pruneDiskCaptures(
+        in directoryURL: URL,
+        keepingExistingCount: Int
+    ) throws {
+        let files = try diskCaptureFiles(in: directoryURL)
+        let removalCount = max(0, files.count - keepingExistingCount)
+        for file in files.prefix(removalCount) {
+            try FileManager.default.removeItem(at: file.url)
+        }
+    }
+
+    private static func removeDiskCaptures(in directoryURL: URL) throws {
+        guard FileManager.default.fileExists(atPath: directoryURL.path) else {
+            return
+        }
+        for file in try diskCaptureFiles(in: directoryURL) {
+            try FileManager.default.removeItem(at: file.url)
+        }
+    }
+
+    private static func diskCaptureFiles(
+        in directoryURL: URL
+    ) throws -> [(url: URL, date: Date)] {
+        let keys: Set<URLResourceKey> = [
+            .contentModificationDateKey,
+            .isRegularFileKey,
+            .isSymbolicLinkKey,
+        ]
+        return try FileManager.default.contentsOfDirectory(
+            at: directoryURL,
+            includingPropertiesForKeys: Array(keys),
+            options: [.skipsHiddenFiles]
+        )
+        .compactMap { url -> (URL, Date)? in
+            guard url.lastPathComponent.hasPrefix(
+                "SakuraCord Discord API Logs "
+            ), url.pathExtension == "jsonl",
+                let values = try? url.resourceValues(forKeys: keys),
+                values.isRegularFile == true,
+                values.isSymbolicLink != true
+            else { return nil }
+            return (url, values.contentModificationDate ?? .distantPast)
+        }
+        .sorted {
+            if $0.1 == $1.1 {
+                return $0.0.lastPathComponent < $1.0.lastPathComponent
+            }
+            return $0.1 < $1.1
         }
     }
 

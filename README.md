@@ -230,8 +230,7 @@ Packages/
                              and provider events
   DiscordProtocol/          provider contract, REST, Gateway, authentication,
                              scheduling, and offline fixtures
-  SakuraCordPersistence/    account-scoped GRDB storage, migrations, drafts,
-                             messages, and non-credential cache state
+  SakuraCordPersistence/    account-scoped GRDB storage, migrations, and drafts
   MessageRendering/         Discord Markdown parsing and attributed-content
                              planning
   MediaPipeline/            media caching plus native voice/video signaling,

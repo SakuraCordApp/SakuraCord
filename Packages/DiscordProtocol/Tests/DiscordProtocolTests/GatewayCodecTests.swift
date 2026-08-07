@@ -73,6 +73,21 @@ import Testing
     ))
 }
 
+@Test func `ETF collection counts are bounded by remaining encoded bytes`() {
+    let declaredCount: [UInt8] = [0, 255, 255, 255]
+    let malformedCollections = [
+        Data([131, 105] + declaredCount), // LARGE_TUPLE_EXT
+        Data([131, 108] + declaredCount), // LIST_EXT, also missing its tail
+        Data([131, 116] + declaredCount), // MAP_EXT
+    ]
+
+    for fixture in malformedCollections {
+        #expect(throws: GatewaySessionError.malformedPayload) {
+            try ETFGatewayCodec().decode(fixture)
+        }
+    }
+}
+
 @Test func `desktop ETF codec preserves integer map keys exactly`() throws {
     var fixture = Data([131, 116, 0, 0, 0, 4])
     appendETFBinary("op", to: &fixture)
@@ -228,6 +243,21 @@ private func appendETFBinary(_ value: String, to data: inout Data) {
     post.httpMethod = "POST"
     try metadata.apply(to: &post)
     #expect(post.value(forHTTPHeaderField: "Origin") == "https://discord.com")
+}
+
+@Test func `client hints derive their Chromium major version from the baseline`() throws {
+    var baseline = DiscordProductionBaseline.august2026
+    baseline.chromiumVersion = "151.2.3456.7"
+    let metadata = DiscordClientMetadata(baseline: baseline)
+    var request = URLRequest(url: URL(string: "https://discord.com/api/v9/users/@me")!)
+
+    try metadata.apply(to: &request)
+
+    #expect(metadata.userAgent.contains("Chrome/151.2.3456.7"))
+    #expect(
+        request.value(forHTTPHeaderField: "Sec-CH-UA")
+            == "\"Not)A;Brand\";v=\"8\", \"Chromium\";v=\"151\""
+    )
 }
 
 @Test func `ready guild decodes the designated community rules channel`() throws {

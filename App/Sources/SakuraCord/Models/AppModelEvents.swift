@@ -177,8 +177,7 @@ extension AppModel {
             visibleChannels = selectedGuildChannels
         }
         if let selectedChannelID,
-           !selectedGuildChannels.contains(where: { $0.id == selectedChannelID }),
-           !presentsCachedStartup
+           !selectedGuildChannels.contains(where: { $0.id == selectedChannelID })
         {
             self.selectedChannelID = Self.preferredInitialChannelID(
                 in: selectedGuildChannels.filter {
@@ -595,17 +594,18 @@ extension AppModel {
     func consumeCurrentUserRolesSnapshot(
         _ roleIDsByGuild: [GuildID: [RoleID]]
     ) {
-        var didChange = false
-        for (guildID, values) in roleIDsByGuild {
-            let roleIDs = Set(values)
-            guard currentUserRoleIDsByGuild[guildID] != roleIDs else { continue }
-            currentUserRoleIDsByGuild[guildID] = roleIDs
-            readState.updateCurrentUserRoles(roleIDs, guildID: guildID)
-            didChange = true
+        let replacement = roleIDsByGuild.mapValues(Set.init)
+        guard currentUserRoleIDsByGuild != replacement else { return }
+        let affectedGuildIDs = Set(currentUserRoleIDsByGuild.keys)
+            .union(replacement.keys)
+        currentUserRoleIDsByGuild = replacement
+        for guildID in affectedGuildIDs {
+            readState.updateCurrentUserRoles(
+                replacement[guildID] ?? [],
+                guildID: guildID
+            )
         }
-        if didChange {
-            refreshUnreadPresentation(appliesAccessImmediately: true)
-        }
+        refreshUnreadPresentation(appliesAccessImmediately: true)
     }
 
     func consumeConnectionChange(_ state: ConnectionState) {
@@ -781,7 +781,7 @@ extension AppModel {
             if let selectedChannelID {
                 if let updated = channels.first(where: { $0.id == selectedChannelID }) {
                     selectedChannel = updated
-                } else if guildID == nil, !presentsCachedStartup {
+                } else if guildID == nil {
                     self.selectedChannelID = channels.first?.id
                 }
             }
@@ -994,10 +994,14 @@ extension AppModel {
 
     func consumeGuildLayoutChanged(guilds: [Guild], railItems: [GuildRailItem]) {
         guard var value = snapshot else { return }
+        let retainedGuildIDs = Set(guilds.map(\.id))
         value.guilds = guilds
         value.guildRailItems = railItems
         snapshot = value
-        readState.retainGuilds(Set(guilds.map(\.id)))
+        currentUserRoleIDsByGuild = currentUserRoleIDsByGuild.filter {
+            retainedGuildIDs.contains($0.key)
+        }
+        readState.retainGuilds(retainedGuildIDs)
         readState.merge(guilds: guilds)
         updateServerRail(from: value)
         // Layout events likewise contain raw guild models. Preserve the

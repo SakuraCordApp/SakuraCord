@@ -52,8 +52,19 @@ nonisolated protocol ExternalAttachmentUploading: Sendable {
 nonisolated struct CatboxAttachmentUploader: ExternalAttachmentUploading {
     let session: URLSession
 
-    init(session: URLSession = .shared) {
+    init() {
+        session = URLSession(configuration: Self.sessionConfiguration())
+    }
+
+    init(session: URLSession) {
         self.session = session
+    }
+
+    static func sessionConfiguration() -> URLSessionConfiguration {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        return configuration
     }
 
     func upload(fileURL: URL, using service: ExternalAttachmentHostingService) async throws -> URL {

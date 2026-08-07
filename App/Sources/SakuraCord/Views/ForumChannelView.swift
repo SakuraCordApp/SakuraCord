@@ -1299,7 +1299,6 @@ private struct ForumPostCardChrome<Content: View>: View {
                     isUnread: model.isForumPostUnread(post),
                     isMutationPending:
                         model.isForumNotificationMutationPending(post.id),
-                    allowsMutations: !model.presentsCachedStartup,
                     notificationSettings: post.thread.notificationSettings,
                     inheritedNotificationLevel:
                         model.inheritedForumPostNotificationLevel(post),

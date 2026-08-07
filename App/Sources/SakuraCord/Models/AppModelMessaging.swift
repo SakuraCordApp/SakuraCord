@@ -77,7 +77,6 @@ extension AppModel {
     }
 
     func edit(_ message: Message, content: String) async {
-        guard !presentsCachedStartup else { return }
         let session = accountSession()
         do {
             let updated = try await session.provider.edit(
@@ -93,7 +92,6 @@ extension AppModel {
     }
 
     func delete(_ message: Message) async {
-        guard !presentsCachedStartup else { return }
         let session = accountSession()
         do {
             try await session.provider.delete(
@@ -122,7 +120,6 @@ extension AppModel {
     }
 
     func toggleReaction(_ emoji: String, on message: Message) async {
-        guard !presentsCachedStartup else { return }
         let guildID = message.guildID ?? selectedGuildID
         let currentGuildEmojis = guildID.flatMap { emojisByGuild[$0] } ?? []
         guard
@@ -192,7 +189,6 @@ extension AppModel {
         for key: ReactionMutationKey,
         generation: UInt64
     ) async {
-        guard !presentsCachedStartup else { return }
         let session = accountSession()
         guard var state = reactionMutations[key],
               state.generation == generation,
@@ -603,7 +599,6 @@ extension AppModel {
     }
 
     func updateStatus(_ status: PresenceStatus) async {
-        guard !presentsCachedStartup else { return }
         let session = accountSession()
         do {
             try await session.provider.updateStatus(status)
@@ -622,7 +617,6 @@ extension AppModel {
     }
 
     func joinVoice(_ channel: Channel) async {
-        guard !presentsCachedStartup else { return }
         guard canJoinVoice(channel) else { return }
         if activeVoiceChannel?.id == channel.id,
            voiceSessionState == .connected || voiceSessionState == .connecting
@@ -630,8 +624,12 @@ extension AppModel {
             return
         }
         let account = accountSession()
-        await leaveVoice(account: account)
-        guard isCurrentAccountSession(account) else { return }
+        voiceActionGeneration &+= 1
+        let actionGeneration = voiceActionGeneration
+        await leaveVoice(account: account, preservingVoiceActionGeneration: actionGeneration)
+        guard isCurrentAccountSession(account),
+              voiceActionGeneration == actionGeneration
+        else { return }
         voiceMigrationGeneration &+= 1
         let voiceGeneration = voiceMigrationGeneration
         activeVoiceChannel = channel
@@ -700,7 +698,6 @@ extension AppModel {
     }
 
     func startPrivateCall(in channel: Channel, withVideo: Bool = false) async {
-        guard !presentsCachedStartup else { return }
         guard channel.kind == .directMessage || channel.kind == .groupDirectMessage,
               !channel.isOfficialSystemDirectMessage
         else { return }
@@ -811,7 +808,6 @@ extension AppModel {
     }
 
     func joinPrivateCall(in channel: Channel, withVideo: Bool = false) async {
-        guard !presentsCachedStartup else { return }
         guard channel.kind == .directMessage || channel.kind == .groupDirectMessage,
               !channel.isOfficialSystemDirectMessage
         else { return }
@@ -863,7 +859,6 @@ extension AppModel {
     }
 
     func acceptPrivateCall(_ call: PrivateCall) async {
-        guard !presentsCachedStartup else { return }
         guard let channel = snapshot?.channels.first(where: { $0.id == call.channelID })
                 ?? visibleChannels.first(where: { $0.id == call.channelID })
         else { return }
@@ -882,7 +877,6 @@ extension AppModel {
     }
 
     func declinePrivateCall(_ call: PrivateCall) async {
-        guard !presentsCachedStartup else { return }
         guard let currentUserID = snapshot?.currentUser.id else { return }
         await performPrivateCallAction(in: call.channelID) { generation in
             await self.declinePrivateCall(
@@ -1026,7 +1020,8 @@ extension AppModel {
 
     func leaveVoice(
         account: AppModelAccountSession? = nil,
-        expectedOperation: AppModelVoiceOperationIdentity? = nil
+        expectedOperation: AppModelVoiceOperationIdentity? = nil,
+        preservingVoiceActionGeneration preservedActionGeneration: UInt64? = nil
     ) async {
         let account = account ?? accountSession()
         guard isCurrentAccountSession(account) else { return }
@@ -1035,6 +1030,11 @@ extension AppModel {
                 account,
                 identity: expectedOperation
             ) else { return }
+        }
+        if let preservedActionGeneration {
+            guard voiceActionGeneration == preservedActionGeneration else { return }
+        } else {
+            voiceActionGeneration &+= 1
         }
         let channel = activeVoiceChannel
         let guildID = channel?.guildID
@@ -1051,7 +1051,8 @@ extension AppModel {
         voiceEventTask = nil
         await departingSession?.disconnect()
         guard isCurrentAccountSession(account),
-              voiceMigrationGeneration == voiceGeneration
+              voiceMigrationGeneration == voiceGeneration,
+              preservedActionGeneration.map({ voiceActionGeneration == $0 }) ?? true
         else { return }
         if voiceSession === departingSession {
             voiceSession = nil
@@ -1067,6 +1068,7 @@ extension AppModel {
         }
         guard isCurrentAccountSession(account),
               voiceMigrationGeneration == voiceGeneration,
+              preservedActionGeneration.map({ voiceActionGeneration == $0 }) ?? true,
               activeVoiceChannel?.id == channel?.id
         else { return }
         activeVoiceChannel = nil
@@ -1087,7 +1089,6 @@ extension AppModel {
     }
 
     func toggleVoiceMute() async {
-        guard !presentsCachedStartup else { return }
         let account = accountSession()
         let generation = voiceMigrationGeneration
         let session = voiceSession
@@ -1112,7 +1113,6 @@ extension AppModel {
     }
 
     func toggleVoiceDeafen() async {
-        guard !presentsCachedStartup else { return }
         let account = accountSession()
         let generation = voiceMigrationGeneration
         let session = voiceSession
@@ -1137,7 +1137,6 @@ extension AppModel {
     }
 
     func toggleCamera() async {
-        guard !presentsCachedStartup else { return }
         let account = accountSession()
         let generation = voiceMigrationGeneration
         let session = voiceSession
@@ -1953,7 +1952,6 @@ extension AppModel {
 
     func reportTimelineUserInteraction(channelID: ChannelID) {
         guard channelID == selectedChannelID || channelID == openThread?.id else { return }
-        guard !presentsCachedStartup else { return }
         readState.unblockAutomaticAcknowledgement(channelID: channelID)
     }
 

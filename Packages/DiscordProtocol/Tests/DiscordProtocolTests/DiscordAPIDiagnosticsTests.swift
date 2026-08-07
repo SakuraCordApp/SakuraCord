@@ -421,6 +421,85 @@ import Testing
     #expect(byteCount <= maximumDiskBytes)
 }
 
+@Test func `disk diagnostics prune older session files to the aggregate count limit`() throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appending(path: "SakuraCordDiagnosticsRetentionTests-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true
+    )
+    let oldest = directory.appending(
+        path: "SakuraCord Discord API Logs 2026-01-01 00-00-00.jsonl"
+    )
+    let newer = directory.appending(
+        path: "SakuraCord Discord API Logs 2026-01-02 00-00-00.jsonl"
+    )
+    try Data("oldest\n".utf8).write(to: oldest)
+    try Data("newer\n".utf8).write(to: newer)
+    try FileManager.default.setAttributes(
+        [.modificationDate: Date(timeIntervalSince1970: 1)],
+        ofItemAtPath: oldest.path
+    )
+    try FileManager.default.setAttributes(
+        [.modificationDate: Date(timeIntervalSince1970: 2)],
+        ofItemAtPath: newer.path
+    )
+    let store = DiscordAPIDiagnosticStore(
+        maximumEntries: 10,
+        diskDirectoryURL: directory,
+        maximumDiskBytes: 4_096,
+        maximumDiskSessionFileCount: 2
+    )
+    try store.setSavesDiagnosticsToDisk(true)
+    let current = try #require(store.currentDiskLogURL)
+
+    #expect(!FileManager.default.fileExists(atPath: oldest.path))
+    #expect(FileManager.default.fileExists(atPath: newer.path))
+    #expect(FileManager.default.fileExists(atPath: current.path))
+    #expect(
+        try FileManager.default.contentsOfDirectory(atPath: directory.path)
+            .filter { $0.hasSuffix(".jsonl") }.count == 2
+    )
+}
+
+@Test func `clearing memory and disk removes prior files and resumes active capture`() throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appending(path: "SakuraCordDiagnosticsClearTests-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = DiscordAPIDiagnosticStore(
+        maximumEntries: 10,
+        diskDirectoryURL: directory,
+        maximumDiskBytes: 4_096,
+        maximumDiskSessionFileCount: 2
+    )
+    try store.setSavesDiagnosticsToDisk(true)
+    store.recordHTTPRequest(
+        method: "GET",
+        path: "/channels/111111111111111111/messages",
+        body: nil,
+        attempt: 1
+    )
+    #expect(store.retainedEntryCount == 1)
+
+    try store.clearMemoryAndDisk()
+
+    #expect(store.retainedEntryCount == 0)
+    #expect(store.savesDiagnosticsToDisk)
+    let currentURL = try #require(store.currentDiskLogURL)
+    let files = try FileManager.default.contentsOfDirectory(
+        at: directory,
+        includingPropertiesForKeys: nil
+    ).filter { $0.pathExtension == "jsonl" }
+    #expect(files.count == 1)
+    #expect(
+        files.first?.resolvingSymlinksInPath()
+            == currentURL.resolvingSymlinksInPath()
+    )
+    #expect(try String(contentsOf: currentURL, encoding: .utf8)
+        .split(separator: "\n").count == 1)
+}
+
 @Test func `central REST transport records one request and one response`() async throws {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [DiagnosticsURLProtocol.self]

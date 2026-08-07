@@ -529,7 +529,6 @@ actor GatewaySession {
         guard let name = envelope.eventName, let data = envelope.data else {
             throw GatewaySessionError.malformedPayload
         }
-        eventContinuation.yield(.dispatch(name: name, data: data))
         if name == "READY" {
             guard case let .object(object) = data,
                   case let .string(readySessionID)? = object["session_id"],
@@ -540,12 +539,16 @@ actor GatewaySession {
             sessionID = readySessionID
             resumeGatewayURL = readyResumeURL
             reconnectAttempts = 0
+            eventContinuation.yield(.dispatch(name: name, data: data))
             transition(to: .ready)
             eventContinuation.yield(.stateChanged(.ready))
         } else if name == "RESUMED" {
             reconnectAttempts = 0
+            eventContinuation.yield(.dispatch(name: name, data: data))
             transition(to: .ready)
             eventContinuation.yield(.stateChanged(.ready))
+        } else {
+            eventContinuation.yield(.dispatch(name: name, data: data))
         }
     }
 

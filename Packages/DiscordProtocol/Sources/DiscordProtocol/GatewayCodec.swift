@@ -199,13 +199,26 @@ private struct ETFParser {
             }
             return .array(values)
         case 104: // SMALL_TUPLE_EXT
-            return try parseTuple(count: Int(try readByte()), depth: depth)
+            return try parseTuple(
+                count: checkedCollectionCount(Int(try readByte()), minimumBytesPerElement: 1),
+                depth: depth
+            )
         case 105: // LARGE_TUPLE_EXT
-            return try parseTuple(count: checkedCount(try readUInt32()), depth: depth)
+            return try parseTuple(
+                count: checkedCollectionCount(
+                    try checkedCount(readUInt32()),
+                    minimumBytesPerElement: 1
+                ),
+                depth: depth
+            )
         case 106: // NIL_EXT
             return .array([])
         case 108: // LIST_EXT
-            let count = try checkedCount(readUInt32())
+            let count = try checkedCollectionCount(
+                checkedCount(readUInt32()),
+                minimumBytesPerElement: 1,
+                trailingBytes: 1
+            )
             var values: [JSONValue] = []
             values.reserveCapacity(count)
             for _ in 0 ..< count {
@@ -216,7 +229,10 @@ private struct ETFParser {
             }
             return .array(values)
         case 116: // MAP_EXT
-            let count = try checkedCount(readUInt32())
+            let count = try checkedCollectionCount(
+                checkedCount(readUInt32()),
+                minimumBytesPerElement: 2
+            )
             var object: [String: JSONValue] = [:]
             object.reserveCapacity(count)
             for _ in 0 ..< count {
@@ -386,5 +402,19 @@ private struct ETFParser {
     private func checkedCount(_ value: UInt32) throws -> Int {
         guard value <= 16 * 1024 * 1024 else { throw GatewaySessionError.malformedPayload }
         return Int(value)
+    }
+
+    private func checkedCollectionCount(
+        _ count: Int,
+        minimumBytesPerElement: Int,
+        trailingBytes: Int = 0
+    ) throws -> Int {
+        let remainingBytes = bytes.count - index
+        guard remainingBytes >= trailingBytes,
+              count <= (remainingBytes - trailingBytes) / minimumBytesPerElement
+        else {
+            throw GatewaySessionError.malformedPayload
+        }
+        return count
     }
 }

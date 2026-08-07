@@ -168,6 +168,19 @@ extension NativeTimelineCanvasView {
     }
 
     func reconcileActionCapsule() {
+        if actionCapsuleState?.isPresentationActive == true {
+            guard editingMessageID == nil,
+                  let messageID = actionCapsuleMessageID,
+                  let index = items.firstIndex(where: {
+                      $0.messageID == messageID
+                  })
+            else {
+                removeActionCapsule()
+                return
+            }
+            positionActionCapsule(at: index)
+            return
+        }
         guard editingMessageID == nil,
               let index = hoveredRow,
               items.indices.contains(index),
@@ -188,14 +201,17 @@ extension NativeTimelineCanvasView {
         removeActionCapsule()
 
         let state = NativeTimelineActionCapsuleState()
-        state.presentationDidChange = { [weak self] isPresented in
-            guard let self else { return }
-            if !isPresented, self.hoveredRow == nil {
-                self.removeActionCapsule()
-            } else {
-                Task { @MainActor [weak self] in
-                    await Task.yield()
-                    self?.refreshActionCapsuleSizeAndPosition()
+        state.presentationDidChange = { [weak self, weak state] isPresented in
+            Task { @MainActor [weak self, weak state] in
+                await Task.yield()
+                guard let self,
+                      let state,
+                      self.actionCapsuleState === state
+                else { return }
+                if isPresented {
+                    self.refreshActionCapsuleSizeAndPosition()
+                } else {
+                    self.reconcileActionCapsule()
                 }
             }
         }

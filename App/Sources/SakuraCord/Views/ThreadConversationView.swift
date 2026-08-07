@@ -168,30 +168,24 @@ private struct ThreadConversationComposer: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if model.presentsCachedStartup {
-                DisabledComposerView(
-                    message: "Messages are read-only while Discord reconnects."
+            switch model.openThreadAccess {
+            case .checking:
+                DisabledComposerView(message: "Checking thread permissions…")
+            case .readable(canSend: true):
+                ComposerView(
+                    model: model,
+                    channelName: thread.name,
+                    conversation: .thread,
+                    onEditMessage: onEditMessage
                 )
-            } else {
-                switch model.openThreadAccess {
-                case .checking:
-                    DisabledComposerView(message: "Checking thread permissions…")
-                case .readable(canSend: true):
-                    ComposerView(
-                        model: model,
-                        channelName: thread.name,
-                        conversation: .thread,
-                        onEditMessage: onEditMessage
+            case .readable(canSend: false):
+                if !thread.isLocked {
+                    DisabledComposerView(
+                        message: "You do not have permission to send messages in this thread."
                     )
-                case .readable(canSend: false):
-                    if !thread.isLocked {
-                        DisabledComposerView(
-                            message: "You do not have permission to send messages in this thread."
-                        )
-                    }
-                case .hidden:
-                    EmptyView()
                 }
+            case .hidden:
+                EmptyView()
             }
         }
     }

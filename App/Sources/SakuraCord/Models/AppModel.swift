@@ -427,19 +427,16 @@ final class AppModel {
     }
 
     var canCreateForumPosts: Bool {
-        !presentsCachedStartup
-            && selectedConversationAccess.canSend
+        selectedConversationAccess.canSend
             && supportedCapabilities.contains(.forums)
     }
 
     var canManageForumPosts: Bool {
-        guard !presentsCachedStartup else { return false }
         guard let permissions = selectedEffectivePermissions else { return false }
         return permissions & DiscordPermissionBits.manageThreads != 0
     }
 
     func canDeleteForumPost(_ post: ForumPost) -> Bool {
-        guard !presentsCachedStartup else { return false }
         return Self.canDeleteForumPost(
             ownerID: post.thread.ownerID ?? post.owner?.id,
             currentUserID: snapshot?.currentUser.id,
@@ -448,7 +445,6 @@ final class AppModel {
     }
 
     func canArchiveForumPost(_ post: ForumPost) -> Bool {
-        guard !presentsCachedStartup else { return false }
         if canManageForumPosts { return true }
         guard !post.thread.isLocked else { return false }
         let ownerID = post.thread.ownerID ?? post.owner?.id
@@ -456,7 +452,6 @@ final class AppModel {
     }
 
     func canEditForumPostTags(_ post: ForumPost) -> Bool {
-        guard !presentsCachedStartup else { return false }
         if canManageForumPosts { return true }
         guard !post.thread.isLocked else { return false }
         let ownerID = post.thread.ownerID ?? post.owner?.id
@@ -606,7 +601,7 @@ final class AppModel {
             cancelApplicationCommandMemberSearch()
             commandExecutionTask?.cancel()
             commandComposer.resetForChannelChange()
-            channelComposerAttachments = []
+            clearComposerAttachments(for: .channel)
             isVoiceChatOpen = selectedChannel?.kind == .voice
             closeThread()
             if let selectedChannelID {
@@ -617,21 +612,18 @@ final class AppModel {
                     initialPositionEstablished: false,
                     windowIsActive: mainWindowIsActive,
                     hasReachedReadBoundary: false,
-                    blocksAutomaticAcknowledgement: presentsCachedStartup
+                    blocksAutomaticAcknowledgement: false
                 )
             }
             if selectedChannel?.kind == .forum {
                 if let selectedChannelID {
                     readState.beginForumVisit(channelID: selectedChannelID)
                 }
-                if !presentsCachedStartup {
-                    beginForumLoad()
-                }
+                beginForumLoad()
             } else {
                 beginSelectedChannelLoad()
             }
             if let channel = selectedChannel,
-               !presentsCachedStartup,
                channel.kind == .directMessage || channel.kind == .groupDirectMessage
             {
                 let account = accountSession()
@@ -658,7 +650,6 @@ final class AppModel {
     @ObservationIgnored let accountTransitionCoordinator = AccountTransitionCoordinator()
     @ObservationIgnored var accountTransitionIsActive = false
     @ObservationIgnored var accountChildTasks: [UUID: Task<Void, Never>] = [:]
-    var presentsCachedStartup = false
     @ObservationIgnored let runsChatPerformanceBenchmark: Bool
     @ObservationIgnored var eventTask: Task<Void, Never>?
     @ObservationIgnored var locallyStartedOutgoingPrivateCallRings:
@@ -699,6 +690,7 @@ final class AppModel {
     @ObservationIgnored var threadLoadTask: Task<Void, Never>?
     @ObservationIgnored var gifSearchTask: Task<Void, Never>?
     @ObservationIgnored var gifPickerLoadTask: Task<Void, Never>?
+    @ObservationIgnored var gifPickerLoadGeneration: UInt64 = 0
     @ObservationIgnored var commandLoadTask: Task<Void, Never>?
     @ObservationIgnored var commandAutocompleteTask: Task<Void, Never>?
     @ObservationIgnored var commandMemberSearchTask: Task<Void, Never>?
@@ -736,6 +728,7 @@ final class AppModel {
     @ObservationIgnored var voiceMigrationTask: Task<Void, Never>?
     @ObservationIgnored var voiceSession: DiscordVoiceSession?
     @ObservationIgnored var voiceMigrationGeneration = 0
+    @ObservationIgnored var voiceActionGeneration: UInt64 = 0
     @ObservationIgnored var privateCallActionGeneration: UInt64 = 0
     @ObservationIgnored var channelLoadGeneration = 0
     @ObservationIgnored var messageNavigationRequestID: UInt64 = 0
@@ -785,6 +778,10 @@ final class AppModel {
     @ObservationIgnored let externalAttachmentUploader: any ExternalAttachmentUploading
     @ObservationIgnored var queuedOversizedAttachmentPrompts: [OversizedAttachmentPrompt] = []
     @ObservationIgnored var externalAttachmentUploadTask: Task<Void, Never>?
+    @ObservationIgnored var externalAttachmentUploadGeneration: UInt64 = 0
+    @ObservationIgnored var promisedAttachmentDirectoryByFileURL: [URL: URL] = [:]
+    @ObservationIgnored var promisedAttachmentFilesInFlight: Set<URL> = []
+    @ObservationIgnored var externalAttachmentUploadFileURL: URL?
 
     init(
         launchMode: AppLaunchMode,

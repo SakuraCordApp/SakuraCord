@@ -59,6 +59,7 @@ nonisolated enum GIFMasonryLayout {
 }
 
 nonisolated enum GIFPickerMediaPolicy {
+    static let maximumRequestCount = 3
     private static let videoExtensions = ["webm", "mp4"]
 
     static func isVideo(
@@ -76,11 +77,13 @@ nonisolated enum GIFPickerMediaPolicy {
     static func nativeAnimationURLs(for gif: GIFSearchResult) -> [URL] {
         var candidates: [URL] = []
         for candidate in [gif.previewURL, gif.mediaURL].compactMap(\.self) {
+            guard let candidate = GIFMediaURLPolicy.approved(candidate) else { continue }
             if isVideo(
                 candidate,
                 declaredKind: candidate == gif.mediaURL ? gif.mediaKind : nil
             ) {
-                if let alternate = alternateURL(
+                if isTenor(candidate),
+                   let alternate = alternateURL(
                     for: candidate,
                     pathExtension: "gif",
                     tenorFormatSuffix: "AM"
@@ -93,22 +96,23 @@ nonisolated enum GIFPickerMediaPolicy {
         }
         return candidates.reduce(into: []) { unique, candidate in
             if !unique.contains(candidate) { unique.append(candidate) }
-        }
+        }.prefix(1).map(\.self)
     }
 
     static func nativeVideoURL(for gif: GIFSearchResult) -> URL? {
-        guard let source = gif.mediaURL,
+        guard let source = GIFMediaURLPolicy.approved(gif.mediaURL),
               isVideo(source, declaredKind: gif.mediaKind)
         else { return nil }
         switch source.pathExtension.lowercased() {
         case "webm":
+            guard isTenor(source) else { return nil }
             return alternateURL(
                 for: source,
                 pathExtension: "mp4",
                 tenorFormatSuffix: tenorMP4Suffix(for: source)
             )
         case "mp4", "":
-            return source
+            return GIFMediaURLPolicy.approved(source)
         default:
             return nil
         }
@@ -116,13 +120,20 @@ nonisolated enum GIFPickerMediaPolicy {
 
     static func staticFallbackURL(for gif: GIFSearchResult) -> URL? {
         let candidates = [gif.thumbnailURL, gif.previewURL, gif.mediaURL]
-            .compactMap(\.self)
+            .compactMap(GIFMediaURLPolicy.approved)
         return candidates.first { candidate in
             !isVideo(
                 candidate,
                 declaredKind: candidate == gif.mediaURL ? gif.mediaKind : nil
             )
         }
+    }
+
+    static func requestURLs(for gif: GIFSearchResult) -> [URL] {
+        ([staticFallbackURL(for: gif), nativeVideoURL(for: gif)].compactMap(\.self)
+            + nativeAnimationURLs(for: gif)).reduce(into: []) { unique, url in
+                if !unique.contains(url) { unique.append(url) }
+            }
     }
 
     private static func tenorMP4Suffix(for url: URL) -> String? {
@@ -169,7 +180,7 @@ nonisolated enum GIFPickerMediaPolicy {
         pathComponents[pathComponents.index(before: pathComponents.endIndex)] =
             alternateFilename
         components.percentEncodedPath = "/" + pathComponents.joined(separator: "/")
-        return components.url
+        return GIFMediaURLPolicy.approved(components.url)
     }
 
     private static let knownTenorVideoSuffixes = [
@@ -183,7 +194,9 @@ nonisolated enum GIFPickerMediaPolicy {
     }
 
     private static func isTenor(_ url: URL) -> Bool {
-        guard let host = url.host()?.lowercased() else { return false }
+        guard GIFMediaURLPolicy.isApproved(url),
+              let host = url.host()?.lowercased()
+        else { return false }
         return host == "tenor.com"
             || host.hasSuffix(".tenor.com")
             || host == "tenor.co"
@@ -450,7 +463,7 @@ private struct GIFCategoryButton: View {
         Button(action: action) {
             ZStack {
                 Color.primary.opacity(0.06)
-                if let previewURL {
+                if let previewURL = GIFMediaURLPolicy.approved(previewURL) {
                     ZStack {
                         // Keep a decoded first frame mounted underneath the
                         // animation so categories never flash empty while the

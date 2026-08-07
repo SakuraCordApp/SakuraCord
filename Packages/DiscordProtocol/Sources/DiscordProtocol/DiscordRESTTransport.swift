@@ -518,10 +518,21 @@ extension DiscordRESTProvider {
     }
 
     func authorizationToken() async throws -> String {
+        guard !requestSafetyCircuitIsOpen else {
+            throw ChatProviderError.invalidRequest(
+                "Discord networking is stopped for this session."
+            )
+        }
         if let authorizationValue {
             return authorizationValue
         }
-        let credential = try await credentialSource.credential()
+        var credential = try await credentialSource.credential()
+        defer { credential.resetBytes(in: credential.indices) }
+        guard !requestSafetyCircuitIsOpen else {
+            throw ChatProviderError.invalidRequest(
+                "Discord networking is stopped for this session."
+            )
+        }
         guard let value = String(data: credential, encoding: .utf8) else {
             throw ChatProviderError.unauthenticated
         }

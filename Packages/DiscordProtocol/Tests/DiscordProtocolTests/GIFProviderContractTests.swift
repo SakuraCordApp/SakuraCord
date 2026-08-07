@@ -16,8 +16,11 @@ struct GIFProviderContractTests {
         #expect(landing.categories.map(\.name) == [
             "hello", "lol", "love", "happy birthday", "thank you", "excited",
         ])
+        #expect(landing.categories.allSatisfy { $0.previewURL?.host() == "static.klipy.com" })
         #expect(searched.map(\.id) == ["one", "two"])
-        #expect(searched[0].thumbnailURL?.absoluteString == "https://cdn.example/one.png")
+        #expect(searched[0].thumbnailURL?.absoluteString == "https://static.klipy.com/one.webm")
+        #expect(searched[0].previewURL?.absoluteString == "https://static.klipy.com/one.webp")
+        #expect(searched[1].previewURL?.host() == "static.klipy.com")
         #expect(trending.map(\.id) == ["one", "two"])
         #expect(GIFURLProtocol.requests.map(\.path) == [
             "/api/v9/gifs/trending",
@@ -184,27 +187,29 @@ private final class GIFURLProtocol: URLProtocol, @unchecked Sendable {
         case "/api/v9/gifs/trending":
             body = #"""
             {"categories":[
-              {"name":"hello","type":"hello","src":"//cdn.example/hello.webm"},
-              {"name":"lol","type":"lol","src":"//cdn.example/lol.webm"},
-              {"name":"love","type":"love","src":"//cdn.example/love.webm"},
-              {"name":"happy birthday","type":"happy-birthday","src":"//cdn.example/birthday.webm"},
-              {"name":"thank you","type":"thank-you","src":"//cdn.example/thanks.webm"},
-              {"name":"excited","type":"excited","src":"//cdn.example/excited.webm"}
+              {"name":"hello","type":"hello","src":"//static.klipy.com/hello.webp"},
+              {"name":"lol","type":"lol","src":"//static.klipy.com/lol.webp"},
+              {"name":"love","type":"love","src":"//static.klipy.com/love.webp"},
+              {"name":"happy birthday","type":"happy-birthday","src":"//static.klipy.com/birthday.webp"},
+              {"name":"thank you","type":"thank-you","src":"//static.klipy.com/thanks.webp"},
+              {"name":"excited","type":"excited","src":"//static.klipy.com/excited.webp"}
             ],"gifs":[
-              {"id":"one","title":"Hello","url":"https://tenor.com/view/one",
-               "src":"//cdn.example/one.webm","gif_src":"//cdn.example/one.gif",
-               "preview":"//cdn.example/one.png","width":640,"height":640}
+              {"id":"one","title":"Hello","url":"https://klipy.com/view/one",
+               "src":"//static.klipy.com/one.webm","gif_src":"//static.klipy.com/one.webp",
+               "preview":"//static.klipy.com/one.webm","width":640,"height":640}
             ]}
             """#
         case "/api/v9/gifs/search", "/api/v9/gifs/trending-gifs":
             body = #"""
             [
-              {"id":"one","title":"Hello","url":"https://tenor.com/view/one",
-               "src":"//cdn.example/one.webm","gif_src":"//cdn.example/one.gif",
-               "preview":"//cdn.example/one.png","width":640,"height":640},
-              {"id":"two","title":"Wave","url":"https://tenor.com/view/two",
-               "src":"//cdn.example/two.webm","gif_src":"//cdn.example/two.gif",
-               "preview":"//cdn.example/two.png","width":498,"height":210}
+              {"id":"one","title":"Hello","url":"https://klipy.com/view/one",
+               "src":"//static.klipy.com/one.webm","gif_src":"//static.klipy.com/one.webp",
+               "preview":"//static.klipy.com/one.webm","width":640,"height":640},
+              {"id":"two","title":"Wave","url":"https://klipy.com/view/two",
+               "src":"//static.klipy.com/two.webm","gif_src":"//static.klipy.com/two.webp",
+               "preview":"//static.klipy.com/two.webm","width":498,"height":210},
+              {"id":"bad","title":"Bad","url":"https://tenor.com/view/bad",
+               "src":"http://unsafe.example/bad.webm","width":100,"height":100}
             ]
             """#
         case "/api/v9/users/@me/settings-proto/2":

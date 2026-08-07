@@ -59,7 +59,6 @@ struct ServerRailView: View {
 }
 
 struct ServerRailContextMenuActions {
-    let allowsMutations: Bool
     let settings: (Guild) -> GuildNotificationSettings
     let isMutationPending: (GuildID) -> Bool
     let markRead: (GuildID) -> Void
@@ -148,7 +147,6 @@ struct GuildRailButton: View {
                 ServerContextMenuBridge(
                     isUnread: guild.unreadCount > 0,
                     isMutationPending: contextMenuActions.isMutationPending(guild.id),
-                    allowsMutations: contextMenuActions.allowsMutations,
                     notificationSettings: contextMenuActions.settings(guild),
                     markRead: { contextMenuActions.markRead(guild.id) },
                     mute: { contextMenuActions.mute(guild, $0) },

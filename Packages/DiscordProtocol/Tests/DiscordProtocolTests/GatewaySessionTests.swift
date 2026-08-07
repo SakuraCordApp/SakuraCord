@@ -486,6 +486,34 @@ import Testing
     #expect(diagnosticText.contains("response_failure"))
 }
 
+@Test func `malformed ready is rejected before dispatch`() async {
+    let socket = FakeGatewaySocket()
+    let transport = FakeGatewayTransport(sockets: [socket])
+    let clock = ManualGatewayClock()
+    let session = makeGatewaySession(transport: transport, clock: clock, randomValues: [])
+    let recorder = GatewayEventRecorder()
+    let eventTask = Task {
+        for await event in session.events {
+            await recorder.append(event)
+        }
+    }
+
+    await session.connect()
+    #expect(await eventually { await transport.connectionCount == 1 })
+    await socket.push(envelope(op: 10, data: .object(["heartbeat_interval": .number(30_000)])))
+    await socket.push(envelope(
+        op: 0,
+        data: .object(["guilds": .array([])]),
+        sequence: 1,
+        eventName: "READY"
+    ))
+
+    #expect(await eventually { await session.snapshot().state == .stopped })
+    #expect(await recorder.dispatchNames.contains("READY") == false)
+    eventTask.cancel()
+    await session.stop()
+}
+
 @Test func `existing message member presence and voice dispatches remain lossless`() async {
     let socket = FakeGatewaySocket()
     let transport = FakeGatewayTransport(sockets: [socket])

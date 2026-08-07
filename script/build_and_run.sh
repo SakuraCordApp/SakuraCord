@@ -138,6 +138,12 @@ for framework in "$BIN_DIR"/*.framework; do
   codesign --force --sign - "$FRAMEWORKS/$framework_name" >/dev/null
 done
 cp "$ROOT_DIR/docs/THIRD_PARTY_NOTICES.md" "$RESOURCES/THIRD_PARTY_NOTICES.md"
+if ! grep -Fq "## Zstandard" "$RESOURCES/THIRD_PARTY_NOTICES.md" \
+  || ! grep -Fq "Copyright (c) Meta Platforms, Inc. and affiliates." \
+    "$RESOURCES/THIRD_PARTY_NOTICES.md"; then
+  echo "packaged third-party notices are missing the Zstandard license" >&2
+  exit 1
+fi
 
 if [[ ! -d "$APP_ICON" ]]; then
   echo "missing app icon: $APP_ICON" >&2

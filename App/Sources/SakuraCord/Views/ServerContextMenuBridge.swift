@@ -5,7 +5,6 @@ import SwiftUI
 struct ServerContextMenuBridge: NSViewRepresentable {
     let isUnread: Bool
     let isMutationPending: Bool
-    let allowsMutations: Bool
     let notificationSettings: GuildNotificationSettings
     let markRead: () -> Void
     let mute: (ChannelMuteDuration) -> Void
@@ -36,7 +35,6 @@ struct ServerContextMenuBridge: NSViewRepresentable {
     final class Coordinator: NSObject {
         private var isUnread: Bool
         private var isMutationPending: Bool
-        private var allowsMutations: Bool
         private var notificationSettings: GuildNotificationSettings
         private var markRead: () -> Void
         private var mute: (ChannelMuteDuration) -> Void
@@ -47,7 +45,6 @@ struct ServerContextMenuBridge: NSViewRepresentable {
         init(from bridge: ServerContextMenuBridge) {
             isUnread = bridge.isUnread
             isMutationPending = bridge.isMutationPending
-            allowsMutations = bridge.allowsMutations
             notificationSettings = bridge.notificationSettings
             markRead = bridge.markRead
             mute = bridge.mute
@@ -59,7 +56,6 @@ struct ServerContextMenuBridge: NSViewRepresentable {
         func update(from bridge: ServerContextMenuBridge) {
             isUnread = bridge.isUnread
             isMutationPending = bridge.isMutationPending
-            allowsMutations = bridge.allowsMutations
             notificationSettings = bridge.notificationSettings
             markRead = bridge.markRead
             mute = bridge.mute
@@ -76,7 +72,7 @@ struct ServerContextMenuBridge: NSViewRepresentable {
                     "Mark as Read",
                     systemImage: "envelope.open.fill",
                     action: #selector(markReadFromMenu),
-                    isEnabled: isUnread && allowsMutations && !isMutationPending
+                    isEnabled: isUnread && !isMutationPending
                 )
             )
             menu.addItem(.separator())
@@ -86,7 +82,7 @@ struct ServerContextMenuBridge: NSViewRepresentable {
                     "Unmute Server",
                     systemImage: "bell.fill",
                     action: #selector(unmuteFromMenu),
-                    isEnabled: allowsMutations && !isMutationPending
+                    isEnabled: !isMutationPending
                 )
                 if let subtitle = ChannelContextMenuSubtitle.muteRemaining(
                     until: notificationSettings.muteConfiguration?.endTime
@@ -99,7 +95,7 @@ struct ServerContextMenuBridge: NSViewRepresentable {
                     "Mute Server",
                     systemImage: "bell.slash.fill",
                     action: nil,
-                    isEnabled: allowsMutations && !isMutationPending
+                    isEnabled: !isMutationPending
                 )
                 let submenu = NSMenu(title: "Mute Server")
                 submenu.autoenablesItems = false
@@ -107,7 +103,7 @@ struct ServerContextMenuBridge: NSViewRepresentable {
                     let durationItem = menuItem(
                         duration.title,
                         action: #selector(muteFromMenu(_:)),
-                        isEnabled: allowsMutations && !isMutationPending
+                        isEnabled: !isMutationPending
                     )
                     durationItem.representedObject = NSNumber(value: index)
                     submenu.addItem(durationItem)
@@ -120,7 +116,7 @@ struct ServerContextMenuBridge: NSViewRepresentable {
                 "Notification Settings",
                 systemImage: "bell.badge.fill",
                 action: nil,
-                isEnabled: allowsMutations && !isMutationPending
+                isEnabled: !isMutationPending
             )
             notificationItem.subtitle = notificationSettings.messageNotifications.menuTitle
             notificationItem.submenu = notificationMenu()
@@ -152,7 +148,7 @@ struct ServerContextMenuBridge: NSViewRepresentable {
                 let item = menuItem(
                     level.menuTitle,
                     action: #selector(setNotificationFromMenu(_:)),
-                    isEnabled: allowsMutations && !isMutationPending
+                    isEnabled: !isMutationPending
                 )
                 item.state = notificationSettings.messageNotifications == level ? .on : .off
                 item.representedObject = NSNumber(value: level.rawValue)

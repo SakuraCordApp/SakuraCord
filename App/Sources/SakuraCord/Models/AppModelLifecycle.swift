@@ -356,6 +356,7 @@ extension AppModel {
         hasLoadedDiscordEmojiSettings = false
         didAttemptDiscordEmojiSettings = false
         voiceStates = [:]
+        privateCallsByChannel = [:]
         visibleChannels = []
         selectedChannel = nil
         selectedGuildID = nil
@@ -398,16 +399,13 @@ extension AppModel {
         )
     }
 
-    func start(
-        publishesSessionState: Bool = true,
-        refreshesExistingSnapshot: Bool = false
-    ) async {
+    func start(publishesSessionState: Bool = true) async {
         let session = accountSession()
         let startSignpost = AppPerformanceSignposts.signposter.beginInterval("SessionStart")
         defer {
             AppPerformanceSignposts.signposter.endInterval("SessionStart", startSignpost)
         }
-        guard snapshot == nil || refreshesExistingSnapshot else { return }
+        guard snapshot == nil else { return }
         guard await prepareSessionStart() else { return }
         guard isCurrentAccountSession(session) else { return }
         if publishesSessionState {
@@ -491,7 +489,6 @@ extension AppModel {
         account: AppModelAccountSession
     ) async {
         guard isCurrentAccountSession(account) else { return }
-        presentsCachedStartup = false
         await AppPerformanceSignposts.measure("BootstrapApplication") {
             await applyBootstrap(
                 value,
@@ -510,7 +507,6 @@ extension AppModel {
         guard launchMode == .normal else { return }
         // No workspace is published until bootstrap succeeds. A failed
         // bootstrap must return to sign-in without exposing partial state.
-        presentsCachedStartup = false
         snapshot = nil
         isAuthenticated = false
         activeAccountID = nil
@@ -578,7 +574,6 @@ extension AppModel {
     func applyBootstrap(
         _ value: BootstrapSnapshot,
         publishesSessionState: Bool,
-        reconcilesCurrentSelection: Bool = false,
         account: AppModelAccountSession? = nil
     ) async {
         if let account, !isCurrentAccountSession(account) { return }
@@ -628,12 +623,6 @@ extension AppModel {
            selectedChannelID != retainedChannel.id
         {
             selectedChannelID = retainedChannel.id
-        } else if retainedChannel != nil, reconcilesCurrentSelection {
-            if retainedChannel?.kind == .forum {
-                beginForumLoad()
-            } else {
-                beginSelectedChannelLoad()
-            }
         }
         if publishesSessionState {
             sessionState = .workspace
@@ -1112,9 +1101,7 @@ extension AppModel {
             }
             selectedChannelID = preferredChannelID
         }
-        if !presentsCachedStartup {
-            beginMemberLoad(for: guildID)
-        }
+        beginMemberLoad(for: guildID)
     }
 
     func restoreMemberPresentation(for guildID: GuildID?) {
@@ -1280,6 +1267,7 @@ extension AppModel {
         gifSearchTask = nil
         gifPickerLoadTask?.cancel()
         gifPickerLoadTask = nil
+        gifPickerLoadGeneration &+= 1
         gifResults = []
         gifCategories = []
         gifTrendingPreviewURL = nil
@@ -1288,6 +1276,15 @@ extension AppModel {
         isLoadingGIFPicker = false
         gifFavoriteMutationURL = nil
         gifErrorMessage = nil
+        externalAttachmentUploadGeneration &+= 1
+        externalAttachmentUploadTask?.cancel()
+        externalAttachmentUploadTask = nil
+        externalAttachmentUploadPresentation = nil
+        releaseAllOwnedPromisedFiles()
+        channelComposerAttachments = []
+        threadComposerAttachments = []
+        oversizedAttachmentPrompt = nil
+        queuedOversizedAttachmentPrompts.removeAll()
         commandLoadTask?.cancel()
         commandLoadTask = nil
         commandAutocompleteTask?.cancel()
@@ -1324,7 +1321,6 @@ extension AppModel {
         loadingReactionReactors = []
         failedReactionReactorLoads = [:]
         resetForumLoadAndPresentationState()
-        presentsCachedStartup = false
     }
 
     func resetForumLoadAndPresentationState() {
@@ -1769,7 +1765,6 @@ extension AppModel {
 
     @discardableResult
     func createForumPost(_ draft: CreateForumPostDraft) async -> Bool {
-        guard !presentsCachedStartup else { return false }
         guard canCreateForumPosts else {
             forumActionError = "You do not have permission to create posts in this forum."
             return false
@@ -1810,7 +1805,6 @@ extension AppModel {
     }
 
     func updateForumPost(_ post: ForumPost, mutation: ForumPostMutation) async {
-        guard !presentsCachedStartup else { return }
         switch mutation {
         case .tags(let tagIDs):
             guard validateForumTagMutation(tagIDs, for: post) else { return }
@@ -1883,7 +1877,6 @@ extension AppModel {
     }
 
     func deleteForumPost(_ post: ForumPost) async {
-        guard !presentsCachedStartup else { return }
         guard canDeleteForumPost(post) else {
             forumActionError = "You do not have permission to delete this post."
             return

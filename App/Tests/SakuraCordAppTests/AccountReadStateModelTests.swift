@@ -63,69 +63,6 @@ struct AccountReadStateModelTests {
         #expect(model.guildUnread(guildID))
     }
 
-    @Test func `startup cache includes accepted read state but excludes pending acknowledgement`() {
-        let acknowledgedID = MessageID(rawValue: 10)
-        let newestID = MessageID(rawValue: 11)
-        let snapshot = BootstrapSnapshot(
-            currentUser: currentUser,
-            guilds: [
-                Guild(
-                    id: guildID,
-                    name: "Guild",
-                    defaultMessageNotifications: .allMessages
-                ),
-            ],
-            channels: [
-                Channel(
-                    id: channelID,
-                    guildID: guildID,
-                    name: "general",
-                    lastMessageID: newestID
-                ),
-            ],
-            members: [],
-            readStates: [
-                ChannelReadState(
-                    channelID: channelID,
-                    lastAcknowledgedMessageID: acknowledgedID
-                ),
-            ]
-        )
-        let model = AccountReadStateModel()
-        model.configure(
-            accountID: "account",
-            guilds: snapshot.guilds,
-            channels: snapshot.channels,
-            readStates: snapshot.readStates,
-            notificationSettings: snapshot.notificationSettings
-        )
-
-        model.markAcknowledgementPending(channelID: channelID, messageID: newestID)
-        #expect(
-            model.cacheSnapshot(updating: snapshot).readStates.first?
-                .lastAcknowledgedMessageID == acknowledgedID
-        )
-
-        model.completeAcknowledgement(
-            channelID: channelID,
-            messageID: newestID,
-            token: nil
-        )
-        let accepted = model.cacheSnapshot(updating: snapshot)
-        #expect(accepted.readStates.first?.lastAcknowledgedMessageID == newestID)
-
-        let restored = AccountReadStateModel()
-        restored.configure(
-            accountID: "account",
-            guilds: accepted.guilds,
-            channels: accepted.channels,
-            readStates: accepted.readStates,
-            notificationSettings: accepted.notificationSettings
-        )
-        #expect(!restored.unread(channelID: channelID))
-        #expect(!restored.guildUnread(guildID))
-    }
-
     @Test func `thread unread stays local without creating an orphan guild rail indicator`() {
         let threadID = ChannelID(rawValue: 201)
         let model = AccountReadStateModel()

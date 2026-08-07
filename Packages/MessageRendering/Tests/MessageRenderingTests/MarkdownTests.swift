@@ -110,6 +110,42 @@ import Testing
     )
 }
 
+@Test func `bare URLs exclude sentence punctuation and keep balanced parentheses`() throws {
+    let first = "https://example.com/docs"
+    let second = "https://en.wikipedia.org/wiki/Function_(mathematics)"
+    let source = "Read \(first), then \(second)."
+    let value = DiscordMarkdown.appKitAttributed(source)
+
+    #expect(value.string == source)
+    let string = value.string as NSString
+    for expected in [first, second] {
+        let range = string.range(of: expected)
+        #expect(range.location != NSNotFound)
+        #expect(
+            value.attribute(.link, at: range.location, effectiveRange: nil)
+                as? URL == URL(string: expected)
+        )
+        #expect(
+            value.attribute(
+                .link,
+                at: NSMaxRange(range) - 1,
+                effectiveRange: nil
+            ) as? URL == URL(string: expected)
+        )
+    }
+    let comma = string.range(of: ",").location
+    let period = string.range(of: ".", options: .backwards).location
+    #expect(value.attribute(.link, at: comma, effectiveRange: nil) == nil)
+    #expect(value.attribute(.link, at: period, effectiveRange: nil) == nil)
+}
+
+@Test func `bare URL rendering rejects a scheme without a host`() {
+    let value = DiscordMarkdown.appKitAttributed("broken https:// remains plain")
+
+    #expect(value.string == "broken https:// remains plain")
+    #expect(value.attribute(.link, at: 7, effectiveRange: nil) == nil)
+}
+
 @Test func `message link policy permits web links and classifies Discord channels`() throws {
     let webURL = try #require(URL(string: "https://example.com/docs"))
     let channelURL = try #require(

@@ -587,7 +587,6 @@ import UserNotifications
 
     #expect(model.sessionState == .restoring)
     #expect(model.snapshot == nil)
-    #expect(!model.presentsCachedStartup)
     #expect(model.selectedChannelID == nil)
 
     await provider.releaseAuthentication()
@@ -603,7 +602,6 @@ import UserNotifications
     await start.value
     #expect(model.isAuthenticated)
     #expect(model.sessionState == .workspace)
-    #expect(!model.presentsCachedStartup)
 }
 
 @MainActor
@@ -2402,7 +2400,7 @@ private actor FailingRemovalCredentialStore: CredentialStore {
 @MainActor
 @Test func `failed bootstrap never presents or authenticates a workspace`() async throws {
     let provider = SuspendedBootstrapTestProvider(
-        bootstrapError: "cached fixture bootstrap stopped"
+        bootstrapError: "fixture bootstrap stopped"
     )
     let database = try SakuraCordDatabase(inMemory: true)
     let notifications = PermissionRecordingNotificationService()
@@ -2435,8 +2433,7 @@ private actor FailingRemovalCredentialStore: CredentialStore {
     #expect(model.sessionState == .signedOut)
     #expect(!model.isAuthenticated)
     #expect(model.snapshot == nil)
-    #expect(!model.presentsCachedStartup)
-    #expect(model.errorMessage == "cached fixture bootstrap stopped")
+    #expect(model.errorMessage == "fixture bootstrap stopped")
     #expect(notifications.authorizationRequestCount == 0)
 }
 
@@ -2480,7 +2477,16 @@ private actor FailingRemovalCredentialStore: CredentialStore {
     model.forumLayout = .gallery
     model.forumTagMatch = .matchAll
     model.forumNextOffset = 25
-    model.presentsCachedStartup = true
+    let staleCallChannelID = ChannelID(rawValue: 98_765)
+    model.privateCallsByChannel[staleCallChannelID] = PrivateCall(
+        channelID: staleCallChannelID,
+        ongoingRings: [
+            PrivateCallRing(
+                recipientID: UserID(rawValue: 1),
+                senderID: UserID(rawValue: 2)
+            ),
+        ]
+    )
     let memberGeneration = model.memberLoadGeneration
     let forumGeneration = model.forumLoadGeneration
     let createGeneration = model.forumCreateGeneration
@@ -2511,7 +2517,7 @@ private actor FailingRemovalCredentialStore: CredentialStore {
     #expect(model.forumLayout == .list)
     #expect(model.forumTagMatch == .matchSome)
     #expect(model.forumNextOffset == nil)
-    #expect(!model.presentsCachedStartup)
+    #expect(model.privateCallsByChannel.isEmpty)
 
     await oldProvider.releaseSuspendedLoads()
     #expect(await oldProvider.waitUntilLoadsReturn())
@@ -2547,13 +2553,9 @@ private actor FailingRemovalCredentialStore: CredentialStore {
     ))
     #expect(await oldProvider.waitUntilLoadsStart())
 
-    // A replacement account with no persisted snapshot must not inherit the
-    // old session's cached-startup mutation gate.
-    model.presentsCachedStartup = true
     #expect(await model.connectAuthenticatedAccount(
         CredentialHandle(accountID: "account-load-new")
     ))
-    #expect(!model.presentsCachedStartup)
     #expect(await eventuallyOnMain {
         model.members.first?.user.displayName == "New member"
             && model.forumPosts.first?.thread.name == "New post"
@@ -3832,6 +3834,28 @@ private func eventuallyOnMain(_ condition: @escaping @MainActor () -> Bool) asyn
     return condition()
 }
 
+private func waitForVoiceLeaveCount(
+    _ expectedCount: Int,
+    from provider: SuspendedVoiceReplacementProvider
+) async -> Bool {
+    for _ in 0 ..< 500 {
+        if await provider.leaveRequestCount == expectedCount { return true }
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    return await provider.leaveRequestCount == expectedCount
+}
+
+private func waitForVoiceJoinCount(
+    _ expectedCount: Int,
+    from provider: SuspendedVoiceReplacementProvider
+) async -> Bool {
+    for _ in 0 ..< 500 {
+        if await provider.joinedChannelIDs.count == expectedCount { return true }
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    return await provider.joinedChannelIDs.count == expectedCount
+}
+
 @MainActor
 private func hiddenMockChannel(
     kind: ChannelKindValue,
@@ -4145,7 +4169,7 @@ private func hiddenMockChannel(
 }
 
 @MainActor
-@Test func `ready role snapshot installs every guild role set together`() {
+@Test func `ready role snapshot replaces stale guild role sets`() {
     let model = AppModel(launchMode: .offlineTesting)
     let firstGuildID = GuildID(rawValue: 91_001)
     let secondGuildID = GuildID(rawValue: 91_002)
@@ -4161,6 +4185,13 @@ private func hiddenMockChannel(
 
     #expect(model.currentUserRoleIDsByGuild[firstGuildID] == [firstRoleID])
     #expect(model.currentUserRoleIDsByGuild[secondGuildID] == [secondRoleID])
+
+    model.consumePresenceAndCommandEvent(
+        .currentUserRolesSnapshot([firstGuildID: []])
+    )
+
+    #expect(model.currentUserRoleIDsByGuild[firstGuildID] == [])
+    #expect(model.currentUserRoleIDsByGuild[secondGuildID] == nil)
 }
 
 @MainActor
@@ -4187,12 +4218,22 @@ private func hiddenMockChannel(
     model.consumePresenceAndCommandEvent(
         .guildRolesChanged(guildID: guild.id, roles: [role])
     )
+    model.consumePresenceAndCommandEvent(
+        .currentUserRolesSnapshot([guild.id: [role.id]])
+    )
     model.consumePresenceAndCommandEvent(.currentUserChanged(updatedUser))
 
     #expect(model.snapshot?.guilds == [guild])
     #expect(model.serverRailGuildsByID[guild.id] == guild)
     #expect(model.guildRolesByGuildID[guild.id] == [role])
+    #expect(model.currentUserRoleIDsByGuild[guild.id] == [role.id])
     #expect(model.snapshot?.currentUser == updatedUser)
+
+    model.consumePresenceAndCommandEvent(
+        .guildLayoutChanged(guilds: [], railItems: [])
+    )
+
+    #expect(model.currentUserRoleIDsByGuild[guild.id] == nil)
 }
 
 @MainActor
@@ -4277,6 +4318,36 @@ private func hiddenMockChannel(
 
     await model.leaveVoice()
     #expect(sounds.played == [.userJoin, .disconnect])
+}
+
+@MainActor
+@Test func `newer voice join wins when prior call teardown completes out of order`() async throws {
+    let provider = SuspendedVoiceReplacementProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let channels = provider.testChannels
+    let currentUser = provider.currentUser
+    model.snapshot = BootstrapSnapshot(
+        currentUser: currentUser,
+        guilds: [],
+        channels: channels,
+        members: []
+    )
+    model.activeVoiceChannel = channels[0]
+    model.voiceSessionState = .connected
+
+    let firstJoin = Task { await model.joinVoice(channels[1]) }
+    #expect(await waitForVoiceLeaveCount(1, from: provider))
+    let secondJoin = Task { await model.joinVoice(channels[2]) }
+    #expect(await waitForVoiceLeaveCount(2, from: provider))
+
+    await provider.releaseLeave(call: 2)
+    #expect(await waitForVoiceJoinCount(1, from: provider))
+    await provider.releaseLeave(call: 1)
+    await firstJoin.value
+    await secondJoin.value
+
+    #expect(model.activeVoiceChannel?.id == channels[2].id)
+    #expect(await provider.joinedChannelIDs == [channels[2].id])
 }
 
 @MainActor
@@ -4732,6 +4803,126 @@ private actor ReactionMutationTestProvider: ChatProvider {
 private struct ChannelLoadMessageRequest: Equatable, Sendable {
     let before: MessageID?
     let limit: Int
+}
+
+private actor SuspendedVoiceReplacementProvider: ChatProvider {
+    let currentUser = User(
+        id: UserID(rawValue: 90_000),
+        username: "voice-user",
+        displayName: "Voice User"
+    )
+    let testChannels = [
+        Channel(
+            id: ChannelID(rawValue: 90_001),
+            guildID: nil,
+            name: "Existing call",
+            kind: .directMessage
+        ),
+        Channel(
+            id: ChannelID(rawValue: 90_002),
+            guildID: nil,
+            name: "First replacement",
+            kind: .directMessage
+        ),
+        Channel(
+            id: ChannelID(rawValue: 90_003),
+            guildID: nil,
+            name: "Second replacement",
+            kind: .directMessage
+        ),
+    ]
+    private(set) var leaveRequestCount = 0
+    private(set) var joinedChannelIDs: [ChannelID] = []
+    private var leaveContinuations: [Int: CheckedContinuation<Void, Never>] = [:]
+
+    func bootstrap() async throws -> BootstrapSnapshot {
+        BootstrapSnapshot(
+            currentUser: currentUser,
+            guilds: [],
+            channels: testChannels,
+            members: []
+        )
+    }
+
+    func channels(in guildID: GuildID?) async throws -> [Channel] { testChannels }
+    func members(in guildID: GuildID?) async throws -> [Member] { [] }
+
+    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
+        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
+    }
+
+    func currentStatus() async -> PresenceStatus { .online }
+    func updateStatus(_ status: PresenceStatus) async throws {}
+
+    func messages(
+        in channelID: ChannelID,
+        before: MessageID?,
+        limit: Int
+    ) async throws -> MessagePage {
+        MessagePage(messages: [], hasMoreBefore: false)
+    }
+
+    func send(_ draft: SendMessageDraft) async throws -> Message {
+        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
+    }
+
+    func edit(
+        messageID: MessageID,
+        channelID: ChannelID,
+        content: String
+    ) async throws -> Message {
+        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
+    }
+
+    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
+    func toggleReaction(
+        _ emoji: String,
+        messageID: MessageID,
+        channelID: ChannelID
+    ) async throws {}
+
+    func joinVoice(
+        channelID: ChannelID,
+        guildID: GuildID?,
+        selfMute: Bool,
+        selfDeaf: Bool
+    ) async throws -> VoiceConnectionInfo {
+        joinedChannelIDs.append(channelID)
+        return VoiceConnectionInfo(
+            serverID: channelID.description,
+            channelID: channelID,
+            guildID: nil,
+            userID: currentUser.id,
+            sessionID: "voice-replacement-test",
+            token: "synthetic",
+            endpoint: "mock.sakuracord.invalid"
+        )
+    }
+
+    func updateVoiceState(
+        channelID: ChannelID?,
+        guildID: GuildID?,
+        selfMute: Bool,
+        selfDeaf: Bool,
+        selfVideo: Bool
+    ) async throws {
+        guard channelID == nil else { return }
+        leaveRequestCount += 1
+        let call = leaveRequestCount
+        await withCheckedContinuation { continuation in
+            leaveContinuations[call] = continuation
+        }
+    }
+
+    func releaseLeave(call: Int) {
+        leaveContinuations.removeValue(forKey: call)?.resume()
+    }
+
+    func eventStream() async -> AsyncStream<ClientEvent> {
+        AsyncStream { $0.finish() }
+    }
+
+    func disconnect() async {}
 }
 
 private actor InaccessibleChannelRequestCountingProvider: ChatProvider {

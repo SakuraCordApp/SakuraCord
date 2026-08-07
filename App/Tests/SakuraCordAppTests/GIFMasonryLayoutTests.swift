@@ -51,7 +51,7 @@ private func mouseEvent(
     let otherWebM = try #require(URL(
         string: "https://cdn.example/favorite.webm?size=2"
     ))
-    let gif = try #require(URL(string: "https://cdn.example/search.gif"))
+    let gif = try #require(URL(string: "https://media.tenor.com/native/search.gif"))
     let tenor = GIFSearchResult(
         id: "tenor",
         title: "Tenor",
@@ -85,15 +85,95 @@ private func mouseEvent(
         GIFPickerMediaPolicy.nativeVideoURL(for: tenor)?.absoluteString
             == "https://media.tenor.com/abcAAAPo/favorite.mp4?size=2"
     )
-    #expect(
-        GIFPickerMediaPolicy.nativeVideoURL(for: unsupported)?.absoluteString
-            == "https://cdn.example/favorite.mp4?size=2"
-    )
-    #expect(
-        GIFPickerMediaPolicy.nativeAnimationURL(for: unsupported)?.absoluteString
-            == "https://cdn.example/favorite.gif?size=2"
-    )
+    #expect(GIFPickerMediaPolicy.nativeVideoURL(for: unsupported) == nil)
+    #expect(GIFPickerMediaPolicy.nativeAnimationURL(for: unsupported) == nil)
     #expect(GIFPickerMediaPolicy.nativeAnimationURL(for: native) == gif)
+    let poster = try #require(URL(string: "https://media.tenor.com/abc/poster.png"))
+    let animation = try #require(URL(string: "https://media.tenor.com/abc/favorite.gif"))
+    let complete = GIFSearchResult(
+        id: "complete",
+        title: "Complete",
+        url: tenorWebM,
+        previewURL: animation,
+        thumbnailURL: poster,
+        mediaURL: tenorWebM,
+        mediaKind: .video
+    )
+    #expect(GIFPickerMediaPolicy.requestURLs(for: complete).count == 3)
+    #expect(GIFPickerMediaPolicy.maximumRequestCount == 3)
+}
+
+@Test func `GIF media policy accepts Discord returned HTTPS origins safely`() throws {
+    let rejected = [
+        "http://media.tenor.com/a.gif",
+        "https://media.tenor.com:8443/a.gif",
+        "https://user:secret@media.tenor.com/a.gif",
+        "file:///tmp/a.gif",
+    ]
+    for value in rejected {
+        #expect(GIFMediaURLPolicy.approved(URL(string: value)) == nil)
+    }
+    for value in [
+        "https://media.tenor.com/a.gif",
+        "https://media12.tenor.co/a.mp4",
+        "https://c.tenor.com/a.webp",
+        "https://static.klipy.com/a.webp",
+        "https://media.giphy.com/a.gif",
+        "https://i.giphy.com/a.gif",
+        "https://future-provider.example/a.gif",
+    ] {
+        #expect(GIFMediaURLPolicy.approved(URL(string: value)) != nil)
+    }
+}
+
+@Test func `Klipy results use returned WebP without speculative MP4 rewriting`() throws {
+    let canonical = try #require(URL(string: "https://klipy.com/view/one"))
+    let webM = try #require(URL(string: "https://static.klipy.com/one.webm"))
+    let webP = try #require(URL(string: "https://static.klipy.com/one.webp"))
+    let result = GIFSearchResult(
+        id: "one",
+        title: "One",
+        url: canonical,
+        previewURL: webP,
+        thumbnailURL: webM,
+        mediaURL: webM,
+        mediaKind: .video
+    )
+
+    #expect(GIFPickerMediaPolicy.nativeVideoURL(for: result) == nil)
+    #expect(GIFPickerMediaPolicy.staticFallbackURL(for: result) == webP)
+    #expect(GIFPickerMediaPolicy.nativeAnimationURL(for: result) == webP)
+    #expect(GIFPickerMediaPolicy.requestURLs(for: result) == [webP])
+}
+
+@Test func `GIF video staging uses one shared streamed request`() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "sakuracord-gif-video-test-\(UUID().uuidString)",
+        isDirectory: true
+    )
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let downloaded = directory.appendingPathComponent("download.mp4")
+    let bytes = Data("video-bytes".utf8)
+    try bytes.write(to: downloaded)
+    let probe = GIFVideoDownloadProbe(fileURL: downloaded)
+    let loader = SharedMediaDataLoader(
+        remoteFetch: { _ in throw URLError(.unsupportedURL) },
+        remoteDownload: { url in await probe.download(url) }
+    )
+    let source = try #require(URL(string: "https://media.tenor.com/asset/video.mp4"))
+
+    let staged = try await GIFPickerVideoTransport.stage(source, dataLoader: loader)
+    defer { staged.discard() }
+
+    #expect(try Data(contentsOf: staged.fileURL) == bytes)
+    #expect(await probe.urls == [source])
+
+    let unsafe = try #require(URL(string: "http://unsafe.example/video.mp4"))
+    await #expect(throws: URLError.self) {
+        try await GIFPickerVideoTransport.stage(unsafe, dataLoader: loader)
+    }
+    #expect(await probe.urls == [source])
 }
 
 @Test func `GIF picker preserves Tenor video size when deriving native MP4`() throws {
@@ -143,6 +223,20 @@ private func mouseEvent(
 
     #expect(!state.isPresentationActive)
     #expect(presentationChanges == [true, true, true, false])
+}
+
+private actor GIFVideoDownloadProbe {
+    let fileURL: URL
+    private(set) var urls: [URL] = []
+
+    init(fileURL: URL) {
+        self.fileURL = fileURL
+    }
+
+    func download(_ url: URL) -> SharedMediaDownloadedFile {
+        urls.append(url)
+        return SharedMediaDownloadedFile(url: fileURL, cleanupDirectory: nil)
+    }
 }
 
 @Test func `GIF masonry preserves Discord result order while balancing aspect ratios`() throws {
@@ -323,6 +417,13 @@ private func mouseEvent(
     #expect(favoriteGlass.style == .regular)
     #expect(favoriteGlass.effectIsInteractive)
     #expect(favoriteGlass.contentView is NSButton)
+    let favoriteAction = try #require(
+        firstCell.accessibilityCustomActions()?.first {
+            $0.name == "Add to favourites"
+        }
+    )
+    #expect(favoriteAction.handler?() == true)
+    #expect(toggledIDs.count == 1)
     firstCell.layoutSubtreeIfNeeded()
     let chooseDocumentPoint = CGPoint(
         x: firstCell.frame.minX + 20,
@@ -374,5 +475,5 @@ private func mouseEvent(
         at: favoriteWindowPoint,
         windowNumber: hostWindow.windowNumber
     ))
-    #expect(toggledIDs.count == 1)
+    #expect(toggledIDs.count == 2)
 }

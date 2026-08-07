@@ -1826,7 +1826,7 @@ private struct UnavailableGatewayTransport: GatewayTransport {
     }
 }
 
-private struct ReadyGatewayTransport: GatewayTransport {
+struct ReadyGatewayTransport: GatewayTransport {
     let socket: ReadyGatewaySocket
 
     func connect(to url: URL, maximumMessageSize: Int) async throws -> any GatewaySocket {
@@ -1836,7 +1836,7 @@ private struct ReadyGatewayTransport: GatewayTransport {
 
 private enum ReadyGatewayError: Error { case closed }
 
-private actor ReadyGatewaySocket: GatewaySocket {
+actor ReadyGatewaySocket: GatewaySocket {
     private var queued: [GatewaySocketMessage] = []
     private var receiver: CheckedContinuation<GatewaySocketMessage, any Error>?
     private(set) var sentCount = 0
@@ -1897,7 +1897,7 @@ private actor ReadyGatewaySocket: GatewaySocket {
     }
 }
 
-private func gatewayMessage(
+func gatewayMessage(
     op: Int,
     data: JSONValue?,
     sequence: Int? = nil,

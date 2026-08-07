@@ -4,7 +4,11 @@ import SwiftUI
 struct ComposerPromisedFileDropBridge: NSViewRepresentable {
     var isEnabled: Bool
     let targetChanged: (_ isTargeted: Bool, _ location: CGPoint, _ isInstant: Bool) -> Void
-    let receiveFiles: (_ urls: [URL], _ location: CGPoint, _ isInstant: Bool) -> Void
+    let receiveFiles: (
+        _ batch: ComposerPromisedFileBatch,
+        _ location: CGPoint,
+        _ isInstant: Bool
+    ) -> Void
 
     func makeNSView(context _: Context) -> ComposerPromisedFileDropView {
         ComposerPromisedFileDropView(
@@ -24,12 +28,12 @@ struct ComposerPromisedFileDropBridge: NSViewRepresentable {
 final class ComposerPromisedFileDropView: NSView {
     var isEnabled: Bool
     var targetChanged: (Bool, CGPoint, Bool) -> Void
-    var receiveFiles: ([URL], CGPoint, Bool) -> Void
+    var receiveFiles: (ComposerPromisedFileBatch, CGPoint, Bool) -> Void
 
     init(
         isEnabled: Bool,
         targetChanged: @escaping (Bool, CGPoint, Bool) -> Void,
-        receiveFiles: @escaping ([URL], CGPoint, Bool) -> Void
+        receiveFiles: @escaping (ComposerPromisedFileBatch, CGPoint, Bool) -> Void
     ) {
         self.isEnabled = isEnabled
         self.targetChanged = targetChanged
@@ -71,11 +75,13 @@ final class ComposerPromisedFileDropView: NSView {
 
         let location = convert(sender.draggingLocation, from: nil)
         let isInstant = NSEvent.modifierFlags.contains(.shift)
-        let expectedCount = receivers.reduce(0) { count, receiver in
-            count + max(1, receiver.fileTypes.count)
-        }
-        let collector = ComposerPromisedFileCollector(expectedCount: expectedCount) { [receiveFiles] urls in
-            receiveFiles(urls, location, isInstant)
+        // Each receiver represents one promised file. `fileTypes` lists the
+        // representations that file can provide; it is not a callback count.
+        let collector = ComposerPromisedFileCollector(
+            expectedCount: receivers.count,
+            directory: directory
+        ) { [receiveFiles] batch in
+            receiveFiles(batch, location, isInstant)
         }
         for receiver in receivers {
             receiver.receivePromisedFiles(
@@ -91,12 +97,9 @@ final class ComposerPromisedFileDropView: NSView {
     }
 
     static func makeReceivingDirectory(fileManager: FileManager = .default) throws -> URL {
-        let directory = fileManager.temporaryDirectory
-            .appendingPathComponent("SakuraCord", isDirectory: true)
-            .appendingPathComponent("Promised Attachments", isDirectory: true)
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory
+        try ComposerPromisedFileStorage.makeReceivingDirectory(
+            fileManager: fileManager
+        )
     }
 
     private func updateTarget(_ sender: any NSDraggingInfo) -> NSDragOperation {
@@ -124,10 +127,16 @@ struct ComposerAttachmentEditorTarget: Identifiable {
 final class ComposerPromisedFileCollector {
     private var remainingCount: Int
     private var receivedURLs: [URL] = []
-    private let completion: ([URL]) -> Void
+    private let directory: URL
+    private let completion: (ComposerPromisedFileBatch) -> Void
 
-    init(expectedCount: Int, completion: @escaping ([URL]) -> Void) {
+    init(
+        expectedCount: Int,
+        directory: URL,
+        completion: @escaping (ComposerPromisedFileBatch) -> Void
+    ) {
         remainingCount = expectedCount
+        self.directory = directory
         self.completion = completion
     }
 
@@ -137,7 +146,14 @@ final class ComposerPromisedFileCollector {
         }
         remainingCount -= 1
         if remainingCount == 0 {
-            completion(receivedURLs)
+            let batch = ComposerPromisedFileBatch(
+                directory: directory,
+                urls: receivedURLs
+            )
+            if receivedURLs.isEmpty {
+                batch.discard()
+            }
+            completion(batch)
         }
     }
 }

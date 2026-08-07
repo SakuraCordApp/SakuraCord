@@ -4,7 +4,6 @@ import SwiftUI
 
 struct NativeAccountMenuButton: NSViewRepresentable {
     let isAuthenticated: Bool
-    let isCachedStartup: Bool
     let isOfflineTesting: Bool
     let currentStatus: PresenceStatus
     let savedAccounts: [SavedAccount]
@@ -40,7 +39,6 @@ struct NativeAccountMenuButton: NSViewRepresentable {
     private var configuration: Configuration {
         Configuration(
             isAuthenticated: isAuthenticated,
-            isCachedStartup: isCachedStartup,
             isOfflineTesting: isOfflineTesting,
             currentStatus: currentStatus,
             savedAccounts: savedAccounts,
@@ -54,7 +52,6 @@ struct NativeAccountMenuButton: NSViewRepresentable {
 
     struct Configuration {
         let isAuthenticated: Bool
-        let isCachedStartup: Bool
         let isOfflineTesting: Bool
         let currentStatus: PresenceStatus
         let savedAccounts: [SavedAccount]
@@ -96,10 +93,6 @@ struct NativeAccountMenuButton: NSViewRepresentable {
             menu.autoenablesItems = false
             if configuration.isOfflineTesting {
                 menu.addItem(disabledItem("Discord networking is disabled"))
-            } else if configuration.isCachedStartup {
-                menu.addItem(
-                    disabledItem("Cached data is read-only while Discord reconnects")
-                )
             } else if configuration.isAuthenticated {
                 menu.addItem(statusMenuItem())
                 menu.addItem(accountMenuItem())

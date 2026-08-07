@@ -44,11 +44,36 @@ enum MediaViewerActionService {
         await Task.yield()
         let response = panel.runModal()
         guard response == .OK, let destination = panel.url else { return nil }
-        let data = try await SharedMediaDataLoader.shared.data(for: item.url)
-        try await Task.detached(priority: .utility) {
-            try data.write(to: destination, options: .atomic)
-        }.value
+        try await copyMedia(from: item.url, to: destination)
         return destination
+    }
+
+    static func copyMedia(
+        from source: URL,
+        to destination: URL,
+        dataLoader: SharedMediaDataLoader = .shared
+    ) async throws {
+        try await ExactDestinationFileWriter.write(to: destination) { stagedDestination in
+            if source.isFileURL {
+                let accessed = source.startAccessingSecurityScopedResource()
+                defer {
+                    if accessed {
+                        source.stopAccessingSecurityScopedResource()
+                    }
+                }
+                try await Task.detached(priority: .utility) {
+                    try FileManager.default.copyItem(
+                        at: source,
+                        to: stagedDestination
+                    )
+                }.value
+            } else {
+                try await dataLoader.copyRemoteMedia(
+                    from: source,
+                    to: stagedDestination
+                )
+            }
+        }
     }
 
     static func openInBrowser(_ url: URL) {

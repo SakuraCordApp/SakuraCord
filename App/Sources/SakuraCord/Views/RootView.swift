@@ -69,7 +69,6 @@ private struct ChatRootView: View {
                     selectHome: { model.selectGuild(nil) },
                     selectGuild: model.selectGuild,
                     contextMenuActions: ServerRailContextMenuActions(
-                        allowsMutations: !model.presentsCachedStartup,
                         settings: model.guildNotificationSettings,
                         isMutationPending: model.isGuildNotificationMutationPending,
                         markRead: model.markGuildRead,
@@ -98,7 +97,6 @@ private struct ChatRootView: View {
                     connectionState: model.connectionState,
                     currentStatus: model.currentStatus,
                     isAuthenticated: model.isAuthenticated,
-                    isCachedStartup: model.presentsCachedStartup,
                     isOfflineTesting: model.isOfflineTesting,
                     activeVoiceChannelID: model.activeVoiceChannel?.id,
                     connectAccount: {
@@ -267,12 +265,21 @@ private struct ChatRootView: View {
                     isInstantUpload = destination != nil && instant
                     hoveredFileDropDestination = destination
                 },
-                receiveFiles: { urls, location, instant in
-                    guard let destination = composerDestination(at: location) else { return }
+                receiveFiles: { batch, location, instant in
+                    guard let destination = composerDestination(at: location) else {
+                        batch.discard()
+                        return
+                    }
                     if instant {
-                        sendDroppedAttachmentsImmediately(urls, to: destination)
+                        sendDroppedPromisedAttachmentsImmediately(
+                            batch,
+                            to: destination
+                        )
                     } else {
-                        model.addComposerAttachments(urls, to: destination)
+                        model.addPromisedComposerAttachments(
+                            batch,
+                            to: destination
+                        )
                     }
                 }
             )
@@ -309,14 +316,7 @@ private struct ChatRootView: View {
         }
         .alert(
             "File Too Large",
-            isPresented: Binding(
-                get: { model.oversizedAttachmentPrompt != nil },
-                set: {
-                    if !$0 {
-                        model.oversizedAttachmentPrompt = nil
-                    }
-                }
-            ),
+            isPresented: oversizedAttachmentPromptIsPresented,
             presenting: model.oversizedAttachmentPrompt
         ) { prompt in
             if prompt.availableServices.contains(.catbox) {
@@ -330,7 +330,7 @@ private struct ChatRootView: View {
                 }
             }
             Button("Cancel", role: .cancel) {
-                model.dismissOversizedAttachmentPrompt()
+                model.dismissOversizedAttachmentPrompt(id: prompt.id)
             }
         } message: { prompt in
             Text(model.oversizedAttachmentMessage(prompt))
@@ -387,6 +387,18 @@ private struct ChatRootView: View {
                 try? await Task.sleep(for: .milliseconds(50))
             }
         }
+    }
+
+    private var oversizedAttachmentPromptIsPresented: Binding<Bool> {
+        let presentedID = model.oversizedAttachmentPrompt?.id
+        return Binding(
+            get: { model.oversizedAttachmentPrompt != nil },
+            set: { isPresented in
+                if !isPresented {
+                    model.dismissOversizedAttachmentPrompt(id: presentedID)
+                }
+            }
+        )
     }
 
     @ToolbarContentBuilder
@@ -595,6 +607,24 @@ private struct ChatRootView: View {
                     url.stopAccessingSecurityScopedResource()
                 }
             }
+            await model.sendAttachmentsImmediately(
+                acceptedURLs.map { ForumPostAttachment(url: $0) },
+                to: destination
+            )
+        }
+    }
+
+    private func sendDroppedPromisedAttachmentsImmediately(
+        _ batch: ComposerPromisedFileBatch,
+        to destination: MessageComposerDestination
+    ) {
+        let acceptedURLs = model.preparePromisedAttachmentsForImmediateSend(
+            batch,
+            to: destination
+        )
+        guard !acceptedURLs.isEmpty else { return }
+        Task {
+            defer { model.endUsingOwnedPromisedFiles(acceptedURLs) }
             await model.sendAttachmentsImmediately(
                 acceptedURLs.map { ForumPostAttachment(url: $0) },
                 to: destination

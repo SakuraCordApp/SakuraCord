@@ -23,7 +23,7 @@ enum DiscordAPILogExporter {
             attachedTo: NSApp.keyWindow ?? NSApp.mainWindow
         )
         guard response == .OK, let url = panel.url else { return nil }
-        try data.write(to: url, options: .atomic)
+        try await ExactDestinationFileWriter.write(data, to: url)
         return url
     }
 

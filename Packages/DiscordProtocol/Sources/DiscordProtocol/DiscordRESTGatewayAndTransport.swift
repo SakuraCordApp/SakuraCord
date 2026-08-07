@@ -166,7 +166,6 @@ extension DiscordRESTProvider {
     public func disconnect() async {
         requestSafetyCircuitIsOpen = true
         failInitialGatewaySnapshot(CancellationError())
-        initialGatewaySnapshot = nil
         for task in forumCatalogueTasks.values {
             task.cancel()
         }
@@ -325,6 +324,7 @@ extension DiscordRESTProvider {
 
     func startGateway() async throws {
         guard gatewaySession == nil else { return }
+        initialGatewaySnapshotResult = nil
         let token = try await authorizationToken()
         let baseline = DiscordProductionBaseline.august2026
         let identifyEnvelope = GatewayEnvelope(
@@ -369,6 +369,10 @@ extension DiscordRESTProvider {
             }
         }
         await gateway.connect()
+        guard gatewaySession === gateway, !requestSafetyCircuitIsOpen else {
+            await gateway.stop()
+            throw CancellationError()
+        }
     }
 
     func handleGatewaySessionEvent(_ event: GatewaySessionEvent) async {
@@ -381,6 +385,7 @@ extension DiscordRESTProvider {
                     status: 401, discordCode: nil, route: "GATEWAY IDENTIFY/RESUME")
                 return
             }
+            failInitialGatewaySnapshotOnTerminalDisconnect(connectionState)
             continuation?.yield(.connectionChanged(connectionState))
             if connectionState == .ready {
                 gatewayLogger.info("Gateway session ready")
@@ -862,11 +867,12 @@ extension DiscordRESTProvider {
                         continuation?.yield(.voiceStateChanged(participant))
                     }
                 }
-                if !currentUserRolesByGuild.isEmpty {
-                    continuation?.yield(
-                        .currentUserRolesSnapshot(currentUserRolesByGuild)
-                    )
-                }
+                // READY replaces the complete session projection. Publish an
+                // empty snapshot too so a fresh session cannot retain roles
+                // learned from an earlier READY payload.
+                continuation?.yield(
+                    .currentUserRolesSnapshot(currentUserRolesByGuild)
+                )
                 if voiceStateCount > 0 {
                     gatewayLogger.info(
                         "Ready voice-state snapshot received; count=\(voiceStateCount)")
