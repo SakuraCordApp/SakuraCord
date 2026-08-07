@@ -16,6 +16,18 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var apexInstallationFingerprint: String?
     nonisolated(unsafe) static var apexInstallationSuperProperties: String?
     nonisolated(unsafe) static var apexInstallationHadBody = false
+    nonisolated(unsafe) static var apexOmitsInstallation = false
+    nonisolated(unsafe) static var loginExperimentsRequests = 0
+    nonisolated(unsafe) static var loginExperimentsQuery: [String: String] = [:]
+    nonisolated(unsafe) static var loginExperimentsMethod: String?
+    nonisolated(unsafe) static var loginExperimentsHost: String?
+    nonisolated(unsafe) static var loginExperimentsReferer: String?
+    nonisolated(unsafe) static var loginExperimentsContext: String?
+    nonisolated(unsafe) static var loginExperimentsAuthorization: String?
+    nonisolated(unsafe) static var loginExperimentsInstallationHeader: String?
+    nonisolated(unsafe) static var loginExperimentsFingerprint: String?
+    nonisolated(unsafe) static var loginExperimentsSuperProperties: String?
+    nonisolated(unsafe) static var loginExperimentsHadBody = false
     nonisolated(unsafe) static var privateChannelListRequests = 0
     nonisolated(unsafe) static var guildChannelRequests = 0
     nonisolated(unsafe) static var guildRoleRequests = 0
@@ -91,6 +103,18 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
         apexInstallationFingerprint = nil
         apexInstallationSuperProperties = nil
         apexInstallationHadBody = false
+        apexOmitsInstallation = false
+        loginExperimentsRequests = 0
+        loginExperimentsQuery = [:]
+        loginExperimentsMethod = nil
+        loginExperimentsHost = nil
+        loginExperimentsReferer = nil
+        loginExperimentsContext = nil
+        loginExperimentsAuthorization = nil
+        loginExperimentsInstallationHeader = nil
+        loginExperimentsFingerprint = nil
+        loginExperimentsSuperProperties = nil
+        loginExperimentsHadBody = false
         privateChannelListRequests = 0
         guildChannelRequests = 0
         guildRoleRequests = 0
@@ -201,7 +225,42 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
             )
             RateLimitURLProtocol.apexInstallationHadBody = request.httpBody?.isEmpty == false
             status = 200
-            json = #"{"installation":"server-issued-installation","assignments":{}}"#
+            json = RateLimitURLProtocol.apexOmitsInstallation
+                ? #"{"assignments":{}}"#
+                : #"{"installation":"server-issued-installation","assignments":{}}"#
+        case "/api/v9/experiments":
+            RateLimitURLProtocol.loginExperimentsRequests += 1
+            RateLimitURLProtocol.loginExperimentsQuery = Dictionary(
+                uniqueKeysWithValues: (URLComponents(
+                    url: request.url!,
+                    resolvingAgainstBaseURL: false
+                )?.queryItems ?? []).compactMap { item in
+                    item.value.map { (item.name, $0) }
+                }
+            )
+            RateLimitURLProtocol.loginExperimentsMethod = request.httpMethod
+            RateLimitURLProtocol.loginExperimentsHost = request.url?.host
+            RateLimitURLProtocol.loginExperimentsReferer = request.value(
+                forHTTPHeaderField: "Referer"
+            )
+            RateLimitURLProtocol.loginExperimentsContext = request.value(
+                forHTTPHeaderField: "X-Context-Properties"
+            )
+            RateLimitURLProtocol.loginExperimentsAuthorization = request.value(
+                forHTTPHeaderField: "Authorization"
+            )
+            RateLimitURLProtocol.loginExperimentsInstallationHeader = request.value(
+                forHTTPHeaderField: "X-Installation-ID"
+            )
+            RateLimitURLProtocol.loginExperimentsFingerprint = request.value(
+                forHTTPHeaderField: "X-Fingerprint"
+            )
+            RateLimitURLProtocol.loginExperimentsSuperProperties = request.value(
+                forHTTPHeaderField: "X-Super-Properties"
+            )
+            RateLimitURLProtocol.loginExperimentsHadBody = request.httpBody?.isEmpty == false
+            status = 200
+            json = #"{"fingerprint":"server-issued-fingerprint","installation":"fallback-installation","assignments":[],"guild_experiments":[]}"#
         case "/api/v9/users/@me":
             RateLimitURLProtocol.currentUserRequests += 1
             status = 200

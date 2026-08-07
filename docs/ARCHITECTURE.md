@@ -97,10 +97,12 @@ flow and presents MFA or user-completed hCaptcha when requested. A newly issued
 credential remains memory-only while the main Gateway connects; a valid
 `READY.user` supplies its account ID before the credential is stored through
 `KeychainCredentialStore`. Failure or cancellation discards the pending value.
-An older stored credential that predates installation-identity persistence
-performs one unauthenticated Apex installation lookup before Gateway startup;
-it does not repeat the fingerprint preflight or force an otherwise valid
-credential through the login flow.
+An approved QR credential or an older stored credential that predates
+installation-identity persistence performs a bounded unauthenticated
+installation lookup before Gateway startup: one Apex request, followed by one
+`/experiments` fallback only when Apex fails or omits the identity. It does not
+replay the authentication exchange or force an otherwise valid credential
+through the login flow.
 Passwords, cookies, captured authorization headers, and analytics identifiers
 are not persisted.
 

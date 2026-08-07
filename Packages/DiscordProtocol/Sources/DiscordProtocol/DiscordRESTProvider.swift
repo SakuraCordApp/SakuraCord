@@ -327,14 +327,56 @@ extension DiscordRESTProvider {
     private func ensureInstallationID() async throws {
         guard clientMetadata.installationID == nil else { return }
         let baseline = DiscordProductionBaseline.august2026
+        var installationID: String?
+        do {
+            installationID = try await fetchInstallationID(
+                baseline: baseline,
+                path: "/apex/experiments",
+                queryItems: [URLQueryItem(
+                    name: "surface",
+                    value: String(baseline.apexAppSurface)
+                )],
+                referer: "https://discordapp.com/app"
+            )
+        } catch {
+            try Task.checkCancellation()
+        }
+        if installationID == nil {
+            installationID = try await fetchInstallationID(
+                baseline: baseline,
+                path: "/experiments",
+                queryItems: [URLQueryItem(
+                    name: "with_guild_experiments",
+                    value: "true"
+                )],
+                referer: "https://discordapp.com/login",
+                contextProperties: Data(#"{"location":"Login"}"#.utf8)
+                    .base64EncodedString()
+            )
+        }
+        guard let installationID, !installationID.isEmpty else {
+            throw ChatProviderError.invalidRequest(
+                "Discord did not issue the installation identity required for desktop startup."
+            )
+        }
+        clientMetadata.setInstallationID(installationID)
+        if persistsResolvedInstallationID {
+            DiscordClientMetadata.persistInstallationID(installationID)
+        }
+    }
+
+    private func fetchInstallationID(
+        baseline: DiscordProductionBaseline,
+        path: String,
+        queryItems: [URLQueryItem],
+        referer: String,
+        contextProperties: String? = nil
+    ) async throws -> String? {
         var components = URLComponents()
         components.scheme = "https"
         components.host = "discordapp.com"
-        components.path = "/api/v\(baseline.apiVersion)/apex/experiments"
-        components.queryItems = [URLQueryItem(
-            name: "surface",
-            value: String(baseline.apexAppSurface)
-        )]
+        components.path = "/api/v\(baseline.apiVersion)\(path)"
+        components.queryItems = queryItems
         guard let url = components.url else {
             throw ChatProviderError.invalidRequest(
                 "Discord's installation identity endpoint was invalid."
@@ -344,12 +386,13 @@ extension DiscordRESTProvider {
         request.httpMethod = "GET"
         request.timeoutInterval = 20
         try clientMetadata.apply(to: &request, includesHeartbeatSession: false)
-        request.setValue("https://discordapp.com/app", forHTTPHeaderField: "Referer")
+        request.setValue(referer, forHTTPHeaderField: "Referer")
+        request.setValue(contextProperties, forHTTPHeaderField: "X-Context-Properties")
         request.setValue(nil, forHTTPHeaderField: "Origin")
         apiDiagnostics.recordHTTPRequest(
             transport: "authentication",
             method: "GET",
-            path: "/apex/experiments",
+            path: path,
             body: nil,
             attempt: 1
         )
@@ -362,7 +405,7 @@ extension DiscordRESTProvider {
             apiDiagnostics.recordHTTPFailure(
                 transport: "authentication",
                 method: "GET",
-                path: "/apex/experiments",
+                path: path,
                 attempt: 1,
                 duration: requestStarted.duration(to: .now),
                 error: error
@@ -377,7 +420,7 @@ extension DiscordRESTProvider {
         apiDiagnostics.recordHTTPResponse(
             transport: "authentication",
             method: "GET",
-            path: "/apex/experiments",
+            path: path,
             attempt: 1,
             response: response,
             body: data,
@@ -389,18 +432,10 @@ extension DiscordRESTProvider {
                 requestID: response.value(forHTTPHeaderField: "x-request-id")
             )
         }
-        guard let payload = try? JSONDecoder().decode(
-            DiscordApexExperimentsDTO.self,
+        return try? JSONDecoder().decode(
+            DiscordInstallationExperimentsDTO.self,
             from: data
-        ), !payload.installation.isEmpty else {
-            throw ChatProviderError.invalidRequest(
-                "Discord did not issue the installation identity required for desktop startup."
-            )
-        }
-        clientMetadata.setInstallationID(payload.installation)
-        if persistsResolvedInstallationID {
-            DiscordClientMetadata.persistInstallationID(payload.installation)
-        }
+        ).installation.flatMap { $0.isEmpty ? nil : $0 }
     }
 
     public func bootstrap() async throws -> BootstrapSnapshot {
@@ -1157,6 +1192,6 @@ extension DiscordRESTProvider {
 
 }
 
-private nonisolated struct DiscordApexExperimentsDTO: Decodable {
-    let installation: String
+private nonisolated struct DiscordInstallationExperimentsDTO: Decodable {
+    let installation: String?
 }
