@@ -323,10 +323,7 @@ final class AccountReadStateModel {
         let directOverride = settings?.channelOverrides.last {
             $0.channelID == channel.id
         }
-        let categoryOverride = channel.categoryID.flatMap { categoryID in
-            settings?.channelOverrides.last { $0.channelID == categoryID }
-        }
-        guard let override = directOverride ?? categoryOverride else {
+        guard let override = directOverride else {
             return false
         }
         return override.isMuted
@@ -922,7 +919,10 @@ final class AccountReadStateModel {
             return false
         }
         let policy = effectivePolicy(for: entry, now: now)
-        return entry.mentionCount > 0 || (!policy.guildMuted && !policy.channelMuted && policy.showsUnread)
+        return entry.mentionCount > 0
+            || (!policy.guildMuted
+                && !policy.presentationChannelMuted
+                && policy.showsUnread)
     }
 
     func mentions(channelID: ChannelID) -> Int {
@@ -940,10 +940,10 @@ final class AccountReadStateModel {
         return max(1, entry.unreadMessageCount)
     }
 
-    /// Produces every account-wide sidebar unread value in one entry-table
-    /// pass. The scalar helpers remain useful for narrow updates, but calling
-    /// them once per guild or forum turns a refresh into a quadratic scan on
-    /// large accounts.
+    /// Produces every account-wide sidebar unread value in linear entry and
+    /// channel-table passes. The scalar helpers remain useful for narrow
+    /// updates, but calling them once per guild or forum turns a refresh into
+    /// a quadratic scan on large accounts.
     func unreadPresentationProjection(
         now: Date = .now
     ) -> UnreadPresentationProjection {
@@ -966,11 +966,6 @@ final class AccountReadStateModel {
 
             if let guildID = entry.guildID {
                 mentionsByGuildID[guildID, default: 0] += channelMentions
-                // Guild rail unread intentionally excludes thread-only state;
-                // this matches `guildUnread`, whose source is channelByID.
-                if channelByID[channelID] != nil, channelUnread {
-                    unreadByGuildID[guildID] = true
-                }
             }
 
             guard let parentID = entry.parentID,
@@ -983,6 +978,15 @@ final class AccountReadStateModel {
             let boundary = parent.lastAcknowledgedMessageID ?? MessageID(rawValue: 0)
             if MessageID(rawValue: channelID.rawValue) > boundary {
                 newForumPostsByChannelID[parentID, default: 0] += 1
+            }
+        }
+
+        // Category mute suppresses the guild aggregate without muting or
+        // dimming the child row itself.
+        for channel in channelByID.values {
+            guard let guildID = channel.guildID else { continue }
+            if contributesGuildUnread(channelID: channel.id, now: now) {
+                unreadByGuildID[guildID] = true
             }
         }
 
@@ -999,7 +1003,7 @@ final class AccountReadStateModel {
     func guildUnread(_ guildID: GuildID, now: Date = .now) -> Bool {
         channelByID.values.contains { channel in
             channel.guildID == guildID
-                && unread(channelID: channel.id, now: now)
+                && contributesGuildUnread(channelID: channel.id, now: now)
         }
     }
 
@@ -1182,13 +1186,34 @@ final class AccountReadStateModel {
     func setCurrentUserID(_ userID: UserID?) {
         currentUserID = userID
     }
+}
 
+private extension AccountReadStateModel {
     private struct EffectivePolicy {
         var level: MessageNotificationLevel
         var guildMuted: Bool
         var channelMuted: Bool
+        var presentationChannelMuted: Bool
+        var categoryMuted: Bool
         var showsUnread: Bool
         var notifiesNewForumThreads: Bool
+    }
+
+    private func contributesGuildUnread(
+        channelID: ChannelID,
+        now: Date
+    ) -> Bool {
+        guard let entry = entries[channelID],
+              entry.isAccessible,
+              entry.isUnread
+        else { return false }
+        guard !isGuildResourceChannel(entry) else { return false }
+        if entry.kind == .voice && entry.mentionCount == 0 { return false }
+
+        let policy = effectivePolicy(for: entry, now: now)
+        guard !policy.categoryMuted else { return false }
+        return entry.mentionCount > 0
+            || (!policy.guildMuted && !policy.channelMuted && policy.showsUnread)
     }
 
     private func allowsNativeNotification(
@@ -1214,23 +1239,32 @@ final class AccountReadStateModel {
         let isDirectMessage =
             entry.kind == .directMessage || entry.kind == .groupDirectMessage
         let guildSettings = settingsByGuild[entry.guildID]
-        let directOverride = guildSettings?.channelOverrides.first { $0.channelID == entry.channelID }
+        let directOverride = guildSettings?.channelOverrides.last { $0.channelID == entry.channelID }
         let parentOverride = entry.parentID.flatMap { parentID in
-            guildSettings?.channelOverrides.first { $0.channelID == parentID }
+            guildSettings?.channelOverrides.last { $0.channelID == parentID }
         }
         let ancestorOverride =
             entry.parentID
             .flatMap { channelByID[$0]?.categoryID }
             .flatMap { ancestorID in
-                guildSettings?.channelOverrides.first { $0.channelID == ancestorID }
+                guildSettings?.channelOverrides.last { $0.channelID == ancestorID }
             }
-        let override = directOverride ?? parentOverride ?? ancestorOverride
+        let overrideHierarchy = [directOverride, parentOverride, ancestorOverride]
+        let parentIsConversation = entry.parentID.flatMap { channelByID[$0] } != nil
+        let categoryOverride = parentIsConversation ? ancestorOverride : parentOverride
+        let presentationOverrideHierarchy = parentIsConversation
+            ? [directOverride, parentOverride]
+            : [directOverride]
         let guildMuted =
             guildSettings?.isMuted == true
             && (guildSettings?.muteConfiguration?.isActive(at: now) ?? true)
-        let inheritedChannelMuted =
-            override?.isMuted == true
-            && (override?.muteConfiguration?.isActive(at: now) ?? true)
+        let inheritedChannelMuted = overrideHierarchy.contains {
+            activeMute($0, now: now)
+        }
+        let presentationOverrideMuted = presentationOverrideHierarchy.contains {
+            activeMute($0, now: now)
+        }
+        let categoryMuted = activeMute(categoryOverride, now: now)
         let guildDefault =
             isDirectMessage
             ? .allMessages
@@ -1239,10 +1273,12 @@ final class AccountReadStateModel {
         let configuredGuildLevel = guildSettings?.messageNotifications ?? .inherit
         let inherited =
             configuredGuildLevel == .inherit ? guildDefault : configuredGuildLevel
-        let inheritedLevel =
-            override?.messageNotifications == .inherit || override == nil
-            ? inherited
-            : override!.messageNotifications
+        let inheritedLevel = overrideHierarchy.compactMap { override in
+            guard let level = override?.messageNotifications,
+                  level != .inherit
+            else { return nil }
+            return level
+        }.first ?? inherited
         let threadLevel =
             entry.threadNotificationSettings?.notificationLevel ?? .inherit
         let level =
@@ -1253,7 +1289,9 @@ final class AccountReadStateModel {
                 .isActive(at: now) ?? true)
         let channelMuted =
             inheritedChannelMuted || threadMuted || threadLevel == .nothing
-        let channelFlags = override?.flags ?? 0
+        let presentationChannelMuted =
+            presentationOverrideMuted || threadMuted || threadLevel == .nothing
+        let channelFlags = overrideHierarchy.compactMap { $0?.flags }.first ?? 0
         let guildFlags = guildSettings?.flags ?? 0
         let directFlags = directOverride?.flags ?? 0
         let parentFlags = parentOverride?.flags ?? 0
@@ -1293,9 +1331,19 @@ final class AccountReadStateModel {
             level: level,
             guildMuted: guildMuted,
             channelMuted: channelMuted,
+            presentationChannelMuted: presentationChannelMuted,
+            categoryMuted: categoryMuted,
             showsUnread: showsUnread,
             notifiesNewForumThreads: notifiesNewForumThreads
         )
+    }
+
+    private func activeMute(
+        _ override: ChannelNotificationOverride?,
+        now: Date
+    ) -> Bool {
+        override?.isMuted == true
+            && (override?.muteConfiguration?.isActive(at: now) ?? true)
     }
 
     private func isGuildResourceChannel(_ entry: Entry) -> Bool {
@@ -1327,6 +1375,36 @@ extension AccountReadStateModel {
         return channelIDs
     }
 
+    func isCategoryMuted(
+        categoryID: ChannelID,
+        guildID: GuildID,
+        at date: Date = .now
+    ) -> Bool {
+        guard let override = notificationOverride(
+            channelID: categoryID,
+            guildID: guildID
+        ) else { return false }
+        return override.isMuted
+            && (override.muteConfiguration?.isActive(at: date) ?? true)
+    }
+
+    func isCategoryCollapsed(categoryID: ChannelID, guildID: GuildID) -> Bool {
+        notificationOverride(
+            channelID: categoryID,
+            guildID: guildID
+        )?.isCollapsed == true
+    }
+
+    func inheritedNotificationLevel(
+        forCategoryIn guildID: GuildID
+    ) -> MessageNotificationLevel {
+        let configured = settingsByGuild[guildID]?.messageNotifications ?? .inherit
+        if configured != .inherit {
+            return configured
+        }
+        return defaultNotificationLevelByGuild[guildID] ?? .onlyMentions
+    }
+
     func bulkAcknowledgements(
         for guildID: GuildID,
         now: Date = .now
@@ -1334,6 +1412,30 @@ extension AccountReadStateModel {
         entries.values.compactMap { entry in
             guard entry.guildID == guildID,
                   unread(channelID: entry.channelID, now: now),
+                  let messageID = entry.latestKnownMessageID
+            else { return nil }
+            return BulkReadStateAcknowledgement(
+                channelID: entry.channelID,
+                messageID: messageID
+            )
+        }
+        .sorted { $0.channelID.rawValue < $1.channelID.rawValue }
+    }
+
+    func bulkAcknowledgements(
+        for categoryID: ChannelID,
+        guildID: GuildID,
+        now: Date = .now
+    ) -> [BulkReadStateAcknowledgement] {
+        entries.values.compactMap { entry in
+            let belongsToCategory = entry.parentID == categoryID
+                || entry.parentID.flatMap { channelByID[$0]?.categoryID } == categoryID
+            guard entry.guildID == guildID,
+                  belongsToCategory,
+                  entry.isAccessible,
+                  entry.isUnread,
+                  !isGuildResourceChannel(entry),
+                  entry.kind != .voice || entry.mentionCount > 0,
                   let messageID = entry.latestKnownMessageID
             else { return nil }
             return BulkReadStateAcknowledgement(

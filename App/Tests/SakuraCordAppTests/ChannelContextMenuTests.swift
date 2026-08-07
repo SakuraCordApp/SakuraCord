@@ -122,6 +122,53 @@ import Testing
 }
 
 @MainActor
+@Test func `category context menu mirrors channel actions without a copy link`() throws {
+    var markedRead = false
+    var copiedID = false
+    let bridge = ChannelContextMenuBridge(
+        subject: .category,
+        isSelected: false,
+        isUnread: true,
+        isMutationPending: false,
+        directOverride: nil,
+        inheritedLevel: .onlyMentions,
+        inheritanceSource: .server,
+        markRead: { markedRead = true },
+        mute: { _ in },
+        unmute: {},
+        setNotificationLevel: { _ in },
+        copyChannelID: { copiedID = true },
+        copyLink: {}
+    )
+
+    let coordinator = bridge.makeCoordinator()
+    let menu = coordinator.makeMenu()
+    #expect(
+        menu.items.map { $0.isSeparatorItem ? nil : $0.title }
+            == [
+                "Mark as Read",
+                nil,
+                "Mute Category",
+                "Notification Settings",
+                nil,
+                "Copy Category ID",
+            ]
+    )
+    #expect(menu.item(withTitle: "Copy Link") == nil)
+    #expect(
+        menu.item(withTitle: "Notification Settings")?.submenu?
+            .items.first?.title == "Use Server Default"
+    )
+
+    let markRead = try #require(menu.item(withTitle: "Mark as Read"))
+    _ = markRead.target?.perform(markRead.action)
+    let copyID = try #require(menu.item(withTitle: "Copy Category ID"))
+    _ = copyID.target?.perform(copyID.action)
+    #expect(markedRead)
+    #expect(copiedID)
+}
+
+@MainActor
 @Test func `direct message menu identifies its inherited notification default`() throws {
     let bridge = ChannelContextMenuBridge(
         isSelected: false,
@@ -292,6 +339,16 @@ import Testing
         ChannelContextMenuSubtitle.muteRemaining(until: nil, now: now)
             == nil
     )
+    #expect(
+        !ChannelCategoryPresentation.initiallyExpanded(
+            isCollapsedByDefault: true
+        )
+    )
+    #expect(
+        ChannelCategoryPresentation.initiallyExpanded(
+            isCollapsedByDefault: false
+        )
+    )
 }
 
 @MainActor
@@ -328,6 +385,107 @@ import Testing
         await provider.channelNotificationRequests.count == 3
             && !model.isChannelMuted(channel)
     })
+}
+
+@MainActor
+@Test func `app model keeps category settings separate from child channel overrides`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let child = try #require(
+        model.snapshot?.channels.first {
+            $0.guildID == GuildID(rawValue: 100) && $0.categoryID != nil
+        }
+    )
+    let guildID = try #require(child.guildID)
+    let categoryID = try #require(child.categoryID)
+
+    model.setCategoryNotificationLevel(
+        .allMessages,
+        guildID: guildID,
+        categoryID: categoryID
+    )
+    #expect(await eventuallyChannelMenu {
+        await provider.categoryNotificationRequests.count == 1
+            && model.categoryNotificationOverride(
+                guildID: guildID,
+                categoryID: categoryID
+            )?.messageNotifications == .allMessages
+    })
+
+    model.setCategoryMute(
+        true,
+        until: nil,
+        guildID: guildID,
+        categoryID: categoryID
+    )
+    #expect(await eventuallyChannelMenu {
+        await provider.categoryNotificationRequests.count == 2
+            && model.isCategoryMuted(
+                guildID: guildID,
+                categoryID: categoryID
+            )
+            && !model.isCategoryCollapsed(
+                guildID: guildID,
+                categoryID: categoryID
+            )
+    })
+    #expect(!model.isChannelMuted(child))
+    #expect(model.channelNotificationOverride(for: child) == nil)
+
+    model.setCategoryCollapsed(
+        false,
+        guildID: guildID,
+        categoryID: categoryID
+    )
+    #expect(await eventuallyChannelMenu {
+        await provider.categoryNotificationRequests.count == 3
+            && !model.isCategoryCollapsed(
+                guildID: guildID,
+                categoryID: categoryID
+            )
+    })
+    let requests = await provider.categoryNotificationRequests
+    #expect(requests.map(\.categoryID) == [categoryID, categoryID, categoryID])
+    #expect(requests[0].level == .allMessages)
+    #expect(requests[1].isMuted == true)
+    #expect(requests[1].isCollapsed == nil)
+    #expect(requests[2].isCollapsed == false)
+}
+
+@MainActor
+@Test func `mark category read acknowledges only conversations in that category`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let child = try #require(
+        model.snapshot?.channels.first {
+            $0.id == ChannelID(rawValue: 210)
+        }
+    )
+    let guildID = try #require(child.guildID)
+    let categoryID = try #require(child.categoryID)
+    let categoryChannelIDs = Set(
+        model.snapshot?.channels.compactMap {
+            $0.categoryID == categoryID ? $0.id : nil
+        } ?? []
+    )
+    let categoryConversationIDs = categoryChannelIDs.union(
+        model.snapshot?.threads.compactMap {
+            categoryChannelIDs.contains($0.parentID ?? ChannelID(rawValue: 0))
+                ? $0.id : nil
+        } ?? []
+    )
+
+    model.markCategoryRead(categoryID: categoryID, guildID: guildID)
+
+    #expect(await eventuallyChannelMenu {
+        await provider.bulkAcknowledgementRequests.count == 1
+    })
+    let request = try #require(await provider.bulkAcknowledgementRequests.first)
+    #expect(!request.isEmpty)
+    #expect(request.contains { $0.channelID == child.id })
+    #expect(request.allSatisfy { categoryConversationIDs.contains($0.channelID) })
 }
 
 @MainActor

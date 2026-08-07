@@ -209,7 +209,7 @@ and retained as evidence.
 | `POST /channels/{channel}/messages/{message}/ack` | One viewport-qualified acknowledgement; `token` is always present (null before Discord issues one), `last_viewed` is the current Discord-epoch day, and `flags` is sent only when the recomputed guild/thread value differs from Ready state. Manual-unread fields remain explicit-action-only. | Current first-party and Paicord; S−. |
 | `POST /read-states/ack-bulk` | Explicit “Mark Server as Read”; at most 100 unread channel/thread entries per sequential request, each containing `channel_id`, `message_id`, and channel `read_state_type:0`. | Current first-party; P−, S−. |
 | `PATCH /users/@me/guilds/{guild-or-@me}/settings` | One explicit channel notification change; a single partial `channel_overrides` entry. | Current first-party; P− and S− for the private `@me` scope. |
-| `PATCH /users/@me/guilds/settings` | One explicit server notification change; `guilds` contains exactly one partial guild entry with only the selected notification or mute fields. | Current first-party; P−, S−. |
+| `PATCH /users/@me/guilds/settings` | One explicit server or category notification change; `guilds` contains exactly one partial guild entry. Category changes contain one category-keyed `channel_overrides` entry and only the selected notification, mute, or collapse fields. | Current first-party; P−, S−. |
 | `GET /guilds/{guild}/application-command-index`, `/channels/{channel}/application-command-index`, `/users/@me/application-command-index`, or `/applications/{application}/application-command-index` | Target-specific index; at most three created GETs for the reviewed `202`/`429` readiness flow. | Current first-party route family; P−, S−. |
 | `POST /interactions` | One explicit type-2 execution, type-4 autocomplete, or returned modal submission; nonce-keyed, one attempt. | Current first-party and Paicord command model; Swiftcord has no current index/interaction path. |
 | `POST /channels/{channel}/messages` | One explicit send; `content`, nonce, `tts:false`, `flags:0`, macOS `mobile_network_type:"unknown"`, optional reply/attachments, and `X-Context-Properties` location `chat_input`. SakuraCord deliberately adds `enforce_nonce:true`. | Current first-party build and clean macOS Network Information result; Paicord supplies the nonce-oriented reference; Swiftcord is historical and nonce-less. |
@@ -874,6 +874,43 @@ capture was used for this recheck.
   not describe either user-client route. Paicord's server-icon menu only
   copies the guild ID and neither pinned reference implements these server
   mutations. No authenticated request or traffic capture was used.
+- A category is a first-class user-guild-settings override keyed by its
+  category channel ID; changing it does not rewrite or mute any child channel's
+  server-side override. A category notification selection sends one immediate,
+  single-attempt `PATCH /users/@me/guilds/settings` whose `guilds` object
+  contains exactly one guild and whose `channel_overrides` object contains
+  exactly one category with `message_notifications`. Child channels without a
+  direct setting inherit that category value at notification-decision time,
+  while direct child overrides remain authoritative for their own setting.
+  Category mute sends only `muted` and `mute_config`; it suppresses
+  notifications inherited by the category's child channels and joined threads
+  without making those child channel overrides muted, suppressing their own
+  unread styling, or inferring a collapsed presentation. Unread children of a
+  muted category remain visible as unread inside the server but do not produce
+  the server-rail unread marker. Manual category collapse/expand sends only the
+  `collapsed` field, and the sidebar follows that authoritative field
+  independently from mute state. Ready and `USER_GUILD_SETTINGS_UPDATE` decode all four fields
+  from the category override. “Mark Category as Read” sends only unread,
+  accessible direct children and joined threads whose parent belongs to the
+  category through the existing `POST /read-states/ack-bulk` batching contract.
+  The category menu otherwise mirrors the channel menu but omits Copy Link.
+
+  This contract was statically checked on 2026-08-07 against Discord public web
+  build `589089`, version hash
+  `cf63e91c5378d3376ec2c615530e8ae0706aed51`, and clean public asset
+  `web.3cd0f98a15f63be2.js` (SHA-256
+  `a77974b18a92b7d5452d4138b0b276f380ac498fd7fefa1b9aa7e183ace0f4f0`),
+  Discord's public channel-type, status-code, Gateway, and rate-limit
+  documentation, Paicord revision
+  `694761c1938b73bb60bd58942674dfe73aab1135`, and Swiftcord v1 revision
+  `14465d927ebe1ba34b3befa00f9365fad7b56eb9`. The current signed and notarized
+  Discord desktop 0.0.406 presentation and the supplied 2026-08-07 category
+  menu screenshot confirmed the visible menu shape; no category setting was
+  changed in an authenticated account and no traffic was captured. The public
+  API documentation identifies guild categories as channel type 4 but does not
+  document these user-client settings or acknowledgement routes. Paicord has
+  local category collapse presentation only, and neither pinned reference
+  implements category notification, mute, or bulk acknowledgement mutations.
 - Forum-post notification settings are current-user thread-member state, not
   parent-forum channel overrides. Joined posts send one
   `PATCH /channels/{thread_id}/thread-members/@me/settings`; an unjoined post

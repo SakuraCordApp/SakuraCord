@@ -229,19 +229,22 @@ public struct ChannelNotificationOverride: Codable, Hashable, Sendable {
     public var isMuted: Bool
     public var muteConfiguration: DiscordMuteConfiguration?
     public var flags: UInt64
+    public var isCollapsed: Bool?
 
     public init(
         channelID: ChannelID,
         messageNotifications: MessageNotificationLevel = .inherit,
         isMuted: Bool = false,
         muteConfiguration: DiscordMuteConfiguration? = nil,
-        flags: UInt64 = 0
+        flags: UInt64 = 0,
+        isCollapsed: Bool? = nil
     ) {
         self.channelID = channelID
         self.messageNotifications = messageNotifications
         self.isMuted = isMuted
         self.muteConfiguration = muteConfiguration
         self.flags = flags
+        self.isCollapsed = isCollapsed
     }
 }
 

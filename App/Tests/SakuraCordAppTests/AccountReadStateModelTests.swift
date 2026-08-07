@@ -1452,6 +1452,34 @@ struct AccountReadStateModelTests {
         model.apply(
             GuildNotificationSettings(
                 guildID: guildID,
+                messageNotifications: .onlyMentions,
+                channelOverrides: [
+                    ChannelNotificationOverride(
+                        channelID: categoryID,
+                        messageNotifications: .allMessages,
+                        isMuted: true,
+                        muteConfiguration: active
+                    ),
+                    ChannelNotificationOverride(
+                        channelID: channelID,
+                        messageNotifications: .allMessages
+                    )
+                ]
+            )
+        )
+        #expect(model.isCategoryMuted(categoryID: categoryID, guildID: guildID))
+        #expect(!model.isCategoryCollapsed(categoryID: categoryID, guildID: guildID))
+        #expect(!model.isChannelMuted(channel))
+        #expect(!model.receive(message(id: 12), currentUserID: currentUser.id).shouldNotify)
+        #expect(model.unread(channelID: channelID))
+        #expect(!model.guildUnread(guildID))
+        let categoryMutedProjection = model.unreadPresentationProjection()
+        #expect(categoryMutedProjection.unreadByChannelID[channelID] == true)
+        #expect(categoryMutedProjection.unreadByGuildID[guildID] != true)
+
+        model.apply(
+            GuildNotificationSettings(
+                guildID: guildID,
                 messageNotifications: .allMessages,
                 channelOverrides: [
                     ChannelNotificationOverride(
@@ -1464,7 +1492,7 @@ struct AccountReadStateModelTests {
             )
         )
         #expect(model.isChannelMuted(channel))
-        #expect(!model.receive(message(id: 12), currentUserID: currentUser.id).shouldNotify)
+        #expect(!model.receive(message(id: 13), currentUserID: currentUser.id).shouldNotify)
     }
 
     @Test func `ordinary unread follows notification level when unread flags are absent`() {

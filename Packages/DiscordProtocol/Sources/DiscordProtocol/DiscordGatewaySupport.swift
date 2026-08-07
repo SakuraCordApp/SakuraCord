@@ -753,6 +753,7 @@ struct GatewayUserGuildSettingsDTO: Decodable {
         var muted: Bool?
         var muteConfig: MuteConfigDTO?
         var flags: UInt64?
+        var collapsed: Bool?
 
         enum CodingKeys: String, CodingKey {
             case channelID = "channel_id"
@@ -760,6 +761,7 @@ struct GatewayUserGuildSettingsDTO: Decodable {
             case muted
             case muteConfig = "mute_config"
             case flags
+            case collapsed
         }
 
         var domain: ChannelNotificationOverride? {
@@ -771,7 +773,8 @@ struct GatewayUserGuildSettingsDTO: Decodable {
                     ?? .inherit,
                 isMuted: muted ?? false,
                 muteConfiguration: muteConfig?.domain,
-                flags: flags ?? 0
+                flags: flags ?? 0,
+                isCollapsed: collapsed
             )
         }
     }

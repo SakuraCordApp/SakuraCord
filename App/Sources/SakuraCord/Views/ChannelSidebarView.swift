@@ -280,6 +280,8 @@ private struct VoiceSidebarParticipant: Identifiable {
 
 struct ChannelGroup: Identifiable {
     let id: String
+    let categoryID: ChannelID?
+    let guildID: GuildID?
     let name: String?
     let position: Int
     var channels: [Channel]
@@ -293,6 +295,8 @@ struct ChannelGroup: Identifiable {
             } else {
                 result.append(ChannelGroup(
                     id: groupID,
+                    categoryID: channel.categoryID,
+                    guildID: channel.guildID,
                     name: channel.category,
                     position: channel.categoryPosition,
                     channels: [channel]
@@ -326,6 +330,12 @@ struct ChannelGroup: Identifiable {
     }
 }
 
+nonisolated enum ChannelCategoryPresentation {
+    static func initiallyExpanded(isCollapsedByDefault: Bool) -> Bool {
+        !isCollapsedByDefault
+    }
+}
+
 struct SidebarChromeSeparator: Shape {
     let cornerRadius: CGFloat
     let strokeInset: CGFloat
@@ -353,7 +363,7 @@ private struct ChannelGroupRows: View {
     let hiddenChannelIDs: Set<ChannelID>
     let checkingChannelIDs: Set<ChannelID>
     let voiceParticipantsByChannel: [ChannelID: [VoiceSidebarParticipant]]
-    @SceneStorage private var isExpanded: Bool
+    @State private var isExpanded: Bool
 
     init(
         model: AppModel,
@@ -373,7 +383,16 @@ private struct ChannelGroupRows: View {
         self.hiddenChannelIDs = hiddenChannelIDs
         self.checkingChannelIDs = checkingChannelIDs
         self.voiceParticipantsByChannel = voiceParticipantsByChannel
-        _isExpanded = SceneStorage(wrappedValue: true, "dev.sakuracord.channel-category.\(group.id).expanded")
+        let isCollapsed = group.categoryID.flatMap { categoryID in
+            group.guildID.map {
+                model.isCategoryCollapsed(guildID: $0, categoryID: categoryID)
+            }
+        } ?? false
+        _isExpanded = State(
+            initialValue: ChannelCategoryPresentation.initiallyExpanded(
+                isCollapsedByDefault: isCollapsed
+            )
+        )
     }
 
     var body: some View {
@@ -413,9 +432,26 @@ private struct ChannelGroupRows: View {
                         .accessibilityHidden(true)
                 }
 
-                if let name = group.name {
+                if let name = group.name,
+                   let categoryID = group.categoryID,
+                   let guildID = group.guildID
+                {
                     Button {
-                        withAnimation(.snappy(duration: 0.18)) { isExpanded.toggle() }
+                        let previousValue = isExpanded
+                        let nextValue = !isExpanded
+                        withAnimation(.snappy(duration: 0.18)) {
+                            isExpanded = nextValue
+                        }
+                        model.setCategoryCollapsed(
+                            !nextValue,
+                            guildID: guildID,
+                            categoryID: categoryID
+                        ) { accepted in
+                            guard !accepted else { return }
+                            withAnimation(.snappy(duration: 0.18)) {
+                                isExpanded = previousValue
+                            }
+                        }
                     } label: {
                         HStack(spacing: 5) {
                             Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
@@ -428,9 +464,87 @@ private struct ChannelGroupRows: View {
                     }
                     .buttonStyle(.plain)
                     .help(isExpanded ? "Collapse \(name)" : "Expand \(name)")
+                    .disabled(
+                        model.isChannelNotificationMutationPending(categoryID)
+                    )
+                    .overlay {
+                        ChannelContextMenuBridge(
+                            subject: .category,
+                            isSelected: false,
+                            isUnread: model.isCategoryUnread(
+                                guildID: guildID,
+                                categoryID: categoryID
+                            ),
+                            isMutationPending:
+                                model.isChannelNotificationMutationPending(
+                                    categoryID
+                                ),
+                            allowsMutations: !model.presentsCachedStartup,
+                            directOverride: model.categoryNotificationOverride(
+                                guildID: guildID,
+                                categoryID: categoryID
+                            ),
+                            inheritedLevel:
+                                model.inheritedCategoryNotificationLevel(
+                                    guildID: guildID
+                                ),
+                            inheritanceSource: .server,
+                            markRead: {
+                                model.markCategoryRead(
+                                    categoryID: categoryID,
+                                    guildID: guildID
+                                )
+                            },
+                            mute: { duration in
+                                model.setCategoryMute(
+                                    true,
+                                    until: duration.endDate(),
+                                    guildID: guildID,
+                                    categoryID: categoryID
+                                )
+                            },
+                            unmute: {
+                                model.setCategoryMute(
+                                    false,
+                                    until: nil,
+                                    guildID: guildID,
+                                    categoryID: categoryID
+                                )
+                            },
+                            setNotificationLevel: { level in
+                                model.setCategoryNotificationLevel(
+                                    level,
+                                    guildID: guildID,
+                                    categoryID: categoryID
+                                )
+                            },
+                            copyChannelID: {
+                                ChannelContextMenuValue.copy(
+                                    categoryID.description
+                                )
+                            },
+                            copyLink: {}
+                        )
+                    }
                 }
             }
         }
+        .onChange(of: shouldCollapseFromServer) { _, shouldCollapse in
+            guard shouldCollapse, isExpanded else { return }
+            withAnimation(.snappy(duration: 0.18)) {
+                isExpanded = false
+            }
+        }
+    }
+
+    private var shouldCollapseFromServer: Bool {
+        guard let categoryID = group.categoryID,
+              let guildID = group.guildID
+        else { return false }
+        return model.isCategoryCollapsed(
+            guildID: guildID,
+            categoryID: categoryID
+        )
     }
 }
 

@@ -1802,7 +1802,7 @@ private struct BootstrapRequestScenario {
     }
 }
 
-private actor TestCredentialStore: CredentialStore {
+actor TestCredentialStore: CredentialStore {
     private(set) var credentialReadCount = 0
 
     func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {

@@ -395,6 +395,12 @@ private struct MockFixtureAssembly {
     var fixture: MockChatFixture {
         let auroraID = GuildID(rawValue: 100)
         let nativeLabID = GuildID(rawValue: 101)
+        let startHereCategoryID = ChannelID(rawValue: 190)
+        let communityCategoryID = ChannelID(rawValue: 191)
+        let projectsCategoryID = ChannelID(rawValue: 192)
+        let auroraVoiceCategoryID = ChannelID(rawValue: 193)
+        let labCategoryID = ChannelID(rawValue: 290)
+        let labVoiceCategoryID = ChannelID(rawValue: 291)
         let textPermissions: UInt64 = (1 << 10) | (1 << 11) | (1 << 16) | (1 << 20)
             | (1 << 34) | (1 << 38)
         let auroraIcon = demoAsset("guild-aurora")
@@ -529,44 +535,51 @@ private struct MockFixtureAssembly {
         var channels = [
             Channel(
                 id: ChannelID(rawValue: 200), guildID: auroraID, name: "welcome", kind: .announcement,
-                category: "START HERE", position: 0
+                category: "START HERE", categoryID: startHereCategoryID,
+                position: 0, categoryPosition: 0
             ),
             Channel(
                 id: ChannelID(rawValue: 201), guildID: auroraID, name: "release-notes", kind: .announcement,
-                category: "START HERE", position: 1
+                category: "START HERE", categoryID: startHereCategoryID,
+                position: 1, categoryPosition: 0
             ),
             Channel(
                 id: ChannelID(rawValue: 202), guildID: auroraID, name: "guidelines", category: "START HERE",
-                position: 2
+                categoryID: startHereCategoryID, position: 2, categoryPosition: 0
             ),
             Channel(
                 id: ChannelID(rawValue: 210), guildID: auroraID, name: "general",
                 topic: "A relaxed place for the Aurora Studio community", category: "COMMUNITY",
-                position: 0, unreadCount: 3
+                categoryID: communityCategoryID, position: 0, categoryPosition: 1,
+                unreadCount: 3
             ),
             Channel(
                 id: ChannelID(rawValue: 211), guildID: auroraID, name: "design-lab",
                 topic: "Interface critique, prototypes, and visual experiments", category: "COMMUNITY",
-                position: 1
+                categoryID: communityCategoryID, position: 1, categoryPosition: 1
             ),
             Channel(
                 id: ChannelID(rawValue: 212), guildID: auroraID, name: "swift-help",
-                topic: "Friendly help for Swift and AppKit questions", category: "COMMUNITY", position: 2
+                topic: "Friendly help for Swift and AppKit questions", category: "COMMUNITY",
+                categoryID: communityCategoryID, position: 2, categoryPosition: 1
             ),
             Channel(
                 id: ChannelID(rawValue: 213), guildID: auroraID, name: "empty-canvas",
-                topic: "A quiet channel ready for its first message", category: "COMMUNITY", position: 3
+                topic: "A quiet channel ready for its first message", category: "COMMUNITY",
+                categoryID: communityCategoryID, position: 3, categoryPosition: 1
             ),
             Channel(
                 id: ChannelID(rawValue: 214), guildID: auroraID, name: "read-only",
-                topic: "Updates that members can read but not reply to", category: "COMMUNITY", position: 4,
+                topic: "Updates that members can read but not reply to", category: "COMMUNITY",
+                categoryID: communityCategoryID, position: 4, categoryPosition: 1,
                 permissionOverwrites: [
                     ChannelPermissionOverwrite(id: nova.id.description, type: 1, deny: 1 << 11)
                 ]
             ),
             Channel(
                 id: ChannelID(rawValue: 215), guildID: auroraID, name: "staff-vault",
-                category: "COMMUNITY", position: 5,
+                category: "COMMUNITY", categoryID: communityCategoryID,
+                position: 5, categoryPosition: 1,
                 permissionOverwrites: [
                     ChannelPermissionOverwrite(
                         id: RoleID(rawValue: 10).description,
@@ -598,7 +611,8 @@ private struct MockFixtureAssembly {
                 id: ChannelID(rawValue: 220), guildID: auroraID, name: "feedback",
                 topic: "Share one focused idea per post. Search for duplicates, choose the most relevant tags, and keep critique constructive.",
                 kind: .forum,
-                category: "PROJECTS", position: 0,
+                category: "PROJECTS", categoryID: projectsCategoryID,
+                position: 0, categoryPosition: 2,
                 flags: 1 << 4,
                 availableTags: forumTags,
                 defaultReaction: ForumDefaultReaction(emojiName: "👍"),
@@ -610,7 +624,8 @@ private struct MockFixtureAssembly {
             Channel(
                 id: ChannelID(rawValue: 221), guildID: auroraID, name: "bug-reports",
                 topic: "Describe the problem, expected result, and reproduction steps. Add screenshots when they help.",
-                kind: .forum, category: "PROJECTS", position: 1,
+                kind: .forum, category: "PROJECTS", categoryID: projectsCategoryID,
+                position: 1, categoryPosition: 2,
                 flags: 1 << 4,
                 availableTags: forumTags,
                 defaultReaction: ForumDefaultReaction(emojiName: "👍"),
@@ -622,24 +637,29 @@ private struct MockFixtureAssembly {
             Channel(
                 id: ChannelID(rawValue: 230), guildID: auroraID, name: "Studio Lounge",
                 topic: "Drop-in conversation and the messages shared alongside it", kind: .voice,
-                category: "VOICE", position: 0
+                category: "VOICE", categoryID: auroraVoiceCategoryID,
+                position: 0, categoryPosition: 3
             ),
             Channel(
                 id: ChannelID(rawValue: 300), guildID: nativeLabID, name: "native-apps",
-                topic: "Shipping polished software with Apple frameworks", category: "LAB", position: 0
+                topic: "Shipping polished software with Apple frameworks", category: "LAB",
+                categoryID: labCategoryID, position: 0, categoryPosition: 0
             ),
             Channel(
                 id: ChannelID(rawValue: 301), guildID: nativeLabID, name: "showcase",
-                topic: "Share screenshots and works in progress", category: "LAB", position: 1
+                topic: "Share screenshots and works in progress", category: "LAB",
+                categoryID: labCategoryID, position: 1, categoryPosition: 0
             ),
             Channel(
                 id: ChannelID(rawValue: 302), guildID: nativeLabID, name: "performance",
-                topic: "Profiling, rendering, and energy use", category: "LAB", position: 2
+                topic: "Profiling, rendering, and energy use", category: "LAB",
+                categoryID: labCategoryID, position: 2, categoryPosition: 0
             ),
             Channel(
                 id: ChannelID(rawValue: 330), guildID: nativeLabID, name: "Coffee Room",
                 topic: "A voice room with a persistent text chat", kind: .voice,
-                category: "VOICE", position: 0
+                category: "VOICE", categoryID: labVoiceCategoryID,
+                position: 0, categoryPosition: 1
             ),
             Channel(
                 id: ChannelID(rawValue: 400), guildID: nil, name: "Maya Ortiz", kind: .directMessage,

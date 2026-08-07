@@ -100,6 +100,22 @@ public protocol ChatProvider: Sendable {
         isMuted: Bool,
         until: Date?
     ) async throws
+    func updateCategoryNotificationLevel(
+        guildID: GuildID,
+        categoryID: ChannelID,
+        level: MessageNotificationLevel
+    ) async throws
+    func updateCategoryMute(
+        guildID: GuildID,
+        categoryID: ChannelID,
+        isMuted: Bool,
+        until: Date?
+    ) async throws
+    func updateCategoryCollapsed(
+        guildID: GuildID,
+        categoryID: ChannelID,
+        isCollapsed: Bool
+    ) async throws
     func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws
     func setReaction(
         _ emoji: String,
@@ -309,6 +325,25 @@ public extension ChatProvider {
         channelID: ChannelID,
         isMuted: Bool,
         until: Date?
+    ) async throws {}
+
+    func updateCategoryNotificationLevel(
+        guildID: GuildID,
+        categoryID: ChannelID,
+        level: MessageNotificationLevel
+    ) async throws {}
+
+    func updateCategoryMute(
+        guildID: GuildID,
+        categoryID: ChannelID,
+        isMuted: Bool,
+        until: Date?
+    ) async throws {}
+
+    func updateCategoryCollapsed(
+        guildID: GuildID,
+        categoryID: ChannelID,
+        isCollapsed: Bool
     ) async throws {}
 
     func forumPosts(in channelID: ChannelID, query: ForumPostQuery) async throws -> ForumPostPage {

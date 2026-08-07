@@ -45,6 +45,16 @@ public actor MockChatProvider: ChatProvider {
     }
 
     public private(set) var channelNotificationRequests: [ChannelNotificationRequest] = []
+    public struct CategoryNotificationRequest: Equatable, Sendable {
+        public var guildID: GuildID
+        public var categoryID: ChannelID
+        public var level: MessageNotificationLevel?
+        public var isMuted: Bool?
+        public var muteEndTime: Date?
+        public var isCollapsed: Bool?
+    }
+
+    public private(set) var categoryNotificationRequests: [CategoryNotificationRequest] = []
     public struct ThreadNotificationRequest: Equatable, Sendable {
         public var threadID: ChannelID
         public var level: MessageNotificationLevel?
@@ -298,6 +308,50 @@ public actor MockChatProvider: ChatProvider {
                 channelID: channelID,
                 isMuted: isMuted,
                 muteEndTime: until
+            )
+        )
+    }
+
+    public func updateCategoryNotificationLevel(
+        guildID: GuildID,
+        categoryID: ChannelID,
+        level: MessageNotificationLevel
+    ) async throws {
+        categoryNotificationRequests.append(
+            CategoryNotificationRequest(
+                guildID: guildID,
+                categoryID: categoryID,
+                level: level
+            )
+        )
+    }
+
+    public func updateCategoryMute(
+        guildID: GuildID,
+        categoryID: ChannelID,
+        isMuted: Bool,
+        until: Date?
+    ) async throws {
+        categoryNotificationRequests.append(
+            CategoryNotificationRequest(
+                guildID: guildID,
+                categoryID: categoryID,
+                isMuted: isMuted,
+                muteEndTime: until
+            )
+        )
+    }
+
+    public func updateCategoryCollapsed(
+        guildID: GuildID,
+        categoryID: ChannelID,
+        isCollapsed: Bool
+    ) async throws {
+        categoryNotificationRequests.append(
+            CategoryNotificationRequest(
+                guildID: guildID,
+                categoryID: categoryID,
+                isCollapsed: isCollapsed
             )
         )
     }

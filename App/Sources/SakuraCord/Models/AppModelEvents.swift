@@ -75,6 +75,8 @@ extension AppModel {
         acknowledgementProcessorTask = nil
         guildAcknowledgementTasks.values.forEach { $0.cancel() }
         guildAcknowledgementTasks.removeAll()
+        categoryAcknowledgementTasks.values.forEach { $0.cancel() }
+        categoryAcknowledgementTasks.removeAll()
         queuedAcknowledgements.removeAll()
         acknowledgementQueueOrder.removeAll()
     }

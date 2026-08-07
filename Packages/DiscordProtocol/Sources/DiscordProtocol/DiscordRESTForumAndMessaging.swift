@@ -1029,6 +1029,73 @@ extension DiscordRESTProvider {
         )
     }
 
+    public func updateCategoryNotificationLevel(
+        guildID: GuildID,
+        categoryID: ChannelID,
+        level: MessageNotificationLevel
+    ) async throws {
+        try await updateCategoryNotificationSettings(
+            guildID: guildID,
+            categoryID: categoryID,
+            override: [
+                "message_notifications": .number(Double(level.rawValue))
+            ]
+        )
+    }
+
+    public func updateCategoryMute(
+        guildID: GuildID,
+        categoryID: ChannelID,
+        isMuted: Bool,
+        until: Date?
+    ) async throws {
+        var override: [String: JSONValue] = [
+            "muted": .bool(isMuted),
+            "mute_config": .null,
+        ]
+        if isMuted, let until {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            override["mute_config"] = .object([
+                "end_time": .string(formatter.string(from: until)),
+            ])
+        }
+        try await updateCategoryNotificationSettings(
+            guildID: guildID,
+            categoryID: categoryID,
+            override: override
+        )
+    }
+
+    public func updateCategoryCollapsed(
+        guildID: GuildID,
+        categoryID: ChannelID,
+        isCollapsed: Bool
+    ) async throws {
+        try await updateCategoryNotificationSettings(
+            guildID: guildID,
+            categoryID: categoryID,
+            override: ["collapsed": .bool(isCollapsed)]
+        )
+    }
+
+    func updateCategoryNotificationSettings(
+        guildID: GuildID,
+        categoryID: ChannelID,
+        override: [String: JSONValue]
+    ) async throws {
+        // Category overrides and their collapsed state use the current bulk
+        // user-guild settings route, scoped to exactly one guild/category.
+        try await updateGuildNotificationSettings(
+            guildID: guildID,
+            settings: [
+                "channel_overrides": .object([
+                    categoryID.description: .object(override)
+                ])
+            ]
+        )
+    }
+
     public func supports(_ capability: ChatCapability) async -> Bool {
         capability == .slashCommands || capability == .forums || capability == .gifs
     }

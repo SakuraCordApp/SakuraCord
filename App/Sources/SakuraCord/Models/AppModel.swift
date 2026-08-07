@@ -768,6 +768,8 @@ final class AppModel {
     @ObservationIgnored var acknowledgementGeneration = 0
     @ObservationIgnored var guildAcknowledgementTasks:
         [GuildID: Task<Void, Never>] = [:]
+    @ObservationIgnored var categoryAcknowledgementTasks:
+        [ChannelID: Task<Void, Never>] = [:]
     @ObservationIgnored var guildNotificationMutationTasks:
         [GuildID: Task<Void, Never>] = [:]
     @ObservationIgnored var channelNotificationMutationTasks:

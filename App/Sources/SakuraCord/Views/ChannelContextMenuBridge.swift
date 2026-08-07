@@ -88,9 +88,29 @@ nonisolated enum ChannelNotificationInheritanceSource: Equatable, Sendable {
     }
 }
 
+nonisolated enum ChannelContextMenuSubject: Equatable, Sendable {
+    case channel
+    case category
+
+    var muteTitle: String {
+        self == .category ? "Mute Category" : "Mute Channel"
+    }
+
+    var unmuteTitle: String {
+        self == .category ? "Unmute Category" : "Unmute Channel"
+    }
+
+    var copyIDTitle: String {
+        self == .category ? "Copy Category ID" : "Copy Channel ID"
+    }
+
+    var includesCopyLink: Bool { self == .channel }
+}
+
 /// SwiftUI context menus can discard item images in the macOS 27 adaptation.
 /// This bridge uses the same AppKit symbol configuration as message menus.
 struct ChannelContextMenuBridge: NSViewRepresentable {
+    var subject: ChannelContextMenuSubject = .channel
     let isSelected: Bool
     let isUnread: Bool
     let isMutationPending: Bool
@@ -136,6 +156,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
     @MainActor
     final class Coordinator: NSObject {
         private var isUnread: Bool
+        private var subject: ChannelContextMenuSubject
         private var isMutationPending: Bool
         private var allowsMutations: Bool
         private var directOverride: ChannelNotificationOverride?
@@ -149,6 +170,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
         private var copyLink: () -> Void
 
         init(from bridge: ChannelContextMenuBridge) {
+            subject = bridge.subject
             isUnread = bridge.isUnread
             isMutationPending = bridge.isMutationPending
             allowsMutations = bridge.allowsMutations
@@ -164,6 +186,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
         }
 
         func update(from bridge: ChannelContextMenuBridge) {
+            subject = bridge.subject
             isUnread = bridge.isUnread
             isMutationPending = bridge.isMutationPending
             allowsMutations = bridge.allowsMutations
@@ -194,7 +217,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
 
             if isDirectlyMuted {
                 let unmuteItem = menuItem(
-                    "Unmute Channel",
+                    subject.unmuteTitle,
                     systemImage: "bell.fill",
                     action: #selector(unmuteFromMenu),
                     isEnabled: allowsMutations && !isMutationPending
@@ -207,12 +230,12 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
                 menu.addItem(unmuteItem)
             } else {
                 let muteItem = menuItem(
-                    "Mute Channel",
+                    subject.muteTitle,
                     systemImage: "bell.slash.fill",
                     action: nil,
                     isEnabled: allowsMutations && !isMutationPending
                 )
-                let muteMenu = NSMenu(title: "Mute Channel")
+                let muteMenu = NSMenu(title: subject.muteTitle)
                 muteMenu.autoenablesItems = false
                 for (index, duration) in ChannelMuteDuration.allCases.enumerated() {
                     let item = menuItem(
@@ -245,18 +268,20 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
             menu.addItem(.separator())
             menu.addItem(
                 menuItem(
-                    "Copy Channel ID",
+                    subject.copyIDTitle,
                     systemImage: "number.square.fill",
                     action: #selector(copyChannelIDFromMenu)
                 )
             )
-            menu.addItem(
-                menuItem(
-                    "Copy Link",
-                    systemImage: "link",
-                    action: #selector(copyLinkFromMenu)
+            if subject.includesCopyLink {
+                menu.addItem(
+                    menuItem(
+                        "Copy Link",
+                        systemImage: "link",
+                        action: #selector(copyLinkFromMenu)
+                    )
                 )
-            )
+            }
             return menu
         }
 
