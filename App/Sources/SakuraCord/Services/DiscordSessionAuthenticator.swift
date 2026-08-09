@@ -277,7 +277,7 @@ actor DiscordSessionAuthenticator {
         await fingerprints.loadInstallationID()
     }
 
-    func resolvedInstallationID() async throws -> String {
+    func resolvedInstallationID() async throws -> String? {
         (try await resolvedClientIdentifiers()).installationID
     }
 
@@ -356,7 +356,7 @@ actor DiscordSessionAuthenticator {
         let storedFingerprint = await fingerprints.load().flatMap { $0.isEmpty ? nil : $0 }
         let storedInstallationID = await fingerprints.loadInstallationID().flatMap { $0.isEmpty ? nil : $0 }
         var experimentsPayload: ExperimentsResponse?
-        let installationID: String
+        let installationID: String?
         if let storedInstallationID {
             installationID = storedInstallationID
         } else {
@@ -385,18 +385,12 @@ actor DiscordSessionAuthenticator {
                 installationID = apexInstallationID
             } else {
                 let payload = try await fetchExperiments(installationID: nil)
-                guard let fallbackInstallationID = payload.installation,
-                      !fallbackInstallationID.isEmpty
-                else {
-                    throw AuthenticationError.installationUnavailable
-                }
                 experimentsPayload = payload
-                installationID = fallbackInstallationID
+                installationID = payload.installation.flatMap { $0.isEmpty ? nil : $0 }
             }
-            guard !installationID.isEmpty else {
-                throw AuthenticationError.installationUnavailable
+            if let installationID {
+                await fingerprints.saveInstallationID(installationID)
             }
-            await fingerprints.saveInstallationID(installationID)
         }
 
         if let storedFingerprint {
@@ -634,7 +628,7 @@ private nonisolated struct PendingCaptchaRequest: Sendable {
     let path: String
     let body: Data
     let fingerprint: String
-    let installationID: String
+    let installationID: String?
     let replayDelay: TimeInterval
 }
 
@@ -647,7 +641,7 @@ private nonisolated struct PendingRemoteAuthCaptchaRequest: Sendable {
 
 private nonisolated struct DiscordAuthClientIdentifiers: Sendable {
     let fingerprint: String
-    let installationID: String
+    let installationID: String?
 }
 
 private nonisolated struct LoginPayload: Encodable {
@@ -799,7 +793,6 @@ nonisolated enum AuthenticationError: LocalizedError, Equatable {
     case invalidCredentials
     case invalidCredential
     case invalidMFACode
-    case installationUnavailable
     case fingerprintUnavailable
     case captchaRequired
     case invalidCaptchaSolution
@@ -815,7 +808,6 @@ nonisolated enum AuthenticationError: LocalizedError, Equatable {
         case .invalidCredentials: "Check your email or phone number and password, then try again."
         case .invalidCredential: "Discord signed in, but did not return a usable session credential."
         case .invalidMFACode: "That authentication code was not accepted."
-        case .installationUnavailable: "Discord did not issue the installation identity required for a normal sign-in."
         case .fingerprintUnavailable: "Discord did not issue the pre-login fingerprint required for a normal sign-in."
         case .captchaRequired: "Discord returned another CAPTCHA challenge after completion, so SakuraCord stopped without replaying again."
         case .invalidCaptchaSolution: "The CAPTCHA was cancelled or did not return a usable solution."

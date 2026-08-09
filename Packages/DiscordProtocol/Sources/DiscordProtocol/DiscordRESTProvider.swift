@@ -53,6 +53,7 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var continuation: AsyncStream<ClientEvent>.Continuation?
     var currentUser: User?
     var authorizationValue: String?
+    var installationResolutionAttempted = false
     var cachedMessages: [MessageID: Message] = [:]
     var cachedChannels: [GuildID?: [Channel]] = [:]
     var cachedGuildChannelDTOs: [GuildID: [String: ChannelDTO]] = [:]
@@ -325,7 +326,8 @@ extension DiscordRESTProvider {
     }
 
     private func ensureInstallationID() async throws {
-        guard clientMetadata.installationID == nil else { return }
+        guard clientMetadata.installationID == nil, !installationResolutionAttempted else { return }
+        installationResolutionAttempted = true
         let baseline = DiscordProductionBaseline.august2026
         var installationID: String?
         do {
@@ -342,7 +344,8 @@ extension DiscordRESTProvider {
             try Task.checkCancellation()
         }
         if installationID == nil {
-            installationID = try await fetchInstallationID(
+            do {
+                installationID = try await fetchInstallationID(
                 baseline: baseline,
                 path: "/experiments",
                 queryItems: [URLQueryItem(
@@ -352,13 +355,12 @@ extension DiscordRESTProvider {
                 referer: "https://discordapp.com/login",
                 contextProperties: Data(#"{"location":"Login"}"#.utf8)
                     .base64EncodedString()
-            )
+                )
+            } catch {
+                try Task.checkCancellation()
+            }
         }
-        guard let installationID, !installationID.isEmpty else {
-            throw ChatProviderError.invalidRequest(
-                "Discord did not issue the installation identity required for desktop startup."
-            )
-        }
+        guard let installationID, !installationID.isEmpty else { return }
         clientMetadata.setInstallationID(installationID)
         if persistsResolvedInstallationID {
             DiscordClientMetadata.persistInstallationID(installationID)

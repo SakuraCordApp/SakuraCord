@@ -89,20 +89,24 @@ Apex path. Pinned Swiftcord v1 delegates sign-in to Discord's embedded web
 flow. No credential, authenticated login, or personal response value was used
 or retained for this re-audit.
 
-The post-approval installation repair was re-audited on 8 August 2026 after a
-sanitized SakuraCord QR-login trace showed repeated successful Apex responses
-that contained assignments but no installation. The current production asset
+The post-approval installation repair was re-audited on 8 August 2026 after two
+sanitized SakuraCord QR-login traces showed successful Apex responses that
+contained assignments but no installation; the second trace also showed the
+fallback `/experiments` response returning a fingerprint and assignments but no
+installation. The current production asset
 `web.6d63a33a2f3badf3.js` (SHA-256
 `da550764957c0a3974bf3ac5fd72816075aa13c67b9443f784471bd6158ce6b9`)
-still treats Apex installation as optional and independently accepts both
-installation and fingerprint from `/experiments`. Discord's public developer
-documentation still has no corresponding normal-user authentication routes.
-Pinned Paicord still performs only its installation-free fingerprint
-`/experiments` request and has no Apex path; pinned Swiftcord v1 still delegates
-sign-in to Discord's embedded web flow. The repair therefore reuses the current
-first-party fallback after approved QR exchange and before Gateway, retains only
-the returned installation, and never replays the exchange. No credential,
-challenge solution, or personal response value was retained for this re-audit.
+still treats both response installations as optional and conditionally adds
+`installation_id` to Gateway Identify only when one is available. Discord's
+public Gateway documentation requires only `os`, `browser`, and `device` as
+connection properties and has no corresponding normal-user authentication
+routes. Pinned Paicord performs only its installation-free fingerprint
+`/experiments` request and its Gateway Identify has no installation field;
+pinned Swiftcord v1 delegates sign-in to Discord's embedded web flow and starts
+Gateway without managing an installation. The repair therefore makes the two
+lookups best-effort and proceeds without the optional field when both omit it;
+it retains a returned installation when present and never replays authentication.
+No credential, challenge solution, or personal response value was retained.
 
 The clean desktop observation covered sign-in restoration, Gateway startup,
 opening a public guild and its default channel, history loading, and a renderer
@@ -211,8 +215,8 @@ and retained as evidence.
 
 | Method and route template | Trigger and exact supported request shape | Cross-reference result |
 | --- | --- | --- |
-| `GET /apex/experiments?surface=2` | Primary cold native password/MFA installation preflight, or the first request in a pending-QR/stored-session repair when the credential lacks its installation identity; unauthenticated, no body, Authorization, fingerprint, installation header, or heartbeat session. Only the returned installation ID is retained. If the request fails or omits a usable installation, the existing `/experiments` preflight is allowed to resolve it. The obsolete string surface is rejected with `400` / `50035`. | Current official login treats Apex failure as non-blocking before its independent authentication-store preflight; P−, S−. |
-| `GET /experiments?with_guild_experiments=true` | Cold native password/MFA fingerprint preflight, or one pending-QR/stored-session installation fallback after Apex fails or omits the identity; unauthenticated, no body, and `X-Context-Properties` location `Login`. Normally password login carries the Apex-issued installation ID. A fallback omits that header. Password login requires the returned installation and fingerprint; post-authentication repair retains only the installation and does not replay authentication. | Current official login accepts both response fields and does not block this path on Apex success; Paicord supplies the installation-free fingerprint cross-check; Swiftcord v1 has no native-login counterpart. Paicord lacks the current query/context shape. |
+| `GET /apex/experiments?surface=2` | Primary cold native password/MFA installation preflight, or the first best-effort request in a pending-QR/stored-session repair when the credential lacks its installation identity; unauthenticated, no body, Authorization, fingerprint, installation header, or heartbeat session. Only a returned installation ID is retained. If the request fails or omits it, `/experiments` follows. The obsolete string surface is rejected with `400` / `50035`. | Current official login treats Apex failure and an omitted installation as non-blocking before its independent authentication-store preflight; P−, S−. |
+| `GET /experiments?with_guild_experiments=true` | Cold native password/MFA fingerprint preflight, or one pending-QR/stored-session installation fallback after Apex fails or omits the identity; unauthenticated, no body, and `X-Context-Properties` location `Login`. It carries the Apex-issued installation when available. Password login requires only the returned fingerprint; all paths retain a nonempty installation when present and otherwise omit it from REST and Gateway metadata. | Current official login accepts both response fields independently and conditionally adds installation to Gateway Identify; Paicord supplies the installation-free fingerprint and Gateway cross-check; Swiftcord v1 has no native-login counterpart and starts Gateway without managing installation. Paicord lacks the current query/context shape. |
 | `POST /auth/login` | Explicit login; `login`, `password`, `undelete:false`, `login_source:null`, and `gift_code_sku_id:null`; one user-completed CAPTCHA replay may add challenge headers. | Current official live password login and web action; Paicord omits the null keys; S−. |
 | `POST /auth/mfa/{totp,sms,backup}` | Explicit MFA; `code`, `ticket`, optional `login_instance_id`, `login_source:null`, and `gift_code_sku_id:null`. | Current official web action and Paicord; no live MFA challenge occurred in the 3 August clean-client pass; S−. |
 | `POST /auth/mfa/sms/send` | Explicit SMS choice; `ticket`. | Current official and Paicord; S−. |
@@ -338,7 +342,7 @@ The default attempt budget is exact:
 | Authenticated mutation | 1; no automatic replay after `429`, timeout, or ambiguous failure. |
 | Application-command index readiness | 3 created GETs for the separately tested `202`/`429` flow. |
 | Cold native installation/fingerprint preflight status retry | Each created preflight request has its original attempt plus at most 3 bounded retries for `429`, `500`, `502`, or `504`, subject to the established delay ceiling. A missing Apex installation creates only the already-required `/experiments` request, without an additional probe. |
-| Pending-QR or stored-session missing-installation repair | 1 unauthenticated Apex GET, plus 1 unauthenticated `/experiments` GET only when Apex fails or omits the identity; no automatic retry or authentication replay. |
+| Pending-QR or stored-session missing-installation repair | Once per provider: 1 unauthenticated Apex GET, plus 1 unauthenticated `/experiments` GET only when Apex fails or omits the identity. Both are best-effort; no automatic retry or authentication replay, and Gateway proceeds without the optional identity when unavailable. |
 | Native password/MFA status retry | Original plus at most 2 current-official retries for `429`, `500`, `502`, or `504`, subject to the established delay ceiling. |
 | Remote-auth ticket status retry | Original plus at most 3 Paicord-policy retries for `429`, `500`, `502`, or `504`, subject to its delay ceiling. |
 | User-completed login CAPTCHA | At most 1 replay of the challenged request. |
@@ -561,13 +565,14 @@ Native authentication is implemented without an embedded Discord login page:
 
 - a cold password login performs the Apex installation preflight, the
   installation-bearing fingerprint preflight, login, then connects Gateway;
-  when Apex alone fails or omits its installation, that same fingerprint
-  preflight may resolve both identifiers without an installation header before
-  login;
+  when Apex fails or omits its installation, that same fingerprint preflight
+  resolves the required fingerprint without an installation header before
+  login and retains an installation only when Discord returns one;
 - a warm password login performs login and then connects Gateway;
 - an approved QR credential or stored credential missing only its installation
-  identity performs one unauthenticated Apex lookup and, only if needed, one
-  `/experiments` fallback before connecting Gateway without replaying login;
+  identity performs one best-effort unauthenticated Apex lookup and, only if
+  needed, one `/experiments` fallback before connecting Gateway without
+  replaying login; when both omit it, Gateway Identify omits the optional field;
 - MFA adds one explicit verification request;
 - hCaptcha is completed by the user and permits one challenged-request replay;
 - QR login uses one remote-auth v2 WebSocket, an ephemeral RSA key, one ticket

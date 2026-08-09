@@ -98,11 +98,12 @@ credential remains memory-only while the main Gateway connects; a valid
 `READY.user` supplies its account ID before the credential is stored through
 `KeychainCredentialStore`. Failure or cancellation discards the pending value.
 An approved QR credential or an older stored credential that predates
-installation-identity persistence performs a bounded unauthenticated
-installation lookup before Gateway startup: one Apex request, followed by one
-`/experiments` fallback only when Apex fails or omits the identity. It does not
-replay the authentication exchange or force an otherwise valid credential
-through the login flow.
+installation-identity persistence performs a bounded, best-effort unauthenticated
+lookup before Gateway startup: one Apex request, followed by one `/experiments`
+fallback only when Apex fails or omits the identity. Discord may omit the
+optional identity from both successful responses; SakuraCord then starts
+Gateway without it. The lookup runs once per provider and does not replay the
+authentication exchange or force an otherwise valid credential through login.
 Passwords, cookies, captured authorization headers, and analytics identifiers
 are not persisted.
 

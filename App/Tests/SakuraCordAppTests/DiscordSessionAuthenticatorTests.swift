@@ -122,24 +122,35 @@ struct DiscordSessionAuthenticatorTests {
         await credential.discard()
     }
 
-    @Test func `cold password login still requires installation after fallback`() async throws {
+    @Test func `cold password login proceeds when installation is omitted`() async throws {
         AuthenticationURLProtocol.reset(mode: .installationMissing)
+        let fingerprints = TestFingerprintStore()
         let authenticator = DiscordSessionAuthenticator(
             session: Self.session(),
-            fingerprints: TestFingerprintStore()
+            fingerprints: fingerprints
         )
 
-        await #expect(throws: AuthenticationError.installationUnavailable) {
-            try await authenticator.login(
-                identifier: "person@example.com",
-                password: "correct horse battery staple"
-            )
-        }
+        let step = try await authenticator.login(
+            identifier: "person@example.com",
+            password: "correct horse battery staple"
+        )
+        let credential = try #require({
+            if case let .authenticated(credential) = step {
+                return credential
+            }
+            return nil
+        }())
 
         #expect(AuthenticationURLProtocol.paths == [
             "/api/v9/apex/experiments",
-            "/api/v9/experiments"
+            "/api/v9/experiments",
+            "/api/v9/auth/login"
         ])
+        #expect(AuthenticationURLProtocol.loginFingerprint == "server-issued-fingerprint")
+        #expect(AuthenticationURLProtocol.loginInstallationID == nil)
+        #expect(await fingerprints.load() == "server-issued-fingerprint")
+        #expect(await fingerprints.loadInstallationID() == nil)
+        await credential.discard()
     }
 
     @Test func `installation fallback preserves experiments HTTP failure`() async throws {
