@@ -468,6 +468,35 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     ) == [selected, blankSelected] + existing)
 }
 
+@Test func `search pin is retained at the visible top while blank results replace the query`() {
+    let guild = Guild(id: GuildID(rawValue: 1), name: "Server")
+    let channels = (10 ... 30).map { value in
+        Channel(
+            id: ChannelID(rawValue: UInt64(value)),
+            guildID: guild.id,
+            name: "channel-\(value)",
+            kind: .text
+        )
+    }
+    let destinations = channels.prefix(15).map {
+        ForwardDestination(kind: .channel($0), guild: guild)
+    }
+    let searchedDestination = ForwardDestination(
+        kind: .channel(channels[20]),
+        guild: guild
+    )
+
+    let merged = ForwardDestinationSelectionPolicy.mergingPinnedDestinations(
+        [searchedDestination.id],
+        into: destinations,
+        fallbacks: [searchedDestination]
+    )
+
+    #expect(merged.first?.id == searchedDestination.id)
+    #expect(merged.count == 15)
+    #expect(Set(merged.map(\.id)).count == merged.count)
+}
+
 @Test func `forward people use relationship names while group subtitles use raw recipient names`() throws {
     let friend = User(
         id: UserID(rawValue: 2),
@@ -809,6 +838,181 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     // retains only 20 raw rows per category, so this also catches regressions
     // that accidentally return to sorting every matching row per keystroke.
     #expect(cpuMilliseconds < 250)
+}
+
+@Test func `forward modal keyboard layout and animation contract stays immediate`() {
+    #expect(WindowModalKeyPolicy.isEscape(keyCode: 53, characters: nil))
+    #expect(WindowModalKeyPolicy.isEscape(keyCode: 0, characters: "\u{1B}"))
+    #expect(!WindowModalKeyPolicy.isEscape(keyCode: 36, characters: "\r"))
+    #expect(ForwardPickerLayoutMetrics.width == 480)
+    #expect(ForwardPickerLayoutMetrics.height == 679)
+    #expect(ForwardPickerLayoutMetrics.rowHeight == 48)
+    #expect(ForwardPickerLayoutMetrics.selectionDiameter == 20)
+    #expect(ForwardPickerLayoutMetrics.closeHitTarget >= 36)
+    #expect(WindowModalAnimationTiming.openingSeconds <= 0.22)
+    #expect(WindowModalAnimationTiming.closingSeconds <= 0.16)
+    #expect(WindowModalAnimationTiming.removalDelayMilliseconds <= 170)
+}
+
+@Test func `forward preview follows Discord text emoji and attachment rules`() throws {
+    let imageURL = try #require(URL(string: "https://cdn.discordapp.com/attachments/1/1/a.png"))
+    let author = User(id: UserID(rawValue: 1), username: "tester", displayName: "Tester")
+
+    func message(
+        content: String = "",
+        attachments: [SakuraCordModels.Attachment] = [],
+        embeds: [MessageEmbed] = [],
+        components: [MessageComponent] = []
+    ) -> Message {
+        Message(
+            id: MessageID(rawValue: 1),
+            channelID: ChannelID(rawValue: 2),
+            author: author,
+            content: content,
+            attachments: attachments,
+            embeds: embeds,
+            components: components
+        )
+    }
+
+    let text = ForwardMessagePreviewPlan.make(message: message(
+        content: "A deliberately long message with <:wave:123> that wraps onto another line."
+    ))
+    #expect(text.content?.contains("<:wave:123>") == true)
+    #expect(text.contentLineLimit == 2)
+    #expect(text.attachmentSummary == nil)
+    #expect(text.media == nil)
+
+    let heading = ForwardMessagePreviewPlan.make(message: message(
+        content: "# Preview heading\n\nPreview body"
+    ))
+    #expect(heading.content == "**Preview heading** Preview body")
+
+    let images = (1 ... 5).map { index in
+        SakuraCordModels.Attachment(
+            id: "\(index)",
+            filename: "image-\(index).png",
+            url: imageURL,
+            mediaType: "image/png"
+        )
+    }
+    let imagePlan = ForwardMessagePreviewPlan.make(message: message(attachments: images))
+    #expect(imagePlan.content == nil)
+    #expect(imagePlan.contentLineLimit == 1)
+    #expect(imagePlan.attachmentSummary == "5 images")
+    #expect(imagePlan.attachmentSystemImage == "photo.on.rectangle.angled")
+    #expect(imagePlan.media == ForwardPreviewMedia(
+        url: imageURL,
+        kind: .image(animated: false)
+    ))
+    #expect(imagePlan.mediaOverflowCount == 4)
+
+    let linked = ForwardMessagePreviewPlan.make(message: message(
+        content: imageURL.absoluteString,
+        embeds: [MessageEmbed(
+            type: "image",
+            url: imageURL,
+            image: MessageEmbedMedia(url: imageURL)
+        )]
+    ))
+    #expect(linked.content == imageURL.absoluteString)
+    #expect(linked.attachmentSummary == nil)
+    #expect(linked.media == ForwardPreviewMedia(
+        url: imageURL,
+        kind: .image(animated: false)
+    ))
+
+    let videoURL = try #require(URL(string: "https://cdn.discordapp.com/attachments/1/2/video.mp4"))
+    let linkedVideo = ForwardMessagePreviewPlan.make(message: message(
+        content: "https://example.com/video",
+        embeds: [MessageEmbed(
+            type: "video",
+            url: URL(string: "https://example.com/video"),
+            thumbnail: MessageEmbedMedia(url: imageURL),
+            video: MessageEmbedMedia(url: videoURL)
+        )]
+    ))
+    #expect(linkedVideo.attachmentSummary == nil)
+    #expect(linkedVideo.media == ForwardPreviewMedia(
+        url: imageURL,
+        kind: .image(animated: false)
+    ))
+
+    let stickerOnly = ForwardMessagePreviewPlan.make(message: Message(
+        id: MessageID(rawValue: 9),
+        channelID: ChannelID(rawValue: 2),
+        author: author,
+        content: "",
+        stickers: [MessageSticker(
+            id: "sticker",
+            name: "snacked",
+            description: "Mr Snack staring at the camera"
+        )]
+    ))
+    #expect(stickerOnly.content == nil)
+    #expect(stickerOnly.attachmentSummary == nil)
+    #expect(stickerOnly.media == nil)
+}
+
+@Test func `forward preview includes Components V2 text and media`() throws {
+    let imageURL = try #require(URL(string: "https://cdn.discordapp.com/attachments/1/2/component.png"))
+    let message = Message(
+        id: MessageID(rawValue: 3),
+        channelID: ChannelID(rawValue: 4),
+        author: User(id: UserID(rawValue: 1), username: "tester", displayName: "Tester"),
+        content: "## Stale fallback that must not win",
+        flags: .isComponentsV2,
+        components: [
+            .container(
+                id: "container",
+                accentColor: nil,
+                spoiler: false,
+                children: [
+                    .textDisplay(
+                        id: "text",
+                        content: "## Component preview heading\n\nComponent preview text"
+                    ),
+                    .mediaGallery(id: "gallery", items: [
+                        ComponentGalleryItem(media: ComponentMedia(url: imageURL)),
+                        ComponentGalleryItem(media: ComponentMedia(url: imageURL)),
+                    ]),
+                ]
+            ),
+        ]
+    )
+
+    let plan = ForwardMessagePreviewPlan.make(message: message)
+    #expect(plan.content == "**Component preview heading** Component preview text")
+    #expect(plan.attachmentSummary == nil)
+    #expect(plan.mediaOverflowCount == 1)
+    #expect(plan.contentLineLimit == 2)
+}
+
+@Test func `forward preview plan benchmark stays below presentation budget`() throws {
+    let imageURL = try #require(URL(string: "https://cdn.discordapp.com/attachments/1/3/preview.gif"))
+    let message = Message(
+        id: MessageID(rawValue: 5),
+        channelID: ChannelID(rawValue: 6),
+        author: User(id: UserID(rawValue: 1), username: "tester", displayName: "Tester"),
+        content: "Preview <:wave:123>",
+        attachments: [SakuraCordModels.Attachment(
+            id: "1",
+            filename: "preview.gif",
+            url: imageURL,
+            mediaType: "image/gif"
+        )]
+    )
+    let start = ContinuousClock.now
+    var plans = 0
+    for _ in 0 ..< 10_000 {
+        plans += ForwardMessagePreviewPlan.make(message: message).media == nil ? 0 : 1
+    }
+    let duration = start.duration(to: .now)
+    let milliseconds = Double(duration.components.seconds) * 1_000
+        + Double(duration.components.attoseconds) / 1_000_000_000_000_000
+    print(String(format: "Forward preview benchmark: %.3f ms / 10,000 plans", milliseconds))
+    #expect(plans == 10_000)
+    #expect(milliseconds < 250)
 }
 
 @Test func `equal score user search orders by the matched comparator`() {

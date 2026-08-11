@@ -4,6 +4,7 @@ import SwiftUI
 struct PickerSearchField: View {
     @Binding var text: String
     let placeholder: String
+    var accessibilityIdentifier = "picker-search"
     @FocusState private var isFocused: Bool
 
     var body: some View {
@@ -30,8 +31,22 @@ struct PickerSearchField: View {
             .regular.interactive(),
             in: ConcentricRectangle(cornerRadius: 12, style: .continuous)
         )
-        .task { isFocused = true }
+        .accessibilityIdentifier(accessibilityIdentifier)
+        .task {
+            await Task.yield()
+            isFocused = true
+        }
     }
+}
+
+nonisolated enum ForwardPickerLayoutMetrics {
+    static let width: CGFloat = 480
+    static let height: CGFloat = 679
+    static let outerInset: CGFloat = 24
+    static let cornerRadius: CGFloat = 16
+    static let closeHitTarget: CGFloat = 36
+    static let rowHeight: CGFloat = 48
+    static let selectionDiameter: CGFloat = 20
 }
 
 nonisolated enum ForwardDestinationID: Hashable {
@@ -60,6 +75,24 @@ nonisolated enum ForwardDestinationSelectionPolicy {
             + selectedDestinationIDs.filter { $0 != destinationID }
         let newlyPinnedSet = Set(newlyPinned)
         return newlyPinned + existing.filter { !newlyPinnedSet.contains($0) }
+    }
+
+    static func mergingPinnedDestinations(
+        _ pins: [ForwardDestinationID],
+        into destinations: [ForwardDestination],
+        fallbacks: [ForwardDestination],
+        limit: Int = 15
+    ) -> [ForwardDestination] {
+        guard !pins.isEmpty else { return Array(destinations.prefix(limit)) }
+        let destinationsByID = Dictionary(
+            (destinations + fallbacks).map { ($0.id, $0) },
+            uniquingKeysWith: { existing, _ in existing }
+        )
+        var seen = Set<ForwardDestinationID>()
+        return (pins + destinations.map(\.id)).compactMap { destinationID in
+            guard seen.insert(destinationID).inserted else { return nil }
+            return destinationsByID[destinationID]
+        }.prefix(limit).map { $0 }
     }
 }
 
@@ -1035,9 +1068,45 @@ nonisolated enum ForwardDestinationSearchPolicy {
     }
 }
 
+@MainActor
+private final class ForwardDestinationSearchIndexCache {
+    static let shared = ForwardDestinationSearchIndexCache()
+
+    private var modelID: ObjectIdentifier?
+    private var userID: UserID?
+    private var revision: UInt64?
+    private var index: ForwardDestinationSearchPolicy.Index?
+
+    func value(
+        for model: AppModel,
+        userID: UserID?,
+        revision: UInt64
+    ) -> ForwardDestinationSearchPolicy.Index? {
+        guard modelID == ObjectIdentifier(model),
+              self.userID == userID,
+              self.revision == revision
+        else { return nil }
+        return index
+    }
+
+    func store(
+        _ index: ForwardDestinationSearchPolicy.Index,
+        for model: AppModel,
+        userID: UserID?,
+        revision: UInt64
+    ) {
+        modelID = ObjectIdentifier(model)
+        self.userID = userID
+        self.revision = revision
+        self.index = index
+    }
+}
+
 struct ForwardMessageOverlay: View {
     let model: AppModel
     let message: Message
+    let animationState: WindowModalAnimationState
+    let dismiss: () -> Void
     @State private var query = ""
     @State private var context = ""
     @State private var selectedDestinationIDs: [ForwardDestinationID] = []
@@ -1045,6 +1114,8 @@ struct ForwardMessageOverlay: View {
     @State private var searchIndex: ForwardDestinationSearchPolicy.Index?
     @State private var searchIndexRevision = 0
     @State private var displayedDestinations: [ForwardDestination] = []
+    @State private var unqueriedDestinations: [ForwardDestination] = []
+    @State private var destinationScrollPosition: ForwardDestinationID?
     @FocusState private var isContextFocused: Bool
 
     private struct SearchRequest: Hashable {
@@ -1062,13 +1133,37 @@ struct ForwardMessageOverlay: View {
         }
     }
 
+    private var isVisible: Bool {
+        animationState.isVisible
+    }
+
     private func rebuildSearchIndex() async {
-        await model.loadDiscordEmojiSettings()
-        guard model.hasLoadedDiscordEmojiSettings else {
-            searchIndex = nil
-            displayedDestinations = []
+        let sourceRevision = model.forwardSearchSourceRevision
+        let currentUserID = model.snapshot?.currentUser.id
+        if let cached = ForwardDestinationSearchIndexCache.shared.value(
+            for: model,
+            userID: currentUserID,
+            revision: sourceRevision
+        ) {
+            searchIndex = cached
+            searchIndexRevision &+= 1
             return
         }
+
+        // Frecency settings improve ranking, but destination discovery itself
+        // is entirely local. Never hold the first picker population behind the
+        // authenticated enrichment request; its revision will rebuild this
+        // index when it settles.
+        if !model.hasLoadedDiscordEmojiSettings {
+            Task { @MainActor in
+                await model.loadDiscordEmojiSettings()
+            }
+        }
+        guard !Task.isCancelled else { return }
+        // Give the newly attached modal one render pass before walking local
+        // permission state. This keeps the opening transition responsive while
+        // adding only a single scheduler turn to destination availability.
+        await Task.yield()
         let snapshotChannels = model.snapshot?.channels ?? []
         let channels = ForwardDestinationSearchPolicy.channelsInStoreOrder(
             snapshotChannels,
@@ -1110,7 +1205,6 @@ struct ForwardMessageOverlay: View {
             model.snapshot?.relationshipNicknamesByUserID ?? [:]
         let userSearchAliasesByUserID =
             model.snapshot?.userSearchAliasesByUserID ?? [:]
-        let currentUserID = model.snapshot?.currentUser.id
         let guildSnapshot = guilds
         let usageScores = model.discordGuildAndChannelUsageScores
         let usageOrder = model.discordGuildAndChannelUsageOrder
@@ -1137,6 +1231,12 @@ struct ForwardMessageOverlay: View {
             indexTask.cancel()
         }
         guard !Task.isCancelled else { return }
+        ForwardDestinationSearchIndexCache.shared.store(
+            index,
+            for: model,
+            userID: currentUserID,
+            revision: sourceRevision
+        )
         searchIndex = index
         searchIndexRevision &+= 1
     }
@@ -1148,6 +1248,7 @@ struct ForwardMessageOverlay: View {
         }
         let query = query
         let pins = searchPinnedDestinationIDs
+        let indexRevision = searchIndexRevision
         let history = model.forwardDestinationHistory
         let originChannelID = message.channelID
         let searchTask = Task.detached(priority: .userInitiated) {
@@ -1164,16 +1265,34 @@ struct ForwardMessageOverlay: View {
             searchTask.cancel()
         }
         guard !Task.isCancelled else { return }
+        guard self.query == query,
+              searchPinnedDestinationIDs == pins,
+              searchIndexRevision == indexRevision
+        else { return }
 
+        var validatedResults = validateContentPermissions(in: results)
+        if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            validatedResults = ForwardDestinationSelectionPolicy.mergingPinnedDestinations(
+                pins,
+                into: validatedResults,
+                fallbacks: displayedDestinations + unqueriedDestinations
+            )
+            unqueriedDestinations = validatedResults
+        }
+        displayedDestinations = validatedResults
+    }
+
+    private func validateContentPermissions(
+        in results: [ForwardDestination]
+    ) -> [ForwardDestination] {
         let needsContentPermissionValidation = !message.attachments.isEmpty
             || !message.embeds.isEmpty
             || !message.stickers.isEmpty
             || message.flags.contains(.voiceMessage)
         guard needsContentPermissionValidation else {
-            displayedDestinations = results
-            return
+            return results
         }
-        displayedDestinations = results.map { destination in
+        return results.map { destination in
             var destination = destination
             let permissionChannel: Channel? = switch destination.kind {
             case .channel(let channel): channel
@@ -1196,7 +1315,7 @@ struct ForwardMessageOverlay: View {
                 Color.black.opacity(0.48)
                     .ignoresSafeArea()
                     .contentShape(Rectangle())
-                    .onTapGesture { model.dismissForwarding() }
+                    .onTapGesture(perform: dismiss)
                 GlassEffectContainer(spacing: 0) {
                     VStack(spacing: 0) {
                         header
@@ -1207,24 +1326,55 @@ struct ForwardMessageOverlay: View {
                     }
                     .background(
                         Color(nsColor: .windowBackgroundColor),
-                        in: ConcentricRectangle(cornerRadius: 20, style: .continuous)
+                        in: ConcentricRectangle(
+                            cornerRadius: ForwardPickerLayoutMetrics.cornerRadius,
+                            style: .continuous
+                        )
                     )
                     .overlay {
-                        ConcentricRectangle(cornerRadius: 20, style: .continuous)
-                            .stroke(.separator, lineWidth: 1)
+                        ConcentricRectangle(
+                            cornerRadius: ForwardPickerLayoutMetrics.cornerRadius,
+                            style: .continuous
+                        )
+                        .stroke(.separator, lineWidth: 1)
                     }
                     .shadow(color: .black.opacity(0.28), radius: 24, y: 10)
+                    .scaleEffect(isVisible ? 1 : 0.965)
                     .frame(
-                        width: min(468, max(0, geometry.size.width - 48)),
-                        height: min(679, max(0, geometry.size.height - 48))
+                        width: min(
+                            ForwardPickerLayoutMetrics.width,
+                            max(
+                                0,
+                                geometry.size.width
+                                    - ForwardPickerLayoutMetrics.outerInset * 2
+                            )
+                        ),
+                        height: min(
+                            ForwardPickerLayoutMetrics.height,
+                            max(
+                                0,
+                                geometry.size.height
+                                    - ForwardPickerLayoutMetrics.outerInset * 2
+                            )
+                        )
                     )
-                    .padding(24)
+                    .padding(ForwardPickerLayoutMetrics.outerInset)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .zIndex(1_100)
+        .ignoresSafeArea()
+        // Keep a modal-level SwiftUI responder in the chain after Search gives
+        // up focus. AppKit routes Escape through `cancelOperation(_:)`, while
+        // SwiftUI's exit command reaches this focusable ancestor for controls
+        // that install their own internal responder.
+        .focusable()
+        .focusEffectDisabled()
         .accessibilityAddTraits(.isModal)
+        .animation(
+            .easeOut(duration: WindowModalAnimationTiming.openingSeconds),
+            value: isVisible
+        )
         // Discord's UserSearchContextManager stays subscribed to UserStore,
         // GuildMemberStore, ChannelStore, and supplemental READY updates while
         // the modal is open. Rebuild only when those source stores advance;
@@ -1240,7 +1390,7 @@ struct ForwardMessageOverlay: View {
         )) {
             await refreshDisplayedDestinations()
         }
-        .onExitCommand { model.dismissForwarding() }
+        .onExitCommand(perform: dismiss)
     }
 
     private var header: some View {
@@ -1256,14 +1406,13 @@ struct ForwardMessageOverlay: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button { model.dismissForwarding() } label: {
-                    Image(systemName: "xmark")
-                        .frame(width: 28, height: 28)
-                }
-                .buttonStyle(.plain)
-                .help("Close")
+                ForwardCloseButton(action: dismiss)
             }
-            PickerSearchField(text: $query, placeholder: "Search")
+            PickerSearchField(
+                text: $query,
+                placeholder: "Search",
+                accessibilityIdentifier: "forward-search"
+            )
         }
         .padding(24)
     }
@@ -1274,7 +1423,7 @@ struct ForwardMessageOverlay: View {
             // 80 rows. Keeping that bounded list eager avoids SwiftUI's lazy
             // collection invalidation trap when accessibility scroll actions
             // race a live search-index update.
-            VStack(spacing: 2) {
+            VStack(spacing: 0) {
                 ForEach(displayedDestinations) { destination in
                     ForwardDestinationRow(
                         destination: destination,
@@ -1285,10 +1434,14 @@ struct ForwardMessageOverlay: View {
                 }
             }
             .padding(8)
+            .scrollTargetLayout()
         }
+        .scrollPosition(id: $destinationScrollPosition, anchor: .top)
         .overlay {
-            if !model.hasLoadedDiscordEmojiSettings {
-                ProgressView("Loading conversations…")
+            if searchIndex == nil {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityLabel("Loading conversations")
             } else if displayedDestinations.isEmpty {
                 ContentUnavailableView.search(text: query)
             }
@@ -1296,20 +1449,24 @@ struct ForwardMessageOverlay: View {
     }
 
     private var footer: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             if let error = model.forwardingErrorMessage {
                 Text(error)
                     .font(.caption)
                     .foregroundStyle(.red)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 8)
             }
-            ForwardedMessagePreview(message: message)
-            HStack(alignment: .bottom, spacing: 10) {
+            ForwardedMessagePreview(model: model, message: message)
+                .padding(.horizontal, 24)
+                .padding(.top, 16)
+            HStack(alignment: .bottom, spacing: 8) {
                 TextField("Add an optional message...", text: $context, axis: .vertical)
                     .textFieldStyle(.plain)
                     .focused($isContextFocused)
                     .lineLimit(1 ... 3)
                     .padding(.horizontal, 11)
-                    .frame(minHeight: 38)
+                    .frame(minHeight: 40)
                     .contentShape(ConcentricRectangle(cornerRadius: 12, style: .continuous))
                     .onTapGesture { isContextFocused = true }
                     .glassEffect(
@@ -1331,7 +1488,7 @@ struct ForwardMessageOverlay: View {
                         }
                     }
                     .frame(minWidth: 66)
-                    .frame(height: 38)
+                    .frame(height: 40)
                     .contentShape(ConcentricRectangle(cornerRadius: 12, style: .continuous))
                 }
                 .buttonStyle(.plain)
@@ -1342,8 +1499,10 @@ struct ForwardMessageOverlay: View {
                 )
                 .disabled(selectedDestinationIDs.isEmpty || model.isForwardingMessages)
             }
+            .padding(.horizontal, 24)
+            .padding(.top, 16)
+            .padding(.bottom, 8)
         }
-        .padding(24)
     }
 
     private func toggle(_ destinationID: ForwardDestinationID) {
@@ -1357,8 +1516,16 @@ struct ForwardMessageOverlay: View {
             existing: searchPinnedDestinationIDs
         )
         if selectedFromSearch {
+            displayedDestinations = ForwardDestinationSelectionPolicy
+                .mergingPinnedDestinations(
+                updatedPins,
+                into: unqueriedDestinations,
+                fallbacks: displayedDestinations
+            )
+            unqueriedDestinations = displayedDestinations
             searchPinnedDestinationIDs = updatedPins
             query = ""
+            destinationScrollPosition = destinationID
         }
         if let index = selectedDestinationIDs.firstIndex(of: destinationID) {
             selectedDestinationIDs.remove(at: index)
@@ -1369,6 +1536,60 @@ struct ForwardMessageOverlay: View {
             return
         }
         selectedDestinationIDs.insert(destinationID, at: 0)
+    }
+}
+
+private struct ForwardCloseButton: View {
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.system(size: 15, weight: .medium))
+                .frame(
+                    width: ForwardPickerLayoutMetrics.closeHitTarget,
+                    height: ForwardPickerLayoutMetrics.closeHitTarget
+                )
+                .contentShape(Circle())
+                .background {
+                    Circle()
+                        .fill(.primary.opacity(isHovered ? 0.09 : 0.001))
+                }
+        }
+        .buttonStyle(.plain)
+        .contentShape(Circle())
+        .onHover { hovering in
+            isHovered = hovering
+        }
+        .help("Close")
+        .accessibilityIdentifier("forward-close")
+    }
+}
+
+private struct ForwardSelectionControl: View {
+    let isSelected: Bool
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(isSelected ? Color.accentColor : .clear)
+            Circle()
+                .stroke(
+                    isSelected ? Color.accentColor : Color.secondary,
+                    lineWidth: 1.8
+                )
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+        }
+        .frame(
+            width: ForwardPickerLayoutMetrics.selectionDiameter,
+            height: ForwardPickerLayoutMetrics.selectionDiameter
+        )
+        .accessibilityHidden(true)
     }
 }
 
@@ -1398,12 +1619,10 @@ private struct ForwardDestinationRow: View {
                     }
                 }
                 Spacer()
-                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 19))
-                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                ForwardSelectionControl(isSelected: isSelected)
             }
             .padding(.horizontal, 16)
-            .frame(height: 48)
+            .frame(height: ForwardPickerLayoutMetrics.rowHeight)
             .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .background {
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
@@ -1416,9 +1635,7 @@ private struct ForwardDestinationRow: View {
         .accessibilityLabel(accessibilityLabel)
         .accessibilityIdentifier(destination.id.accessibilityIdentifier)
         .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.12)) {
-                isHovered = hovering
-            }
+            isHovered = hovering
         }
     }
 
@@ -1495,88 +1712,5 @@ private struct ForwardDestinationAvatar: View {
             return String(initials.prefix(3)).uppercased()
         }
         return String(name.prefix(2)).uppercased()
-    }
-}
-
-private struct ForwardedMessagePreview: View {
-    let message: Message
-
-    var body: some View {
-        HStack(spacing: 10) {
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(Color.secondary.opacity(0.48))
-                .frame(width: 3, height: 48)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(previewText)
-                    .font(.body)
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-                    .textSelection(.enabled)
-                if let attachmentSummary {
-                    Label(attachmentSummary, systemImage: "photo")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Spacer(minLength: 0)
-            if let mediaURL {
-                AsyncImage(url: mediaURL) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    Color.secondary.opacity(0.12)
-                }
-                .frame(width: 44, height: 44)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-            }
-        }
-        .frame(minHeight: 52)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Message being forwarded: \(previewText)")
-    }
-
-    private var attachmentSummary: String? {
-        let imageCount = message.attachments.count(where: {
-            $0.mediaKind == .image || $0.mediaKind == .animatedImage
-        })
-        guard imageCount > 0 else { return nil }
-        return imageCount == 1 ? "1 image" : "\(imageCount) images"
-    }
-
-    private var mediaURL: URL? {
-        message.stickers.first?.assetURL
-            ?? message.attachments.first(where: {
-                $0.mediaKind == .image || $0.mediaKind == .animatedImage
-            })?.proxyURL
-            ?? message.attachments.first(where: {
-                $0.mediaKind == .image || $0.mediaKind == .animatedImage
-            })?.url
-            ?? message.embeds.lazy.compactMap { $0.thumbnail?.url ?? $0.image?.url }.first
-    }
-
-    private var previewText: String {
-        if !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return MessageReplySummary.text(content: message.content)
-        }
-        if let sticker = message.stickers.first {
-            return "Sticker: \(sticker.name)"
-        }
-        if let attachment = message.attachments.first {
-            return nonEmpty(attachment.description)
-                ?? nonEmpty(attachment.title)
-                ?? attachment.filename
-        }
-        if let embed = message.embeds.first {
-            return nonEmpty(embed.title)
-                ?? nonEmpty(embed.description)
-                ?? "Embed"
-        }
-        if message.hasPoll { return "Poll" }
-        return "Message"
-    }
-
-    private func nonEmpty(_ value: String?) -> String? {
-        guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return nil }
-        return value
     }
 }

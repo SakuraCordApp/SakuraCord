@@ -175,6 +175,10 @@ struct CustomEmojiRichText: View {
     var model: AppModel?
     let content: String
     let emojiSize: CGFloat
+    var baseFontSize: CGFloat?
+    var maximumNumberOfLines: Int?
+    var isSelectable = true
+    var foregroundColor: NSColor?
     let mentionPresentation: (RenderedMention) -> MentionPresentation
     let onMentionClick: (MentionPresentation, StablePopoverAnchor) -> Void
     let onURLClick: (URL) -> Bool
@@ -184,6 +188,10 @@ struct CustomEmojiRichText: View {
         model: AppModel? = nil,
         content: String,
         emojiSize: CGFloat,
+        baseFontSize: CGFloat? = nil,
+        maximumNumberOfLines: Int? = nil,
+        isSelectable: Bool = true,
+        foregroundColor: NSColor? = nil,
         mentionPresentation: @escaping (RenderedMention) -> MentionPresentation = {
             MentionPresentation.fallback(for: $0)
         },
@@ -193,6 +201,10 @@ struct CustomEmojiRichText: View {
         self.model = model
         self.content = content
         self.emojiSize = emojiSize
+        self.baseFontSize = baseFontSize
+        self.maximumNumberOfLines = maximumNumberOfLines
+        self.isSelectable = isSelectable
+        self.foregroundColor = foregroundColor
         self.mentionPresentation = mentionPresentation
         self.onMentionClick = onMentionClick
         self.onURLClick = onURLClick
@@ -203,6 +215,10 @@ struct CustomEmojiRichText: View {
             model: model,
             source: content,
             emojiSize: emojiSize,
+            baseFontSize: baseFontSize,
+            maximumNumberOfLines: maximumNumberOfLines,
+            isSelectable: isSelectable,
+            foregroundColor: foregroundColor,
             mentionPresentations: mentionPresentations,
             onMentionClick: handleMentionClick,
             onURLClick: onURLClick
