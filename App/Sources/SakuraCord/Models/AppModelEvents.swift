@@ -93,7 +93,8 @@ extension AppModel {
     }
 
     func refreshUnreadPresentation(
-        appliesAccessImmediately: Bool = false
+        appliesAccessImmediately: Bool = false,
+        accessAffectedGuildIDs: Set<GuildID>? = nil
     ) {
         // Permission and unread projection walks every channel, role, guild,
         // and sidebar row. Gateway bursts can request it repeatedly while the
@@ -104,9 +105,10 @@ extension AppModel {
         // ends.
         var immediateAccessProjection: UnreadAccessProjection?
         if appliesAccessImmediately, let channels = snapshot?.channels {
-            let projection = unreadAccessProjection(for: channels)
-            applyUnreadAccessProjection(projection)
-            immediateAccessProjection = projection
+            immediateAccessProjection = applyImmediateUnreadAccessProjection(
+                for: channels,
+                affectedGuildIDs: accessAffectedGuildIDs
+            )
         }
         guard liveScrollingConversationIDs.isEmpty else {
             hasDeferredUnreadPresentationRefresh = true
@@ -120,12 +122,10 @@ extension AppModel {
             )
             return
         }
-        let accessProjection = immediateAccessProjection
-            ?? unreadAccessProjection(for: value.channels)
-        if immediateAccessProjection == nil {
-            applyUnreadAccessProjection(accessProjection)
-        }
-        let accessByChannelID = accessProjection.accessByChannelID
+        // Ordinary read-state changes do not alter channel permissions. Access
+        // events already applied their projection above, so avoid rebuilding
+        // every guild's permission masks for message and acknowledgement churn.
+        let accessByChannelID = immediateAccessProjection?.accessByChannelID ?? [:]
         let unreadProjection = readState.unreadPresentationProjection()
         let projectedChannels = value.channels.map { channel in
             var channel = channel
@@ -181,7 +181,7 @@ extension AppModel {
         {
             self.selectedChannelID = Self.preferredInitialChannelID(
                 in: selectedGuildChannels.filter {
-                    accessByChannelID[$0.id] != .hidden
+                    (accessByChannelID[$0.id] ?? conversationAccess(for: $0)) != .hidden
                 }
             )
         }
@@ -196,107 +196,6 @@ extension AppModel {
         notificationService.setDockBadge(
             unreadProjection.totalMentions,
             enabled: notificationPreferences.showsDockBadge
-        )
-    }
-
-    func applyUnreadAccessProjection(
-        _ projection: UnreadAccessProjection
-    ) {
-        let projectedHiddenChannelIDs = Set(
-            projection.accessByChannelID.compactMap { channelID, access in
-                access == .hidden ? channelID : nil
-            }
-        )
-        let selectedChannelBecameHidden = selectedChannelID.map {
-            projectedHiddenChannelIDs.contains($0)
-                && !hiddenChannelIDs.contains($0)
-        } ?? false
-        let projectedCheckingChannelIDs = Set(
-            projection.accessByChannelID.compactMap { channelID, access in
-                access == .checking ? channelID : nil
-            }
-        )
-        let selectedChannelBecameReadable = selectedChannelID.map { channelID in
-            checkingChannelIDs.contains(channelID)
-                && projection.accessByChannelID[channelID]?.isReadable == true
-        } ?? false
-        if projectedHiddenChannelIDs != hiddenChannelIDs {
-            hiddenChannelIDs = projectedHiddenChannelIDs
-        }
-        if projectedCheckingChannelIDs != checkingChannelIDs {
-            checkingChannelIDs = projectedCheckingChannelIDs
-        }
-        let redirectsAutomaticSelection =
-            pendingAutomaticChannelAccessID == selectedChannelID
-            && selectedChannelID.map(projectedHiddenChannelIDs.contains) == true
-        if redirectsAutomaticSelection {
-            pendingAutomaticChannelAccessID = nil
-            selectedChannelID = Self.preferredInitialChannelID(
-                in: visibleChannels.filter {
-                    projection.accessByChannelID[$0.id]?.isReadable == true
-                }
-            )
-        } else if pendingAutomaticChannelAccessID == selectedChannelID,
-                  selectedChannelID.map(projectedCheckingChannelIDs.contains) != true
-        {
-            pendingAutomaticChannelAccessID = nil
-        }
-        if selectedChannelBecameHidden, !redirectsAutomaticSelection {
-            switch selectedChannel?.kind {
-            case .forum:
-                beginForumLoad()
-            case .voice:
-                break
-            default:
-                beginSelectedChannelLoad()
-            }
-        }
-        if selectedChannelBecameReadable {
-            if selectedChannel?.kind == .forum {
-                beginForumLoad()
-            } else if selectedChannel?.kind != .voice {
-                refreshSelectedChannelPreservingHistory()
-            }
-        }
-        readState.applyAccessibility(
-            projection.accessibilityByChannelID
-        )
-    }
-
-    func unreadAccessProjection(
-        for channels: [Channel]
-    ) -> UnreadAccessProjection {
-        // Permission resolution walks guild roles and channel overwrites.
-        // Resolve once per channel and share the result with unread and
-        // sidebar projection.
-        var accessByChannelID = [ChannelID: ConversationAccess](
-            minimumCapacity: channels.count
-        )
-        var accessibilityByChannelID = [ChannelID: Bool](
-            minimumCapacity: channels.count
-        )
-        let authoritativeAccessEvidence =
-            readState.authoritativeAccessEvidenceChannelIDs()
-        for channel in channels {
-            let access = conversationAccess(for: channel)
-            accessByChannelID[channel.id] = access
-            switch access {
-            case .hidden:
-                accessibilityByChannelID[channel.id] = false
-            case .checking:
-                // Untouched guilds can remain in permission-checking state
-                // until activation loads their member roles. Preserve unread
-                // supplied by Discord's authoritative account read state,
-                // without admitting channels for which no such evidence exists.
-                accessibilityByChannelID[channel.id] =
-                    authoritativeAccessEvidence.contains(channel.id)
-            case .readable:
-                accessibilityByChannelID[channel.id] = true
-            }
-        }
-        return UnreadAccessProjection(
-            accessByChannelID: accessByChannelID,
-            accessibilityByChannelID: accessibilityByChannelID
         )
     }
 
@@ -592,7 +491,11 @@ extension AppModel {
         guard currentUserRoleIDsByGuild[guildID] != roleIDs else { return }
         currentUserRoleIDsByGuild[guildID] = roleIDs
         readState.updateCurrentUserRoles(roleIDs, guildID: guildID)
-        refreshUnreadPresentation(appliesAccessImmediately: true)
+        guard selectedGuildID == guildID else { return }
+        refreshUnreadPresentation(
+            appliesAccessImmediately: true,
+            accessAffectedGuildIDs: [guildID]
+        )
     }
 
     func consumeCurrentUserRolesSnapshot(
@@ -898,7 +801,11 @@ extension AppModel {
         guard currentUserRoleIDsByGuild[guildID] != roleIDs else { return }
         currentUserRoleIDsByGuild[guildID] = roleIDs
         readState.updateCurrentUserRoles(roleIDs, guildID: guildID)
-        refreshUnreadPresentation(appliesAccessImmediately: true)
+        guard selectedGuildID == guildID else { return }
+        refreshUnreadPresentation(
+            appliesAccessImmediately: true,
+            accessAffectedGuildIDs: [guildID]
+        )
     }
 
     func refreshMentionAutocompleteMembers(from members: [Member]) {
@@ -1029,7 +936,10 @@ extension AppModel {
         // Gateway guild payloads do not carry SakuraCord's presentation-only
         // unread and mention counts. Re-project them after every metadata
         // update instead of replacing the rail entry with raw zero values.
-        refreshUnreadPresentation(appliesAccessImmediately: true)
+        refreshUnreadPresentation(
+            appliesAccessImmediately: true,
+            accessAffectedGuildIDs: [guild.id]
+        )
     }
 
     func consumeGuildLayoutChanged(guilds: [Guild], railItems: [GuildRailItem]) {

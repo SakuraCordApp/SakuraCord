@@ -1395,6 +1395,28 @@ extension AccountReadStateModel {
         }
         .sorted { $0.channelID.rawValue < $1.channelID.rawValue }
     }
+
+    /// Resolves every category carrying an acknowledgement-eligible unread
+    /// conversation in one account-store pass. The sidebar renders all
+    /// categories together, so asking `bulkAcknowledgements` once per header
+    /// multiplied the same account-wide scan during startup updates.
+    func unreadCategoryIDs(
+        in guildID: GuildID
+    ) -> Set<ChannelID> {
+        var result: Set<ChannelID> = []
+        for entry in entries.values {
+            guard entry.guildID == guildID,
+                  entry.isAccessible,
+                  entry.isUnread,
+                  !isGuildResourceChannel(entry),
+                  entry.kind != .voice || entry.mentionCount > 0,
+                  let parentID = entry.parentID
+            else { continue }
+            let categoryID = channelByID[parentID]?.categoryID ?? parentID
+            result.insert(categoryID)
+        }
+        return result
+    }
 }
 
 private func maximum<T: Comparable>(_ lhs: T?, _ rhs: T?) -> T? {

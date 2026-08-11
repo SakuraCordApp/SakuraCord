@@ -4226,6 +4226,59 @@ private func hiddenMockChannel(
 }
 
 @MainActor
+@Test func `guild role updates preserve unrelated guild access projection`() {
+    let model = AppModel(launchMode: .offlineTesting)
+    let user = User(
+        id: UserID(rawValue: 92_100), username: "member", displayName: "Member"
+    )
+    let updatedGuild = Guild(id: GuildID(rawValue: 92_101), name: "Updated")
+    let unrelatedGuild = Guild(id: GuildID(rawValue: 92_102), name: "Unrelated")
+    let updatedChannel = Channel(
+        id: ChannelID(rawValue: 92_103),
+        guildID: updatedGuild.id,
+        name: "updated",
+        kind: .text
+    )
+    let unrelatedChannel = Channel(
+        id: ChannelID(rawValue: 92_104),
+        guildID: unrelatedGuild.id,
+        name: "unrelated",
+        kind: .text
+    )
+    model.snapshot = BootstrapSnapshot(
+        currentUser: user,
+        guilds: [updatedGuild, unrelatedGuild],
+        channels: [updatedChannel, unrelatedChannel],
+        members: []
+    )
+    model.serverRailGuildsByID = [
+        updatedGuild.id: updatedGuild,
+        unrelatedGuild.id: unrelatedGuild,
+    ]
+    model.currentUserRoleIDsByGuild[updatedGuild.id] = []
+    model.hiddenChannelIDs = [unrelatedChannel.id]
+    model.selectedGuildID = updatedGuild.id
+
+    model.applyGuildRoles(
+        [
+            GuildRole(
+                id: RoleID(rawValue: updatedGuild.id.rawValue),
+                name: "@everyone",
+                position: 0,
+                permissions: DiscordPermissionBits.viewChannel
+                    | DiscordPermissionBits.sendMessages
+                    | DiscordPermissionBits.readMessageHistory
+            )
+        ],
+        to: updatedGuild.id
+    )
+
+    #expect(model.conversationAccess(for: updatedChannel).isReadable)
+    #expect(!model.hiddenChannelIDs.contains(updatedChannel.id))
+    #expect(model.hiddenChannelIDs.contains(unrelatedChannel.id))
+}
+
+@MainActor
 @Test func `gateway lifecycle projections update app workspace state`() {
     let model = AppModel(launchMode: .offlineTesting)
     let oldUser = User(

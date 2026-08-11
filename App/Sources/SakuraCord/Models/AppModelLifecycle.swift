@@ -847,10 +847,12 @@ extension AppModel {
         guard !roles.isEmpty else { return }
         guard guildRolesByGuildID[guildID] != roles else { return }
         guildRolesByGuildID[guildID] = roles
-        if selectedGuildID == guildID {
-            guildRoles = roles
-        }
-        refreshUnreadPresentation(appliesAccessImmediately: true)
+        guard selectedGuildID == guildID else { return }
+        guildRoles = roles
+        refreshUnreadPresentation(
+            appliesAccessImmediately: true,
+            accessAffectedGuildIDs: [guildID]
+        )
     }
 
     var directMessageInspectorSections: [MemberSection] {
@@ -1107,6 +1109,12 @@ extension AppModel {
               selectedGuildID == guildID
         else { return }
         visibleChannels = channels
+        if let guildID {
+            refreshUnreadPresentation(
+                appliesAccessImmediately: true,
+                accessAffectedGuildIDs: [guildID]
+            )
+        }
         if launchMode == .offlineTesting, let guildID {
             await loadEmojis(for: guildID)
             guard isCurrentAccountSession(session) else { return }

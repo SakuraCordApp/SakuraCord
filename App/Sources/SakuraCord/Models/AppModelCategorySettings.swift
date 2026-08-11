@@ -23,9 +23,10 @@ extension AppModel {
     }
 
     func isCategoryUnread(guildID: GuildID, categoryID: ChannelID) -> Bool {
-        !readState.bulkAcknowledgements(
-            for: categoryID,
-            guildID: guildID
-        ).isEmpty
+        unreadCategoryIDs(guildID: guildID).contains(categoryID)
+    }
+
+    func unreadCategoryIDs(guildID: GuildID) -> Set<ChannelID> {
+        readState.unreadCategoryIDs(in: guildID)
     }
 }

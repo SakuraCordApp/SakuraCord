@@ -118,6 +118,9 @@ struct ChannelSidebarView: View {
                 .accessibilityHidden(guild != nil)
 
                 if guild != nil {
+                    let unreadCategoryIDs = guild.map {
+                        voiceModel.unreadCategoryIDs(guildID: $0.id)
+                    } ?? []
                     List(selection: deferredGuildSelection) {
                         let groups = ChannelGroup.make(from: displayedChannels)
                         ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
@@ -129,6 +132,9 @@ struct ChannelSidebarView: View {
                                 activeVoiceChannelID: activeVoiceChannelID,
                                 hiddenChannelIDs: hiddenChannelIDs,
                                 checkingChannelIDs: checkingChannelIDs,
+                                isUnread: group.categoryID.map(
+                                    unreadCategoryIDs.contains
+                                ) ?? false,
                                 voiceParticipantsByChannel: voiceSidebarParticipantsByChannel
                             )
                         }
@@ -360,6 +366,7 @@ private struct ChannelGroupRows: View {
     let activeVoiceChannelID: ChannelID?
     let hiddenChannelIDs: Set<ChannelID>
     let checkingChannelIDs: Set<ChannelID>
+    let isUnread: Bool
     let voiceParticipantsByChannel: [ChannelID: [VoiceSidebarParticipant]]
     @State private var isExpanded: Bool
 
@@ -371,6 +378,7 @@ private struct ChannelGroupRows: View {
         activeVoiceChannelID: ChannelID?,
         hiddenChannelIDs: Set<ChannelID>,
         checkingChannelIDs: Set<ChannelID>,
+        isUnread: Bool,
         voiceParticipantsByChannel: [ChannelID: [VoiceSidebarParticipant]]
     ) {
         self.model = model
@@ -380,6 +388,7 @@ private struct ChannelGroupRows: View {
         self.activeVoiceChannelID = activeVoiceChannelID
         self.hiddenChannelIDs = hiddenChannelIDs
         self.checkingChannelIDs = checkingChannelIDs
+        self.isUnread = isUnread
         self.voiceParticipantsByChannel = voiceParticipantsByChannel
         let isCollapsed = group.categoryID.flatMap { categoryID in
             group.guildID.map {
@@ -469,10 +478,7 @@ private struct ChannelGroupRows: View {
                         ChannelContextMenuBridge(
                             subject: .category,
                             isSelected: false,
-                            isUnread: model.isCategoryUnread(
-                                guildID: guildID,
-                                categoryID: categoryID
-                            ),
+                            isUnread: isUnread,
                             isMutationPending:
                                 model.isChannelNotificationMutationPending(
                                     categoryID

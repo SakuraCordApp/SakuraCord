@@ -1202,23 +1202,61 @@ final class ForwardDestinationSearchIndexCache {
             uniquingKeysWith: { _, newer in newer }
         )
         let threads = model.snapshot?.activeJoinedThreads ?? []
+        var permissionBasisByGuildID: [GuildID: ConversationPermissionBasis] = [:]
+        var unresolvedGuildIDs: Set<GuildID> = []
+        var permissionsByChannelID: [ChannelID: UInt64] = [:]
+        for channel in channels {
+            guard let guildID = channel.guildID else { continue }
+            let permissionBasis: ConversationPermissionBasis?
+            if let cached = permissionBasisByGuildID[guildID] {
+                permissionBasis = cached
+            } else if unresolvedGuildIDs.contains(guildID) {
+                permissionBasis = nil
+            } else if let resolved = model.conversationPermissionBasis(for: guildID) {
+                permissionBasisByGuildID[guildID] = resolved
+                permissionBasis = resolved
+            } else {
+                unresolvedGuildIDs.insert(guildID)
+                permissionBasis = nil
+            }
+            permissionsByChannelID[channel.id] = model.forwardDestinationPermissions(
+                channel,
+                permissionBasis: permissionBasis
+            )
+        }
         let searchableChannelIDs = Set(
-            channels.lazy.filter(model.canSearchForwardDestination).map(\.id)
+            channels.lazy.filter { channel in
+                model.canSearchForwardDestination(
+                    channel,
+                    permissions: permissionsByChannelID[channel.id]
+                )
+            }.map(\.id)
         ).union(threads.compactMap { thread in
             guard !thread.isArchived,
                   let parentID = thread.parentID,
                   let parent = channelsByID[parentID],
-                  model.canSearchForwardThreadDestination(parent: parent)
+                  model.canSearchForwardThreadDestination(
+                    parent: parent,
+                    permissions: permissionsByChannelID[parent.id]
+                  )
             else { return nil }
             return thread.id
         })
         let eligibleChannelIDs = Set(
-            channels.lazy.filter(model.canUseForwardDestination).map(\.id)
+            channels.lazy.filter { channel in
+                model.canUseForwardDestination(
+                    channel,
+                    permissions: permissionsByChannelID[channel.id]
+                )
+            }.map(\.id)
         ).union(threads.compactMap { thread in
             guard !thread.isArchived,
                   let parentID = thread.parentID,
                   let parent = channelsByID[parentID],
-                  model.canUseForwardThreadDestination(parent: parent)
+                  model.canUseForwardThreadDestination(
+                    parent: parent,
+                    permissions: permissionsByChannelID[parent.id]
+                  )
             else { return nil }
             return thread.id
         })

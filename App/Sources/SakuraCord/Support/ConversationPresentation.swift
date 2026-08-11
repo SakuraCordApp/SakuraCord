@@ -149,16 +149,33 @@ nonisolated enum ConversationPermissionResolver {
         roles: [GuildRole],
         currentRoleIDs: Set<RoleID>? = nil
     ) -> UInt64? {
-        if guild.isOwnedByCurrentUser == true { return .max }
-
         let roleIDs = currentRoleIDs ?? Set(currentMember?.roles.map(\.id) ?? [])
         let hasCurrentRoleIdentity = currentRoleIDs != nil || currentMember != nil
-        let basePermissions = guild.currentUserPermissions ?? basePermissions(
+        let resolvedBasePermissions = guild.currentUserPermissions ?? basePermissions(
             guildID: guild.id,
             roleIDs: roleIDs,
             roles: roles
         )
-        guard let permissions = basePermissions else { return nil }
+        return effectivePermissions(
+            guild: guild,
+            channel: channel,
+            currentUserID: currentUserID,
+            resolvedBasePermissions: resolvedBasePermissions,
+            roleIDs: roleIDs,
+            hasCurrentRoleIdentity: hasCurrentRoleIdentity
+        )
+    }
+
+    static func effectivePermissions(
+        guild: Guild,
+        channel: Channel,
+        currentUserID: UserID,
+        resolvedBasePermissions: UInt64?,
+        roleIDs: Set<RoleID>,
+        hasCurrentRoleIdentity: Bool
+    ) -> UInt64? {
+        if guild.isOwnedByCurrentUser == true { return .max }
+        guard let permissions = resolvedBasePermissions else { return nil }
         if permissions & DiscordPermissionBits.administrator != 0 { return .max }
 
         guard let overwrites = channel.permissionOverwrites, !overwrites.isEmpty else {
@@ -273,7 +290,7 @@ nonisolated enum ConversationPermissionResolver {
         return .readable(canSend: canSend)
     }
 
-    private static func basePermissions(
+    static func basePermissions(
         guildID: GuildID,
         roleIDs: Set<RoleID>,
         roles: [GuildRole]

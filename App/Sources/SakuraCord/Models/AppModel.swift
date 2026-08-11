@@ -17,6 +17,14 @@ enum ServerRailNavigationDestination: Equatable {
     case guild(GuildID)
 }
 
+nonisolated struct ConversationPermissionBasis {
+    let guild: Guild
+    let currentUserID: UserID
+    let roleIDs: Set<RoleID>
+    let resolvedBasePermissions: UInt64?
+    let hasCurrentRoleIdentity: Bool
+}
+
 @Observable
 final class AppModel {
     enum ThreadErrorScope {
@@ -110,7 +118,7 @@ final class AppModel {
     var snapshot: BootstrapSnapshot?
     var serverRailGuildsByID: [GuildID: Guild] = [:]
     var serverRailItems: [GuildRailItem] = [] {
-        didSet { updateOrderedCustomEmojis() }
+        didSet { requestOrderedCustomEmojiUpdate() }
     }
     var visibleChannels: [Channel] = []
     var hiddenChannelIDs: Set<ChannelID> = []
@@ -165,7 +173,10 @@ final class AppModel {
                 }
             }
             if permissionsChanged {
-                refreshUnreadPresentation(appliesAccessImmediately: true)
+                refreshUnreadPresentation(
+                    appliesAccessImmediately: true,
+                    accessAffectedGuildIDs: selectedGuildID.map { [$0] }
+                )
             }
             if !defersMemberPresentationRebuild {
                 publishTimelineMemberPresentationChanges(
@@ -363,7 +374,7 @@ final class AppModel {
     var privateCallActionChannelIDs: Set<ChannelID> = []
     var mediaDevices: MediaDeviceSnapshot = .empty
     var emojisByGuild: [GuildID: [DiscordEmoji]] = [:] {
-        didSet { updateOrderedCustomEmojis() }
+        didSet { requestOrderedCustomEmojiUpdate() }
     }
     var loadingEmojiGuildIDs: Set<GuildID> = []
     var emojiLoadErrorsByGuild: [GuildID: String] = [:]
@@ -388,6 +399,26 @@ final class AppModel {
     var hasLoadedDiscordEmojiSettings = false
     var orderedCustomEmojis: [DiscordEmoji] = []
     var customEmojiURLsByID: [String: URL] = [:]
+    @ObservationIgnored var orderedCustomEmojiUpdateTask: Task<Void, Never>?
+
+    func requestOrderedCustomEmojiUpdate() {
+        orderedCustomEmojiUpdateTask?.cancel()
+        if emojisByGuild.isEmpty {
+            orderedCustomEmojiUpdateTask = nil
+            updateOrderedCustomEmojis()
+            return
+        }
+        orderedCustomEmojiUpdateTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(150))
+            } catch {
+                return
+            }
+            guard let self, !Task.isCancelled else { return }
+            orderedCustomEmojiUpdateTask = nil
+            updateOrderedCustomEmojis()
+        }
+    }
 
     func updateOrderedCustomEmojis() {
         let guildOrder = serverRailItems.flatMap { item -> [GuildID] in
@@ -523,10 +554,19 @@ final class AppModel {
         guard let guildID = channel.guildID else {
             return .readable(canSend: !channel.isOfficialSystemDirectMessage)
         }
+        return conversationAccess(
+            for: channel,
+            permissionBasis: conversationPermissionBasis(for: guildID)
+        )
+    }
+
+    func conversationPermissionBasis(
+        for guildID: GuildID
+    ) -> ConversationPermissionBasis? {
         guard let guild = serverRailGuildsByID[guildID],
               let currentUserID = snapshot?.currentUser.id
         else {
-            return .checking
+            return nil
         }
         let member =
             membersByGuildID[guildID]?[currentUserID]
@@ -534,13 +574,37 @@ final class AppModel {
         let roles =
             guildRolesByGuildID[guildID]
             ?? (guildID == selectedGuildID ? guildRoles : [])
-        let permissions = ConversationPermissionResolver.effectivePermissions(
+        let storedRoleIDs = currentUserRoleIDsByGuild[guildID]
+        let roleIDs = storedRoleIDs ?? Set(member?.roles.map(\.id) ?? [])
+        return ConversationPermissionBasis(
             guild: guild,
-            channel: channel,
             currentUserID: currentUserID,
-            currentMember: member,
-            roles: roles,
-            currentRoleIDs: currentUserRoleIDsByGuild[guildID]
+            roleIDs: roleIDs,
+            resolvedBasePermissions: guild.currentUserPermissions
+                ?? ConversationPermissionResolver.basePermissions(
+                    guildID: guildID,
+                    roleIDs: roleIDs,
+                    roles: roles
+                ),
+            hasCurrentRoleIdentity: storedRoleIDs != nil || member != nil
+        )
+    }
+
+    func conversationAccess(
+        for channel: Channel,
+        permissionBasis: ConversationPermissionBasis?
+    ) -> ConversationAccess {
+        guard channel.guildID != nil else {
+            return .readable(canSend: !channel.isOfficialSystemDirectMessage)
+        }
+        guard let permissionBasis else { return .checking }
+        let permissions = ConversationPermissionResolver.effectivePermissions(
+            guild: permissionBasis.guild,
+            channel: channel,
+            currentUserID: permissionBasis.currentUserID,
+            resolvedBasePermissions: permissionBasis.resolvedBasePermissions,
+            roleIDs: permissionBasis.roleIDs,
+            hasCurrentRoleIdentity: permissionBasis.hasCurrentRoleIdentity
         )
         if channel.kind == .voice {
             return ConversationPermissionResolver.voiceChannelAccess(
@@ -589,9 +653,19 @@ final class AppModel {
     /// and vocal candidates with VIEW_CHANNEL plus CONNECT. The forwarding
     /// filter runs only after that category has been truncated.
     func canSearchForwardDestination(_ channel: Channel) -> Bool {
+        canSearchForwardDestination(
+            channel,
+            permissions: forwardDestinationPermissions(channel)
+        )
+    }
+
+    func canSearchForwardDestination(
+        _ channel: Channel,
+        permissions: UInt64?
+    ) -> Bool {
         guard Self.supportsForwardSearchCandidate(channel.kind) else { return false }
         guard channel.kind != .groupDirectMessage else { return true }
-        guard let permissions = forwardDestinationPermissions(channel) else {
+        guard let permissions else {
             // Discord's queryChannels path requires the resolved vocal
             // `accessPermissions` value to contain CONNECT before the row can
             // enter either raw channel category. Do not turn missing guild
@@ -610,12 +684,24 @@ final class AppModel {
     /// limit. Guild destinations require VIEW_CHANNEL and SEND_MESSAGES; vocal
     /// destinations have already passed the search-stage CONNECT check.
     func canUseForwardDestination(_ channel: Channel) -> Bool {
+        canUseForwardDestination(
+            channel,
+            permissions: forwardDestinationPermissions(channel)
+        )
+    }
+
+    func canUseForwardDestination(
+        _ channel: Channel,
+        permissions: UInt64?
+    ) -> Bool {
         guard Self.supportsForwardDestination(channel.kind) else { return false }
         guard channel.kind != .groupDirectMessage else {
             return !channel.isOfficialSystemDirectMessage
         }
-        guard canSearchForwardDestination(channel) else { return false }
-        guard let permissions = forwardDestinationPermissions(channel) else {
+        guard canSearchForwardDestination(channel, permissions: permissions) else {
+            return false
+        }
+        guard let permissions else {
             return channel.permissionOverwrites?.isEmpty != false
         }
         let required = DiscordPermissionBits.viewChannel | DiscordPermissionBits.sendMessages
@@ -625,18 +711,38 @@ final class AppModel {
     /// Active joined threads remain valid targets even when their parent is a
     /// forum, which is not itself a forward destination in Discord's picker.
     func canSearchForwardThreadDestination(parent: Channel) -> Bool {
+        canSearchForwardThreadDestination(
+            parent: parent,
+            permissions: forwardDestinationPermissions(parent)
+        )
+    }
+
+    func canSearchForwardThreadDestination(
+        parent: Channel,
+        permissions: UInt64?
+    ) -> Bool {
         guard parent.kind == .text || parent.kind == .announcement || parent.kind == .forum
         else { return false }
-        guard let permissions = forwardDestinationPermissions(parent) else {
+        guard let permissions else {
             return parent.permissionOverwrites?.isEmpty != false
         }
         return permissions & DiscordPermissionBits.viewChannel != 0
     }
 
     func canUseForwardThreadDestination(parent: Channel) -> Bool {
+        canUseForwardThreadDestination(
+            parent: parent,
+            permissions: forwardDestinationPermissions(parent)
+        )
+    }
+
+    func canUseForwardThreadDestination(
+        parent: Channel,
+        permissions: UInt64?
+    ) -> Bool {
         guard parent.kind == .text || parent.kind == .announcement || parent.kind == .forum
         else { return false }
-        guard let permissions = forwardDestinationPermissions(parent) else {
+        guard let permissions else {
             return parent.permissionOverwrites?.isEmpty != false
         }
         let required = DiscordPermissionBits.viewChannel | DiscordPermissionBits.sendMessages
@@ -647,22 +753,24 @@ final class AppModel {
         guard let guildID = channel.guildID else {
             return nil
         }
-        guard let guild = serverRailGuildsByID[guildID],
-              let currentUserID = snapshot?.currentUser.id
-        else { return nil }
-        let member =
-            membersByGuildID[guildID]?[currentUserID]
-            ?? (guildID == selectedGuildID ? membersByID[currentUserID] : nil)
-        let roles =
-            guildRolesByGuildID[guildID]
-            ?? (guildID == selectedGuildID ? guildRoles : [])
+        return forwardDestinationPermissions(
+            channel,
+            permissionBasis: conversationPermissionBasis(for: guildID)
+        )
+    }
+
+    func forwardDestinationPermissions(
+        _ channel: Channel,
+        permissionBasis: ConversationPermissionBasis?
+    ) -> UInt64? {
+        guard let permissionBasis else { return nil }
         return ConversationPermissionResolver.effectivePermissions(
-            guild: guild,
+            guild: permissionBasis.guild,
             channel: channel,
-            currentUserID: currentUserID,
-            currentMember: member,
-            roles: roles,
-            currentRoleIDs: currentUserRoleIDsByGuild[guildID]
+            currentUserID: permissionBasis.currentUserID,
+            resolvedBasePermissions: permissionBasis.resolvedBasePermissions,
+            roleIDs: permissionBasis.roleIDs,
+            hasCurrentRoleIdentity: permissionBasis.hasCurrentRoleIdentity
         )
     }
 

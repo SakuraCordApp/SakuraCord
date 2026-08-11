@@ -1807,6 +1807,40 @@ struct AccountReadStateModelTests {
         #expect(projection.totalMentions == model.totalMentions)
     }
 
+    @Test func `one pass category unread projection matches acknowledgement eligibility`() {
+        let model = makeModel(latest: 11, acknowledged: 10)
+        #expect(model.unreadCategoryIDs(in: guildID) == [categoryID])
+        #expect(!model.bulkAcknowledgements(
+            for: categoryID,
+            guildID: guildID
+        ).isEmpty)
+
+        let threadID = ChannelID(rawValue: 201)
+        model.merge(
+            thread: MessageThreadSummary(
+                id: threadID,
+                guildID: guildID,
+                parentID: channelID,
+                name: "Post",
+                lastMessageID: MessageID(rawValue: 20)
+            )
+        )
+        model.applyRemote(
+            ChannelReadState(
+                channelID: threadID,
+                lastAcknowledgedMessageID: MessageID(rawValue: 19)
+            )
+        )
+        #expect(model.unreadCategoryIDs(in: guildID) == [categoryID])
+
+        model.applyAccessibility([channelID: false])
+        #expect(model.unreadCategoryIDs(in: guildID).isEmpty)
+        #expect(model.bulkAcknowledgements(
+            for: categoryID,
+            guildID: guildID
+        ).isEmpty)
+    }
+
     private func makeModel(
         latest: UInt64,
         acknowledged: UInt64,
