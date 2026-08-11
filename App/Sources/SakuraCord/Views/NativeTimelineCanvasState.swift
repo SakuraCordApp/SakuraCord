@@ -38,6 +38,7 @@ final class NativeTimelinePointerState {
         let textSpoiler: NativeTimelineTextSpoilerHover?
         let codeBlock: NativeTimelineCodeBlockPointerTarget?
         let componentButton: NativeTimelineComponentButtonTarget?
+        let forwardedSourceMessageID: MessageID?
     }
 
     var hoveredRow: Int?
@@ -48,6 +49,7 @@ final class NativeTimelinePointerState {
     var hoveredCodeBlock: NativeTimelineCodeBlockPointerTarget?
     var pressedCodeBlockCopyButton: NativeTimelineCodeBlockPointerTarget?
     var hoveredComponentButton: NativeTimelineComponentButtonTarget?
+    var hoveredForwardedSourceMessageID: MessageID?
     var pressedComponentButton: NativeTimelineComponentButtonTarget?
     var visualPressedComponentButton: NativeTimelineComponentButtonTarget?
     var componentButtonPressProgress: CGFloat = 0
@@ -56,7 +58,7 @@ final class NativeTimelinePointerState {
     var pressedActivationTarget: NativeTimelinePointerActivationTarget?
     var hoveredReaction: NativeTimelineReactionPointerTarget?
     var suppressesHoverPresentation = false
-    var mediaViewerBlocksInteractions = false
+    var overlayBlocksInteractions = false
     var textSelection: NativeTimelineTextSelection?
     var textSelectionGesture: NativeTimelineTextSelectionGesture?
     var didDragTextSelection = false
@@ -75,7 +77,8 @@ final class NativeTimelinePointerState {
             textSpoiler: hoveredTextSpoiler,
             codeBlock: hoveredCodeBlock,
             componentButton:
-                visualPressedComponentButton ?? hoveredComponentButton
+                visualPressedComponentButton ?? hoveredComponentButton,
+            forwardedSourceMessageID: hoveredForwardedSourceMessageID
         )
         hoveredRow = nil
         hoveredCompactTimestampRow = nil
@@ -85,6 +88,7 @@ final class NativeTimelinePointerState {
         hoveredCodeBlock = nil
         pressedCodeBlockCopyButton = nil
         hoveredComponentButton = nil
+        hoveredForwardedSourceMessageID = nil
         pressedComponentButton = nil
         visualPressedComponentButton = nil
         componentButtonPressProgress = 0
@@ -127,6 +131,7 @@ final class NativeTimelinePointerState {
             || hoveredCodeBlock != nil
             || pressedCodeBlockCopyButton != nil
             || hoveredComponentButton != nil
+            || hoveredForwardedSourceMessageID != nil
             || pressedComponentButton != nil
             || visualPressedComponentButton != nil
             || componentButtonPressProgress != 0
@@ -274,6 +279,11 @@ extension NativeTimelineCanvasView {
         set { pointer.hoveredComponentButton = newValue }
     }
 
+    var hoveredForwardedSourceMessageID: MessageID? {
+        get { pointer.hoveredForwardedSourceMessageID }
+        set { pointer.hoveredForwardedSourceMessageID = newValue }
+    }
+
     var pressedComponentButton: NativeTimelineComponentButtonTarget? {
         get { pointer.pressedComponentButton }
         set { pointer.pressedComponentButton = newValue }
@@ -314,9 +324,9 @@ extension NativeTimelineCanvasView {
         set { pointer.suppressesHoverPresentation = newValue }
     }
 
-    var mediaViewerBlocksInteractions: Bool {
-        get { pointer.mediaViewerBlocksInteractions }
-        set { pointer.mediaViewerBlocksInteractions = newValue }
+    var overlayBlocksInteractions: Bool {
+        get { pointer.overlayBlocksInteractions }
+        set { pointer.overlayBlocksInteractions = newValue }
     }
 
     var textSelection: NativeTimelineTextSelection? {

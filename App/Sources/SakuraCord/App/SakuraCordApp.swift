@@ -64,7 +64,9 @@ struct SakuraCordApp: App {
     }
 
     var body: some Scene {
-        WindowGroup("SakuraCord", id: "main") {
+        // SakuraCord owns one account workspace. A WindowGroup would restore
+        // every previously opened main window on the next launch.
+        Window("SakuraCord", id: "main") {
             RootView(model: model)
                 .frame(minWidth: 860, minHeight: 560)
                 .onAppear {
@@ -124,6 +126,7 @@ struct SakuraCordApp: App {
                     }
                 }
         }
+        .defaultLaunchBehavior(.presented)
         .defaultSize(width: 1280, height: 780)
         .windowBackgroundDragBehavior(.disabled)
         .commands {

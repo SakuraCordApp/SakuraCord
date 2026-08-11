@@ -15,6 +15,7 @@ func `pointer state clears every hover and press target as one invariant`() {
     state.hoveredRow = 4
     state.hoveredCompactTimestampRow = 3
     state.hoveredComponentButton = component
+    state.hoveredForwardedSourceMessageID = messageID
     state.visualPressedComponentButton = component
     state.componentButtonPressProgress = 0.75
     state.componentButtonPressAnimationDestination = 1
@@ -28,7 +29,23 @@ func `pointer state clears every hover and press target as one invariant`() {
     #expect(cleared.row == 4)
     #expect(cleared.compactTimestampRow == 3)
     #expect(cleared.componentButton == component)
+    #expect(cleared.forwardedSourceMessageID == messageID)
     #expect(!state.hasHoverOrPressTargets)
+}
+
+@MainActor @Test
+func `forward overlay interaction block clears native hover and tracking state`() {
+    let canvas = NativeTimelineCanvasView(
+        frame: CGRect(x: 0, y: 0, width: 560, height: 400)
+    )
+    canvas.hoveredRow = 4
+    canvas.hoveredForwardedSourceMessageID = MessageID(rawValue: 72)
+
+    canvas.setOverlayInteractionBlocked(true)
+
+    #expect(canvas.overlayBlocksInteractions)
+    #expect(!canvas.pointer.hasHoverOrPressTargets)
+    #expect(canvas.rowTrackingAreas.isEmpty)
 }
 
 @MainActor @Test

@@ -11,6 +11,22 @@ struct GatewayLifecycleEventTests {
     private let voiceChannelID = ChannelID(rawValue: 202)
     private let currentUserID = UserID(rawValue: 1)
 
+    @Test func `media channel decodes as a non-text forum surface`() throws {
+        let data = Data(
+            #"""
+            {
+              "id":"203","guild_id":"100","type":16,"name":"media",
+              "permission_overwrites":[]
+            }
+            """#.utf8
+        )
+
+        let channel = try JSONDecoder().decode(ChannelDTO.self, from: data)
+            .domain(guildID: guildID)
+
+        #expect(channel.kind == .forum)
+    }
+
     @Test func `guild channel role member and user lifecycle reconciles cached state`() async {
         let provider = makeProvider()
         await provider.receiveGatewayDispatchForTesting(

@@ -8,6 +8,7 @@ public struct MessageFlags: OptionSet, Codable, Hashable, Sendable {
     }
 
     public static let crossposted = Self(rawValue: 1 << 0)
+    public static let isCrosspost = Self(rawValue: 1 << 1)
     public static let suppressEmbeds = Self(rawValue: 1 << 2)
     public static let sourceMessageDeleted = Self(rawValue: 1 << 3)
     public static let urgent = Self(rawValue: 1 << 4)
@@ -15,10 +16,31 @@ public struct MessageFlags: OptionSet, Codable, Hashable, Sendable {
     public static let ephemeral = Self(rawValue: 1 << 6)
     public static let loading = Self(rawValue: 1 << 7)
     public static let failedToMentionRoles = Self(rawValue: 1 << 8)
+    public static let guildFeedHidden = Self(rawValue: 1 << 9)
+    public static let shouldShowNonDiscordLinkWarning = Self(rawValue: 1 << 10)
     public static let suppressNotifications = Self(rawValue: 1 << 12)
     public static let voiceMessage = Self(rawValue: 1 << 13)
     public static let forwarded = Self(rawValue: 1 << 14)
     public static let isComponentsV2 = Self(rawValue: 1 << 15)
+    public static let isGuildOfficial = Self(rawValue: 1 << 19)
+
+    /// Discord clears this exact whitelist before requiring that no flag bits
+    /// remain. Despite appearances, these flags are permitted on a source.
+    public static let forwardingAllowed: Self = [
+        .crossposted,
+        .isCrosspost,
+        .suppressEmbeds,
+        .urgent,
+        .hasThread,
+        .failedToMentionRoles,
+        .guildFeedHidden,
+        .shouldShowNonDiscordLinkWarning,
+        .suppressNotifications,
+        .voiceMessage,
+        .forwarded,
+        .isComponentsV2,
+        .isGuildOfficial,
+    ]
 }
 
 public struct DiscordMessageType: RawRepresentable, Codable, Hashable, Sendable {
@@ -45,10 +67,22 @@ public struct DiscordMessageType: RawRepresentable, Codable, Hashable, Sendable 
     public static let chatInputCommand = Self(rawValue: 20)
     public static let threadStarter = Self(rawValue: 21)
     public static let guildInviteReminder = Self(rawValue: 22)
+    public static let contextMenuCommand = Self(rawValue: 23)
     public static let stageStart = Self(rawValue: 27)
     public static let stageEnd = Self(rawValue: 28)
     public static let stageSpeaker = Self(rawValue: 29)
     public static let stageTopic = Self(rawValue: 31)
+    public static let premiumReferral = Self(rawValue: 35)
+
+    /// Exact set used by Discord desktop's current `FORWARDABLE` policy.
+    public var isForwardable: Bool {
+        switch rawValue {
+        case 0, 19, 20, 23, 35:
+            true
+        default:
+            false
+        }
+    }
 
     public var hasGeneratedContent: Bool {
         switch rawValue {

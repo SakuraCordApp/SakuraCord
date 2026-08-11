@@ -650,6 +650,23 @@ extension DiscordRESTProvider {
         continuation?.yield(.forumPostsChanged(channelID: parentID, posts: posts))
     }
 
+    func reconcileJoinedThread(_ thread: MessageThreadSummary) {
+        if thread.notificationSettings != nil {
+            if cachedJoinedThreads[thread.id] == nil {
+                cachedJoinedThreadOrder.append(thread.id)
+            }
+            cachedJoinedThreads[thread.id] = thread
+        } else if let existing = cachedJoinedThreads[thread.id] {
+            var updated = thread
+            updated.notificationSettings = existing.notificationSettings
+            cachedJoinedThreads[thread.id] = updated
+        }
+    }
+
+    func publishActiveJoinedThreads() {
+        continuation?.yield(.activeJoinedThreadsChanged(currentActiveJoinedThreads()))
+    }
+
     func ingestForumThreads(
         _ threadDTOs: [ChannelDTO], fallbackGuildID: GuildID?,
         replacingParents: Set<ChannelID>? = nil,
@@ -692,12 +709,14 @@ extension DiscordRESTProvider {
                         } ?? false
             }
             cachedForumPosts[parentID, default: [:]][post.id] = post
+            reconcileJoinedThread(post.thread)
             cacheForumPreviewMessages(post)
             changed.insert(parentID)
         }
         for parentID in changed.union(replacingParents ?? []) {
             publishForumPosts(parentID: parentID)
         }
+        publishActiveJoinedThreads()
     }
 
     func advanceForumParentLatestThreadIDs(
@@ -1108,6 +1127,7 @@ extension DiscordRESTProvider {
 
     public func supports(_ capability: ChatCapability) async -> Bool {
         capability == .slashCommands || capability == .forums || capability == .gifs
+            || capability == .messageForwarding
     }
 
     public func applicationCommandCatalog(for target: ApplicationCommandIndexTarget) async throws
@@ -1398,6 +1418,93 @@ extension DiscordRESTProvider {
 
     public func send(_ draft: SendMessageDraft) async throws -> Message {
         try await send(draft, progress: { _ in })
+    }
+
+    public func ensurePrivateChannel(for userID: UserID) async throws -> Channel {
+        if let existing = (cachedChannels[nil] ?? []).first(where: {
+            $0.kind == .directMessage && $0.recipients.contains { $0.id == userID }
+        }) {
+            return existing
+        }
+        if let task = privateChannelTasks[userID] {
+            return try await task.value
+        }
+        let task = Task { [self] in
+            try await createPrivateChannel(for: userID)
+        }
+        privateChannelTasks[userID] = task
+        defer { privateChannelTasks[userID] = nil }
+        return try await task.value
+    }
+
+    private func createPrivateChannel(for userID: UserID) async throws -> Channel {
+        let dto: ChannelDTO = try await request(
+            "/users/@me/channels",
+            method: "POST",
+            body: ["recipients": .array([.string(userID.description)])]
+        )
+        let channel = try dto.domain(
+            guildID: nil,
+            knownUsersByID: cachedGatewayUsersByID
+        )
+        upsertPrivateChannel(channel)
+        continuation?.yield(.channelsChanged(
+            guildID: nil,
+            channels: cachedChannels[nil] ?? []
+        ))
+        return channel
+    }
+
+    public func forward(_ draft: ForwardMessageDraft) async throws -> Message {
+        let key = "forward:\(draft.destinationChannelID):\(draft.nonce)"
+        if let task = messageSendTasks[key] {
+            return try await task.value
+        }
+        let task = Task { [self] in
+            try await performForward(draft)
+        }
+        messageSendTasks[key] = task
+        defer { messageSendTasks[key] = nil }
+        return try await task.value
+    }
+
+    func performForward(_ draft: ForwardMessageDraft) async throws -> Message {
+        let isKnownChannel = cachedChannels.values.lazy.flatMap(\.self).contains(where: {
+            $0.id == draft.destinationChannelID
+        })
+        let isKnownThread = cachedForumPosts.values.contains { posts in
+            posts[draft.destinationChannelID] != nil
+        }
+        guard isKnownChannel || isKnownThread else {
+            throw ChatProviderError.channelNotFound
+        }
+        var reference: [String: JSONValue] = [
+            "type": .number(1),
+            "message_id": .string(draft.sourceMessageID.description),
+            "channel_id": .string(draft.sourceChannelID.description),
+        ]
+        if let sourceGuildID = draft.sourceGuildID {
+            reference["guild_id"] = .string(sourceGuildID.description)
+        }
+        let body: [String: JSONValue] = [
+            "content": .string(""),
+            "nonce": .string(draft.nonce),
+            "tts": .bool(false),
+            "flags": .number(0),
+            "mobile_network_type": .string("unknown"),
+            "message_reference": .object(reference),
+        ]
+        let dto: MessageDTO = try await request(
+            "/channels/\(draft.destinationChannelID)/messages",
+            method: "POST",
+            body: body,
+            headers: ["X-Context-Properties": DiscordClientMetadata.forwardingContextHeader]
+        )
+        var message = try dto.domain()
+        message.nonce = draft.nonce
+        cachedMessages[message.id] = message
+        continuation?.yield(.messageCreated(message))
+        return message
     }
 
     public func send(

@@ -5,7 +5,7 @@ import Testing
 
 @Suite(.serialized)
 struct DirectMessageProviderContractTests {
-    @Test func `DM history matches Paicord query ordering and stays a read`() async throws {
+    @Test func `DM history stays a read and extends the forwarding user index`() async throws {
         DirectMessageURLProtocol.reset()
         let provider = makeProvider()
 
@@ -14,6 +14,10 @@ struct DirectMessageProviderContractTests {
             before: MessageID(rawValue: 900),
             limit: 50
         )
+
+        #expect(await provider.currentKnownUsers().map(\.id) == [
+            UserID(rawValue: 77), UserID(rawValue: 78),
+        ])
 
         let request = try #require(DirectMessageURLProtocol.requests.first)
         #expect(request.method == "GET")
@@ -118,7 +122,7 @@ struct DirectMessageProviderContractTests {
             await provider.cachedChannelForTesting(
                 channelID: ChannelID(rawValue: 41)
             )?.recipients.map(\.id) == [
-                UserID(rawValue: 2), UserID(rawValue: 3),
+                UserID(rawValue: 3), UserID(rawValue: 2),
             ]
         )
 
@@ -137,7 +141,7 @@ struct DirectMessageProviderContractTests {
         )
         #expect(remotelyRenamed.name == "Renamed remotely")
         #expect(remotelyRenamed.recipients.map(\.id) == [
-            UserID(rawValue: 2), UserID(rawValue: 3),
+            UserID(rawValue: 3), UserID(rawValue: 2),
         ])
         #expect(remotelyRenamed.ownerID == UserID(rawValue: 1))
 
@@ -155,25 +159,22 @@ struct DirectMessageProviderContractTests {
 
     @Test func `private channel order matches Paicord Ready and message reconciliation`() async {
         let provider = makeProvider()
-        await provider.receiveGatewayDispatchForTesting(
-            name: "READY",
-            data: .object([
-                "guilds": .array([]),
-                "users": .array([
-                    user(id: "2", username: "maya", globalName: "Maya")
-                ]),
-                "private_channels": .array([
-                    privateChannel(id: "41", lastMessageID: "500"),
-                    privateChannel(id: "42", lastMessageID: nil),
-                    privateChannel(id: "43", lastMessageID: "700"),
-                ]),
-            ])
-        )
+        await seedPrivateChannelOrderReady(on: provider)
         #expect(
             await provider.cachedPrivateChannelsForTesting().map(\.id) == [
                 ChannelID(rawValue: 43),
                 ChannelID(rawValue: 41),
                 ChannelID(rawValue: 42),
+            ]
+        )
+        #expect(
+            Dictionary(
+                uniqueKeysWithValues: await provider.cachedPrivateChannelsForTesting()
+                    .map { ($0.id, $0.position) }
+            ) == [
+                ChannelID(rawValue: 41): 0,
+                ChannelID(rawValue: 42): 1,
+                ChannelID(rawValue: 43): 2,
             ]
         )
         #expect(
@@ -194,6 +195,10 @@ struct DirectMessageProviderContractTests {
                 ChannelID(rawValue: 42),
                 ChannelID(rawValue: 44),
             ]
+        )
+        #expect(
+            await provider.cachedPrivateChannelsForTesting()
+                .first(where: { $0.id == ChannelID(rawValue: 44) })?.position == 3
         )
 
         await provider.receiveGatewayDispatchForTesting(
@@ -224,6 +229,7 @@ struct DirectMessageProviderContractTests {
             afterSupplemental.first?.recipients.map(\.id)
                 == [UserID(rawValue: 3)]
         )
+        #expect(afterSupplemental.first?.position == 4)
 
         await provider.receiveGatewayDispatchForTesting(
             name: "MESSAGE_CREATE",
@@ -251,6 +257,395 @@ struct DirectMessageProviderContractTests {
             ChannelID(rawValue: 44),
         ])
         #expect(reordered.first?.lastMessageID == MessageID(rawValue: 1000))
+        await provider.disconnect()
+    }
+
+    @Test func `ready supplemental publishes newly known users without a REST lookup`() async throws {
+        DirectMessageURLProtocol.reset()
+        let provider = makeProvider()
+        let events = await provider.eventStream()
+        let published = Task { () -> [User]? in
+            for await event in events {
+                if case let .knownUsersChanged(users) = event { return users }
+            }
+            return nil
+        }
+
+        await provider.receiveGatewayDispatchForTesting(
+            name: "READY_SUPPLEMENTAL",
+            data: .object([
+                "guilds": .array([]),
+                "users": .array([
+                    .object([
+                        "id": .string("3"),
+                        "username": .string("legacy-bot"),
+                        "discriminator": .string("8860"),
+                        "global_name": .string("Global Name"),
+                    ]),
+                    .object([
+                        "id": .string("2"),
+                        "username": .string("later-user"),
+                        "global_name": .string("Later User"),
+                    ])
+                ]),
+            ])
+        )
+
+        let users = try #require(await published.value)
+        #expect(users.map(\.id) == [UserID(rawValue: 3), UserID(rawValue: 2)])
+        #expect(users.first?.id == UserID(rawValue: 3))
+        #expect(users.first?.tag == "legacy-bot#8860")
+        #expect(DirectMessageURLProtocol.requests.isEmpty)
+        await provider.disconnect()
+    }
+
+    @Test func `message updates an existing forwarding user without a REST lookup`() async throws {
+        DirectMessageURLProtocol.reset()
+        let provider = makeProvider()
+        await provider.receiveGatewayDispatchForTesting(
+            name: "READY_SUPPLEMENTAL",
+            data: .object([
+                "guilds": .array([]),
+                "users": .array([
+                    user(id: "2", username: "before", globalName: "Before")
+                ]),
+            ])
+        )
+        let events = await provider.eventStream()
+        let published = Task { () -> [User]? in
+            for await event in events {
+                if case let .knownUsersChanged(users) = event { return users }
+            }
+            return nil
+        }
+
+        await provider.receiveGatewayDispatchForTesting(
+            name: "MESSAGE_CREATE",
+            data: .object([
+                "id": .string("1000"),
+                "channel_id": .string("42"),
+                "author": user(id: "2", username: "after", globalName: "After"),
+                "content": .string("updated identity"),
+                "timestamp": .string("2026-08-10T08:00:00.000Z"),
+                "attachments": .array([]),
+                "reactions": .array([]),
+            ])
+        )
+
+        let users = try #require(await published.value)
+        let updated = try #require(users.first { $0.id == UserID(rawValue: 2) })
+        #expect(updated.username == "after")
+        #expect(updated.displayName == "After")
+        #expect(DirectMessageURLProtocol.requests.isEmpty)
+        await provider.disconnect()
+    }
+
+    @Test func `message learned forwarding people survive a provider relaunch`() async throws {
+        DirectMessageURLProtocol.reset()
+        let cacheDirectory = FileManager.default.temporaryDirectory.appending(
+            path: "forward-search-people-\(UUID().uuidString)",
+            directoryHint: .isDirectory
+        )
+        defer { try? FileManager.default.removeItem(at: cacheDirectory) }
+        await seedForwardSearchPeopleCache(at: cacheDirectory)
+
+        let second = makeProvider(usesForwardSearchPeopleDiskCache: true)
+        await second.setForwardSearchPeopleCacheDirectoryForTesting(cacheDirectory)
+        await second.receiveGatewayDispatchForTesting(
+            name: "READY",
+            data: .object([
+                "guilds": .array([]),
+                "user": user(id: "1", username: "owner", globalName: "Owner"),
+                "users": .array([
+                    user(id: "3", username: "ready", globalName: "Ready User")
+                ]),
+            ])
+        )
+
+        #expect(await second.currentKnownUsers().map(\.id) == [
+            UserID(rawValue: 2),
+            UserID(rawValue: 3),
+            UserID(rawValue: 1),
+        ])
+        #expect(!(await second.currentKnownUsers()).contains {
+            $0.id == UserID(rawValue: 5)
+        })
+        #expect(
+            await second.currentUserSearchAliasesByUserID()[UserID(rawValue: 2)]
+                == ["Current nickname"]
+        )
+
+        await seedLiveForwardSearchUsers(on: second)
+
+        #expect(await second.currentKnownUsers().map(\.id) == [
+            UserID(rawValue: 2),
+            UserID(rawValue: 3),
+            UserID(rawValue: 1),
+            UserID(rawValue: 4),
+        ])
+        #expect(
+            await second.currentUserSearchAliasesByUserID()[UserID(rawValue: 2)]
+                == ["Current nickname", "Ready nickname"]
+        )
+        #expect(
+            await second.currentUserSearchAliasesByUserID()[UserID(rawValue: 4)]
+                == nil
+        )
+        #expect(DirectMessageURLProtocol.requests.isEmpty)
+        await second.disconnect()
+    }
+
+    @Test func `ready supplemental resolves recipients referenced by Ready private channels`() async throws {
+        DirectMessageURLProtocol.reset()
+        let provider = makeProvider()
+        await provider.receiveGatewayDispatchForTesting(
+            name: "READY",
+            data: .object([
+                "guilds": .array([]),
+                "user": user(id: "1", username: "owner", globalName: "Owner"),
+                "users": .array([]),
+                "private_channels": .array([
+                    .object([
+                        "id": .string("41"),
+                        "type": .number(3),
+                        "name": .string(""),
+                        "owner_id": .string("1"),
+                        "recipient_ids": .array([.string("2")]),
+                    ])
+                ]),
+            ])
+        )
+        #expect(await provider.cachedPrivateChannelsForTesting().first?.recipients.isEmpty == true)
+
+        await provider.receiveGatewayDispatchForTesting(
+            name: "READY_SUPPLEMENTAL",
+            data: .object([
+                "guilds": .array([]),
+                "users": .array([
+                    user(id: "2", username: "later-user", globalName: "Later User")
+                ]),
+            ])
+        )
+
+        let channel = try #require(await provider.cachedPrivateChannelsForTesting().first)
+        #expect(channel.recipients.map(\.id) == [UserID(rawValue: 2)])
+        #expect(channel.name == "Later User")
+        #expect(DirectMessageURLProtocol.requests.isEmpty)
+        await provider.disconnect()
+    }
+
+    @Test func `private recipient ordering matches Discords JavaScript snowflake sorter`() {
+        let input = [
+            "1000000000000000123",
+            "1100000000000000456",
+            "1200000000000000789",
+            "1300000000000000111",
+            "1400000000000000222",
+        ]
+
+        #expect(
+            DiscordPrivateRecipientOrdering.sortedIDs(
+                input,
+                channelID: "1500000000000000123",
+                channelType: 3
+            ) == [
+                "1300000000000000111",
+                "1000000000000000123",
+                "1200000000000000789",
+                "1400000000000000222",
+                "1100000000000000456",
+            ]
+        )
+    }
+
+    @Test func `ready excludes blocked and ignored users from forwarding search`() async throws {
+        let provider = makeProvider()
+        await provider.receiveGatewayDispatchForTesting(
+            name: "READY",
+            data: .object([
+                "guilds": .array([]),
+                "user": user(id: "1", username: "owner", globalName: "Owner"),
+                "relationships": .array([
+                    .object([
+                        "id": .string("7"),
+                        "type": .number(2),
+                        "user": user(id: "7", username: "blocked", globalName: "Blocked"),
+                    ]),
+                    .object([
+                        "id": .string("8"),
+                        "type": .number(3),
+                        "user_ignored": .bool(true),
+                        "user": user(id: "8", username: "ignored", globalName: "Ignored"),
+                    ]),
+                    .object([
+                        "id": .string("9"),
+                        "type": .number(1),
+                        "user": user(id: "9", username: "friend", globalName: "Friend"),
+                    ]),
+                ]),
+            ])
+        )
+
+        let users = await provider.currentKnownUsers()
+        #expect(users.contains { $0.id == UserID(rawValue: 9) })
+        #expect(!users.contains { $0.id == UserID(rawValue: 7) })
+        #expect(!users.contains { $0.id == UserID(rawValue: 8) })
+        await provider.disconnect()
+    }
+
+    @Test func `guild create members extend account wide forwarding users without REST`() async {
+        DirectMessageURLProtocol.reset()
+        let provider = makeProvider()
+        let events = await provider.eventStream()
+        let publishedAliases = Task { () -> [UserID: [String]]? in
+            for await event in events {
+                if case let .userSearchAliasesChanged(aliases) = event {
+                    return aliases
+                }
+            }
+            return nil
+        }
+
+        await provider.receiveGatewayDispatchForTesting(
+            name: "GUILD_CREATE",
+            data: .object([
+                "id": .string("1"),
+                "name": .string("Guild"),
+                "members": .array([
+                    .object([
+                        "user": user(
+                            id: "7",
+                            username: "member-user",
+                            globalName: "Member User"
+                        ),
+                        "nick": .string("Member nickname"),
+                        "roles": .array([]),
+                    ])
+                ]),
+            ])
+        )
+
+        let users = await provider.currentKnownUsers()
+        #expect(users.contains { $0.id == UserID(rawValue: 7) })
+        let aliases = await publishedAliases.value
+        #expect(aliases?[UserID(rawValue: 7)] == ["Member nickname"])
+        #expect(DirectMessageURLProtocol.requests.isEmpty)
+        await provider.disconnect()
+    }
+
+    @Test func `guild member chunks extend forwarding users without a REST lookup`() async throws {
+        DirectMessageURLProtocol.reset()
+        let provider = makeProvider()
+        let events = await provider.eventStream()
+        let published = Task { () -> [User]? in
+            for await event in events {
+                if case let .knownUsersChanged(users) = event { return users }
+            }
+            return nil
+        }
+
+        await provider.receiveGatewayDispatchForTesting(
+            name: "GUILD_MEMBERS_CHUNK",
+            data: .object([
+                "guild_id": .string("1"),
+                "chunk_index": .number(0),
+                "chunk_count": .number(1),
+                "members": .array([
+                    .object([
+                        "user": user(
+                            id: "8",
+                            username: "chunk-user",
+                            globalName: "Chunk User"
+                        ),
+                        "nick": .string("Chunk nickname"),
+                        "roles": .array([]),
+                    ])
+                ]),
+            ])
+        )
+
+        let users = try #require(await published.value)
+        #expect(users.contains { $0.id == UserID(rawValue: 8) })
+        #expect(DirectMessageURLProtocol.requests.isEmpty)
+        await provider.disconnect()
+    }
+
+    @Test func `member list updates do not extend forwarding user search`() async {
+        DirectMessageURLProtocol.reset()
+        let provider = makeProvider()
+
+        await provider.receiveGatewayDispatchForTesting(
+            name: "GUILD_CREATE",
+            data: .object([
+                "id": .string("1"),
+                "name": .string("Guild"),
+            ])
+        )
+
+        await provider.receiveGatewayDispatchForTesting(
+            name: "GUILD_MEMBER_LIST_UPDATE",
+            data: .object([
+                "guild_id": .string("1"),
+                "id": .string("everyone"),
+                "ops": .array([
+                    .object([
+                        "op": .string("SYNC"),
+                        "range": .array([.number(0), .number(0)]),
+                        "items": .array([
+                            .object([
+                                "member": .object([
+                                    "user": user(
+                                        id: "10",
+                                        username: "list-user",
+                                        globalName: "List User"
+                                    ),
+                                    "nick": .string("List nickname"),
+                                    "roles": .array([]),
+                                ])
+                            ])
+                        ]),
+                    ])
+                ]),
+            ])
+        )
+
+        #expect(!(await provider.currentKnownUsers()).contains {
+            $0.id == UserID(rawValue: 10)
+        })
+        #expect(
+            await provider.currentUserSearchAliasesByUserID()[UserID(rawValue: 10)]
+                == ["List nickname"]
+        )
+        #expect(DirectMessageURLProtocol.requests.isEmpty)
+        await provider.disconnect()
+    }
+
+    @Test func `empty group DM uses its owner display name like Discord`() async throws {
+        let provider = makeProvider()
+        await provider.receiveGatewayDispatchForTesting(
+            name: "READY",
+            data: .object([
+                "guilds": .array([]),
+                "user": user(id: "1", username: "owner", globalName: "Owner Display"),
+                "users": .array([]),
+                "private_channels": .array([
+                    .object([
+                        "id": .string("41"),
+                        "type": .number(3),
+                        "name": .string(""),
+                        "owner_id": .string("1"),
+                        "recipient_ids": .array([]),
+                        "last_message_id": .string("500"),
+                    ])
+                ]),
+            ])
+        )
+
+        let channel = try #require(
+            await provider.cachedPrivateChannelsForTesting().first
+        )
+        #expect(channel.kind == .groupDirectMessage)
+        #expect(channel.name == "Owner Display's Group")
         await provider.disconnect()
     }
 
@@ -492,6 +887,119 @@ struct DirectMessageProviderContractTests {
         await provider.disconnect()
     }
 
+    private func seedPrivateChannelOrderReady(on provider: DiscordRESTProvider) async {
+        await provider.receiveGatewayDispatchForTesting(
+            name: "READY",
+            data: .object([
+                "guilds": .array([]),
+                "users": .array([
+                    user(id: "2", username: "maya", globalName: "Maya")
+                ]),
+                "private_channels": .array([
+                    privateChannel(id: "41", lastMessageID: "500"),
+                    privateChannel(id: "42", lastMessageID: nil),
+                    privateChannel(id: "43", lastMessageID: "700"),
+                ]),
+            ])
+        )
+    }
+
+    private func seedForwardSearchPeopleCache(at cacheDirectory: URL) async {
+        let provider = makeProvider(usesForwardSearchPeopleDiskCache: true)
+        await provider.setForwardSearchPeopleCacheDirectoryForTesting(cacheDirectory)
+        await provider.receiveGatewayDispatchForTesting(
+            name: "GUILD_CREATE",
+            data: .object([
+                "id": .string("7"),
+                "name": .string("Cached guild"),
+                "members": .array([
+                    .object([
+                        "user": user(id: "2", username: "cached", globalName: "Cached User"),
+                        "nick": .string("Current nickname"),
+                        "roles": .array([]),
+                    ]),
+                    .object([
+                        "user": user(id: "5", username: "live-only", globalName: "Live Only"),
+                        "nick": .string("Live nickname"),
+                        "roles": .array([]),
+                    ])
+                ]),
+            ])
+        )
+        await provider.receiveGatewayDispatchForTesting(
+            name: "MESSAGE_CREATE",
+            data: .object([
+                "id": .string("1000"),
+                "channel_id": .string("42"),
+                "guild_id": .string("7"),
+                "author": user(id: "2", username: "cached", globalName: "Cached User"),
+                "member": .object([
+                    "nick": .string("Historical nickname"),
+                    "roles": .array([]),
+                ]),
+                "content": .string("cache me"),
+                "timestamp": .string("2026-08-10T08:00:00.000Z"),
+                "attachments": .array([]),
+                "reactions": .array([]),
+            ])
+        )
+        await provider.disconnect()
+    }
+
+    private func seedLiveForwardSearchUsers(on provider: DiscordRESTProvider) async {
+        await provider.receiveGatewayDispatchForTesting(
+            name: "GUILD_CREATE",
+            data: .object([
+                "id": .string("8"),
+                "name": .string("Ready guild"),
+                "members": .array([
+                    .object([
+                        "user": user(id: "2", username: "cached", globalName: "Cached User"),
+                        "nick": .string("Ready nickname"),
+                        "roles": .array([]),
+                    ])
+                ]),
+            ])
+        )
+        await provider.receiveGatewayDispatchForTesting(
+            name: "MESSAGE_CREATE",
+            data: .object([
+                "id": .string("1001"),
+                "channel_id": .string("43"),
+                "guild_id": .string("6"),
+                "author": user(id: "4", username: "later", globalName: "Later User"),
+                "member": .object([
+                    "nick": .string("Later nickname"),
+                    "roles": .array([]),
+                ]),
+                "mentions": .array([
+                    user(id: "2", username: "cached", globalName: "Cached User")
+                ]),
+                "content": .string("learn after Ready"),
+                "timestamp": .string("2026-08-10T08:01:00.000Z"),
+                "attachments": .array([]),
+                "reactions": .array([]),
+            ])
+        )
+        await provider.receiveGatewayDispatchForTesting(
+            name: "MESSAGE_CREATE",
+            data: .object([
+                "id": .string("1002"),
+                "channel_id": .string("43"),
+                "guild_id": .string("6"),
+                "author": user(id: "2", username: "cached", globalName: "Cached User"),
+                "member": .object([
+                    "nick": .string("Later guild nickname"),
+                    "roles": .array([]),
+                ]),
+                "content": .string("learn a later guild alias"),
+                "timestamp": .string("2026-08-10T08:02:00.000Z"),
+                "attachments": .array([]),
+                "reactions": .array([]),
+            ])
+        )
+    }
+
     private func privateChannel(
         id: String,
         lastMessageID: String?,
@@ -521,13 +1029,16 @@ struct DirectMessageProviderContractTests {
         ])
     }
 
-    private func makeProvider() -> DiscordRESTProvider {
+    private func makeProvider(
+        usesForwardSearchPeopleDiskCache: Bool? = nil
+    ) -> DiscordRESTProvider {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [DirectMessageURLProtocol.self]
         return DiscordRESTProvider(
             credentials: DirectMessageCredentialStore(),
             handle: CredentialHandle(accountID: "dm-contract"),
-            session: URLSession(configuration: configuration)
+            session: URLSession(configuration: configuration),
+            usesForwardSearchPeopleDiskCache: usesForwardSearchPeopleDiskCache
         )
     }
 }
@@ -697,7 +1208,15 @@ private final class DirectMessageURLProtocol:
         let body: String
         switch request.url?.path {
         case "/api/v9/channels/41/messages":
-            body = "[]"
+            body = #"""
+            [{
+              "id":"800","channel_id":"41",
+              "author":{"id":"77","username":"history-author","global_name":"History Author"},
+              "content":"history","timestamp":"2026-07-29T08:00:00.000Z",
+              "mentions":[{"id":"78","username":"history-mention","global_name":"History Mention"}],
+              "attachments":[],"reactions":[]
+            }]
+            """#
         case "/api/v9/users/2/profile":
             body = Self.profileHasEffect
                 ? #"""

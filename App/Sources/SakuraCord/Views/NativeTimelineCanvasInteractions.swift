@@ -873,7 +873,7 @@ extension NativeTimelineCanvasView {
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
-        guard !mediaViewerBlocksInteractions else { return nil }
+        guard !overlayBlocksInteractions else { return nil }
         let point = convert(event.locationInWindow, from: nil)
         guard let index = rowIndex(at: point.y),
               layouts.indices.contains(index),
@@ -927,7 +927,8 @@ extension NativeTimelineCanvasView {
         for entry in NativeTimelineMessageMenuPolicy.entries(
             canEdit: canEdit,
             canRetry: row.message.outboxState == .failed,
-            canReply: actions.reply != nil
+            canReply: actions.reply != nil,
+            canForward: actions.forward != nil && model?.canForward(row.message) == true
         ) {
             guard case let .action(
                 action,
@@ -939,47 +940,12 @@ extension NativeTimelineCanvasView {
                 menu.addItem(.separator())
                 continue
             }
-            let handler: () -> Void
-            switch action {
-            case .retrySending:
-                handler = {
-                    actions.retry(row.message)
-                }
-            case .addReaction:
-                handler = {
-                    actions.react("👍", row.message)
-                }
-            case .reply:
-                handler = {
-                    guard let reply = actions.reply else { return }
-                    reply(row.message)
-                }
-            case .markUnread:
-                handler = {
-                    actions.markUnread(row.message)
-                }
-            case .editMessage:
-                handler = { [weak self] in
-                    self?.beginEditing(row: row, at: index)
-                }
-            case .copyText:
-                handler = {
-                    Self.copyText(row.message.content)
-                }
-            case .copyLink:
-                handler = { [weak self] in
-                    guard let self else { return }
-                    Self.copyText(self.messageLink(for: row.message))
-                }
-            case .copyMessageID:
-                handler = {
-                    Self.copyText(row.message.id.description)
-                }
-            case .deleteMessage:
-                handler = { [weak self] in
-                    self?.confirmDelete(row.message)
-                }
-            }
+            let handler = messageMenuHandler(
+                action: action,
+                row: row,
+                index: index,
+                actions: actions
+            )
             menu.addItem(
                 actionItem(
                     title,
@@ -990,6 +956,45 @@ extension NativeTimelineCanvasView {
             )
         }
         return menu
+    }
+
+    func messageMenuHandler(
+        action: NativeTimelineMessageMenuAction,
+        row: MessageRowPresentation,
+        index: Int,
+        actions: NativeTimelineRowActions
+    ) -> () -> Void {
+        switch action {
+        case .retrySending:
+            { actions.retry(row.message) }
+        case .addReaction:
+            { actions.react("👍", row.message) }
+        case .reply:
+            {
+                guard let reply = actions.reply else { return }
+                reply(row.message)
+            }
+        case .forward:
+            {
+                guard let forward = actions.forward else { return }
+                forward(row.message)
+            }
+        case .markUnread:
+            { actions.markUnread(row.message) }
+        case .editMessage:
+            { [weak self] in self?.beginEditing(row: row, at: index) }
+        case .copyText:
+            { Self.copyText(row.message.content) }
+        case .copyLink:
+            { [weak self] in
+                guard let self else { return }
+                Self.copyText(self.messageLink(for: row.message))
+            }
+        case .copyMessageID:
+            { Self.copyText(row.message.id.description) }
+        case .deleteMessage:
+            { [weak self] in self?.confirmDelete(row.message) }
+        }
     }
 
     func imageContextMenuActions(

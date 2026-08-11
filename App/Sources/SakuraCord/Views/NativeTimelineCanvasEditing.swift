@@ -96,6 +96,18 @@ extension NativeTimelineCanvasView {
         }
     }
 
+    func setHoveredForwardedSourceMessageID(_ value: MessageID?) {
+        guard hoveredForwardedSourceMessageID != value else { return }
+        let old = hoveredForwardedSourceMessageID
+        hoveredForwardedSourceMessageID = value
+        for messageID in [old, value].compactMap({ $0 }) {
+            guard let index = items.firstIndex(where: {
+                $0.messageID == messageID
+            }) else { continue }
+            setNeedsDisplay(rowFrame(at: index))
+        }
+    }
+
     func animateComponentButtonPress(
         _ target: NativeTimelineComponentButtonTarget,
         to destination: CGFloat
@@ -230,6 +242,9 @@ extension NativeTimelineCanvasView {
             reply: actions.reply.map { reply in
                 { reply(row.message) }
             },
+            forward: model.canForward(row.message) ? actions.forward.map { forward in
+                { forward(row.message) }
+            } : nil,
             react: { emoji in actions.react(emoji, row.message) },
             copy: { Self.copyText(row.message.content) },
             copyLink: { [weak self] in

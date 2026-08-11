@@ -1,5 +1,4 @@
 import Foundation
-import Synchronization
 
 public struct Nameplate: Codable, Hashable, Sendable {
     public var staticURL: URL?
@@ -44,6 +43,7 @@ public struct DisplayNameStyle: Codable, Hashable, Sendable {
 public struct User: Identifiable, Codable, Hashable, Sendable {
     public let id: UserID
     public var username: String
+    public var discriminator: String
     public var displayName: String
     public var avatarURL: URL?
     public var isBot: Bool
@@ -58,6 +58,7 @@ public struct User: Identifiable, Codable, Hashable, Sendable {
     public init(
         id: UserID,
         username: String,
+        discriminator: String = "0",
         displayName: String,
         avatarURL: URL? = nil,
         isBot: Bool = false,
@@ -71,6 +72,7 @@ public struct User: Identifiable, Codable, Hashable, Sendable {
     ) {
         self.id = id
         self.username = username
+        self.discriminator = discriminator
         self.displayName = displayName
         self.avatarURL = avatarURL
         self.isBot = isBot
@@ -84,7 +86,7 @@ public struct User: Identifiable, Codable, Hashable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, username, displayName, avatarURL, isBot, isSystem, avatarDecorationURL, nameplate
+        case id, username, discriminator, displayName, avatarURL, isBot, isSystem, avatarDecorationURL, nameplate
         case primaryGuild, displayNameStyle, publicFlags, premiumType
     }
 
@@ -92,6 +94,7 @@ public struct User: Identifiable, Codable, Hashable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UserID.self, forKey: .id)
         username = try container.decodeIfPresent(String.self, forKey: .username) ?? id.description
+        discriminator = try container.decodeIfPresent(String.self, forKey: .discriminator) ?? "0"
         displayName = try container.decodeIfPresent(String.self, forKey: .displayName) ?? username
         avatarURL = try container.decodeIfPresent(URL.self, forKey: .avatarURL)
         isBot = try container.decodeIfPresent(Bool.self, forKey: .isBot) ?? false
@@ -106,6 +109,10 @@ public struct User: Identifiable, Codable, Hashable, Sendable {
         publicFlags = try container.decodeIfPresent(UInt64.self, forKey: .publicFlags) ?? 0
         premiumType = try container.decodeIfPresent(Int.self, forKey: .premiumType) ?? 0
     }
+
+    public var tag: String {
+        discriminator == "0" ? username : "\(username)#\(discriminator)"
+    }
 }
 
 public struct Guild: Identifiable, Codable, Hashable, Sendable {
@@ -118,6 +125,7 @@ public struct Guild: Identifiable, Codable, Hashable, Sendable {
     public var isOwnedByCurrentUser: Bool?
     public var currentUserPermissions: UInt64?
     public var rulesChannelID: ChannelID?
+    public var features: Set<String>
     public var defaultMessageNotifications: MessageNotificationLevel
     public var isUnavailable: Bool
 
@@ -125,6 +133,7 @@ public struct Guild: Identifiable, Codable, Hashable, Sendable {
         id: GuildID, name: String, iconURL: URL? = nil, accentHex: UInt32 = 0x5865F2,
         unreadCount: Int = 0, mentionCount: Int = 0, isOwnedByCurrentUser: Bool? = nil,
         currentUserPermissions: UInt64? = nil, rulesChannelID: ChannelID? = nil,
+        features: Set<String> = [],
         defaultMessageNotifications: MessageNotificationLevel = .onlyMentions,
         isUnavailable: Bool = false
     ) {
@@ -137,13 +146,15 @@ public struct Guild: Identifiable, Codable, Hashable, Sendable {
         self.isOwnedByCurrentUser = isOwnedByCurrentUser
         self.currentUserPermissions = currentUserPermissions
         self.rulesChannelID = rulesChannelID
+        self.features = features
         self.defaultMessageNotifications = defaultMessageNotifications
         self.isUnavailable = isUnavailable
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, name, iconURL, accentHex, unreadCount, mentionCount, isOwnedByCurrentUser
-        case currentUserPermissions, rulesChannelID, defaultMessageNotifications, isUnavailable
+        case currentUserPermissions, rulesChannelID, features, defaultMessageNotifications
+        case isUnavailable
     }
 
     public init(from decoder: any Decoder) throws {
@@ -157,6 +168,7 @@ public struct Guild: Identifiable, Codable, Hashable, Sendable {
         isOwnedByCurrentUser = try values.decodeIfPresent(Bool.self, forKey: .isOwnedByCurrentUser)
         currentUserPermissions = try values.decodeIfPresent(UInt64.self, forKey: .currentUserPermissions)
         rulesChannelID = try values.decodeIfPresent(ChannelID.self, forKey: .rulesChannelID)
+        features = try values.decodeIfPresent(Set<String>.self, forKey: .features) ?? []
         defaultMessageNotifications =
             try values.decodeIfPresent(MessageNotificationLevel.self, forKey: .defaultMessageNotifications)
                 ?? .onlyMentions
@@ -377,17 +389,33 @@ public struct EmojiUserSettings: Equatable, Sendable {
     public var frequentlyUsedKeys: [String]
     public var usageScores: [String: Int]
     public var guildAndChannelUsageScores: [String: Int]
+    public var guildAndChannelUsage: [String: DiscordFrecencyUsage]
+    public var guildAndChannelUsageOrder: [String]
 
     public init(
         favoriteKeys: [String] = [],
         frequentlyUsedKeys: [String] = [],
         usageScores: [String: Int] = [:],
-        guildAndChannelUsageScores: [String: Int] = [:]
+        guildAndChannelUsageScores: [String: Int] = [:],
+        guildAndChannelUsage: [String: DiscordFrecencyUsage] = [:],
+        guildAndChannelUsageOrder: [String] = []
     ) {
         self.favoriteKeys = favoriteKeys
         self.frequentlyUsedKeys = frequentlyUsedKeys
         self.usageScores = usageScores
         self.guildAndChannelUsageScores = guildAndChannelUsageScores
+        self.guildAndChannelUsage = guildAndChannelUsage
+        self.guildAndChannelUsageOrder = guildAndChannelUsageOrder
+    }
+}
+
+public struct DiscordFrecencyUsage: Codable, Equatable, Sendable {
+    public var totalUses: Int
+    public var recentUses: [UInt64]
+
+    public init(totalUses: Int, recentUses: [UInt64]) {
+        self.totalUses = totalUses
+        self.recentUses = recentUses
     }
 }
 
@@ -461,6 +489,7 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
     public let id: ChannelID
     public var guildID: GuildID?
     public var name: String
+    public var hasExplicitName: Bool
     public var iconURL: URL?
     public var ownerID: UserID?
     public var topic: String?
@@ -493,6 +522,7 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         id: ChannelID,
         guildID: GuildID?,
         name: String,
+        hasExplicitName: Bool = true,
         iconURL: URL? = nil,
         ownerID: UserID? = nil,
         topic: String? = nil,
@@ -524,6 +554,7 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         self.id = id
         self.guildID = guildID
         self.name = name
+        self.hasExplicitName = hasExplicitName
         self.iconURL = iconURL
         self.ownerID = ownerID
         self.topic = topic
@@ -562,7 +593,7 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, guildID, name, iconURL, ownerID, topic, kind, category, categoryID, position, categoryPosition
+        case id, guildID, name, hasExplicitName, iconURL, ownerID, topic, kind, category, categoryID, position, categoryPosition
         case unreadCount, mentionCount, isMuted, recipients, permissionOverwrites, memberListID, lastMessageID, lastPinTimestamp
         case flags, availableTags, defaultReaction, defaultSortOrder, defaultForumLayout
         case defaultTagMatch, defaultAutoArchiveDuration, defaultThreadRateLimitPerUser
@@ -575,6 +606,7 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         id = try values.decode(ChannelID.self, forKey: .id)
         guildID = try values.decodeIfPresent(GuildID.self, forKey: .guildID)
         name = try values.decode(String.self, forKey: .name)
+        hasExplicitName = try values.decodeIfPresent(Bool.self, forKey: .hasExplicitName) ?? true
         iconURL = try values.decodeIfPresent(URL.self, forKey: .iconURL)
         ownerID = try values.decodeIfPresent(UserID.self, forKey: .ownerID)
         topic = try values.decodeIfPresent(String.self, forKey: .topic)
@@ -1178,6 +1210,12 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
     public var mentionedRoleIDs: [RoleID]
     public var mentionsEveryone: Bool
     public var call: MessageCall?
+    public var hasPoll: Bool
+    public var hasActivity: Bool
+    public var hasSharedClientTheme: Bool
+    public var hasActivityInstance: Bool
+    public var messageReference: DiscordMessageReference?
+    public var forwardedSnapshot: ForwardedMessageSnapshot?
 
     public init(
         id: MessageID,
@@ -1206,7 +1244,13 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
         mentionedUsers: [User] = [],
         mentionedRoleIDs: [RoleID] = [],
         mentionsEveryone: Bool = false,
-        call: MessageCall? = nil
+        call: MessageCall? = nil,
+        hasPoll: Bool = false,
+        hasActivity: Bool = false,
+        hasSharedClientTheme: Bool = false,
+        hasActivityInstance: Bool = false,
+        messageReference: DiscordMessageReference? = nil,
+        forwardedSnapshot: ForwardedMessageSnapshot? = nil
     ) {
         self.id = id
         self.channelID = channelID
@@ -1235,6 +1279,12 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
         self.mentionedRoleIDs = mentionedRoleIDs
         self.mentionsEveryone = mentionsEveryone
         self.call = call
+        self.hasPoll = hasPoll
+        self.hasActivity = hasActivity
+        self.hasSharedClientTheme = hasSharedClientTheme
+        self.hasActivityInstance = hasActivityInstance
+        self.messageReference = messageReference
+        self.forwardedSnapshot = forwardedSnapshot
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -1243,7 +1293,8 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
         case attachments, reactions, nonce, outboxState, type, flags, applicationID, application
         case interactionMetadata, guildID
         case embeds, components, stickers, thread, mentionedUsers, mentionedRoleIDs, mentionsEveryone
-        case call
+        case call, hasPoll, hasActivity, hasSharedClientTheme, hasActivityInstance
+        case messageReference, forwardedSnapshot
     }
 
     public init(from decoder: Decoder) throws {
@@ -1280,6 +1331,31 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
         mentionedRoleIDs = try values.decodeIfPresent([RoleID].self, forKey: .mentionedRoleIDs) ?? []
         mentionsEveryone = try values.decodeIfPresent(Bool.self, forKey: .mentionsEveryone) ?? false
         call = try values.decodeIfPresent(MessageCall.self, forKey: .call)
+        hasPoll = try values.decodeIfPresent(Bool.self, forKey: .hasPoll) ?? false
+        hasActivity = try values.decodeIfPresent(Bool.self, forKey: .hasActivity) ?? false
+        hasSharedClientTheme =
+            try values.decodeIfPresent(Bool.self, forKey: .hasSharedClientTheme) ?? false
+        hasActivityInstance =
+            try values.decodeIfPresent(Bool.self, forKey: .hasActivityInstance) ?? false
+        messageReference = try values.decodeIfPresent(
+            DiscordMessageReference.self, forKey: .messageReference
+        )
+        forwardedSnapshot = try values.decodeIfPresent(
+            ForwardedMessageSnapshot.self, forKey: .forwardedSnapshot
+        )
+    }
+
+    /// Message-local portion of Discord desktop's current forwarding guard.
+    /// Source-channel permission and guild gating are evaluated by `AppModel`.
+    public var isForwardable: Bool {
+        outboxState == .confirmed
+            && type.isForwardable
+            && !hasPoll
+            && !hasActivity
+            && !hasSharedClientTheme
+            && call == nil
+            && !hasActivityInstance
+            && flags.subtracting(.forwardingAllowed).isEmpty
     }
 }
 
@@ -1643,10 +1719,16 @@ public enum GuildRailItem: Codable, Equatable, Hashable, Sendable, Identifiable 
 
 public struct BootstrapSnapshot: Codable, Equatable, Sendable {
     public var currentUser: User
+    public var knownUsers: [User]
+    public var friendUserIDs: Set<UserID>
+    public var relationshipNicknamesByUserID: [UserID: String]
+    public var userSearchAliasesByUserID: [UserID: [String]]
     public var guilds: [Guild]
     public var guildRailItems: [GuildRailItem]
     public var channels: [Channel]
+    public var forwardChannelStoreOrder: [ChannelID]
     public var threads: [MessageThreadSummary]
+    public var activeJoinedThreads: [MessageThreadSummary]
     public var members: [Member]
     public var readStates: [ChannelReadState]
     public var notificationSettings: [GuildNotificationSettings]
@@ -1654,20 +1736,32 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
 
     public init(
         currentUser: User,
+        knownUsers: [User] = [],
+        friendUserIDs: Set<UserID> = [],
+        relationshipNicknamesByUserID: [UserID: String] = [:],
+        userSearchAliasesByUserID: [UserID: [String]] = [:],
         guilds: [Guild],
         guildRailItems: [GuildRailItem]? = nil,
         channels: [Channel],
+        forwardChannelStoreOrder: [ChannelID]? = nil,
         threads: [MessageThreadSummary] = [],
+        activeJoinedThreads: [MessageThreadSummary] = [],
         members: [Member],
         readStates: [ChannelReadState] = [],
         notificationSettings: [GuildNotificationSettings] = [],
         usesNewNotifications: Bool = true
     ) {
         self.currentUser = currentUser
+        self.knownUsers = knownUsers
+        self.friendUserIDs = friendUserIDs
+        self.relationshipNicknamesByUserID = relationshipNicknamesByUserID
+        self.userSearchAliasesByUserID = userSearchAliasesByUserID
         self.guilds = guilds
         self.guildRailItems = guildRailItems ?? guilds.map { .guild($0.id) }
         self.channels = channels
+        self.forwardChannelStoreOrder = forwardChannelStoreOrder ?? channels.map(\.id)
         self.threads = threads
+        self.activeJoinedThreads = activeJoinedThreads
         self.members = members
         self.readStates = readStates
         self.notificationSettings = notificationSettings
@@ -1675,20 +1769,42 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case currentUser, guilds, guildRailItems, channels, threads, members, readStates
+        case currentUser, knownUsers, friendUserIDs, relationshipNicknamesByUserID
+        case userSearchAliasesByUserID
+        case guilds, guildRailItems, channels, forwardChannelStoreOrder
+        case threads, activeJoinedThreads
+        case members, readStates
         case notificationSettings, usesNewNotifications
     }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         currentUser = try container.decode(User.self, forKey: .currentUser)
+        knownUsers = try container.decodeIfPresent([User].self, forKey: .knownUsers) ?? []
+        friendUserIDs = try container.decodeIfPresent(Set<UserID>.self, forKey: .friendUserIDs) ?? []
+        relationshipNicknamesByUserID =
+            try container.decodeIfPresent(
+                [UserID: String].self, forKey: .relationshipNicknamesByUserID
+            ) ?? [:]
+        userSearchAliasesByUserID =
+            try container.decodeIfPresent(
+                [UserID: [String]].self, forKey: .userSearchAliasesByUserID
+            ) ?? [:]
         guilds = try container.decode([Guild].self, forKey: .guilds)
         guildRailItems =
             try container.decodeIfPresent([GuildRailItem].self, forKey: .guildRailItems)
                 ?? guilds.map { .guild($0.id) }
         channels = try container.decode([Channel].self, forKey: .channels)
+        forwardChannelStoreOrder =
+            try container.decodeIfPresent(
+                [ChannelID].self, forKey: .forwardChannelStoreOrder
+            ) ?? channels.map(\.id)
         threads =
             try container.decodeIfPresent([MessageThreadSummary].self, forKey: .threads) ?? []
+        activeJoinedThreads =
+            try container.decodeIfPresent(
+                [MessageThreadSummary].self, forKey: .activeJoinedThreads
+            ) ?? []
         members = try container.decode([Member].self, forKey: .members)
         readStates = try container.decodeIfPresent([ChannelReadState].self, forKey: .readStates) ?? []
         notificationSettings =
@@ -1701,10 +1817,18 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(currentUser, forKey: .currentUser)
+        try container.encode(knownUsers, forKey: .knownUsers)
+        try container.encode(friendUserIDs, forKey: .friendUserIDs)
+        try container.encode(
+            relationshipNicknamesByUserID, forKey: .relationshipNicknamesByUserID
+        )
+        try container.encode(userSearchAliasesByUserID, forKey: .userSearchAliasesByUserID)
         try container.encode(guilds, forKey: .guilds)
         try container.encode(guildRailItems, forKey: .guildRailItems)
         try container.encode(channels, forKey: .channels)
+        try container.encode(forwardChannelStoreOrder, forKey: .forwardChannelStoreOrder)
         try container.encode(threads, forKey: .threads)
+        try container.encode(activeJoinedThreads, forKey: .activeJoinedThreads)
         try container.encode(members, forKey: .members)
         try container.encode(readStates, forKey: .readStates)
         try container.encode(notificationSettings, forKey: .notificationSettings)
@@ -1862,77 +1986,4 @@ public struct PrivateCall: Equatable, Sendable {
     public func isRinging(_ userID: UserID) -> Bool {
         ongoingRings.contains { $0.recipientID == userID }
     }
-}
-
-public enum ClientNonce {
-    /// Discord message nonces use the same timestamp layout as snowflakes.
-    /// The upper 42 bits are milliseconds since Discord's 2015 epoch, not Unix
-    /// milliseconds. A local 12-bit sequence keeps multiple messages created in
-    /// the same millisecond distinct without fabricating worker or process IDs.
-    public static let discordEpochMilliseconds: UInt64 = 1_420_070_400_000
-    private static let sequenceState = Mutex((millisecond: UInt64(0), sequence: UInt16(0)))
-
-    public static func make(now: Date = .now) -> String {
-        let milliseconds = UInt64(max(0, now.timeIntervalSince1970 * 1000))
-        guard milliseconds >= discordEpochMilliseconds else { return "0" }
-        let sequence = sequenceState.withLock { state -> UInt16 in
-            if state.millisecond == milliseconds {
-                state.sequence = (state.sequence + 1) & 0x0FFF
-            } else {
-                state.millisecond = milliseconds
-                state.sequence = 0
-            }
-            return state.sequence
-        }
-        return String(((milliseconds - discordEpochMilliseconds) << 22) | UInt64(sequence))
-    }
-}
-
-public enum ConnectionState: String, Codable, Equatable, Sendable {
-    case disconnected, connecting, ready, resuming, backingOff, authenticationFailed
-}
-
-public enum ClientEvent: Equatable, Sendable {
-    case connectionChanged(ConnectionState)
-    case messageCreated(Message)
-    case messageUpdated(Message)
-    case messageReactionUpdated(MessageReactionUpdate)
-    case messageDeleted(channelID: ChannelID, messageID: MessageID)
-    case readStateSnapshot([ChannelReadState], version: Int? = nil)
-    case readStateChanged(ChannelReadState)
-    case notificationModeChanged(usesNewNotifications: Bool)
-    case notificationSettingsChanged(GuildNotificationSettings)
-    case typing(channelID: ChannelID, user: User)
-    case channelsChanged(guildID: GuildID?, channels: [Channel])
-    case forumPostsChanged(channelID: ChannelID, posts: [ForumPost])
-    case forumPostPreviewsChanged(channelID: ChannelID, posts: [ForumPost])
-    case forumPageLoaded(channelID: ChannelID, query: ForumPostQuery, page: ForumPostPage)
-    case membersChanged(
-        guildID: GuildID,
-        members: [Member],
-        groups: [GuildMemberListGroup]
-    )
-    case privateMembersChanged([Member])
-    case currentUserRolesChanged(guildID: GuildID, roleIDs: [RoleID])
-    case currentUserRolesSnapshot([GuildID: [RoleID]])
-    case emojisChanged(guildID: GuildID, emojis: [DiscordEmoji])
-    case emojisUpdated(
-        guildID: GuildID,
-        upserted: [DiscordEmoji],
-        deletedIDs: [String]
-    )
-    case voiceStateChanged(VoiceParticipantState)
-    case privateCallChanged(PrivateCall)
-    case privateCallDeleted(channelID: ChannelID, unavailable: Bool)
-    /// A nil value means Discord deallocated the current voice server and the
-    /// client must wait for a replacement allocation before reconnecting.
-    case voiceServerChanged(VoiceConnectionInfo?)
-    case snapshotChanged(BootstrapSnapshot)
-    case guildChanged(Guild)
-    case guildLayoutChanged(guilds: [Guild], railItems: [GuildRailItem])
-    case guildRolesChanged(guildID: GuildID, roles: [GuildRole])
-    case currentUserChanged(User)
-    case applicationCommandIndexInvalidated(ApplicationCommandIndexTarget)
-    case applicationCommandAutocomplete(ApplicationCommandAutocompleteResult)
-    case interaction(InteractionEvent)
 }

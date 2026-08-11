@@ -1392,6 +1392,7 @@ struct NativeTimelineActionCapsuleOverlay: View {
     let retry: (() -> Void)?
     let edit: () -> Void
     let reply: (() -> Void)?
+    let forward: (() -> Void)?
     let react: (String) -> Void
     let copy: () -> Void
     let copyLink: () -> Void
@@ -1409,6 +1410,7 @@ struct NativeTimelineActionCapsuleOverlay: View {
             retry: retry,
             edit: edit,
             reply: reply,
+            forward: forward,
             react: react,
             copy: copy,
             copyLink: copyLink,

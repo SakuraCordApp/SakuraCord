@@ -108,6 +108,138 @@ lookups best-effort and proceeds without the optional field when both omit it;
 it retains a returned installation when present and never replays authentication.
 No credential, challenge solution, or personal response value was retained.
 
+Message forwarding and its destination picker were re-audited on 9 August
+2026 against clean, renamed Discord desktop `0.0.406` (Electron `42.7.1`,
+Chromium `148`) and production asset `web.6d63a33a2f3badf3.js` (SHA-256
+`da550764957c0a3974bf3ac5fd72816075aa13c67b9443f784471bd6158ce6b9`). The
+first-party action sends one ordinary message mutation per selected destination
+with empty wrapper content, a nonce but no `enforce_nonce`, `tts:false`,
+`flags:0`, `message_reference.type = 1`, source message/channel/guild IDs, and
+`X-Context-Properties` location `forwarding`. Multiple destination mutations
+start together and are settled independently. If the user also enters context,
+the client sends it as one subsequent ordinary message per destination only
+after that destination's forward succeeds; it omits the context send when
+slowmode applies and the user lacks the bypass permission. A missing direct
+message is resolved first with one coalesced `POST /users/@me/channels` carrying
+the single recipient. The picker caps explicit selection at five.
+
+The source eligibility guard accepts only message types `0`, `19`, `20`, `23`,
+and `35`. It rejects failed local sends, polls, shared client themes, activities,
+calls, activity instances, forwarding-disabled sources, gated channels or
+threads, sources without read-message-history permission, and any flag outside
+the first-party allowlist (`1`, `2`, `4`, `16`, `32`, `256`, `512`, `1024`,
+`4096`, `8192`, `16384`, `32768`, and `524288`). Destination validation also
+checks send permission plus attachment, embed-link, external-sticker, and voice-
+message permissions required by the immutable snapshot.
+
+Sanitized CDP captures showed that opening, scrolling, and typing in the picker
+perform no destination REST request or Gateway search; search is local over the
+account-wide channel store, active joined threads, known users, and direct
+messages. `READY_SUPPLEMENTAL.users` extends that known-user set without a REST
+lookup, and relationship nicknames plus legacy discriminators remain available
+to the user-search worker. Discord's joined-thread store is distinct from its
+forum catalogue: `CONNECTION_OPEN` admits active thread records only when their
+embedded `member` is present, while thread-list and member events update or
+remove that membership without a forum-page replacement erasing it. Blank
+results concatenate picker-local destinations
+selected from a typed search, the remove-and-unshift channel history capped at
+eight and persisted by the client-local `QuickSwitcherStore`, and computed
+frequent destinations. A client relaunch therefore preserves this history;
+each `CHANNEL_SELECT` removes the selected channel if already present, prepends
+it, and truncates the stored list to eight. The three sources then
+deduplicate, omit the source
+unless search-selected, and cap the final list at 15. Selecting a destination
+already visible in the blank list does not move it or create a picker-local
+pin. Selecting a typed-search result clears the query and prepends that result,
+followed by the picker's other currently selected destinations in their
+existing selection order, for the lifetime of the open picker; the searched
+result remains pinned even if it is later deselected.
+
+Typed search separately caps raw user, group-DM, text/thread, and voice
+categories at 20 before the Forward-specific destination filter runs and then
+combines the survivors by the first-party match and frecency score. A sanitized
+10 August follow-up inspected the live query helpers and confirmed that denied
+voice rows can consume raw category slots without lower eligible matches being
+backfilled; forum and media rows behave equivalently in the raw text category.
+The account-wide user index is updated from Ready, Ready Supplemental,
+`GUILD_CREATE`, batched member chunks, individual member changes, relationship
+and private-channel changes, forum/thread loads, and authors and mentions in
+successful message-history or live-message events; these are cache updates and
+add no picker request. The manager does not subscribe to
+`GUILD_MEMBER_LIST_UPDATE`, so ordinary virtualized member-list range updates
+must not add Forward user candidates. The
+10 August follow-up also inspected production asset
+`web.2548ec5eac0614b5.js` (SHA-256
+`514e91b189b59604adb5d008008b20f9c0f72aec9deb7915989c5f6da5506216`)
+and its user-search worker `16844172e1c61d95.js` (SHA-256
+`42090c7222926792067af81023aefe1ec5fd1e26c1a2b2276f34513e4bc59fcd`).
+Its user and guild-member stores process `LOCAL_MESSAGES_LOADED` before
+`CONNECTION_OPEN`, so identities and guild nicknames recovered from local
+message pages seed insertion order before Ready users and members; subsequent
+history and live-message discoveries append without moving existing entries.
+SakuraCord mirrors that state source with an account-scoped cache containing
+only message-observed user identity records and nonempty guild nicknames from
+the current resolved member store. Ephemeral guild, member-chunk, relationship,
+and private-channel updates feed the live index without being written into the
+message-derived cache. Like Discord's GuildMemberStore, it does not
+index the historical `message.member` nickname embedded in a message. It
+does not retain message bodies for Forward search, and loading or updating this
+cache performs no Discord request. The
+global channel query requires each vocal destination's full first-party
+`accessPermissions`, including `VIEW_CHANNEL` and `CONNECT`; non-vocal guild
+destinations require `VIEW_CHANNEL` at this raw-search stage. The later Forward
+filter rejects forum/media destinations and requires `VIEW_CHANNEL` plus
+`SEND_MESSAGES` for guild text, thread, and voice survivors. The
+matcher assigns exact, prefix, containment, all-term, then ordered-subsequence
+scores for channel and Group-DM records. User results come from Discord's
+account-wide user-search worker. Its identity order is username, relationship
+nickname, global name, then guild nicknames in store order; prefix, containment,
+and ordered-subsequence matches score `10`, `5`, and `1`. The subsequence check
+runs over both accent-folded text and the worker's Unicode-confusable skeleton.
+The current skeleton uses compatibility-equivalent styled letters and includes
+the ASCII transformations `0 → o`, `1/I → l`, and `m → rn`. The first identity
+with the highest score becomes the comparator. The picker uses the first-party
+unified comparator: it sorts by score, then sorts equal-score user rows by that
+lowercased comparator using JavaScript UTF-16 code-unit order. Channel and
+Group-DM results provide `sortable`; the current first-party comparator reads
+the left result's `sortable` for both operands, so those equal-score rows
+preserve the candidate store's order. The global channel candidate order is
+the `ChannelStore` insertion sequence: `CONNECTION_OPEN` visits guild records
+in their Gateway order and inserts each full-sync channel item in payload
+order; `loadAllGuildAndPrivateChannelsFromDisk()` then exposes guild channels
+in that raw order before private channels. This is intentionally independent
+of the category/position ordering used by the channel sidebar. SakuraCord
+therefore retains a separate raw channel-ID sequence for Forward search rather
+than reusing its presentation-sorted channel array. The
+separate category/channel-position comparator in the same bundle belongs to
+application-command channel arguments and is not used by the Forward picker.
+The final merge preserves category concatenation order when scores tie. Named Group DMs show recipient display
+names as detail, while an unnamed Group DM with an empty raw name has no detail.
+The guild/channel frecency store retains at most ten samples, overrides the
+generic engine's weight function with `0/1/2–3/4–6/>=7` day weights of
+`100/70/50/30/10`, and computes
+`ceil(totalUses * recencyWeight / samples)`;
+persisted computed score fields are discarded and entries without a retained
+sample are omitted. The channel matcher adds up to three points before its
+match-class cap using the live Forward path's `100`-point bonus scale; the category
+booster separately multiplies by `1 + score / maximumResolvedScore`. Like the
+first-party persisted store, locally pending channel and guild selections
+survive a relaunch; SakuraCord stores an account-scoped aggregate containing
+the pending total-use delta and newest ten timestamps, then replays it over the
+fresh settings snapshot without an extra request. Controlled
+fresh-launch comparisons reproduced the same
+navigation sequence before comparing blank search, multiple queries, and deep
+scroll results. Live forwarding used a controlled test message; only sanitized
+request shape and counts were retained, never credentials, authorization
+metadata, message content, or personal identifiers.
+
+Pinned Paicord has snapshot decoding/rendering and a placeholder Forward action,
+but no forwarding request or destination-picker implementation. Pinned
+Swiftcord v1 has neither forwarding nor snapshot support. DiscordKit at the
+repository pin has no forwarding implementation; its later `73c0996` DTO-only
+addition remains a decoding cross-check rather than picker, request, or ordering
+evidence.
+
 The clean desktop observation covered sign-in restoration, Gateway startup,
 opening a public guild and its default channel, history loading, and a renderer
 reload. Selecting the guild caused one newest-history GET and no read
@@ -155,6 +287,7 @@ request-contract and request-budget tests.
 | Message components and returned modals | Disabled | Enabled with fixtures |
 | Remote component choices | Disabled | Enabled with local fixtures |
 | GIF picker, search, favourites, and sending | Enabled | Enabled with fixtures |
+| Message forwarding and forwarded snapshot rendering | Enabled | Enabled with fixtures |
 | Guild sticker catalog and sticker sending | Disabled | Enabled with fixtures |
 
 Rendering decoded embeds, Components V2, stickers, attachments, and interaction
@@ -234,7 +367,7 @@ and retained as evidence.
 | `GET /gifs/trending?locale={locale}&media_format=webm` | Opening the GIF picker; one cacheable landing read returning the current base categories in server order and their preview media. | Current first-party route and clean-client request; P−, S−. |
 | `GET /gifs/trending-gifs?media_format=webm&locale={locale}` | Explicit Trending GIFs selection; no body. The returned order is preserved. | Current first-party route and clean-client request; P−, S−. |
 | `GET /gifs/search?q={query}&media_format=webm&locale={locale}` | Nonempty picker search after the current 250 ms debounce; no speculative or paginated follow-up. The live default response is 50 results and its order is preserved. | Current first-party route/action and clean-client `hello` request; P−, S−. |
-| `GET /channels/{channel}/messages` | Visible history only; guild history requires effective `VIEW_CHANNEL` and `READ_MESSAGE_HISTORY`, and voice-channel history additionally requires `CONNECT`. The current clean client uses `limit=10` for a newly selected uncached channel, which SakuraCord matches once per channel per uninterrupted Gateway connection. Reopening a loaded channel restores its bounded session-memory page and sends no history request. After a Gateway gap, the retained page is presented immediately but its completeness marker is invalidated; returning to Ready refreshes the selected page once and later reopened pages refresh once on selection. Older-page pagination uses ordered `before` then `limit=50`; no body. | Public message semantics, current first-party permission/message paths and stale-connection refresh, and Paicord's permission-checked channel store. Swiftcord v1 checks `VIEW_CHANNEL` before presentation but otherwise supplies only a historical unguarded/refetching history path. Paicord retains a per-channel in-memory store and uses a historical 50-message initial page. The current first-party cache behavior and connection-generation invalidation take precedence. |
+| `GET /channels/{channel}/messages` | Visible history only; guild history requires effective `VIEW_CHANNEL` and `READ_MESSAGE_HISTORY`, and voice-channel history additionally requires `CONNECT`. The current clean client uses `limit=10` for a newly selected uncached channel, which SakuraCord matches once per channel per uninterrupted Gateway connection. A dispatched newest-page read is allowed to finish and populate the session stores after a later selection supersedes its presentation; rapid navigation does not abort those reads. Reopening a loaded channel restores its bounded session-memory page and sends no history request. After a Gateway gap, the retained page is presented immediately but its completeness marker is invalidated; returning to Ready refreshes the selected page once and later reopened pages refresh once on selection. Older-page pagination uses ordered `before` then `limit=50`; no body. | Public message semantics, current first-party permission/message paths and stale-connection refresh, and Paicord's permission-checked channel store. Swiftcord v1 checks `VIEW_CHANNEL` before presentation but otherwise supplies only a historical unguarded/refetching history path. Paicord retains a per-channel in-memory store and uses a historical 50-message initial page. The current first-party cache behavior and connection-generation invalidation take precedence. |
 | `GET /channels/{thread}` | One unknown-thread deep-link resolution; no body. | Public channel semantics and all three references. |
 | `POST /channels/{forum}/threads?use_nested_fields=true` | Explicit forum creation; `name`, `auto_archive_duration`, ordered `applied_tags`, nested `message` with `content`, `sticker_ids:[]`, and attachments only when uploaded. | Current first-party action; Paicord and Swiftcord have only partial/historical thread creation. |
 | `GET /channels/{forum}/threads/search` | Forum catalogue: `archived=true`, `sort_by`, `sort_order=desc`, `limit`, `offset`, and optional `tag`/`tag_setting`; name search adds `name`. | Current first-party route; P−, S−. |
@@ -249,7 +382,7 @@ and retained as evidence.
 | `PATCH /users/@me/guilds/settings` | One explicit server or category notification change; `guilds` contains exactly one partial guild entry. Category changes contain one category-keyed `channel_overrides` entry and only the selected notification, mute, or collapse fields. | Current first-party; P−, S−. |
 | `GET /guilds/{guild}/application-command-index`, `/channels/{channel}/application-command-index`, `/users/@me/application-command-index`, or `/applications/{application}/application-command-index` | Target-specific index; at most three created GETs for the reviewed `202`/`429` readiness flow. | Current first-party route family; P−, S−. |
 | `POST /interactions` | One explicit type-2 execution, type-4 autocomplete, or returned modal submission; nonce-keyed, one attempt. | Current first-party and Paicord command model; Swiftcord has no current index/interaction path. |
-| `POST /channels/{channel}/messages` | One explicit send; `content`, nonce, `tts:false`, `flags:0`, macOS `mobile_network_type:"unknown"`, optional reply/attachments, and `X-Context-Properties` location `chat_input`. SakuraCord deliberately adds `enforce_nonce:true`. | Current first-party build and clean macOS Network Information result; Paicord supplies the nonce-oriented reference; Swiftcord is historical and nonce-less. |
+| `POST /channels/{channel}/messages` | One explicit send; `content`, nonce, `tts:false`, `flags:0`, macOS `mobile_network_type:"unknown"`, optional reply/attachments, and `X-Context-Properties` location `chat_input`. SakuraCord deliberately adds `enforce_nonce:true` to ordinary composer sends. An explicit forward uses the same route once per selected destination (maximum five), empty `content`, nonce without `enforce_nonce`, `message_reference` with `type:1` and source IDs, and context location `forwarding`. Selected forwards start together and settle independently. Optional user-entered context is one later ordinary send per successful destination unless slowmode without bypass forbids it. Picker browsing and typing perform no HTTP or Gateway search. | Current first-party build and clean macOS CDP request/search observation. Pinned Paicord has no forward request/picker, and Swiftcord v1 has no forward path. DiscordKit's later DTO-only snapshot support is decoding evidence, not request or picker evidence. |
 | `POST /channels/{channel}/attachments` | Explicit files only; `files` entries contain string index `id`, `filename`, `file_size`, and `is_clip:false`. | Current first-party upload action and Paicord; Swiftcord has no comparable presigned upload. |
 | `PUT {Discord-issued upload_url}` | One unauthenticated storage PUT per reserved file, `application/octet-stream`, raw bytes, no Discord authorization metadata. | Current first-party and Paicord; S−. |
 | `PATCH` or `DELETE /channels/{channel}/messages/{message}` | Explicit edit with only `content`, or explicit deletion with no body. | Public message semantics and all three references. |
@@ -614,9 +747,12 @@ implementation records.
   initial read only for an uncached selection. Pinned Paicord retains one
   `ChannelStore` per channel and likewise reuses it on selection; pinned
   Swiftcord v1 is the historical outlier that clears and refetches on every
-  channel change. Discord's public message documentation defines the endpoint,
-  permissions, and pagination parameters but does not prescribe client cache
-  lifetime.
+  channel change. A clean-client CDP rapid-navigation trace on 10 August showed
+  three dispatched `limit=10` reads all finishing after their selections were
+  superseded; SakuraCord therefore cancels only stale presentation and lets the
+  bounded transport reads finish into its provider caches. Discord's public
+  message documentation defines the endpoint, permissions, and pagination
+  parameters but does not prescribe client cache or cancellation lifetime.
 - One user send creates one message POST with a Discord-epoch nonce,
   `enforce_nonce: true`, `tts: false`, `flags: 0`, the clean macOS host's
   `mobile_network_type: "unknown"`, attachments only when present, and

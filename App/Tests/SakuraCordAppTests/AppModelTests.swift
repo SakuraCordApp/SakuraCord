@@ -1325,6 +1325,35 @@ import UserNotifications
 }
 
 @MainActor
+@Test func `gateway forum catalogues keep forwarding thread destinations current`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let forum = try #require(model.snapshot?.channels.first(where: { $0.kind == .forum }))
+    let thread = MessageThreadSummary(
+        id: ChannelID(rawValue: 999_002),
+        guildID: forum.guildID,
+        parentID: forum.id,
+        name: "Forward meow thread"
+    )
+
+    await provider.emit(
+        .forumPostsChanged(
+            channelID: forum.id,
+            posts: [ForumPost(thread: thread)]
+        )
+    )
+    #expect(await eventuallyOnMain {
+        model.snapshot?.threads.filter { $0.parentID == forum.id } == [thread]
+    })
+
+    await provider.emit(.forumPostsChanged(channelID: forum.id, posts: []))
+    #expect(await eventuallyOnMain {
+        model.snapshot?.threads.contains { $0.parentID == forum.id } == false
+    })
+}
+
+@MainActor
 @Test func `forum cache events cannot close an ordinary text thread`() async throws {
     let provider = MockChatProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
@@ -3967,6 +3996,8 @@ private func hiddenMockChannel(
     #expect(model.messages.allSatisfy { $0.channelID == firstChannel })
     #expect(await provider.requestCount(for: firstChannel) == 1)
     #expect(await provider.requestCount(for: secondChannel) == 1)
+    try await Task.sleep(for: .milliseconds(120))
+    #expect(await provider.requestWasCancelled(for: secondChannel) == false)
 }
 
 @MainActor
@@ -5046,6 +5077,7 @@ private actor ChannelLoadTestProvider: ChatProvider {
     private var messageRequests: [ChannelID: Int] = [:]
     private var messageRequestParameters:
         [ChannelID: [ChannelLoadMessageRequest]] = [:]
+    private var cancelledMessageRequests: Set<ChannelID> = []
     private var reactorRequests = 0
     private var activeReactorRequests = 0
     private var maximumActiveReactorRequests = 0
@@ -5108,6 +5140,9 @@ private actor ChannelLoadTestProvider: ChatProvider {
         let delay: Duration =
             channelID == testChannels[1].id ? .milliseconds(100) : .milliseconds(20)
         try? await Task.sleep(for: delay)
+        if Task.isCancelled {
+            cancelledMessageRequests.insert(channelID)
+        }
         let message = Message(
             id: MessageID(rawValue: channelID.rawValue),
             channelID: channelID,
@@ -5170,6 +5205,10 @@ private actor ChannelLoadTestProvider: ChatProvider {
 
     func earlierRequestCount() -> Int {
         earlierRequests
+    }
+
+    func requestWasCancelled(for channelID: ChannelID) -> Bool {
+        cancelledMessageRequests.contains(channelID)
     }
 
     func reactorRequestCount() -> Int {

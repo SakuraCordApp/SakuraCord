@@ -127,7 +127,12 @@ import Testing
         kind: .forum,
         lastMessageID: MessageID(rawValue: 100)
     )
-    await provider.seedForumChannelForTesting(forum)
+    await provider.seedForumChannelForTesting(
+        forum,
+        currentUser: User(
+            id: UserID(rawValue: 9), username: "tester", displayName: "Tester"
+        )
+    )
 
     await provider.receiveGatewayDispatchForTesting(
         name: "THREAD_LIST_SYNC",
@@ -179,6 +184,10 @@ import Testing
             threadID: ChannelID(rawValue: 250)
         )?.thread.notificationSettings?.isMuted == true
     )
+    #expect(
+        await provider.activeJoinedThreadsForTesting().map(\.id)
+            == [ChannelID(rawValue: 250)]
+    )
 
     await provider.receiveGatewayDispatchForTesting(
         name: "THREAD_MEMBER_UPDATE",
@@ -199,6 +208,51 @@ import Testing
             threadID: ChannelID(rawValue: 250)
         )?.thread.notificationSettings?.isMuted == false
     )
+    await provider.receiveGatewayDispatchForTesting(
+        name: "THREAD_MEMBERS_UPDATE",
+        data: .object([
+            "id": .string("250"),
+            "guild_id": .string("1"),
+            "member_count": .number(0),
+            "removed_member_ids": .array([.string("9")]),
+        ])
+    )
+    #expect(await provider.activeJoinedThreadsForTesting().isEmpty)
+    await provider.disconnect()
+}
+
+@Test func `joined thread snapshot preserves gateway source order`() async throws {
+    let provider = DiscordRESTProvider(
+        credentials: ForumPostDeletionCredentialStore(),
+        handle: CredentialHandle(accountID: "forum-joined-thread-order")
+    )
+    await provider.receiveGatewayDispatchForTesting(
+        name: "THREAD_LIST_SYNC",
+        data: .object([
+            "guild_id": .string("1"),
+            "threads": .array(["300", "250"].map { id in
+                .object([
+                    "id": .string(id),
+                    "guild_id": .string("1"),
+                    "parent_id": .string("7"),
+                    "name": .string("Thread \(id)"),
+                    "type": .number(11),
+                    "thread_metadata": .object(["archived": .bool(false)]),
+                ])
+            }),
+            "members": .array(["300", "250"].map { id in
+                .object([
+                    "id": .string(id),
+                    "flags": .number(0),
+                    "muted": .bool(false),
+                ])
+            }),
+        ])
+    )
+
+    #expect(await provider.activeJoinedThreadsForTesting().map(\.id) == [
+        ChannelID(rawValue: 300), ChannelID(rawValue: 250),
+    ])
     await provider.disconnect()
 }
 

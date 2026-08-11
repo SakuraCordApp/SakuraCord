@@ -11,7 +11,7 @@ import SwiftUI
 extension NativeTimelineCanvasView {
     override func updateTrackingAreas() {
         guard !suppressesHoverPresentation,
-              !mediaViewerBlocksInteractions
+              !overlayBlocksInteractions
         else {
             pointer.removeTrackingAreas(from: self)
             return
@@ -36,7 +36,7 @@ extension NativeTimelineCanvasView {
 
     override func resetCursorRects() {
         guard !suppressesHoverPresentation,
-              !mediaViewerBlocksInteractions
+              !overlayBlocksInteractions
         else { return }
         super.resetCursorRects()
         guard var index = rowIndex(at: max(0, visibleRect.minY)) else {
@@ -131,14 +131,23 @@ extension NativeTimelineCanvasView {
                         cursor: .pointingHand
                     )
                 }
+                installForwardedSourceCursor(at: index, rowOrigin: rowOrigin)
             }
             index += 1
         }
     }
 
+    private func installForwardedSourceCursor(at index: Int, rowOrigin: CGFloat) {
+        guard let frame = layouts[index].forwardedSourceRegion?.frame else { return }
+        addCursorRect(
+            frame.offsetBy(dx: 0, dy: rowOrigin),
+            cursor: .pointingHand
+        )
+    }
+
     override func mouseEntered(with event: NSEvent) {
         guard !suppressesHoverPresentation,
-              !mediaViewerBlocksInteractions,
+              !overlayBlocksInteractions,
               editingMessageID == nil,
               event.trackingArea?.userInfo?["nativeTimelineTrackingKind"]
                 as? String == "row",
@@ -167,11 +176,14 @@ extension NativeTimelineCanvasView {
         setHoveredComponentButton(
             componentButtonPointerHit(at: point)?.target
         )
+        setHoveredForwardedSourceMessageID(
+            forwardedSourcePointerHit(at: point)
+        )
     }
 
     override func mouseMoved(with event: NSEvent) {
         guard !suppressesHoverPresentation,
-              !mediaViewerBlocksInteractions,
+              !overlayBlocksInteractions,
               editingMessageID == nil
         else {
             return
@@ -188,6 +200,9 @@ extension NativeTimelineCanvasView {
         setHoveredCodeBlock(codeBlockPointerHit(at: point))
         setHoveredComponentButton(
             componentButtonPointerHit(at: point)?.target
+        )
+        setHoveredForwardedSourceMessageID(
+            forwardedSourcePointerHit(at: point)
         )
         setHoveredReaction(
             reactionPointerHit(at: point),
@@ -260,6 +275,14 @@ extension NativeTimelineCanvasView {
             {
                 setHoveredComponentButton(nil)
             }
+            if let index = event.trackingArea?.userInfo?[
+                "nativeTimelineRowIndex"
+            ] as? Int,
+               items.indices.contains(index),
+               items[index].messageID == hoveredForwardedSourceMessageID
+            {
+                setHoveredForwardedSourceMessageID(nil)
+            }
             return
         }
         if kind == "canvas" {
@@ -269,13 +292,14 @@ extension NativeTimelineCanvasView {
             setHoveredTextSpoiler(nil)
             setHoveredCodeBlock(nil)
             setHoveredComponentButton(nil)
+            setHoveredForwardedSourceMessageID(nil)
             setHoveredReaction(nil)
             setHoveredRow(nil)
         }
     }
 
     override func mouseDown(with event: NSEvent) {
-        guard !mediaViewerBlocksInteractions else { return }
+        guard !overlayBlocksInteractions else { return }
         window?.makeFirstResponder(self)
         guard event.buttonNumber == 0 else { return }
         let point = convert(event.locationInWindow, from: nil)
@@ -347,8 +371,18 @@ extension NativeTimelineCanvasView {
         }
     }
 
+    private func forwardedSourcePointerHit(at point: CGPoint) -> MessageID? {
+        guard let index = rowIndex(at: point.y),
+              items.indices.contains(index),
+              layouts.indices.contains(index),
+              let frame = layouts[index].forwardedSourceRegion?.frame
+        else { return nil }
+        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
+        return frame.contains(local) ? items[index].messageID : nil
+    }
+
     override func mouseDragged(with event: NSEvent) {
-        guard !mediaViewerBlocksInteractions else { return }
+        guard !overlayBlocksInteractions else { return }
         if pressedCodeBlockCopyButton != nil {
             let point = convert(event.locationInWindow, from: nil)
             setHoveredCodeBlock(codeBlockPointerHit(at: point))
@@ -532,6 +566,23 @@ extension NativeTimelineCanvasView {
             actions.openReply(replyID)
             return
         }
+        if let source = layout.forwardedSourceRegion,
+           source.frame.contains(local)
+        {
+            if let messageID = source.messageID {
+                model?.navigate(
+                    to: source.guildID,
+                    channelID: source.channelID,
+                    messageID: messageID
+                )
+            } else {
+                model?.navigate(
+                    to: source.guildID,
+                    linkedChannelID: source.channelID
+                )
+            }
+            return
+        }
         if let linkedImage = layout.linkedImageRegions.first(
             where: { $0.frame.contains(local) }
         ) {
@@ -601,7 +652,7 @@ extension NativeTimelineCanvasView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        guard !mediaViewerBlocksInteractions else { return }
+        guard !overlayBlocksInteractions else { return }
         mouseUpOperation(event)
     }
 
@@ -739,7 +790,7 @@ extension NativeTimelineCanvasView {
         ) { [weak self] event in
             guard let self,
                   event.window === self.window,
-                  !self.mediaViewerBlocksInteractions,
+                  !self.overlayBlocksInteractions,
                   self.editingMessageID == nil
             else { return event }
             let point = self.convert(event.locationInWindow, from: nil)
@@ -1182,6 +1233,16 @@ extension NativeTimelineCanvasView {
            let replyID = row.replyPreview?.messageID
         {
             return .reply(message.id, replyID)
+        }
+        if let source = layout.forwardedSourceRegion,
+           source.frame.contains(local)
+        {
+            return .forwardedSource(
+                message.id,
+                source.channelID,
+                source.guildID,
+                source.messageID
+            )
         }
         if let region = layout.linkedImageRegions.first(where: {
             $0.frame.contains(local)

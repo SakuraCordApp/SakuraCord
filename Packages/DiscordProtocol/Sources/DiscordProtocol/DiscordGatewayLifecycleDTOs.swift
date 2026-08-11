@@ -32,11 +32,12 @@ struct GatewayGuildPropertiesDTO: Decodable {
     var permissions: String?
     var rulesChannelID: String?
     var defaultMessageNotifications: Int?
+    var features: Set<String>?
     var containsIcon: Bool
     var containsRulesChannelID: Bool
 
     enum CodingKeys: String, CodingKey {
-        case name, icon, owner, permissions
+        case name, icon, owner, permissions, features
         case ownerID = "owner_id"
         case rulesChannelID = "rules_channel_id"
         case defaultMessageNotifications = "default_message_notifications"
@@ -55,6 +56,7 @@ struct GatewayGuildPropertiesDTO: Decodable {
         defaultMessageNotifications = try? values.decode(
             Int.self, forKey: .defaultMessageNotifications
         )
+        features = try? values.decode(Set<String>.self, forKey: .features)
         containsIcon = values.contains(.icon)
         containsRulesChannelID = values.contains(.rulesChannelID)
     }

@@ -414,40 +414,8 @@ private struct GIFPickerHeader: View {
                 )
                 .help("All GIF categories")
             }
-            GIFPickerSearchField(text: $text)
+            PickerSearchField(text: $text, placeholder: "Search GIFs")
         }
-    }
-}
-
-private struct GIFPickerSearchField: View {
-    @Binding var text: String
-    @FocusState private var isFocused: Bool
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-            TextField("Search GIFs", text: $text)
-                .textFieldStyle(.plain)
-                .focused($isFocused)
-            if !text.isEmpty {
-                Button {
-                    text = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("Clear search")
-            }
-        }
-        .padding(.horizontal, 11)
-        .frame(height: 38)
-        .glassEffect(
-            .regular.interactive(),
-            in: ConcentricRectangle(cornerRadius: 12, style: .continuous)
-        )
-        .task { isFocused = true }
     }
 }
 

@@ -254,6 +254,11 @@ final class AppModel {
     var forumActionError: String?
     var forumPaginationError: String?
     var forumCreateProgress: MessageSendProgress?
+    var forwardingMessage: Message?
+    var forwardingErrorMessage: String?
+    var isForwardingMessages = false
+    var forwardDestinationHistory: [ChannelID] = []
+    var forwardSearchSourceRevision: UInt64 = 0
     var forumCreateGeneration: UInt64 = 0
     var forumSearchText = ""
     var forumSelectedTagIDs: Set<ForumTagID> = []
@@ -368,6 +373,18 @@ final class AppModel {
     var discordFrequentlyUsedEmojiKeys: [String] = []
     var discordEmojiUsageScores: [String: Int] = [:]
     var discordGuildAndChannelUsageScores: [String: Int] = [:]
+    var discordGuildAndChannelUsage: [String: DiscordFrecencyUsage] = [:]
+    var discordGuildAndChannelUsageOrder: [String] = []
+    @ObservationIgnored var forwardDestinationHistoryDefaultsKey =
+        "dev.sakuracord.forward-destination-history.signed-out"
+    @ObservationIgnored var pendingDiscordFrecencyUses: [(key: String, timestamp: UInt64)] = []
+    @ObservationIgnored var persistedDiscordFrecencyUsageDeltas: [String: DiscordFrecencyUsage] = [:]
+    @ObservationIgnored var discordFrecencyUsageDeltasDefaultsKey =
+        "dev.sakuracord.forward-frecency-deltas.signed-out"
+    @ObservationIgnored var appliedDiscordFrecencyDeltasKey: String?
+    @ObservationIgnored var lastDiscordFrecencyChannelID: ChannelID?
+    @ObservationIgnored var lastDiscordFrecencyGuildID: GuildID?
+    @ObservationIgnored var didSelectInitialForwardDestination = false
     var hasLoadedDiscordEmojiSettings = false
     var orderedCustomEmojis: [DiscordEmoji] = []
     var customEmojiURLsByID: [String: URL] = [:]
@@ -533,6 +550,197 @@ final class AppModel {
         return ConversationPermissionResolver.channelAccess(effectivePermissions: permissions)
     }
 
+    /// Mirrors Discord desktop's source-side forwarding guard for the state
+    /// SakuraCord has resolved locally. Private channels do not require a
+    /// guild permission check; guild messages require message-history access.
+    func canForward(_ message: Message) -> Bool {
+        guard supportedCapabilities.contains(.messageForwarding),
+              message.isForwardable
+        else { return false }
+        guard let channel = snapshot?.channels.first(where: { $0.id == message.channelID })
+                ?? visibleChannels.first(where: { $0.id == message.channelID })
+        else { return true }
+        guard channel.guildID != nil else { return true }
+
+        let guildID = channel.guildID
+        guard let guildID,
+              let guild = serverRailGuildsByID[guildID],
+              let currentUserID = snapshot?.currentUser.id
+        else { return false }
+        guard !guild.features.contains("FORWARDING_DISABLED") else { return false }
+        let member =
+            membersByGuildID[guildID]?[currentUserID]
+            ?? (guildID == selectedGuildID ? membersByID[currentUserID] : nil)
+        let roles =
+            guildRolesByGuildID[guildID]
+            ?? (guildID == selectedGuildID ? guildRoles : [])
+        guard let permissions = ConversationPermissionResolver.effectivePermissions(
+            guild: guild,
+            channel: channel,
+            currentUserID: currentUserID,
+            currentMember: member,
+            roles: roles,
+            currentRoleIDs: currentUserRoleIDsByGuild[guildID]
+        ) else { return false }
+        return permissions & DiscordPermissionBits.readMessageHistory != 0
+    }
+
+    /// Discord's global search admits guild text candidates with VIEW_CHANNEL
+    /// and vocal candidates with VIEW_CHANNEL plus CONNECT. The forwarding
+    /// filter runs only after that category has been truncated.
+    func canSearchForwardDestination(_ channel: Channel) -> Bool {
+        guard Self.supportsForwardSearchCandidate(channel.kind) else { return false }
+        guard channel.kind != .groupDirectMessage else { return true }
+        guard let permissions = forwardDestinationPermissions(channel) else {
+            // Discord's queryChannels path requires the resolved vocal
+            // `accessPermissions` value to contain CONNECT before the row can
+            // enter either raw channel category. Do not turn missing guild
+            // role/member state into connect access.
+            if channel.kind == .voice { return false }
+            return channel.permissionOverwrites?.isEmpty != false
+        }
+        var required = DiscordPermissionBits.viewChannel
+        if channel.kind == .voice {
+            required |= DiscordPermissionBits.connect
+        }
+        return permissions & required == required
+    }
+
+    /// Discord applies the actual forwarding filter after the raw per-category
+    /// limit. Guild destinations require VIEW_CHANNEL and SEND_MESSAGES; vocal
+    /// destinations have already passed the search-stage CONNECT check.
+    func canUseForwardDestination(_ channel: Channel) -> Bool {
+        guard Self.supportsForwardDestination(channel.kind) else { return false }
+        guard channel.kind != .groupDirectMessage else {
+            return !channel.isOfficialSystemDirectMessage
+        }
+        guard canSearchForwardDestination(channel) else { return false }
+        guard let permissions = forwardDestinationPermissions(channel) else {
+            return channel.permissionOverwrites?.isEmpty != false
+        }
+        let required = DiscordPermissionBits.viewChannel | DiscordPermissionBits.sendMessages
+        return permissions & required == required
+    }
+
+    /// Active joined threads remain valid targets even when their parent is a
+    /// forum, which is not itself a forward destination in Discord's picker.
+    func canSearchForwardThreadDestination(parent: Channel) -> Bool {
+        guard parent.kind == .text || parent.kind == .announcement || parent.kind == .forum
+        else { return false }
+        guard let permissions = forwardDestinationPermissions(parent) else {
+            return parent.permissionOverwrites?.isEmpty != false
+        }
+        return permissions & DiscordPermissionBits.viewChannel != 0
+    }
+
+    func canUseForwardThreadDestination(parent: Channel) -> Bool {
+        guard parent.kind == .text || parent.kind == .announcement || parent.kind == .forum
+        else { return false }
+        guard let permissions = forwardDestinationPermissions(parent) else {
+            return parent.permissionOverwrites?.isEmpty != false
+        }
+        let required = DiscordPermissionBits.viewChannel | DiscordPermissionBits.sendMessages
+        return permissions & required == required
+    }
+
+    private func forwardDestinationPermissions(_ channel: Channel) -> UInt64? {
+        guard let guildID = channel.guildID else {
+            return nil
+        }
+        guard let guild = serverRailGuildsByID[guildID],
+              let currentUserID = snapshot?.currentUser.id
+        else { return nil }
+        let member =
+            membersByGuildID[guildID]?[currentUserID]
+            ?? (guildID == selectedGuildID ? membersByID[currentUserID] : nil)
+        let roles =
+            guildRolesByGuildID[guildID]
+            ?? (guildID == selectedGuildID ? guildRoles : [])
+        return ConversationPermissionResolver.effectivePermissions(
+            guild: guild,
+            channel: channel,
+            currentUserID: currentUserID,
+            currentMember: member,
+            roles: roles,
+            currentRoleIDs: currentUserRoleIDsByGuild[guildID]
+        )
+    }
+
+    func forwardUnavailableReason(
+        for message: Message,
+        destination channel: Channel
+    ) -> String? {
+        guard let guildID = channel.guildID else { return nil }
+        guard let guild = serverRailGuildsByID[guildID],
+              let currentUserID = snapshot?.currentUser.id
+        else { return "Destination permissions are unavailable." }
+        let member =
+            membersByGuildID[guildID]?[currentUserID]
+            ?? (guildID == selectedGuildID ? membersByID[currentUserID] : nil)
+        let roles =
+            guildRolesByGuildID[guildID]
+            ?? (guildID == selectedGuildID ? guildRoles : [])
+        guard let permissions = ConversationPermissionResolver.effectivePermissions(
+            guild: guild,
+            channel: channel,
+            currentUserID: currentUserID,
+            currentMember: member,
+            roles: roles,
+            currentRoleIDs: currentUserRoleIDsByGuild[guildID]
+        ) else {
+            return channel.permissionOverwrites?.isEmpty != false
+                ? nil
+                : "Destination permissions are unavailable."
+        }
+        if !message.attachments.isEmpty,
+           permissions & DiscordPermissionBits.attachFiles == 0
+        {
+            return "You cannot attach files in this conversation."
+        }
+        if !message.embeds.isEmpty,
+           permissions & DiscordPermissionBits.embedLinks == 0
+        {
+            return "You cannot embed links in this conversation."
+        }
+        if message.stickers.contains(where: { $0.guildID != nil && $0.guildID != guildID }),
+           permissions & DiscordPermissionBits.useExternalStickers == 0
+        {
+            return "You cannot use external stickers in this conversation."
+        }
+        if message.flags.contains(.voiceMessage),
+           permissions & DiscordPermissionBits.sendVoiceMessages == 0
+        {
+            return "You cannot send voice messages in this conversation."
+        }
+        return nil
+    }
+
+    func shouldSendForwardContext(to channelID: ChannelID) -> Bool {
+        guard let channel = snapshot?.channels.first(where: { $0.id == channelID })
+                ?? visibleChannels.first(where: { $0.id == channelID }),
+              channel.rateLimitPerUser > 0
+        else { return true }
+        guard let guildID = channel.guildID,
+              let guild = serverRailGuildsByID[guildID],
+              let currentUserID = snapshot?.currentUser.id
+        else { return false }
+        let member =
+            membersByGuildID[guildID]?[currentUserID]
+            ?? (guildID == selectedGuildID ? membersByID[currentUserID] : nil)
+        let roles =
+            guildRolesByGuildID[guildID]
+            ?? (guildID == selectedGuildID ? guildRoles : [])
+        let permissions = ConversationPermissionResolver.effectivePermissions(
+            guild: guild,
+            channel: channel,
+            currentUserID: currentUserID,
+            currentMember: member,
+            roles: roles,
+            currentRoleIDs: currentUserRoleIDsByGuild[guildID]
+        )
+        return permissions.map { $0 & DiscordPermissionBits.bypassSlowmode != 0 } ?? false
+    }
+
     func canJoinVoice(_ channel: Channel) -> Bool {
         guard channel.kind == .voice
                 || channel.kind == .directMessage
@@ -596,6 +804,14 @@ final class AppModel {
             selectedChannel =
                 snapshot?.channels.first { $0.id == selectedChannelID }
                     ?? visibleChannels.first { $0.id == selectedChannelID }
+            if let selectedChannel,
+               didSelectInitialForwardDestination
+            {
+                recordForwardDestinationVisit(selectedChannel.id)
+            }
+            if selectedChannel != nil {
+                didSelectInitialForwardDestination = true
+            }
             commandLoadTask?.cancel()
             commandAutocompleteTask?.cancel()
             cancelApplicationCommandMemberSearch()

@@ -364,6 +364,11 @@ extension NativeTimelineCanvasView {
         if let oldComponentButton = clearedTargets.componentButton {
             invalidateComponentButton(oldComponentButton)
         }
+        if let messageID = clearedTargets.forwardedSourceMessageID,
+           let index = items.firstIndex(where: { $0.messageID == messageID })
+        {
+            setNeedsDisplay(rowFrame(at: index))
+        }
     }
 
     func allowHoverPresentationAfterScroll() {
@@ -383,9 +388,9 @@ extension NativeTimelineCanvasView {
         synchronizeHoverWithCurrentPointer()
     }
 
-    func setMediaViewerInteractionBlocked(_ isBlocked: Bool) {
-        guard mediaViewerBlocksInteractions != isBlocked else { return }
-        mediaViewerBlocksInteractions = isBlocked
+    func setOverlayInteractionBlocked(_ isBlocked: Bool) {
+        guard overlayBlocksInteractions != isBlocked else { return }
+        overlayBlocksInteractions = isBlocked
         if isBlocked {
             pointer.clearHoverAndPressTargets()
             reactionHoverCoordinator.close()
@@ -638,6 +643,8 @@ extension NativeTimelineCanvasView {
                         == items[index].messageID
                     || visualPressedComponentButton?.messageID
                         == items[index].messageID
+                    || hoveredForwardedSourceMessageID
+                        == items[index].messageID
                     || !countTransitions.isEmpty
                     || textSelection?.itemIdentifier
                         == items[index].identifier
@@ -681,6 +688,9 @@ extension NativeTimelineCanvasView {
                                 == items[index].messageID
                             ? componentButtonPressProgress
                             : 0,
+                        isForwardedSourceHovered:
+                            hoveredForwardedSourceMessageID
+                                == items[index].messageID,
                         hoveredReactionID: hoveredReactionID(
                             inMessageAt: index
                         ),
@@ -1422,6 +1432,9 @@ extension NativeTimelineCanvasView {
             keys.append(.avatarDecoration(url))
         }
         if let url = message.interactionMetadata?.user?.avatarURL {
+            keys.append(.avatar(url))
+        }
+        if let url = layouts[index].forwardedSourceRegion?.iconURL {
             keys.append(.avatar(url))
         }
         if let preview = row.replyPreview,

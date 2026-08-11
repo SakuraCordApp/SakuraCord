@@ -8,7 +8,9 @@ private final class NativeTimelineInputShieldScrollView: NSScrollView {
     weak var model: AppModel?
 
     override func scrollWheel(with event: NSEvent) {
-        guard model?.mediaViewerPresentation == nil else { return }
+        guard model?.mediaViewerPresentation == nil,
+              model?.forwardingMessage == nil
+        else { return }
         super.scrollWheel(with: event)
     }
 }
@@ -637,8 +639,9 @@ extension NativeMessageTimelineCoordinator {
 
         func update(parent: NativeMessageTimelineView, scrollView: NSScrollView) {
             (scrollView as? NativeTimelineInputShieldScrollView)?.model = parent.model
-            canvas?.setMediaViewerInteractionBlocked(
+            canvas?.setOverlayInteractionBlocked(
                 parent.model.mediaViewerPresentation != nil
+                    || parent.model.forwardingMessage != nil
             )
             timelineUpdateOperation(parent, scrollView)
         }
@@ -770,6 +773,11 @@ extension NativeMessageTimelineCoordinator {
                 reply: parent.conversation.supportsReply
                     ? { [weak model = parent.model] message in
                         model?.reply(to: message)
+                    }
+                    : nil,
+                forward: parent.model.supportedCapabilities.contains(.messageForwarding)
+                    ? { [weak model = parent.model] message in
+                        model?.presentForwarding(message)
                     }
                     : nil,
                 retry: { [weak model = parent.model] message in

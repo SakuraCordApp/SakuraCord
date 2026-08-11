@@ -218,6 +218,17 @@ private struct ChatRootView: View {
                 )
             }
         }
+        // A Forward picker is a true modal surface. Keep the workspace out of
+        // both hit testing and the accessibility tree while it is presented;
+        // otherwise AppKit can still deliver hover/accessibility actions to
+        // channel, member, and timeline rows visually covered by the scrim.
+        .allowsHitTesting(model.forwardingMessage == nil)
+        .accessibilityHidden(model.forwardingMessage != nil)
+        .overlay {
+            if let message = model.forwardingMessage {
+                ForwardMessageOverlay(model: model, message: message)
+            }
+        }
         .overlay {
             if isFileDropTargeted, canAcceptWindowDrops {
                 ComposerFileDropOverlay(

@@ -1,0 +1,51 @@
+public enum ConnectionState: String, Codable, Equatable, Sendable {
+    case disconnected, connecting, ready, resuming, backingOff, authenticationFailed
+}
+
+public enum ClientEvent: Equatable, Sendable {
+    case connectionChanged(ConnectionState)
+    case messageCreated(Message)
+    case messageUpdated(Message)
+    case messageReactionUpdated(MessageReactionUpdate)
+    case messageDeleted(channelID: ChannelID, messageID: MessageID)
+    case readStateSnapshot([ChannelReadState], version: Int? = nil)
+    case readStateChanged(ChannelReadState)
+    case notificationModeChanged(usesNewNotifications: Bool)
+    case notificationSettingsChanged(GuildNotificationSettings)
+    case typing(channelID: ChannelID, user: User)
+    case channelsChanged(guildID: GuildID?, channels: [Channel])
+    case forumPostsChanged(channelID: ChannelID, posts: [ForumPost])
+    case forumPostPreviewsChanged(channelID: ChannelID, posts: [ForumPost])
+    case activeJoinedThreadsChanged([MessageThreadSummary])
+    case forumPageLoaded(channelID: ChannelID, query: ForumPostQuery, page: ForumPostPage)
+    case membersChanged(
+        guildID: GuildID,
+        members: [Member],
+        groups: [GuildMemberListGroup]
+    )
+    case privateMembersChanged([Member])
+    case knownUsersChanged([User])
+    case userSearchAliasesChanged([UserID: [String]])
+    case currentUserRolesChanged(guildID: GuildID, roleIDs: [RoleID])
+    case currentUserRolesSnapshot([GuildID: [RoleID]])
+    case emojisChanged(guildID: GuildID, emojis: [DiscordEmoji])
+    case emojisUpdated(
+        guildID: GuildID,
+        upserted: [DiscordEmoji],
+        deletedIDs: [String]
+    )
+    case voiceStateChanged(VoiceParticipantState)
+    case privateCallChanged(PrivateCall)
+    case privateCallDeleted(channelID: ChannelID, unavailable: Bool)
+    /// A nil value means Discord deallocated the current voice server and the
+    /// client must wait for a replacement allocation before reconnecting.
+    case voiceServerChanged(VoiceConnectionInfo?)
+    case snapshotChanged(BootstrapSnapshot)
+    case guildChanged(Guild)
+    case guildLayoutChanged(guilds: [Guild], railItems: [GuildRailItem])
+    case guildRolesChanged(guildID: GuildID, roles: [GuildRole])
+    case currentUserChanged(User)
+    case applicationCommandIndexInvalidated(ApplicationCommandIndexTarget)
+    case applicationCommandAutocomplete(ApplicationCommandAutocompleteResult)
+    case interaction(InteractionEvent)
+}

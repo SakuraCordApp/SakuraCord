@@ -214,6 +214,8 @@ public final class DiscordClientMetadata: @unchecked Sendable {
     }
 
     static let messageContextHeader = Data(#"{"location":"chat_input"}"#.utf8).base64EncodedString()
+    static let forwardingContextHeader = Data(#"{"location":"forwarding"}"#.utf8)
+        .base64EncodedString()
 
     private nonisolated static var architecture: String {
         #if arch(arm64)

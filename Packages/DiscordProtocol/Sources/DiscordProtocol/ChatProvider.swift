@@ -52,9 +52,11 @@ public protocol ChatProvider: Sendable {
         until: Date?
     ) async throws
     func sendTyping(in channelID: ChannelID) async throws
+    func ensurePrivateChannel(for userID: UserID) async throws -> Channel
     func send(_ draft: SendMessageDraft) async throws -> Message
     func send(_ draft: SendMessageDraft, progress: @escaping @Sendable (MessageSendProgress) -> Void)
         async throws -> Message
+    func forward(_ draft: ForwardMessageDraft) async throws -> Message
     func supports(_ capability: ChatCapability) async -> Bool
     func applicationCommandCatalog(for target: ApplicationCommandIndexTarget) async throws
         -> ApplicationCommandCatalog
@@ -219,6 +221,14 @@ public extension ChatProvider {
         let message = try await send(draft)
         progress(.completed(messageID: message.id))
         return message
+    }
+
+    func forward(_ draft: ForwardMessageDraft) async throws -> Message {
+        throw ChatProviderError.capabilityDisabled(.messageForwarding)
+    }
+
+    func ensurePrivateChannel(for userID: UserID) async throws -> Channel {
+        throw ChatProviderError.channelNotFound
     }
 
     func supports(_ capability: ChatCapability) async -> Bool {
@@ -502,6 +512,7 @@ public enum ChatCapability: String, Codable, CaseIterable, Hashable, Sendable {
     case gifs
     case stickers
     case stickerSending
+    case messageForwarding
 
     public var displayName: String {
         switch self {
@@ -513,6 +524,7 @@ public enum ChatCapability: String, Codable, CaseIterable, Hashable, Sendable {
         case .gifs: "GIF search"
         case .stickers: "Guild stickers"
         case .stickerSending: "Sticker sending"
+        case .messageForwarding: "Message forwarding"
         }
     }
 }

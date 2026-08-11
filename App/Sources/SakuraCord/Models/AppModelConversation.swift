@@ -146,11 +146,20 @@ extension AppModel {
             )
         }
         async let storedDraft = storedDraft(in: channelID, account: account)
-        async let freshPage = account.provider.messages(
-            in: channelID,
-            before: nil,
-            limit: 10
-        )
+        // Discord lets already-dispatched history reads finish when the user
+        // switches channels. Besides retaining the response in MessageStore,
+        // this also lets UserStore learn authors for account-wide picker
+        // search. Shield the provider read from presentation-task cancellation
+        // and discard only its stale UI result below. This avoids repeatedly
+        // cancelling URLSession HTTP/3 streams during fast navigation, which
+        // can leave the reused connection stalled on macOS.
+        let freshPageTask = Task {
+            try await account.provider.messages(
+                in: channelID,
+                before: nil,
+                limit: 10
+            )
+        }
 
         let savedDraft = await storedDraft
         guard isCurrentAccountSession(account),
@@ -161,7 +170,7 @@ extension AppModel {
         }
 
         do {
-            let page = try await freshPage
+            let page = try await freshPageTask.value
             guard isCurrentAccountSession(account),
                   isCurrentLoad(channelID, generation: generation)
             else { return }
@@ -479,6 +488,7 @@ extension AppModel {
         AppPerformanceSignposts.beginConversationNavigation(to: thread.id)
         readState.merge(thread: thread)
         openThread = thread
+        recordForwardDestinationVisit(thread.id)
         _ = readState.updatePresentation(
             channelID: thread.id,
             isPresented: true,

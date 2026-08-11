@@ -490,6 +490,13 @@ private func appendETFBinary(_ value: String, to data: inout Data) {
                 recentUses: [],
                 storedFrecency: 9
             )
+            + guildAndChannelEntry(
+                key: 789,
+                totalUses: 9,
+                recentUses: [0, 1, 2, 3, 4, 6, 7, 80, 81].map {
+                    now - UInt64($0) * 86_400_000
+                }
+            )
     )
 
     let settings = DiscordSettingsProto.emojiSettings(
@@ -502,7 +509,17 @@ private func appendETFBinary(_ value: String, to data: inout Data) {
     #expect(settings.usageScores["white_heart"] == 50)
     #expect(settings.usageScores["reaction_only"] == nil)
     #expect(settings.guildAndChannelUsageScores["123"] == 500)
-    #expect(settings.guildAndChannelUsageScores["456"] == 9)
+    #expect(settings.guildAndChannelUsageScores["456"] == nil)
+    #expect(settings.guildAndChannelUsageScores["789"] == 360)
+    #expect(settings.guildAndChannelUsage["123"] == DiscordFrecencyUsage(
+        totalUses: 5,
+        recentUses: [now, now - 1, now - 2]
+    ))
+    #expect(settings.guildAndChannelUsage["456"] == DiscordFrecencyUsage(
+        totalUses: 2,
+        recentUses: []
+    ))
+    #expect(settings.guildAndChannelUsageOrder == ["123", "456", "789"])
 }
 
 @Test func `emoji settings cap frequently used to two picker rows`() {
@@ -899,6 +916,37 @@ private func appendETFBinary(_ value: String, to data: inout Data) {
     #expect(participant.channelID == ChannelID(rawValue: 300))
 }
 
+@Test func `ready thread keeps an inline member without standalone identifiers`() throws {
+    let data = Data(#"""
+    {
+        "guilds": [
+            {
+                "id":"100",
+                "threads":[
+                    {
+                        "id":"300",
+                        "guild_id":"100",
+                        "parent_id":"200",
+                        "type":11,
+                        "name":"joined thread",
+                        "thread_metadata":{"archived":false},
+                        "member":{"flags":1,"muted":false,"mute_config":null}
+                    }
+                ]
+            }
+        ]
+    }
+    """#.utf8)
+    let ready = try JSONDecoder().decode(GatewayReadyGuildsDTO.self, from: data)
+    let member = try #require(ready.guilds.first?.threads.first?.member)
+
+    #expect(member.id == nil)
+    #expect(member.userID == nil)
+    #expect(member.flags == 1)
+    #expect(member.domain.notificationLevel == .inherit)
+    #expect(member.domain.isMuted == false)
+}
+
 @Test func `ready payload preserves guild member store insertion order`() throws {
     let data = Data(#"""
     {
@@ -918,6 +966,59 @@ private func appendETFBinary(_ value: String, to data: inout Data) {
     let guild = try #require(ready.guilds.first)
 
     #expect(guild.members.map(\.user.username) == ["first", "second"])
+}
+
+@Test func `ready payload preserves relationship nickname and embedded legacy user`() throws {
+    let data = Data(#"""
+    {
+        "guilds":[],
+        "relationships":[
+            {
+                "id":"200",
+                "type":1,
+                "nickname":"  USERNAME THIEF!!!  ",
+                "user":{
+                    "id":"200",
+                    "username":"legacy-bot",
+                    "discriminator":"8860",
+                    "global_name":"Global Name"
+                }
+            }
+        ]
+    }
+    """#.utf8)
+    let ready = try JSONDecoder().decode(GatewayReadyGuildsDTO.self, from: data)
+    let userDTO = try #require(ready.users.first)
+    let user = try userDTO.domain()
+
+    #expect(ready.friendUserIDs == [UserID(rawValue: 200)])
+    #expect(ready.relationshipNicknamesByUserID[UserID(rawValue: 200)]
+        == "USERNAME THIEF!!!")
+    #expect(user.tag == "legacy-bot#8860")
+}
+
+@Test func `ready identifies blocked and ignored users for forwarding search`() throws {
+    let data = Data(#"""
+    {
+        "guilds":[],
+        "relationships":[
+            {"id":"200","type":2,"user":{"id":"200","username":"blocked"}},
+            {
+                "id":"201",
+                "type":3,
+                "user_ignored":true,
+                "user":{"id":"201","username":"ignored"}
+            },
+            {"id":"202","type":1,"user":{"id":"202","username":"friend"}}
+        ]
+    }
+    """#.utf8)
+    let ready = try JSONDecoder().decode(GatewayReadyGuildsDTO.self, from: data)
+
+    #expect(ready.blockedOrIgnoredUserIDs == [
+        UserID(rawValue: 200), UserID(rawValue: 201),
+    ])
+    #expect(!ready.blockedOrIgnoredUserIDs.contains(UserID(rawValue: 202)))
 }
 
 @Test func `ready payload hydrates compressed merged member order`() throws {

@@ -80,3 +80,29 @@ import Testing
             == "https://cdn.discordapp.com/assets/collectibles/nameplates/cosmic-storm/img.png"
     )
 }
+
+@Test func `malformed optional profile cosmetics do not discard a ready user`() throws {
+    let data = Data(
+        #"""
+        {
+          "id":"42",
+          "username":"member",
+          "global_name":"Member",
+          "avatar_decoration_data":"new-shape",
+          "collectibles":{"nameplate":{"assets":17}},
+          "primary_guild":{"identity_enabled":"yes"},
+          "display_name_styles":{"colors":"violet"}
+        }
+        """#.utf8
+    )
+
+    let user = try JSONDecoder().decode(UserDTO.self, from: data).domain()
+
+    #expect(user.id.rawValue == 42)
+    #expect(user.username == "member")
+    #expect(user.displayName == "Member")
+    #expect(user.avatarDecorationURL == nil)
+    #expect(user.nameplate == nil)
+    #expect(user.primaryGuild == nil)
+    #expect(user.displayNameStyle == nil)
+}

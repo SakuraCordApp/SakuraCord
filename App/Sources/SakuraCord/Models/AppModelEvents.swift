@@ -512,6 +512,12 @@ extension AppModel {
             consumeForumPostsChanged(channelID: channelID, posts: posts)
         case .forumPostPreviewsChanged(let channelID, let posts):
             consumeForumPostPreviewsChanged(channelID: channelID, posts: posts)
+        case .activeJoinedThreadsChanged(let threads):
+            if var value = snapshot {
+                value.activeJoinedThreads = threads
+                snapshot = value
+                forwardSearchSourceRevision &+= 1
+            }
         case .forumPageLoaded(let channelID, let query, let page):
             consumeForumPageLoaded(channelID: channelID, query: query, page: page)
         case .membersChanged(let guildID, let value, let groups):
@@ -522,10 +528,8 @@ extension AppModel {
     }
 
     func consumePresenceAndCommandEvent(_ event: ClientEvent) {
+        if consumeForwardSearchPeopleEvent(event) { return }
         switch event {
-        case .privateMembersChanged(let value):
-            guard selectedGuildID == nil else { return }
-            members = value
         case .currentUserRolesChanged, .currentUserRolesSnapshot:
             consumeCurrentUserRoleEvent(event)
         case .voiceStateChanged(let state):
@@ -772,9 +776,14 @@ extension AppModel {
 
     func consumeChannelsChanged(guildID: GuildID?, channels: [Channel]) {
         if var value = snapshot {
-            value.channels.removeAll { $0.guildID == guildID }
-            value.channels.append(contentsOf: channels)
+            if let firstIndex = value.channels.firstIndex(where: { $0.guildID == guildID }) {
+                value.channels.removeAll { $0.guildID == guildID }
+                value.channels.insert(contentsOf: channels, at: firstIndex)
+            } else {
+                value.channels.append(contentsOf: channels)
+            }
             snapshot = value
+            forwardSearchSourceRevision &+= 1
         }
         if guildID == selectedGuildID {
             visibleChannels = channels
@@ -791,6 +800,10 @@ extension AppModel {
     }
 
     func consumeForumPostsChanged(channelID: ChannelID, posts: [ForumPost]) {
+        replaceForwardDestinationThreads(
+            parentID: channelID,
+            with: posts.map(\.thread)
+        )
         readState.replaceThreads(parentID: channelID, with: posts.map(\.thread))
         refreshUnreadPresentation()
         guard channelID == selectedChannelID, selectedChannel?.kind == .forum else { return }
@@ -804,6 +817,7 @@ extension AppModel {
     }
 
     func consumeForumPostPreviewsChanged(channelID: ChannelID, posts: [ForumPost]) {
+        mergeForwardDestinationThreads(posts.map(\.thread))
         for post in posts { readState.merge(thread: post.thread) }
         refreshUnreadPresentation()
         guard channelID == selectedChannelID, selectedChannel?.kind == .forum else { return }
@@ -835,6 +849,30 @@ extension AppModel {
         applyForumPresentation()
         forumNextOffset = page.nextOffset
         hasMoreForumPosts = page.hasMore
+    }
+
+    func replaceForwardDestinationThreads(
+        parentID: ChannelID,
+        with threads: [MessageThreadSummary]
+    ) {
+        guard var value = snapshot else { return }
+        value.threads.removeAll { $0.parentID == parentID }
+        value.threads.append(contentsOf: threads)
+        value.threads.sort { $0.id < $1.id }
+        snapshot = value
+    }
+
+    func mergeForwardDestinationThreads(_ threads: [MessageThreadSummary]) {
+        guard var value = snapshot, !threads.isEmpty else { return }
+        var threadsByID = Dictionary(
+            value.threads.map { ($0.id, $0) },
+            uniquingKeysWith: { _, newer in newer }
+        )
+        for thread in threads {
+            threadsByID[thread.id] = thread
+        }
+        value.threads = threadsByID.values.sorted { $0.id < $1.id }
+        snapshot = value
     }
 
     func consumeMembersChanged(
@@ -963,6 +1001,7 @@ extension AppModel {
 
     func consumeSnapshotChanged(_ value: BootstrapSnapshot) {
         snapshot = value
+        forwardSearchSourceRevision &+= 1
         readState.configure(
             accountID: readState.accountID,
             guilds: value.guilds,
@@ -985,6 +1024,7 @@ extension AppModel {
         else { return }
         value.guilds[index] = guild
         snapshot = value
+        forwardSearchSourceRevision &+= 1
         readState.merge(guilds: [guild])
         // Gateway guild payloads do not carry SakuraCord's presentation-only
         // unread and mention counts. Re-project them after every metadata
@@ -998,6 +1038,7 @@ extension AppModel {
         value.guilds = guilds
         value.guildRailItems = railItems
         snapshot = value
+        forwardSearchSourceRevision &+= 1
         currentUserRoleIDsByGuild = currentUserRoleIDsByGuild.filter {
             retainedGuildIDs.contains($0.key)
         }

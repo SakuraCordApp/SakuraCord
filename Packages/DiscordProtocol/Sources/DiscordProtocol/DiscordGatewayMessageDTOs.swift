@@ -271,8 +271,94 @@ struct MessageDTO: Decodable {
     }
 
     struct ReferenceDTO: Decodable {
+        var type: Int?
         var messageID: String?
-        enum CodingKeys: String, CodingKey { case messageID = "message_id" }
+        var channelID: String?
+        var guildID: String?
+
+        enum CodingKeys: String, CodingKey {
+            case type
+            case messageID = "message_id"
+            case channelID = "channel_id"
+            case guildID = "guild_id"
+        }
+
+        var domain: DiscordMessageReference? {
+            guard let type = DiscordMessageReferenceType(rawValue: type ?? 0) else {
+                return nil
+            }
+            return DiscordMessageReference(
+                type: type,
+                messageID: messageID.flatMap(MessageID.init),
+                channelID: channelID.flatMap(ChannelID.init),
+                guildID: guildID.flatMap(GuildID.init)
+            )
+        }
+    }
+
+    struct SnapshotResolvedDTO: Decodable {
+        var users: [String: UserDTO]?
+    }
+
+    struct SnapshotMessageDTO: Decodable {
+            var type: Int?
+            var content: String?
+            var timestamp: String?
+            var editedTimestamp: String?
+            var flags: UInt64?
+            var attachments: LossyList<AttachmentDTO>?
+            var embeds: LossyList<MessageEmbedDTO>?
+            var components: LossyList<MessageComponentDTO>?
+            var stickerItems: LossyList<MessageStickerDTO>?
+            var mentions: LossyList<MessageMentionDTO>?
+            var mentionRoles: [String]?
+            var resolved: SnapshotResolvedDTO?
+
+            enum CodingKeys: String, CodingKey {
+                case type, content, timestamp, flags, attachments, embeds, components, mentions
+                case resolved
+                case editedTimestamp = "edited_timestamp"
+                case stickerItems = "sticker_items"
+                case mentionRoles = "mention_roles"
+            }
+
+            func domain(guildID: GuildID?) -> ForwardedMessageSnapshot {
+                let mentionedUsers = mentions?.elements.compactMap {
+                    try? $0.domain(guildID: guildID)
+                } ?? []
+                var usersByID = Dictionary(
+                    mentionedUsers.map { ($0.id, $0) },
+                    uniquingKeysWith: { _, newer in newer }
+                )
+                if let resolvedUsers = resolved?.users {
+                    for userDTO in resolvedUsers.values {
+                        if let user = try? userDTO.domain() {
+                            usersByID[user.id] = user
+                        }
+                    }
+                }
+                return ForwardedMessageSnapshot(
+                    type: DiscordMessageType(rawValue: type ?? 0),
+                    content: content ?? "",
+                    timestamp: timestamp.flatMap(DiscordDate.parse) ?? .distantPast,
+                    editedTimestamp: editedTimestamp.flatMap(DiscordDate.parse),
+                    flags: MessageFlags(rawValue: flags ?? 0),
+                    attachments: attachments?.elements.compactMap { try? $0.domain() } ?? [],
+                    embeds: (embeds?.elements ?? []).enumerated().map {
+                        $0.element.domain(index: $0.offset)
+                    },
+                    components: (components?.elements ?? []).enumerated().map {
+                        $0.element.domain(path: "forward.\($0.offset)")
+                    },
+                    stickers: stickerItems?.elements.map(\.domain) ?? [],
+                    mentionedUsers: Array(usersByID.values),
+                    mentionedRoleIDs: (mentionRoles ?? []).compactMap(RoleID.init)
+                )
+            }
+    }
+
+    struct SnapshotDTO: Decodable {
+        var message: SnapshotMessageDTO
     }
 
     struct ReferencedMessageDTO: Decodable {
@@ -310,6 +396,7 @@ struct MessageDTO: Decodable {
     var reactions: LossyList<ReactionDTO>?
     var nonce: StringOrIntegerDTO?
     var messageReference: ReferenceDTO?
+    var messageSnapshots: LossyList<SnapshotDTO>?
     var referencedMessage: ReferencedMessageDTO?
     var type: Int?
     var flags: UInt64?
@@ -327,6 +414,10 @@ struct MessageDTO: Decodable {
     var mentionRoles: [String]?
     var mentionEveryone: Bool?
     var call: CallDTO?
+    var poll: JSONValue?
+    var activity: JSONValue?
+    var sharedClientTheme: JSONValue?
+    var activityInstance: JSONValue?
     enum CodingKeys: String, CodingKey {
         case id
         case channelID = "channel_id"
@@ -334,6 +425,7 @@ struct MessageDTO: Decodable {
         case editedTimestamp = "edited_timestamp"
         case attachments, reactions, nonce
         case messageReference = "message_reference"
+        case messageSnapshots = "message_snapshots"
         case referencedMessage = "referenced_message"
         case type, flags, application, interaction, embeds, components, stickers, thread, mentions
         case mentionRoles = "mention_roles"
@@ -342,7 +434,14 @@ struct MessageDTO: Decodable {
         case interactionMetadata = "interaction_metadata"
         case guildID = "guild_id"
         case stickerItems = "sticker_items"
-        case call
+        case call, poll, activity
+        case sharedClientTheme = "shared_client_theme"
+        case activityInstance = "activity_instance"
+    }
+
+    var searchIndexUsers: [UserDTO] {
+        [author].compactMap { $0 }
+            + (mentions?.elements.map(\.searchIndexUser) ?? [])
     }
 
     func domain() throws -> Message {
@@ -371,37 +470,56 @@ struct MessageDTO: Decodable {
         let resolvedMember = member?.domain(guildID: resolvedGuildID, userID: resolvedAuthor.id)
         resolvedAuthor.displayName = resolvedMember?.nickname ?? resolvedAuthor.displayName
         resolvedAuthor.avatarURL = resolvedMember?.avatarURL ?? resolvedAuthor.avatarURL
+        let forwardedSnapshot = messageSnapshots?.elements.first?.message.domain(
+            guildID: messageReference?.guildID.flatMap(GuildID.init) ?? resolvedGuildID
+        )
         return Message(
             id: id, channelID: channelID, author: resolvedAuthor, guildMember: resolvedMember,
-            content: content ?? "",
+            // Forward snapshots are authorless immutable content. Flatten their
+            // rich payload into the message's presentation fields while
+            // retaining the snapshot and wrapper timestamp/reference below.
+            content: forwardedSnapshot?.content ?? content ?? "",
             timestamp: timestamp.flatMap(DiscordDate.parse) ?? .now,
             editedTimestamp: editedTimestamp.flatMap(DiscordDate.parse),
-            replyTo: messageReference?.messageID.flatMap(MessageID.init)
+            replyTo: messageReference?.type == DiscordMessageReferenceType.forward.rawValue
+                ? nil
+                : messageReference?.messageID.flatMap(MessageID.init)
                 ?? referencedMessage.flatMap { MessageID($0.id) },
             replyPreview: referencedMessage?.domain(guildID: resolvedGuildID),
-            attachments: attachments?.elements.compactMap { try? $0.domain() } ?? [],
+            attachments: forwardedSnapshot?.attachments
+                ?? attachments?.elements.compactMap { try? $0.domain() } ?? [],
             reactions: reactions?.elements.map(\.domain) ?? [],
             nonce: nonce?.value,
+            // Action eligibility uses the wrapper's metadata while the
+            // presentation fields above render its immutable snapshot.
             type: DiscordMessageType(rawValue: type ?? 0),
             flags: MessageFlags(rawValue: flags ?? 0),
             applicationID: (applicationID ?? application?.id).flatMap(ApplicationID.init),
             application: application?.domain,
             interactionMetadata: metadata,
             guildID: resolvedGuildID,
-            embeds: (embeds?.elements ?? []).enumerated().map {
+            embeds: forwardedSnapshot?.embeds ?? (embeds?.elements ?? []).enumerated().map {
                 $0.element.domain(index: $0.offset)
             },
-            components: (components?.elements ?? []).enumerated().map {
+            components: forwardedSnapshot?.components ?? (components?.elements ?? []).enumerated().map {
                 $0.element.domain(path: "\($0.offset)")
             },
-            stickers: (stickerItems ?? stickers)?.elements.map(\.domain) ?? [],
+            stickers: forwardedSnapshot?.stickers
+                ?? (stickerItems ?? stickers)?.elements.map(\.domain) ?? [],
             thread: thread?.domain,
-            mentionedUsers: mentions?.elements.compactMap {
+            mentionedUsers: forwardedSnapshot?.mentionedUsers ?? mentions?.elements.compactMap {
                 try? $0.domain(guildID: resolvedGuildID)
             } ?? [],
-            mentionedRoleIDs: (mentionRoles ?? []).compactMap(RoleID.init),
+            mentionedRoleIDs: forwardedSnapshot?.mentionedRoleIDs
+                ?? (mentionRoles ?? []).compactMap(RoleID.init),
             mentionsEveryone: mentionEveryone ?? false,
-            call: call?.domain
+            call: call?.domain,
+            hasPoll: poll != nil,
+            hasActivity: activity != nil,
+            hasSharedClientTheme: sharedClientTheme != nil,
+            hasActivityInstance: activityInstance != nil,
+            messageReference: messageReference?.domain,
+            forwardedSnapshot: forwardedSnapshot
         )
     }
 }

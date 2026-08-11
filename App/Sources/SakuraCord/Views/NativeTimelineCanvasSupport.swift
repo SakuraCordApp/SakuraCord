@@ -184,6 +184,7 @@ nonisolated enum NativeTimelineMessageMenuAction: Equatable {
     case retrySending
     case addReaction
     case reply
+    case forward
     case markUnread
     case editMessage
     case copyText
@@ -206,7 +207,8 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
     static func entries(
         canEdit: Bool,
         canRetry: Bool,
-        canReply: Bool
+        canReply: Bool,
+        canForward: Bool = false
     ) -> [NativeTimelineMessageMenuEntry] {
         var result: [NativeTimelineMessageMenuEntry] = []
         if canRetry {
@@ -227,6 +229,13 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
                 .reply,
                 title: "Reply",
                 systemImage: "arrowshape.turn.up.left"
+            ))
+        }
+        if canForward {
+            result.append(.action(
+                .forward,
+                title: "Forward",
+                systemImage: "arrowshape.turn.up.right"
             ))
         }
         if canEdit {
@@ -718,6 +727,7 @@ nonisolated enum NativeTimelinePointerActivationTarget: Hashable {
     case authorProfile(MessageID)
     case invocationProfile(MessageID)
     case reply(MessageID, MessageID)
+    case forwardedSource(MessageID, ChannelID, GuildID?, MessageID?)
     case linkedImage(MessageID, URL)
     case attachment(MessageID, String)
     case embedMedia(MessageID, String)

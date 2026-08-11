@@ -131,6 +131,7 @@ struct NativeTimelineRowActions {
     var loadEarlier: () -> Void
     var openReply: (MessageID) -> Void
     var reply: ((Message) -> Void)?
+    var forward: ((Message) -> Void)?
     var retry: (Message) -> Void
     var edit: (Message, String) -> Void
     var markUnread: (Message) -> Void
@@ -143,6 +144,37 @@ struct NativeTimelineRowActions {
         ComponentInteractionKind,
         [String]
     ) -> Void
+
+    init(
+        loadEarlier: @escaping () -> Void,
+        openReply: @escaping (MessageID) -> Void,
+        reply: ((Message) -> Void)?,
+        forward: ((Message) -> Void)? = nil,
+        retry: @escaping (Message) -> Void,
+        edit: @escaping (Message, String) -> Void,
+        markUnread: @escaping (Message) -> Void,
+        delete: @escaping (Message) -> Void,
+        react: @escaping (String, Message) -> Void,
+        openThread: @escaping (MessageThreadSummary) -> Void,
+        submitComponent: @escaping (
+            Message,
+            String,
+            ComponentInteractionKind,
+            [String]
+        ) -> Void
+    ) {
+        self.loadEarlier = loadEarlier
+        self.openReply = openReply
+        self.reply = reply
+        self.forward = forward
+        self.retry = retry
+        self.edit = edit
+        self.markUnread = markUnread
+        self.delete = delete
+        self.react = react
+        self.openThread = openThread
+        self.submitComponent = submitComponent
+    }
 }
 
 struct NativeTimelineBeginningLayout {
@@ -311,6 +343,16 @@ struct NativeTimelineLoaderLayout {
 }
 
 struct NativeTimelineRowLayout {
+    struct ForwardedSourceRegion {
+        let frame: CGRect
+        let label: String
+        let iconURL: URL?
+        let channelID: ChannelID
+        let guildID: GuildID?
+        let messageID: MessageID?
+        let timestamp: Date
+    }
+
     struct CommandInvocationRegion {
         let frame: CGRect
         let connectorFrame: CGRect
@@ -407,6 +449,9 @@ struct NativeTimelineRowLayout {
     let contentFrame: CGRect?
     let attributedContent: NSAttributedString?
     let contentFramesetter: CTFramesetter?
+    let forwardedHeaderFrame: CGRect?
+    let forwardedBarFrame: CGRect?
+    let forwardedSourceRegion: ForwardedSourceRegion?
     let linkedImageRegions: [LinkedImageRegion]
     let attachmentRegions: [AttachmentRegion]
     let embedFrames: [CGRect]
@@ -483,6 +528,9 @@ struct NativeTimelineRowLayout {
             contentFrame: nil,
             attributedContent: nil,
             contentFramesetter: nil,
+            forwardedHeaderFrame: nil,
+            forwardedBarFrame: nil,
+            forwardedSourceRegion: nil,
             linkedImageRegions: [],
             attachmentRegions: [],
             embedFrames: [],
@@ -693,6 +741,21 @@ struct NativeTimelineRowLayout {
             )
         }
 
+        var forwardedHeaderFrame: CGRect?
+        let forwardedBarStartY: CGFloat?
+        if message.forwardedSnapshot != nil {
+            forwardedHeaderFrame = CGRect(
+                x: contentX,
+                y: verticalOffset,
+                width: contentWidth,
+                height: 18
+            )
+            forwardedBarStartY = verticalOffset
+            verticalOffset += 22
+        } else {
+            forwardedBarStartY = nil
+        }
+
         var contentFrame: CGRect?
         var hasRichContent = false
         let usesComponentsV2 = message.flags.contains(.isComponentsV2)
@@ -854,6 +917,65 @@ struct NativeTimelineRowLayout {
             hasRichContent = true
         }
 
+        var forwardedSourceRegion: ForwardedSourceRegion?
+        var forwardedBarFrame: CGRect?
+        if let snapshot = message.forwardedSnapshot,
+           let reference = message.messageReference,
+           let sourceChannelID = reference.channelID,
+           let sourceChannel = model?.snapshot?.channels.first(where: {
+               $0.id == sourceChannelID
+           })
+        {
+            if hasRichContent { verticalOffset += 7 }
+            let sourceGuild = reference.guildID.flatMap { sourceGuildID in
+                model?.snapshot?.guilds.first(where: { $0.id == sourceGuildID })
+            }
+            let sameGuild = message.guildID == reference.guildID
+            let sourceLabel = sameGuild
+                ? "#\(sourceChannel.name)"
+                : (sourceGuild?.name ?? sourceChannel.name)
+            let dateText = snapshot.timestamp.formatted(
+                date: .abbreviated,
+                time: .shortened
+            )
+            let sourceText = "\(sourceLabel)  •  \(dateText)  ›"
+            let sourceFont = NSFont.systemFont(
+                ofSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize,
+                weight: .medium
+            )
+            let iconWidth: CGFloat = sameGuild ? 0 : 24
+            let sourceWidth = min(
+                contentWidth,
+                ceil((sourceText as NSString).size(withAttributes: [
+                    .font: sourceFont
+                ]).width) + iconWidth + 12
+            )
+            forwardedSourceRegion = ForwardedSourceRegion(
+                frame: CGRect(
+                    x: contentX,
+                    y: verticalOffset,
+                    width: sourceWidth,
+                    height: 22
+                ),
+                label: sourceLabel,
+                iconURL: sameGuild ? nil : sourceGuild?.iconURL,
+                channelID: sourceChannelID,
+                guildID: reference.guildID,
+                messageID: reference.messageID,
+                timestamp: snapshot.timestamp
+            )
+            verticalOffset += 22
+            hasRichContent = true
+        }
+        if let forwardedBarStartY {
+            forwardedBarFrame = CGRect(
+                x: contentX - 11,
+                y: forwardedBarStartY,
+                width: 3,
+                height: max(18, verticalOffset - forwardedBarStartY)
+            )
+        }
+
         var threadFrame: CGRect?
         if message.thread != nil {
             if hasRichContent {
@@ -976,6 +1098,9 @@ struct NativeTimelineRowLayout {
             contentFrame: contentFrame,
             attributedContent: contentPresentation.attributedContent,
             contentFramesetter: contentPresentation.framesetter,
+            forwardedHeaderFrame: forwardedHeaderFrame,
+            forwardedBarFrame: forwardedBarFrame,
+            forwardedSourceRegion: forwardedSourceRegion,
             linkedImageRegions: linkedImageRegions,
             attachmentRegions: attachmentRegions,
             embedFrames: embedFrames,

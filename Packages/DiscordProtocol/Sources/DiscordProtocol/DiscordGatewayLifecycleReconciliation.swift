@@ -13,6 +13,12 @@ extension DiscordRESTProvider {
             }
         )
         cachedGuilds[guildID] = nil
+        cachedJoinedThreads = cachedJoinedThreads.filter {
+            $0.value.guildID != guildID
+        }
+        cachedJoinedThreadOrder.removeAll {
+            cachedJoinedThreads[$0] == nil
+        }
         cachedChannels[guildID] = nil
         cachedGuildChannelDTOs[guildID] = nil
         cachedGuildRoles[guildID] = nil
@@ -87,7 +93,7 @@ extension DiscordRESTProvider {
     }
 
     func applyUserUpdate(dto: UserDTO, user: User) {
-        cachedGatewayUsersByID[dto.id] = dto
+        cacheGatewayUser(dto)
         currentUser = user
 
         if var channels = cachedChannels[nil] {

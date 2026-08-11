@@ -296,6 +296,7 @@ struct MessageActionCapsule: View {
     let retry: (() -> Void)?
     let edit: () -> Void
     let reply: (() -> Void)?
+    let forward: (() -> Void)?
     let react: (String) -> Void
     let copy: () -> Void
     let copyLink: () -> Void
@@ -328,6 +329,13 @@ struct MessageActionCapsule: View {
             .id("reaction-picker-\(message.id)-toolbar")
             if let reply {
                 HoverActionButton(systemImage: "arrowshape.turn.up.left", help: "Reply", action: reply)
+            }
+            if let forward {
+                HoverActionButton(
+                    systemImage: "arrowshape.turn.up.right",
+                    help: "Forward",
+                    action: forward
+                )
             }
             if canEdit {
                 HoverActionButton(systemImage: "pencil", help: "Edit message", action: edit)

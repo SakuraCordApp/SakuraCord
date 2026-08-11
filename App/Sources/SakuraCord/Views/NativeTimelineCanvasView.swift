@@ -358,6 +358,7 @@ enum NativeTimelineRowPainter {
         pressedComponentButton:
             NativeTimelineComponentButtonTarget? = nil,
         componentButtonPressProgress: CGFloat = 0,
+        isForwardedSourceHovered: Bool = false,
         hidesMessageContent: Bool = false,
         hoveredReactionID: String? = nil,
         isAddReactionHovered: Bool = false,
@@ -440,6 +441,7 @@ enum NativeTimelineRowPainter {
                 pressedComponentButton: pressedComponentButton,
                 componentButtonPressProgress:
                     componentButtonPressProgress,
+                isForwardedSourceHovered: isForwardedSourceHovered,
                 hidesMessageContent: hidesMessageContent,
                 hoveredReactionID: hoveredReactionID,
                 isAddReactionHovered: isAddReactionHovered,

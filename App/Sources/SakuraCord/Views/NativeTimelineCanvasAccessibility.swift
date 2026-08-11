@@ -1178,6 +1178,12 @@ extension NativeTimelineCanvasView {
                 return true
             })
         }
+        if model?.canForward(message) == true, let forward = actions?.forward {
+            result.append(NSAccessibilityCustomAction(name: "Forward") {
+                forward(message)
+                return true
+            })
+        }
         result.append(NSAccessibilityCustomAction(
             name: "Mark Unread"
         ) { [weak self] in

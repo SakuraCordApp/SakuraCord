@@ -511,6 +511,7 @@ struct GatewayReadyGuildsDTO: Decodable {
         var permissions: String?
         var rulesChannelID: String?
         var defaultMessageNotifications: Int?
+        var features: Set<String>
         var voiceStates: [VoiceStateUpdateDTO]
         var emojis: GatewayGuildEmojiCollectionDTO?
         var channels: [ChannelDTO]
@@ -519,7 +520,7 @@ struct GatewayReadyGuildsDTO: Decodable {
         var members: [GuildMemberDTO]
 
         enum CodingKeys: String, CodingKey {
-            case id, name, icon, owner, permissions, properties
+            case id, name, icon, owner, permissions, properties, features
             case ownerID = "owner_id"
             case rulesChannelID = "rules_channel_id"
             case defaultMessageNotifications = "default_message_notifications"
@@ -549,6 +550,8 @@ struct GatewayReadyGuildsDTO: Decodable {
                 Int.self,
                 forKey: .defaultMessageNotifications
             )) ?? nested?.defaultMessageNotifications
+            features = (try? container.decode(Set<String>.self, forKey: .features))
+                ?? nested?.features ?? []
             voiceStates =
                 (try? container.decode(
                     LossyList<VoiceStateUpdateDTO>.self,
@@ -593,6 +596,7 @@ struct GatewayReadyGuildsDTO: Decodable {
                 isOwnedByCurrentUser: isOwnedByCurrentUser,
                 currentUserPermissions: permissions.flatMap(UInt64.init),
                 rulesChannelID: rulesChannelID.flatMap(ChannelID.init),
+                features: features,
                 defaultMessageNotifications:
                     defaultMessageNotifications.flatMap(
                         MessageNotificationLevel.init(rawValue:)
@@ -606,6 +610,9 @@ struct GatewayReadyGuildsDTO: Decodable {
     var lazyPrivateChannels: [ChannelDTO]
     var currentUser: UserDTO?
     var users: [UserDTO]
+    var friendUserIDs: Set<UserID>
+    var blockedOrIgnoredUserIDs: Set<UserID>
+    var relationshipNicknamesByUserID: [UserID: String]
     var presences: [PresenceUpdateDTO]
     var mergedPresences: GatewayMergedPresencesDTO
     var mergedMembers: [[ReadyMergedMemberDTO]]
@@ -621,6 +628,7 @@ struct GatewayReadyGuildsDTO: Decodable {
         case lazyPrivateChannels = "lazy_private_channels"
         case currentUser = "user"
         case users
+        case relationships
         case presences
         case mergedPresences = "merged_presences"
         case mergedMembers = "merged_members"
@@ -649,6 +657,46 @@ struct GatewayReadyGuildsDTO: Decodable {
             (try? container.decode(
                 LossyList<UserDTO>.self, forKey: .users
             ))?.elements ?? []
+        struct RelationshipDTO: Decodable {
+            var id: String
+            var type: Int
+            var nickname: String?
+            var user: UserDTO?
+
+            var userIgnored: Bool?
+
+            enum CodingKeys: String, CodingKey {
+                case id, type, nickname, user
+                case userIgnored = "user_ignored"
+            }
+        }
+        let relationships =
+            (try? container.decode(
+                LossyList<RelationshipDTO>.self, forKey: .relationships
+            ))?.elements ?? []
+        friendUserIDs = Set(relationships.compactMap {
+            $0.type == 1 ? UserID($0.id) : nil
+        })
+        blockedOrIgnoredUserIDs = Set(relationships.compactMap {
+            $0.type == 2 || $0.userIgnored == true ? UserID($0.id) : nil
+        })
+        relationshipNicknamesByUserID = Dictionary(
+            relationships.compactMap { relationship in
+                guard let id = UserID(relationship.id),
+                      let nickname = relationship.nickname?
+                        .trimmingCharacters(in: .whitespacesAndNewlines),
+                      !nickname.isEmpty
+                else { return nil }
+                return (id, nickname)
+            },
+            uniquingKeysWith: { _, newer in newer }
+        )
+        for relationship in relationships {
+            guard let user = relationship.user,
+                  !users.contains(where: { $0.id == user.id })
+            else { continue }
+            users.append(user)
+        }
         presences =
             (try? container.decode(
                 LossyList<PresenceUpdateDTO>.self, forKey: .presences

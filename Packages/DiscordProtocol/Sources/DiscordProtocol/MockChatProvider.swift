@@ -189,7 +189,12 @@ public actor MockChatProvider: ChatProvider {
                 "cry", "wilted_flower", "person_shrugging", "white_heart", "thumbsup", "x",
                 "unamused", "hot_face", "pleading_face", "smiley_cat", "eyes",
             ],
-            usageScores: [:]
+            usageScores: [:],
+            guildAndChannelUsageScores: Dictionary(
+                uniqueKeysWithValues: snapshot.channels.enumerated().map { index, channel in
+                    (channel.id.description, max(1, snapshot.channels.count - index))
+                }
+            )
         )
     }
 
@@ -855,12 +860,67 @@ public actor MockChatProvider: ChatProvider {
         return message
     }
 
+    public func forward(_ draft: ForwardMessageDraft) async throws -> Message {
+        guard snapshot.channels.contains(where: { $0.id == draft.destinationChannelID }) else {
+            throw ChatProviderError.channelNotFound
+        }
+        guard let source = messagesByChannel[draft.sourceChannelID]?.first(where: {
+            $0.id == draft.sourceMessageID
+        }) else {
+            throw ChatProviderError.messageNotFound
+        }
+        nextMessageID += 1
+        let forwardedSnapshot = ForwardedMessageSnapshot(
+            type: source.type,
+            content: source.content,
+            timestamp: source.timestamp,
+            editedTimestamp: source.editedTimestamp,
+            flags: source.flags,
+            attachments: source.attachments,
+            embeds: source.embeds,
+            components: source.components,
+            stickers: source.stickers,
+            mentionedUsers: source.mentionedUsers,
+            mentionedRoleIDs: source.mentionedRoleIDs
+        )
+        let message = Message(
+            id: MessageID(rawValue: nextMessageID),
+            channelID: draft.destinationChannelID,
+            author: currentUser,
+            content: forwardedSnapshot.content,
+            timestamp: .now,
+            editedTimestamp: forwardedSnapshot.editedTimestamp,
+            attachments: forwardedSnapshot.attachments,
+            nonce: draft.nonce,
+            type: forwardedSnapshot.type,
+            flags: forwardedSnapshot.flags,
+            guildID: snapshot.channels.first(where: {
+                $0.id == draft.destinationChannelID
+            })?.guildID,
+            embeds: forwardedSnapshot.embeds,
+            components: forwardedSnapshot.components,
+            stickers: forwardedSnapshot.stickers,
+            mentionedUsers: forwardedSnapshot.mentionedUsers,
+            mentionedRoleIDs: forwardedSnapshot.mentionedRoleIDs,
+            messageReference: DiscordMessageReference(
+                type: .forward,
+                messageID: draft.sourceMessageID,
+                channelID: draft.sourceChannelID,
+                guildID: draft.sourceGuildID
+            ),
+            forwardedSnapshot: forwardedSnapshot
+        )
+        messagesByChannel[draft.destinationChannelID, default: []].append(message)
+        continuation?.yield(.messageCreated(message))
+        return message
+    }
+
     public func supports(_ capability: ChatCapability) async -> Bool {
         capability == .forums || capability == .gifs || capability == .stickers
             || capability == .stickerSending
             || capability == .components || capability == .modals
             || capability == .remoteComponentChoices
-            || capability == .slashCommands
+            || capability == .slashCommands || capability == .messageForwarding
     }
 
     public func componentChoices(

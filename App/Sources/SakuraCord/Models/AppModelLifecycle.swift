@@ -214,6 +214,10 @@ extension AppModel {
     }
 
     func resetAccountPresentationState() {
+        forwardingMessage = nil
+        forwardingErrorMessage = nil
+        isForwardingMessages = false
+        forwardDestinationHistory = []
         snapshot = nil
         serverRailGuildsByID = [:]
         serverRailItems = []
@@ -224,6 +228,13 @@ extension AppModel {
         discordFrequentlyUsedEmojiKeys = []
         discordEmojiUsageScores = [:]
         discordGuildAndChannelUsageScores = [:]
+        discordGuildAndChannelUsage = [:]
+        discordGuildAndChannelUsageOrder = []
+        pendingDiscordFrecencyUses = []
+        appliedDiscordFrecencyDeltasKey = nil
+        lastDiscordFrecencyChannelID = nil
+        lastDiscordFrecencyGuildID = nil
+        didSelectInitialForwardDestination = false
         hasLoadedDiscordEmojiSettings = false
         didAttemptDiscordEmojiSettings = false
         voiceStates = [:]
@@ -320,6 +331,14 @@ extension AppModel {
                 errorMessage = error.localizedDescription
             }
         }
+        installSignedOutAccountState()
+        if launchMode == .offlineTesting {
+            await start()
+            guard accountSessionGeneration == transitionGeneration else { return }
+        }
+    }
+
+    private func installSignedOutAccountState() {
         credentialHandle = nil
         activeAccountID = nil
         resetAcknowledgementWork()
@@ -338,10 +357,7 @@ extension AppModel {
         let signedOutDatabase = launchMode == .offlineTesting
             ? try? SakuraCordDatabase(inMemory: true)
             : nil
-        installAccountSession(
-            provider: signedOutProvider,
-            database: signedOutDatabase
-        )
+        installAccountSession(provider: signedOutProvider, database: signedOutDatabase)
         accountTransitionIsActive = false
         snapshot = nil
         serverRailGuildsByID = [:]
@@ -353,6 +369,12 @@ extension AppModel {
         discordFrequentlyUsedEmojiKeys = []
         discordEmojiUsageScores = [:]
         discordGuildAndChannelUsageScores = [:]
+        discordGuildAndChannelUsage = [:]
+        discordGuildAndChannelUsageOrder = []
+        pendingDiscordFrecencyUses = []
+        appliedDiscordFrecencyDeltasKey = nil
+        lastDiscordFrecencyChannelID = nil
+        lastDiscordFrecencyGuildID = nil
         hasLoadedDiscordEmojiSettings = false
         didAttemptDiscordEmojiSettings = false
         voiceStates = [:]
@@ -384,10 +406,6 @@ extension AppModel {
         isAuthenticated = false
         didAttemptSessionRestore = true
         sessionState = launchMode == .offlineTesting ? .connecting : .signedOut
-        if launchMode == .offlineTesting {
-            await start()
-            guard accountSessionGeneration == transitionGeneration else { return }
-        }
     }
 
     private func removeSavedAccount(_ handle: CredentialHandle) async throws {
@@ -578,6 +596,10 @@ extension AppModel {
     ) async {
         if let account, !isCurrentAccountSession(account) { return }
         snapshot = value
+        configureForwardDestinationHistoryScope(
+            credentialHandle?.accountID
+                ?? (launchMode == .offlineTesting ? "offline" : "signed-out")
+        )
         if let handle = credentialHandle,
            handle.accountID == value.currentUser.id.description
         {
@@ -1205,14 +1227,23 @@ extension AppModel {
         guard !didAttemptDiscordEmojiSettings else { return }
         let session = accountSession()
         didAttemptDiscordEmojiSettings = true
-        guard let settings = try? await session.provider.emojiUserSettings(),
-              isCurrentAccountSession(session)
-        else { return }
-        discordFavoriteEmojiKeys = settings.favoriteKeys
-        discordFrequentlyUsedEmojiKeys = settings.frequentlyUsedKeys
-        discordEmojiUsageScores = settings.usageScores
-        discordGuildAndChannelUsageScores = settings.guildAndChannelUsageScores
+        let settings = try? await session.provider.emojiUserSettings()
+        guard isCurrentAccountSession(session) else { return }
+        if let settings {
+            discordFavoriteEmojiKeys = settings.favoriteKeys
+            discordFrequentlyUsedEmojiKeys = settings.frequentlyUsedKeys
+            discordEmojiUsageScores = settings.usageScores
+            discordGuildAndChannelUsageScores = settings.guildAndChannelUsageScores
+            discordGuildAndChannelUsage = settings.guildAndChannelUsage
+            discordGuildAndChannelUsageOrder = settings.guildAndChannelUsageOrder
+        }
+        // Destination discovery is local once bootstrap state is available.
+        // A failed or timed-out settings enrichment must not leave Forward on
+        // an infinite loading state; persisted local deltas still provide the
+        // best available frecency signal until the next authenticated session.
         hasLoadedDiscordEmojiSettings = true
+        applyPersistedDiscordFrecencyUsageDeltas()
+        forwardSearchSourceRevision &+= 1
     }
 
     func recordEmojiUse(_ key: String) {
