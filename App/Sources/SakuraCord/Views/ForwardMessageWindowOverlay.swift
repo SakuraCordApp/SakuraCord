@@ -21,5 +21,18 @@ struct ForwardMessageWindowOverlay: View {
                 }
             )
         }
+        // Destination discovery depends only on already-loaded local stores.
+        // Warm its revisioned index after workspace changes settle so the first
+        // explicit Forward action normally attaches an immediately populated
+        // picker instead of starting permission and fuzzy-index work on open.
+        .task(id: model.forwardSearchSourceRevision) {
+            guard model.snapshot != nil else { return }
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled else { return }
+            _ = await ForwardDestinationSearchIndexCache.shared.prepare(
+                for: model,
+                priority: .utility
+            )
+        }
     }
 }

@@ -54,6 +54,47 @@ import Testing
     #expect(!channelResults.contains { $0.resolvedChannelID == ChannelID(rawValue: 12) })
 }
 
+@MainActor @Test
+func `forward destination index warms before the menu is presented`() async throws {
+    let currentUser = User(
+        id: UserID(rawValue: 1),
+        username: "current",
+        displayName: "Current"
+    )
+    let guild = Guild(id: GuildID(rawValue: 2), name: "Warm Guild")
+    let channel = Channel(
+        id: ChannelID(rawValue: 10),
+        guildID: guild.id,
+        name: "warm-destination",
+        kind: .text
+    )
+    let model = AppModel(
+        launchMode: .offlineTesting,
+        provider: MockChatProvider()
+    )
+    model.snapshot = BootstrapSnapshot(
+        currentUser: currentUser,
+        guilds: [guild],
+        channels: [channel],
+        members: []
+    )
+
+    #expect(model.forwardingMessage == nil)
+    let index = try #require(
+        await ForwardDestinationSearchIndexCache.shared.prepare(
+            for: model,
+            priority: .utility
+        )
+    )
+
+    #expect(index.results(query: "warm").map(\.id) == [.channel(channel.id)])
+    #expect(ForwardDestinationSearchIndexCache.shared.value(
+        for: model,
+        userID: currentUser.id,
+        revision: model.forwardSearchSourceRevision
+    ) != nil)
+}
+
 @Test func `forward search includes account wide known users without a private channel`() {
     let knownUser = User(
         id: UserID(rawValue: 2),

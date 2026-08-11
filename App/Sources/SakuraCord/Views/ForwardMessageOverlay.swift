@@ -1069,13 +1069,53 @@ nonisolated enum ForwardDestinationSearchPolicy {
 }
 
 @MainActor
-private final class ForwardDestinationSearchIndexCache {
+final class ForwardDestinationSearchIndexCache {
     static let shared = ForwardDestinationSearchIndexCache()
+
+    private struct Key: Equatable {
+        let modelID: ObjectIdentifier
+        let userID: UserID?
+        let revision: UInt64
+    }
+
+    private nonisolated struct Input {
+        let channels: [Channel]
+        let threads: [MessageThreadSummary]
+        let users: [User]
+        let friendUserIDs: Set<UserID>
+        let relationshipNicknamesByUserID: [UserID: String]
+        let userSearchAliasesByUserID: [UserID: [String]]
+        let currentUserID: UserID?
+        let guilds: [GuildID: Guild]
+        let usageScores: [String: Int]
+        let usageOrder: [String]
+        let searchableChannelIDs: Set<ChannelID>
+        let eligibleChannelIDs: Set<ChannelID>
+
+        func makeIndex() -> ForwardDestinationSearchPolicy.Index {
+            ForwardDestinationSearchPolicy.makeIndex(
+                channels: channels,
+                threads: threads,
+                users: users,
+                friendUserIDs: friendUserIDs,
+                relationshipNicknamesByUserID: relationshipNicknamesByUserID,
+                userSearchAliasesByUserID: userSearchAliasesByUserID,
+                currentUserID: currentUserID,
+                guilds: guilds,
+                usageScores: usageScores,
+                usageOrder: usageOrder,
+                searchableChannelIDs: searchableChannelIDs,
+                eligibleChannelIDs: eligibleChannelIDs
+            )
+        }
+    }
 
     private var modelID: ObjectIdentifier?
     private var userID: UserID?
     private var revision: UInt64?
     private var index: ForwardDestinationSearchPolicy.Index?
+    private var preparationKey: Key?
+    private var preparationTask: Task<ForwardDestinationSearchPolicy.Index, Never>?
 
     func value(
         for model: AppModel,
@@ -1100,82 +1140,63 @@ private final class ForwardDestinationSearchIndexCache {
         self.revision = revision
         self.index = index
     }
-}
 
-struct ForwardMessageOverlay: View {
-    let model: AppModel
-    let message: Message
-    let animationState: WindowModalAnimationState
-    let dismiss: () -> Void
-    @State private var query = ""
-    @State private var context = ""
-    @State private var selectedDestinationIDs: [ForwardDestinationID] = []
-    @State private var searchPinnedDestinationIDs: [ForwardDestinationID] = []
-    @State private var searchIndex: ForwardDestinationSearchPolicy.Index?
-    @State private var searchIndexRevision = 0
-    @State private var displayedDestinations: [ForwardDestination] = []
-    @State private var unqueriedDestinations: [ForwardDestination] = []
-    @State private var destinationScrollPosition: ForwardDestinationID?
-    @FocusState private var isContextFocused: Bool
-
-    private struct SearchRequest: Hashable {
-        let query: String
-        let pinnedDestinationIDs: [ForwardDestinationID]
-        let indexRevision: Int
-    }
-
-    private var guilds: [GuildID: Guild] {
-        let snapshotGuilds = Dictionary(
-            uniqueKeysWithValues: (model.snapshot?.guilds ?? []).map { ($0.id, $0) }
-        )
-        return snapshotGuilds.merging(model.serverRailGuildsByID) { _, railGuild in
-            railGuild
-        }
-    }
-
-    private var isVisible: Bool {
-        animationState.isVisible
-    }
-
-    private func rebuildSearchIndex() async {
-        let sourceRevision = model.forwardSearchSourceRevision
+    func prepare(
+        for model: AppModel,
+        priority: TaskPriority
+    ) async -> ForwardDestinationSearchPolicy.Index? {
         let currentUserID = model.snapshot?.currentUser.id
-        if let cached = ForwardDestinationSearchIndexCache.shared.value(
+        let sourceRevision = model.forwardSearchSourceRevision
+        if let cached = value(
             for: model,
             userID: currentUserID,
             revision: sourceRevision
         ) {
-            searchIndex = cached
-            searchIndexRevision &+= 1
-            return
+            return cached
         }
 
-        // Frecency settings improve ranking, but destination discovery itself
-        // is entirely local. Never hold the first picker population behind the
-        // authenticated enrichment request; its revision will rebuild this
-        // index when it settles.
-        if !model.hasLoadedDiscordEmojiSettings {
-            Task { @MainActor in
-                await model.loadDiscordEmojiSettings()
+        let key = Key(
+            modelID: ObjectIdentifier(model),
+            userID: currentUserID,
+            revision: sourceRevision
+        )
+        let task: Task<ForwardDestinationSearchPolicy.Index, Never>
+        if preparationKey == key, let preparationTask {
+            task = preparationTask
+        } else {
+            preparationTask?.cancel()
+            let input = makeInput(for: model, currentUserID: currentUserID)
+            let newTask = Task.detached(priority: priority) {
+                input.makeIndex()
             }
+            preparationKey = key
+            preparationTask = newTask
+            task = newTask
         }
-        guard !Task.isCancelled else { return }
-        // Give the newly attached modal one render pass before walking local
-        // permission state. This keeps the opening transition responsive while
-        // adding only a single scheduler turn to destination availability.
-        await Task.yield()
-        let snapshotChannels = model.snapshot?.channels ?? []
+
+        let prepared = await task.value
+        guard !Task.isCancelled else { return nil }
+        if preparationKey == key {
+            store(
+                prepared,
+                for: model,
+                userID: currentUserID,
+                revision: sourceRevision
+            )
+            preparationKey = nil
+            preparationTask = nil
+        }
+        return prepared
+    }
+
+    private func makeInput(
+        for model: AppModel,
+        currentUserID: UserID?
+    ) -> Input {
         let channels = ForwardDestinationSearchPolicy.channelsInStoreOrder(
-            snapshotChannels,
+            model.snapshot?.channels ?? [],
             storeOrder: model.snapshot?.forwardChannelStoreOrder ?? []
         )
-        let friendUserIDs = model.snapshot?.friendUserIDs ?? []
-        // Discord searches its singular account-wide UserStore, which is fed by
-        // READY, relationships, READY_SUPPLEMENTAL, and subsequently observed
-        // users. The provider projects that store here. Do not merge AppModel
-        // member dictionaries again: doing so admits guild-only records and
-        // changes source order and category-cutoff membership.
-        let knownUsers = model.snapshot?.knownUsers ?? []
         let channelsByID = Dictionary(
             channels.map { ($0.id, $0) },
             uniquingKeysWith: { _, newer in newer }
@@ -1201,42 +1222,73 @@ struct ForwardMessageOverlay: View {
             else { return nil }
             return thread.id
         })
-        let relationshipNicknamesByUserID =
-            model.snapshot?.relationshipNicknamesByUserID ?? [:]
-        let userSearchAliasesByUserID =
-            model.snapshot?.userSearchAliasesByUserID ?? [:]
-        let guildSnapshot = guilds
-        let usageScores = model.discordGuildAndChannelUsageScores
-        let usageOrder = model.discordGuildAndChannelUsageOrder
-        let userSnapshot = knownUsers
-        let indexTask = Task.detached(priority: .userInitiated) {
-            ForwardDestinationSearchPolicy.makeIndex(
-                channels: channels,
-                threads: threads,
-                users: userSnapshot,
-                friendUserIDs: friendUserIDs,
-                relationshipNicknamesByUserID: relationshipNicknamesByUserID,
-                userSearchAliasesByUserID: userSearchAliasesByUserID,
-                currentUserID: currentUserID,
-                guilds: guildSnapshot,
-                usageScores: usageScores,
-                usageOrder: usageOrder,
-                searchableChannelIDs: searchableChannelIDs,
-                eligibleChannelIDs: eligibleChannelIDs
-            )
+        let snapshotGuilds = Dictionary(
+            uniqueKeysWithValues: (model.snapshot?.guilds ?? []).map { ($0.id, $0) }
+        )
+        let guilds = snapshotGuilds.merging(model.serverRailGuildsByID) { _, railGuild in
+            railGuild
         }
-        let index = await withTaskCancellationHandler {
-            await indexTask.value
-        } onCancel: {
-            indexTask.cancel()
+        return Input(
+            channels: channels,
+            threads: threads,
+            users: model.snapshot?.knownUsers ?? [],
+            friendUserIDs: model.snapshot?.friendUserIDs ?? [],
+            relationshipNicknamesByUserID:
+                model.snapshot?.relationshipNicknamesByUserID ?? [:],
+            userSearchAliasesByUserID:
+                model.snapshot?.userSearchAliasesByUserID ?? [:],
+            currentUserID: currentUserID,
+            guilds: guilds,
+            usageScores: model.discordGuildAndChannelUsageScores,
+            usageOrder: model.discordGuildAndChannelUsageOrder,
+            searchableChannelIDs: searchableChannelIDs,
+            eligibleChannelIDs: eligibleChannelIDs
+        )
+    }
+}
+
+struct ForwardMessageOverlay: View {
+    let model: AppModel
+    let message: Message
+    let animationState: WindowModalAnimationState
+    let dismiss: () -> Void
+    @State private var query = ""
+    @State private var context = ""
+    @State private var selectedDestinationIDs: [ForwardDestinationID] = []
+    @State private var searchPinnedDestinationIDs: [ForwardDestinationID] = []
+    @State private var searchIndex: ForwardDestinationSearchPolicy.Index?
+    @State private var searchIndexRevision = 0
+    @State private var displayedDestinations: [ForwardDestination] = []
+    @State private var unqueriedDestinations: [ForwardDestination] = []
+    @State private var destinationScrollPosition: ForwardDestinationID?
+    @FocusState private var isContextFocused: Bool
+
+    private struct SearchRequest: Hashable {
+        let query: String
+        let pinnedDestinationIDs: [ForwardDestinationID]
+        let indexRevision: Int
+    }
+
+    private var isVisible: Bool {
+        animationState.isVisible
+    }
+
+    private func rebuildSearchIndex() async {
+        // Frecency settings improve ranking, but destination discovery itself
+        // is entirely local. Never hold the first picker population behind the
+        // authenticated enrichment request; its revision will rebuild this
+        // index when it settles.
+        if !model.hasLoadedDiscordEmojiSettings {
+            Task { @MainActor in
+                await model.loadDiscordEmojiSettings()
+            }
         }
         guard !Task.isCancelled else { return }
-        ForwardDestinationSearchIndexCache.shared.store(
-            index,
+        guard let index = await ForwardDestinationSearchIndexCache.shared.prepare(
             for: model,
-            userID: currentUserID,
-            revision: sourceRevision
-        )
+            priority: .userInitiated
+        ), !Task.isCancelled
+        else { return }
         searchIndex = index
         searchIndexRevision &+= 1
     }
