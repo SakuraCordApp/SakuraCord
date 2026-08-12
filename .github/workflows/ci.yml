@@ -40,6 +40,12 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+      - name: Check out current release-control files
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@v6
+        with:
+          path: release-control
+          ref: ${{ github.sha }}
       - name: Validate release tag and pre-made copy
         run: |
           release_tag="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
@@ -52,21 +58,27 @@ jobs:
             exit 1
           fi
           version="${release_tag#v}"
-          release_copy="Releases/$release_tag.json"
+          release_control_root="$GITHUB_WORKSPACE"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            release_control_root="$GITHUB_WORKSPACE/release-control"
+          fi
+          release_copy="$release_control_root/Releases/$release_tag.json"
           if [[ ! -f "$release_copy" ]]; then
-            echo "$release_copy must be written, reviewed, and committed before tagging." >&2
+            echo "Releases/$release_tag.json must be written, reviewed, and committed before publishing." >&2
             exit 1
           fi
-          ./script/validate_release_tag.sh "$GITHUB_WORKSPACE" "$release_tag"
+          "$release_control_root/script/validate_release_tag.sh" \
+            "$release_control_root" "$release_tag"
           echo "SAKURACORD_VERSION=$version" >> "$GITHUB_ENV"
           echo "SAKURACORD_BUILD_NUMBER=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
           echo "SAKURACORD_RELEASE_TAG=$release_tag" >> "$GITHUB_ENV"
+          echo "SAKURACORD_RELEASE_CONTROL_ROOT=$release_control_root" >> "$GITHUB_ENV"
           echo "SAKURACORD_RELEASE_COPY=$release_copy" >> "$GITHUB_ENV"
           echo "SAKURACORD_DMG_PATH=dist/SakuraCord.v$version.dmg" >> "$GITHUB_ENV"
       - name: Prepare exact release notes and Discord copy
         run: |
           mkdir -p dist
-          node script/release_automation.mjs prepare \
+          node "$SAKURACORD_RELEASE_CONTROL_ROOT/script/release_automation.mjs" prepare \
             --input "$SAKURACORD_RELEASE_COPY" \
             --tag "$SAKURACORD_RELEASE_TAG" \
             --output dist/release-copy.json \
@@ -191,7 +203,7 @@ jobs:
           DISCORD_UPDATES_ROLE_ID: ${{ secrets.DISCORD_UPDATES_ROLE_ID }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          message_id="$(node script/release_automation.mjs announce-discord \
+          message_id="$(node "$SAKURACORD_RELEASE_CONTROL_ROOT/script/release_automation.mjs" announce-discord \
             --input dist/release-copy.json \
             --repo "$GITHUB_REPOSITORY" \
             --release-id "${{ steps.published_release.outputs.id }}" \
