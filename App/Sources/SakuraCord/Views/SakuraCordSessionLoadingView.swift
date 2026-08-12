@@ -1,6 +1,108 @@
 import AppKit
 import SwiftUI
 
+nonisolated enum SessionLoadingSkeletonLayout {
+    enum ChannelPlaceholder: Hashable, Sendable {
+        case category(Int)
+        case channel(section: Int, row: Int)
+
+        var height: CGFloat {
+            switch self {
+            case .category: 28
+            case .channel: 32
+            }
+        }
+    }
+
+    static let serverCount = 11
+    static let channelSectionCounts = [3, 4, 4, 4]
+
+    static func channelPlaceholdersFitting(height: CGFloat) -> [ChannelPlaceholder] {
+        let availableHeight = max(0, height - ChatChromeMetrics.channelListTopPadding)
+        var result: [ChannelPlaceholder] = []
+        var usedHeight: CGFloat = 0
+
+        for (section, rowCount) in channelSectionCounts.enumerated() {
+            if section > 0 {
+                let category = ChannelPlaceholder.category(section)
+                let firstChannelHeight = ChannelPlaceholder
+                    .channel(section: section, row: 0)
+                    .height
+                guard usedHeight + category.height + firstChannelHeight <= availableHeight
+                else { break }
+                result.append(category)
+                usedHeight += category.height
+            }
+
+            for row in 0 ..< rowCount {
+                let channel = ChannelPlaceholder.channel(section: section, row: row)
+                guard usedHeight + channel.height <= availableHeight else {
+                    return result
+                }
+                result.append(channel)
+                usedHeight += channel.height
+            }
+        }
+        return result
+    }
+}
+
+struct ChannelListLoadingSkeleton: View {
+    var body: some View {
+        GeometryReader { geometry in
+            let placeholders = SessionLoadingSkeletonLayout
+                .channelPlaceholdersFitting(height: geometry.size.height)
+
+            VStack(spacing: 0) {
+                ForEach(placeholders, id: \.self) { placeholder in
+                    switch placeholder {
+                    case .category:
+                        categoryRow
+                            .frame(height: placeholder.height)
+                    case .channel:
+                        channelRow
+                            .frame(height: placeholder.height)
+                    }
+                }
+            }
+            .padding(.top, ChatChromeMetrics.channelListTopPadding)
+            .frame(
+                width: geometry.size.width,
+                height: geometry.size.height,
+                alignment: .topLeading
+            )
+            .clipped()
+        }
+        .accessibilityHidden(true)
+    }
+
+    private var categoryRow: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "chevron.down")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.12))
+                .frame(width: 8)
+            SkeletonShape(cornerRadius: 4)
+                .frame(width: 86, height: 9)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+    }
+
+    private var channelRow: some View {
+        HStack(spacing: 8) {
+            Color.clear
+                .frame(width: 8, height: 8)
+            SkeletonShape(cornerRadius: 4)
+                .frame(width: 16, height: 16)
+            SkeletonShape(cornerRadius: 5.5)
+                .frame(width: 112, height: 11)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+    }
+}
+
 /// A data-free representation of the complete chat chrome. Startup owns a
 /// standalone navigation container; account switching overlays these same
 /// placeholders inside the already-mounted workspace navigation container.
@@ -77,8 +179,8 @@ struct SakuraCordSessionLoadingView: View {
             VStack(spacing: 10) {
                 railItem(cornerRadius: 14)
                 Divider().padding(.horizontal, 12)
-                ForEach(0 ..< 7, id: \.self) { index in
-                    railItem(cornerRadius: index == 0 ? 14 : 22)
+                ForEach(0 ..< SessionLoadingSkeletonLayout.serverCount, id: \.self) { _ in
+                    railItem(cornerRadius: 14)
                 }
             }
             .padding(
@@ -104,28 +206,7 @@ struct SakuraCordSessionLoadingView: View {
 
     private var channelSidebar: some View {
         VStack(spacing: 0) {
-            List {
-                ForEach(0 ..< 3, id: \.self) { section in
-                    Section {
-                        ForEach(0 ..< (section == 1 ? 4 : 3), id: \.self) { row in
-                            HStack(spacing: 8) {
-                                SkeletonShape(cornerRadius: 4)
-                                .frame(width: 16, height: 16)
-                                SkeletonShape(cornerRadius: 4)
-                                .frame(width: row.isMultiple(of: 2) ? 112 : 84, height: 12)
-                            }
-                            .frame(height: 24)
-                        }
-                    } header: {
-                        SkeletonShape(cornerRadius: 3)
-                            .frame(width: section == 1 ? 88 : 68, height: 9)
-                            .padding(.top, section == 0 ? 0 : 8)
-                    }
-                }
-            }
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
-            .contentMargins(.top, ChatChromeMetrics.channelListTopPadding, for: .scrollContent)
+            ChannelListLoadingSkeleton()
 
             GlassEffectContainer(spacing: 0) {
                 HStack(spacing: 9) {
@@ -190,39 +271,9 @@ struct SakuraCordSessionLoadingView: View {
     }
 
     private var memberList: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(0 ..< 2, id: \.self) { section in
-                    SkeletonShape(cornerRadius: 4)
-                        .frame(width: section == 0 ? 92 : 70, height: 11)
-                        .padding(.horizontal, 10)
-                        .padding(.top, 12)
-                        .padding(.bottom, 5)
-                    ForEach(0 ..< (section == 0 ? 4 : 3), id: \.self) { index in
-                        HStack(spacing: 10) {
-                            SkeletonShape(cornerRadius: 17)
-                                .frame(width: 34, height: 34)
-                            VStack(alignment: .leading, spacing: 5) {
-                                SkeletonShape(cornerRadius: 4)
-                                    .frame(width: index.isMultiple(of: 3) ? 108 : 78, height: 11)
-                                if index.isMultiple(of: 2) {
-                                    SkeletonShape(cornerRadius: 3)
-                                        .frame(width: 62, height: 8)
-                                }
-                            }
-                            Spacer(minLength: 0)
-                        }
-                        .frame(height: 48)
-                        .padding(.horizontal, 10)
-                    }
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 10)
-        }
+        MemberListLoadingSkeleton()
         .frame(width: ChatChromeMetrics.memberListWidth)
         .frame(maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.45))
     }
 
     @ToolbarContentBuilder

@@ -1,9 +1,45 @@
+import AppKit
 import CoreGraphics
 import Foundation
 import MessageRendering
 import SakuraCordModels
+import SwiftUI
 @testable import SakuraCord
 import Testing
+
+@Test func `startup skeleton keeps a dense server and channel list`() {
+    #expect(SessionLoadingSkeletonLayout.serverCount == 11)
+    #expect(SessionLoadingSkeletonLayout.channelSectionCounts == [3, 4, 4, 4])
+    #expect(SessionLoadingSkeletonLayout.channelSectionCounts.reduce(0, +) == 15)
+
+    let placeholders = SessionLoadingSkeletonLayout
+        .channelPlaceholdersFitting(height: 460)
+    #expect(
+        placeholders.reduce(ChatChromeMetrics.channelListTopPadding) {
+            $0 + $1.height
+        } <= 460
+    )
+    for index in placeholders.indices {
+        guard case .category(let section) = placeholders[index] else { continue }
+        #expect(placeholders.indices.contains(index + 1))
+        #expect(placeholders[index + 1] == .channel(section: section, row: 0))
+    }
+}
+
+@MainActor
+@Test func `startup channel skeleton is a fixed non scrolling viewport`() {
+    let host = NSHostingView(rootView: ChannelListLoadingSkeleton())
+    host.frame = NSRect(x: 0, y: 0, width: 230, height: 460)
+    host.layoutSubtreeIfNeeded()
+
+    #expect(!channelSkeletonContainsScrollView(host))
+}
+
+@MainActor
+private func channelSkeletonContainsScrollView(_ view: NSView) -> Bool {
+    view is NSScrollView
+        || view.subviews.contains(where: channelSkeletonContainsScrollView)
+}
 
 @MainActor
 @Test func `malformed decoded mentions remain noninteractive`() throws {

@@ -103,6 +103,46 @@ struct MemberInspectorView: View {
     }
 }
 
+/// A viewport-sized, non-scrolling startup surface. Its row and header views
+/// are also hosted over unloaded native member-list ranges.
+struct MemberListLoadingSkeleton: View {
+    var body: some View {
+        SkeletonShimmerTimeline {
+            ZStack {
+                Color(nsColor: .controlBackgroundColor).opacity(0.45)
+                GeometryReader { geometry in
+                    let items = MemberListSkeletonLayout.itemsFitting(
+                        height: geometry.size.height,
+                        memberCounts: MemberSection.loadingSkeletonSections.map(\.totalCount)
+                    )
+                    VStack(spacing: 0) {
+                        ForEach(items, id: \.self) { item in
+                            switch item {
+                            case .header:
+                            MemberListSkeletonHeader()
+                                .frame(height: NativeMemberListMetrics.sectionHeaderHeight)
+                            case .member:
+                                MemberListSkeletonRow()
+                                    .padding(.horizontal, NativeMemberListMetrics.horizontalInset)
+                                    .frame(height: NativeMemberListMetrics.memberRowHeight)
+                            }
+                        }
+                    }
+                    .padding(.vertical, NativeMemberListMetrics.verticalInset)
+                    .frame(
+                        width: geometry.size.width,
+                        height: geometry.size.height,
+                        alignment: .topLeading
+                    )
+                    .clipped()
+                }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Loading members")
+    }
+}
+
 struct MemberSection: Identifiable, Equatable {
     enum SectionIdentifier: Hashable {
         case role(name: String, position: Int)
@@ -116,6 +156,7 @@ struct MemberSection: Identifiable, Equatable {
     let totalCount: Int
     let members: [Member]
     let gatewayStartIndex: Int?
+    let isLoadingSkeleton: Bool
 
     init(
         id: SectionIdentifier,
@@ -123,7 +164,8 @@ struct MemberSection: Identifiable, Equatable {
         colorHex: UInt32?,
         totalCount: Int,
         members: [Member],
-        gatewayStartIndex: Int? = nil
+        gatewayStartIndex: Int? = nil,
+        isLoadingSkeleton: Bool = false
     ) {
         self.id = id
         self.title = title
@@ -131,6 +173,24 @@ struct MemberSection: Identifiable, Equatable {
         self.totalCount = totalCount
         self.members = members
         self.gatewayStartIndex = gatewayStartIndex
+        self.isLoadingSkeleton = isLoadingSkeleton
+    }
+
+    static var loadingSkeletonSections: [MemberSection] {
+        let memberCounts = [5, 6, 7]
+        var gatewayStartIndex = 0
+        return memberCounts.enumerated().map { index, count in
+            defer { gatewayStartIndex += count + 1 }
+            return MemberSection(
+                id: .role(name: "Loading members \(index)", position: index),
+                title: "",
+                colorHex: nil,
+                totalCount: count,
+                members: [],
+                gatewayStartIndex: gatewayStartIndex,
+                isLoadingSkeleton: true
+            )
+        }
     }
 
     static func make(

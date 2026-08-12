@@ -18,6 +18,100 @@ nonisolated enum NativeMemberListMetrics {
     static let maximumVisibleAnimatedEmojiCount = 64
 }
 
+nonisolated enum MemberListSkeletonLayout {
+    enum Item: Hashable {
+        case header(Int)
+        case member(section: Int, row: Int)
+
+        var height: CGFloat {
+            switch self {
+            case .header: NativeMemberListMetrics.sectionHeaderHeight
+            case .member: NativeMemberListMetrics.memberRowHeight
+            }
+        }
+    }
+
+    static func itemsFitting(height: CGFloat, memberCounts: [Int]) -> [Item] {
+        let availableHeight = max(
+            0,
+            height - NativeMemberListMetrics.verticalInset * 2
+        )
+        var result: [Item] = []
+        var usedHeight: CGFloat = 0
+        for (section, count) in memberCounts.enumerated() {
+            let header = Item.header(section)
+            guard usedHeight + header.height <= availableHeight else { break }
+            result.append(header)
+            usedHeight += header.height
+            for row in 0 ..< count {
+                let member = Item.member(section: section, row: row)
+                guard usedHeight + member.height <= availableHeight else {
+                    return result
+                }
+                result.append(member)
+                usedHeight += member.height
+            }
+        }
+        return result
+    }
+}
+
+struct MemberListSkeletonRow: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            ZStack(alignment: .bottomTrailing) {
+                SkeletonShape(
+                    cornerRadius: NativeMemberListMetrics.avatarSize / 2
+                )
+                .frame(
+                    width: NativeMemberListMetrics.avatarSize,
+                    height: NativeMemberListMetrics.avatarSize
+                )
+
+                SkeletonShape(cornerRadius: 5.5)
+                    .frame(width: 11, height: 11)
+                    .overlay {
+                        Circle().stroke(
+                            Color(nsColor: .controlBackgroundColor),
+                            lineWidth: 2
+                        )
+                    }
+                    .offset(x: 1, y: 1)
+            }
+            .frame(
+                width: NativeMemberListMetrics.avatarContainerSize,
+                height: NativeMemberListMetrics.avatarContainerSize
+            )
+
+            VStack(alignment: .leading, spacing: 9) {
+                SkeletonShape(cornerRadius: 5)
+                    .frame(width: 104, height: 10)
+                SkeletonShape(cornerRadius: 4)
+                    .frame(width: 138, height: 8)
+                    .opacity(0.7)
+            }
+            .offset(y: -2.5)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, 4)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+struct MemberListSkeletonHeader: View {
+    var body: some View {
+        SkeletonShape(cornerRadius: 5)
+            .frame(width: 96, height: 10)
+            .padding(.leading, NativeMemberListMetrics.horizontalInset + 10)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
 nonisolated enum NativeMemberNameLayout {
     struct Result: Equatable {
         let nameWidth: CGFloat
@@ -424,6 +518,7 @@ final class NativeMemberListCanvasView: NSView {
     )
     var avatarOverlays: [ItemID: NSHostingView<AnyView>] = [:]
     var avatarOverlayMembers: [ItemID: Member] = [:]
+    var placeholderOverlays: [ItemID: NSHostingView<AnyView>] = [:]
     var activityEmojiOverlays: [ActivityEmojiOverlayID: NSHostingView<AnyView>] = [:]
     var activityEmojiOverlayConfigurations: [
         ActivityEmojiOverlayID: ActivityEmojiOverlayConfiguration
@@ -661,22 +756,24 @@ final class NativeMemberListCanvasView: NSView {
     func draw(item: Item, at index: Int, context: CGContext) {
         switch item {
         case .header(let section):
-            let label = "\(section.title) — \(section.totalCount)"
-            let font = NSFont.systemFont(
-                ofSize: NSFont.preferredFont(forTextStyle: .body).pointSize,
-                weight: .semibold
-            )
-            let color = section.colorHex.map(Self.color(hex:)) ?? .secondaryLabelColor
-            Self.draw(
-                line: Self.line(label, font: font, color: color),
-                at: CGPoint(
-                    x: NativeMemberListMetrics.horizontalInset + 10,
-                    y: origins[index] + 12
-                ),
-                context: context
-            )
+            if !section.isLoadingSkeleton {
+                let label = "\(section.title) — \(section.totalCount)"
+                let font = NSFont.systemFont(
+                    ofSize: NSFont.preferredFont(forTextStyle: .body).pointSize,
+                    weight: .semibold
+                )
+                let color = section.colorHex.map(Self.color(hex:)) ?? .secondaryLabelColor
+                Self.draw(
+                    line: Self.line(label, font: font, color: color),
+                    at: CGPoint(
+                        x: NativeMemberListMetrics.horizontalInset + 10,
+                        y: origins[index] + 12
+                    ),
+                    context: context
+                )
+            }
         case .placeholder:
-            drawPlaceholder(at: index, context: context)
+            break
         case .member(let member, _):
             drawMember(member, at: index, context: context)
         }
@@ -877,25 +974,6 @@ final class NativeMemberListCanvasView: NSView {
         Self.draw(line: line, at: CGPoint(x: badge.minX + 5, y: badge.minY + 2), context: context)
     }
 
-    func drawPlaceholder(at index: Int, context: CGContext) {
-        let row = paintedRowRect(at: index)
-        let shade = NSColor.placeholderTextColor.withAlphaComponent(0.12)
-        context.setFillColor(shade.cgColor)
-        context.fillEllipse(in: CGRect(x: row.minX + 6, y: row.minY + 5, width: 34, height: 34))
-        Self.fillRounded(
-            CGRect(x: row.minX + 50, y: row.minY + 10, width: 92, height: 8),
-            radius: 4,
-            color: shade,
-            context: context
-        )
-        Self.fillRounded(
-            CGRect(x: row.minX + 50, y: row.minY + 25, width: 138, height: 7),
-            radius: 3.5,
-            color: shade.withAlphaComponent(0.7),
-            context: context
-        )
-    }
-
     func itemRange(intersecting rect: CGRect) -> Range<Int> {
         guard !items.isEmpty else { return 0 ..< 0 }
         var low = 0
@@ -1003,11 +1081,56 @@ final class NativeMemberListCanvasView: NSView {
         let prewarmLower = max(0, visible.lowerBound - NativeMemberListMetrics.prewarmItemCount)
         let prewarmUpper = min(items.count, visible.upperBound + NativeMemberListMetrics.prewarmItemCount)
         let prewarmRange = prewarmLower ..< prewarmUpper
+        installPlaceholderOverlays(in: visible)
         installAvatarOverlays(in: visible)
         installActivityEmojiOverlays(in: visible)
         installAccessibilityRows(in: visible)
         prewarmImages(in: prewarmRange, visible: visible)
         return true
+    }
+
+    func installPlaceholderOverlays(in range: Range<Int>) {
+        var visibleIDs: Set<ItemID> = []
+        for index in range {
+            let rootView: AnyView
+            let frame: CGRect
+            switch items[index] {
+            case .header(let section) where section.isLoadingSkeleton:
+                rootView = AnyView(
+                    SkeletonShimmerTimeline {
+                        MemberListSkeletonHeader()
+                    }
+                )
+                frame = itemRect(at: index)
+            case .placeholder:
+                rootView = AnyView(
+                    SkeletonShimmerTimeline {
+                        MemberListSkeletonRow()
+                    }
+                )
+                frame = paintedRowRect(at: index)
+            default:
+                continue
+            }
+
+            let id = items[index].id
+            visibleIDs.insert(id)
+            let host = placeholderOverlays[id] ?? {
+                let value = NSHostingView(rootView: rootView)
+                value.sizingOptions = []
+                value.wantsLayer = true
+                addSubview(value)
+                placeholderOverlays[id] = value
+                return value
+            }()
+            host.frame = frame
+            host.layer?.zPosition = 11
+            host.setAccessibilityHidden(true)
+        }
+        for (id, host) in placeholderOverlays where !visibleIDs.contains(id) {
+            host.removeFromSuperview()
+            placeholderOverlays[id] = nil
+        }
     }
 
     func installAvatarOverlays(in range: Range<Int>) {
@@ -1339,11 +1462,13 @@ final class NativeMemberListCanvasView: NSView {
         reconciledViewportWidth = nil
         removeRowOverlay()
         removeProfileAnchor(immediately: true)
+        for host in placeholderOverlays.values { host.removeFromSuperview() }
         for host in avatarOverlays.values { host.removeFromSuperview() }
         for host in activityEmojiOverlays.values { host.removeFromSuperview() }
         avatarOverlayMembers.removeAll()
         activityEmojiOverlayConfigurations.removeAll()
         for proxy in accessibilityRows.values { proxy.removeFromSuperview() }
+        placeholderOverlays.removeAll()
         avatarOverlays.removeAll()
         activityEmojiOverlays.removeAll()
         accessibilityRows.removeAll()

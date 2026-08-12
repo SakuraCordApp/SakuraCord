@@ -1,5 +1,6 @@
 import AppKit
 import SakuraCordModels
+import SwiftUI
 import Testing
 @testable import SakuraCord
 
@@ -118,6 +119,61 @@ import Testing
     #expect(items[2] == .member(fallback, gatewayIndex: 2))
     #expect(items[3] == .placeholder(gatewayIndex: 3))
     #expect(items[5] == .member(offline, gatewayIndex: 5))
+}
+
+@MainActor
+@Test func `startup and unloaded member skeletons share dense placeholder sections`() {
+    let sections = MemberSection.loadingSkeletonSections
+    let items = NativeMemberListCanvasView.makeItems(sections: sections)
+    let placeholderCount = items.reduce(into: 0) { count, item in
+        if case .placeholder = item {
+            count += 1
+        }
+    }
+    let headerCount = items.reduce(into: 0) { count, item in
+        if case .header = item {
+            count += 1
+        }
+    }
+
+    #expect(sections.count == 3)
+    #expect(sections.allSatisfy { $0.isLoadingSkeleton })
+    #expect(sections.allSatisfy { $0.members.isEmpty })
+    #expect(sections.map(\.totalCount) == [5, 6, 7])
+    #expect(placeholderCount == 18)
+    #expect(headerCount == sections.count)
+
+    let startupHost = NSHostingView(rootView: MemberListLoadingSkeleton())
+    startupHost.frame = NSRect(x: 0, y: 0, width: 280, height: 700)
+    startupHost.layoutSubtreeIfNeeded()
+    #expect(!containsScrollView(startupHost))
+    let fittedItems = MemberListSkeletonLayout.itemsFitting(
+        height: startupHost.bounds.height,
+        memberCounts: sections.map(\.totalCount)
+    )
+    #expect(
+        fittedItems.reduce(NativeMemberListMetrics.verticalInset * 2) {
+            $0 + $1.height
+        } <= startupHost.bounds.height
+    )
+
+    let canvas = NativeMemberListCanvasView()
+    let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 280, height: 300))
+    scrollView.documentView = canvas
+    #expect(canvas.updateDocumentIfNeeded(sections: sections))
+    canvas.frame = NSRect(x: 0, y: 0, width: 280, height: canvas.contentHeight)
+    #expect(canvas.updateVisibleOverlaysAndPrewarming(force: true))
+    #expect(!canvas.placeholderOverlays.isEmpty)
+    #expect(canvas.placeholderOverlays.count == canvas.itemRange(
+        intersecting: scrollView.documentVisibleRect
+    ).count)
+    canvas.tearDown()
+    #expect(canvas.placeholderOverlays.isEmpty)
+}
+
+@MainActor
+private func containsScrollView(_ view: NSView) -> Bool {
+    view is NSScrollView || view.subviews.contains(where: containsScrollView)
 }
 
 @MainActor
