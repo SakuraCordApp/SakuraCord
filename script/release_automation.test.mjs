@@ -12,8 +12,8 @@ function releaseCopy(overrides = {}) {
     schemaVersion: 1,
     tagName: "v0.1.2",
     githubDescription: "## Changes\n\n- Good things.\n\n**Full Changelog:** hand-written",
-    discordTitle: "SakuraCord v0.1.2 is here",
-    discordAnnouncement: "**Highlights**\n- Good things.",
+    discordAnnouncement:
+      "**Message forwarding and GIFs 🌸**\n\nA focused update.\n\n**Highlights**\n\n- Good things",
     ...overrides,
   };
 }
@@ -24,6 +24,10 @@ test("validates a pre-made release file against its tag", () => {
   assert.throws(
     () => validateReleaseCopy({ ...releaseCopy(), generatedAt: "today" }),
     /unsupported fields/,
+  );
+  assert.throws(
+    () => validateReleaseCopy({ ...releaseCopy(), discordTitle: "Redundant title" }),
+    /unsupported fields: discordTitle/,
   );
 });
 
@@ -37,8 +41,8 @@ test("preserves hand-written notes and appends only the ownership marker", () =>
 test("sanitizes pre-made Discord mentions and constrains allowed mentions", () => {
   const copy = validateReleaseCopy(
     releaseCopy({
-      discordTitle: "@everyone SakuraCord is here",
-      discordAnnouncement: "Hello <@&1528177363995590795> and @here",
+      discordAnnouncement:
+        "**A specific headline 🌸**\n\nHello <@&1528177363995590795> and @here\n\n**Highlights**\n\n- A feature",
     }),
   );
   const payload = createDiscordPayload(
@@ -50,6 +54,7 @@ test("sanitizes pre-made Discord mentions and constrains allowed mentions", () =
   );
   assert.equal(payload.allowed_mentions.parse.length, 0);
   assert.deepEqual(payload.allowed_mentions.roles, ["1528177363995590795"]);
+  assert.equal(payload.embeds[0].title, "SakuraCord v0.1.2");
   assert.doesNotMatch(payload.embeds[0].description, /<@|@here/);
   assert.equal(payload.nonce.length, 25);
   assert.equal(payload.enforce_nonce, true);

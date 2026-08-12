@@ -17,7 +17,6 @@ export function validateReleaseCopy(value, expectedTag) {
     "schemaVersion",
     "tagName",
     "githubDescription",
-    "discordTitle",
     "discordAnnouncement",
   ]);
   const unexpected = Object.keys(value).filter((key) => !allowedKeys.has(key));
@@ -34,7 +33,6 @@ export function validateReleaseCopy(value, expectedTag) {
   }
   const limits = {
     githubDescription: 20_000,
-    discordTitle: 100,
     discordAnnouncement: 3_800,
   };
   const copy = { schemaVersion: 1, tagName };
@@ -45,7 +43,6 @@ export function validateReleaseCopy(value, expectedTag) {
     }
     copy[key] = text.trim();
   }
-  copy.discordTitle = stripDiscordMentions(copy.discordTitle);
   copy.discordAnnouncement = stripDiscordMentions(copy.discordAnnouncement);
   return copy;
 }
@@ -71,7 +68,7 @@ export function createDiscordPayload(copy, repository, releaseId, releaseUrl, ro
     content: `<@&${roleId}>`,
     embeds: [
       {
-        title: validated.discordTitle,
+        title: `SakuraCord ${validated.tagName}`,
         description: validated.discordAnnouncement,
         color: 0xce6096,
       },

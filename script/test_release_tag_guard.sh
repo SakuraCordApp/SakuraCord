@@ -22,7 +22,6 @@ printf '%s\n' \
   '  "schemaVersion": 1,' \
   '  "tagName": "v0.1.2",' \
   '  "githubDescription": "Reviewed GitHub notes.",' \
-  '  "discordTitle": "Reviewed title",' \
   '  "discordAnnouncement": "Reviewed Discord announcement."' \
   '}' > "$TEMP_ROOT/Releases/v0.1.3.json"
 
@@ -36,7 +35,6 @@ printf '%s\n' \
   '  "schemaVersion": 1,' \
   '  "tagName": "v0.1.3",' \
   '  "githubDescription": "Reviewed GitHub notes.",' \
-  '  "discordTitle": "Reviewed title",' \
   '  "discordAnnouncement": "Reviewed Discord announcement."' \
   '}' > "$TEMP_ROOT/Releases/v0.1.3.json"
 

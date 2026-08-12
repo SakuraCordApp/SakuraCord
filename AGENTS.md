@@ -246,6 +246,31 @@ triggered an account restriction.
 - Date observations and state what was not verified. Do not present a build,
   benchmark, live check, or memory-derived fact as current without evidence.
 
+## Release copy workflow
+
+When asked to generate, revise, or save release notes or a Discord release
+announcement, read [docs/RELEASE_NOTES_STYLE.md](docs/RELEASE_NOTES_STYLE.md)
+and
+[docs/DISCORD_RELEASE_ANNOUNCEMENTS_STYLE.md](docs/DISCORD_RELEASE_ANNOUNCEMENTS_STYLE.md).
+
+- Resolve the exact requested tag and inspect its published GitHub Release
+  state before drafting. Never assume the next version is intended.
+- Derive claims from the previous-tag comparison and the code, tests, and
+  documentation actually contained in the requested tag. Exclude later work.
+- Draft GitHub notes and Discord copy separately. GitHub notes are detailed;
+  Discord copy is concise and prioritizes user-facing features.
+- Use feature-specific Discord headlines ending in `🌸`; do not use generic
+  marketing phrases that could describe any release.
+- Apply the specificity test from both style guides before presenting a draft:
+  name major features directly instead of reducing them to abstract benefits.
+  Broad quality-of-life wording is allowed only for genuinely diffuse polish
+  and must be supported by representative concrete details.
+- Treat the Discord role mention, `SakuraCord vX.Y.Z` embed title, and
+  **View release** button as generated output, not authored copy.
+- Show both complete drafts to the maintainer for revision before writing
+  `Releases/vX.Y.Z.json`, unless the maintainer explicitly asks to save them
+  immediately. Preserve the approved wording exactly.
+
 ## Completion checklist
 
 Before finishing, apply the parts relevant to the change:

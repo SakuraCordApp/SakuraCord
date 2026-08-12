@@ -183,11 +183,13 @@ both files on a draft GitHub Release and publishing them together. The workflow
 refuses to replace assets on an already published tag. Sparkle signing keys
 exist only in GitHub repository secrets. Each tag must contain a reviewed
 `Releases/<tag>.json` with the complete GitHub and Discord copy. CI validates
-that versioned file but never generates or rewrites its user-visible content.
-The workflow uses the same complete Markdown body for the GitHub Release and
-signed appcast, posts the pre-made Discord copy with secret-backed bot
-credentials, and stores public copy/delivery checkpoint assets for idempotent
-repair runs. If a maintainer edits the GitHub Release body after publication, a
+that versioned file but never generates or rewrites its authored notes or
+announcement description. The workflow uses the same complete Markdown body
+for the GitHub Release and signed appcast, derives the Discord embed title from
+the tag, posts the pre-made embed description with a generated role mention
+and release button, and stores public copy/delivery checkpoint assets for
+idempotent repair runs.
+If a maintainer edits the GitHub Release body after publication, a
 release-edit workflow downloads the unchanged DMG,
 preserves its build number, regenerates and verifies the signed appcast with the
 current body, and replaces only the appcast asset. The two release paths share

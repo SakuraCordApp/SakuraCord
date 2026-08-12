@@ -263,15 +263,17 @@ the downloadable archive is named `SakuraCord.vMAJOR.MINOR.PATCH.dmg`.
 Before creating the tag, write `Releases/vMAJOR.MINOR.PATCH.json` manually or
 ask an agent to draft it, review the complete text, and commit it with the
 release. The file is deliberately ordinary source data—local tooling may help
-write it, but CI performs no AI inference or copy generation:
+write it, but CI performs no AI inference or copy generation. Follow the
+[detailed GitHub release-note guide](docs/RELEASE_NOTES_STYLE.md) and the
+[concise Discord announcement guide](docs/DISCORD_RELEASE_ANNOUNCEMENTS_STYLE.md),
+and review both drafts before saving them:
 
 ```json
 {
   "schemaVersion": 1,
   "tagName": "v0.1.3",
-  "githubDescription": "## What changed\n\n- Reviewed release notes.\n\n**Full Changelog:** https://github.com/SakuraCordApp/SakuraCord/compare/v0.1.2...v0.1.3",
-  "discordTitle": "SakuraCord v0.1.3 is here",
-  "discordAnnouncement": "**Highlights**\n- Reviewed announcement copy."
+  "githubDescription": "SakuraCord v0.1.3 adds ...\n\n## Feature area\n\n- Added ...\n\n**Full Changelog:** [v0.1.2...v0.1.3](https://github.com/SakuraCordApp/SakuraCord/compare/v0.1.2...v0.1.3)",
+  "discordAnnouncement": "**Specific feature headline 🌸**\n\nA short description of this update.\n\n**Highlights**\n\n- A user-facing feature"
 }
 ```
 
@@ -333,7 +335,10 @@ printf '%s' '1528177363995590795' | gh secret set DISCORD_UPDATES_ROLE_ID
 The bot needs permission to view and send in the configured channel and to
 mention the updates role. Pre-made text cannot add arbitrary mentions:
 `allowed_mentions` admits only the configured role, and additional mention
-syntax in the reviewed copy is neutralized.
+syntax in the reviewed copy is neutralized. The action derives the
+`SakuraCord vX.Y.Z` embed title from the tag and generates the role mention and
+**View release** button; only the embed description is authored in the release
+copy.
 
 The release workflow validates the tag's committed file, publishes its notes,
 uploads the validated snapshot as `release-copy.json`, and checkpoints a
