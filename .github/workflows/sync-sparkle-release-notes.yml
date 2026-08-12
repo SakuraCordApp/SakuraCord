@@ -18,7 +18,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || github.event.release.draft == false
     runs-on: xcode-27
     concurrency:
-      group: sparkle-release-${{ github.event.release.tag_name || inputs.tag }}
+      group: sparkle-release
       cancel-in-progress: false
     env:
       SAKURACORD_RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}

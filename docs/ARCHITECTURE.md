@@ -181,13 +181,17 @@ Tag releases enable the canonical Sparkle configuration, generate a signed
 archive signature, bundle metadata, and nested code signatures before staging
 both files on a draft GitHub Release and publishing them together. The workflow
 refuses to replace assets on an already published tag. Sparkle signing keys
-exist only in GitHub repository secrets. The workflow generates the GitHub
-release notes once and uses the same complete Markdown body for both the GitHub
-Release and the release notes embedded in the signed appcast. If post-publish
-automation edits the GitHub Release body, a release-edit workflow downloads the
-unchanged DMG, preserves its build number, regenerates and verifies the signed
-appcast with the current body, and replaces only the appcast asset. The two
-release paths share per-tag concurrency so this refresh cannot race the initial
+exist only in GitHub repository secrets. Each tag must contain a reviewed
+`Releases/<tag>.json` with the complete GitHub and Discord copy. CI validates
+that versioned file but never generates or rewrites its user-visible content.
+The workflow uses the same complete Markdown body for the GitHub Release and
+signed appcast, posts the pre-made Discord copy with secret-backed bot
+credentials, and stores public copy/delivery checkpoint assets for idempotent
+repair runs. If a maintainer edits the GitHub Release body after publication, a
+release-edit workflow downloads the unchanged DMG,
+preserves its build number, regenerates and verifies the signed appcast with the
+current body, and replaces only the appcast asset. The two release paths share
+global release concurrency so this refresh cannot race the initial
 publication. Maintainers can dispatch the same workflow with a tag to repair an
 older feed. The public feed is
 `https://github.com/SakuraCordApp/SakuraCord/releases/latest/download/appcast.xml`.

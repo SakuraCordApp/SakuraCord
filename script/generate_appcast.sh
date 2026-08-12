@@ -41,7 +41,7 @@ if [[ ! -f "$DMG_PATH" ]]; then
   exit 1
 fi
 if [[ -z "$RELEASE_NOTES_PATH" || ! -s "$RELEASE_NOTES_PATH" ]]; then
-  echo "A non-empty GitHub-generated release-notes file is required." >&2
+  echo "A non-empty validated release-notes file is required." >&2
   exit 1
 fi
 

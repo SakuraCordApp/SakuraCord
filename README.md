@@ -255,14 +255,42 @@ builds.
 
 Version tags drive the release workflow. A tag matching `vMAJOR.MINOR.PATCH`
 builds the app, verifies its nested signatures, packages the DMG, generates and
-verifies a Sparkle-signed appcast, and publishes both files through GitHub
-Actions. The packaged app and native About panel use that release version, and
+verifies a Sparkle-signed appcast, publishes reviewed pre-made release notes,
+and sends the reviewed pre-made announcement to Discord. The packaged app and
+native About panel use that release version, and
 the downloadable archive is named `SakuraCord.vMAJOR.MINOR.PATCH.dmg`.
 
-```sh
-git tag v0.1.0
-git push origin v0.1.0
+Before creating the tag, write `Releases/vMAJOR.MINOR.PATCH.json` manually or
+ask an agent to draft it, review the complete text, and commit it with the
+release. The file is deliberately ordinary source data—local tooling may help
+write it, but CI performs no AI inference or copy generation:
+
+```json
+{
+  "schemaVersion": 1,
+  "tagName": "v0.1.3",
+  "githubDescription": "## What changed\n\n- Reviewed release notes.\n\n**Full Changelog:** https://github.com/SakuraCordApp/SakuraCord/compare/v0.1.2...v0.1.3",
+  "discordTitle": "SakuraCord v0.1.3 is here",
+  "discordAnnouncement": "**Highlights**\n- Reviewed announcement copy."
+}
 ```
+
+Validate it before tagging:
+
+```sh
+node script/release_automation.mjs validate-copy \
+  --input Releases/v0.1.3.json --tag v0.1.3
+git add Releases/v0.1.3.json
+git commit -m "Prepare v0.1.3 release copy"
+git tag v0.1.3
+git push origin main v0.1.3
+```
+
+The installed pre-push hook repeats this validation only for pushed
+`refs/tags/v*` refs and rejects a missing, malformed, or mismatched release-copy
+file from the tagged commit. The release job independently repeats the same
+guard before packaging, so bypassing or missing local hooks cannot publish an
+unreviewed release.
 
 ### One-time Sparkle release setup
 
@@ -291,11 +319,37 @@ printf '%s' 'ad-hoc-updates-are-not-notarized' | gh secret set SPARKLE_ADHOC_REL
 distribution limitation described below. Remove the exported working copy only
 after confirming the offline backup and repository secrets.
 
-The release job fails before publishing when these secrets are absent or
-malformed, when the private and public keys do not match the packaged app, when
-Sparkle cannot sign the archive/feed, or when appcast, bundle, URL, version, or
-nested-signature validation fails. Local, debug, and linked-worktree packages
-do not embed the production feed or public key and never perform update checks.
+### One-time Discord release setup
+
+Store the Discord bot credential and destination IDs as repository secrets as
+well; none belong in workflow YAML, logs, release assets, or source:
+
+```sh
+gh secret set DISCORD_BOT_TOKEN
+printf '%s' '1528180315233714368' | gh secret set DISCORD_RELEASE_CHANNEL_ID
+printf '%s' '1528177363995590795' | gh secret set DISCORD_UPDATES_ROLE_ID
+```
+
+The bot needs permission to view and send in the configured channel and to
+mention the updates role. Pre-made text cannot add arbitrary mentions:
+`allowed_mentions` admits only the configured role, and additional mention
+syntax in the reviewed copy is neutralized.
+
+The release workflow validates the tag's committed file, publishes its notes,
+uploads the validated snapshot as `release-copy.json`, and checkpoints a
+successful Discord delivery as `discord-announcement.json`. A retry therefore
+reuses the exact committed copy and does not post a second announcement. The
+legacy roadmap worker and generic GitHub-event notifier recognize the hidden
+Action ownership marker appended by the validator and do not race this path.
+
+The release job fails before publishing when the tag's pre-made file is absent,
+malformed, or names another tag; when Sparkle secrets are absent or malformed;
+when the private and public keys do not match the packaged app; or when appcast,
+bundle, URL, version, or nested-signature validation fails. Discord is
+deliberately last: a Discord credential or permission failure leaves the
+already verified GitHub Release intact, and a manual retry resumes from its
+committed copy. Local, debug, and linked-worktree packages do not embed the
+production feed or public key and never perform update checks.
 
 Canonical releases check the signed feed every six hours while SakuraCord is
 running and after launch when a check is overdue. Users can change automatic
@@ -303,14 +357,14 @@ checking and downloading in **Settings → General**, and those preferences
 persist through Sparkle across launches. A new release opens Sparkle's standard
 update alert with the complete current GitHub Release notes. Installation is
 manual by default; users may opt into automatic downloading, while Sparkle
-still verifies the signed update before installation. When post-publish
-automation edits a GitHub Release body, the release-edit workflow downloads the
+still verifies the signed update before installation. When a maintainer edits a
+GitHub Release body after publication, the release-edit workflow downloads the
 unchanged DMG, regenerates and verifies its signed appcast with that current
-Markdown body, and replaces only the appcast asset. Per-tag concurrency keeps
-that refresh from racing the original release publication. The same workflow
-can be dispatched manually with a release tag to repair an older feed. Sparkle's
-standard UI reports no-update, network, download, signature, and installation
-failures without crashing SakuraCord.
+Markdown body, and replaces only the appcast asset. Global release concurrency
+keeps that refresh from racing the original release publication. The same
+workflow can be dispatched manually with a release tag to repair an older feed.
+Sparkle's standard UI reports no-update, network, download, signature, and
+installation failures without crashing SakuraCord.
 
 Current artifacts remain ad-hoc signed and are not notarized. Sparkle's EdDSA
 signature authenticates the update archive and signed feed, but it does not

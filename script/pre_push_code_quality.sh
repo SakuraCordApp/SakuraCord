@@ -38,11 +38,22 @@ check_commit() {
   CHECKED_REF_COUNT=$((CHECKED_REF_COUNT + 1))
 }
 
+check_release_copy() {
+  local sha="$1"
+  local tag="$2"
+  local snapshot_root="$TEMP_ROOT/commit-$sha"
+
+  "$snapshot_root/script/validate_release_tag.sh" "$snapshot_root" "$tag"
+}
+
 while read -r local_ref local_sha remote_ref remote_sha; do
   if [[ -z "${local_ref:-}" || "$local_sha" == "$ZERO_SHA" ]]; then
     continue
   fi
   check_commit "$local_sha"
+  if [[ "$remote_ref" == refs/tags/v* ]]; then
+    check_release_copy "$local_sha" "${remote_ref#refs/tags/}"
+  fi
 done
 
 if ! git diff --cached --quiet --diff-filter=ACMR -- '*.swift'; then
