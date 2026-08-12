@@ -261,6 +261,9 @@ and
   Discord copy is concise and prioritizes user-facing features.
 - Use feature-specific Discord headlines ending in `🌸`; do not use generic
   marketing phrases that could describe any release.
+- Keep Discord embed sections compact: use only the custom headline and the
+  `**Highlights**` list, with no introductory paragraph. Put one blank line
+  between the headings and the first bullet immediately after `**Highlights**`.
 - Apply the specificity test from both style guides before presenting a draft:
   name major features directly instead of reducing them to abstract benefits.
   Broad quality-of-life wording is allowed only for genuinely diffuse polish

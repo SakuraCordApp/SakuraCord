@@ -21,18 +21,20 @@ Only the embed description belongs in `discordAnnouncement`.
 Use this consistent order:
 
 1. A short, feature-specific headline in bold, ending with `🌸`.
-2. One short paragraph describing the release and its overall value.
-3. The bold heading `**Highlights**`.
-4. Four to six concise bullets focused on user-facing features and recognizable
+2. The bold heading `**Highlights**`.
+3. Four to six concise bullets focused on user-facing features and recognizable
    improvements.
+
+Do not add an introductory paragraph between the custom headline and
+`**Highlights**`; the bullets carry the release details. Use exactly one blank
+line between the two headings, and put the first bullet immediately after
+`**Highlights**`. This is an intentional Discord embed layout rule, not
+optional Markdown styling.
 
 ```markdown
 **[Feature-specific headline] 🌸**
 
-[One or two short sentences describing the update.]
-
 **Highlights**
-
 - [User-facing feature or outcome]
 - [User-facing feature or outcome]
 - [Visible improvement or recognizable fix]
@@ -51,7 +53,7 @@ as `More ways to connect, share, and explore`, `Something for everyone`,
 `Better than ever`, or `A new update is available`. Avoid hype, filler, and
 unsupported superlatives.
 
-The headline and description must pass this specificity test: do not replace
+The headline and bullets must pass this specificity test: do not replace
 clearly nameable features with an abstract description of what those features
 loosely enable. If a release adds message forwarding, a GIF picker, and a media
 viewer, name them instead of calling them `new ways to share and browse`.
@@ -64,16 +66,14 @@ Examples that must be rewritten include:
 - `includes several exciting new features`;
 - `offers a smoother and more polished experience`.
 
-Replace them with the actual behavior, such as `Forward messages between
-conversations, search and send GIFs from a native picker, and browse
-attachments in a rebuilt media viewer.` Highlights bullets cannot justify
-hiding a few clearly nameable headline features behind an abstract description.
+Replace them with the actual feature names. Highlights bullets cannot justify
+hiding a few clearly nameable headline features behind an abstract heading.
 
-Broad language such as `quality-of-life improvements` or `improves the overall
-experience` is acceptable when it truthfully groups many small, unrelated
-polish changes that would be noisy to enumerate in the short description. It
-must not replace major features that can be named, and the announcement's
-Highlights should still provide representative concrete examples.
+Broad language such as `quality-of-life improvements` is acceptable in a
+bullet when it truthfully groups many small, unrelated polish changes that
+would be noisy to enumerate. It must not replace major features that can be
+named, and nearby bullets should still provide representative concrete
+examples.
 
 ## Wording and selection
 
@@ -97,8 +97,11 @@ Before presenting a draft, perform a specificity pass:
 2. Check that broad quality-of-life wording represents genuinely diffuse polish
    and is supported by representative concrete bullets.
 3. Remove introductory filler instead of paraphrasing it.
-4. Check that the headline and description add information beyond saying that
-   an update exists.
+4. Check that the headline adds information beyond saying that an update
+   exists.
+5. Preview the raw line breaks: there must be exactly one blank line between
+   the custom headline and `**Highlights**`, no paragraph between them, and the
+   first bullet must immediately follow `**Highlights**`.
 
 ## Review and storage
 

@@ -13,7 +13,7 @@ function releaseCopy(overrides = {}) {
     tagName: "v0.1.2",
     githubDescription: "## Changes\n\n- Good things.\n\n**Full Changelog:** hand-written",
     discordAnnouncement:
-      "**Message forwarding and GIFs 🌸**\n\nA focused update.\n\n**Highlights**\n\n- Good things",
+      "**Message forwarding and GIFs 🌸**\n\n**Highlights**\n- Good things",
     ...overrides,
   };
 }
@@ -29,6 +29,26 @@ test("validates a pre-made release file against its tag", () => {
     () => validateReleaseCopy({ ...releaseCopy(), discordTitle: "Redundant title" }),
     /unsupported fields: discordTitle/,
   );
+  assert.throws(
+    () =>
+      validateReleaseCopy(
+        releaseCopy({
+          discordAnnouncement:
+            "**Message forwarding and GIFs 🌸**\nA focused update.\n\n**Highlights**\n- Good things",
+        }),
+      ),
+    /no paragraph/,
+  );
+  assert.throws(
+    () =>
+      validateReleaseCopy(
+        releaseCopy({
+          discordAnnouncement:
+            "**Message forwarding and GIFs 🌸**\n\n**Highlights**\n\n- Good things",
+        }),
+      ),
+    /blank line after \*\*Highlights\*\*/,
+  );
 });
 
 test("preserves hand-written notes and appends only the ownership marker", () => {
@@ -42,7 +62,7 @@ test("sanitizes pre-made Discord mentions and constrains allowed mentions", () =
   const copy = validateReleaseCopy(
     releaseCopy({
       discordAnnouncement:
-        "**A specific headline 🌸**\n\nHello <@&1528177363995590795> and @here\n\n**Highlights**\n\n- A feature",
+        "**A specific headline 🌸**\n\n**Highlights**\n- Hello <@&1528177363995590795> and @here",
     }),
   );
   const payload = createDiscordPayload(

@@ -44,6 +44,7 @@ export function validateReleaseCopy(value, expectedTag) {
     copy[key] = text.trim();
   }
   copy.discordAnnouncement = stripDiscordMentions(copy.discordAnnouncement);
+  validateDiscordAnnouncementLayout(copy.discordAnnouncement);
   return copy;
 }
 
@@ -144,6 +145,21 @@ function stripDiscordMentions(value) {
     .replaceAll("@everyone", "@\u200beveryone")
     .replaceAll("@here", "@\u200bhere")
     .replace(/<@!?&?\d{17,20}>/g, "[mention removed]");
+}
+
+function validateDiscordAnnouncementLayout(value) {
+  const lines = value.split("\n");
+  if (!/^\*\*.+ 🌸\*\*$/.test(lines[0] ?? "")) {
+    throw new Error("discordAnnouncement must start with a bold feature-specific headline ending in 🌸.");
+  }
+  if (lines[1] !== "" || lines[2] !== "**Highlights**") {
+    throw new Error(
+      "discordAnnouncement must contain exactly one blank line, no paragraph, then **Highlights** after its headline.",
+    );
+  }
+  if (!lines[3]?.startsWith("- ")) {
+    throw new Error("discordAnnouncement must not contain a blank line after **Highlights**.");
+  }
 }
 
 function formatUpstreamFailure(label, response, bodyText) {

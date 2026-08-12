@@ -22,7 +22,7 @@ printf '%s\n' \
   '  "schemaVersion": 1,' \
   '  "tagName": "v0.1.2",' \
   '  "githubDescription": "Reviewed GitHub notes.",' \
-  '  "discordAnnouncement": "Reviewed Discord announcement."' \
+  '  "discordAnnouncement": "**Reviewed feature 🌸**\n\n**Highlights**\n- Reviewed highlight"' \
   '}' > "$TEMP_ROOT/Releases/v0.1.3.json"
 
 if "$ROOT_DIR/script/validate_release_tag.sh" "$TEMP_ROOT" v0.1.3 >/dev/null 2>&1; then
@@ -35,7 +35,7 @@ printf '%s\n' \
   '  "schemaVersion": 1,' \
   '  "tagName": "v0.1.3",' \
   '  "githubDescription": "Reviewed GitHub notes.",' \
-  '  "discordAnnouncement": "Reviewed Discord announcement."' \
+  '  "discordAnnouncement": "**Reviewed feature 🌸**\n\n**Highlights**\n- Reviewed highlight"' \
   '}' > "$TEMP_ROOT/Releases/v0.1.3.json"
 
 "$ROOT_DIR/script/validate_release_tag.sh" "$TEMP_ROOT" v0.1.3 >/dev/null

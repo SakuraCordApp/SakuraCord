@@ -273,7 +273,7 @@ and review both drafts before saving them:
   "schemaVersion": 1,
   "tagName": "v0.1.3",
   "githubDescription": "SakuraCord v0.1.3 adds ...\n\n## Feature area\n\n- Added ...\n\n**Full Changelog:** [v0.1.2...v0.1.3](https://github.com/SakuraCordApp/SakuraCord/compare/v0.1.2...v0.1.3)",
-  "discordAnnouncement": "**Specific feature headline 🌸**\n\nA short description of this update.\n\n**Highlights**\n\n- A user-facing feature"
+  "discordAnnouncement": "**Specific feature headline 🌸**\n\n**Highlights**\n- A user-facing feature"
 }
 ```
 
