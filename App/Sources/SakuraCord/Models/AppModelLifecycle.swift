@@ -214,10 +214,13 @@ extension AppModel {
     }
 
     func resetAccountPresentationState() {
+        workspaceNavigationOverlay = nil
+        lastOpenedChannelIDsByGuild = [:]
         forwardingMessage = nil
         forwardingErrorMessage = nil
         isForwardingMessages = false
         forwardDestinationHistory = []
+        quickSwitcherDraftChannelIDs = []
         snapshot = nil
         serverRailGuildsByID = [:]
         serverRailItems = []
@@ -234,7 +237,6 @@ extension AppModel {
         appliedDiscordFrecencyDeltasKey = nil
         lastDiscordFrecencyChannelID = nil
         lastDiscordFrecencyGuildID = nil
-        didSelectInitialForwardDestination = false
         hasLoadedDiscordEmojiSettings = false
         didAttemptDiscordEmojiSettings = false
         voiceStates = [:]
@@ -359,6 +361,8 @@ extension AppModel {
             : nil
         installAccountSession(provider: signedOutProvider, database: signedOutDatabase)
         accountTransitionIsActive = false
+        workspaceNavigationOverlay = nil
+        lastOpenedChannelIDsByGuild = [:]
         snapshot = nil
         serverRailGuildsByID = [:]
         serverRailItems = []
@@ -441,10 +445,15 @@ extension AppModel {
             }
         }
         do {
+            async let storedDraftChannelIDs: [ChannelID] = {
+                guard let database = session.database else { return [] }
+                return (try? await database.recentDraftChannelIDs()) ?? []
+            }()
             let value = try await AppPerformanceSignposts.measure("ProviderBootstrap") {
                 try await session.provider.bootstrap()
             }
             guard isCurrentAccountSession(session) else { return }
+            quickSwitcherDraftChannelIDs = await storedDraftChannelIDs
             await applyLiveBootstrap(
                 value,
                 publishesSessionState: publishesSessionState,
@@ -886,6 +895,7 @@ extension AppModel {
             guard !Task.isCancelled,
                   model.isCurrentAccountSession(account)
             else { return }
+            model.recordForwardDestinationVisit(channel.id)
             model.selectedChannelID = channel.id
         }
     }
@@ -1076,6 +1086,10 @@ extension AppModel {
                 activationSignpost
             )
         }
+        // Snapshot this before changing the selected guild. A synchronous
+        // workspace projection may select that guild's first channel while
+        // activation is in flight, which must not replace the user's memory.
+        let rememberedChannelID = guildID.flatMap { lastOpenedChannelIDsByGuild[$0] }
         dismissAllProfiles()
         selectedGuildID = guildID
         restoreMemberPresentation(for: guildID)
@@ -1119,11 +1133,19 @@ extension AppModel {
             await loadEmojis(for: guildID)
             guard isCurrentAccountSession(session) else { return }
         }
-        if !visibleChannels.contains(where: { $0.id == selectedChannelID }) {
-            let selectableChannels = visibleChannels.filter {
-                conversationAccess(for: $0) != .hidden
-            }
-            let preferredChannelID = Self.preferredInitialChannelID(in: selectableChannels)
+        let selectableChannels = visibleChannels.filter {
+            conversationAccess(for: $0) != .hidden
+        }
+        let restoredChannelID = rememberedChannelID.flatMap { rememberedID in
+            selectableChannels.contains(where: { $0.id == rememberedID })
+                ? rememberedID
+                : nil
+        }
+        if restoredChannelID != nil
+            || !visibleChannels.contains(where: { $0.id == selectedChannelID })
+        {
+            let preferredChannelID = restoredChannelID
+                ?? Self.preferredInitialChannelID(in: selectableChannels)
             pendingAutomaticChannelAccessID = preferredChannelID.flatMap { id in
                 selectableChannels.first(where: { $0.id == id }).flatMap { channel in
                     conversationAccess(for: channel) == .checking ? id : nil

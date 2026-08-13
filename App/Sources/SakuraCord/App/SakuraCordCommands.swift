@@ -10,6 +10,18 @@ struct SakuraCordCommands: Commands {
         }
 
         CommandMenu("Navigate") {
+            Button("Quick Switch…") {
+                model.presentQuickSwitcher()
+            }
+            .keyboardShortcut("k")
+
+            Button("Search Messages…") {
+                model.presentMessageSearch()
+            }
+            .keyboardShortcut("f")
+
+            Divider()
+
             Button("Direct Messages") {
                 model.navigateUsingShortcut(1)
             }

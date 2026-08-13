@@ -21,6 +21,12 @@ final class AccountReadStateModel {
         var firstUnreadTimestamp: Date
     }
 
+    struct QuickSwitcherProjection: Equatable, Sendable {
+        var unreadChannelIDs: Set<ChannelID>
+        var mentionsByChannelID: [ChannelID: Int]
+        var mentionedChannelIDs: [ChannelID]
+    }
+
     struct Entry: Equatable, Sendable {
         var channelID: ChannelID
         var guildID: GuildID?
@@ -96,6 +102,7 @@ final class AccountReadStateModel {
     private(set) var presentations: [ChannelID: Presentation] = [:]
     private(set) var acknowledgementToken: String?
     private(set) var readStateVersion: Int?
+    private(set) var remoteReadStateOrder: [ChannelID] = []
     private var channelByID: [ChannelID: Channel] = [:]
     private var defaultNotificationLevelByGuild: [GuildID: MessageNotificationLevel] = [:]
     private var currentUserRoleIDsByGuild: [GuildID: Set<RoleID>] = [:]
@@ -111,6 +118,7 @@ final class AccountReadStateModel {
         presentations.removeAll()
         acknowledgementToken = nil
         readStateVersion = nil
+        remoteReadStateOrder.removeAll()
         channelByID.removeAll()
         defaultNotificationLevelByGuild.removeAll()
         currentUserRoleIDsByGuild.removeAll()
@@ -280,6 +288,29 @@ final class AccountReadStateModel {
             && (override.muteConfiguration?.isActive(at: date) ?? true)
     }
 
+    /// Resolves the muted projection in one pass. Quick-switcher preparation
+    /// covers the complete channel store, so calling `isChannelMuted` for each
+    /// channel would repeatedly scan the same guild override arrays.
+    func mutedChannelIDs(
+        in channels: [Channel],
+        at date: Date = .now
+    ) -> Set<ChannelID> {
+        var activeMutedOverrides = Set<ChannelID>()
+        for settings in settingsByGuild.values {
+            for override in settings.channelOverrides where override.isMuted {
+                guard override.muteConfiguration?.isActive(at: date) ?? true else {
+                    continue
+                }
+                activeMutedOverrides.insert(override.channelID)
+            }
+        }
+        return Set(channels.lazy.compactMap { channel in
+            channel.isMuted || activeMutedOverrides.contains(channel.id)
+                ? channel.id
+                : nil
+        })
+    }
+
     func inheritedNotificationLevel(for channel: Channel) -> MessageNotificationLevel {
         let guildSettings = settingsByGuild[channel.guildID]
         let parentOverride = channel.categoryID.flatMap { parentID in
@@ -354,6 +385,9 @@ final class AccountReadStateModel {
         {
             return false
         }
+        if !remoteReadStateOrder.contains(state.channelID) {
+            remoteReadStateOrder.append(state.channelID)
+        }
         var entry = entry(for: state.channelID)
         if let existing = entry.lastAcknowledgedMessageID,
            let incoming = state.lastAcknowledgedMessageID,
@@ -410,10 +444,16 @@ final class AccountReadStateModel {
             states.map { ($0.channelID, $0) },
             uniquingKeysWith: { _, latest in latest }
         )
+        var seenStateIDs: Set<ChannelID> = []
+        remoteReadStateOrder = states.compactMap { state in
+            seenStateIDs.insert(state.channelID).inserted ? state.channelID : nil
+        }
         entries.removeAll(keepingCapacity: true)
         merge(channels: Array(channelByID.values))
-        for state in latestStateByChannel.values {
-            applyRemote(state)
+        for channelID in remoteReadStateOrder {
+            if let state = latestStateByChannel[channelID] {
+                applyRemote(state)
+            }
         }
         for channelID in Array(entries.keys) {
             guard let previous = previousEntries[channelID] else { continue }
@@ -433,6 +473,59 @@ final class AccountReadStateModel {
         if let snapshotVersion {
             readStateVersion = max(readStateVersion ?? snapshotVersion, snapshotVersion)
         }
+    }
+
+    func quickSwitcherMentionChannelIDs(
+        mentionsByChannelID mentionCounts: [ChannelID: Int]
+    ) -> [ChannelID] {
+        var seen: Set<ChannelID> = []
+        let remoteIDs = Set(remoteReadStateOrder)
+        let ordered = remoteReadStateOrder + entries.keys.filter {
+            !remoteIDs.contains($0)
+        }
+        return ordered.enumerated().filter {
+            seen.insert($0.element).inserted
+                && mentionCounts[$0.element, default: 0] > 0
+        }.sorted { lhs, rhs in
+            let leftMessage = entries[lhs.element]?.latestUnreadMessageID
+                ?? entries[lhs.element]?.latestKnownMessageID
+            let rightMessage = entries[rhs.element]?.latestUnreadMessageID
+                ?? entries[rhs.element]?.latestKnownMessageID
+            if leftMessage != rightMessage {
+                return (leftMessage ?? MessageID(rawValue: 0))
+                    < (rightMessage ?? MessageID(rawValue: 0))
+            }
+            return lhs.offset < rhs.offset
+        }.map {
+            $0.element
+        }
+    }
+
+    /// Produces only the local read-state fields consumed by Discord's quick
+    /// switcher. The full sidebar projection also resolves guild aggregates,
+    /// forum counters, and notification policies, which are irrelevant here
+    /// and expensive across a large account.
+    func quickSwitcherProjection() -> QuickSwitcherProjection {
+        var unreadChannelIDs = Set<ChannelID>()
+        var mentionsByChannelID: [ChannelID: Int] = [:]
+        unreadChannelIDs.reserveCapacity(entries.count)
+        mentionsByChannelID.reserveCapacity(entries.count)
+        for entry in entries.values where entry.isAccessible {
+            guard !isGuildResourceChannel(entry) else { continue }
+            if entry.isUnread {
+                unreadChannelIDs.insert(entry.channelID)
+            }
+            if entry.mentionCount > 0 {
+                mentionsByChannelID[entry.channelID] = entry.mentionCount
+            }
+        }
+        return QuickSwitcherProjection(
+            unreadChannelIDs: unreadChannelIDs,
+            mentionsByChannelID: mentionsByChannelID,
+            mentionedChannelIDs: quickSwitcherMentionChannelIDs(
+                mentionsByChannelID: mentionsByChannelID
+            )
+        )
     }
 
     private func reconciledSnapshotEntry(
@@ -550,6 +643,14 @@ final class AccountReadStateModel {
         let policy = effectivePolicy(for: entry, now: now)
         let mentionKind = mentionKind(for: message, entry: entry, policy: policy)
         if mentionKind != .none {
+            if entry.mentionCount == 0 {
+                // Discord's MentionStore appends a channel when it first
+                // becomes mentioned. The quick switcher walks that order in
+                // reverse, so a newly mentioned channel appears first even
+                // when its read-state entry was created much earlier.
+                remoteReadStateOrder.removeAll { $0 == message.channelID }
+                remoteReadStateOrder.append(message.channelID)
+            }
             entry.mentionCount += 1
         }
         entries[message.channelID] = entry

@@ -84,6 +84,11 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var gatewaySession: GatewaySession?
     var gatewayEventTask: Task<Void, Never>?
     var gatewayGuildIDs: [GuildID] = []
+    // Preserve READY's raw guild membership projection independently of user
+    // hydration. A merged member can precede its UserStore row in
+    // READY_SUPPLEMENTAL, but Discord still makes it eligible immediately in
+    // the quick switcher for the selected guild.
+    var quickSwitcherGuildMemberUserIDsByGuildID: [GuildID: Set<UserID>] = [:]
     var gatewayReady = false
     var initialGatewaySnapshotResult: Result<InitialGatewaySnapshot, any Error>?
     var initialGatewaySnapshotContinuation:
@@ -101,6 +106,8 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var memberListSubscriptionOrder: [GuildID: [String]] = [:]
     var cachedGatewayUsersByID: [String: UserDTO] = [:]
     var cachedGatewayUserOrder: [String] = []
+    var forwardSearchEligibleUserIDs: Set<UserID> = []
+    var forwardSearchEligibleUserOrder: [UserID] = []
     var cachedForwardSearchUsersByID: [UserID: User] = [:]
     var cachedForwardSearchUserOrder: [UserID] = []
     var cachedForwardSearchAliasesByGuildID: [GuildID: [UserID: String]] = [:]
@@ -550,11 +557,14 @@ extension DiscordRESTProvider {
         return BootstrapSnapshot(
             currentUser: user,
             knownUsers: currentKnownUsers(),
+            quickSwitcherUserIDs: currentQuickSwitcherUsers().map(\.id),
             friendUserIDs: cachedFriendUserIDs,
             relationshipNicknamesByUserID: cachedRelationshipNicknamesByUserID,
             userSearchAliasesByUserID: userSearchAliasesByUserID,
+            quickSwitcherGuildMemberUserIDs: currentQuickSwitcherGuildMemberUserIDs(),
             guilds: currentGuilds,
             guildRailItems: cachedGuildRailItems,
+            forwardGuildStoreOrder: gatewayGuildIDs,
             channels: startupChannels,
             forwardChannelStoreOrder: cachedForwardChannelStoreOrder,
             threads: startupThreads,
@@ -569,9 +579,12 @@ extension DiscordRESTProvider {
     func currentUserSearchAliasesByUserID() -> [UserID: [String]] {
         var result: [UserID: [String]] = [:]
         var seenGuildIDs = Set<GuildID>()
-        let orderedGuildIDs = loadedForwardSearchAliasGuildOrder.filter {
+        // CONNECTION_OPEN establishes GuildMemberStore's key insertion order.
+        // Cached aliases only fill gaps after that live authoritative order;
+        // putting the disk cache first changed equal-score nickname ties.
+        let orderedGuildIDs = gatewayGuildIDs.filter {
             seenGuildIDs.insert($0).inserted
-        } + gatewayGuildIDs.filter { seenGuildIDs.insert($0).inserted }
+        } + loadedForwardSearchAliasGuildOrder.filter { seenGuildIDs.insert($0).inserted }
             + cachedMembers.keys.sorted().filter { seenGuildIDs.insert($0).inserted }
             + cachedForwardSearchAliasGuildOrder.filter { seenGuildIDs.insert($0).inserted }
         for guildID in orderedGuildIDs {
@@ -591,6 +604,28 @@ extension DiscordRESTProvider {
         return result
     }
 
+    func currentQuickSwitcherGuildMemberUserIDs() -> [GuildID: [UserID]] {
+        var guildIDs = Set(gatewayGuildIDs)
+        guildIDs.formUnion(quickSwitcherGuildMemberUserIDsByGuildID.keys)
+        guildIDs.formUnion(cachedMembers.keys)
+        guildIDs.formUnion(cachedForwardSearchAliasesByGuildID.keys)
+        return Dictionary(uniqueKeysWithValues: guildIDs.map { guildID in
+            var userIDs = quickSwitcherGuildMemberUserIDsByGuildID[guildID] ?? []
+            userIDs.formUnion((cachedMembers[guildID] ?? []).map(\.id))
+            userIDs.formUnion(
+                cachedForwardSearchAliasesByGuildID[guildID]?.keys.map { $0 } ?? []
+            )
+            return (guildID, userIDs.sorted())
+        })
+    }
+
+    func publishUserSearchAliases() {
+        continuation?.yield(.userSearchAliasesChanged(currentUserSearchAliasesByUserID()))
+        continuation?.yield(.quickSwitcherGuildMemberUserIDsChanged(
+            currentQuickSwitcherGuildMemberUserIDs()
+        ))
+    }
+
     func currentKnownUsers() -> [User] {
         cachedGatewayUserOrder.compactMap { rawUserID -> User? in
             let userID = UserID(rawUserID)
@@ -604,8 +639,33 @@ extension DiscordRESTProvider {
         }
     }
 
+    func currentQuickSwitcherUsers() -> [User] {
+        var seen = Set<UserID>()
+        let orderedUserIDs = cachedGatewayUserOrder.compactMap(UserID.init).filter {
+            seen.insert($0).inserted
+        } + forwardSearchEligibleUserOrder.filter {
+            seen.insert($0).inserted
+        } + cachedForwardSearchUserOrder.filter {
+            seen.insert($0).inserted
+        }
+        // Discord's worker mirrors UserStore, then applies friends/current-
+        // guild eligibility at query time. Keeping only rows that happened to
+        // arrive through READY's first user collection dropped valid members
+        // whose user record arrived in READY_SUPPLEMENTAL.
+        return orderedUserIDs.compactMap { userID in
+            guard let user = cachedGatewayUsersByID[userID.description]
+                .flatMap({ try? $0.domain() }) ?? cachedForwardSearchUsersByID[userID],
+                  !cachedBlockedOrIgnoredUserIDs.contains(user.id)
+            else { return nil }
+            return user
+        }
+    }
+
     @discardableResult
-    func cacheGatewayUser(_ user: UserDTO) -> Bool {
+    func cacheGatewayUser(
+        _ user: UserDTO,
+        forwardSearchEligible: Bool = true
+    ) -> Bool {
         let userID = UserID(user.id)
         let previous = cachedGatewayUsersByID[user.id].flatMap { try? $0.domain() }
             ?? userID.flatMap { cachedForwardSearchUsersByID[$0] }
@@ -614,7 +674,13 @@ extension DiscordRESTProvider {
             cachedGatewayUserOrder.append(user.id)
         }
         cachedGatewayUsersByID[user.id] = user
-        return inserted || previous != (try? user.domain())
+        let becameForwardSearchEligible = userID.map {
+            forwardSearchEligible && forwardSearchEligibleUserIDs.insert($0).inserted
+        } ?? false
+        if let userID, becameForwardSearchEligible {
+            forwardSearchEligibleUserOrder.append(userID)
+        }
+        return becameForwardSearchEligible || inserted || previous != (try? user.domain())
     }
 
     func cacheLiveSearchUsers(_ users: [UserDTO]) {
@@ -640,6 +706,9 @@ extension DiscordRESTProvider {
         }
         if changed || persistentChanged {
             continuation?.yield(.knownUsersChanged(currentKnownUsers()))
+            continuation?.yield(
+                .quickSwitcherUserIDsChanged(currentQuickSwitcherUsers().map(\.id))
+            )
         }
     }
 

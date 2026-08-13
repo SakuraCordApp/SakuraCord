@@ -111,7 +111,7 @@ struct ChannelSidebarView: View {
                         !$0.value.isUnavailable
                     },
                     animatesAvatars: guild == nil,
-                    selection: $selection
+                    selection: directMessageSelection
                 )
                 .opacity(guild == nil ? 1 : 0)
                 .allowsHitTesting(guild == nil)
@@ -197,8 +197,26 @@ struct ChannelSidebarView: View {
                 selectionCommitter.schedule(
                     newSelection,
                     currentSelection: { selection },
-                    commit: { selection = $0 }
+                    commit: { newSelection in
+                        if let newSelection {
+                            voiceModel.recordForwardDestinationVisit(newSelection)
+                        }
+                        selection = newSelection
+                    }
                 )
+            }
+        )
+    }
+
+    private var directMessageSelection: Binding<ChannelID?> {
+        Binding(
+            get: { selection },
+            set: { newSelection in
+                guard selection != newSelection else { return }
+                if let newSelection {
+                    voiceModel.recordForwardDestinationVisit(newSelection)
+                }
+                selection = newSelection
             }
         )
     }

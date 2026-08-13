@@ -151,6 +151,7 @@ struct NativeMemberListView: NSViewRepresentable {
     let customEmojiURLsByID: [String: URL]
     let profilePresentation: ProfilePresentationState?
     let isProfilePresented: Bool
+    let interactionsBlocked: Bool
     let selectMember: (Member) -> Void
     let dismissProfile: () -> Void
     let runsPerformanceAutoScroll: Bool
@@ -241,6 +242,7 @@ final class NativeMemberListCoordinator: NSObject {
         canvas.selectMember = { [weak self] member in
             self?.parent.selectMember(member)
         }
+        canvas.setInteractionsBlocked(parent.interactionsBlocked)
         canvas.update(
             sections: parent.sections,
             customEmojiURLsByID: parent.customEmojiURLsByID,
@@ -499,6 +501,7 @@ final class NativeMemberListCanvasView: NSView {
     var selectMember: (Member) -> Void = { _ in }
     var hoveredIndex: Int?
     var isScrolling = false
+    var interactionsBlocked = false
     var trackingArea: NSTrackingArea?
     var rowOverlay: NSHostingView<AnyView>?
     var rowForegroundOverlay: NativeMemberForegroundOverlayView?
@@ -539,6 +542,11 @@ final class NativeMemberListCanvasView: NSView {
 
     override func updateTrackingAreas() {
         if let trackingArea { removeTrackingArea(trackingArea) }
+        guard !interactionsBlocked else {
+            trackingArea = nil
+            super.updateTrackingAreas()
+            return
+        }
         let options: NSTrackingArea.Options = [
             .activeInKeyWindow, .inVisibleRect, .mouseMoved, .mouseEnteredAndExited,
         ]
@@ -581,6 +589,21 @@ final class NativeMemberListCanvasView: NSView {
         updateVisibleOverlaysAndPrewarming(
             force: documentChanged || previousCustomEmojiURLsByID != customEmojiURLsByID
         )
+    }
+
+    func setInteractionsBlocked(_ blocked: Bool) {
+        guard interactionsBlocked != blocked else { return }
+        interactionsBlocked = blocked
+        if blocked {
+            if let old = hoveredIndex {
+                hoveredIndex = nil
+                setNeedsDisplay(itemRect(at: old))
+            }
+            removeRowOverlay()
+            profilePopoverCoordinator.close()
+        }
+        updateTrackingAreas()
+        window?.invalidateCursorRects(for: self)
     }
 
     @discardableResult
@@ -1026,7 +1049,7 @@ final class NativeMemberListCanvasView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        guard !isScrolling else { return }
+        guard !isScrolling, !interactionsBlocked else { return }
         let newIndex = index(at: convert(event.locationInWindow, from: nil))
         guard newIndex != hoveredIndex else { return }
         let old = hoveredIndex
@@ -1044,7 +1067,8 @@ final class NativeMemberListCanvasView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        guard let index = index(at: convert(event.locationInWindow, from: nil)),
+        guard !interactionsBlocked,
+              let index = index(at: convert(event.locationInWindow, from: nil)),
               case .member(let member, _) = items[index]
         else { return }
         selectMember(member)

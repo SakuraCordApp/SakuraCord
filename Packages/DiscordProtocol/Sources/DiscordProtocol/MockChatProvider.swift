@@ -435,6 +435,30 @@ public actor MockChatProvider: ChatProvider {
         )
     }
 
+    public func searchMessages(
+        in channelID: ChannelID,
+        query: String,
+        limit: Int,
+        offset: Int
+    ) async throws -> MessageSearchPage {
+        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else {
+            throw ChatProviderError.invalidRequest("Enter text to search for.")
+        }
+        guard messagesByChannel[channelID] != nil else {
+            throw ChatProviderError.channelNotFound
+        }
+        let matches = messagesByChannel[channelID, default: []]
+            .filter { $0.content.localizedCaseInsensitiveContains(normalized) }
+            .sorted { $0.timestamp > $1.timestamp }
+        let lowerBound = min(max(0, offset), matches.count)
+        let upperBound = min(matches.count, lowerBound + min(max(1, limit), 25))
+        return MessageSearchPage(
+            messages: Array(matches[lowerBound ..< upperBound]),
+            totalResults: matches.count
+        )
+    }
+
     public func forumPosts(in channelID: ChannelID, query: ForumPostQuery) async throws
         -> ForumPostPage
     {

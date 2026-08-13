@@ -202,6 +202,23 @@ private struct ChatRootView: View {
                 .frame(width: 0, height: 0)
         }
         .background {
+            WindowModalOverlay(
+                presentation: model.workspaceNavigationOverlay,
+                preloadedPresentation: .quickSwitcher,
+                behavior: { presentation in
+                    presentation == .quickSwitcher ? .instantKeyboardOwned : .standard
+                },
+                dismiss: model.dismissWorkspaceNavigationOverlay,
+                content: { presentation, animationState in
+                WorkspaceNavigationOverlayView(
+                    model: model,
+                    presentation: presentation,
+                    animationState: animationState
+                )
+            })
+            .frame(width: 0, height: 0)
+        }
+        .background {
             DisplayCompleteFrameReporter(
                 presentationID: model.selectedChannelID?.rawValue
             ) {
@@ -547,6 +564,14 @@ private struct ChatRootView: View {
                 if selectedPrivateChannel != nil {
                     ToolbarSpacer(.fixed)
                 }
+
+                ToolbarItem {
+                    Button { model.presentMessageSearch() } label: {
+                        Label("Search Messages", systemImage: "magnifyingglass")
+                    }
+                    .help("Search messages in this channel (Command-F)")
+                }
+                .visibilityPriority(.high)
 
                 ToolbarItem {
                     Button { model.showInspector.toggle() } label: {

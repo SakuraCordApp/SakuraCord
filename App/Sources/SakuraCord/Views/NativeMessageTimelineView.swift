@@ -9,7 +9,8 @@ private final class NativeTimelineInputShieldScrollView: NSScrollView {
 
     override func scrollWheel(with event: NSEvent) {
         guard model?.mediaViewerPresentation == nil,
-              model?.forwardingMessage == nil
+              model?.forwardingMessage == nil,
+              model?.workspaceNavigationOverlay == nil
         else { return }
         super.scrollWheel(with: event)
     }
@@ -642,6 +643,7 @@ extension NativeMessageTimelineCoordinator {
             canvas?.setOverlayInteractionBlocked(
                 parent.model.mediaViewerPresentation != nil
                     || parent.model.forwardingMessage != nil
+                    || parent.model.workspaceNavigationOverlay != nil
             )
             timelineUpdateOperation(parent, scrollView)
         }

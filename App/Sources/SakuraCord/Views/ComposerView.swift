@@ -105,6 +105,9 @@ struct ComposerView: View {
                                     onSubmit: send,
                                     onEscape: handleEscapeCommand,
                                     onEditLatestMessage: editLatestMessage,
+                                    onCycleReplyContext: {
+                                        model.cycleReplyContext(in: conversation)
+                                    },
                                     onAutocompleteCommand: handleAutocomplete,
                                     onPasteAttachments: addPastedAttachments,
                                     capturesUnfocusedTyping: true,

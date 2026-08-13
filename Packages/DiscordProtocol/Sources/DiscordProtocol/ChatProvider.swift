@@ -34,6 +34,12 @@ public protocol ChatProvider: Sendable {
     func currentStatus() async -> PresenceStatus
     func updateStatus(_ status: PresenceStatus) async throws
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws -> MessagePage
+    func searchMessages(
+        in channelID: ChannelID,
+        query: String,
+        limit: Int,
+        offset: Int
+    ) async throws -> MessageSearchPage
     func forumPosts(in channelID: ChannelID, query: ForumPostQuery) async throws -> ForumPostPage
     func forumPost(threadID: ChannelID) async throws -> ForumPost
     func createForumPost(
@@ -178,6 +184,28 @@ public extension ChatProvider {
     func prepareAuthentication() async throws {}
 
     func updateClientAppState(isFocused: Bool) async {}
+
+    func searchMessages(
+        in channelID: ChannelID,
+        query: String,
+        limit: Int,
+        offset: Int
+    ) async throws -> MessageSearchPage {
+        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else {
+            throw ChatProviderError.invalidRequest("Enter text to search for.")
+        }
+        let page = try await messages(in: channelID, before: nil, limit: 100)
+        let matches = page.messages.filter {
+            $0.content.localizedCaseInsensitiveContains(normalized)
+        }
+        let lowerBound = min(max(0, offset), matches.count)
+        let upperBound = min(matches.count, lowerBound + min(max(1, limit), 25))
+        return MessageSearchPage(
+            messages: Array(matches[lowerBound ..< upperBound]),
+            totalResults: matches.count
+        )
+    }
 
     func updateMemberListViewport(
         in guildID: GuildID,

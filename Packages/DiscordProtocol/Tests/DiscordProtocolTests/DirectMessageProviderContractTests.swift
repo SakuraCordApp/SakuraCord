@@ -364,12 +364,14 @@ struct DirectMessageProviderContractTests {
 
         #expect(await second.currentKnownUsers().map(\.id) == [
             UserID(rawValue: 2),
+            UserID(rawValue: 5),
             UserID(rawValue: 3),
             UserID(rawValue: 1),
         ])
-        #expect(!(await second.currentKnownUsers()).contains {
-            $0.id == UserID(rawValue: 5)
-        })
+        let reloadedMemberships = await second.currentQuickSwitcherGuildMemberUserIDs()
+        #expect(reloadedMemberships[GuildID(rawValue: 7)] == [
+            UserID(rawValue: 2), UserID(rawValue: 5),
+        ])
         #expect(
             await second.currentUserSearchAliasesByUserID()[UserID(rawValue: 2)]
                 == ["Current nickname"]
@@ -379,19 +381,50 @@ struct DirectMessageProviderContractTests {
 
         #expect(await second.currentKnownUsers().map(\.id) == [
             UserID(rawValue: 2),
+            UserID(rawValue: 5),
             UserID(rawValue: 3),
             UserID(rawValue: 1),
             UserID(rawValue: 4),
         ])
-        #expect(
-            await second.currentUserSearchAliasesByUserID()[UserID(rawValue: 2)]
-                == ["Current nickname", "Ready nickname"]
-        )
+        let reloadedAliases = await second.currentUserSearchAliasesByUserID()
+        #expect(reloadedAliases[UserID(rawValue: 2)] == [
+            "Ready nickname", "Current nickname",
+        ])
         #expect(
             await second.currentUserSearchAliasesByUserID()[UserID(rawValue: 4)]
                 == nil
         )
         #expect(DirectMessageURLProtocol.requests.isEmpty)
+        await second.disconnect()
+    }
+
+    @Test func `quick switcher channel store order survives Ready reconciliation`() async throws {
+        let cacheDirectory = FileManager.default.temporaryDirectory.appending(
+            path: "quick-switcher-channel-store-\(UUID().uuidString)",
+            directoryHint: .isDirectory
+        )
+        defer { try? FileManager.default.removeItem(at: cacheDirectory) }
+
+        let first = makeProvider(usesForwardSearchPeopleDiskCache: true)
+        await first.setForwardSearchPeopleCacheDirectoryForTesting(cacheDirectory)
+        await first.reconcileQuickSwitcherChannelStoreOrder(with: [
+            ChannelID(rawValue: 3), ChannelID(rawValue: 1), ChannelID(rawValue: 2),
+        ])
+        await first.persistQuickSwitcherChannelStoreCache()
+
+        let second = makeProvider(usesForwardSearchPeopleDiskCache: true)
+        await second.setForwardSearchPeopleCacheDirectoryForTesting(cacheDirectory)
+        await second.loadQuickSwitcherChannelStoreCache()
+        await second.reconcileQuickSwitcherChannelStoreOrder(with: [
+            ChannelID(rawValue: 2), ChannelID(rawValue: 3),
+            ChannelID(rawValue: 4), ChannelID(rawValue: 1),
+        ])
+
+        #expect(await second.cachedForwardChannelStoreOrder == [
+            ChannelID(rawValue: 3), ChannelID(rawValue: 1),
+            ChannelID(rawValue: 2), ChannelID(rawValue: 4),
+        ])
+        await first.disconnect()
         await second.disconnect()
     }
 

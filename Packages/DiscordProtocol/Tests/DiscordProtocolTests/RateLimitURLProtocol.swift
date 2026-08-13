@@ -42,6 +42,9 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var typingHadBody = false
     nonisolated(unsafe) static var typingSuperProperties: String?
     nonisolated(unsafe) static var messageRequestCount = 0
+    nonisolated(unsafe) static var messageSearchRequestCount = 0
+    nonisolated(unsafe) static var messageSearchQueries: [[String: String]] = []
+    nonisolated(unsafe) static var messageSearchStatuses: [Int] = []
     nonisolated(unsafe) static var messageMethod: String?
     nonisolated(unsafe) static var messagePath: String?
     nonisolated(unsafe) static var sentMessageBody: [String: Any]?
@@ -129,6 +132,9 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
         typingHadBody = false
         typingSuperProperties = nil
         messageRequestCount = 0
+        messageSearchRequestCount = 0
+        messageSearchQueries = []
+        messageSearchStatuses = []
         messageMethod = nil
         messagePath = nil
         sentMessageBody = nil
@@ -516,6 +522,41 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
                 "edited_timestamp":null,"attachments":[],"reactions":[]}
                 """#
             }
+        case "/api/v9/channels/200/messages/search":
+            RateLimitURLProtocol.messageSearchRequestCount += 1
+            RateLimitURLProtocol.messageSearchQueries.append(
+                Dictionary(
+                    uniqueKeysWithValues: (URLComponents(
+                        url: request.url!,
+                        resolvingAgainstBaseURL: false
+                    )?.queryItems ?? []).compactMap { item in
+                        item.value.map { (item.name, $0) }
+                    }
+                )
+            )
+            let index = RateLimitURLProtocol.messageSearchRequestCount - 1
+            status = RateLimitURLProtocol.messageSearchStatuses.indices.contains(index)
+                ? RateLimitURLProtocol.messageSearchStatuses[index]
+                : 200
+            json = status == 202
+                ? #"{"message":"Index not yet available","code":110000,"retry_after":0}"#
+                : #"""
+                {
+                  "total_results":1,
+                  "doing_deep_historical_index":false,
+                  "messages":[[{
+                    "id":"351",
+                    "channel_id":"200",
+                    "guild_id":"100",
+                    "author":{"id":"4","username":"maya","global_name":"Maya","avatar":null},
+                    "content":"searchable sakura message",
+                    "timestamp":"2026-08-12T19:00:00.000Z",
+                    "edited_timestamp":null,
+                    "attachments":[],
+                    "mentions":[]
+                  }]]
+                }
+                """#
         default:
             status = 404
             json = "{}"

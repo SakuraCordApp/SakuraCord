@@ -1720,11 +1720,14 @@ public enum GuildRailItem: Codable, Equatable, Hashable, Sendable, Identifiable 
 public struct BootstrapSnapshot: Codable, Equatable, Sendable {
     public var currentUser: User
     public var knownUsers: [User]
+    public var quickSwitcherUserIDs: [UserID]
     public var friendUserIDs: Set<UserID>
     public var relationshipNicknamesByUserID: [UserID: String]
     public var userSearchAliasesByUserID: [UserID: [String]]
+    public var quickSwitcherGuildMemberUserIDs: [GuildID: [UserID]]
     public var guilds: [Guild]
     public var guildRailItems: [GuildRailItem]
+    public var forwardGuildStoreOrder: [GuildID]
     public var channels: [Channel]
     public var forwardChannelStoreOrder: [ChannelID]
     public var threads: [MessageThreadSummary]
@@ -1737,11 +1740,14 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
     public init(
         currentUser: User,
         knownUsers: [User] = [],
+        quickSwitcherUserIDs: [UserID]? = nil,
         friendUserIDs: Set<UserID> = [],
         relationshipNicknamesByUserID: [UserID: String] = [:],
         userSearchAliasesByUserID: [UserID: [String]] = [:],
+        quickSwitcherGuildMemberUserIDs: [GuildID: [UserID]] = [:],
         guilds: [Guild],
         guildRailItems: [GuildRailItem]? = nil,
+        forwardGuildStoreOrder: [GuildID]? = nil,
         channels: [Channel],
         forwardChannelStoreOrder: [ChannelID]? = nil,
         threads: [MessageThreadSummary] = [],
@@ -1753,11 +1759,14 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
     ) {
         self.currentUser = currentUser
         self.knownUsers = knownUsers
+        self.quickSwitcherUserIDs = quickSwitcherUserIDs ?? knownUsers.map(\.id)
         self.friendUserIDs = friendUserIDs
         self.relationshipNicknamesByUserID = relationshipNicknamesByUserID
         self.userSearchAliasesByUserID = userSearchAliasesByUserID
+        self.quickSwitcherGuildMemberUserIDs = quickSwitcherGuildMemberUserIDs
         self.guilds = guilds
         self.guildRailItems = guildRailItems ?? guilds.map { .guild($0.id) }
+        self.forwardGuildStoreOrder = forwardGuildStoreOrder ?? guilds.map(\.id)
         self.channels = channels
         self.forwardChannelStoreOrder = forwardChannelStoreOrder ?? channels.map(\.id)
         self.threads = threads
@@ -1769,9 +1778,12 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case currentUser, knownUsers, friendUserIDs, relationshipNicknamesByUserID
+        case currentUser, knownUsers, quickSwitcherUserIDs, friendUserIDs
+        case relationshipNicknamesByUserID
         case userSearchAliasesByUserID
-        case guilds, guildRailItems, channels, forwardChannelStoreOrder
+        case quickSwitcherGuildMemberUserIDs
+        case guilds, guildRailItems, forwardGuildStoreOrder
+        case channels, forwardChannelStoreOrder
         case threads, activeJoinedThreads
         case members, readStates
         case notificationSettings, usesNewNotifications
@@ -1781,6 +1793,10 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         currentUser = try container.decode(User.self, forKey: .currentUser)
         knownUsers = try container.decodeIfPresent([User].self, forKey: .knownUsers) ?? []
+        quickSwitcherUserIDs = try container.decodeIfPresent(
+            [UserID].self,
+            forKey: .quickSwitcherUserIDs
+        ) ?? knownUsers.map(\.id)
         friendUserIDs = try container.decodeIfPresent(Set<UserID>.self, forKey: .friendUserIDs) ?? []
         relationshipNicknamesByUserID =
             try container.decodeIfPresent(
@@ -1790,10 +1806,17 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
             try container.decodeIfPresent(
                 [UserID: [String]].self, forKey: .userSearchAliasesByUserID
             ) ?? [:]
+        quickSwitcherGuildMemberUserIDs =
+            try container.decodeIfPresent(
+                [GuildID: [UserID]].self, forKey: .quickSwitcherGuildMemberUserIDs
+            ) ?? [:]
         guilds = try container.decode([Guild].self, forKey: .guilds)
         guildRailItems =
             try container.decodeIfPresent([GuildRailItem].self, forKey: .guildRailItems)
                 ?? guilds.map { .guild($0.id) }
+        forwardGuildStoreOrder =
+            try container.decodeIfPresent([GuildID].self, forKey: .forwardGuildStoreOrder)
+                ?? guilds.map(\.id)
         channels = try container.decode([Channel].self, forKey: .channels)
         forwardChannelStoreOrder =
             try container.decodeIfPresent(
@@ -1818,13 +1841,19 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(currentUser, forKey: .currentUser)
         try container.encode(knownUsers, forKey: .knownUsers)
+        try container.encode(quickSwitcherUserIDs, forKey: .quickSwitcherUserIDs)
         try container.encode(friendUserIDs, forKey: .friendUserIDs)
         try container.encode(
             relationshipNicknamesByUserID, forKey: .relationshipNicknamesByUserID
         )
         try container.encode(userSearchAliasesByUserID, forKey: .userSearchAliasesByUserID)
+        try container.encode(
+            quickSwitcherGuildMemberUserIDs,
+            forKey: .quickSwitcherGuildMemberUserIDs
+        )
         try container.encode(guilds, forKey: .guilds)
         try container.encode(guildRailItems, forKey: .guildRailItems)
+        try container.encode(forwardGuildStoreOrder, forKey: .forwardGuildStoreOrder)
         try container.encode(channels, forKey: .channels)
         try container.encode(forwardChannelStoreOrder, forKey: .forwardChannelStoreOrder)
         try container.encode(threads, forKey: .threads)
@@ -1941,49 +1970,5 @@ public struct VoiceParticipantState: Equatable, Sendable {
         self.isSuppressed = isSuppressed
         self.isStreaming = isStreaming
         self.isVideoEnabled = isVideoEnabled
-    }
-}
-
-public struct PrivateCallRing: Equatable, Hashable, Sendable {
-    public var recipientID: UserID
-    public var senderID: UserID
-
-    public init(recipientID: UserID, senderID: UserID) {
-        self.recipientID = recipientID
-        self.senderID = senderID
-    }
-}
-
-/// Discord's app-wide state for an active direct-message or group-DM call.
-///
-/// `voiceStates` is nil on partial CALL_UPDATE payloads. Callers should retain
-/// the last complete participant snapshot until individual VOICE_STATE_UPDATE
-/// events reconcile it.
-public struct PrivateCall: Equatable, Sendable {
-    public var channelID: ChannelID
-    public var messageID: MessageID?
-    public var region: String?
-    public var ongoingRings: [PrivateCallRing]
-    public var voiceStates: [VoiceParticipantState]?
-    public var isUnavailable: Bool
-
-    public init(
-        channelID: ChannelID,
-        messageID: MessageID? = nil,
-        region: String? = nil,
-        ongoingRings: [PrivateCallRing] = [],
-        voiceStates: [VoiceParticipantState]? = nil,
-        isUnavailable: Bool = false
-    ) {
-        self.channelID = channelID
-        self.messageID = messageID
-        self.region = region
-        self.ongoingRings = ongoingRings
-        self.voiceStates = voiceStates
-        self.isUnavailable = isUnavailable
-    }
-
-    public func isRinging(_ userID: UserID) -> Bool {
-        ongoingRings.contains { $0.recipientID == userID }
     }
 }

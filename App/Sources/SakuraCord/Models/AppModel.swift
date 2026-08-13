@@ -124,6 +124,8 @@ final class AppModel {
     var hiddenChannelIDs: Set<ChannelID> = []
     var checkingChannelIDs: Set<ChannelID> = []
     var selectedChannel: Channel?
+    var workspaceNavigationOverlay: WorkspaceNavigationOverlay?
+    @ObservationIgnored var lastOpenedChannelIDsByGuild: [GuildID: ChannelID] = [:]
     @ObservationIgnored var messages: [Message] = []
     @ObservationIgnored var messageRows: [MessageRowPresentation] = []
     @ObservationIgnored var messageRowsRevision: UInt64 = 0
@@ -269,6 +271,7 @@ final class AppModel {
     var forwardingErrorMessage: String?
     var isForwardingMessages = false
     var forwardDestinationHistory: [ChannelID] = []
+    var quickSwitcherDraftChannelIDs: [ChannelID] = []
     var forwardSearchSourceRevision: UInt64 = 0
     var forumCreateGeneration: UInt64 = 0
     var forumSearchText = ""
@@ -395,7 +398,6 @@ final class AppModel {
     @ObservationIgnored var appliedDiscordFrecencyDeltasKey: String?
     @ObservationIgnored var lastDiscordFrecencyChannelID: ChannelID?
     @ObservationIgnored var lastDiscordFrecencyGuildID: GuildID?
-    @ObservationIgnored var didSelectInitialForwardDestination = false
     var hasLoadedDiscordEmojiSettings = false
     var orderedCustomEmojis: [DiscordEmoji] = []
     var customEmojiURLsByID: [String: URL] = [:]
@@ -882,6 +884,11 @@ final class AppModel {
     var selectedChannelID: ChannelID? {
         didSet {
             guard selectedChannelID != oldValue else { return }
+            if let previousChannel = selectedChannel,
+               let guildID = previousChannel.guildID
+            {
+                lastOpenedChannelIDsByGuild[guildID] = previousChannel.id
+            }
             if pendingAutomaticChannelAccessID != selectedChannelID {
                 pendingAutomaticChannelAccessID = nil
             }
@@ -913,12 +920,9 @@ final class AppModel {
                 snapshot?.channels.first { $0.id == selectedChannelID }
                     ?? visibleChannels.first { $0.id == selectedChannelID }
             if let selectedChannel,
-               didSelectInitialForwardDestination
+               let guildID = selectedChannel.guildID
             {
-                recordForwardDestinationVisit(selectedChannel.id)
-            }
-            if selectedChannel != nil {
-                didSelectInitialForwardDestination = true
+                lastOpenedChannelIDsByGuild[guildID] = selectedChannel.id
             }
             commandLoadTask?.cancel()
             commandAutocompleteTask?.cancel()

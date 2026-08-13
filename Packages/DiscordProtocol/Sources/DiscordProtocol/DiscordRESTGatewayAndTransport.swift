@@ -598,6 +598,7 @@ extension DiscordRESTProvider {
                 privateCallsByChannel = [:]
                 cancelPendingRoleMemberRequests(error: CancellationError())
                 cachedMembers = [:]
+                quickSwitcherGuildMemberUserIDsByGuildID = [:]
                 cachedMemberListItems = [:]
                 cachedMemberListGroups = [:]
                 selectedMemberListID = [:]
@@ -614,7 +615,10 @@ extension DiscordRESTProvider {
                 cachedPrivateRecipientIDsByChannelID = [:]
                 cachedGatewayUsersByID = [:]
                 cachedGatewayUserOrder = []
+                forwardSearchEligibleUserIDs = []
+                forwardSearchEligibleUserOrder = []
                 loadForwardSearchPeopleCache()
+                loadQuickSwitcherChannelStoreCache()
                 cachedBlockedOrIgnoredUserIDs = ready.blockedOrIgnoredUserIDs
                 for user in ready.users {
                     cacheGatewayUser(user)
@@ -632,9 +636,16 @@ extension DiscordRESTProvider {
                         mentionCount: entry.mentionCount ?? 0
                     )
                 }
+                var seenReadStateChannelIDs: Set<ChannelID> = []
+                let latestReadStateByChannelID = ready.readState.channelEntriesByID
                 let readyReadStates: [ChannelReadState] =
-                    ready.readState.channelEntriesByID.map { channelID, entry in
-                        ChannelReadState(
+                    ready.readState.entries.compactMap { sourceEntry in
+                        guard sourceEntry.readStateType == 0,
+                              let channelID = ChannelID(sourceEntry.id),
+                              seenReadStateChannelIDs.insert(channelID).inserted,
+                              let entry = latestReadStateByChannelID[channelID]
+                        else { return nil }
+                        return ChannelReadState(
                             channelID: channelID,
                             lastAcknowledgedMessageID: entry.lastMessageID.flatMap(MessageID.init),
                             mentionCount: entry.mentionCount ?? 0,
@@ -643,7 +654,6 @@ extension DiscordRESTProvider {
                             version: ready.readState.version
                         )
                     }
-                    .sorted { $0.channelID.rawValue < $1.channelID.rawValue }
                 let readyNotificationSettings = ready.userGuildSettings.map(\.domain)
                 let guildAllUnreadSettingCount = readyNotificationSettings.count {
                     $0.flags & (1 << 11) != 0
@@ -706,10 +716,24 @@ extension DiscordRESTProvider {
                 }
                 continuation?.yield(.privateMembersChanged(privateMembersInChannelOrder()))
                 let readyGuilds = ready.hydratedGuilds(using: cachedGatewayUsersByID)
-                cachedForwardChannelStoreOrder = readyGuilds.flatMap { guild in
+                let readyChannelStoreOrder = readyGuilds.flatMap { guild in
                     guild.channels.compactMap { ChannelID($0.id) }
                 }
+                reconcileQuickSwitcherChannelStoreOrder(with: readyChannelStoreOrder)
+                persistQuickSwitcherChannelStoreCache()
                 gatewayGuildIDs = readyGuilds.compactMap { GuildID($0.id) }
+                for (index, guildID) in gatewayGuildIDs.enumerated()
+                    where ready.mergedMembers.indices.contains(index)
+                {
+                    // READY's aligned merged-member batch replaces the
+                    // persisted GuildMemberStore projection for that guild.
+                    // Unioning retained users who have since left makes `@`
+                    // queries diverge until a remove event happens to arrive
+                    // in this process lifetime.
+                    quickSwitcherGuildMemberUserIDsByGuildID[guildID] = Set(
+                        ready.mergedMembers[index].compactMap { UserID($0.userID) }
+                    )
+                }
                 let guilds = readyGuilds.compactMap {
                     $0.domain(currentUserID: currentUser?.id)
                 }
@@ -820,8 +844,18 @@ extension DiscordRESTProvider {
             if let supplemental = try? JSONDecoder().decode(
                 GatewayReadyGuildsDTO.self, from: data
             ) {
+                let supplementalMemberUserIDs = Set(
+                    supplemental.mergedMembers.flatMap { members in
+                        members.compactMap { UserID($0.userID) }
+                    }
+                )
                 for user in supplemental.users {
-                    cacheGatewayUser(user)
+                    cacheGatewayUser(
+                        user,
+                        forwardSearchEligible: UserID(user.id).map {
+                            supplementalMemberUserIDs.contains($0)
+                        } ?? false
+                    )
                 }
                 cachePrivateRecipientReferences(supplemental.lazyPrivateChannels)
                 for presence in supplemental.privatePresences {
@@ -863,7 +897,20 @@ extension DiscordRESTProvider {
                 {
                     continuation?.yield(.privateMembersChanged(privateMembersInChannelOrder()))
                 }
-                for guild in supplemental.hydratedGuilds(using: cachedGatewayUsersByID) {
+                let hydratedGuilds = supplemental.hydratedGuilds(using: cachedGatewayUsersByID)
+                // READY_SUPPLEMENTAL's parallel merged arrays retain READY's
+                // guild ordering; they are not keyed by the supplemental
+                // guild objects. This is the same mapping used by its merged
+                // voice-state projection.
+                for (index, guildID) in gatewayGuildIDs.enumerated()
+                    where supplemental.mergedMembers.indices.contains(index)
+                {
+                    quickSwitcherGuildMemberUserIDsByGuildID[guildID, default: []]
+                        .formUnion(supplemental.mergedMembers[index].compactMap {
+                            UserID($0.userID)
+                        })
+                }
+                for guild in hydratedGuilds {
                     guard let guildID = GuildID(guild.id) else { continue }
                     for member in guild.members {
                         cacheGatewayUser(member.user)
@@ -900,10 +947,30 @@ extension DiscordRESTProvider {
                         ))
                     }
                 }
+                for guild in hydratedGuilds {
+                    guard let guildID = GuildID(guild.id) else { continue }
+                    for participant in guild.activityInstances.flatMap(\.participants) {
+                        guard let member = participant.member else { continue }
+                        cacheGatewayUser(member.user)
+                        if let userID = UserID(member.user.id),
+                           let nickname = member.nick?.trimmingCharacters(
+                               in: .whitespacesAndNewlines
+                           ), !nickname.isEmpty
+                        {
+                            if cachedForwardSearchAliasesByGuildID[guildID] == nil {
+                                cachedForwardSearchAliasGuildOrder.append(guildID)
+                            }
+                            cachedForwardSearchAliasesByGuildID[guildID, default: [:]][userID] =
+                                nickname
+                        }
+                    }
+                }
                 continuation?.yield(.knownUsersChanged(currentKnownUsers()))
                 continuation?.yield(
-                    .userSearchAliasesChanged(currentUserSearchAliasesByUserID())
+                    .quickSwitcherUserIDsChanged(currentQuickSwitcherUsers().map(\.id))
                 )
+                publishUserSearchAliases()
+                persistForwardSearchPeopleCache()
             }
             let states = ReadySupplementalVoiceStateResolver.resolve(
                 data: data,
@@ -930,6 +997,10 @@ extension DiscordRESTProvider {
                let guildID = GuildID(catalog.id)
             {
                 if let channels = catalog.channels {
+                    appendQuickSwitcherChannelStoreOrder(
+                        channels.compactMap { ChannelID($0.id) }
+                    )
+                    persistQuickSwitcherChannelStoreCache()
                     cachedGuildChannelDTOs[guildID] = Dictionary(
                         channels.map { ($0.id, $0) },
                         uniquingKeysWith: { _, newer in newer }
@@ -948,6 +1019,8 @@ extension DiscordRESTProvider {
                     )
                 }
                 if let catalogMembers = catalog.members, !catalogMembers.isEmpty {
+                    quickSwitcherGuildMemberUserIDsByGuildID[guildID, default: []]
+                        .formUnion(catalogMembers.compactMap { UserID($0.user.id) })
                     cacheLiveSearchUsers(catalogMembers.map(\.user))
                     let members = catalogMembers.compactMap {
                         try? $0.domain(
@@ -973,9 +1046,8 @@ extension DiscordRESTProvider {
                     // observed account records, but the nickname index is a
                     // separate snapshot and must advance even when every user
                     // was already known from READY.
-                    continuation?.yield(
-                        .userSearchAliasesChanged(currentUserSearchAliasesByUserID())
-                    )
+                    publishUserSearchAliases()
+                    persistForwardSearchPeopleCache()
                     if let currentUserID = currentUser?.id,
                        let ownMember = members.first(where: { $0.id == currentUserID })
                     {
@@ -1068,11 +1140,11 @@ extension DiscordRESTProvider {
                     guildID: guildID
                 )
             else { return }
+            quickSwitcherGuildMemberUserIDsByGuildID[guildID, default: []].insert(member.id)
             cacheLiveSearchUsers([update.member.user])
             publishMemberChange(member, guildID: guildID)
-            continuation?.yield(
-                .userSearchAliasesChanged(currentUserSearchAliasesByUserID())
-            )
+            publishUserSearchAliases()
+            persistForwardSearchPeopleCache()
         case "GUILD_MEMBER_REMOVE":
             guard
                 let deletion = try? JSONDecoder().decode(
@@ -1080,10 +1152,10 @@ extension DiscordRESTProvider {
                 ), let guildID = GuildID(deletion.guildID),
                 let userID = UserID(deletion.user.id)
             else { return }
+            quickSwitcherGuildMemberUserIDsByGuildID[guildID]?.remove(userID)
             removeMember(userID: userID, guildID: guildID)
-            continuation?.yield(
-                .userSearchAliasesChanged(currentUserSearchAliasesByUserID())
-            )
+            publishUserSearchAliases()
+            persistForwardSearchPeopleCache()
         case "USER_UPDATE":
             guard let dto = try? JSONDecoder().decode(UserDTO.self, from: data),
                   let user = try? dto.domain()
@@ -1551,9 +1623,7 @@ extension DiscordRESTProvider {
             cachedMembers[guildID] = DiscordMemberStoreOrdering.merging(
                 existing: cachedMembers[guildID] ?? [], updates: members
             )
-            continuation?.yield(
-                .userSearchAliasesChanged(currentUserSearchAliasesByUserID())
-            )
+            publishUserSearchAliases()
             if guildID == pendingMemberGuildID,
                update.id == selectedMemberListID[guildID]
             {
@@ -1582,9 +1652,7 @@ extension DiscordRESTProvider {
                 )
             }
             mergeResolvedMembers(decodedMembers, guildID: guildID)
-            continuation?.yield(
-                .userSearchAliasesChanged(currentUserSearchAliasesByUserID())
-            )
+            publishUserSearchAliases()
             let responseUserIDs = Set(decodedMembers.map(\.id)).union(
                 (chunk.notFound ?? []).compactMap(UserID.init)
             )
@@ -1911,44 +1979,4 @@ extension DiscordRESTProvider {
         }
     }
 
-    func applyGuildSettingsProto(
-        _ encoded: String?,
-        replacesAllSettings: Bool = false
-    ) {
-        guard
-            let encoded,
-            let data = Data(base64Encoded: encoded)
-        else { return }
-        let decodedLayout = DiscordSettingsProto.guildLayout(from: data)
-        guard decodedLayout != nil || replacesAllSettings else { return }
-        let layout = decodedLayout ?? DiscordGuildLayout(folders: [], guildPositions: [])
-        cachedGuildLayout = layout
-        // A current desktop READY can provide every guild ID and its channels
-        // while omitting the catalogue metadata required to construct Guilds.
-        // Preserve the settings until bootstrap's bounded guild-list fallback
-        // has installed that catalogue instead of replacing the cached rail
-        // with an empty layout event here.
-        guard !cachedGuilds.isEmpty else { return }
-        let result = Self.applyingGuildLayout(layout, to: guildsInCurrentRailOrder())
-        cachedGuilds = Dictionary(uniqueKeysWithValues: result.guilds.map { ($0.id, $0) })
-        guard result.railItems != cachedGuildRailItems else { return }
-        cachedGuildRailItems = result.railItems
-        continuation?.yield(.guildLayoutChanged(guilds: result.guilds, railItems: result.railItems))
-    }
-
-    func guildsInCurrentRailOrder() -> [Guild] {
-        let existingOrder = cachedGuildRailItems.flatMap { item -> [GuildID] in
-            switch item {
-            case .guild(let id): [id]
-            case .folder(let folder): folder.guildIDs
-            }
-        }
-        let existingSet = Set(existingOrder)
-        let orderedGuilds =
-            existingOrder.compactMap { cachedGuilds[$0] }
-                + cachedGuilds.values
-                .filter { !existingSet.contains($0.id) }
-                .sorted { $0.id.rawValue > $1.id.rawValue }
-        return orderedGuilds
-    }
 }

@@ -449,11 +449,12 @@ enum DiscordSettingsProto {
                     : Int((nowMilliseconds - timestamp) / millisecondsPerDay)
             let weight =
                 switch ageDays {
-                case 0: 100
-                case 1: 70
-                case 2 ... 3: 50
-                case 4 ... 6: 30
-                default: 10
+                case ...3: 100
+                case ...15: 70
+                case ...30: 50
+                case ...45: 30
+                case ...80: 10
+                default: 1
                 }
             result += weight
         }

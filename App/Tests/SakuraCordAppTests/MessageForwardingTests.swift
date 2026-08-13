@@ -287,7 +287,7 @@ func `passive initial channel selection does not contaminate forward history`() 
     #expect(model.forwardDestinationHistory.isEmpty)
 
     model.selectedChannelID = second.id
-    #expect(model.forwardDestinationHistory == [second.id])
+    #expect(model.forwardDestinationHistory.isEmpty)
 }
 
 @MainActor @Test func `failed frecency enrichment never leaves forwarding destinations loading`() async {
@@ -310,7 +310,7 @@ func `passive initial channel selection does not contaminate forward history`() 
         recentUses: [now, now - day, now - 2 * day]
     )
 
-    #expect(AppModel.discordFrecencyScore(usage, nowMilliseconds: now) == 367)
+    #expect(AppModel.discordFrecencyScore(usage, nowMilliseconds: now) == 500)
     #expect(AppModel.discordFrecencyScore(
         DiscordFrecencyUsage(totalUses: 9, recentUses: []),
         nowMilliseconds: now
@@ -325,7 +325,7 @@ func `passive initial channel selection does not contaminate forward history`() 
         recentUses: [0, 1, 2, 3, 4, 6, 7, 80, 81].map { now - UInt64($0) * day }
     )
 
-    #expect(AppModel.discordFrecencyScore(usage, nowMilliseconds: now) == 360)
+    #expect(AppModel.discordFrecencyScore(usage, nowMilliseconds: now) == 621)
 }
 
 @Test func `persisted forward frecency replays total uses and the newest ten samples`() {
@@ -568,7 +568,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         relationshipNicknamesByUserID: relationshipNames,
         guilds: [:],
         usageScores: [:]
-    ).first)
+    ).first { $0.id == .user(friend.id) })
     #expect(person.title == "USERNAME THIEF!!!")
     #expect(person.detail == "legacy-bot#8860")
 
@@ -650,7 +650,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     #expect(results.contains { $0.id == .channel(group.id) })
 }
 
-@Test func `typed channel search uses Discords live hundred point bonus scale`() {
+@Test func `typed channel search keeps an exact match above a small frecency boost`() {
     let guild = Guild(id: GuildID(rawValue: 1), name: "Sakura Server")
     let exact = Channel(
         id: ChannelID(rawValue: 10), guildID: guild.id,
@@ -672,7 +672,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         usageScores: ["11": 100, "12": 94_700]
     )
 
-    #expect(results.compactMap(\.resolvedChannelID) == [boostedPrefix.id, exact.id])
+    #expect(results.compactMap(\.resolvedChannelID) == [exact.id, boostedPrefix.id])
 }
 
 @Test func `typed forward search includes missing DMs and caps each category separately`() {
@@ -1207,6 +1207,40 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
 
     #expect(results.map(\.id) == [.channel(thread.id)])
     #expect(results.first?.detail == "bug-reports")
+}
+
+@Test func `joined threads retain their channel store insertion order`() {
+    let guild = Guild(id: GuildID(rawValue: 1), name: "SakuraCord")
+    let first = Channel(
+        id: ChannelID(rawValue: 10), guildID: guild.id,
+        name: "match-first", kind: .text
+    )
+    let forum = Channel(
+        id: ChannelID(rawValue: 11), guildID: guild.id,
+        name: "forum", kind: .forum
+    )
+    let last = Channel(
+        id: ChannelID(rawValue: 12), guildID: guild.id,
+        name: "match-last", kind: .text
+    )
+    let thread = MessageThreadSummary(
+        id: ChannelID(rawValue: 13), guildID: guild.id,
+        parentID: forum.id, name: "match-thread",
+        notificationSettings: ThreadNotificationSettings()
+    )
+
+    let results = ForwardDestinationSearchPolicy.results(
+        query: "match",
+        channels: [first, forum, last],
+        threads: [thread],
+        channelStoreOrder: [first.id, thread.id, last.id, forum.id],
+        guilds: [guild.id: guild],
+        usageScores: [:]
+    )
+
+    #expect(results.map(\.id) == [
+        .channel(first.id), .channel(thread.id), .channel(last.id),
+    ])
 }
 
 @Test func `forward search excludes inactive and unjoined cached threads`() {

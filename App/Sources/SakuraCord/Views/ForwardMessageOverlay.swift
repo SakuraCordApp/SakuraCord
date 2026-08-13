@@ -160,8 +160,15 @@ nonisolated struct ForwardDestination: Identifiable, Equatable {
 }
 
 nonisolated enum ForwardDestinationSearchPolicy {
-    fileprivate enum ResultCategory {
+    enum ResultCategory: Sendable {
         case user, groupDirectMessage, selectableChannel, voiceChannel
+    }
+
+    struct ScoredResult: Sendable {
+        let destination: ForwardDestination
+        let score: Double
+        let comparator: String?
+        let stableOrder: Int
     }
 
     private struct RankedDestination {
@@ -177,6 +184,17 @@ nonisolated enum ForwardDestinationSearchPolicy {
         let offset: Int
         let destination: ForwardDestination
         let position: Int
+    }
+
+    private struct DestinationSource {
+        let channels: [Channel]
+        let threads: [MessageThreadSummary]
+        let channelStoreOrder: [ChannelID]
+        let users: [User]
+        let relationshipNicknamesByUserID: [UserID: String]
+        let currentUserID: UserID?
+        let guilds: [GuildID: Guild]
+        let searchableChannelIDs: Set<ChannelID>?
     }
 
     private struct RankedMergeEntry {
@@ -203,12 +221,26 @@ nonisolated enum ForwardDestinationSearchPolicy {
         )
     }
 
-    fileprivate struct SearchRecord: Sendable {
+    fileprivate final class SearchRecord: Sendable {
         let destination: ForwardDestination
         let category: ResultCategory
         let sourceOrder: Int
         let isEligible: Bool
         let values: SearchValues
+
+        init(
+            destination: ForwardDestination,
+            category: ResultCategory,
+            sourceOrder: Int,
+            isEligible: Bool,
+            values: SearchValues
+        ) {
+            self.destination = destination
+            self.category = category
+            self.sourceOrder = sourceOrder
+            self.isEligible = isEligible
+            self.values = values
+        }
     }
 
     private struct PreparedMatch {
@@ -294,7 +326,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
     }
 
     struct Index: Sendable {
-        fileprivate let destinations: [ForwardDestination]
+        let destinations: [ForwardDestination]
         fileprivate let searchRecords: [SearchRecord]
         fileprivate let usageScores: [String: Int]
         fileprivate let usageOrder: [String]
@@ -304,7 +336,9 @@ nonisolated enum ForwardDestinationSearchPolicy {
             query: String,
             recentChannelIDs: [ChannelID] = [],
             pinnedDestinationIDs: [ForwardDestinationID] = [],
-            originChannelID: ChannelID? = nil
+            originChannelID: ChannelID? = nil,
+            categories: Set<ResultCategory>? = nil,
+            limitPerCategory: Int = ForwardDestinationSearchPolicy.resultLimitPerCategory
         ) -> [ForwardDestination] {
             let normalizedQuery = ForwardDestinationSearchPolicy.normalize(query)
             guard !normalizedQuery.isEmpty else {
@@ -320,7 +354,28 @@ nonisolated enum ForwardDestinationSearchPolicy {
             }
             return ForwardDestinationSearchPolicy.searchedResults(
                 searchRecords,
-                query: normalizedQuery
+                query: normalizedQuery,
+                categories: categories,
+                limitPerCategory: limitPerCategory
+            ).map(\.destination)
+        }
+
+        func scoredResults(
+            query: String,
+            categories: Set<ResultCategory>,
+            limitPerCategory: Int,
+            requiresDestinationEligibility: Bool = true,
+            allowedUserIDs: Set<UserID>? = nil
+        ) -> [ScoredResult] {
+            let normalizedQuery = ForwardDestinationSearchPolicy.normalize(query)
+            guard !normalizedQuery.isEmpty else { return [] }
+            return ForwardDestinationSearchPolicy.searchedResults(
+                searchRecords,
+                query: normalizedQuery,
+                categories: categories,
+                limitPerCategory: limitPerCategory,
+                requiresDestinationEligibility: requiresDestinationEligibility,
+                allowedUserIDs: allowedUserIDs
             )
         }
     }
@@ -328,6 +383,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
     static func makeIndex(
         channels: [Channel],
         threads: [MessageThreadSummary] = [],
+        channelStoreOrder: [ChannelID] = [],
         users: [User] = [],
         friendUserIDs: Set<UserID> = [],
         relationshipNicknamesByUserID: [UserID: String] = [:],
@@ -339,21 +395,17 @@ nonisolated enum ForwardDestinationSearchPolicy {
         searchableChannelIDs: Set<ChannelID>? = nil,
         eligibleChannelIDs: Set<ChannelID>? = nil
     ) -> Index {
-        let destinations = makeDestinations(
+        let destinations = makeDestinations(source: DestinationSource(
             channels: channels,
             threads: threads,
+            channelStoreOrder: channelStoreOrder,
             users: users,
             relationshipNicknamesByUserID: relationshipNicknamesByUserID,
             currentUserID: currentUserID,
             guilds: guilds,
             searchableChannelIDs: searchableChannelIDs
-        )
-        let maximumUsageScore = maximumUsageScore(
-            channels: channels,
-            threads: threads,
-            guilds: guilds,
-            usageScores: usageScores
-        )
+        ))
+        let maximumUsageScore = Double(max(1, usageScores.values.max() ?? 1))
         return Index(
             destinations: destinations,
             searchRecords: makeSearchRecords(
@@ -375,6 +427,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
         query: String,
         channels: [Channel],
         threads: [MessageThreadSummary] = [],
+        channelStoreOrder: [ChannelID] = [],
         users: [User] = [],
         friendUserIDs: Set<UserID> = [],
         relationshipNicknamesByUserID: [UserID: String] = [:],
@@ -392,6 +445,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
         makeIndex(
             channels: channels,
             threads: threads,
+            channelStoreOrder: channelStoreOrder,
             users: users,
             friendUserIDs: friendUserIDs,
             relationshipNicknamesByUserID: relationshipNicknamesByUserID,
@@ -411,14 +465,9 @@ nonisolated enum ForwardDestinationSearchPolicy {
     }
 
     private static func makeDestinations(
-        channels: [Channel],
-        threads: [MessageThreadSummary],
-        users: [User],
-        relationshipNicknamesByUserID: [UserID: String],
-        currentUserID: UserID?,
-        guilds: [GuildID: Guild],
-        searchableChannelIDs: Set<ChannelID>?
+        source: DestinationSource
     ) -> [ForwardDestination] {
+        let channels = source.channels
         let channelsByID = Dictionary(
             channels.map { ($0.id, $0) },
             uniquingKeysWith: { _, newer in newer }
@@ -433,26 +482,26 @@ nonisolated enum ForwardDestinationSearchPolicy {
             uniquingKeysWith: { existing, _ in existing }
         )
         var seenUserIDs = Set<UserID>()
-        let orderedUsers = (users + channels.flatMap(\.recipients)).filter { user in
-            user.id != currentUserID && seenUserIDs.insert(user.id).inserted
+        let orderedUsers = (source.users + channels.flatMap(\.recipients)).filter { user in
+            user.id != source.currentUserID && seenUserIDs.insert(user.id).inserted
         }
         let userDestinations = orderedUsers.map { user in
             ForwardDestination(
                 kind: .user(user, directMessage: directMessagesByUserID[user.id]),
                 guild: nil,
-                titleOverride: relationshipNicknamesByUserID[user.id]
+                titleOverride: source.relationshipNicknamesByUserID[user.id]
             )
         }
         let channelDestinations = channels.compactMap { channel -> ForwardDestination? in
             guard channel.kind != .directMessage else { return nil }
             if channel.kind != .groupDirectMessage {
                 guard supportsSearchCandidate(channel.kind),
-                      searchableChannelIDs?.contains(channel.id) != false
+                      source.searchableChannelIDs?.contains(channel.id) != false
                 else { return nil }
             }
             return ForwardDestination(
                 kind: .channel(channel),
-                guild: channel.guildID.flatMap { guilds[$0] },
+                guild: channel.guildID.flatMap { source.guilds[$0] },
                 detailOverride: groupDirectMessageDetail(channel)
             )
         }
@@ -478,23 +527,36 @@ nonisolated enum ForwardDestinationSearchPolicy {
             else { return destination }
             return nil
         }
-        let threadDestinations = threads.compactMap { thread -> ForwardDestination? in
+        let threadDestinations = source.threads.compactMap { thread -> ForwardDestination? in
             guard !thread.isArchived,
                   thread.notificationSettings != nil,
-                  searchableChannelIDs?.contains(thread.id) != false
+                  source.searchableChannelIDs?.contains(thread.id) != false
             else { return nil }
             return ForwardDestination(
                 kind: .thread(
                     thread,
                     parent: thread.parentID.flatMap { channelsByID[$0] }
                 ),
-                guild: thread.guildID.flatMap { guilds[$0] }
+                guild: thread.guildID.flatMap { source.guilds[$0] }
             )
         }
+        let sourceOrder = Dictionary(
+            source.channelStoreOrder.enumerated().map { ($0.element, $0.offset) },
+            uniquingKeysWith: { earlier, _ in earlier }
+        )
+        let channelAndThreadDestinations = (
+            nonGroupChannelDestinations + threadDestinations
+        ).enumerated().sorted { lhs, rhs in
+            let lhsOrder = lhs.element.resolvedChannelID.flatMap { sourceOrder[$0] }
+                ?? Int.max
+            let rhsOrder = rhs.element.resolvedChannelID.flatMap { sourceOrder[$0] }
+                ?? Int.max
+            if lhsOrder != rhsOrder { return lhsOrder < rhsOrder }
+            return lhs.offset < rhs.offset
+        }.map(\.element)
         return userDestinations
             + groupDirectMessageDestinations
-            + nonGroupChannelDestinations
-            + threadDestinations
+            + channelAndThreadDestinations
     }
 
     private static func supportsSearchCandidate(_ kind: ChannelKindValue) -> Bool {
@@ -516,24 +578,6 @@ nonisolated enum ForwardDestinationSearchPolicy {
         return remaining > 0 ? "\(visible) and \(remaining) others" : visible
     }
 
-    private static func maximumUsageScore(
-        channels: [Channel],
-        threads: [MessageThreadSummary],
-        guilds: [GuildID: Guild],
-        usageScores: [String: Int]
-    ) -> Double {
-        let resolvableUsageKeys = Set(channels.map { $0.id.description })
-            .union(threads.map { $0.id.description })
-            .union(guilds.keys.map(\.description))
-        return Double(max(
-            1,
-            usageScores.lazy
-                .filter { resolvableUsageKeys.contains($0.key) }
-                .map { $0.value }
-                .max() ?? 1
-        ))
-    }
-
     private static func makeSearchRecords(
         _ destinations: [ForwardDestination],
         usageScores: [String: Int],
@@ -549,7 +593,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
             } ?? 0)
             let boosters = UsageBoosters(
                 normalized: min(max(usage / maximumUsageScore, 0), 1),
-                internalChannel: min(max(usage / 100, 0), 1)
+                internalChannel: min(max(usage / 1_000, 0), 1)
             )
             let eligible = isEligible(
                 destination,
@@ -646,19 +690,30 @@ nonisolated enum ForwardDestinationSearchPolicy {
 
     private static func searchedResults(
         _ records: [SearchRecord],
-        query: String
-    ) -> [ForwardDestination] {
+        query: String,
+        categories: Set<ResultCategory>? = nil,
+        limitPerCategory: Int = resultLimitPerCategory,
+        requiresDestinationEligibility: Bool = true,
+        allowedUserIDs: Set<UserID>? = nil
+    ) -> [ScoredResult] {
         let preparedQuery = PreparedQuery(query)
         var users: [RankedDestination] = []
         var groups: [RankedDestination] = []
         var textChannels: [RankedDestination] = []
         var voiceChannels: [RankedDestination] = []
-        users.reserveCapacity(resultLimitPerCategory)
-        groups.reserveCapacity(resultLimitPerCategory)
-        textChannels.reserveCapacity(resultLimitPerCategory)
-        voiceChannels.reserveCapacity(resultLimitPerCategory)
-        for record in records {
-            guard !Task.isCancelled else { return [] }
+        users.reserveCapacity(limitPerCategory)
+        groups.reserveCapacity(limitPerCategory)
+        textChannels.reserveCapacity(limitPerCategory)
+        voiceChannels.reserveCapacity(limitPerCategory)
+        for (offset, record) in records.enumerated() {
+            if offset & 63 == 0, Task.isCancelled { return [] }
+            guard categories?.contains(record.category) != false else { continue }
+            if record.category == .user,
+               let allowedUserIDs,
+               record.destination.userID.map(allowedUserIDs.contains) != true
+            {
+                continue
+            }
             let (score, comparator) = searchScore(record.values, query: preparedQuery)
             guard score > 0 else { continue }
             let ranked = RankedDestination(
@@ -670,39 +725,28 @@ nonisolated enum ForwardDestinationSearchPolicy {
                 isEligible: record.isEligible
             )
             switch record.category {
-            case .user: insertBounded(ranked, into: &users)
-            case .groupDirectMessage: insertBounded(ranked, into: &groups)
-            case .selectableChannel: insertBounded(ranked, into: &textChannels)
-            case .voiceChannel: insertBounded(ranked, into: &voiceChannels)
+            case .user: users.append(ranked)
+            case .groupDirectMessage: groups.append(ranked)
+            case .selectableChannel: textChannels.append(ranked)
+            case .voiceChannel: voiceChannels.append(ranked)
             }
         }
-        return mergedRankedDestinations([users, groups, textChannels, voiceChannels])
+        users = sortedPrefix(users, limit: limitPerCategory)
+        groups = sortedPrefix(groups, limit: limitPerCategory)
+        textChannels = sortedPrefix(textChannels, limit: limitPerCategory)
+        voiceChannels = sortedPrefix(voiceChannels, limit: limitPerCategory)
+        return mergedRankedDestinations(
+            [users, groups, textChannels, voiceChannels],
+            limitPerCategory: limitPerCategory,
+            requiresDestinationEligibility: requiresDestinationEligibility
+        )
     }
 
-    private static func insertBounded(
-        _ candidate: RankedDestination,
-        into results: inout [RankedDestination]
-    ) {
-        guard let last = results.last else {
-            results.append(candidate)
-            return
-        }
-        guard ranksBefore(candidate, last) else {
-            if results.count < resultLimitPerCategory {
-                results.append(candidate)
-            }
-            return
-        }
-        let insertionIndex = results.firstIndex {
-            ranksBefore(candidate, $0)
-        } ?? results.endIndex
-        guard insertionIndex < resultLimitPerCategory
-            || results.count < resultLimitPerCategory
-        else { return }
-        results.insert(candidate, at: insertionIndex)
-        if results.count > resultLimitPerCategory {
-            results.removeLast()
-        }
+    private static func sortedPrefix(
+        _ results: [RankedDestination],
+        limit: Int
+    ) -> [RankedDestination] {
+        Array(results.sorted(by: ranksBefore).prefix(limit))
     }
 
     private static func ranksBefore(
@@ -710,8 +754,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
         _ rhs: RankedDestination
     ) -> Bool {
         if lhs.score != rhs.score { return lhs.score > rhs.score }
-        if lhs.category == .user,
-           let left = lhs.comparator,
+        if let left = lhs.comparator,
            let right = rhs.comparator,
            left != right
         {
@@ -740,8 +783,10 @@ nonisolated enum ForwardDestinationSearchPolicy {
     }
 
     private static func mergedRankedDestinations(
-        _ rankedCategories: [[RankedDestination]]
-    ) -> [ForwardDestination] {
+        _ rankedCategories: [[RankedDestination]],
+        limitPerCategory: Int,
+        requiresDestinationEligibility: Bool
+    ) -> [ScoredResult] {
         let limited = rankedCategories.enumerated().flatMap { item -> [RankedMergeEntry] in
             let (categoryOrder, ranked) = item
             return ranked
@@ -749,7 +794,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
                 .map {
                     RankedMergeEntry(
                         destination: $0.element,
-                        stableOrder: categoryOrder * resultLimitPerCategory + $0.offset
+                        stableOrder: categoryOrder * limitPerCategory + $0.offset
                     )
                 }
         }
@@ -765,10 +810,45 @@ nonisolated enum ForwardDestinationSearchPolicy {
             if lhs.destination.score != rhs.destination.score {
                 return lhs.destination.score > rhs.destination.score
             }
+            if let left = lhs.destination.comparator,
+               let right = rhs.destination.comparator,
+               left != right
+            {
+                return left.utf16.lexicographicallyPrecedes(right.utf16)
+            }
             return lhs.stableOrder < rhs.stableOrder
         }.compactMap { entry in
-            entry.destination.isEligible ? entry.destination.destination : nil
+            guard !requiresDestinationEligibility || entry.destination.isEligible else {
+                return nil
+            }
+            return ScoredResult(
+                destination: entry.destination.destination,
+                score: entry.destination.score,
+                comparator: entry.destination.comparator,
+                stableOrder: entry.stableOrder
+            )
         }
+    }
+
+    static func guildSearchScore(
+        name: String,
+        query: String,
+        usageScore: Int,
+        maximumUsageScore: Int
+    ) -> Double {
+        let normalizedQuery = normalize(query)
+        guard !normalizedQuery.isEmpty else { return 0 }
+        let preparedQuery = PreparedQuery(normalizedQuery)
+        let baseScore = matchScore(
+            normalize(name),
+            query: preparedQuery.match,
+            fuzzy: true
+        )
+        guard baseScore > 0 else { return 0 }
+        let usage = Double(usageScore)
+        let maximum = Double(max(1, maximumUsageScore))
+        let usageBooster = 1 + min(max(usage / maximum, 0), 1)
+        return 1_000 * Double(baseScore) * usageBooster
     }
 
     private static func unqueriedResults(
@@ -834,9 +914,6 @@ nonisolated enum ForwardDestinationSearchPolicy {
             var comparator: String?
             for value in values {
                 let score = userMatchScore(value, query: query.match)
-                // Discord's worker keeps the first identity with the highest
-                // score: username, relationship nickname, global name, then
-                // guild nicknames in store order.
                 if score > bestScore {
                     bestScore = score
                     comparator = value.comparator
@@ -884,10 +961,8 @@ nonisolated enum ForwardDestinationSearchPolicy {
         if identity.searchValue.hasPrefix(query.value) { return 10 }
         if identity.searchValue.contains(query.value) { return 5 }
         if isOrderedSubsequence(query.value, of: identity.searchValue) { return 1 }
-        return isOrderedSubsequence(
-            query.confusableSkeleton,
-            of: identity.confusableSkeleton
-        ) ? 1 : 0
+        return isOrderedSubsequence(query.confusableSkeleton, of: identity.confusableSkeleton)
+            ? 1 : 0
     }
 
     private static func userIdentitySearchValue(_ value: String) -> String {
@@ -1081,6 +1156,7 @@ final class ForwardDestinationSearchIndexCache {
     private nonisolated struct Input {
         let channels: [Channel]
         let threads: [MessageThreadSummary]
+        let channelStoreOrder: [ChannelID]
         let users: [User]
         let friendUserIDs: Set<UserID>
         let relationshipNicknamesByUserID: [UserID: String]
@@ -1096,6 +1172,7 @@ final class ForwardDestinationSearchIndexCache {
             ForwardDestinationSearchPolicy.makeIndex(
                 channels: channels,
                 threads: threads,
+                channelStoreOrder: channelStoreOrder,
                 users: users,
                 friendUserIDs: friendUserIDs,
                 relationshipNicknamesByUserID: relationshipNicknamesByUserID,
@@ -1125,6 +1202,20 @@ final class ForwardDestinationSearchIndexCache {
         guard modelID == ObjectIdentifier(model),
               self.userID == userID,
               self.revision == revision
+        else { return nil }
+        return index
+    }
+
+    /// Returns the most recently completed index for this account even while a
+    /// newer source revision is being prepared. An open search surface can use
+    /// this immutable snapshot immediately and adopt the refresh next time it
+    /// is presented instead of blocking interaction on background work.
+    func latestValue(
+        for model: AppModel,
+        userID: UserID?
+    ) -> ForwardDestinationSearchPolicy.Index? {
+        guard modelID == ObjectIdentifier(model),
+              self.userID == userID
         else { return nil }
         return index
     }
@@ -1160,11 +1251,32 @@ final class ForwardDestinationSearchIndexCache {
             userID: currentUserID,
             revision: sourceRevision
         )
+        if let preparationTask,
+           let preparationKey,
+           preparationKey != key
+        {
+            // Index construction is synchronous CPU work. Cancelling its Task
+            // does not interrupt that work, so starting the next revision here
+            // used to leave overlapping rebuilds competing with typing and
+            // presentation. Cache the in-flight snapshot, then coalesce callers
+            // onto one rebuild for the newest revision.
+            let prepared = await preparationTask.value
+            if self.preparationKey == preparationKey {
+                modelID = preparationKey.modelID
+                userID = preparationKey.userID
+                revision = preparationKey.revision
+                index = prepared
+                self.preparationKey = nil
+                self.preparationTask = nil
+            }
+            guard !Task.isCancelled else { return nil }
+            return await prepare(for: model, priority: priority)
+        }
+
         let task: Task<ForwardDestinationSearchPolicy.Index, Never>
         if preparationKey == key, let preparationTask {
             task = preparationTask
         } else {
-            preparationTask?.cancel()
             let input = makeInput(for: model, currentUserID: currentUserID)
             let newTask = Task.detached(priority: priority) {
                 input.makeIndex()
@@ -1175,7 +1287,6 @@ final class ForwardDestinationSearchIndexCache {
         }
 
         let prepared = await task.value
-        guard !Task.isCancelled else { return nil }
         if preparationKey == key {
             store(
                 prepared,
@@ -1186,6 +1297,7 @@ final class ForwardDestinationSearchIndexCache {
             preparationKey = nil
             preparationTask = nil
         }
+        guard !Task.isCancelled else { return nil }
         return prepared
     }
 
@@ -1269,6 +1381,7 @@ final class ForwardDestinationSearchIndexCache {
         return Input(
             channels: channels,
             threads: threads,
+            channelStoreOrder: model.snapshot?.forwardChannelStoreOrder ?? [],
             users: model.snapshot?.knownUsers ?? [],
             friendUserIDs: model.snapshot?.friendUserIDs ?? [],
             relationshipNicknamesByUserID:

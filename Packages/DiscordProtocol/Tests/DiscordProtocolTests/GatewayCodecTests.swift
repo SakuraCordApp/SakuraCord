@@ -510,7 +510,7 @@ private func appendETFBinary(_ value: String, to data: inout Data) {
     #expect(settings.usageScores["reaction_only"] == nil)
     #expect(settings.guildAndChannelUsageScores["123"] == 500)
     #expect(settings.guildAndChannelUsageScores["456"] == nil)
-    #expect(settings.guildAndChannelUsageScores["789"] == 360)
+    #expect(settings.guildAndChannelUsageScores["789"] == 621)
     #expect(settings.guildAndChannelUsage["123"] == DiscordFrecencyUsage(
         totalUses: 5,
         recentUses: [now, now - 1, now - 2]

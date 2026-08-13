@@ -245,6 +245,7 @@ struct ComposerTextView: NSViewRepresentable {
     let onSubmit: () -> Void
     var onEscape: () -> Void = {}
     var onEditLatestMessage: () -> Bool = { false }
+    var onCycleReplyContext: () -> Bool = { false }
     var onAutocompleteCommand: (ComposerAutocompleteCommand) -> Bool = { _ in false }
     var onPasteAttachments: (([URL]) -> Void)?
     var capturesUnfocusedTyping = false
@@ -305,6 +306,9 @@ struct ComposerTextView: NSViewRepresentable {
         textView.onEditLatestMessage = { [weak coordinator = context.coordinator] in
             coordinator?.parent.onEditLatestMessage() ?? false
         }
+        textView.onCycleReplyContext = { [weak coordinator = context.coordinator] in
+            coordinator?.parent.onCycleReplyContext() ?? false
+        }
         textView.onPasteAttachments = onPasteAttachments
         textView.capturesUnfocusedTyping = capturesUnfocusedTyping
 
@@ -335,6 +339,9 @@ struct ComposerTextView: NSViewRepresentable {
         }
         textView.onEditLatestMessage = { [weak coordinator = context.coordinator] in
             coordinator?.parent.onEditLatestMessage() ?? false
+        }
+        textView.onCycleReplyContext = { [weak coordinator = context.coordinator] in
+            coordinator?.parent.onCycleReplyContext() ?? false
         }
         textView.onPasteAttachments = onPasteAttachments
         textView.capturesUnfocusedTyping = capturesUnfocusedTyping
@@ -640,6 +647,7 @@ final class ComposerNSTextView: NSTextView {
     var onReturn: ((NSEvent) -> Bool)?
     var onEscape: (() -> Void)?
     var onEditLatestMessage: (() -> Bool)?
+    var onCycleReplyContext: (() -> Bool)?
     var onAutocompleteCommand: ((ComposerAutocompleteCommand) -> Bool)?
     var onPasteAttachments: (([URL]) -> Void)?
     var commandPasteboard = NSPasteboard.general
@@ -651,6 +659,7 @@ final class ComposerNSTextView: NSTextView {
                 enabled: capturesUnfocusedTyping,
                 onUnfocusedReturn: unfocusedReturnHandler,
                 onEditLatestMessage: unfocusedEditLatestMessageHandler,
+                onCycleReplyContext: unfocusedCycleReplyContextHandler,
                 onEscape: escapeHandler,
                 onPasteAttachments: pasteAttachmentsHandler
             )
@@ -667,6 +676,12 @@ final class ComposerNSTextView: NSTextView {
     private var unfocusedEditLatestMessageHandler: () -> Bool {
         { [weak self] in
             self?.onEditLatestMessage?() ?? false
+        }
+    }
+
+    private var unfocusedCycleReplyContextHandler: () -> Bool {
+        { [weak self] in
+            self?.onCycleReplyContext?() ?? false
         }
     }
 
@@ -693,6 +708,7 @@ final class ComposerNSTextView: NSTextView {
             enabled: capturesUnfocusedTyping,
             onUnfocusedReturn: unfocusedReturnHandler,
             onEditLatestMessage: unfocusedEditLatestMessageHandler,
+            onCycleReplyContext: unfocusedCycleReplyContextHandler,
             onEscape: escapeHandler,
             onPasteAttachments: pasteAttachmentsHandler
         )
@@ -714,24 +730,11 @@ final class ComposerNSTextView: NSTextView {
     }
 
     override func keyDown(with event: NSEvent) {
-        let textNavigationModifiers: NSEvent.ModifierFlags = [.shift, .command, .option, .control]
-        let usesTextNavigationModifier = !event.modifierFlags
-            .isDisjoint(with: textNavigationModifiers)
-        let autocompleteCommand: ComposerAutocompleteCommand? =
-            switch event.keyCode {
-            case 126 where !usesTextNavigationModifier: .previous
-            case 125 where !usesTextNavigationModifier: .next
-            case 48 where event.modifierFlags.isDisjoint(with: [.command, .option, .control]):
-                event.modifierFlags.contains(.shift) ? .previousField : .advance
-            case 36, 76: .accept
-            case 53: .dismiss
-            case 51 where string.isEmpty: .removeField
-            case 117 where string.isEmpty: .removeField
-            case 123 where shouldLeaveField(backward: true, event: event): .previousField
-            case 124 where shouldLeaveField(backward: false, event: event): .nextField
-            default: nil
-            }
+        let autocompleteCommand = autocompleteCommand(for: event)
         if let autocompleteCommand, onAutocompleteCommand?(autocompleteCommand) == true {
+            return
+        }
+        if handleReplyContextCycle(event) {
             return
         }
         if ComposerLatestMessageEditingPolicy.shouldRequest(
@@ -755,6 +758,35 @@ final class ComposerNSTextView: NSTextView {
             return
         }
         super.keyDown(with: event)
+    }
+
+    private func autocompleteCommand(for event: NSEvent) -> ComposerAutocompleteCommand? {
+        let textNavigationModifiers: NSEvent.ModifierFlags = [.shift, .command, .option, .control]
+        let usesTextNavigationModifier = !event.modifierFlags
+            .isDisjoint(with: textNavigationModifiers)
+        return switch event.keyCode {
+            case 126 where !usesTextNavigationModifier: .previous
+            case 125 where !usesTextNavigationModifier: .next
+            case 48 where event.modifierFlags.isDisjoint(with: [.command, .option, .control]):
+                event.modifierFlags.contains(.shift) ? .previousField : .advance
+            case 36, 76: .accept
+            case 53: .dismiss
+            case 51 where string.isEmpty: .removeField
+            case 117 where string.isEmpty: .removeField
+            case 123 where shouldLeaveField(backward: true, event: event): .previousField
+            case 124 where shouldLeaveField(backward: false, event: event): .nextField
+            default: nil
+            }
+    }
+
+    nonisolated static func requestsReplyContextCycle(_ event: NSEvent) -> Bool {
+        let relevant = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        return event.keyCode == 126 && relevant == .command
+    }
+
+    private func handleReplyContextCycle(_ event: NSEvent) -> Bool {
+        guard Self.requestsReplyContextCycle(event) else { return false }
+        return onCycleReplyContext?() == true
     }
 
     private func shouldLeaveField(backward: Bool, event: NSEvent) -> Bool {
@@ -848,6 +880,7 @@ final class ComposerUnfocusedTypingMonitor {
     private var eventMonitor: Any?
     private var onUnfocusedReturn: ((NSEvent) -> Bool)?
     private var onEditLatestMessage: (() -> Bool)?
+    private var onCycleReplyContext: (() -> Bool)?
     private var onEscape: (() -> Void)?
     private var onPasteAttachments: (() -> Bool)?
 
@@ -862,12 +895,14 @@ final class ComposerUnfocusedTypingMonitor {
         enabled: Bool,
         onUnfocusedReturn: ((NSEvent) -> Bool)? = nil,
         onEditLatestMessage: (() -> Bool)? = nil,
+        onCycleReplyContext: (() -> Bool)? = nil,
         onEscape: (() -> Void)? = nil,
         onPasteAttachments: (() -> Bool)? = nil
     ) {
         self.textView = textView
         self.onUnfocusedReturn = onUnfocusedReturn
         self.onEditLatestMessage = onEditLatestMessage
+        self.onCycleReplyContext = onCycleReplyContext
         self.onEscape = onEscape
         self.onPasteAttachments = onPasteAttachments
         guard enabled, textView.window != nil
@@ -902,6 +937,11 @@ final class ComposerUnfocusedTypingMonitor {
                 composerIsEmpty: textView.string.isEmpty,
                 onEditLatestMessage: self.onEditLatestMessage
             ) {
+                return nil
+            }
+            if ComposerNSTextView.requestsReplyContextCycle(event),
+               self.onCycleReplyContext?() == true
+            {
                 return nil
             }
             if Self.handleEscape(

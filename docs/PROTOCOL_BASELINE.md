@@ -1,7 +1,7 @@
 # Discord production protocol baseline
 
-Last repository audit: 7 August 2026, in a working tree based on SakuraCord
-commit `5a2f42d`.
+Last repository audit: 12 August 2026, in a working tree based on SakuraCord
+commit `12252ec7`.
 
 This document describes SakuraCord's durable network contract and the dated
 evidence behind it. It is not a claim that Discord's undocumented
@@ -41,6 +41,20 @@ No token, cookie, authorization header, message body, personal payload,
 fingerprint, installation identifier, or unsanitized traffic is stored in this
 repository. Treat every build number and observed payload as a dated snapshot,
 not current official behavior.
+
+Message search was re-audited on 12 August 2026 against Discord's current
+public message-resource documentation and production asset
+`web.206b719a7d513cf1.js` (SHA-256
+`6d7e9a2db8440b1913bf8ef23b98045d78eb6245040ca662ab6d1ed948080b4e`).
+The first-party channel action uses `/channels/{channel}/messages/search`,
+orders by descending timestamp, decodes nested result groups, and treats `202`
+as an indexing response with an original request plus at most five retries.
+The public resource contract supplies the query limits, nested response shape,
+`READ_MESSAGE_HISTORY` requirement, and server-provided `retry_after`. Pinned
+Paicord revision `694761c1938b73bb60bd58942674dfe73aab1135` and Swiftcord v1
+revision `14465d927ebe1ba34b3befa00f9365fad7b56eb9` have no corresponding
+message-search request. Static first-party and public evidence left no material
+request-shape ambiguity, so no authenticated search was performed.
 
 The GIF-picker surface was re-audited on 6 August 2026 against clean, signed,
 notarized Discord desktop `0.0.406` and production asset
@@ -368,6 +382,7 @@ and retained as evidence.
 | `GET /gifs/trending-gifs?media_format=webm&locale={locale}` | Explicit Trending GIFs selection; no body. The returned order is preserved. | Current first-party route and clean-client request; P−, S−. |
 | `GET /gifs/search?q={query}&media_format=webm&locale={locale}` | Nonempty picker search after the current 250 ms debounce; no speculative or paginated follow-up. The live default response is 50 results and its order is preserved. | Current first-party route/action and clean-client `hello` request; P−, S−. |
 | `GET /channels/{channel}/messages` | Visible history only; guild history requires effective `VIEW_CHANNEL` and `READ_MESSAGE_HISTORY`, and voice-channel history additionally requires `CONNECT`. The current clean client uses `limit=10` for a newly selected uncached channel, which SakuraCord matches once per channel per uninterrupted Gateway connection. A dispatched newest-page read is allowed to finish and populate the session stores after a later selection supersedes its presentation; rapid navigation does not abort those reads. Reopening a loaded channel restores its bounded session-memory page and sends no history request. After a Gateway gap, the retained page is presented immediately but its completeness marker is invalidated; returning to Ready refreshes the selected page once and later reopened pages refresh once on selection. Older-page pagination uses ordered `before` then `limit=50`; no body. | Public message semantics, current first-party permission/message paths and stale-connection refresh, and Paicord's permission-checked channel store. Swiftcord v1 checks `VIEW_CHANNEL` before presentation but otherwise supplies only a historical unguarded/refetching history path. Paicord retains a per-channel in-memory store and uses a historical 50-message initial page. The current first-party cache behavior and connection-generation invalidation take precedence. |
+| `GET /channels/{channel}/messages/search` | One debounced, cancellation-aware search for the selected conversation with trimmed `content`, `sort_by=timestamp`, `sort_order=desc`, `limit` from 1 through 25, and `offset` from 0 through 9,975. Results decode from nested groups and populate the message cache for exact-result navigation. | Current first-party channel route and action plus public message-search semantics and limits; P−, S−. |
 | `GET /channels/{thread}` | One unknown-thread deep-link resolution; no body. | Public channel semantics and all three references. |
 | `POST /channels/{forum}/threads?use_nested_fields=true` | Explicit forum creation; `name`, `auto_archive_duration`, ordered `applied_tags`, nested `message` with `content`, `sticker_ids:[]`, and attachments only when uploaded. | Current first-party action; Paicord and Swiftcord have only partial/historical thread creation. |
 | `GET /channels/{forum}/threads/search` | Forum catalogue: `archived=true`, `sort_by`, `sort_order=desc`, `limit`, `offset`, and optional `tag`/`tag_setting`; name search adds `name`. | Current first-party route; P−, S−. |
@@ -474,6 +489,7 @@ The default attempt budget is exact:
 | Ordinary authenticated GET | 2; the second attempt occurs only after a server `429` cooldown. |
 | Authenticated mutation | 1; no automatic replay after `429`, timeout, or ambiguous failure. |
 | Application-command index readiness | 3 created GETs for the separately tested `202`/`429` flow. |
+| Message-search index readiness | 6 created GETs: the original plus at most 5 retries after server `202`, each delayed by the server's `Retry-After` or `retry_after` value (with a five-second fallback only when neither is present). Each created GET retains the ordinary bounded `429` contract. |
 | Cold native installation/fingerprint preflight status retry | Each created preflight request has its original attempt plus at most 3 bounded retries for `429`, `500`, `502`, or `504`, subject to the established delay ceiling. A missing Apex installation creates only the already-required `/experiments` request, without an additional probe. |
 | Pending-QR or stored-session missing-installation repair | Once per provider: 1 unauthenticated Apex GET, plus 1 unauthenticated `/experiments` GET only when Apex fails or omits the identity. Both are best-effort; no automatic retry or authentication replay, and Gateway proceeds without the optional identity when unavailable. |
 | Native password/MFA status retry | Original plus at most 2 current-official retries for `429`, `500`, `502`, or `504`, subject to the established delay ceiling. |

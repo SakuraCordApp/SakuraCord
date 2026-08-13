@@ -249,6 +249,27 @@ import Testing
 }
 
 @MainActor
+@Test func `command up requests reply context cycling`() throws {
+    let textView = ComposerNSTextView()
+    var cycleRequestCount = 0
+    textView.onAutocompleteCommand = { _ in false }
+    textView.onCycleReplyContext = {
+        cycleRequestCount += 1
+        return true
+    }
+
+    textView.keyDown(with: try upArrowKeyEvent(modifiers: [.command]))
+
+    #expect(cycleRequestCount == 1)
+    #expect(ComposerNSTextView.requestsReplyContextCycle(
+        try upArrowKeyEvent(modifiers: [.command])
+    ))
+    #expect(!ComposerNSTextView.requestsReplyContextCycle(
+        try upArrowKeyEvent(modifiers: [.command, .shift])
+    ))
+}
+
+@MainActor
 @Test func `timeline edit request rechecks current user ownership`() async throws {
     let model = AppModel(launchMode: .offlineTesting)
     await model.start()

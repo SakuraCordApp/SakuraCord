@@ -89,6 +89,10 @@ struct GatewayLifecycleEventTests {
             ])
         )
         #expect(await provider.cachedMembersForTesting(guildID: guildID).first?.user.displayName == "Guild Nick")
+        #expect(
+            await provider.currentQuickSwitcherGuildMemberUserIDs()[guildID]
+                == [UserID(rawValue: 1)]
+        )
 
         await provider.receiveGatewayDispatchForTesting(
             name: "USER_UPDATE",
@@ -114,6 +118,7 @@ struct GatewayLifecycleEventTests {
             ])
         )
         #expect(await provider.cachedMembersForTesting(guildID: guildID).isEmpty)
+        #expect(await provider.currentQuickSwitcherGuildMemberUserIDs()[guildID]?.isEmpty == true)
     }
 
     @Test func `guild unavailable differs from leaving and create adds a new guild`() async {

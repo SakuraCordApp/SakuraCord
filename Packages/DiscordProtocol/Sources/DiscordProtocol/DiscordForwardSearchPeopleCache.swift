@@ -8,18 +8,52 @@ nonisolated struct DiscordForwardSearchPeopleCache: Codable, Sendable {
         let nickname: String
     }
 
-    static let currentVersion = 3
+    struct Membership: Codable, Hashable, Sendable {
+        let guildID: GuildID
+        let userID: UserID
+    }
+
+    static let currentVersion = 4
+    static let oldestSupportedVersion = 3
     static let maximumUsers = 10_000
     static let maximumAliases = 20_000
+    static let maximumMemberships = 50_000
 
     var version = currentVersion
     var users: [User]
     var aliases: [Alias]
+    var memberships: [Membership] = []
+
+    private enum CodingKeys: String, CodingKey {
+        case version, users, aliases, memberships
+    }
+
+    init(
+        version: Int = currentVersion,
+        users: [User],
+        aliases: [Alias],
+        memberships: [Membership] = []
+    ) {
+        self.version = version
+        self.users = users
+        self.aliases = aliases
+        self.memberships = memberships
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decode(Int.self, forKey: .version)
+        users = try container.decode([User].self, forKey: .users)
+        aliases = try container.decode([Alias].self, forKey: .aliases)
+        memberships = try container.decodeIfPresent(
+            [Membership].self, forKey: .memberships
+        ) ?? []
+    }
 
     static func load(from url: URL) -> Self? {
         guard let data = try? Data(contentsOf: url),
               let value = try? JSONDecoder().decode(Self.self, from: data),
-              value.version == currentVersion
+              (oldestSupportedVersion ... currentVersion).contains(value.version)
         else { return nil }
         return value
     }
@@ -57,6 +91,12 @@ extension DiscordRESTProvider {
             }
             cachedForwardSearchAliasesByGuildID[alias.guildID, default: [:]][alias.userID] =
                 alias.nickname
+        }
+        for membership in cache.memberships.suffix(
+            DiscordForwardSearchPeopleCache.maximumMemberships
+        ) {
+            quickSwitcherGuildMemberUserIDsByGuildID[membership.guildID, default: []]
+                .insert(membership.userID)
         }
     }
 
@@ -111,8 +151,15 @@ extension DiscordRESTProvider {
 
     func persistForwardSearchPeopleCache() {
         guard let url = forwardSearchPeopleCacheURL() else { return }
-        let users = cachedForwardSearchUserOrder.compactMap {
-            cachedForwardSearchUsersByID[$0]
+        var seenUserIDs = Set<UserID>()
+        let orderedUserIDs = cachedGatewayUserOrder.compactMap(UserID.init).filter {
+            seenUserIDs.insert($0).inserted
+        } + cachedForwardSearchUserOrder.filter { seenUserIDs.insert($0).inserted }
+        let users = orderedUserIDs.suffix(
+            DiscordForwardSearchPeopleCache.maximumUsers
+        ).compactMap { userID in
+            cachedGatewayUsersByID[userID.description].flatMap { try? $0.domain() }
+                ?? cachedForwardSearchUsersByID[userID]
         }
         let aliases = cachedForwardSearchAliasGuildOrder.flatMap { guildID in
             (cachedForwardSearchAliasesByGuildID[guildID] ?? [:]).map {
@@ -124,7 +171,26 @@ extension DiscordRESTProvider {
             }
             .sorted { $0.userID.rawValue < $1.userID.rawValue }
         }
-        try? DiscordForwardSearchPeopleCache(users: users, aliases: aliases).save(to: url)
+        var memberships: [DiscordForwardSearchPeopleCache.Membership] = []
+        var seenGuildIDs = Set<GuildID>()
+        for guildID in (gatewayGuildIDs
+            + quickSwitcherGuildMemberUserIDsByGuildID.keys.sorted())
+            where seenGuildIDs.insert(guildID).inserted
+        {
+            for userID in (quickSwitcherGuildMemberUserIDsByGuildID[guildID] ?? []).sorted() {
+                memberships.append(.init(guildID: guildID, userID: userID))
+            }
+        }
+        if memberships.count > DiscordForwardSearchPeopleCache.maximumMemberships {
+            memberships = Array(
+                memberships.suffix(DiscordForwardSearchPeopleCache.maximumMemberships)
+            )
+        }
+        try? DiscordForwardSearchPeopleCache(
+            users: users,
+            aliases: aliases,
+            memberships: memberships
+        ).save(to: url)
     }
 
     func forwardSearchNickname(from member: Member?) -> String? {

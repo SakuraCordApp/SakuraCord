@@ -40,6 +40,15 @@ public actor SakuraCordDatabase {
         }
     }
 
+    public func recentDraftChannelIDs() throws -> [ChannelID] {
+        try queue.read { db in
+            try DraftRecord
+                .order(Column("updatedAt").desc)
+                .fetchAll(db)
+                .compactMap { ChannelID($0.channelID) }
+        }
+    }
+
     public func clearAccountData() throws {
         _ = try queue.write { db in
             try DraftRecord.deleteAll(db)

@@ -14,6 +14,9 @@ enum AppPerformanceSignposts {
         StartupPresentationReadiness()
     private static var conversationNavigationInterval:
         (channelID: ChannelID, state: OSSignpostIntervalState)?
+    private static var quickSwitcherOpenInterval: OSSignpostIntervalState?
+    private static var quickSwitcherQueryInterval: OSSignpostIntervalState?
+    private static var quickSwitcherCloseInterval: OSSignpostIntervalState?
     private static var resourceWindowStartNanoseconds: UInt64?
 
     static func beginStartup() {
@@ -101,6 +104,48 @@ enum AppPerformanceSignposts {
             current.state
         )
         conversationNavigationInterval = nil
+    }
+
+    static func beginQuickSwitcherOpen() {
+        if let current = quickSwitcherOpenInterval {
+            signposter.endInterval("QuickSwitcherOpenToFirstFrame", current)
+        }
+        quickSwitcherOpenInterval = signposter.beginInterval(
+            "QuickSwitcherOpenToFirstFrame"
+        )
+    }
+
+    static func beginQuickSwitcherQuery() {
+        if let current = quickSwitcherQueryInterval {
+            signposter.endInterval("QuickSwitcherQueryToFirstFrame", current)
+        }
+        quickSwitcherQueryInterval = signposter.beginInterval(
+            "QuickSwitcherQueryToFirstFrame"
+        )
+    }
+
+    static func reportQuickSwitcherFirstFrame() {
+        if let current = quickSwitcherOpenInterval {
+            signposter.endInterval("QuickSwitcherOpenToFirstFrame", current)
+            quickSwitcherOpenInterval = nil
+        }
+        if let current = quickSwitcherQueryInterval {
+            signposter.endInterval("QuickSwitcherQueryToFirstFrame", current)
+            quickSwitcherQueryInterval = nil
+        }
+    }
+
+    static func beginQuickSwitcherClose() {
+        if let current = quickSwitcherCloseInterval {
+            signposter.endInterval("QuickSwitcherClose", current)
+        }
+        quickSwitcherCloseInterval = signposter.beginInterval("QuickSwitcherClose")
+    }
+
+    static func reportQuickSwitcherClosed() {
+        guard let current = quickSwitcherCloseInterval else { return }
+        signposter.endInterval("QuickSwitcherClose", current)
+        quickSwitcherCloseInterval = nil
     }
 
     static func beginResourceWindow(named name: String) {

@@ -443,6 +443,34 @@ extension AppModel {
         )
     }
 
+    @discardableResult
+    func cycleReplyContext(in destination: MessageComposerDestination) -> Bool {
+        let availableMessages: [Message]
+        let currentReply: Message?
+        switch destination {
+        case .channel:
+            availableMessages = messages
+            currentReply = replyingTo
+        case .thread:
+            availableMessages = threadMessages
+            currentReply = threadReplyingTo
+        }
+        guard !availableMessages.isEmpty else { return false }
+
+        let nextIndex: Int
+        if let currentReply,
+           let currentIndex = availableMessages.firstIndex(where: { $0.id == currentReply.id })
+        {
+            nextIndex = currentIndex > availableMessages.startIndex
+                ? availableMessages.index(before: currentIndex)
+                : availableMessages.index(before: availableMessages.endIndex)
+        } else {
+            nextIndex = availableMessages.index(before: availableMessages.endIndex)
+        }
+        reply(to: availableMessages[nextIndex])
+        return true
+    }
+
     func cancelReply(in destination: MessageComposerDestination = .channel) {
         switch destination {
         case .channel:
@@ -795,6 +823,10 @@ extension AppModel {
             scheduleLocalTyping(for: value)
         }
         guard let channelID = selectedChannelID else { return }
+        quickSwitcherDraftChannelIDs.removeAll { $0 == channelID }
+        if !value.isEmpty {
+            quickSwitcherDraftChannelIDs.insert(channelID, at: 0)
+        }
         let session = accountSession()
         Task { [weak self] in
             guard let self, self.isCurrentAccountSession(session) else { return }

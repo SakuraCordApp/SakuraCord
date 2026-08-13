@@ -501,6 +501,26 @@ struct GuildVoiceStateSnapshotDTO: Decodable {
     }
 }
 
+struct GatewayActivityParticipantDTO: Decodable {
+    var member: GuildMemberDTO?
+}
+
+struct GatewayActivityInstanceDTO: Decodable {
+    var participants: [GatewayActivityParticipantDTO]
+
+    private enum CodingKeys: String, CodingKey {
+        case participants
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        participants = (try? container.decode(
+            LossyList<GatewayActivityParticipantDTO>.self,
+            forKey: .participants
+        ))?.elements ?? []
+    }
+}
+
 struct GatewayReadyGuildsDTO: Decodable {
     struct GuildReference: Decodable {
         var id: String
@@ -518,6 +538,7 @@ struct GatewayReadyGuildsDTO: Decodable {
         var threads: [ChannelDTO]
         var roles: [GuildRoleDTO]
         var members: [GuildMemberDTO]
+        var activityInstances: [GatewayActivityInstanceDTO]
 
         enum CodingKeys: String, CodingKey {
             case id, name, icon, owner, permissions, properties, features
@@ -527,6 +548,7 @@ struct GatewayReadyGuildsDTO: Decodable {
             case voiceStates = "voice_states"
             case emojis
             case channels, threads, roles, members
+            case activityInstances = "activity_instances"
         }
 
         init(from decoder: any Decoder) throws {
@@ -576,6 +598,11 @@ struct GatewayReadyGuildsDTO: Decodable {
             members =
                 (try? container.decode(
                     LossyList<GuildMemberDTO>.self, forKey: .members
+                ))?.elements ?? []
+            activityInstances =
+                (try? container.decode(
+                    LossyList<GatewayActivityInstanceDTO>.self,
+                    forKey: .activityInstances
                 ))?.elements ?? []
         }
 

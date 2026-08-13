@@ -45,6 +45,64 @@ import UserNotifications
     #expect(model.selectedGuildID == nil)
 }
 
+@MainActor
+@Test func `switching servers restores each server's last opened channel`() async throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    await model.start()
+    let auroraID = GuildID(rawValue: 100)
+    let nativeLabID = GuildID(rawValue: 101)
+    let rememberedAuroraChannel = try #require(
+        model.snapshot?.channels.first(where: {
+            $0.guildID == auroraID && $0.id == ChannelID(rawValue: 211)
+        })
+    )
+    let rememberedNativeChannel = try #require(
+        model.snapshot?.channels.first(where: {
+            $0.guildID == nativeLabID && $0.id == ChannelID(rawValue: 301)
+        })
+    )
+
+    model.selectedChannelID = rememberedAuroraChannel.id
+    #expect(model.lastOpenedChannelIDsByGuild[auroraID] == rememberedAuroraChannel.id)
+    model.selectGuild(nativeLabID)
+    await model.guildActivationTask?.value
+    model.selectedChannelID = rememberedNativeChannel.id
+    #expect(model.lastOpenedChannelIDsByGuild[nativeLabID] == rememberedNativeChannel.id)
+
+    model.selectGuild(auroraID)
+    await model.guildActivationTask?.value
+    #expect(model.selectedChannelID == rememberedAuroraChannel.id)
+
+    model.selectGuild(nativeLabID)
+    await model.guildActivationTask?.value
+    #expect(model.selectedChannelID == rememberedNativeChannel.id)
+}
+
+@MainActor
+@Test func `command palette and message search presentations are available in a workspace`() async throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    await model.start()
+
+    model.presentQuickSwitcher()
+    #expect(model.workspaceNavigationOverlay == .quickSwitcher)
+
+    model.presentQuickSwitcher()
+    #expect(model.workspaceNavigationOverlay == nil)
+
+    model.presentQuickSwitcher()
+    #expect(model.workspaceNavigationOverlay == .quickSwitcher)
+
+    model.presentMessageSearch()
+    #expect(model.workspaceNavigationOverlay == .messageSearch)
+
+    let searchableMessage = try #require(
+        model.messages.first(where: { !$0.content.isEmpty })
+    )
+    let searchTerm = String(searchableMessage.content.prefix(12))
+    let page = try await model.searchSelectedChannelMessages(query: searchTerm)
+    #expect(page.messages.contains(where: { $0.id == searchableMessage.id }))
+}
+
 @Test func `channel message cache keeps only the newest bounded history`() {
     let channelID = ChannelID(rawValue: 9)
     let author = User(
@@ -3040,6 +3098,24 @@ private actor FailingRemovalCredentialStore: CredentialStore {
     #expect(model.messageRows.last?.replyPreview?.messageID == target.id)
     #expect(model.messageRows.last?.replyPreview?.content == target.content)
     #expect(model.replyingTo == nil)
+}
+
+@MainActor
+@Test func `reply context cycles backward through visible messages and wraps`() async throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    await model.start()
+    let messages = model.messages
+    #expect(messages.count >= 2)
+
+    #expect(model.cycleReplyContext(in: .channel))
+    #expect(model.replyingTo?.id == messages.last?.id)
+
+    #expect(model.cycleReplyContext(in: .channel))
+    #expect(model.replyingTo?.id == messages.dropLast().last?.id)
+
+    model.reply(to: messages.first!)
+    #expect(model.cycleReplyContext(in: .channel))
+    #expect(model.replyingTo?.id == messages.last?.id)
 }
 
 @MainActor
