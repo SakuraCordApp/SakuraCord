@@ -103,6 +103,24 @@ struct GatewayLifecycleEventTests {
         #expect(memberAfterUserUpdate?.user.displayName == "Guild Nick")
         #expect(memberAfterUserUpdate?.globalDisplayName == "After")
 
+        await provider.cacheForwardSearchMessageAliases([
+            Message(
+                id: MessageID(rawValue: 500),
+                channelID: textChannelID,
+                author: User(
+                    id: currentUserID,
+                    username: "after",
+                    displayName: "After"
+                ),
+                content: "cached alias",
+                guildID: guildID
+            )
+        ])
+        #expect(
+            await provider.currentUserSearchAliasesByUserID()[currentUserID]
+                == ["Guild Nick"]
+        )
+
         await provider.receiveGatewayDispatchForTesting(
             name: "GUILD_ROLE_DELETE",
             data: .object(["guild_id": .string("100"), "role_id": .string("101")])
@@ -408,6 +426,7 @@ struct GatewayLifecycleEventTests {
             data: channel(id: "203", type: 0, name: "created")
         )
         #expect(await provider.cachedChannelForTesting(channelID: createdChannelID)?.name == "created")
+        #expect(await provider.cachedForwardChannelStoreOrder.contains(createdChannelID))
 
         await provider.receiveGatewayDispatchForTesting(
             name: "GUILD_ROLE_CREATE",

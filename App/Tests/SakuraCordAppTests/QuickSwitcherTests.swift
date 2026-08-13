@@ -12,6 +12,7 @@ import Testing
         imageSize: CGSize(width: 100, height: 200),
         in: CGRect(x: 10, y: 20, width: 22, height: 22)
     ) == CGRect(x: 10, y: 9, width: 22, height: 44))
+    #expect(QuickSwitcherIconGeometry.serverCornerRadius(iconSize: 22) == 7)
 }
 
 @Test func `unsupported prefix remains ordinary quick switcher search text`() {
@@ -90,7 +91,6 @@ private struct QuickSwitcherFixture {
                 index: index,
                 guilds: guilds,
                 usageScores: usageScores,
-                usageOrder: usageOrder,
                 history: history ?? [currentChannel.id, chatChannel.id, betaChannel.id],
                 currentChannelID: currentChannel.id,
                 currentGuildID: currentGuild.id,
@@ -164,7 +164,24 @@ private struct QuickSwitcherFixture {
     ])
 }
 
-@Test func `quick switcher twenty query matrix covers every first party mode`() {
+@Test func `quick switcher keeps the first persisted previous channel when it is not current`() {
+    let fixture = QuickSwitcherFixture()
+
+    #expect(fixture.results(
+        "",
+        history: [fixture.chatChannel.id, fixture.betaChannel.id]
+    ).map(\.id) == [
+        .heading("previous"),
+        .destination(.channel(fixture.chatChannel.id)),
+        .destination(.channel(fixture.betaChannel.id)),
+    ])
+}
+
+@Test func `quick switcher exposes only implemented in-app navigation`() {
+    #expect(QuickSwitcherNavigationDestination.discordDefaults.map(\.id) == ["SETTINGS"])
+}
+
+@Test func `quick switcher query matrix covers every implemented mode`() {
     let fixture = QuickSwitcherFixture()
     let checks: [(String, QuickSwitcherResultID)] = [
         ("gen", .destination(.channel(fixture.currentChannel.id))),
@@ -174,9 +191,6 @@ private struct QuickSwitcherFixture {
         ("hen", .destination(.user(fixture.henry.id))),
         ("len", .destination(.user(fixture.lena.id))),
         ("settings", .navigation("SETTINGS")),
-        ("shop", .navigation("SHOP")),
-        ("nitro", .navigation("NITRO_HOME")),
-        ("quest", .navigation("QUEST_HOME")),
         ("@hen", .destination(.user(fixture.henry.id))),
         ("@len", .destination(.user(fixture.lena.id))),
         ("#gen", .destination(.channel(fixture.currentChannel.id))),

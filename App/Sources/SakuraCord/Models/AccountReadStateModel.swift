@@ -23,6 +23,7 @@ final class AccountReadStateModel {
 
     struct QuickSwitcherProjection: Equatable, Sendable {
         var unreadChannelIDs: Set<ChannelID>
+        var mutedChannelIDs: Set<ChannelID>
         var mentionsByChannelID: [ChannelID: Int]
         var mentionedChannelIDs: [ChannelID]
     }
@@ -103,6 +104,7 @@ final class AccountReadStateModel {
     private(set) var acknowledgementToken: String?
     private(set) var readStateVersion: Int?
     private(set) var remoteReadStateOrder: [ChannelID] = []
+    private var remoteReadStateOrderIDs: Set<ChannelID> = []
     private var channelByID: [ChannelID: Channel] = [:]
     private var defaultNotificationLevelByGuild: [GuildID: MessageNotificationLevel] = [:]
     private var currentUserRoleIDsByGuild: [GuildID: Set<RoleID>] = [:]
@@ -119,6 +121,7 @@ final class AccountReadStateModel {
         acknowledgementToken = nil
         readStateVersion = nil
         remoteReadStateOrder.removeAll()
+        remoteReadStateOrderIDs.removeAll()
         channelByID.removeAll()
         defaultNotificationLevelByGuild.removeAll()
         currentUserRoleIDsByGuild.removeAll()
@@ -288,29 +291,6 @@ final class AccountReadStateModel {
             && (override.muteConfiguration?.isActive(at: date) ?? true)
     }
 
-    /// Resolves the muted projection in one pass. Quick-switcher preparation
-    /// covers the complete channel store, so calling `isChannelMuted` for each
-    /// channel would repeatedly scan the same guild override arrays.
-    func mutedChannelIDs(
-        in channels: [Channel],
-        at date: Date = .now
-    ) -> Set<ChannelID> {
-        var activeMutedOverrides = Set<ChannelID>()
-        for settings in settingsByGuild.values {
-            for override in settings.channelOverrides where override.isMuted {
-                guard override.muteConfiguration?.isActive(at: date) ?? true else {
-                    continue
-                }
-                activeMutedOverrides.insert(override.channelID)
-            }
-        }
-        return Set(channels.lazy.compactMap { channel in
-            channel.isMuted || activeMutedOverrides.contains(channel.id)
-                ? channel.id
-                : nil
-        })
-    }
-
     func inheritedNotificationLevel(for channel: Channel) -> MessageNotificationLevel {
         let guildSettings = settingsByGuild[channel.guildID]
         let parentOverride = channel.categoryID.flatMap { parentID in
@@ -385,7 +365,7 @@ final class AccountReadStateModel {
         {
             return false
         }
-        if !remoteReadStateOrder.contains(state.channelID) {
+        if remoteReadStateOrderIDs.insert(state.channelID).inserted {
             remoteReadStateOrder.append(state.channelID)
         }
         var entry = entry(for: state.channelID)
@@ -448,6 +428,7 @@ final class AccountReadStateModel {
         remoteReadStateOrder = states.compactMap { state in
             seenStateIDs.insert(state.channelID).inserted ? state.channelID : nil
         }
+        remoteReadStateOrderIDs = seenStateIDs
         entries.removeAll(keepingCapacity: true)
         merge(channels: Array(channelByID.values))
         for channelID in remoteReadStateOrder {
@@ -479,9 +460,8 @@ final class AccountReadStateModel {
         mentionsByChannelID mentionCounts: [ChannelID: Int]
     ) -> [ChannelID] {
         var seen: Set<ChannelID> = []
-        let remoteIDs = Set(remoteReadStateOrder)
         let ordered = remoteReadStateOrder + entries.keys.filter {
-            !remoteIDs.contains($0)
+            !remoteReadStateOrderIDs.contains($0)
         }
         return ordered.enumerated().filter {
             seen.insert($0.element).inserted
@@ -507,13 +487,47 @@ final class AccountReadStateModel {
     /// and expensive across a large account.
     func quickSwitcherProjection() -> QuickSwitcherProjection {
         var unreadChannelIDs = Set<ChannelID>()
+        var mutedChannelIDs = Set<ChannelID>()
         var mentionsByChannelID: [ChannelID: Int] = [:]
+        let now = Date.now
+        var mutedGuildIDs = Set<GuildID>()
+        var mutedOverrideIDs = Set<ChannelID>()
+        for (guildID, settings) in settingsByGuild {
+            if let guildID,
+               settings.isMuted,
+               settings.muteConfiguration?.isActive(at: now) ?? true
+            {
+                mutedGuildIDs.insert(guildID)
+            }
+            for override in settings.channelOverrides
+                where override.isMuted
+                    && (override.muteConfiguration?.isActive(at: now) ?? true)
+            {
+                mutedOverrideIDs.insert(override.channelID)
+            }
+        }
         unreadChannelIDs.reserveCapacity(entries.count)
+        mutedChannelIDs.reserveCapacity(entries.count)
         mentionsByChannelID.reserveCapacity(entries.count)
         for entry in entries.values where entry.isAccessible {
             guard !isGuildResourceChannel(entry) else { continue }
             if entry.isUnread {
                 unreadChannelIDs.insert(entry.channelID)
+                let ancestorID = entry.parentID.flatMap { channelByID[$0]?.categoryID }
+                let threadMuted = entry.threadNotificationSettings.map {
+                    ($0.isMuted
+                        && ($0.muteConfiguration?.isActive(at: now) ?? true))
+                        || $0.notificationLevel == .nothing
+                } ?? false
+                if entry.guildID.map(mutedGuildIDs.contains) == true
+                    || mutedOverrideIDs.contains(entry.channelID)
+                    || entry.parentID.map(mutedOverrideIDs.contains) == true
+                    || ancestorID.map(mutedOverrideIDs.contains) == true
+                    || threadMuted
+                    || channelByID[entry.channelID]?.isMuted == true
+                {
+                    mutedChannelIDs.insert(entry.channelID)
+                }
             }
             if entry.mentionCount > 0 {
                 mentionsByChannelID[entry.channelID] = entry.mentionCount
@@ -521,6 +535,7 @@ final class AccountReadStateModel {
         }
         return QuickSwitcherProjection(
             unreadChannelIDs: unreadChannelIDs,
+            mutedChannelIDs: mutedChannelIDs,
             mentionsByChannelID: mentionsByChannelID,
             mentionedChannelIDs: quickSwitcherMentionChannelIDs(
                 mentionsByChannelID: mentionsByChannelID
@@ -650,6 +665,7 @@ final class AccountReadStateModel {
                 // when its read-state entry was created much earlier.
                 remoteReadStateOrder.removeAll { $0 == message.channelID }
                 remoteReadStateOrder.append(message.channelID)
+                remoteReadStateOrderIDs.insert(message.channelID)
             }
             entry.mentionCount += 1
         }

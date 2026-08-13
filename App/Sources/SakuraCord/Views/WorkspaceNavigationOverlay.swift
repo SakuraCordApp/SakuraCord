@@ -50,7 +50,6 @@ private nonisolated struct QuickSwitcherSearchInput: Sendable {
     let index: ForwardDestinationSearchPolicy.Index
     let guilds: [Guild]
     let usageScores: [String: Int]
-    let usageOrder: [String]
     let history: [ChannelID]
     let currentChannelID: ChannelID?
     let currentGuildID: GuildID?
@@ -77,7 +76,6 @@ private nonisolated struct QuickSwitcherSearchInput: Sendable {
                 index: index,
                 guilds: guilds,
                 usageScores: usageScores,
-                usageOrder: usageOrder,
                 history: history,
                 currentChannelID: currentChannelID,
                 currentGuildID: currentGuildID,
@@ -188,7 +186,15 @@ private struct QuickSwitcherView: View {
             }
             .onChange(of: animationState.isVisible) { _, isVisible in
                 if isVisible {
-                    if let searchIndex {
+                    let currentUserID = model.snapshot?.currentUser.id
+                    let sourceRevision = model.forwardSearchSourceRevision
+                    if let exact = ForwardDestinationSearchIndexCache.shared.value(
+                        for: model,
+                        userID: currentUserID,
+                        revision: sourceRevision
+                    ) {
+                        applySearchIndex(exact)
+                    } else if let searchIndex {
                         searchInput = makeSearchInput(searchIndex: searchIndex)
                     }
                     contextRevision &+= 1
@@ -308,7 +314,6 @@ private struct QuickSwitcherView: View {
             index: searchIndex,
             guilds: guildsInStoreOrder,
             usageScores: model.discordGuildAndChannelUsageScores,
-            usageOrder: model.discordGuildAndChannelUsageOrder,
             history: model.forwardDestinationHistory,
             currentChannelID: model.selectedChannelID,
             currentGuildID: model.selectedGuildID,
@@ -317,7 +322,7 @@ private struct QuickSwitcherView: View {
             friendUserIDs: snapshot.friendUserIDs,
             currentGuildMemberIDs: currentGuildMemberIDs,
             unreadChannelIDs: projection.unreadChannelIDs,
-            mutedChannelIDs: model.readState.mutedChannelIDs(in: snapshot.channels),
+            mutedChannelIDs: projection.mutedChannelIDs,
             mentionedChannelIDs: projection.mentionedChannelIDs,
             draftChannelIDs: model.quickSwitcherDraftChannelIDs,
             recentlyTalkedUserIDs: recentlyTalkedUserIDs
@@ -419,11 +424,9 @@ private struct QuickSwitcherView: View {
             model.selectGuild(guild.id)
         case .destination(let destination):
             model.activateQuickSwitcherDestination(destination)
-        case .navigation(let navigation):
+        case .navigation:
             model.dismissWorkspaceNavigationOverlay()
-            if navigation.id == "SETTINGS" {
-                openSettings()
-            }
+            openSettings()
         }
     }
 
@@ -438,7 +441,8 @@ private struct QuickSwitcherView: View {
                 result: result,
                 title: guild.name,
                 inlineDetail: "Server",
-                systemImage: "square.stack.3d.up.fill"
+                systemImage: "person.3.fill",
+                imageURL: guild.iconURL
             )
         case .destination(let destination):
             let metadata = destinationMetadata(destination)
@@ -589,6 +593,10 @@ private struct QuickSwitcherRowPresentation: Identifiable, Equatable {
 }
 
 nonisolated enum QuickSwitcherIconGeometry {
+    static func serverCornerRadius(iconSize: CGFloat) -> CGFloat {
+        iconSize * 14 / 44
+    }
+
     static func aspectFillRect(
         imageSize: CGSize,
         in bounds: CGRect
@@ -928,22 +936,32 @@ private final class QuickSwitcherResultCanvas: NSView {
         in rect: CGRect,
         context: CGContext
     ) {
-        if let url = row.imageURL {
+        if case .guild = row.result {
+            context.saveGState()
+            let clipPath = NSBezierPath(
+                concentricRoundedRect: rect,
+                cornerRadius: QuickSwitcherIconGeometry.serverCornerRadius(
+                    iconSize: rect.width
+                )
+            )
+            context.addPath(clipPath.cgPath)
+            context.clip()
+            context.setFillColor(NSColor.secondaryLabelColor.withAlphaComponent(0.16).cgColor)
+            context.fill(rect)
+            if let url = row.imageURL {
+                if let image = images[url] {
+                    drawImage(image, in: rect, context: context)
+                }
+                context.restoreGState()
+                return
+            }
+            context.restoreGState()
+        } else if let url = row.imageURL {
             context.saveGState()
             context.addEllipse(in: rect)
             context.clip()
             if let image = images[url] {
-                let destination = QuickSwitcherIconGeometry.aspectFillRect(
-                    imageSize: CGSize(width: image.width, height: image.height),
-                    in: rect
-                )
-                context.interpolationQuality = .high
-                context.translateBy(
-                    x: 0,
-                    y: destination.minY * 2 + destination.height
-                )
-                context.scaleBy(x: 1, y: -1)
-                context.draw(image, in: destination)
+                drawImage(image, in: rect, context: context)
             } else {
                 NSColor.controlAccentColor.setFill()
                 context.fillEllipse(in: rect)
@@ -958,6 +976,28 @@ private final class QuickSwitcherResultCanvas: NSView {
             context.restoreGState()
             return
         }
+        drawSystemImage(row.systemImage, in: rect)
+    }
+
+    private func drawImage(
+        _ image: CGImage,
+        in rect: CGRect,
+        context: CGContext
+    ) {
+        let destination = QuickSwitcherIconGeometry.aspectFillRect(
+            imageSize: CGSize(width: image.width, height: image.height),
+            in: rect
+        )
+        context.interpolationQuality = .high
+        context.translateBy(
+            x: 0,
+            y: destination.minY * 2 + destination.height
+        )
+        context.scaleBy(x: 1, y: -1)
+        context.draw(image, in: destination)
+    }
+
+    private func drawSystemImage(_ name: String, in rect: CGRect) {
         let configuration = NSImage.SymbolConfiguration(
             pointSize: 15,
             weight: .medium
@@ -965,7 +1005,7 @@ private final class QuickSwitcherResultCanvas: NSView {
             NSImage.SymbolConfiguration(paletteColors: [.secondaryLabelColor])
         )
         guard let image = NSImage(
-            systemSymbolName: row.systemImage,
+            systemSymbolName: name,
             accessibilityDescription: nil
         )?.withSymbolConfiguration(configuration)
         else { return }
@@ -1023,7 +1063,7 @@ private final class QuickSwitcherResultCanvas: NSView {
             visibleIDs.insert(row.id)
             if let url = row.imageURL {
                 wantedURLs.insert(url)
-                requestImage(url, at: index)
+                requestImage(url)
             }
             let proxy = accessibilityRows[row.id] ?? {
                 let proxy = QuickSwitcherAccessibilityRow()
@@ -1052,7 +1092,7 @@ private final class QuickSwitcherResultCanvas: NSView {
         }
     }
 
-    private func requestImage(_ url: URL, at index: Int) {
+    private func requestImage(_ url: URL) {
         guard images[url] == nil, imageTasks[url] == nil else { return }
         imageTasks[url] = Task { [weak self] in
             let image = await SharedDecodedImageLoader.shared.image(
@@ -1064,7 +1104,7 @@ private final class QuickSwitcherResultCanvas: NSView {
             imageTasks[url] = nil
             guard let image else { return }
             images[url] = image
-            if rows.indices.contains(index), rows[index].imageURL == url {
+            for index in rows.indices where rows[index].imageURL == url {
                 setNeedsDisplay(rowRect(at: index))
             }
         }

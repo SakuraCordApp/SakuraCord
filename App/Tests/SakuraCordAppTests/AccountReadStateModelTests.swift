@@ -26,6 +26,88 @@ struct AccountReadStateModelTests {
         )
     }
 
+    @Test func `quick switcher muted projection includes inherited and guild mutes`() {
+        let otherChannelID = ChannelID(rawValue: 201)
+        let child = Channel(
+            id: channelID,
+            guildID: guildID,
+            name: "child",
+            categoryID: categoryID,
+            lastMessageID: MessageID(rawValue: 20)
+        )
+        let other = Channel(
+            id: otherChannelID,
+            guildID: guildID,
+            name: "other",
+            lastMessageID: MessageID(rawValue: 20)
+        )
+        let model = AccountReadStateModel()
+        model.reset(accountID: "account")
+        model.configure(
+            accountID: "account",
+            guilds: [Guild(id: guildID, name: "Guild")],
+            channels: [child, other],
+            readStates: [channelID, otherChannelID].map {
+                ChannelReadState(
+                    channelID: $0,
+                    lastAcknowledgedMessageID: MessageID(rawValue: 10)
+                )
+            },
+            notificationSettings: [
+                GuildNotificationSettings(
+                    guildID: guildID,
+                    channelOverrides: [
+                        ChannelNotificationOverride(channelID: categoryID, isMuted: true)
+                    ]
+                )
+            ]
+        )
+
+        #expect(model.quickSwitcherProjection().mutedChannelIDs == [channelID])
+
+        model.apply(GuildNotificationSettings(guildID: guildID, isMuted: true))
+        #expect(model.quickSwitcherProjection().mutedChannelIDs == [channelID, otherChannelID])
+    }
+
+    @Test func `live mention and later remote state keep one quick switcher order entry`() {
+        let model = AccountReadStateModel()
+        model.reset(accountID: "account")
+        model.setCurrentUserID(currentUser.id)
+        model.configure(
+            accountID: "account",
+            guilds: [
+                Guild(
+                    id: guildID,
+                    name: "Guild",
+                    defaultMessageNotifications: .allMessages
+                )
+            ],
+            channels: [
+                Channel(
+                    id: channelID,
+                    guildID: guildID,
+                    name: "general",
+                    lastMessageID: MessageID(rawValue: 10)
+                )
+            ],
+            readStates: [],
+            notificationSettings: []
+        )
+
+        #expect(model.receive(
+            message(id: 11, mentionedUsers: [currentUser]),
+            currentUserID: currentUser.id
+        ).accepted)
+        #expect(model.remoteReadStateOrder == [channelID])
+
+        #expect(model.applyRemote(ChannelReadState(
+            channelID: channelID,
+            lastAcknowledgedMessageID: MessageID(rawValue: 10),
+            mentionCount: 1
+        )))
+        #expect(model.remoteReadStateOrder == [channelID])
+    }
+
     @Test func `channels omitted from ready read state begin read and become unread live`() {
         let model = AccountReadStateModel()
         model.reset(accountID: "account")

@@ -1339,6 +1339,10 @@ extension DiscordRESTProvider {
                 return
             }
             if let guildID = dto.guildID.flatMap(GuildID.init) {
+                if name == "CHANNEL_CREATE", let channelID = ChannelID(dto.id) {
+                    appendQuickSwitcherChannelStoreOrder([channelID])
+                    persistQuickSwitcherChannelStoreCache()
+                }
                 cachedGuildChannelDTOs[guildID, default: [:]][dto.id] = dto
                 publishGuildChannels(guildID)
                 return

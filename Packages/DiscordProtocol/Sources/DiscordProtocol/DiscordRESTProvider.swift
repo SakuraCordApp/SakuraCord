@@ -608,13 +608,9 @@ extension DiscordRESTProvider {
         var guildIDs = Set(gatewayGuildIDs)
         guildIDs.formUnion(quickSwitcherGuildMemberUserIDsByGuildID.keys)
         guildIDs.formUnion(cachedMembers.keys)
-        guildIDs.formUnion(cachedForwardSearchAliasesByGuildID.keys)
         return Dictionary(uniqueKeysWithValues: guildIDs.map { guildID in
             var userIDs = quickSwitcherGuildMemberUserIDsByGuildID[guildID] ?? []
             userIDs.formUnion((cachedMembers[guildID] ?? []).map(\.id))
-            userIDs.formUnion(
-                cachedForwardSearchAliasesByGuildID[guildID]?.keys.map { $0 } ?? []
-            )
             return (guildID, userIDs.sorted())
         })
     }

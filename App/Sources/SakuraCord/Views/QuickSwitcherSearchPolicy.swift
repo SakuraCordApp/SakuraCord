@@ -71,36 +71,11 @@ nonisolated enum QuickSwitcherSelectionPolicy {
 nonisolated struct QuickSwitcherNavigationDestination: Identifiable, Equatable, Sendable {
     let id: String
     let title: String
-    let path: String
     let searchAliases: [String]
 
     static let discordDefaults = [
         QuickSwitcherNavigationDestination(
-            id: "SHOP", title: "Shop", path: "/shop", searchAliases: ["Shop"]
-        ),
-        QuickSwitcherNavigationDestination(
-            id: "SHOP_ORBS_TAB", title: "Orbs Exclusives", path: "/shop",
-            searchAliases: ["Orbs Exclusives", "Shop", "Orbs"]
-        ),
-        QuickSwitcherNavigationDestination(
-            id: "QUEST_ORBS", title: "Orbs Quests",
-            path: "/quest-home?filter=reward_virtual_currency",
-            searchAliases: ["Orbs Exclusives", "Quests", "Orbs"]
-        ),
-        QuickSwitcherNavigationDestination(
-            id: "NITRO_HOME", title: "Nitro", path: "/store",
-            searchAliases: ["Nitro"]
-        ),
-        QuickSwitcherNavigationDestination(
-            id: "QUEST_HOME", title: "Quests", path: "/quest-home",
-            searchAliases: ["Quests"]
-        ),
-        QuickSwitcherNavigationDestination(
-            id: "APPS_HOME", title: "Apps", path: "/activities",
-            searchAliases: ["Apps", "Activities"]
-        ),
-        QuickSwitcherNavigationDestination(
-            id: "SETTINGS", title: "Settings", path: "/settings/account",
+            id: "SETTINGS", title: "Settings",
             searchAliases: ["Settings"]
         ),
     ]
@@ -131,7 +106,6 @@ nonisolated struct QuickSwitcherSearchContext: Sendable {
     let index: ForwardDestinationSearchPolicy.Index
     let guilds: [Guild]
     let usageScores: [String: Int]
-    let usageOrder: [String]
     let history: [ChannelID]
     let currentChannelID: ChannelID?
     let currentGuildID: GuildID?
@@ -348,7 +322,6 @@ nonisolated enum QuickSwitcherSearchPolicy {
                         context.guilds,
                         query: "",
                         usageScores: context.usageScores,
-                        usageOrder: context.usageOrder,
                         limit: 100
                     ).map(QuickSwitcherResult.guild)
                 )
@@ -361,7 +334,7 @@ nonisolated enum QuickSwitcherSearchPolicy {
             },
             uniquingKeysWith: { existing, _ in existing }
         )
-        let historyRows = context.history.dropFirst().compactMap { destinationsByChannel[$0] }
+        let historyRows = context.history.compactMap { destinationsByChannel[$0] }
             .filter { $0.resolvedChannelID != context.currentChannelID }
         let protectedHistoryIDs = Set(historyRows.prefix(3).compactMap(\.resolvedChannelID))
         var seen = protectedHistoryIDs
@@ -398,33 +371,10 @@ nonisolated enum QuickSwitcherSearchPolicy {
         return output
     }
 
-    private static func frequentlyUsedDestinations(
-        index: ForwardDestinationSearchPolicy.Index,
-        usageScores: [String: Int],
-        usageOrder: [String]
-    ) -> [ForwardDestination] {
-        let sourceOrder = Dictionary(uniqueKeysWithValues: usageOrder.enumerated().map {
-            ($0.element, $0.offset)
-        })
-        return index.destinations.enumerated().filter { _, destination in
-            destination.resolvedChannelID != nil
-        }.sorted { left, right in
-            let leftID = left.element.resolvedChannelID?.description ?? ""
-            let rightID = right.element.resolvedChannelID?.description ?? ""
-            let leftScore = usageScores[leftID, default: 0]
-            let rightScore = usageScores[rightID, default: 0]
-            if leftScore != rightScore { return leftScore > rightScore }
-            let leftOrder = sourceOrder[leftID] ?? .max
-            let rightOrder = sourceOrder[rightID] ?? .max
-            return leftOrder == rightOrder ? left.offset < right.offset : leftOrder < rightOrder
-        }.map(\.element)
-    }
-
     private static func rankedGuilds(
         _ guilds: [Guild],
         query: String,
         usageScores: [String: Int],
-        usageOrder: [String] = [],
         excluding excludedGuildID: GuildID? = nil,
         limit: Int
     ) -> [Guild] {
