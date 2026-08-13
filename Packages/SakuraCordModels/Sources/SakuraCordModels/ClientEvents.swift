@@ -28,6 +28,8 @@ public enum ClientEvent: Equatable, Sendable {
     case quickSwitcherUserIDsChanged([UserID])
     case userSearchAliasesChanged([UserID: [String]])
     case quickSwitcherGuildMemberUserIDsChanged([GuildID: [UserID]])
+    case quickSwitcherJoinedMemberIDsChanged([GuildID: [UserID]])
+    case quickSwitcherGuildMemberAliasesChanged([GuildID: [UserID: String]])
     case currentUserRolesChanged(guildID: GuildID, roleIDs: [RoleID])
     case currentUserRolesSnapshot([GuildID: [RoleID]])
     case emojisChanged(guildID: GuildID, emojis: [DiscordEmoji])

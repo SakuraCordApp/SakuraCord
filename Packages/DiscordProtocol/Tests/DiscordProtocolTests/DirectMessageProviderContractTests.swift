@@ -368,10 +368,15 @@ struct DirectMessageProviderContractTests {
             UserID(rawValue: 3),
             UserID(rawValue: 1),
         ])
-        let reloadedMemberships = await second.currentQuickSwitcherGuildMemberUserIDs()
-        #expect(reloadedMemberships[GuildID(rawValue: 7)] == [
-            UserID(rawValue: 2), UserID(rawValue: 5),
+        #expect(await second.currentQuickSwitcherUsers().map(\.id) == [
+            UserID(rawValue: 3), UserID(rawValue: 1),
         ])
+        let reloadedMemberships = await second.currentQuickSwitcherGuildMemberUserIDs()
+        #expect(reloadedMemberships[GuildID(rawValue: 7)] == nil)
+        #expect(
+            await second.currentQuickSwitcherGuildMemberAliases()[GuildID(rawValue: 7)]
+                == nil
+        )
         #expect(
             await second.currentUserSearchAliasesByUserID()[UserID(rawValue: 2)]
                 == ["Current nickname"]
@@ -386,6 +391,10 @@ struct DirectMessageProviderContractTests {
             UserID(rawValue: 1),
             UserID(rawValue: 4),
         ])
+        #expect(await second.currentQuickSwitcherUsers().map(\.id) == [
+            UserID(rawValue: 3), UserID(rawValue: 1),
+            UserID(rawValue: 2), UserID(rawValue: 4),
+        ])
         let reloadedAliases = await second.currentUserSearchAliasesByUserID()
         #expect(reloadedAliases[UserID(rawValue: 2)] == [
             "Ready nickname", "Current nickname",
@@ -393,6 +402,14 @@ struct DirectMessageProviderContractTests {
         #expect(
             await second.currentUserSearchAliasesByUserID()[UserID(rawValue: 4)]
                 == nil
+        )
+        let liveMessageMemberships = await second.currentQuickSwitcherGuildMemberUserIDs()
+        #expect(liveMessageMemberships[GuildID(rawValue: 6)] == [
+            UserID(rawValue: 2), UserID(rawValue: 4),
+        ])
+        #expect(
+            await second.currentQuickSwitcherGuildMemberAliases()[GuildID(rawValue: 8)]
+                == [UserID(rawValue: 2): "Ready nickname"]
         )
         #expect(DirectMessageURLProtocol.requests.isEmpty)
         await second.disconnect()
@@ -523,6 +540,10 @@ struct DirectMessageProviderContractTests {
         #expect(users.contains { $0.id == UserID(rawValue: 9) })
         #expect(!users.contains { $0.id == UserID(rawValue: 7) })
         #expect(!users.contains { $0.id == UserID(rawValue: 8) })
+        let quickSwitcherUsers = await provider.currentQuickSwitcherUsers()
+        #expect(quickSwitcherUsers.contains { $0.id == UserID(rawValue: 7) })
+        #expect(quickSwitcherUsers.contains { $0.id == UserID(rawValue: 8) })
+        #expect(quickSwitcherUsers.contains { $0.id == UserID(rawValue: 9) })
         await provider.disconnect()
     }
 

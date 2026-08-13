@@ -63,6 +63,21 @@ enum DiscordGatewayPayloadFactory {
         ]
     }
 
+    static func searchMembers(
+        guildIDs: [GuildID], query: String, limit: Int
+    ) -> [String: Any] {
+        [
+            "op": 8,
+            "d": [
+                "guild_id": guildIDs.map(\.description),
+                "query": query,
+                "limit": limit,
+                "presences": true,
+                "user_ids": NSNull(),
+            ] as [String: Any],
+        ]
+    }
+
     static func voiceStateUpdate(
         guildID: GuildID?,
         channelID: ChannelID?,
@@ -969,10 +984,11 @@ struct ReadyMergedMemberDTO: Decodable {
     var avatar: String?
     var banner: String?
     var bio: String?
+    var pending: Bool?
 
     enum CodingKeys: String, CodingKey {
         case userID = "user_id"
-        case nick, roles, presence, avatar, banner, bio
+        case nick, roles, presence, avatar, banner, bio, pending
     }
 
     func hydrated(using usersByID: [String: UserDTO]) -> GuildMemberDTO? {
@@ -984,7 +1000,8 @@ struct ReadyMergedMemberDTO: Decodable {
             presence: presence,
             avatar: avatar,
             banner: banner,
-            bio: bio
+            bio: bio,
+            pending: pending
         )
     }
 }

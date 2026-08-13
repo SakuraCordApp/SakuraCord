@@ -89,6 +89,9 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     // READY_SUPPLEMENTAL, but Discord still makes it eligible immediately in
     // the quick switcher for the selected guild.
     var quickSwitcherGuildMemberUserIDsByGuildID: [GuildID: Set<UserID>] = [:]
+    // Bare @ uses GuildMemberStore rather than the search worker's broader
+    // message-derived membership markers.
+    var quickSwitcherJoinedMemberIDsByGuildID: [GuildID: Set<UserID>] = [:]
     var gatewayReady = false
     var initialGatewaySnapshotResult: Result<InitialGatewaySnapshot, any Error>?
     var initialGatewaySnapshotContinuation:
@@ -562,6 +565,9 @@ extension DiscordRESTProvider {
             relationshipNicknamesByUserID: cachedRelationshipNicknamesByUserID,
             userSearchAliasesByUserID: userSearchAliasesByUserID,
             quickSwitcherGuildMemberUserIDs: currentQuickSwitcherGuildMemberUserIDs(),
+            quickSwitcherJoinedGuildMemberUserIDs:
+                currentQuickSwitcherJoinedGuildMemberUserIDs(),
+            quickSwitcherGuildMemberAliases: currentQuickSwitcherGuildMemberAliases(),
             guilds: currentGuilds,
             guildRailItems: cachedGuildRailItems,
             forwardGuildStoreOrder: gatewayGuildIDs,
@@ -615,10 +621,34 @@ extension DiscordRESTProvider {
         })
     }
 
+    func currentQuickSwitcherGuildMemberAliases() -> [GuildID: [UserID: String]] {
+        var guildIDs = Set(gatewayGuildIDs)
+        guildIDs.formUnion(cachedMembers.keys)
+        return Dictionary(uniqueKeysWithValues: guildIDs.map { guildID in
+            var aliases: [UserID: String] = [:]
+            for member in cachedMembers[guildID] ?? [] {
+                aliases[member.id] = forwardSearchNickname(from: member)
+            }
+            return (guildID, aliases.filter { !$0.value.isEmpty })
+        })
+    }
+
+    func currentQuickSwitcherJoinedGuildMemberUserIDs() -> [GuildID: [UserID]] {
+        Dictionary(uniqueKeysWithValues: quickSwitcherJoinedMemberIDsByGuildID.map { entry in
+            (entry.key, entry.value.sorted())
+        })
+    }
+
     func publishUserSearchAliases() {
         continuation?.yield(.userSearchAliasesChanged(currentUserSearchAliasesByUserID()))
         continuation?.yield(.quickSwitcherGuildMemberUserIDsChanged(
             currentQuickSwitcherGuildMemberUserIDs()
+        ))
+        continuation?.yield(.quickSwitcherJoinedMemberIDsChanged(
+            currentQuickSwitcherJoinedGuildMemberUserIDs()
+        ))
+        continuation?.yield(.quickSwitcherGuildMemberAliasesChanged(
+            currentQuickSwitcherGuildMemberAliases()
         ))
     }
 
@@ -637,23 +667,21 @@ extension DiscordRESTProvider {
 
     func currentQuickSwitcherUsers() -> [User] {
         var seen = Set<UserID>()
-        let orderedUserIDs = cachedGatewayUserOrder.compactMap(UserID.init).filter {
-            seen.insert($0).inserted
-        } + forwardSearchEligibleUserOrder.filter {
-            seen.insert($0).inserted
-        } + cachedForwardSearchUserOrder.filter {
+        let orderedUserIDs = forwardSearchEligibleUserOrder.filter {
             seen.insert($0).inserted
         }
-        // Discord's worker mirrors UserStore, then applies friends/current-
-        // guild eligibility at query time. Keeping only rows that happened to
-        // arrive through READY's first user collection dropped valid members
-        // whose user record arrived in READY_SUPPLEMENTAL.
+        // Discord's quick-switcher worker mirrors the live UserStore. It does
+        // not index every user record carried by READY_SUPPLEMENTAL, nor does
+        // it restore message authors from an app-specific disk cache. READY
+        // users and members hydrated into UserStore are marked eligible at
+        // their ingestion sites and retain the same insertion order here.
+        // UserStore retains blocked/ignored relationships as searchable
+        // identities; forwarding continues to exclude them separately.
+        // Keeping this distinct from currentKnownUsers() prevents a relaunch
+        // with ForwardSearchPeople data from changing quick-switcher results.
         return orderedUserIDs.compactMap { userID in
-            guard let user = cachedGatewayUsersByID[userID.description]
-                .flatMap({ try? $0.domain() }) ?? cachedForwardSearchUsersByID[userID],
-                  !cachedBlockedOrIgnoredUserIDs.contains(user.id)
-            else { return nil }
-            return user
+            cachedGatewayUsersByID[userID.description]
+                .flatMap { try? $0.domain() } ?? cachedForwardSearchUsersByID[userID]
         }
     }
 
@@ -1079,7 +1107,7 @@ extension DiscordRESTProvider {
                 "Discord Gateway is not ready to search guild members.")
         }
         let requestID = UUID().uuidString
-        let maximumResults = min(max(1, limit), 20)
+        let maximumResults = min(max(1, limit), 100)
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[Member], any Error>) in
                 if let supersededRequestID = pendingMemberSearchRequestByGuild[guildID] {
@@ -1126,6 +1154,28 @@ extension DiscordRESTProvider {
                 )
             }
         }
+    }
+
+    public func requestQuickSwitcherMembers(
+        in guildID: GuildID, query: String, limit: Int
+    ) async throws {
+        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return }
+        guard gatewayReady else {
+            throw ChatProviderError.invalidRequest(
+                "Discord Gateway is not ready to search guild members.")
+        }
+        let maximumResults = min(max(1, limit), 100)
+        try await sendGateway(
+            DiscordGatewayPayloadFactory.searchMembers(
+                guildIDs: [guildID],
+                query: normalized.lowercased(),
+                limit: maximumResults
+            )
+        )
+        gatewayLogger.info(
+            "Sent quick-switcher member Gateway request; limit=\(maximumResults)"
+        )
     }
 
     public func members(withRole roleID: RoleID, in guildID: GuildID) async throws

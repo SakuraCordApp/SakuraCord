@@ -166,6 +166,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
 
     struct ScoredResult: Sendable {
         let destination: ForwardDestination
+        let category: ResultCategory
         let score: Double
         let comparator: String?
         let stableOrder: Int
@@ -261,6 +262,17 @@ nonisolated enum ForwardDestinationSearchPolicy {
         }
     }
 
+    private struct UserMatch {
+        let score: Int
+        let isFuzzy: Bool
+    }
+
+    private struct SearchScore {
+        let value: Double
+        let comparator: String?
+        let isFuzzyUserMatch: Bool
+    }
+
     fileprivate struct PreparedUserIdentity: Sendable {
         let searchValue: String
         let confusableSkeleton: String
@@ -314,10 +326,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
         _ channels: [Channel],
         storeOrder: [ChannelID]
     ) -> [Channel] {
-        let channelsByID = Dictionary(
-            channels.map { ($0.id, $0) },
-            uniquingKeysWith: { _, newer in newer }
-        )
+        let channelsByID = channelsByID(channels)
         var seenChannelIDs = Set<ChannelID>()
         return storeOrder.compactMap {
             guard seenChannelIDs.insert($0).inserted else { return nil }
@@ -331,6 +340,36 @@ nonisolated enum ForwardDestinationSearchPolicy {
         fileprivate let usageScores: [String: Int]
         fileprivate let usageOrder: [String]
         fileprivate let eligibleChannelIDs: Set<ChannelID>?
+        fileprivate let friendUserIDs: Set<UserID>
+        fileprivate let relationshipNicknamesByUserID: [UserID: String]
+        let maximumResolvableUsageScore: Int
+
+        func quickSwitcherUserIndex(
+            userSearchAliasesByUserID: [UserID: [String]]
+        ) -> Index {
+            let users = destinations.filter { destination in
+                if case .user = destination.kind { return true }
+                return false
+            }
+            return Index(
+                destinations: users,
+                searchRecords: ForwardDestinationSearchPolicy.makeSearchRecords(
+                    users,
+                    usageScores: usageScores,
+                    maximumUsageScore: Double(maximumResolvableUsageScore),
+                    friendUserIDs: friendUserIDs,
+                    relationshipNicknamesByUserID: relationshipNicknamesByUserID,
+                    userSearchAliasesByUserID: userSearchAliasesByUserID,
+                    eligibleChannelIDs: nil
+                ),
+                usageScores: usageScores,
+                usageOrder: usageOrder,
+                eligibleChannelIDs: nil,
+                friendUserIDs: friendUserIDs,
+                relationshipNicknamesByUserID: relationshipNicknamesByUserID,
+                maximumResolvableUsageScore: maximumResolvableUsageScore
+            )
+        }
 
         func results(
             query: String,
@@ -378,6 +417,18 @@ nonisolated enum ForwardDestinationSearchPolicy {
                 allowedUserIDs: allowedUserIDs
             )
         }
+
+        func unqueriedTextChannelResults(
+            currentGuildID: GuildID?,
+            limit: Int
+        ) -> [ScoredResult] {
+            ForwardDestinationSearchPolicy.unqueriedTextChannelResults(
+                searchRecords,
+                currentGuildID: currentGuildID,
+                limit: limit
+            )
+        }
+
     }
 
     static func makeIndex(
@@ -405,13 +456,21 @@ nonisolated enum ForwardDestinationSearchPolicy {
             guilds: guilds,
             searchableChannelIDs: searchableChannelIDs
         ))
-        let maximumUsageScore = Double(max(1, usageScores.values.max() ?? 1))
+        let resolvableUsageKeys = Set(
+            channels.map { $0.id.description }
+                + threads.map { $0.id.description }
+                + guilds.keys.map(\.description)
+        )
+        let maximumUsageScore = max(
+            1,
+            resolvableUsageKeys.compactMap { usageScores[$0] }.max() ?? 1
+        )
         return Index(
             destinations: destinations,
             searchRecords: makeSearchRecords(
                 destinations,
                 usageScores: usageScores,
-                maximumUsageScore: maximumUsageScore,
+                maximumUsageScore: Double(maximumUsageScore),
                 friendUserIDs: friendUserIDs,
                 relationshipNicknamesByUserID: relationshipNicknamesByUserID,
                 userSearchAliasesByUserID: userSearchAliasesByUserID,
@@ -419,7 +478,10 @@ nonisolated enum ForwardDestinationSearchPolicy {
             ),
             usageScores: usageScores,
             usageOrder: usageOrder,
-            eligibleChannelIDs: eligibleChannelIDs
+            eligibleChannelIDs: eligibleChannelIDs,
+            friendUserIDs: friendUserIDs,
+            relationshipNicknamesByUserID: relationshipNicknamesByUserID,
+            maximumResolvableUsageScore: maximumUsageScore
         )
     }
 
@@ -540,20 +602,34 @@ nonisolated enum ForwardDestinationSearchPolicy {
                 guild: thread.guildID.flatMap { source.guilds[$0] }
             )
         }
-        let sourceOrder = Dictionary(
+        let parentSourceOrder = Dictionary(
             source.channelStoreOrder.enumerated().map { ($0.element, $0.offset) },
             uniquingKeysWith: { earlier, _ in earlier }
         )
-        let channelAndThreadDestinations = (
-            nonGroupChannelDestinations + threadDestinations
-        ).enumerated().sorted { lhs, rhs in
-            let lhsOrder = lhs.element.resolvedChannelID.flatMap { sourceOrder[$0] }
+        // ChannelStore supplies ordinary channels first. Discord then appends
+        // active joined threads, grouped by their parent channel's store
+        // position and in snowflake order within a parent. Interleaving thread
+        // IDs into ChannelStore changes equal-score ordering for normal search.
+        func parentChannelID(of destination: ForwardDestination) -> ChannelID? {
+            guard case .thread(_, let parent) = destination.kind else { return nil }
+            return parent?.id
+        }
+        let orderedThreadDestinations = threadDestinations.sorted { lhs, rhs in
+            let lhsParentOrder = parentChannelID(of: lhs).flatMap { parentSourceOrder[$0] }
                 ?? Int.max
-            let rhsOrder = rhs.element.resolvedChannelID.flatMap { sourceOrder[$0] }
+            let rhsParentOrder = parentChannelID(of: rhs).flatMap { parentSourceOrder[$0] }
                 ?? Int.max
-            if lhsOrder != rhsOrder { return lhsOrder < rhsOrder }
-            return lhs.offset < rhs.offset
-        }.map(\.element)
+            if lhsParentOrder != rhsParentOrder { return lhsParentOrder < rhsParentOrder }
+            if let lhsID = lhs.resolvedChannelID,
+               let rhsID = rhs.resolvedChannelID,
+               lhsID != rhsID
+            {
+                return lhsID < rhsID
+            }
+            return false
+        }
+        let channelAndThreadDestinations = nonGroupChannelDestinations
+            + orderedThreadDestinations
         return userDestinations
             + groupDirectMessageDestinations
             + channelAndThreadDestinations
@@ -564,6 +640,13 @@ nonisolated enum ForwardDestinationSearchPolicy {
         case .text, .announcement, .forum, .voice, .groupDirectMessage: true
         case .directMessage, .unknown: false
         }
+    }
+
+    private static func channelsByID(_ channels: [Channel]) -> [ChannelID: Channel] {
+        Dictionary(
+            channels.map { ($0.id, $0) },
+            uniquingKeysWith: { _, newer in newer }
+        )
     }
 
     private static func groupDirectMessageDetail(_ channel: Channel) -> String? {
@@ -593,7 +676,13 @@ nonisolated enum ForwardDestinationSearchPolicy {
             } ?? 0)
             let boosters = UsageBoosters(
                 normalized: min(max(usage / maximumUsageScore, 0), 1),
-                internalChannel: min(max(usage / 1_000, 0), 1)
+                // Preserve the current first-party client's expression
+                // exactly. Its null-coalescing/division precedence means a
+                // present positive score is clamped directly to one here;
+                // it is not normalized by the frecency engine's 1,000-point
+                // maximum. Consequently every used channel receives the
+                // complete internal three-point channel boost.
+                internalChannel: usage > 0 ? 1 : 0
             )
             let eligible = isEligible(
                 destination,
@@ -633,13 +722,15 @@ nonisolated enum ForwardDestinationSearchPolicy {
                 return [record(
                     category: .groupDirectMessage,
                     values: .groupDirectMessage(
-                        name: normalize(destination.title),
+                        name: discordConfusableSkeleton(normalize(destination.title)),
                         recipientValues: channel.recipients.flatMap {
                             [
                                 $0.displayName,
                                 $0.username,
                                 relationshipNicknamesByUserID[$0.id],
-                            ].compactMap { $0 }.map(normalize)
+                            ].compactMap { $0 }.map {
+                                discordConfusableSkeleton(normalize($0))
+                            }
                         },
                         usage: boosters.normalized
                     )
@@ -705,6 +796,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
         groups.reserveCapacity(limitPerCategory)
         textChannels.reserveCapacity(limitPerCategory)
         voiceChannels.reserveCapacity(limitPerCategory)
+        var fuzzyUserCount = 0
         for (offset, record) in records.enumerated() {
             if offset & 63 == 0, Task.isCancelled { return [] }
             guard categories?.contains(record.category) != false else { continue }
@@ -714,13 +806,20 @@ nonisolated enum ForwardDestinationSearchPolicy {
             {
                 continue
             }
-            let (score, comparator) = searchScore(record.values, query: preparedQuery)
-            guard score > 0 else { continue }
+            let match = searchScore(
+                record.values,
+                query: preparedQuery
+            )
+            guard match.value > 0 else { continue }
+            if match.isFuzzyUserMatch {
+                guard fuzzyUserCount < 50 else { continue }
+                fuzzyUserCount += 1
+            }
             let ranked = RankedDestination(
                 destination: record.destination,
                 category: record.category,
-                score: score,
-                comparator: comparator,
+                score: match.value,
+                comparator: match.comparator,
                 sourceOrder: record.sourceOrder,
                 isEligible: record.isEligible
             )
@@ -823,10 +922,87 @@ nonisolated enum ForwardDestinationSearchPolicy {
             }
             return ScoredResult(
                 destination: entry.destination.destination,
+                category: entry.destination.category,
                 score: entry.destination.score,
                 comparator: entry.destination.comparator,
                 stableOrder: entry.stableOrder
             )
+        }
+    }
+
+    private static func unqueriedTextChannelResults(
+        _ records: [SearchRecord],
+        currentGuildID: GuildID?,
+        limit: Int
+    ) -> [ScoredResult] {
+        let ranked = records.compactMap { record -> RankedDestination? in
+            guard record.category == .selectableChannel,
+                  record.destination.guild?.id == currentGuildID,
+                  !isVoiceDestination(record.destination),
+                  case .text(
+                      _, _, let boosters, let basePenalty, let minimumAfterPenalty
+                  ) = record.values
+            else { return nil }
+            let score = boostedTextDestinationScore(
+                base: 7,
+                // Empty channel-mode search does not receive SearchContext's
+                // outer frecency map. Positive local use still applies the
+                // worker's complete internal boost, leaving equally used
+                // channels in ChannelStore insertion order.
+                boosters: UsageBoosters(
+                    normalized: 0,
+                    internalChannel: boosters.internalChannel
+                ),
+                basePenalty: basePenalty,
+                minimumAfterPenalty: minimumAfterPenalty
+            )
+            return RankedDestination(
+                destination: record.destination,
+                category: record.category,
+                score: score,
+                comparator: nil,
+                sourceOrder: record.sourceOrder,
+                isEligible: record.isEligible
+            )
+        }
+        return ranked.sorted { lhs, rhs in
+            if lhs.score != rhs.score { return lhs.score > rhs.score }
+            switch (lhs.destination.kind, rhs.destination.kind) {
+            case (.channel(let left), .channel(let right)):
+                if left.position != right.position { return left.position < right.position }
+            case (.channel, .thread):
+                return true
+            case (.thread, .channel):
+                return false
+            case (
+                .thread(let left, let leftParent),
+                .thread(let right, let rightParent)
+            ):
+                let leftPosition = leftParent?.position ?? Int.max
+                let rightPosition = rightParent?.position ?? Int.max
+                if leftPosition != rightPosition { return leftPosition < rightPosition }
+                if left.id != right.id { return left.id < right.id }
+            case (.user, _), (_, .user):
+                break
+            }
+            return lhs.sourceOrder < rhs.sourceOrder
+        }.prefix(limit).map {
+            ScoredResult(
+                destination: $0.destination,
+                category: $0.category,
+                score: $0.score,
+                comparator: nil,
+                stableOrder: $0.sourceOrder
+            )
+        }
+    }
+
+    private static func isVoiceDestination(
+        _ destination: ForwardDestination
+    ) -> Bool {
+        switch destination.kind {
+        case .channel(let channel): channel.kind == .voice
+        case .thread, .user: false
         }
     }
 
@@ -907,31 +1083,47 @@ nonisolated enum ForwardDestinationSearchPolicy {
     private static func searchScore(
         _ values: SearchValues,
         query: PreparedQuery
-    ) -> (Double, String?) {
+    ) -> SearchScore {
         switch values {
         case .user(let values, let booster):
             var bestScore = 0
             var comparator: String?
+            var isFuzzy = false
             for value in values {
-                let score = userMatchScore(value, query: query.match)
-                if score > bestScore {
-                    bestScore = score
+                let match = userMatch(value, query: query.match)
+                if match.score > bestScore {
+                    bestScore = match.score
                     comparator = value.comparator
+                    isFuzzy = match.isFuzzy
                 }
             }
-            return (1_000 * Double(bestScore) * booster, comparator)
+            return SearchScore(
+                value: 1_000 * Double(bestScore) * booster,
+                comparator: comparator,
+                isFuzzyUserMatch: isFuzzy
+            )
         case .groupDirectMessage(let name, let recipientValues, let usage):
-            let ownNameScore = matchScore(name, query: query.match, fuzzy: true)
+            // Group-DM search is the one channel category that Discord runs
+            // through its confusable-character normalizer before applying the
+            // ordinary fuzzy matcher. In particular, ASCII `m` becomes `rn`;
+            // omitting this made queries such as `len` miss a recipient whose
+            // display name ended in `me` even though the official client
+            // returned that group.
+            let groupQuery = PreparedMatch(
+                discordConfusableSkeleton(query.match.value)
+            )
+            let ownNameScore = matchScore(name, query: groupQuery, fuzzy: true)
             var recipientScore = 0
             for value in recipientValues {
                 recipientScore = max(
                     recipientScore,
-                    min(5, matchScore(value, query: query.match, fuzzy: true))
+                    min(5, matchScore(value, query: groupQuery, fuzzy: true))
                 )
             }
-            return (
-                1_000 * Double(max(ownNameScore, recipientScore)) * (1 + usage),
-                nil
+            return SearchScore(
+                value: 1_000 * Double(max(ownNameScore, recipientScore)) * (1 + usage),
+                comparator: nil,
+                isFuzzyUserMatch: false
             )
         case .text(
             let title,
@@ -940,8 +1132,8 @@ nonisolated enum ForwardDestinationSearchPolicy {
             let basePenalty,
             let minimumAfterPenalty
         ):
-            return (
-                textDestinationSearchScore(
+            return SearchScore(
+                value: textDestinationSearchScore(
                     title: title,
                     metadata: metadata,
                     query: query,
@@ -949,20 +1141,31 @@ nonisolated enum ForwardDestinationSearchPolicy {
                     basePenalty: basePenalty,
                     minimumAfterPenalty: minimumAfterPenalty
                 ),
-                nil
+                comparator: nil,
+                isFuzzyUserMatch: false
             )
         }
     }
 
-    private static func userMatchScore(
+    private static func userMatch(
         _ identity: PreparedUserIdentity,
         query: PreparedMatch
-    ) -> Int {
-        if identity.searchValue.hasPrefix(query.value) { return 10 }
-        if identity.searchValue.contains(query.value) { return 5 }
-        if isOrderedSubsequence(query.value, of: identity.searchValue) { return 1 }
-        return isOrderedSubsequence(query.confusableSkeleton, of: identity.confusableSkeleton)
-            ? 1 : 0
+    ) -> UserMatch {
+        if identity.searchValue.hasPrefix(query.value) {
+            return UserMatch(score: 10, isFuzzy: false)
+        }
+        if identity.searchValue.contains(query.value) {
+            return UserMatch(score: 5, isFuzzy: false)
+        }
+        if identity.confusableSkeleton.hasPrefix(query.confusableSkeleton) {
+            return UserMatch(score: 1, isFuzzy: false)
+        }
+        let matchesFuzzy = isOrderedSubsequence(query.value, of: identity.searchValue)
+            || isOrderedSubsequence(
+                query.confusableSkeleton,
+                of: identity.confusableSkeleton
+            )
+        return UserMatch(score: matchesFuzzy ? 1 : 0, isFuzzy: matchesFuzzy)
     }
 
     private static func userIdentitySearchValue(_ value: String) -> String {
@@ -1138,7 +1341,11 @@ nonisolated enum ForwardDestinationSearchPolicy {
     }
 
     private static func normalize(_ value: String) -> String {
-        value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        // Channel and guild search lowercases literally. Discord applies
+        // accent folding only inside its user/GDM identity path; folding here
+        // makes e.g. `music` match `música` and changes the complete channel
+        // result set.
+        value.lowercased(with: .current)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
@@ -1218,6 +1425,11 @@ final class ForwardDestinationSearchIndexCache {
               self.userID == userID
         else { return nil }
         return index
+    }
+
+    func invalidate(for model: AppModel) {
+        guard modelID == ObjectIdentifier(model) else { return }
+        revision = nil
     }
 
     func store(
@@ -1767,153 +1979,5 @@ private struct ForwardCloseButton: View {
         }
         .help("Close")
         .accessibilityIdentifier("forward-close")
-    }
-}
-
-private struct ForwardSelectionControl: View {
-    let isSelected: Bool
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .fill(isSelected ? Color.accentColor : .clear)
-            Circle()
-                .stroke(
-                    isSelected ? Color.accentColor : Color.secondary,
-                    lineWidth: 1.8
-                )
-            if isSelected {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.white)
-            }
-        }
-        .frame(
-            width: ForwardPickerLayoutMetrics.selectionDiameter,
-            height: ForwardPickerLayoutMetrics.selectionDiameter
-        )
-        .accessibilityHidden(true)
-    }
-}
-
-private struct ForwardDestinationRow: View {
-    let destination: ForwardDestination
-    let isSelected: Bool
-    let action: () -> Void
-
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                ForwardDestinationAvatar(destination: destination)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(destination.title)
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                    let detail = destination.unavailableReason ?? destination.detail
-                    if !detail.isEmpty {
-                        Text(detail)
-                            .font(.caption)
-                            .foregroundStyle(destination.unavailableReason == nil
-                                ? Color.secondary : Color.red)
-                            .lineLimit(1)
-                    }
-                }
-                Spacer()
-                ForwardSelectionControl(isSelected: isSelected)
-            }
-            .padding(.horizontal, 16)
-            .frame(height: ForwardPickerLayoutMetrics.rowHeight)
-            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-            .background {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(rowBackground)
-            }
-        }
-        .buttonStyle(.plain)
-        .disabled(destination.unavailableReason != nil)
-        .opacity(destination.unavailableReason == nil ? 1 : 0.62)
-        .accessibilityLabel(accessibilityLabel)
-        .accessibilityIdentifier(destination.id.accessibilityIdentifier)
-        .onHover { hovering in
-            isHovered = hovering
-        }
-    }
-
-    private var rowBackground: Color {
-        .primary.opacity(isSelected || isHovered ? 0.075 : 0.001)
-    }
-
-    private var accessibilityLabel: String {
-        let detail = destination.unavailableReason ?? destination.detail
-        return detail.isEmpty ? destination.title : "\(destination.title), \(detail)"
-    }
-}
-
-private struct ForwardDestinationAvatar: View {
-    let destination: ForwardDestination
-
-    var body: some View {
-        switch destination.kind {
-        case .channel(let channel) where channel.guildID != nil:
-            guildIcon(channelKind: channel.kind)
-        case .thread:
-            guildIcon(channelKind: .text)
-        case .channel, .user:
-            AvatarView(
-                name: destination.title,
-                url: destination.avatarURL,
-                size: 28
-            )
-        }
-    }
-
-    private func guildIcon(channelKind: ChannelKindValue) -> some View {
-        ZStack(alignment: .bottomTrailing) {
-            if destination.guild?.iconURL != nil {
-                GuildIconView(
-                    name: destination.guild?.name ?? destination.title,
-                    iconURL: destination.guild?.iconURL,
-                    size: 28,
-                    cornerRadius: 9,
-                    animates: false
-                )
-            } else {
-                ConcentricRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(Color.secondary.opacity(0.16))
-                    .frame(width: 28, height: 28)
-                    .overlay {
-                        Text(guildInitials)
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-            }
-            Circle()
-                .fill(Color(nsColor: .windowBackgroundColor))
-                .frame(width: 18, height: 18)
-                .overlay {
-                    Image(systemName: channelKind == .voice ? "speaker.wave.2.fill" : "number")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .overlay {
-                    Circle().stroke(.black.opacity(0.12), lineWidth: 0.5)
-                }
-                .offset(x: 4, y: 4)
-        }
-        .frame(width: 34, height: 34)
-        .accessibilityHidden(true)
-    }
-
-    private var guildInitials: String {
-        let name = destination.guild?.name ?? destination.title
-        let initials = name.split(whereSeparator: { $0.isWhitespace }).compactMap(\.first)
-        if initials.count > 1 {
-            return String(initials.prefix(3)).uppercased()
-        }
-        return String(name.prefix(2)).uppercased()
     }
 }

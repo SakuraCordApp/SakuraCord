@@ -48,6 +48,7 @@ struct WorkspaceNavigationOverlayView: View {
 
 private nonisolated struct QuickSwitcherSearchInput: Sendable {
     let index: ForwardDestinationSearchPolicy.Index
+    let userIndex: ForwardDestinationSearchPolicy.Index
     let guilds: [Guild]
     let usageScores: [String: Int]
     let history: [ChannelID]
@@ -57,6 +58,7 @@ private nonisolated struct QuickSwitcherSearchInput: Sendable {
     let searchableUserIDs: Set<UserID>
     let friendUserIDs: Set<UserID>
     let currentGuildMemberIDs: Set<UserID>
+    let currentGuildLiveMemberIDs: Set<UserID>
     let unreadChannelIDs: Set<ChannelID>
     let mutedChannelIDs: Set<ChannelID>
     let mentionedChannelIDs: [ChannelID]
@@ -74,6 +76,7 @@ private nonisolated struct QuickSwitcherSearchInput: Sendable {
             query: query,
             context: QuickSwitcherSearchContext(
                 index: index,
+                userIndex: userIndex,
                 guilds: guilds,
                 usageScores: usageScores,
                 history: history,
@@ -83,6 +86,7 @@ private nonisolated struct QuickSwitcherSearchInput: Sendable {
                 searchableUserIDs: searchableUserIDs,
                 friendUserIDs: friendUserIDs,
                 currentGuildMemberIDs: currentGuildMemberIDs,
+                currentGuildLiveMemberIDs: currentGuildLiveMemberIDs,
                 unreadChannelIDs: unreadChannelIDs,
                 mutedChannelIDs: mutedChannelIDs,
                 mentionedChannelIDs: mentionedChannelIDs,
@@ -97,6 +101,11 @@ private nonisolated struct QuickSwitcherSearchRequest: Hashable, Sendable {
     let query: String
     let indexRevision: UInt64
     let contextRevision: UInt64
+}
+
+private nonisolated struct QuickSwitcherMemberQuery: Hashable, Sendable {
+    let guildID: GuildID
+    let query: String
 }
 
 private struct QuickSwitcherView: View {
@@ -116,6 +125,7 @@ private struct QuickSwitcherView: View {
     @State private var mouseFocusDisabled = true
     @State private var lastPointerLocation: CGPoint?
     @State private var framePresentationID: UInt64 = 0
+    @State private var requestedMemberQueries: Set<QuickSwitcherMemberQuery> = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -217,6 +227,9 @@ private struct QuickSwitcherView: View {
                 }
             }
             .task(id: model.forwardSearchSourceRevision) {
+                if memberSearchRequest != nil {
+                    ForwardDestinationSearchIndexCache.shared.invalidate(for: model)
+                }
                 if !model.hasLoadedDiscordEmojiSettings {
                     Task { @MainActor in
                         await model.loadDiscordEmojiSettings()
@@ -255,17 +268,21 @@ private struct QuickSwitcherView: View {
                     searchInput = makeSearchInput(searchIndex: searchIndex)
                     contextRevision &+= 1
                 }
-                // Search one coherent local-store snapshot. Swapping a newly
-                // prepared index under an active query used to schedule a full
-                // re-rank and render in the middle of typing.
-                if let prepared,
-                   searchIndex == nil || !animationState.isVisible
-                {
+                // Show the retained index immediately, then adopt the exact
+                // account-synchronized frecency snapshot as soon as it is
+                // ready. Discord does the same asynchronous store hydration;
+                // retaining the stale index for the whole first presentation
+                // made a clean launch rank differently until close/reopen.
+                if let prepared {
                     applySearchIndex(prepared)
                 }
             }
             .task(id: searchRequest) {
                 await refreshDisplayedResults(for: searchRequest)
+            }
+            .task(id: memberSearchRequest) {
+                guard let memberSearchRequest else { return }
+                await requestQuickSwitcherMembersIfNeeded(for: memberSearchRequest)
             }
     }
 
@@ -274,6 +291,18 @@ private struct QuickSwitcherView: View {
             query: query,
             indexRevision: searchIndexRevision,
             contextRevision: contextRevision
+        )
+    }
+
+    private var memberSearchRequest: QuickSwitcherMemberQuery? {
+        let parsed = QuickSwitcherParsedQuery(query)
+        guard parsed.mode == .user,
+              !parsed.searchValue.isEmpty,
+              let guildID = model.selectedGuildID
+        else { return nil }
+        return QuickSwitcherMemberQuery(
+            guildID: guildID,
+            query: parsed.searchValue.lowercased()
         )
     }
 
@@ -304,6 +333,20 @@ private struct QuickSwitcherView: View {
             let live = Set(model.membersByGuildID[guildID]?.keys.map { $0 } ?? [])
             return indexed.union(live)
         } ?? []
+        let currentGuildLiveMemberIDs: Set<UserID> = model.selectedGuildID.map { guildID in
+            var userIDs = Set(
+                snapshot.quickSwitcherJoinedGuildMemberUserIDs[guildID] ?? []
+            )
+            // Discord's current-channel MessageStore records may already carry
+            // a current guild-member object even when a separate member lookup
+            // did not echo that user. Bare @ reads this live MessageStore path;
+            // a message-derived worker marker without a member remains ineligible.
+            userIDs.formUnion(model.messages.lazy.compactMap { message in
+                message.guildID == guildID && message.guildMember != nil
+                    ? message.author.id : nil
+            })
+            return userIDs
+        } ?? []
         var seenRecentlyTalkedUserIDs: Set<UserID> = []
         let recentlyTalkedUserIDs = model.messages.reversed().compactMap { message in
             seenRecentlyTalkedUserIDs.insert(message.author.id).inserted
@@ -312,6 +355,15 @@ private struct QuickSwitcherView: View {
         mentionCountsByChannelID = projection.mentionsByChannelID
         return QuickSwitcherSearchInput(
             index: searchIndex,
+            userIndex: searchIndex.quickSwitcherUserIndex(
+                // SearchContextManager seeds every live nickname held by
+                // GuildMemberStore at connection-open. Forwarding's durable
+                // message cache must not change results after a relaunch.
+                userSearchAliasesByUserID: quickSwitcherAliases(
+                    snapshot.quickSwitcherGuildMemberAliases,
+                    guildOrder: guildsInStoreOrder.map(\.id)
+                )
+            ),
             guilds: guildsInStoreOrder,
             usageScores: model.discordGuildAndChannelUsageScores,
             history: model.forwardDestinationHistory,
@@ -321,12 +373,34 @@ private struct QuickSwitcherView: View {
             searchableUserIDs: Set(snapshot.quickSwitcherUserIDs),
             friendUserIDs: snapshot.friendUserIDs,
             currentGuildMemberIDs: currentGuildMemberIDs,
+            currentGuildLiveMemberIDs: currentGuildLiveMemberIDs,
             unreadChannelIDs: projection.unreadChannelIDs,
             mutedChannelIDs: projection.mutedChannelIDs,
             mentionedChannelIDs: projection.mentionedChannelIDs,
             draftChannelIDs: model.quickSwitcherDraftChannelIDs,
             recentlyTalkedUserIDs: recentlyTalkedUserIDs
         )
+    }
+
+    private func quickSwitcherAliases(
+        _ aliasesByGuildID: [GuildID: [UserID: String]],
+        guildOrder: [GuildID]
+    ) -> [UserID: [String]] {
+        var result: [UserID: [String]] = [:]
+        var seenGuildIDs = Set<GuildID>()
+        let orderedGuildIDs = guildOrder.filter { seenGuildIDs.insert($0).inserted }
+            + aliasesByGuildID.keys.sorted().filter { seenGuildIDs.insert($0).inserted }
+        for guildID in orderedGuildIDs {
+            for userID in (aliasesByGuildID[guildID] ?? [:]).keys.sorted() {
+                guard let alias = aliasesByGuildID[guildID]?[userID],
+                      result[userID, default: []].contains(where: {
+                          $0.localizedCaseInsensitiveCompare(alias) == .orderedSame
+                      }) == false
+                else { continue }
+                result[userID, default: []].append(alias)
+            }
+        }
+        return result
     }
 
     private func refreshDisplayedResults(
@@ -354,6 +428,44 @@ private struct QuickSwitcherView: View {
             preservesCurrent: preservesSelection
         )
         framePresentationID &+= 1
+    }
+
+    private func requestQuickSwitcherMembersIfNeeded(
+        for memberQuery: QuickSwitcherMemberQuery
+    ) async {
+        // Discord ranks from its local UserStore and opportunistically asks
+        // the selected guild for prefix matches only in explicit @ mode.
+        // Ordinary text search must not alter the candidate store.
+        do {
+            // The current clean client sends at roughly 430–525 ms after an
+            // input fill. Keep this coalescing latency entirely
+            // outside the local ranking task.
+            try await Task.sleep(for: .milliseconds(400))
+        } catch {
+            return
+        }
+        guard !Task.isCancelled,
+              requestedMemberQueries.insert(memberQuery).inserted
+        else { return }
+        let session = model.accountSession()
+        do {
+            try await session.provider.requestQuickSwitcherMembers(
+                in: memberQuery.guildID,
+                query: memberQuery.query,
+                limit: 100
+            )
+            guard !Task.isCancelled,
+                  model.isCurrentAccountSession(session)
+            else { return }
+            // GUILD_MEMBERS_CHUNK updates the provider's UserStore mirror and
+            // publishes a new immutable search-index revision. The retained
+            // sheet adopts that revision without blocking local keystrokes.
+        } catch is CancellationError {
+            requestedMemberQueries.remove(memberQuery)
+        } catch {
+            guard model.isCurrentAccountSession(session) else { return }
+            requestedMemberQueries.remove(memberQuery)
+        }
     }
 
     private func handleKeyDown(_ event: NSEvent) -> Bool {
@@ -508,6 +620,7 @@ private struct QuickSwitcherView: View {
             }
         }
     }
+
 }
 
 private struct QuickSwitcherRowPresentation: Identifiable, Equatable {
@@ -590,6 +703,7 @@ private struct QuickSwitcherRowPresentation: Identifiable, Equatable {
             }
         }
     }
+
 }
 
 nonisolated enum QuickSwitcherIconGeometry {

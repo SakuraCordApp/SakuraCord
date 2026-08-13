@@ -510,7 +510,7 @@ private func appendETFBinary(_ value: String, to data: inout Data) {
     #expect(settings.usageScores["reaction_only"] == nil)
     #expect(settings.guildAndChannelUsageScores["123"] == 500)
     #expect(settings.guildAndChannelUsageScores["456"] == nil)
-    #expect(settings.guildAndChannelUsageScores["789"] == 621)
+    #expect(settings.guildAndChannelUsageScores["789"] == 360)
     #expect(settings.guildAndChannelUsage["123"] == DiscordFrecencyUsage(
         totalUses: 5,
         recentUses: [now, now - 1, now - 2]
@@ -1309,4 +1309,22 @@ private func appendETFBinary(_ value: String, to data: inout Data) {
     #expect(data["limit"] as? Int == 10)
     #expect(data["presences"] as? Bool == true)
     #expect(Set(data.keys) == ["guild_id", "query", "limit", "presences"])
+}
+
+@Test func `quick switcher member search uses current desktop payload shape`() throws {
+    let payload = DiscordGatewayPayloadFactory.searchMembers(
+        guildIDs: [GuildID(rawValue: 10)],
+        query: "hen",
+        limit: 100
+    )
+    #expect(payload["op"] as? Int == 8)
+    let data = try #require(payload["d"] as? [String: Any])
+    #expect(data["guild_id"] as? [String] == ["10"])
+    #expect(data["query"] as? String == "hen")
+    #expect(data["limit"] as? Int == 100)
+    #expect(data["presences"] as? Bool == true)
+    #expect(data["user_ids"] is NSNull)
+    #expect(Set(data.keys) == [
+        "guild_id", "query", "limit", "presences", "user_ids",
+    ])
 }

@@ -1618,7 +1618,7 @@ private struct BootstrapRequestScenario {
 
         let memberSearch = Task {
             try await provider.searchMembers(
-                in: GuildID(rawValue: 100), query: "maya", limit: 25
+                in: GuildID(rawValue: 100), query: "maya", limit: 125
             )
         }
         #expect(await eventually {
@@ -1632,7 +1632,7 @@ private struct BootstrapRequestScenario {
         let searchData = try #require(gatewayPayload["d"] as? [String: Any])
         #expect(searchData["guild_id"] as? String == "100")
         #expect(searchData["query"] as? String == "maya")
-        #expect((searchData["limit"] as? NSNumber)?.intValue == 20)
+        #expect((searchData["limit"] as? NSNumber)?.intValue == 100)
         #expect(searchData["presences"] as? Bool == true)
         #expect(Set(searchData.keys) == ["guild_id", "query", "limit", "presences"])
         await socket.push(gatewayMessage(
@@ -1669,7 +1669,33 @@ private struct BootstrapRequestScenario {
         ))
         let memberMatches = try await memberSearch.value
         #expect(memberMatches.map(\.user.displayName) == ["Maya", "Maya Bot"])
+        let indexedQuickSwitcherMembers =
+            await provider.currentQuickSwitcherGuildMemberUserIDs()
+        #expect(indexedQuickSwitcherMembers[GuildID(rawValue: 100)] == [
+            UserID(rawValue: 2), UserID(rawValue: 3), UserID(rawValue: 4),
+        ])
         #expect(RateLimitURLProtocol.memberSearchRequestCount == 0)
+
+        let memberRequestCount = await socket.sentPayloadCount(opcode: 8)
+        try await provider.requestQuickSwitcherMembers(
+            in: GuildID(rawValue: 100), query: "HEN", limit: 125
+        )
+        #expect(await socket.sentPayloadCount(opcode: 8) == memberRequestCount + 1)
+        let quickSwitcherGatewayData = try #require(await socket.sentPayload(opcode: 8))
+        let quickSwitcherGatewayPayload = try #require(
+            JSONSerialization.jsonObject(with: quickSwitcherGatewayData) as? [String: Any]
+        )
+        let quickSwitcherSearch = try #require(
+            quickSwitcherGatewayPayload["d"] as? [String: Any]
+        )
+        #expect(quickSwitcherSearch["guild_id"] as? [String] == ["100"])
+        #expect(quickSwitcherSearch["query"] as? String == "hen")
+        #expect((quickSwitcherSearch["limit"] as? NSNumber)?.intValue == 100)
+        #expect(quickSwitcherSearch["presences"] as? Bool == true)
+        #expect(quickSwitcherSearch["user_ids"] is NSNull)
+        #expect(Set(quickSwitcherSearch.keys) == [
+            "guild_id", "query", "limit", "presences", "user_ids",
+        ])
 
         await provider.updateClientAppState(isFocused: false)
         let clientAppState = await provider.clientAppStateForTesting()

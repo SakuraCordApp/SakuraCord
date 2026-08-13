@@ -463,21 +463,12 @@ final class AccountReadStateModel {
         let ordered = remoteReadStateOrder + entries.keys.filter {
             !remoteReadStateOrderIDs.contains($0)
         }
-        return ordered.enumerated().filter {
-            seen.insert($0.element).inserted
-                && mentionCounts[$0.element, default: 0] > 0
-        }.sorted { lhs, rhs in
-            let leftMessage = entries[lhs.element]?.latestUnreadMessageID
-                ?? entries[lhs.element]?.latestKnownMessageID
-            let rightMessage = entries[rhs.element]?.latestUnreadMessageID
-                ?? entries[rhs.element]?.latestKnownMessageID
-            if leftMessage != rightMessage {
-                return (leftMessage ?? MessageID(rawValue: 0))
-                    < (rightMessage ?? MessageID(rawValue: 0))
-            }
-            return lhs.offset < rhs.offset
-        }.map {
-            $0.element
+        // Discord's ReadStateStore maintains a Set whose insertion order is
+        // established by CONNECTION_OPEN and subsequent mention-count
+        // transitions. QuickSwitcherStore reverses that order when rendering;
+        // sorting by message snowflake changes otherwise equivalent results.
+        return ordered.filter {
+            seen.insert($0).inserted && mentionCounts[$0, default: 0] > 0
         }
     }
 
@@ -512,7 +503,9 @@ final class AccountReadStateModel {
         for entry in entries.values where entry.isAccessible {
             guard !isGuildResourceChannel(entry) else { continue }
             if entry.isUnread {
-                unreadChannelIDs.insert(entry.channelID)
+                if quickSwitcherUsesAllMessagesUnreadSetting(for: entry) {
+                    unreadChannelIDs.insert(entry.channelID)
+                }
                 let ancestorID = entry.parentID.flatMap { channelByID[$0]?.categoryID }
                 let threadMuted = entry.threadNotificationSettings.map {
                     ($0.isMuted
@@ -541,6 +534,61 @@ final class AccountReadStateModel {
                 mentionsByChannelID: mentionsByChannelID
             )
         )
+    }
+
+    /// Mirrors Discord's `UserGuildSettingsStore.resolveUnreadSetting` for
+    /// the `QuickSwitcherStore` unread-candidate predicate. This is narrower
+    /// than the sidebar's presentation policy: quick-switcher unread results
+    /// require the effective unread setting to be `ALL_MESSAGES`.
+    private func quickSwitcherUsesAllMessagesUnreadSetting(
+        for entry: Entry
+    ) -> Bool {
+        let isDirectMessage =
+            entry.kind == .directMessage || entry.kind == .groupDirectMessage
+        let isThread = channelByID[entry.channelID] == nil && entry.parentID != nil
+        if isDirectMessage || isThread || !usesNewNotifications {
+            return true
+        }
+
+        let guildSettings = settingsByGuild[entry.guildID]
+        let directOverride = guildSettings?.channelOverrides.last {
+            $0.channelID == entry.channelID
+        }
+        let parentOverride = entry.parentID.flatMap { parentID in
+            guildSettings?.channelOverrides.last { $0.channelID == parentID }
+        }
+
+        let unreadAllMessagesFlag: UInt64 = 1 << 10
+        let unreadOnlyMentionsFlag: UInt64 = 1 << 9
+        func unreadSetting(flags: UInt64) -> Bool? {
+            if flags & unreadAllMessagesFlag != 0 { return true }
+            if flags & unreadOnlyMentionsFlag != 0 { return false }
+            return nil
+        }
+
+        if let setting = unreadSetting(flags: directOverride?.flags ?? 0) {
+            return setting
+        }
+        if let setting = unreadSetting(flags: parentOverride?.flags ?? 0) {
+            return setting
+        }
+
+        let guildUnreadAllMessagesFlag: UInt64 = 1 << 11
+        let guildUnreadOnlyMentionsFlag: UInt64 = 1 << 12
+        let guildFlags = guildSettings?.flags ?? 0
+        if guildFlags & guildUnreadAllMessagesFlag != 0 { return true }
+        if guildFlags & guildUnreadOnlyMentionsFlag != 0 { return false }
+
+        let directLevel = directOverride?.messageNotifications ?? .inherit
+        if directLevel != .inherit { return directLevel == .allMessages }
+        let parentLevel = parentOverride?.messageNotifications ?? .inherit
+        if parentLevel != .inherit { return parentLevel == .allMessages }
+        let guildLevel = guildSettings?.messageNotifications ?? .inherit
+        if guildLevel != .inherit { return guildLevel == .allMessages }
+        let defaultLevel = entry.guildID.flatMap {
+            defaultNotificationLevelByGuild[$0]
+        } ?? .onlyMentions
+        return defaultLevel == .allMessages
     }
 
     private func reconciledSnapshotEntry(

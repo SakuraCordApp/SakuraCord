@@ -23,6 +23,7 @@ nonisolated struct ConversationPermissionBasis {
     let roleIDs: Set<RoleID>
     let resolvedBasePermissions: UInt64?
     let hasCurrentRoleIdentity: Bool
+    let currentUserIsPending: Bool
 }
 
 @Observable
@@ -588,7 +589,8 @@ final class AppModel {
                     roleIDs: roleIDs,
                     roles: roles
                 ),
-            hasCurrentRoleIdentity: storedRoleIDs != nil || member != nil
+            hasCurrentRoleIdentity: storedRoleIDs != nil || member != nil,
+            currentUserIsPending: member?.isPending == true
         )
     }
 

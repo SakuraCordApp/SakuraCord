@@ -108,6 +108,89 @@ struct AccountReadStateModelTests {
         #expect(model.remoteReadStateOrder == [channelID])
     }
 
+    @Test func `quick switcher mention projection preserves Ready insertion order`() {
+        let first = ChannelID(rawValue: 201)
+        let second = ChannelID(rawValue: 202)
+        let model = AccountReadStateModel()
+        model.reset(accountID: "account")
+        model.configure(
+            accountID: "account",
+            guilds: [Guild(id: guildID, name: "Guild")],
+            channels: [
+                Channel(id: first, guildID: guildID, name: "first"),
+                Channel(id: second, guildID: guildID, name: "second"),
+            ],
+            readStates: [
+                ChannelReadState(
+                    channelID: second,
+                    lastAcknowledgedMessageID: nil,
+                    mentionCount: 1
+                ),
+                ChannelReadState(
+                    channelID: first,
+                    lastAcknowledgedMessageID: nil,
+                    mentionCount: 1
+                ),
+            ],
+            notificationSettings: []
+        )
+
+        #expect(model.quickSwitcherProjection().mentionedChannelIDs == [second, first])
+    }
+
+    @Test func `quick switcher unread projection resolves notification hierarchy`() {
+        let model = makeModel(
+            latest: 20,
+            acknowledged: 10,
+            settings: GuildNotificationSettings(
+                guildID: guildID,
+                messageNotifications: .onlyMentions
+            )
+        )
+        #expect(model.quickSwitcherProjection().unreadChannelIDs.isEmpty)
+
+        model.apply(GuildNotificationSettings(
+            guildID: guildID,
+            messageNotifications: .onlyMentions,
+            channelOverrides: [
+                ChannelNotificationOverride(
+                    channelID: categoryID,
+                    flags: 1 << 10
+                )
+            ]
+        ))
+        #expect(model.quickSwitcherProjection().unreadChannelIDs == [channelID])
+
+        model.apply(GuildNotificationSettings(
+            guildID: guildID,
+            messageNotifications: .allMessages,
+            channelOverrides: [
+                ChannelNotificationOverride(
+                    channelID: channelID,
+                    flags: 1 << 9
+                )
+            ]
+        ))
+        #expect(model.quickSwitcherProjection().unreadChannelIDs.isEmpty)
+
+        model.apply(GuildNotificationSettings(
+            guildID: guildID,
+            messageNotifications: .onlyMentions,
+            flags: 1 << 11
+        ))
+        #expect(model.quickSwitcherProjection().unreadChannelIDs == [channelID])
+
+        model.apply(GuildNotificationSettings(
+            guildID: guildID,
+            messageNotifications: .allMessages,
+            flags: 1 << 12
+        ))
+        #expect(model.quickSwitcherProjection().unreadChannelIDs.isEmpty)
+
+        model.updateNotificationMode(usesNewNotifications: false)
+        #expect(model.quickSwitcherProjection().unreadChannelIDs == [channelID])
+    }
+
     @Test func `channels omitted from ready read state begin read and become unread live`() {
         let model = AccountReadStateModel()
         model.reset(accountID: "account")

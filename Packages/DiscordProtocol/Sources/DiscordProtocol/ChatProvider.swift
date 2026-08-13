@@ -26,6 +26,9 @@ public protocol ChatProvider: Sendable {
     ) async throws
     func resolveMembers(in guildID: GuildID, userIDs: [UserID]) async throws -> [Member]
     func searchMembers(in guildID: GuildID, query: String, limit: Int) async throws -> [Member]
+    func requestQuickSwitcherMembers(
+        in guildID: GuildID, query: String, limit: Int
+    ) async throws
     func roles(in guildID: GuildID) async throws -> [GuildRole]
     func members(withRole roleID: RoleID, in guildID: GuildID) async throws -> RoleMemberResult
     func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile
@@ -226,6 +229,10 @@ public extension ChatProvider {
                 || member.user.username.localizedCaseInsensitiveContains(normalized)
         }.prefix(max(1, limit)).map(\.self)
     }
+
+    func requestQuickSwitcherMembers(
+        in guildID: GuildID, query: String, limit: Int
+    ) async throws {}
 
     func roles(in guildID: GuildID) async throws -> [GuildRole] {
         var rolesByID: [RoleID: GuildRole] = [:]

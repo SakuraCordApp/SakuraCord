@@ -33,6 +33,16 @@ extension AppModel {
             value.quickSwitcherGuildMemberUserIDs = userIDsByGuildID
             snapshot = value
             forwardSearchSourceRevision &+= 1
+        case .quickSwitcherJoinedMemberIDsChanged(let userIDsByGuildID):
+            guard var value = snapshot else { return true }
+            value.quickSwitcherJoinedGuildMemberUserIDs = userIDsByGuildID
+            snapshot = value
+            forwardSearchSourceRevision &+= 1
+        case .quickSwitcherGuildMemberAliasesChanged(let aliasesByGuildID):
+            guard var value = snapshot else { return true }
+            value.quickSwitcherGuildMemberAliases = aliasesByGuildID
+            snapshot = value
+            forwardSearchSourceRevision &+= 1
         default:
             return false
         }
@@ -205,12 +215,11 @@ extension AppModel {
                 ? 0
                 : Int((nowMilliseconds - timestamp) / day)
             let weight = switch age {
-            case ...3: 100
-            case ...15: 70
-            case ...30: 50
-            case ...45: 30
-            case ...80: 10
-            default: 1
+            case 0: 100
+            case 1: 70
+            case 2 ... 3: 50
+            case 4 ... 6: 30
+            default: 10
             }
             result += weight
         }

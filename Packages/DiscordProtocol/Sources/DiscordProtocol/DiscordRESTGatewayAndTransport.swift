@@ -220,10 +220,13 @@ extension DiscordRESTProvider {
             op: 2,
             data: .object([
                 "token": .string(token),
-                // The official client adds bit 15 only for its private-channel
-                // obfuscation experiment. SakuraCord does not advertise that
-                // capability until it can reconcile obfuscated channels.
-                "capabilities": .number(Double(baseline.defaultCapabilities)),
+                // Bit 15 asks Ready Supplemental to carry prioritized private
+                // channels separately. Both the ordinary and lazy lists flow
+                // through the same recipient hydration, ordering, and Gateway
+                // reconciliation path below.
+                "capabilities": .number(
+                    Double(baseline.privateChannelObfuscationCapabilities)
+                ),
                 "properties": .object(clientMetadata.gatewayProperties()),
                 "client_state": .object(["guild_versions": .object([:])]),
             ])
@@ -463,6 +466,8 @@ extension DiscordRESTProvider {
         cachedMembers[guildID] = DiscordMemberStoreOrdering.merging(
             existing: cachedMembers[guildID] ?? [], updates: members
         )
+        quickSwitcherJoinedMemberIDsByGuildID[guildID, default: []]
+            .formUnion(members.lazy.filter { $0.isPending != true }.map(\.id))
     }
 
     func pendingRoleMemberRequestID(
@@ -599,6 +604,7 @@ extension DiscordRESTProvider {
                 cancelPendingRoleMemberRequests(error: CancellationError())
                 cachedMembers = [:]
                 quickSwitcherGuildMemberUserIDsByGuildID = [:]
+                quickSwitcherJoinedMemberIDsByGuildID = [:]
                 cachedMemberListItems = [:]
                 cachedMemberListGroups = [:]
                 selectedMemberListID = [:]
@@ -733,6 +739,8 @@ extension DiscordRESTProvider {
                     quickSwitcherGuildMemberUserIDsByGuildID[guildID] = Set(
                         ready.mergedMembers[index].compactMap { UserID($0.userID) }
                     )
+                    quickSwitcherJoinedMemberIDsByGuildID[guildID] =
+                        quickSwitcherGuildMemberUserIDsByGuildID[guildID]
                 }
                 let guilds = readyGuilds.compactMap {
                     $0.domain(currentUserID: currentUser?.id)
@@ -909,6 +917,10 @@ extension DiscordRESTProvider {
                         .formUnion(supplemental.mergedMembers[index].compactMap {
                             UserID($0.userID)
                         })
+                    quickSwitcherJoinedMemberIDsByGuildID[guildID, default: []]
+                        .formUnion(supplemental.mergedMembers[index].compactMap {
+                            UserID($0.userID)
+                        })
                 }
                 for guild in hydratedGuilds {
                     guard let guildID = GuildID(guild.id) else { continue }
@@ -1033,6 +1045,8 @@ extension DiscordRESTProvider {
                     cachedMembers[guildID] = DiscordMemberStoreOrdering.merging(
                         existing: cachedMembers[guildID] ?? [], updates: members
                     )
+                    quickSwitcherJoinedMemberIDsByGuildID[guildID, default: []]
+                        .formUnion(members.lazy.filter { $0.isPending != true }.map(\.id))
                     continuation?.yield(
                         .membersChanged(
                             guildID: guildID,
@@ -1141,6 +1155,10 @@ extension DiscordRESTProvider {
                 )
             else { return }
             quickSwitcherGuildMemberUserIDsByGuildID[guildID, default: []].insert(member.id)
+            if member.isPending != true {
+                quickSwitcherJoinedMemberIDsByGuildID[guildID, default: []]
+                    .insert(member.id)
+            }
             cacheLiveSearchUsers([update.member.user])
             publishMemberChange(member, guildID: guildID)
             publishUserSearchAliases()
@@ -1153,6 +1171,7 @@ extension DiscordRESTProvider {
                 let userID = UserID(deletion.user.id)
             else { return }
             quickSwitcherGuildMemberUserIDsByGuildID[guildID]?.remove(userID)
+            quickSwitcherJoinedMemberIDsByGuildID[guildID]?.remove(userID)
             removeMember(userID: userID, guildID: guildID)
             publishUserSearchAliases()
             persistForwardSearchPeopleCache()
@@ -1656,6 +1675,12 @@ extension DiscordRESTProvider {
                 )
             }
             mergeResolvedMembers(decodedMembers, guildID: guildID)
+            // The first-party SearchContext worker records membership from
+            // every GUILD_MEMBERS_CHUNK_BATCH result. Keep this index separate
+            // from the bounded visible-member cache so @ searches can filter
+            // a newly resolved user immediately within this live connection.
+            quickSwitcherGuildMemberUserIDsByGuildID[guildID, default: []]
+                .formUnion(decodedMembers.map(\.id))
             publishUserSearchAliases()
             let responseUserIDs = Set(decodedMembers.map(\.id)).union(
                 (chunk.notFound ?? []).compactMap(UserID.init)
@@ -1935,52 +1960,6 @@ extension DiscordRESTProvider {
                 groups: selectedMemberListGroups(guildID: guildID)
             )
         )
-    }
-
-    func publishMemberChange(_ member: Member, guildID: GuildID) {
-        cachedMembers[guildID] = DiscordMemberStoreOrdering.merging(
-            existing: cachedMembers[guildID] ?? [], updates: [member]
-        )
-        let members = cachedMembers[guildID] ?? []
-        continuation?.yield(
-            .membersChanged(
-                guildID: guildID,
-                members: members,
-                groups: selectedMemberListGroups(guildID: guildID)
-            )
-        )
-        if member.id == currentUser?.id {
-            continuation?.yield(
-                .currentUserRolesChanged(guildID: guildID, roleIDs: member.roleIDs)
-            )
-            if var guild = cachedGuilds[guildID] {
-                guild.currentUserPermissions = nil
-                cachedGuilds[guildID] = guild
-                continuation?.yield(.guildChanged(guild))
-            }
-        }
-    }
-
-    func removeMember(userID: UserID, guildID: GuildID) {
-        cachedMembers[guildID]?.removeAll { $0.id == userID }
-        let memberListIDs = cachedMemberListItems[guildID].map { Array($0.keys) } ?? []
-        for memberListID in memberListIDs {
-            cachedMemberListItems[guildID]?[memberListID]?.removeAll {
-                $0?.member?.user.id == userID.description
-            }
-        }
-        let members = cachedMembers[guildID] ?? []
-        continuation?.yield(
-            .membersChanged(
-                guildID: guildID,
-                members: members,
-                groups: selectedMemberListGroups(guildID: guildID)
-            )
-        )
-        if userID == currentUser?.id {
-            continuation?.yield(.currentUserRolesChanged(guildID: guildID, roleIDs: []))
-            clearCurrentUserPermissionSnapshot(guildID)
-        }
     }
 
 }

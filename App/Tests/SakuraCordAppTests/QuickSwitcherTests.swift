@@ -89,6 +89,7 @@ private struct QuickSwitcherFixture {
             query: query,
             context: QuickSwitcherSearchContext(
                 index: index,
+                userIndex: index,
                 guilds: guilds,
                 usageScores: usageScores,
                 history: history ?? [currentChannel.id, chatChannel.id, betaChannel.id],
@@ -98,6 +99,7 @@ private struct QuickSwitcherFixture {
                 searchableUserIDs: nil,
                 friendUserIDs: [henry.id, lena.id],
                 currentGuildMemberIDs: [currentUser.id, henry.id],
+                currentGuildLiveMemberIDs: [currentUser.id, henry.id],
                 unreadChannelIDs: unread,
                 mutedChannelIDs: muted,
                 mentionedChannelIDs: mentions,
@@ -117,7 +119,6 @@ private struct QuickSwitcherFixture {
             recentlyTalked: [fixture.lena.id, fixture.henry.id]
         ).map(\.id) == [
             .heading("mode-@"),
-            .destination(.user(fixture.lena.id)),
             .destination(.user(fixture.henry.id)),
         ]
     )
@@ -209,6 +210,94 @@ private struct QuickSwitcherFixture {
             "Missing expected result for \(query)"
         )
     }
+}
+
+@Test func `general search preserves Discord worker order for equal channel scores`() {
+    let guild = Guild(id: GuildID(rawValue: 1), name: "Guild")
+    let later = Channel(
+        id: ChannelID(rawValue: 101), guildID: guild.id,
+        name: "beta-later", kind: .text,
+        categoryID: ChannelID(rawValue: 201), position: 0, categoryPosition: 2
+    )
+    let earlierSecond = Channel(
+        id: ChannelID(rawValue: 102), guildID: guild.id,
+        name: "beta-second", kind: .text,
+        categoryID: ChannelID(rawValue: 200), position: 2, categoryPosition: 1
+    )
+    let earlierFirst = Channel(
+        id: ChannelID(rawValue: 103), guildID: guild.id,
+        name: "beta-first", kind: .text,
+        categoryID: ChannelID(rawValue: 200), position: 1, categoryPosition: 1
+    )
+    let channels = [later, earlierSecond, earlierFirst]
+    let index = ForwardDestinationSearchPolicy.makeIndex(
+        channels: channels,
+        channelStoreOrder: channels.map(\.id),
+        guilds: [guild.id: guild],
+        usageScores: [:],
+        searchableChannelIDs: Set(channels.map(\.id)),
+        eligibleChannelIDs: []
+    )
+    let results = QuickSwitcherSearchPolicy.results(
+        query: "beta",
+        context: QuickSwitcherSearchContext(
+            index: index,
+            userIndex: index,
+            guilds: [guild],
+            usageScores: [:],
+            history: [],
+            currentChannelID: nil,
+            currentGuildID: guild.id,
+            currentUserID: UserID(rawValue: 999),
+            searchableUserIDs: [],
+            friendUserIDs: [],
+            currentGuildMemberIDs: [],
+            currentGuildLiveMemberIDs: [],
+            unreadChannelIDs: [],
+            mutedChannelIDs: [],
+            mentionedChannelIDs: [],
+            draftChannelIDs: [],
+            recentlyTalkedUserIDs: []
+        )
+    )
+
+    #expect(results.map(\.id) == [
+        .destination(.channel(later.id)),
+        .destination(.channel(earlierSecond.id)),
+        .destination(.channel(earlierFirst.id)),
+    ])
+}
+
+@Test func `quick switcher searches all guild aliases held by user store`() {
+    let remoteAliasOnly = User(
+        id: UserID(rawValue: 10), username: "plain-user", displayName: "Plain User"
+    )
+    let currentAlias = User(
+        id: UserID(rawValue: 11), username: "other-user", displayName: "Other User"
+    )
+    let forwardingIndex = ForwardDestinationSearchPolicy.makeIndex(
+        channels: [],
+        users: [remoteAliasOnly, currentAlias],
+        userSearchAliasesByUserID: [remoteAliasOnly.id: ["developer"]],
+        guilds: [:],
+        usageScores: [:]
+    )
+    let quickSwitcherIndex = forwardingIndex.quickSwitcherUserIndex(
+        userSearchAliasesByUserID: [
+            remoteAliasOnly.id: ["developer"],
+            currentAlias.id: ["developer"],
+        ]
+    )
+
+    let matches = quickSwitcherIndex.scoredResults(
+        query: "dev",
+        categories: [.user],
+        limitPerCategory: 100,
+        requiresDestinationEligibility: false
+    )
+    #expect(matches.compactMap { $0.destination.userID } == [
+        remoteAliasOnly.id, currentAlias.id,
+    ])
 }
 
 @Test func `quick switcher selection switches cleanly between keyboard and pointer`() {

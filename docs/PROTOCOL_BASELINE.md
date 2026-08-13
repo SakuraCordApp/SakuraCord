@@ -587,11 +587,17 @@ the historical JSON/zlib and opcode-1 subset and has no 13, 37, 40, or 41.
 
 Current first-party Identify normally uses capability bitfield `1734653`; the
 clean account received `1767421` because the first-party
-`private_channel_obfuscation` experiment adds bit 15. SakuraCord deliberately
-does not advertise that dynamic bit until it implements the corresponding
-obfuscated-private-channel reconciliation. This is the remaining Gateway
-metadata difference and prevents requesting a payload shape the app cannot yet
-consume.
+`private_channel_obfuscation` experiment adds bit 15. As rechecked on 13 August
+2026, SakuraCord now advertises `1767421`: its existing Ready Supplemental path
+hydrates `lazy_private_channels` from the supplemental user table, merges them
+with ordinary private channels, applies the same last-message ordering, and
+reconciles subsequent channel/message Gateway events. Discord's public Gateway
+documentation does not define user-client capability bit 15. The current web
+bundle supplies the operational contract. Pinned Paicord declares capability
+bits only through 14 and 16 and leaves `ReadySupplemental` empty; pinned
+Swiftcord v1 has no corresponding capability or supplemental implementation.
+Their absence was treated as an explicit compatibility gap, not as evidence to
+omit the current first-party shape.
 
 ### Dispatch reconciliation
 
@@ -929,6 +935,24 @@ implementation records.
   implementation removes that invalid field, matches the first-party and
   Paicord request shape, and reconciles the observed nonce-less response by
   guild plus the returned and `not_found` user IDs.
+- Explicit quick-switcher `@` searches rank the account-wide local UserStore,
+  then opportunistically hydrate the selected guild. After a cancellable
+  debounce, one opcode-8 payload contains the selected guild as a one-element
+  `guild_id` array, the lowercased prefix in `query`, `limit:100`,
+  `presences:true`, and `user_ids:null`; it has no nonce.
+  Incoming `GUILD_MEMBERS_CHUNK` events immediately extend the session-local
+  user and per-guild nickname indexes, which re-rank the retained sheet without
+  blocking the keystroke path. Ordinary unmodified searches send nothing, and
+  no member-search result is restored from disk on relaunch. This was rechecked
+  on 14 August 2026 against the clean authenticated stable client. Three CDP
+  captures with uncached query strings each observed exactly one matching
+  Gateway frame 431–523 milliseconds after filling the field, with the shape
+  above and no REST request. Discord's public bot Gateway contract documents
+  one guild ID rather than the first-party client's single-element array.
+  Pinned Paicord models a single `GuildSnowflake` and has no account-wide
+  quick-switcher requester; pinned Swiftcord v1 has neither this request nor a
+  corresponding quick-switcher member search. Those absences were checked
+  explicitly and do not override current first-party behavior.
 - The channel member inspector always retains the official client's initial
   `0...99` member-list range, then adds only the 100-aligned blocks intersecting
   the visible rows plus half a viewport of prefetch on either side. A payload

@@ -310,7 +310,7 @@ func `passive initial channel selection does not contaminate forward history`() 
         recentUses: [now, now - day, now - 2 * day]
     )
 
-    #expect(AppModel.discordFrecencyScore(usage, nowMilliseconds: now) == 500)
+    #expect(AppModel.discordFrecencyScore(usage, nowMilliseconds: now) == 367)
     #expect(AppModel.discordFrecencyScore(
         DiscordFrecencyUsage(totalUses: 9, recentUses: []),
         nowMilliseconds: now
@@ -325,7 +325,7 @@ func `passive initial channel selection does not contaminate forward history`() 
         recentUses: [0, 1, 2, 3, 4, 6, 7, 80, 81].map { now - UInt64($0) * day }
     )
 
-    #expect(AppModel.discordFrecencyScore(usage, nowMilliseconds: now) == 621)
+    #expect(AppModel.discordFrecencyScore(usage, nowMilliseconds: now) == 360)
 }
 
 @Test func `persisted forward frecency replays total uses and the newest ten samples`() {
@@ -650,7 +650,32 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     #expect(results.contains { $0.id == .channel(group.id) })
 }
 
-@Test func `typed channel search keeps an exact match above a small frecency boost`() {
+@Test func `group DM fuzzy search applies Discord confusable normalization`() {
+    let recipient = User(
+        id: UserID(rawValue: 2),
+        username: "recipient",
+        displayName: "your ai slop bores me"
+    )
+    let group = Channel(
+        id: ChannelID(rawValue: 20), guildID: nil,
+        name: "unrelated group", hasExplicitName: true,
+        kind: .groupDirectMessage, recipients: [recipient]
+    )
+
+    let results = ForwardDestinationSearchPolicy.results(
+        query: "len",
+        channels: [group],
+        users: [recipient],
+        guilds: [:],
+        usageScores: [:]
+    )
+
+    // Discord's normalizer maps the final `m` in `me` to `rn`, making
+    // `len` an ordered fuzzy subsequence of `slop bores rne`.
+    #expect(results.contains { $0.id == .channel(group.id) })
+}
+
+@Test func `typed channel search gives a used prefix Discords full boost`() {
     let guild = Guild(id: GuildID(rawValue: 1), name: "Sakura Server")
     let exact = Channel(
         id: ChannelID(rawValue: 10), guildID: guild.id,
@@ -672,7 +697,28 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         usageScores: ["11": 100, "12": 94_700]
     )
 
-    #expect(results.compactMap(\.resolvedChannelID) == [exact.id, boostedPrefix.id])
+    #expect(results.compactMap(\.resolvedChannelID) == [boostedPrefix.id, exact.id])
+}
+
+@Test func `typed channel search gives every used channel Discords full internal boost`() {
+    let guild = Guild(id: GuildID(rawValue: 1), name: "Swiftcord")
+    let usedChannel = Channel(
+        id: ChannelID(rawValue: 10), guildID: guild.id,
+        name: "discordkit-github-events", kind: .text
+    )
+    let accountMaximum = Channel(
+        id: ChannelID(rawValue: 11), guildID: guild.id,
+        name: "unrelated", kind: .text
+    )
+
+    let results = ForwardDestinationSearchPolicy.results(
+        query: "cord",
+        channels: [usedChannel, accountMaximum],
+        guilds: [guild.id: guild],
+        usageScores: ["10": 200, "11": 655_000]
+    )
+
+    #expect(results.first?.resolvedChannelID == usedChannel.id)
 }
 
 @Test func `typed forward search includes missing DMs and caps each category separately`() {
@@ -1209,7 +1255,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     #expect(results.first?.detail == "bug-reports")
 }
 
-@Test func `joined threads retain their channel store insertion order`() {
+@Test func `joined threads follow ordinary ChannelStore records`() {
     let guild = Guild(id: GuildID(rawValue: 1), name: "SakuraCord")
     let first = Channel(
         id: ChannelID(rawValue: 10), guildID: guild.id,
@@ -1239,7 +1285,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     )
 
     #expect(results.map(\.id) == [
-        .channel(first.id), .channel(thread.id), .channel(last.id),
+        .channel(first.id), .channel(last.id), .channel(thread.id),
     ])
 }
 

@@ -1380,6 +1380,9 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
     public var globalDisplayName: String?
     public var activityText: String?
     public var customStatus: String?
+    /// Discord's membership-screening state. A pending member does not have
+    /// normal guild channel access even when role IDs are already present.
+    public var isPending: Bool?
     /// Absolute row index in Discord's virtualized guild member list. This is
     /// absent for DMs, fallback stores, and member lookups that are not backed
     /// by a `GUILD_MEMBER_LIST_UPDATE` range.
@@ -1402,6 +1405,7 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
         globalDisplayName: String? = nil,
         activityText: String? = nil,
         customStatus: String? = nil,
+        isPending: Bool? = nil,
         memberListIndex: Int? = nil
     ) {
         self.user = user
@@ -1416,6 +1420,7 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
         self.globalDisplayName = globalDisplayName
         self.activityText = activityText
         self.customStatus = customStatus
+        self.isPending = isPending
         self.memberListIndex = memberListIndex
     }
 
@@ -1432,6 +1437,7 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
         globalDisplayName: String? = nil,
         activityText: String? = nil,
         customStatus: String? = nil,
+        isPending: Bool? = nil,
         memberListIndex: Int? = nil
     ) {
         self.user = user
@@ -1446,6 +1452,7 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
         self.globalDisplayName = globalDisplayName
         self.activityText = activityText
         self.customStatus = customStatus
+        self.isPending = isPending
         self.memberListIndex = memberListIndex
     }
 
@@ -1725,6 +1732,8 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
     public var relationshipNicknamesByUserID: [UserID: String]
     public var userSearchAliasesByUserID: [UserID: [String]]
     public var quickSwitcherGuildMemberUserIDs: [GuildID: [UserID]]
+    public var quickSwitcherJoinedGuildMemberUserIDs: [GuildID: [UserID]]
+    public var quickSwitcherGuildMemberAliases: [GuildID: [UserID: String]]
     public var guilds: [Guild]
     public var guildRailItems: [GuildRailItem]
     public var forwardGuildStoreOrder: [GuildID]
@@ -1745,6 +1754,8 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
         relationshipNicknamesByUserID: [UserID: String] = [:],
         userSearchAliasesByUserID: [UserID: [String]] = [:],
         quickSwitcherGuildMemberUserIDs: [GuildID: [UserID]] = [:],
+        quickSwitcherJoinedGuildMemberUserIDs: [GuildID: [UserID]] = [:],
+        quickSwitcherGuildMemberAliases: [GuildID: [UserID: String]] = [:],
         guilds: [Guild],
         guildRailItems: [GuildRailItem]? = nil,
         forwardGuildStoreOrder: [GuildID]? = nil,
@@ -1764,6 +1775,8 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
         self.relationshipNicknamesByUserID = relationshipNicknamesByUserID
         self.userSearchAliasesByUserID = userSearchAliasesByUserID
         self.quickSwitcherGuildMemberUserIDs = quickSwitcherGuildMemberUserIDs
+        self.quickSwitcherJoinedGuildMemberUserIDs = quickSwitcherJoinedGuildMemberUserIDs
+        self.quickSwitcherGuildMemberAliases = quickSwitcherGuildMemberAliases
         self.guilds = guilds
         self.guildRailItems = guildRailItems ?? guilds.map { .guild($0.id) }
         self.forwardGuildStoreOrder = forwardGuildStoreOrder ?? guilds.map(\.id)
@@ -1782,6 +1795,8 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
         case relationshipNicknamesByUserID
         case userSearchAliasesByUserID
         case quickSwitcherGuildMemberUserIDs
+        case quickSwitcherJoinedGuildMemberUserIDs
+        case quickSwitcherGuildMemberAliases
         case guilds, guildRailItems, forwardGuildStoreOrder
         case channels, forwardChannelStoreOrder
         case threads, activeJoinedThreads
@@ -1809,6 +1824,16 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
         quickSwitcherGuildMemberUserIDs =
             try container.decodeIfPresent(
                 [GuildID: [UserID]].self, forKey: .quickSwitcherGuildMemberUserIDs
+            ) ?? [:]
+        quickSwitcherJoinedGuildMemberUserIDs =
+            try container.decodeIfPresent(
+                [GuildID: [UserID]].self,
+                forKey: .quickSwitcherJoinedGuildMemberUserIDs
+            ) ?? [:]
+        quickSwitcherGuildMemberAliases =
+            try container.decodeIfPresent(
+                [GuildID: [UserID: String]].self,
+                forKey: .quickSwitcherGuildMemberAliases
             ) ?? [:]
         guilds = try container.decode([Guild].self, forKey: .guilds)
         guildRailItems =
@@ -1850,6 +1875,14 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
         try container.encode(
             quickSwitcherGuildMemberUserIDs,
             forKey: .quickSwitcherGuildMemberUserIDs
+        )
+        try container.encode(
+            quickSwitcherJoinedGuildMemberUserIDs,
+            forKey: .quickSwitcherJoinedGuildMemberUserIDs
+        )
+        try container.encode(
+            quickSwitcherGuildMemberAliases,
+            forKey: .quickSwitcherGuildMemberAliases
         )
         try container.encode(guilds, forKey: .guilds)
         try container.encode(guildRailItems, forKey: .guildRailItems)
@@ -1930,45 +1963,5 @@ public struct VoiceConnectionInfo: Equatable, Sendable {
         self.sessionID = sessionID
         self.token = token
         self.endpoint = endpoint
-    }
-}
-
-public struct VoiceParticipantState: Equatable, Sendable {
-    public var userID: UserID
-    public var channelID: ChannelID?
-    public var guildID: GuildID?
-    public var sessionID: String
-    public var isMuted: Bool
-    public var isDeafened: Bool
-    public var isSelfMuted: Bool
-    public var isSelfDeafened: Bool
-    public var isSuppressed: Bool
-    public var isStreaming: Bool
-    public var isVideoEnabled: Bool
-
-    public init(
-        userID: UserID,
-        channelID: ChannelID?,
-        guildID: GuildID?,
-        sessionID: String,
-        isMuted: Bool = false,
-        isDeafened: Bool = false,
-        isSelfMuted: Bool = false,
-        isSelfDeafened: Bool = false,
-        isSuppressed: Bool = false,
-        isStreaming: Bool = false,
-        isVideoEnabled: Bool = false
-    ) {
-        self.userID = userID
-        self.channelID = channelID
-        self.guildID = guildID
-        self.sessionID = sessionID
-        self.isMuted = isMuted
-        self.isDeafened = isDeafened
-        self.isSelfMuted = isSelfMuted
-        self.isSelfDeafened = isSelfDeafened
-        self.isSuppressed = isSuppressed
-        self.isStreaming = isStreaming
-        self.isVideoEnabled = isVideoEnabled
     }
 }

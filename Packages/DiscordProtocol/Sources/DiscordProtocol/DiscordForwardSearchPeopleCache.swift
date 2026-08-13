@@ -8,36 +8,27 @@ nonisolated struct DiscordForwardSearchPeopleCache: Codable, Sendable {
         let nickname: String
     }
 
-    struct Membership: Codable, Hashable, Sendable {
-        let guildID: GuildID
-        let userID: UserID
-    }
-
-    static let currentVersion = 4
+    static let currentVersion = 5
     static let oldestSupportedVersion = 3
     static let maximumUsers = 10_000
     static let maximumAliases = 20_000
-    static let maximumMemberships = 50_000
 
     var version = currentVersion
     var users: [User]
     var aliases: [Alias]
-    var memberships: [Membership] = []
 
     private enum CodingKeys: String, CodingKey {
-        case version, users, aliases, memberships
+        case version, users, aliases
     }
 
     init(
         version: Int = currentVersion,
         users: [User],
-        aliases: [Alias],
-        memberships: [Membership] = []
+        aliases: [Alias]
     ) {
         self.version = version
         self.users = users
         self.aliases = aliases
-        self.memberships = memberships
     }
 
     init(from decoder: any Decoder) throws {
@@ -45,9 +36,6 @@ nonisolated struct DiscordForwardSearchPeopleCache: Codable, Sendable {
         version = try container.decode(Int.self, forKey: .version)
         users = try container.decode([User].self, forKey: .users)
         aliases = try container.decode([Alias].self, forKey: .aliases)
-        memberships = try container.decodeIfPresent(
-            [Membership].self, forKey: .memberships
-        ) ?? []
     }
 
     static func load(from url: URL) -> Self? {
@@ -92,12 +80,6 @@ extension DiscordRESTProvider {
             cachedForwardSearchAliasesByGuildID[alias.guildID, default: [:]][alias.userID] =
                 alias.nickname
         }
-        for membership in cache.memberships.suffix(
-            DiscordForwardSearchPeopleCache.maximumMemberships
-        ) {
-            quickSwitcherGuildMemberUserIDsByGuildID[membership.guildID, default: []]
-                .insert(membership.userID)
-        }
     }
 
     @discardableResult
@@ -119,6 +101,7 @@ extension DiscordRESTProvider {
 
     func cacheForwardSearchMessageAliases(_ messages: [Message]) {
         var changed = false
+        var quickSwitcherMembershipChanged = false
         for message in messages {
             guard let guildID = message.guildID else { continue }
             if cachedForwardSearchAliasesByGuildID[guildID] == nil {
@@ -127,6 +110,12 @@ extension DiscordRESTProvider {
             let relevantUserIDs = Set(
                 CollectionOfOne(message.author.id) + message.mentionedUsers.map(\.id)
             )
+            for userID in relevantUserIDs {
+                quickSwitcherMembershipChanged = quickSwitcherGuildMemberUserIDsByGuildID[
+                    guildID,
+                    default: []
+                ].insert(userID).inserted || quickSwitcherMembershipChanged
+            }
             let membersByID = Dictionary(
                 uniqueKeysWithValues: (cachedMembers[guildID] ?? []).map { ($0.id, $0) }
             )
@@ -144,9 +133,15 @@ extension DiscordRESTProvider {
                 }
             }
         }
-        guard changed else { return }
-        compactForwardSearchPeopleCacheIfNeeded()
-        persistForwardSearchPeopleCache()
+        if changed {
+            compactForwardSearchPeopleCacheIfNeeded()
+        }
+        if changed || quickSwitcherMembershipChanged {
+            publishUserSearchAliases()
+        }
+        if changed {
+            persistForwardSearchPeopleCache()
+        }
     }
 
     func persistForwardSearchPeopleCache() {
@@ -171,25 +166,9 @@ extension DiscordRESTProvider {
             }
             .sorted { $0.userID.rawValue < $1.userID.rawValue }
         }
-        var memberships: [DiscordForwardSearchPeopleCache.Membership] = []
-        var seenGuildIDs = Set<GuildID>()
-        for guildID in (gatewayGuildIDs
-            + quickSwitcherGuildMemberUserIDsByGuildID.keys.sorted())
-            where seenGuildIDs.insert(guildID).inserted
-        {
-            for userID in (quickSwitcherGuildMemberUserIDsByGuildID[guildID] ?? []).sorted() {
-                memberships.append(.init(guildID: guildID, userID: userID))
-            }
-        }
-        if memberships.count > DiscordForwardSearchPeopleCache.maximumMemberships {
-            memberships = Array(
-                memberships.suffix(DiscordForwardSearchPeopleCache.maximumMemberships)
-            )
-        }
         try? DiscordForwardSearchPeopleCache(
             users: users,
-            aliases: aliases,
-            memberships: memberships
+            aliases: aliases
         ).save(to: url)
     }
 
