@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 "$ROOT_DIR/script/code_quality.sh" check
 "$ROOT_DIR/script/test_release_metadata.sh"
+"$ROOT_DIR/script/test_debug_credentials_config.sh"
 node --test "$ROOT_DIR/script/release_automation.test.mjs"
 "$ROOT_DIR/script/test_release_tag_guard.sh"
 

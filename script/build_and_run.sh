@@ -7,6 +7,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 source "$ROOT_DIR/script/runtime.sh"
 # shellcheck source=release_metadata.sh
 source "$ROOT_DIR/script/release_metadata.sh"
+# shellcheck source=debug_credentials_config.sh
+source "$ROOT_DIR/script/debug_credentials_config.sh"
 
 case "$MODE" in
   package|package-release|run|--offline|--offline-long-server-list|--offline-forum-performance|--offline-chat-performance|--offline-chat-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-media-performance-autoscroll|--offline-incoming-private-call|--verify|--debug|--logs|--telemetry) ;;
@@ -38,16 +40,10 @@ if [[ "$UPDATES_ENABLED" != "0" && "$UPDATES_ENABLED" != "1" ]]; then
   echo "SAKURACORD_ENABLE_UPDATES must be 0 or 1." >&2
   exit 2
 fi
-INSECURE_DEBUG_CREDENTIALS="${SAKURACORD_INSECURE_DEBUG_CREDENTIALS:-0}"
-if [[ "$INSECURE_DEBUG_CREDENTIALS" != "0" && "$INSECURE_DEBUG_CREDENTIALS" != "1" ]]; then
-  echo "SAKURACORD_INSECURE_DEBUG_CREDENTIALS must be 0 or 1." >&2
-  exit 2
-fi
-if [[ "$INSECURE_DEBUG_CREDENTIALS" == "1" \
-  && ( "$MODE" == "package-release" || "$UPDATES_ENABLED" == "1" ) ]]; then
-  echo "Insecure debug credentials cannot be used for release or update-enabled packages." >&2
-  exit 2
-fi
+sakuracord_resolve_insecure_debug_credentials "$ROOT_DIR"
+sakuracord_apply_secure_release_credential_policy "$MODE" "$UPDATES_ENABLED"
+INSECURE_DEBUG_CREDENTIALS="$SAKURACORD_RESOLVED_INSECURE_DEBUG_CREDENTIALS"
+INSECURE_DEBUG_CREDENTIALS_SOURCE="$SAKURACORD_INSECURE_DEBUG_CREDENTIALS_SOURCE"
 if [[ "$UPDATES_ENABLED" == "1" ]]; then
   if [[ -z "${SPARKLE_ED_PUBLIC_KEY:-}" ]]; then
     echo "SPARKLE_ED_PUBLIC_KEY is required when production updates are enabled." >&2
@@ -94,6 +90,11 @@ cleanup() {
 trap cleanup EXIT
 
 sakuracord_print_identity
+if [[ "$INSECURE_DEBUG_CREDENTIALS" == "1" ]]; then
+  echo "Debug credentials: enabled ($INSECURE_DEBUG_CREDENTIALS_SOURCE)"
+else
+  echo "Debug credentials: disabled ($INSECURE_DEBUG_CREDENTIALS_SOURCE)"
+fi
 
 if [[ "$MODE" != "package" && "$MODE" != "package-release" ]]; then
   sakuracord_stop_scoped_app

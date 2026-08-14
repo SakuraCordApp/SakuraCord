@@ -169,38 +169,53 @@ for UI work, screenshots, and fixture-driven development.
 
 ### Insecure local credential mode (debug only)
 
-For temporary local work that must survive repeated ad-hoc rebuilds without
-Keychain prompts, opt into the explicitly insecure debug credential store:
+For local work that must survive repeated ad-hoc rebuilds without Keychain
+prompts, enable the persistent, explicitly insecure debug credential store once
+for this Git checkout:
 
 ```sh
-export SAKURACORD_INSECURE_DEBUG_CREDENTIALS=1
+./script/debug_credentials.sh enable
 ./script/build_and_run.sh run
 ```
 
-This is a build-time opt-in, so keep the variable set for every debug rebuild
-that should use local credentials. The first launch copies the existing
-credential from Keychain and can prompt once. A normal networking-enabled
-launch can then restore the authenticated session from the local copy. A launch
-with `SAKURACORD_DISABLE_DISCORD_NETWORK=1` may perform the migration, but stays
+The option is off by default and is stored as the boolean Git setting
+`sakuracord.insecureDebugCredentials` in the checkout's local `.git/config`, so
+it is never committed. Subsequent debug builds use it automatically. Run
+`./script/debug_credentials.sh status` to inspect it or
+`./script/debug_credentials.sh disable` to turn it off. An explicit
+`SAKURACORD_INSECURE_DEBUG_CREDENTIALS=0` or `1` overrides the repository setting
+for one build. Release and update-enabled packages always disable the repository
+preference; an explicit insecure environment override still fails those builds.
+
+The first enabled launch copies the existing credential from Keychain and can
+prompt once. A normal networking-enabled launch can then restore the
+authenticated session from the local copy. A launch with
+`SAKURACORD_DISABLE_DISCORD_NETWORK=1` may perform the migration, but stays
 signed out by design.
 
-The copied credential is an unencrypted mode-`0600` file under:
+Normal mode stores each account as a macOS Keychain generic-password item under
+service `dev.sakuracord.SakuraCord.session`, keyed by the Discord account ID and
+accessible only while this Mac is unlocked. Debug mode stores one file per
+account under:
 
 ```text
 ~/Library/Containers/dev.sakuracord.SakuraCord/Data/Library/Application Support/SakuraCord/InsecureDebugCredentials/
 ```
 
-Its parent directory is mode `0700`, and it is outside the Git checkout, but it
-is still readable by other processes running as the same macOS user and by
-local disk inspection. Never enable this mode on a shared or production
-machine, never copy that directory into the repository, and never attach its
-contents to logs or bug reports. Release and update-enabled packages reject the
-flag.
+Each `<account-id>.credential` file is unencrypted and mode `0600`; its parent
+directory is mode `0700`.
 
-When finished, unset `SAKURACORD_INSECURE_DEBUG_CREDENTIALS` to return to the
-normal Keychain store. The local copy is intentionally retained until you
-remove the `InsecureDebugCredentials` directory above, so do that after the
-debug session no longer needs to survive rebuilds.
+The directory is outside the Git checkout, but it is still readable by other
+processes running as the same macOS user and by local disk inspection. Never
+enable this mode on a shared or production machine, never copy that directory
+into the repository, and never attach its contents to logs or bug reports.
+
+When finished, run `./script/debug_credentials.sh disable` to return to the
+normal Keychain store while retaining the local copy. Run
+`./script/debug_credentials.sh delete` with SakuraCord closed to disable the
+mode and delete all local insecure credential files. The delete command never
+changes credentials stored in Keychain and preserves unexpected files rather
+than recursively deleting the directory.
 
 <details>
   <summary><strong>More development commands</strong></summary>
