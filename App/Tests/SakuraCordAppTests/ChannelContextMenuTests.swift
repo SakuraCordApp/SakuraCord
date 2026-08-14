@@ -434,13 +434,13 @@ import Testing
     #expect(model.channelNotificationOverride(for: child) == nil)
 
     model.setCategoryCollapsed(
-        false,
+        true,
         guildID: guildID,
         categoryID: categoryID
     )
     #expect(await eventuallyChannelMenu {
         await provider.categoryNotificationRequests.count == 3
-            && !model.isCategoryCollapsed(
+            && model.isCategoryCollapsed(
                 guildID: guildID,
                 categoryID: categoryID
             )
@@ -450,7 +450,43 @@ import Testing
     #expect(requests[0].level == .allMessages)
     #expect(requests[1].isMuted == true)
     #expect(requests[1].isCollapsed == nil)
-    #expect(requests[2].isCollapsed == false)
+    #expect(requests[2].isCollapsed == true)
+}
+
+@MainActor
+@Test func `category collapse is optimistic and coalesces rapid changes`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let child = try #require(
+        model.snapshot?.channels.first {
+            $0.guildID == GuildID(rawValue: 100) && $0.categoryID != nil
+        }
+    )
+    let guildID = try #require(child.guildID)
+    let categoryID = try #require(child.categoryID)
+    await provider.suspendCategoryCollapsedUpdates()
+
+    model.setCategoryCollapsed(true, guildID: guildID, categoryID: categoryID)
+    #expect(model.isCategoryCollapsed(guildID: guildID, categoryID: categoryID))
+    #expect(await eventuallyChannelMenu {
+        await provider.categoryNotificationRequests.count == 1
+    })
+
+    model.setCategoryCollapsed(false, guildID: guildID, categoryID: categoryID)
+    model.setCategoryCollapsed(true, guildID: guildID, categoryID: categoryID)
+    model.setCategoryCollapsed(false, guildID: guildID, categoryID: categoryID)
+    #expect(!model.isCategoryCollapsed(guildID: guildID, categoryID: categoryID))
+    #expect(await provider.categoryNotificationRequests.count == 1)
+
+    await provider.resumeCategoryCollapsedUpdates()
+    #expect(await eventuallyChannelMenu {
+        let requests = await provider.categoryNotificationRequests
+        return requests.count == 2
+            && requests.map(\.isCollapsed) == [true, false]
+            && !model.isChannelNotificationMutationPending(categoryID)
+            && !model.isCategoryCollapsed(guildID: guildID, categoryID: categoryID)
+    })
 }
 
 @MainActor

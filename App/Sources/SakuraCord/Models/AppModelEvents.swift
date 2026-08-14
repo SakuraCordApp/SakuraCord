@@ -87,6 +87,10 @@ extension AppModel {
         guildNotificationMutationTasks.removeAll()
         channelNotificationMutationTasks.values.forEach { $0.cancel() }
         channelNotificationMutationTasks.removeAll()
+        categoryCollapseMutationTasks.values.forEach { $0.cancel() }
+        categoryCollapseMutationTasks.removeAll()
+        categoryCollapseMutationStates.removeAll()
+        optimisticCategoryCollapsedByID.removeAll()
         forumNotificationMutationGeneration &+= 1
         forumNotificationMutationTasks.values.forEach { $0.cancel() }
         forumNotificationMutationTasks.removeAll()

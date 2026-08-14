@@ -1817,6 +1817,7 @@ extension AppModel {
 
     func isChannelNotificationMutationPending(_ channelID: ChannelID) -> Bool {
         channelNotificationMutationTasks[channelID] != nil
+            || categoryCollapseMutationTasks[channelID] != nil
     }
 
     func guildNotificationSettings(for guild: Guild) -> GuildNotificationSettings {

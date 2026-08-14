@@ -116,6 +116,12 @@ final class AppModel {
         var lastViewed: Int
     }
 
+    struct CategoryCollapseMutationState {
+        var guildID: GuildID
+        var confirmedCollapsed: Bool
+        var desiredCollapsed: Bool
+    }
+
     var snapshot: BootstrapSnapshot?
     var serverRailGuildsByID: [GuildID: Guild] = [:]
     var serverRailItems: [GuildRailItem] = [] {
@@ -1097,6 +1103,11 @@ final class AppModel {
         [GuildID: Task<Void, Never>] = [:]
     @ObservationIgnored var channelNotificationMutationTasks:
         [ChannelID: Task<Void, Never>] = [:]
+    @ObservationIgnored var categoryCollapseMutationTasks:
+        [ChannelID: Task<Void, Never>] = [:]
+    @ObservationIgnored var categoryCollapseMutationStates:
+        [ChannelID: CategoryCollapseMutationState] = [:]
+    var optimisticCategoryCollapsedByID: [ChannelID: Bool] = [:]
     @ObservationIgnored var channelNotificationMutationGeneration = 0
     @ObservationIgnored var forumNotificationMutationTasks:
         [ChannelID: Task<Void, Never>] = [:]

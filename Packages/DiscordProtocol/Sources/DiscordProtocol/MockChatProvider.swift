@@ -56,6 +56,8 @@ public actor MockChatProvider: ChatProvider {
     }
 
     public private(set) var categoryNotificationRequests: [CategoryNotificationRequest] = []
+    private var categoryCollapsedUpdatesAreSuspended = false
+    private var categoryCollapsedUpdateWaiters: [CheckedContinuation<Void, Never>] = []
     public struct ThreadNotificationRequest: Equatable, Sendable {
         public var threadID: ChannelID
         public var level: MessageNotificationLevel?
@@ -370,6 +372,24 @@ public actor MockChatProvider: ChatProvider {
                 isCollapsed: isCollapsed
             )
         )
+        if categoryCollapsedUpdatesAreSuspended {
+            await withCheckedContinuation { continuation in
+                categoryCollapsedUpdateWaiters.append(continuation)
+            }
+        }
+    }
+
+    public func suspendCategoryCollapsedUpdates() {
+        categoryCollapsedUpdatesAreSuspended = true
+    }
+
+    public func resumeCategoryCollapsedUpdates() {
+        categoryCollapsedUpdatesAreSuspended = false
+        let waiters = categoryCollapsedUpdateWaiters
+        categoryCollapsedUpdateWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
     }
 
     public func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {

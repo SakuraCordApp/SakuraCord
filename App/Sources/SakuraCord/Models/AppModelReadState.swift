@@ -737,49 +737,79 @@ extension AppModel {
     func setCategoryCollapsed(
         _ isCollapsed: Bool,
         guildID: GuildID,
-        categoryID: ChannelID,
-        completion: @escaping @MainActor (Bool) -> Void = { _ in }
+        categoryID: ChannelID
     ) {
-        guard channelNotificationMutationTasks[categoryID] == nil else {
-            completion(false)
+        optimisticCategoryCollapsedByID[categoryID] = isCollapsed
+
+        if var mutation = categoryCollapseMutationStates[categoryID] {
+            mutation.desiredCollapsed = isCollapsed
+            categoryCollapseMutationStates[categoryID] = mutation
             return
         }
+
+        categoryCollapseMutationStates[categoryID] = CategoryCollapseMutationState(
+            guildID: guildID,
+            confirmedCollapsed: readState.isCategoryCollapsed(
+                categoryID: categoryID,
+                guildID: guildID
+            ),
+            desiredCollapsed: isCollapsed
+        )
         let generation = channelNotificationMutationGeneration
         let session = accountSession()
         let activeProvider = session.provider
-        channelNotificationMutationTasks[categoryID] = Task { [weak self] in
-            var accepted = false
-            do {
-                try await activeProvider.updateCategoryCollapsed(
-                    guildID: guildID,
-                    categoryID: categoryID,
-                    isCollapsed: isCollapsed
-                )
-                guard let self,
-                      self.isCurrentAccountSession(session),
-                      generation == self.channelNotificationMutationGeneration
-                else { return }
-                self.updateLocalChannelNotificationOverride(
-                    guildID: guildID,
-                    channelID: categoryID
-                ) { $0.isCollapsed = isCollapsed }
-                accepted = true
-            } catch is CancellationError {
-                return
-            } catch {
-                guard let self,
-                      self.isCurrentAccountSession(session),
-                      generation == self.channelNotificationMutationGeneration
-                else { return }
-                self.errorMessage = "Discord did not accept the category collapse setting."
-            }
-            guard let self,
+        categoryCollapseMutationTasks[categoryID] = Task { [weak self] in
+            while let self,
                   self.isCurrentAccountSession(session),
-                  generation == self.channelNotificationMutationGeneration
-            else { return }
-            self.channelNotificationMutationTasks[categoryID] = nil
-            completion(accepted)
+                  generation == self.channelNotificationMutationGeneration,
+                  let mutation = self.categoryCollapseMutationStates[categoryID]
+            {
+                if mutation.desiredCollapsed == mutation.confirmedCollapsed {
+                    self.finishCategoryCollapseMutation(categoryID: categoryID)
+                    return
+                }
+
+                let sentValue = mutation.desiredCollapsed
+                do {
+                    try await activeProvider.updateCategoryCollapsed(
+                        guildID: mutation.guildID,
+                        categoryID: categoryID,
+                        isCollapsed: sentValue
+                    )
+                } catch is CancellationError {
+                    return
+                } catch {
+                    guard self.isCurrentAccountSession(session),
+                          generation == self.channelNotificationMutationGeneration,
+                          let current = self.categoryCollapseMutationStates[categoryID]
+                    else { return }
+                    self.updateLocalChannelNotificationOverride(
+                        guildID: current.guildID,
+                        channelID: categoryID
+                    ) { $0.isCollapsed = current.confirmedCollapsed }
+                    self.errorMessage = "Discord did not accept the category collapse setting."
+                    self.finishCategoryCollapseMutation(categoryID: categoryID)
+                    return
+                }
+
+                guard self.isCurrentAccountSession(session),
+                      generation == self.channelNotificationMutationGeneration,
+                      var current = self.categoryCollapseMutationStates[categoryID]
+                else { return }
+                current.confirmedCollapsed = sentValue
+                self.categoryCollapseMutationStates[categoryID] = current
+                self.updateLocalChannelNotificationOverride(
+                    guildID: current.guildID,
+                    channelID: categoryID
+                ) { $0.isCollapsed = sentValue }
+            }
         }
+    }
+
+    private func finishCategoryCollapseMutation(categoryID: ChannelID) {
+        categoryCollapseMutationStates[categoryID] = nil
+        optimisticCategoryCollapsedByID[categoryID] = nil
+        categoryCollapseMutationTasks[categoryID] = nil
     }
 
     func setForumPostNotificationLevel(

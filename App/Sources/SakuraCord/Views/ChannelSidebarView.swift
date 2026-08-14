@@ -462,7 +462,6 @@ private struct ChannelGroupRows: View {
                    let guildID = group.guildID
                 {
                     Button {
-                        let previousValue = isExpanded
                         let nextValue = !isExpanded
                         withAnimation(.snappy(duration: 0.18)) {
                             isExpanded = nextValue
@@ -471,12 +470,7 @@ private struct ChannelGroupRows: View {
                             !nextValue,
                             guildID: guildID,
                             categoryID: categoryID
-                        ) { accepted in
-                            guard !accepted else { return }
-                            withAnimation(.snappy(duration: 0.18)) {
-                                isExpanded = previousValue
-                            }
-                        }
+                        )
                     } label: {
                         HStack(spacing: 5) {
                             Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
@@ -489,9 +483,6 @@ private struct ChannelGroupRows: View {
                     }
                     .buttonStyle(.plain)
                     .help(isExpanded ? "Collapse \(name)" : "Expand \(name)")
-                    .disabled(
-                        model.isChannelNotificationMutationPending(categoryID)
-                    )
                     .overlay {
                         ChannelContextMenuBridge(
                             subject: .category,
@@ -550,15 +541,15 @@ private struct ChannelGroupRows: View {
                 }
             }
         }
-        .onChange(of: shouldCollapseFromServer) { _, shouldCollapse in
-            guard shouldCollapse, isExpanded else { return }
+        .onChange(of: isCollapsedInModel) { _, isCollapsed in
+            guard isExpanded == isCollapsed else { return }
             withAnimation(.snappy(duration: 0.18)) {
-                isExpanded = false
+                isExpanded = !isCollapsed
             }
         }
     }
 
-    private var shouldCollapseFromServer: Bool {
+    private var isCollapsedInModel: Bool {
         guard let categoryID = group.categoryID,
               let guildID = group.guildID
         else { return false }

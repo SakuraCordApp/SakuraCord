@@ -1117,9 +1117,13 @@ capture was used for this recheck.
   without making those child channel overrides muted, suppressing their own
   unread styling, or inferring a collapsed presentation. Unread children of a
   muted category remain visible as unread inside the server but do not produce
-  the server-rail unread marker. Manual category collapse/expand sends only the
-  `collapsed` field, and the sidebar follows that authoritative field
-  independently from mute state. Ready and `USER_GUILD_SETTINGS_UPDATE` decode all four fields
+  the server-rail unread marker. Manual category collapse/expand updates the
+  sidebar optimistically and sends only the `collapsed` field. SakuraCord keeps
+  at most one collapse PATCH in flight per category; further toggles replace a
+  single queued desired value, so only the latest differing state is sent after
+  the in-flight request. A rejected request restores the last confirmed state.
+  The sidebar otherwise follows the authoritative field independently from
+  mute state. Ready and `USER_GUILD_SETTINGS_UPDATE` decode all four fields
   from the category override. “Mark Category as Read” sends only unread,
   accessible direct children and joined threads whose parent belongs to the
   category through the existing `POST /read-states/ack-bulk` batching contract.
