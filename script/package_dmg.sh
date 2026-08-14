@@ -2,15 +2,10 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-# shellcheck source=worktree_runtime.sh
-source "$ROOT_DIR/script/worktree_runtime.sh"
+# shellcheck source=runtime.sh
+source "$ROOT_DIR/script/runtime.sh"
 # shellcheck source=release_metadata.sh
 source "$ROOT_DIR/script/release_metadata.sh"
-
-if [[ "$SAKURACORD_IS_MAIN_WORKTREE" -ne 1 ]]; then
-  echo "Release DMGs must be built from the main checkout, not a linked worktree." >&2
-  exit 2
-fi
 
 DMGBUILD="${DMGBUILD:-dmgbuild}"
 RELEASE_VERSION="$(sakuracord_release_version "$ROOT_DIR")"

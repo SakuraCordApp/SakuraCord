@@ -2,14 +2,12 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-# shellcheck source=worktree_runtime.sh
-source "$ROOT_DIR/script/worktree_runtime.sh"
+# shellcheck source=runtime.sh
+source "$ROOT_DIR/script/runtime.sh"
 
 TARGET="${1:-app}"
 sakuracord_acquire_operation_lock
 trap sakuracord_release_operation_lock EXIT
-
-sakuracord_print_identity
 
 run_tests() {
   local package_path="$1"

@@ -1363,9 +1363,7 @@ fixture. Such an issue does not require a performative offline reproduction or
 offline attempt. Before an authenticated check is run, the exact API path must
 be re-audited, mocked contract coverage must be added when it can meaningfully
 exercise that path, and the user must grant fresh permission for the specific
-action and bounded request sequence described in `AGENTS.md`. Agent-run
-authenticated checks use the canonical main checkout, never a linked-worktree
-live override.
+action and bounded request sequence described in `AGENTS.md`.
 
 When a production network contract changes:
 

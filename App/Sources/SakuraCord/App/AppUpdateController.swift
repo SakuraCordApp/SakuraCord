@@ -62,7 +62,7 @@ final class AppUpdateController: ObservableObject {
 
     var availabilityDescription: String {
         if !isEnabled {
-            return "Updates are unavailable in development, linked-worktree, and offline builds."
+            return "Updates are unavailable in development and offline builds."
         }
         if canCheckForUpdates {
             return "SakuraCord is ready to check its signed update feed."

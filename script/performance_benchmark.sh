@@ -2,8 +2,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-runtime="$("$root/script/worktree_runtime.sh")"
-checkout="$(sed -n 's/^Checkout:  *//p' <<<"$runtime")"
+runtime="$("$root/script/runtime.sh")"
 app="$(sed -n 's/^App:  *//p' <<<"$runtime")"
 bundle_id="$(sed -n 's/^Bundle ID:  *//p' <<<"$runtime")"
 executable="${SAKURACORD_PERFORMANCE_EXECUTABLE_OVERRIDE:-$app/Contents/MacOS/SakuraCord}"
@@ -63,13 +62,6 @@ usage() {
 #       number is private and is not the same measurement as top's power column.
 #
 # Artifacts are written beneath .build/performance and remain untracked.
-
-require_main_checkout() {
-    if [[ "$checkout" != main* ]]; then
-        printf '%s\n' "Authenticated benchmarks are restricted to the canonical checkout." >&2
-        exit 2
-    fi
-}
 
 running_pid() {
     local candidate actual
@@ -215,7 +207,6 @@ write_recording_metadata() {
         printf 'source_state_sha256\t%s\n' "$source_state_hash"
         printf 'build_source_state_sha256\t%s\n' "$build_source_state_hash"
         printf 'executable_sha256\t%s\n' "$executable_hash"
-        printf 'checkout\t%s\n' "$checkout"
         printf 'app\t%s\n' "$app"
         printf 'macos\t%s\n' "$(sw_vers -productVersion)"
         printf 'build\t%s\n' "$(sw_vers -buildVersion)"
@@ -1010,29 +1001,24 @@ RUBY
 command="${1:-}"
 case "$command" in
     build)
-        require_main_checkout
         cd "$root"
         SAKURACORD_INSECURE_DEBUG_CREDENTIALS=1 \
             ./script/build_and_run.sh run
         record_build_provenance
         ;;
     record)
-        require_main_checkout
         scenario="${2:-active}"
         seconds="${3:-30}"
         template="${4:-Time Profiler}"
         record_running_app "$scenario" "$seconds" "$template"
         ;;
     startup)
-        require_main_checkout
         record_startup "${2:-12}"
         ;;
     authenticated-scroll)
-        require_main_checkout
         record_authenticated_scroll "${2:-35}"
         ;;
     authenticated-member-list-scroll)
-        require_main_checkout
         record_authenticated_member_list_scroll "${2:-70}"
         ;;
     snapshot)

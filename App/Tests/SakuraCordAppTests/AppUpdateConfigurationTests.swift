@@ -17,11 +17,11 @@ func productionUpdateMetadataEnablesCanonicalBundle() {
     #expect(AppUpdateConfiguration.scheduledCheckInterval == 21_600)
 }
 
-@Test("linked-worktree and developer bundles cannot enable production updates")
+@Test("noncanonical developer bundles cannot enable production updates")
 func noncanonicalBundlesCannotEnableUpdates() {
     let configuration = AppUpdateConfiguration(
         infoDictionary: productionUpdateInfo(),
-        bundleIdentifier: "dev.sakuracord.SakuraCord.worktree.example"
+        bundleIdentifier: "dev.example.SakuraCord"
     )
 
     #expect(!configuration.isEnabled)

@@ -12,7 +12,6 @@ planned work and progress belong in the canonical roadmap service.
 | [Protocol baseline](PROTOCOL_BASELINE.md) | Current SakuraCord network contracts, safety rules, capability gates, and dated protocol evidence. |
 | [GitHub release notes style](RELEASE_NOTES_STYLE.md) | Evidence, layout, wording, and review rules for detailed GitHub release notes. |
 | [Discord release announcement style](DISCORD_RELEASE_ANNOUNCEMENTS_STYLE.md) | Concise user-facing announcement structure and generated Discord framing. |
-| [Linked worktrees](PARALLEL_WORKTREES.md) | Conditional isolation workflow for actual linked Codex worktrees and concurrent writers. |
 | [Third-party notices](THIRD_PARTY_NOTICES.md) | Attribution and license notices that must remain with the repository. |
 
 The root [README](../README.md) is the public project entry point.

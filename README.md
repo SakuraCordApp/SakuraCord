@@ -209,9 +209,9 @@ debug session no longer needs to survive rebuilds.
   | `./script/build_and_run.sh --offline-incoming-private-call` | Open the incoming direct-message call fixture. |
   | `./script/build_and_run.sh --verify` | Build the app bundle, launch it offline, and verify the scoped process. |
   | `./script/build_and_run.sh package` | Stage an ad-hoc signed debug app without launching it. |
-  | `./script/worktree_test.sh protocol` | Run the protocol package tests. |
-  | `./script/worktree_test.sh app` | Run the application package tests. |
-  | `./script/worktree_test.sh all` | Run the configured first-party package and application test matrix. |
+  | `./script/test.sh protocol` | Run the protocol package tests. |
+  | `./script/test.sh app` | Run the application package tests. |
+  | `./script/test.sh all` | Run the configured first-party package and application test matrix. |
   | `./script/code_quality.sh check` | Run the complete pinned SwiftFormat and SwiftLint policy used by CI and both Git hooks. |
   | `./script/code_quality.sh fix --staged` | Format only staged Swift files and re-stage them; refuses files with additional unstaged edits. |
   | `./script/code_quality.sh fix --files App/Sources/Example.swift` | Format only explicitly selected tracked Swift files. |
@@ -240,16 +240,13 @@ Packages/
 Brand/                      canonical logos, banners, and brand metadata
 Config/                     application entitlements
 docs/                       canonical architecture, protocol, and workflow guides
-script/                     build, package, quality, test, and worktree entrypoints
+script/                     build, package, quality, and test entrypoints
 ```
 
 SwiftPM manifests are the build source of truth; `SakuraCord.xcworkspace` is a
 convenience entry point. Start with the [documentation index](docs/README.md),
 then use the [architecture guide](docs/ARCHITECTURE.md) or
-[protocol baseline](docs/PROTOCOL_BASELINE.md) for deeper work. Contributors
-using actual linked checkouts should read the
-[linked-worktree workflow](docs/PARALLEL_WORKTREES.md) before starting parallel
-builds.
+[protocol baseline](docs/PROTOCOL_BASELINE.md) for deeper work.
 
 ## Releases and development
 
@@ -353,8 +350,8 @@ when the private and public keys do not match the packaged app; or when appcast,
 bundle, URL, version, or nested-signature validation fails. Discord is
 deliberately last: a Discord credential or permission failure leaves the
 already verified GitHub Release intact, and a manual retry resumes from its
-committed copy. Local, debug, and linked-worktree packages do not embed the
-production feed or public key and never perform update checks.
+committed copy. Local and debug packages do not embed the production feed or
+public key and never perform update checks.
 
 Canonical releases check the signed feed every six hours while SakuraCord is
 running and after launch when a check is overdue. Users can change automatic
@@ -394,7 +391,7 @@ Before proposing a change:
 ```sh
 git diff --check
 ./script/code_quality.sh check
-./script/worktree_test.sh all
+./script/test.sh all
 ./script/ci.sh
 ```
 
