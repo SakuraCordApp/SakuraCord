@@ -1361,13 +1361,20 @@ Every protocol contract that can be represented faithfully must be covered by
 mocked transports, sanitized fixtures, deterministic clocks, request-contract
 tests, and request-budget tests with Discord networking disabled.
 
-An authenticated check is a narrow exception only when the defect genuinely
-depends on authenticated or server-issued state that cannot be established in a
-fixture. Such an issue does not require a performative offline reproduction or
-offline attempt. Before an authenticated check is run, the exact API path must
-be re-audited, mocked contract coverage must be added when it can meaningfully
-exercise that path, and the user must grant fresh permission for the specific
-action and bounded request sequence described in `AGENTS.md`.
+For work that is not exclusively UI, a read-only authenticated verification
+pass against a configured session is encouraged when it can exercise the
+changed behavior. It complements rather than replaces deterministic coverage.
+Connection and session-maintenance traffic, reading existing state, navigation,
+and sanitized diagnostics are allowed. Agent-run verification must not
+deliberately mutate remote account state or content, including sending, editing,
+or deleting messages; creating DMs; adding reactions; changing settings;
+joining or leaving; moderation actions; calls; or login and challenge flows.
+
+Account-mutating live verification requires an explicit user request for the
+specific bounded action. Re-audit the exact API path and add meaningful mocked
+contract coverage before performing it. If no configured authenticated session
+is available, report that the live pass was not performed; do not extract or
+copy a credential to create one.
 
 When a production network contract changes:
 

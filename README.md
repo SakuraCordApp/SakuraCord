@@ -151,15 +151,21 @@ versions, cached under the ignored `.build/` directory. Existing SwiftFormat
 drift and every SwiftLint violation are rejected under the checked-in strict
 policy.
 
-When you deliberately want to open the normal app:
+For a read-only authenticated verification pass, open the normal app:
 
 ```sh
 ./script/build_and_run.sh run
 ```
 
-That launch can restore an existing SakuraCord session from Keychain. The
-offline command never contacts Discord and is the right starting point for UI
-work, screenshots, and fixture-driven development.
+That launch can restore an existing SakuraCord session from Keychain. For work
+that is not exclusively UI, a read-only authenticated pass is encouraged when
+it can exercise the changed behavior. Connection and session-maintenance
+traffic plus observation of existing state are allowed; agent-run verification
+must not deliberately mutate remote account state or content. Account-mutating
+verification requires an explicit user request for the specific bounded action.
+
+The offline command never contacts Discord and remains the right starting point
+for UI work, screenshots, and fixture-driven development.
 
 ### Insecure local credential mode (debug only)
 
