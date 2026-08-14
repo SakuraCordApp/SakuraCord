@@ -1116,6 +1116,142 @@ func `inline rich tokens inherit their enclosing spoiler`() {
     )
 }
 
+@Test func `search result menu exposes only Discord search actions`() {
+    #expect(
+        NativeTimelineMessageMenuPolicy.entries(
+            canEdit: true,
+            canRetry: true,
+            canReply: true,
+            canForward: true,
+            context: .searchResult
+        ) == [
+            .action(
+                .jumpToMessage,
+                title: "Jump to Message",
+                systemImage: NativeTimelineSearchResultPresentation
+                    .jumpToMessageSystemImage
+            ),
+            .action(
+                .markUnread,
+                title: "Mark Unread",
+                systemImage: "envelope.badge"
+            ),
+            .separator,
+            .action(
+                .copyText,
+                title: "Copy Text",
+                systemImage: "doc.on.doc"
+            ),
+            .action(
+                .copyLink,
+                title: "Copy Link",
+                systemImage: "link"
+            ),
+            .action(
+                .copyMessageID,
+                title: "Copy Message ID",
+                systemImage: "number.square.fill"
+            ),
+            .action(
+                .copyAuthorID,
+                title: "Copy Message Author ID",
+                systemImage: "number.square.fill"
+            ),
+            .separator,
+            .action(
+                .deleteMessage,
+                title: "Delete Message",
+                systemImage: "trash",
+                isDestructive: true
+            ),
+        ]
+    )
+
+    #expect(
+        NativeTimelineMessageMenuPolicy.entries(
+            canEdit: false,
+            canRetry: true,
+            canReply: true,
+            canForward: true,
+            context: .searchResult
+        ) == [
+            .action(
+                .jumpToMessage,
+                title: "Jump to Message",
+                systemImage: NativeTimelineSearchResultPresentation
+                    .jumpToMessageSystemImage
+            ),
+            .action(
+                .markUnread,
+                title: "Mark Unread",
+                systemImage: "envelope.badge"
+            ),
+            .separator,
+            .action(
+                .copyText,
+                title: "Copy Text",
+                systemImage: "doc.on.doc"
+            ),
+            .action(
+                .copyLink,
+                title: "Copy Link",
+                systemImage: "link"
+            ),
+            .action(
+                .copyMessageID,
+                title: "Copy Message ID",
+                systemImage: "number.square.fill"
+            ),
+            .action(
+                .copyAuthorID,
+                title: "Copy Message Author ID",
+                systemImage: "number.square.fill"
+            ),
+        ]
+    )
+}
+
+@MainActor @Test func `search result surfaces span the complete pane width`() throws {
+    let message = Message(
+        id: MessageID(rawValue: 1),
+        channelID: ChannelID(rawValue: 2),
+        author: User(
+            id: UserID(rawValue: 3),
+            username: "fixture",
+            displayName: "Fixture"
+        ),
+        content: "Search result"
+    )
+    let row = MessageRowPresentation(
+        message: message,
+        startsGroup: true,
+        startsDay: false,
+        replyPreview: nil,
+        isReplyAvailable: false,
+        searchContext: MessageSearchRowContext(
+            channelID: message.channelID,
+            sectionTitle: "general",
+            sectionSubtitle: nil,
+            systemImage: "number",
+            showsSectionHeader: true
+        )
+    )
+    let paneWidth: CGFloat = 640
+    let layout = NativeTimelineRowLayout.make(
+        item: .message(
+            row,
+            isUnreadBoundary: false,
+            isHighlighted: false
+        ),
+        width: paneWidth
+    )
+    let surface = try #require(layout.searchCardFrame)
+
+    #expect(surface.minX == 0)
+    #expect(surface.maxX == paneWidth)
+    #expect(layout.highlightFrame == surface)
+}
+
 @Test func `native author profile hitboxes do not cover message text`() {
     let avatar = CGRect(x: 14, y: 3, width: 38, height: 38)
     let author = CGRect(x: 64, y: 3, width: 86, height: 16)

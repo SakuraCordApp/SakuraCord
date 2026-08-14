@@ -1389,6 +1389,7 @@ struct NativeTimelineActionCapsuleOverlay: View {
     let message: Message
     let canEdit: Bool
     @ObservedObject var state: NativeTimelineActionCapsuleState
+    let jumpToMessage: (() -> Void)?
     let retry: (() -> Void)?
     let edit: () -> Void
     let reply: (() -> Void)?
@@ -1400,23 +1401,36 @@ struct NativeTimelineActionCapsuleOverlay: View {
     let delete: () -> Void
 
     var body: some View {
-        MessageActionCapsule(
-            model: model,
-            message: message,
-            canEdit: canEdit,
-            isReactionPickerPresented: $state.isReactionPickerPresented,
-            isDeleteConfirmationPresented:
-                $state.isDeleteConfirmationPresented,
-            retry: retry,
-            edit: edit,
-            reply: reply,
-            forward: forward,
-            react: react,
-            copy: copy,
-            copyLink: copyLink,
-            openThread: openThread,
-            delete: delete
-        )
+        Group {
+            if let jumpToMessage {
+                HoverActionPill {
+                    HoverActionButton(
+                        systemImage: NativeTimelineSearchResultPresentation
+                            .jumpToMessageSystemImage,
+                        help: "Jump to Message",
+                        action: jumpToMessage
+                    )
+                }
+            } else {
+                MessageActionCapsule(
+                    model: model,
+                    message: message,
+                    canEdit: canEdit,
+                    isReactionPickerPresented: $state.isReactionPickerPresented,
+                    isDeleteConfirmationPresented:
+                        $state.isDeleteConfirmationPresented,
+                    retry: retry,
+                    edit: edit,
+                    reply: reply,
+                    forward: forward,
+                    react: react,
+                    copy: copy,
+                    copyLink: copyLink,
+                    openThread: openThread,
+                    delete: delete
+                )
+            }
+        }
         .fixedSize()
     }
 }

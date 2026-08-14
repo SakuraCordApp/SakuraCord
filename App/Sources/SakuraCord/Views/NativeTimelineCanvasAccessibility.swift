@@ -297,15 +297,29 @@ extension NativeTimelineCanvasView {
         let rowLabel = message.type.hasGeneratedContent
             ? "System message, \(generatedLabel)"
             : "Message from \(author.displayName), \(timestamp)"
+        let rowPress: (@MainActor @Sendable () -> Bool)? =
+            if actions?.openMessage != nil {
+                { [weak self] in
+                    guard let openMessage = self?.actions?.openMessage else {
+                        return false
+                    }
+                    openMessage(message)
+                    return true
+                }
+            } else {
+                nil
+            }
         let element = accessibilityElement(
             role: .row,
             label: rowLabel,
             value: MessageOutboxPresentation.accessibilityStatus(
                 for: message.outboxState
             ),
+            help: row.searchContext == nil ? nil : "Jump to message",
             identifier: "timeline-message-\(message.id)",
             frame: rowFrame,
-            parent: self
+            parent: self,
+            press: rowPress
         )
         element.setAccessibilityCustomActions(
             accessibilityMessageActions(
@@ -1147,6 +1161,12 @@ extension NativeTimelineCanvasView {
         let message = row.message
         let canEdit =
             message.author.id == model?.snapshot?.currentUser.id
+        if messageInteractionContext == .searchResult {
+            return accessibilitySearchResultActions(
+                for: message,
+                canDelete: canEdit
+            )
+        }
         var result: [NSAccessibilityCustomAction] = []
         if message.outboxState == .failed {
             result.append(NSAccessibilityCustomAction(
@@ -1219,6 +1239,53 @@ extension NativeTimelineCanvasView {
             return true
         })
         if canEdit {
+            result.append(NSAccessibilityCustomAction(
+                name: "Delete Message"
+            ) { [weak self] in
+                self?.confirmDelete(message)
+                return self != nil
+            })
+        }
+        return result
+    }
+
+    private func accessibilitySearchResultActions(
+        for message: Message,
+        canDelete: Bool
+    ) -> [NSAccessibilityCustomAction] {
+        var result = [
+            NSAccessibilityCustomAction(name: "Jump to Message") { [weak self] in
+                guard let openMessage = self?.actions?.openMessage else {
+                    return false
+                }
+                openMessage(message)
+                return true
+            },
+            NSAccessibilityCustomAction(name: "Mark Unread") { [weak self] in
+                self?.actions?.markUnread(message)
+                return self != nil
+            },
+            NSAccessibilityCustomAction(name: "Copy Text") {
+                Self.copyText(message.content)
+                return true
+            },
+            NSAccessibilityCustomAction(name: "Copy Link") { [weak self] in
+                guard let self else { return false }
+                Self.copyText(self.messageLink(for: message))
+                return true
+            },
+        ]
+        result.append(contentsOf: [
+            NSAccessibilityCustomAction(name: "Copy Message ID") {
+                Self.copyText(message.id.description)
+                return true
+            },
+            NSAccessibilityCustomAction(name: "Copy Message Author ID") {
+                Self.copyText(message.author.id.description)
+                return true
+            },
+        ])
+        if canDelete {
             result.append(NSAccessibilityCustomAction(
                 name: "Delete Message"
             ) { [weak self] in

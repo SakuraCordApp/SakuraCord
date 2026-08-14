@@ -52,6 +52,18 @@ usage() {
 #       subscriptions are read-only; this scenario never sends messages,
 #       acknowledgements, reactions, or account mutations. Defaults: 70 seconds
 #       so an authenticated workspace can be selected before measurement.
+#   authenticated-search [seconds]
+#       Relaunch the authenticated debug app for a read-only search comparison.
+#       During the recording, submit one representative server or DM search in
+#       the UI. Request-to-render latency and exact-window CPU, memory, wakeup,
+#       and energy metrics are bounded by MessageSearchBenchmark signposts.
+#       Defaults: 45 seconds.
+#   authenticated-search-pagination [seconds]
+#       Submit an initial search, then select another result page. Measures the
+#       pagination request through rendered results and its exact resources.
+#   authenticated-search-scroll [seconds]
+#       Submit a search, then scroll its results. Measures one complete user
+#       scroll gesture and its exact CPU, memory, wakeup, and energy window.
 #   snapshot
 #       Print a one-shot CPU, RSS, thread, footprint, and network sample.
 #   summarize <artifact-directory>
@@ -365,11 +377,17 @@ record_launch() {
     case "$scenario" in
         authenticated-scroll) resource_window_name="MessageTimelineAutoScrollBenchmark" ;;
         authenticated-member-list-scroll) resource_window_name="MemberListAutoScrollBenchmark" ;;
+        authenticated-search) resource_window_name="MessageSearchBenchmark" ;;
+        authenticated-search-pagination) resource_window_name="MessageSearchPaginationBenchmark" ;;
+        authenticated-search-scroll) resource_window_name="MessageSearchScrollBenchmark" ;;
         *) resource_window_name="" ;;
     esac
     performance_account_id="${SAKURACORD_PERFORMANCE_ACCOUNT_ID:-}"
     if [[ "$scenario" == "authenticated-scroll" \
-          || "$scenario" == "authenticated-member-list-scroll" ]]; then
+          || "$scenario" == "authenticated-member-list-scroll" \
+          || "$scenario" == "authenticated-search" \
+          || "$scenario" == "authenticated-search-pagination" \
+          || "$scenario" == "authenticated-search-scroll" ]]; then
         debug_credential_directory="$HOME/Library/Containers/$bundle_id/Data/Library/Application Support/SakuraCord/InsecureDebugCredentials"
         if [[ -z "$performance_account_id" ]]; then
             newest_credential="$(
@@ -388,7 +406,7 @@ record_launch() {
             || [[ ! -f "$debug_credential_directory/$performance_account_id.credential" ]]
         then
             printf '%s\n' \
-                "Authenticated scrolling requires a selected local debug credential." >&2
+                "Authenticated performance recording requires a selected local debug credential." >&2
             exit 4
         fi
     fi
@@ -441,7 +459,10 @@ record_launch() {
     fi
     kill -CONT "$pid"
     if [[ ( "$scenario" == "authenticated-scroll" \
-            || "$scenario" == "authenticated-member-list-scroll" ) \
+            || "$scenario" == "authenticated-member-list-scroll" \
+            || "$scenario" == "authenticated-search" \
+            || "$scenario" == "authenticated-search-pagination" \
+            || "$scenario" == "authenticated-search-scroll" ) \
           && -n "$pid" ]]; then
         top -pid "$pid" -l "$seconds" -s 1 \
             -stats pid,cpu,mem,threads,power -o cpu \
@@ -458,7 +479,10 @@ record_launch() {
     fi
     wait "$trace_pid"
     if [[ ( "$scenario" == "authenticated-scroll" \
-            || "$scenario" == "authenticated-member-list-scroll" ) \
+            || "$scenario" == "authenticated-member-list-scroll" \
+            || "$scenario" == "authenticated-search" \
+            || "$scenario" == "authenticated-search-pagination" \
+            || "$scenario" == "authenticated-search-scroll" ) \
           && -n "$pid" ]]; then
         wait "$top_pid" || true
         wait "$energy_pid" || true
@@ -492,6 +516,18 @@ record_authenticated_scroll() {
 record_authenticated_member_list_scroll() {
     record_launch authenticated-member-list-scroll "$1" \
         --debug-authenticated-member-list-performance-autoscroll
+}
+
+record_authenticated_search() {
+    record_launch authenticated-search "$1"
+}
+
+record_authenticated_search_pagination() {
+    record_launch authenticated-search-pagination "$1"
+}
+
+record_authenticated_search_scroll() {
+    record_launch authenticated-search-scroll "$1"
 }
 
 summarize_recording() {
@@ -748,6 +784,12 @@ measurement_interval = case scenario
                          "MessageTimelineAutoScrollBenchmark"
                        when "authenticated-member-list-scroll"
                          "MemberListAutoScrollBenchmark"
+                       when "authenticated-search"
+                         "MessageSearchRequestToResults"
+                       when "authenticated-search-pagination"
+                         "MessageSearchPaginationToResults"
+                       when "authenticated-search-scroll"
+                         "MessageSearchUserScroll"
                        when "startup"
                          "StartupToWorkspace"
                        end
@@ -886,8 +928,11 @@ elsif measurement_interval
     )
     window_samples << upper_sample
     rusage_samples = window_samples
-    resource_window_label =
-      "#{measurement_interval} nominal #{format('%.3f', benchmark_nominal_duration)} s"
+    resource_window_label = if benchmark_nominal_duration
+                              "#{measurement_interval} nominal #{format('%.3f', benchmark_nominal_duration)} s"
+                            else
+                              "#{measurement_interval} exact request window"
+                            end
     sampled_physical_footprint =
       raw_window_samples.map { |sample| sample[:footprint].to_f }
     window_samples.each_cons(2) do |before, after|
@@ -1020,6 +1065,15 @@ case "$command" in
         ;;
     authenticated-member-list-scroll)
         record_authenticated_member_list_scroll "${2:-70}"
+        ;;
+    authenticated-search)
+        record_authenticated_search "${2:-45}"
+        ;;
+    authenticated-search-pagination)
+        record_authenticated_search_pagination "${2:-50}"
+        ;;
+    authenticated-search-scroll)
+        record_authenticated_search_scroll "${2:-50}"
         ;;
     snapshot)
         pid="$(require_running_pid)"

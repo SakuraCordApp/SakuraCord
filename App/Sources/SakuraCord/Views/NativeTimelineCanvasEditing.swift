@@ -233,6 +233,9 @@ extension NativeTimelineCanvasView {
             message: row.message,
             canEdit: canEdit,
             state: state,
+            jumpToMessage: actions.openMessage.map { openMessage in
+                { openMessage(row.message) }
+            },
             retry: row.message.outboxState == .failed
                 ? { actions.retry(row.message) }
                 : nil,

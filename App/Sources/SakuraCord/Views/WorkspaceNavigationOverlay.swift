@@ -5,7 +5,6 @@ import SwiftUI
 
 enum WorkspaceNavigationOverlay: String, Identifiable {
     case quickSwitcher
-    case messageSearch
 
     var id: Self { self }
 }
@@ -22,24 +21,7 @@ struct WorkspaceNavigationOverlayView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { model.dismissWorkspaceNavigationOverlay() }
 
-            switch presentation {
-            case .quickSwitcher:
-                QuickSwitcherView(model: model, animationState: animationState)
-            case .messageSearch:
-                Group {
-                    MessageSearchView(model: model)
-                }
-                .frame(width: 620, height: 500)
-                .background(.regularMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(.separator.opacity(0.7), lineWidth: 1)
-                }
-                .shadow(color: .black.opacity(0.35), radius: 30, y: 18)
-                .scaleEffect(animationState.isVisible ? 1 : 0.97)
-                .opacity(animationState.isVisible ? 1 : 0)
-            }
+            QuickSwitcherView(model: model, animationState: animationState)
         }
         .accessibilityAddTraits(.isModal)
         .accessibilityHidden(!animationState.isVisible)
@@ -1331,115 +1313,6 @@ private final class KeyHandlingTextField: NSTextField {
     override func keyDown(with event: NSEvent) {
         guard handleKeyDown?(event) != true else { return }
         super.keyDown(with: event)
-    }
-}
-
-private struct MessageSearchView: View {
-    let model: AppModel
-    @State private var query = ""
-    @State private var page: MessageSearchPage?
-    @State private var errorMessage: String?
-    @State private var isSearching = false
-
-    var body: some View {
-        VStack(spacing: 0) {
-            overlayHeader(
-                title: "Search Messages",
-                subtitle: model.selectedChannel.map { "in #\($0.name)" } ?? "Current channel"
-            )
-            PickerSearchField(
-                text: $query,
-                placeholder: "Search this conversation",
-                accessibilityIdentifier: "message-search-field"
-            )
-            .padding(.horizontal, 20)
-            .padding(.bottom, 14)
-
-            Divider()
-
-            Group {
-                if isSearching {
-                    ProgressView("Searching…")
-                } else if let errorMessage {
-                    ContentUnavailableView(
-                        "Search Failed",
-                        systemImage: "exclamationmark.magnifyingglass",
-                        description: Text(errorMessage)
-                    )
-                } else if let page, page.messages.isEmpty {
-                    ContentUnavailableView.search(text: query)
-                } else if let page {
-                    List(page.messages) { message in
-                        Button { model.navigateToSearchResult(message) } label: {
-                            messageResultRow(message)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .listStyle(.plain)
-                    .safeAreaInset(edge: .bottom) {
-                        Text("\(page.totalResults) result\(page.totalResults == 1 ? "" : "s")")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(8)
-                            .frame(maxWidth: .infinity)
-                            .background(.bar)
-                    }
-                } else {
-                    ContentUnavailableView(
-                        "Search this conversation",
-                        systemImage: "text.magnifyingglass",
-                        description: Text("Enter words from a message to find it.")
-                    )
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .task(id: query) {
-            let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !normalized.isEmpty else {
-                page = nil
-                errorMessage = nil
-                isSearching = false
-                return
-            }
-            do {
-                try await Task.sleep(for: .milliseconds(300))
-                isSearching = true
-                errorMessage = nil
-                page = try await model.searchSelectedChannelMessages(query: normalized)
-                isSearching = false
-            } catch is CancellationError {
-                return
-            } catch {
-                page = nil
-                errorMessage = error.localizedDescription
-                isSearching = false
-            }
-        }
-    }
-
-    private func messageResultRow(_ message: Message) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            AvatarView(
-                name: message.author.displayName,
-                url: message.author.avatarURL,
-                size: 34
-            )
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text(message.author.displayName).fontWeight(.semibold)
-                    Text(message.timestamp, style: .date)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                }
-                Text(message.content.isEmpty ? "Message with media" : message.content)
-                    .lineLimit(3)
-                    .foregroundStyle(message.content.isEmpty ? .secondary : .primary)
-            }
-        }
-        .contentShape(Rectangle())
-        .padding(.vertical, 6)
     }
 }
 

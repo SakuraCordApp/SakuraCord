@@ -1,7 +1,7 @@
 # Discord production protocol baseline
 
-Last repository audit: 12 August 2026, in a working tree based on SakuraCord
-commit `12252ec7`.
+Last repository audit: 14 August 2026, in a working tree based on SakuraCord
+commit `924e52e2`.
 
 This document describes SakuraCord's durable network contract and the dated
 evidence behind it. It is not a claim that Discord's undocumented
@@ -42,19 +42,52 @@ fingerprint, installation identifier, or unsanitized traffic is stored in this
 repository. Treat every build number and observed payload as a dated snapshot,
 not current official behavior.
 
-Message search was re-audited on 12 August 2026 against Discord's current
-public message-resource documentation and production asset
-`web.206b719a7d513cf1.js` (SHA-256
-`6d7e9a2db8440b1913bf8ef23b98045d78eb6245040ca662ab6d1ed948080b4e`).
-The first-party channel action uses `/channels/{channel}/messages/search`,
-orders by descending timestamp, decodes nested result groups, and treats `202`
-as an indexing response with an original request plus at most five retries.
-The public resource contract supplies the query limits, nested response shape,
-`READ_MESSAGE_HISTORY` requirement, and server-provided `retry_after`. Pinned
-Paicord revision `694761c1938b73bb60bd58942674dfe73aab1135` and Swiftcord v1
-revision `14465d927ebe1ba34b3befa00f9365fad7b56eb9` have no corresponding
-message-search request. Static first-party and public evidence left no material
-request-shape ambiguity, so no authenticated search was performed.
+Message search was re-audited on 14 August 2026 with sanitized CDP capture in a
+fresh, cache-disabled, authenticated, renamed official Discord desktop `0.0.407`.
+The audit covered server and direct-message searches, current-DM and all-DM
+scope, content and filter-only queries, every exposed filter family, combined
+and repeated filters, newest/oldest/relevance sorts, zero results, result
+navigation, and pagination through the client maximum. No authorization value,
+message content, user/channel/guild identifier, or personal response payload was
+retained.
+
+Server search uses `GET /guilds/{guild}/messages/search`; it does not use the
+older selected-channel route. The ordered query contains optional repeated
+`author_id`, `channel_id`, `mentions`, `has`, and `author_type` items, optional
+`pinned`, `min_id`, `max_id`, and trimmed `content`, followed by `sort_by`,
+`sort_order`, and `offset`. There is no `limit` query item; Discord returns 25
+nested result groups per page. The observed values are `has` = `image`, `video`,
+`link`, `file`, `embed`, `sound`, `poll`, `sticker`, or `forward`, and
+`author_type` = `user`, `bot`, or `webhook`. Timestamp sorts use
+`sort_by=timestamp` with `desc` for newest and `asc` for oldest; relevance uses
+`sort_by=relevance&sort_order=desc`. Pages use offsets 0, 25, …, 9,975, and the
+client exposes at most 400 pages.
+
+All-DM and current-DM search both use
+`POST /users/@me/messages/search/tabs`, not a channel message-search endpoint.
+The JSON body has `tabs.messages` containing the same sort fields, optional
+content/filter arrays or booleans, numeric `offset`, and `limit:25`, plus
+top-level `track_exact_total_hits:true`. Current-DM scope is expressed only as a
+top-level `channel_ids` array; omitting it searches every DM. DM pagination still
+advances `offset` by 25 even though the response also supplies a cursor.
+
+Both response families carry nested message groups; the message whose `hit`
+field is true is the result while siblings provide rendering context. Guild
+responses expose `total_results`, `doing_deep_historical_index`, and optional
+thread/member data. DM responses place `messages`, `channels`, `total_results`,
+`time_spent_ms`, and `cursor` under `tabs.messages`. A `202` is an indexing
+response with an original request plus at most five server-delayed retries.
+Typing does not issue requests: only Return, a sort/filter application, or an
+explicit page selection submits search. Selecting a result keeps the side panel
+open, navigates to its actual channel or DM, and focuses the exact message.
+
+For calendar filters, the desktop translates `before:DATE` to the snowflake at
+local midnight starting that date (`max_id`), and `after:DATE` to local midnight
+starting the following date (`min_id`), making the selected calendar day
+exclusive in each direction. Pinned Paicord revision
+`694761c1938b73bb60bd58942674dfe73aab1135` and Swiftcord v1 revision
+`14465d927ebe1ba34b3befa00f9365fad7b56eb9` still have no corresponding
+message-search implementation.
 
 The GIF-picker surface was re-audited on 6 August 2026 against clean, signed,
 notarized Discord desktop `0.0.406` and production asset
@@ -382,7 +415,8 @@ and retained as evidence.
 | `GET /gifs/trending-gifs?media_format=webm&locale={locale}` | Explicit Trending GIFs selection; no body. The returned order is preserved. | Current first-party route and clean-client request; P−, S−. |
 | `GET /gifs/search?q={query}&media_format=webm&locale={locale}` | Nonempty picker search after the current 250 ms debounce; no speculative or paginated follow-up. The live default response is 50 results and its order is preserved. | Current first-party route/action and clean-client `hello` request; P−, S−. |
 | `GET /channels/{channel}/messages` | Visible history only; guild history requires effective `VIEW_CHANNEL` and `READ_MESSAGE_HISTORY`, and voice-channel history additionally requires `CONNECT`. The current clean client uses `limit=10` for a newly selected uncached channel, which SakuraCord matches once per channel per uninterrupted Gateway connection. A dispatched newest-page read is allowed to finish and populate the session stores after a later selection supersedes its presentation; rapid navigation does not abort those reads. Reopening a loaded channel restores its bounded session-memory page and sends no history request. After a Gateway gap, the retained page is presented immediately but its completeness marker is invalidated; returning to Ready refreshes the selected page once and later reopened pages refresh once on selection. Older-page pagination uses ordered `before` then `limit=50`; no body. | Public message semantics, current first-party permission/message paths and stale-connection refresh, and Paicord's permission-checked channel store. Swiftcord v1 checks `VIEW_CHANNEL` before presentation but otherwise supplies only a historical unguarded/refetching history path. Paicord retains a per-channel in-memory store and uses a historical 50-message initial page. The current first-party cache behavior and connection-generation invalidation take precedence. |
-| `GET /channels/{channel}/messages/search` | One debounced, cancellation-aware search for the selected conversation with trimmed `content`, `sort_by=timestamp`, `sort_order=desc`, `limit` from 1 through 25, and `offset` from 0 through 9,975. Results decode from nested groups and populate the message cache for exact-result navigation. | Current first-party channel route and action plus public message-search semantics and limits; P−, S−. |
+| `GET /guilds/{guild}/messages/search` | One explicit server search on Return, filter/sort application, or page selection. Optional repeated `author_id`, `channel_id`, `mentions`, `has`, and `author_type`; optional `pinned`, date snowflakes, and trimmed `content`; then exact sort and 25-step offset fields. No `limit` query item. Nested groups select their `hit` message and retain context for shared timeline rendering and exact-result navigation. | Sanitized authenticated clean-client CDP matrix on 14 August 2026; P−, S−. |
+| `POST /users/@me/messages/search/tabs` | One explicit DM search with `tabs.messages`, `limit:25`, 25-step `offset`, exact sort/filter fields, and `track_exact_total_hits:true`. Optional top-level `channel_ids` scopes the same endpoint to one or more DMs; omitting it searches all DMs. Returned channel metadata is merged before exact-result navigation. | Sanitized authenticated clean-client CDP matrix on 14 August 2026; P−, S−. |
 | `GET /channels/{thread}` | One unknown-thread deep-link resolution; no body. | Public channel semantics and all three references. |
 | `POST /channels/{forum}/threads?use_nested_fields=true` | Explicit forum creation; `name`, `auto_archive_duration`, ordered `applied_tags`, nested `message` with `content`, `sticker_ids:[]`, and attachments only when uploaded. | Current first-party action; Paicord and Swiftcord have only partial/historical thread creation. |
 | `GET /channels/{forum}/threads/search` | Forum catalogue: `archived=true`, `sort_by`, `sort_order=desc`, `limit`, `offset`, and optional `tag`/`tag_setting`; name search adds `name`. | Current first-party route; P−, S−. |
@@ -489,7 +523,7 @@ The default attempt budget is exact:
 | Ordinary authenticated GET | 2; the second attempt occurs only after a server `429` cooldown. |
 | Authenticated mutation | 1; no automatic replay after `429`, timeout, or ambiguous failure. |
 | Application-command index readiness | 3 created GETs for the separately tested `202`/`429` flow. |
-| Message-search index readiness | 6 created GETs: the original plus at most 5 retries after server `202`, each delayed by the server's `Retry-After` or `retry_after` value (with a five-second fallback only when neither is present). Each created GET retains the ordinary bounded `429` contract. |
+| Message-search index readiness | 6 created requests: the original plus at most 5 retries after server `202`, each delayed by the server's `Retry-After` or `retry_after` value (with a five-second fallback only when neither is present). Each created GET or POST retains the ordinary bounded `429` contract. |
 | Cold native installation/fingerprint preflight status retry | Each created preflight request has its original attempt plus at most 3 bounded retries for `429`, `500`, `502`, or `504`, subject to the established delay ceiling. A missing Apex installation creates only the already-required `/experiments` request, without an additional probe. |
 | Pending-QR or stored-session missing-installation repair | Once per provider: 1 unauthenticated Apex GET, plus 1 unauthenticated `/experiments` GET only when Apex fails or omits the identity. Both are best-effort; no automatic retry or authentication replay, and Gateway proceeds without the optional identity when unavailable. |
 | Native password/MFA status retry | Original plus at most 2 current-official retries for `429`, `500`, `502`, or `504`, subject to the established delay ceiling. |

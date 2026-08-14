@@ -648,6 +648,8 @@ extension NativeTimelineCanvasView {
             return
         }
 
+        actions.openMessage?(row.message)
+
         }
     }
 
@@ -1269,6 +1271,11 @@ extension NativeTimelineCanvasView {
            let thread = message.thread
         {
             return .thread(message.id, thread.id)
+        }
+        if actions?.openMessage != nil,
+           layout.searchCardFrame?.contains(local) == true
+        {
+            return .message(message.id)
         }
         return nil
 

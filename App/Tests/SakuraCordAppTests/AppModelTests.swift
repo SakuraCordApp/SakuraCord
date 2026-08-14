@@ -93,14 +93,38 @@ import UserNotifications
     #expect(model.workspaceNavigationOverlay == .quickSwitcher)
 
     model.presentMessageSearch()
-    #expect(model.workspaceNavigationOverlay == .messageSearch)
+    #expect(!model.messageSearch.isPresented)
+    #expect(model.messageSearch.isInputFocused)
+    #expect(model.workspaceNavigationOverlay == nil)
 
     let searchableMessage = try #require(
         model.messages.first(where: { !$0.content.isEmpty })
     )
     let searchTerm = String(searchableMessage.content.prefix(12))
-    let page = try await model.searchSelectedChannelMessages(query: searchTerm)
+    let input = "\(searchTerm) from:\(searchableMessage.author.username)"
+    model.messageSearch.queryText = input
+    model.submitMessageSearchInput()
+    #expect(model.messageSearch.isPresented)
+    await model.messageSearch.requestTask?.value
+    let page = try #require(model.messageSearch.page)
     #expect(page.messages.contains(where: { $0.id == searchableMessage.id }))
+    #expect(model.messageSearch.queryText == input)
+    #expect(model.messageSearch.submittedQuery?.content == searchTerm)
+    #expect(model.messageSearch.effectiveFilters.authorIDs == [searchableMessage.author.id])
+    #expect(model.messageSearch.requestTask == nil)
+
+    let replacementAuthor = try #require(
+        model.messageSearchUsers.first(where: { $0.id != searchableMessage.author.id })
+    )
+    model.messageSearchInputText = "from:\(replacementAuthor.username)"
+    model.submitMessageSearchInput()
+    #expect(model.messageSearch.effectiveFilters.authorIDs == [replacementAuthor.id])
+    #expect(model.messageSearch.isPresented)
+
+    model.messageSearchInputText = ""
+    #expect(!model.messageSearch.isPresented)
+    #expect(!model.messageSearch.isInputFocused)
+    model.messageSearch.requestTask?.cancel()
 }
 
 @Test func `channel message cache keeps only the newest bounded history`() {

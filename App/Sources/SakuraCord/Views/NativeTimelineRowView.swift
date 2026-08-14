@@ -129,6 +129,7 @@ nonisolated enum NativeTimelineRunDelegate {
 
 struct NativeTimelineRowActions {
     var loadEarlier: () -> Void
+    var openMessage: ((Message) -> Void)?
     var openReply: (MessageID) -> Void
     var reply: ((Message) -> Void)?
     var forward: ((Message) -> Void)?
@@ -147,6 +148,7 @@ struct NativeTimelineRowActions {
 
     init(
         loadEarlier: @escaping () -> Void,
+        openMessage: ((Message) -> Void)? = nil,
         openReply: @escaping (MessageID) -> Void,
         reply: ((Message) -> Void)?,
         forward: ((Message) -> Void)? = nil,
@@ -164,6 +166,7 @@ struct NativeTimelineRowActions {
         ) -> Void
     ) {
         self.loadEarlier = loadEarlier
+        self.openMessage = openMessage
         self.openReply = openReply
         self.reply = reply
         self.forward = forward
@@ -343,6 +346,13 @@ struct NativeTimelineLoaderLayout {
 }
 
 struct NativeTimelineRowLayout {
+    struct SearchSectionRegion {
+        let frame: CGRect
+        let iconFrame: CGRect
+        let titleFrame: CGRect
+        let subtitleFrame: CGRect?
+    }
+
     struct ForwardedSourceRegion {
         let frame: CGRect
         let label: String
@@ -433,6 +443,8 @@ struct NativeTimelineRowLayout {
     let height: CGFloat
     let loaderLayout: NativeTimelineLoaderLayout?
     let beginningLayout: NativeTimelineBeginningLayout?
+    let searchSectionRegion: SearchSectionRegion?
+    let searchCardFrame: CGRect?
     let highlightFrame: CGRect?
     let daySeparatorFrame: CGRect?
     let unreadSeparatorFrame: CGRect?
@@ -512,6 +524,8 @@ struct NativeTimelineRowLayout {
             height: height,
             loaderLayout: loaderLayout,
             beginningLayout: beginningLayout,
+            searchSectionRegion: nil,
+            searchCardFrame: nil,
             highlightFrame: nil,
             daySeparatorFrame: nil,
             unreadSeparatorFrame: nil,
@@ -554,7 +568,8 @@ struct NativeTimelineRowLayout {
 
         var layout: NativeTimelineRowLayout {
         let message = row.message
-        let horizontalInset: CGFloat = 14
+        let searchContext = row.searchContext
+        let horizontalInset: CGFloat = searchContext == nil ? 14 : 22
         let avatarWidth: CGFloat = 38
         let columnGap: CGFloat = 12
         let ordinaryContentX = horizontalInset + avatarWidth + columnGap
@@ -566,6 +581,43 @@ struct NativeTimelineRowLayout {
         let contentX: CGFloat = isGenerated ? horizontalInset + 58 : ordinaryContentX
         let contentWidth = max(80, width - contentX - horizontalInset)
         var prefixHeight: CGFloat = 0
+
+        var searchSectionRegion: SearchSectionRegion?
+        if let searchContext, searchContext.showsSectionHeader {
+            let sectionFrame = CGRect(
+                x: 14,
+                y: 8,
+                width: max(1, width - 28),
+                height: searchContext.sectionSubtitle == nil ? 24 : 34
+            )
+            let iconFrame = CGRect(
+                x: sectionFrame.minX,
+                y: sectionFrame.minY + 2,
+                width: 20,
+                height: 20
+            )
+            let titleFrame = CGRect(
+                x: iconFrame.maxX + 7,
+                y: sectionFrame.minY,
+                width: max(1, sectionFrame.maxX - iconFrame.maxX - 7),
+                height: 18
+            )
+            let subtitleFrame = searchContext.sectionSubtitle.map { _ in
+                CGRect(
+                    x: titleFrame.minX,
+                    y: titleFrame.maxY,
+                    width: titleFrame.width,
+                    height: 14
+                )
+            }
+            searchSectionRegion = SearchSectionRegion(
+                frame: sectionFrame,
+                iconFrame: iconFrame,
+                titleFrame: titleFrame,
+                subtitleFrame: subtitleFrame
+            )
+            prefixHeight = sectionFrame.maxY + 4
+        }
 
         var daySeparatorFrame: CGRect?
         if row.startsDay {
@@ -598,7 +650,8 @@ struct NativeTimelineRowLayout {
             followsTimelineSeparator: row.startsDay || isUnreadBoundary,
             highlightTopInset: highlightInsets.top
         )
-        let highlightMinY = prefixHeight + externalTopSeparation
+        let highlightMinY = prefixHeight
+            + (searchContext == nil ? externalTopSeparation : 4)
         var verticalOffset = highlightMinY + highlightInsets.top
 
         var replyFrame: CGRect?
@@ -1060,6 +1113,7 @@ struct NativeTimelineRowLayout {
             avatarFrame?.maxY ?? 0,
             authorFrame?.maxY ?? 0
         )
+        let searchBottomInset: CGFloat = searchContext == nil ? 0 : 8
         let rowHeight = ceil(
             max(
                 visibleContentMaxY + highlightInsets.bottom,
@@ -1069,19 +1123,29 @@ struct NativeTimelineRowLayout {
                         ? MessageRowLayoutMetrics.avatarDiameter
                         : MessageRowLayoutMetrics.compactContentHeight)
                     + highlightInsets.bottom
-            )
+            ) + searchBottomInset
         )
+        let searchCardFrame = searchContext.map { _ in
+            CGRect(
+                x: 0,
+                y: highlightMinY,
+                width: width,
+                height: max(0, rowHeight - highlightMinY - searchBottomInset)
+            )
+        }
         let highlightFrame = CGRect(
-            x: 0,
+            x: searchCardFrame?.minX ?? 0,
             y: highlightMinY,
-            width: width,
-            height: max(0, rowHeight - highlightMinY)
+            width: searchCardFrame?.width ?? width,
+            height: searchCardFrame?.height ?? max(0, rowHeight - highlightMinY)
         )
 
         return NativeTimelineRowLayout(
             height: rowHeight,
             loaderLayout: nil,
             beginningLayout: nil,
+            searchSectionRegion: searchSectionRegion,
+            searchCardFrame: searchCardFrame,
             highlightFrame: highlightFrame,
             daySeparatorFrame: daySeparatorFrame,
             unreadSeparatorFrame: unreadSeparatorFrame,

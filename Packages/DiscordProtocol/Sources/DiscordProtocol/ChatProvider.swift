@@ -37,12 +37,7 @@ public protocol ChatProvider: Sendable {
     func currentStatus() async -> PresenceStatus
     func updateStatus(_ status: PresenceStatus) async throws
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws -> MessagePage
-    func searchMessages(
-        in channelID: ChannelID,
-        query: String,
-        limit: Int,
-        offset: Int
-    ) async throws -> MessageSearchPage
+    func searchMessages(_ query: MessageSearchQuery) async throws -> MessageSearchPage
     func forumPosts(in channelID: ChannelID, query: ForumPostQuery) async throws -> ForumPostPage
     func forumPost(threadID: ChannelID) async throws -> ForumPost
     func createForumPost(
@@ -188,26 +183,91 @@ public extension ChatProvider {
 
     func updateClientAppState(isFocused: Bool) async {}
 
-    func searchMessages(
-        in channelID: ChannelID,
-        query: String,
-        limit: Int,
-        offset: Int
-    ) async throws -> MessageSearchPage {
-        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalized.isEmpty else {
-            throw ChatProviderError.invalidRequest("Enter text to search for.")
+    func searchMessages(_ query: MessageSearchQuery) async throws -> MessageSearchPage {
+        guard !query.isEmpty else {
+            throw ChatProviderError.invalidRequest("Enter text or choose a filter to search.")
         }
-        let page = try await messages(in: channelID, before: nil, limit: 100)
-        let matches = page.messages.filter {
-            $0.content.localizedCaseInsensitiveContains(normalized)
+        let availableChannels = try await channels(in: query.scope.guildID)
+        let selectedChannelIDs = Set(query.filters.channelIDs)
+        let searchedChannels = availableChannels.filter {
+            selectedChannelIDs.isEmpty || selectedChannelIDs.contains($0.id)
         }
-        let lowerBound = min(max(0, offset), matches.count)
-        let upperBound = min(matches.count, lowerBound + min(max(1, limit), 25))
+        var candidates: [Message] = []
+        for channel in searchedChannels {
+            try Task.checkCancellation()
+            candidates.append(
+                contentsOf: try await messages(
+                    in: channel.id,
+                    before: nil,
+                    limit: 100
+                ).messages
+            )
+        }
+        let normalized = query.normalizedContent
+        let authorIDs = Set(query.filters.authorIDs)
+        let mentionedUserIDs = Set(query.filters.mentionedUserIDs)
+        let matches = candidates.filter { message in
+            (normalized.isEmpty
+                || message.content.localizedCaseInsensitiveContains(normalized))
+                && (authorIDs.isEmpty || authorIDs.contains(message.author.id))
+                && (mentionedUserIDs.isEmpty
+                    || !mentionedUserIDs.isDisjoint(
+                        with: message.mentionedUsers.map(\.id)
+                    ))
+                && Self.matchesSearchContentTypes(
+                    query.filters.contentTypes,
+                    message: message
+                )
+        }.sorted {
+            query.sort == .oldest
+                ? $0.timestamp < $1.timestamp
+                : $0.timestamp > $1.timestamp
+        }
+        let lowerBound = min(max(0, query.offset), matches.count)
+        let upperBound = min(
+            matches.count,
+            lowerBound + MessageSearchQuery.pageSize
+        )
         return MessageSearchPage(
             messages: Array(matches[lowerBound ..< upperBound]),
+            channels: searchedChannels,
             totalResults: matches.count
         )
+    }
+
+    private static func matchesSearchContentTypes(
+        _ types: [MessageSearchContentType],
+        message: Message
+    ) -> Bool {
+        guard !types.isEmpty else { return true }
+        return types.contains { type in
+            switch type {
+            case .image:
+                message.attachments.contains { attachment in
+                    attachment.mediaType?.hasPrefix("image/") == true
+                }
+            case .video:
+                message.attachments.contains { attachment in
+                    attachment.mediaType?.hasPrefix("video/") == true
+                }
+            case .link:
+                message.content.contains("://")
+            case .file:
+                !message.attachments.isEmpty
+            case .embed:
+                !message.embeds.isEmpty
+            case .sound:
+                message.attachments.contains { attachment in
+                    attachment.mediaType?.hasPrefix("audio/") == true
+                }
+            case .poll:
+                message.hasPoll
+            case .sticker:
+                !message.stickers.isEmpty
+            case .forward:
+                message.forwardedSnapshot != nil
+            }
+        }
     }
 
     func updateMemberListViewport(

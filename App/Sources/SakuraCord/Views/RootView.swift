@@ -55,9 +55,11 @@ private struct ChatRootView: View {
     @State private var isInstantUpload = false
     @State private var hoveredFileDropDestination: MessageComposerDestination?
     @State private var modifierPollingTask: Task<Void, Never>?
+    @State private var toolbarSearchFieldMetrics = ToolbarSearchFieldMetrics.zero
 
     var body: some View {
         @Bindable var model = model
+        @Bindable var search = model.messageSearch
         NavigationSplitView(columnVisibility: $columnVisibility) {
             HStack(spacing: 0) {
                 ServerRailView(
@@ -122,7 +124,8 @@ private struct ChatRootView: View {
         } detail: {
             ChatWorkspaceView(
                 model: model,
-                presentsForumComposer: $presentsForumComposer
+                presentsForumComposer: $presentsForumComposer,
+                toolbarSearchFieldMetrics: toolbarSearchFieldMetrics
             )
             .opacity(model.isSwitchingAccounts ? 0 : 1)
             .navigationTitle("")
@@ -132,6 +135,15 @@ private struct ChatRootView: View {
         }
         .toolbar {
             conversationToolbar
+        }
+        .searchable(
+            text: $model.messageSearchInputText,
+            isPresented: $search.isInputFocused,
+            placement: .toolbar,
+            prompt: messageSearchPrompt
+        )
+        .onSubmit(of: .search) {
+            model.submitMessageSearchInput()
         }
         .overlay(alignment: .topLeading) {
             ZStack(alignment: .topLeading) {
@@ -187,6 +199,11 @@ private struct ChatRootView: View {
                 WindowChromeDimmingBridge(
                     isDimmed: isFileDropTargeted && canAcceptWindowDrops
                 )
+                ToolbarSearchFieldGeometryReader(
+                    searchText: $model.messageSearchInputText
+                ) { metrics in
+                    toolbarSearchFieldMetrics = metrics
+                }
             }
             .frame(width: 0, height: 0)
         }
@@ -472,13 +489,13 @@ private struct ChatRootView: View {
                 .visibilityPriority(.high)
             }
 
-            if hasOpenSupplementaryConversation {
+            if hasOpenSupplementaryToolbarConversation {
                 ToolbarItem {
                     Button(action: closeSupplementaryConversation) {
                         Label("Close conversation", systemImage: "xmark")
                             .labelStyle(.iconOnly)
                     }
-                    .help(model.openThread == nil ? "Close voice channel chat" : "Close thread")
+                    .help(supplementaryCloseHelp)
                 }
                 .visibilityPriority(.high)
             }
@@ -560,18 +577,10 @@ private struct ChatRootView: View {
                 .visibilityPriority(.high)
             }
 
-            if !hasOpenSupplementaryConversation, selectedVoiceChannel == nil {
+            if !hasOpenSupplementaryToolbarConversation, selectedVoiceChannel == nil {
                 if selectedPrivateChannel != nil {
                     ToolbarSpacer(.fixed)
                 }
-
-                ToolbarItem {
-                    Button { model.presentMessageSearch() } label: {
-                        Label("Search Messages", systemImage: "magnifyingglass")
-                    }
-                    .help("Search messages in this channel (Command-F)")
-                }
-                .visibilityPriority(.high)
 
                 ToolbarItem {
                     Button { model.showInspector.toggle() } label: {
@@ -580,6 +589,18 @@ private struct ChatRootView: View {
                 }
                 .visibilityPriority(.high)
             }
+
+        }
+    }
+
+    private var messageSearchPrompt: Text {
+        if let guildID = model.messageSearch.submittedQuery?.scope.guildID
+            ?? model.selectedGuildID,
+           let guild = model.snapshot?.guilds.first(where: { $0.id == guildID })
+        {
+            Text("Search \(guild.name)")
+        } else {
+            Text("Search in DMs")
         }
     }
 
@@ -706,7 +727,13 @@ private struct ChatRootView: View {
     }
 
     private var hasOpenSupplementaryConversation: Bool {
-        model.openThread != nil || model.isVoiceChatOpen
+        hasOpenSupplementaryToolbarConversation
+            || model.messageSearch.isPresented
+    }
+
+    private var hasOpenSupplementaryToolbarConversation: Bool {
+        model.openThread != nil
+            || model.isVoiceChatOpen
     }
 
     private var selectedVoiceChannel: Channel? {
@@ -729,6 +756,10 @@ private struct ChatRootView: View {
             systemImage: "bubble.left.fill",
             subtitle: "Voice channel chat"
         )
+    }
+
+    private var supplementaryCloseHelp: String {
+        model.openThread == nil ? "Close voice channel chat" : "Close thread"
     }
 
     private func closeSupplementaryConversation() {

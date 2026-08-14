@@ -138,16 +138,27 @@ nonisolated enum TimelineEarlierHistoryScrollIntentPolicy {
 enum NativeTimelineConversation: Hashable {
     case channel(ChannelID?)
     case thread(ChannelID?)
+    case search
 
     var id: ChannelID? {
         switch self {
         case let .channel(id), let .thread(id):
             id
+        case .search:
+            nil
         }
     }
 
     var supportsReply: Bool {
-        true
+        self != .search
+    }
+
+    var activatesMessageOnClick: Bool {
+        self == .search
+    }
+
+    var messageInteractionContext: NativeTimelineMessageInteractionContext {
+        self == .search ? .searchResult : .conversation
     }
 
     var loaderKind: NativeTimelineLoaderKind {
@@ -156,6 +167,8 @@ enum NativeTimelineConversation: Hashable {
             .messages
         case .thread:
             .replies
+        case .search:
+            .messages
         }
     }
 
@@ -166,6 +179,8 @@ enum NativeTimelineConversation: Hashable {
             model.messageRows
         case .thread:
             model.threadMessageRows
+        case .search:
+            model.messageSearch.rows
         }
     }
 
@@ -176,6 +191,8 @@ enum NativeTimelineConversation: Hashable {
             model.messageRowsRevision
         case .thread:
             model.threadMessageRowsRevision
+        case .search:
+            model.messageSearch.rowsRevision
         }
     }
 
@@ -186,6 +203,8 @@ enum NativeTimelineConversation: Hashable {
             model.messageRowsUpdateHint
         case .thread:
             model.threadMessageRowsUpdateHint
+        case .search:
+            nil
         }
     }
 
@@ -196,8 +215,15 @@ enum NativeTimelineConversation: Hashable {
             model.messageRowsUpdateJournal
         case .thread:
             model.threadMessageRowsUpdateJournal
+        case .search:
+            model.messageSearch.rowsUpdateJournal
         }
     }
+}
+
+nonisolated enum NativeTimelineMessageInteractionContext: Equatable {
+    case conversation
+    case searchResult
 }
 
 nonisolated enum NativeTimelineLoaderKind: Equatable {

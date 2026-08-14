@@ -181,6 +181,7 @@ enum NativeTimelineCompactTimestampMetrics {
 }
 
 nonisolated enum NativeTimelineMessageMenuAction: Equatable {
+    case jumpToMessage
     case retrySending
     case addReaction
     case reply
@@ -190,7 +191,12 @@ nonisolated enum NativeTimelineMessageMenuAction: Equatable {
     case copyText
     case copyLink
     case copyMessageID
+    case copyAuthorID
     case deleteMessage
+}
+
+nonisolated enum NativeTimelineSearchResultPresentation {
+    static let jumpToMessageSystemImage = "arrow.forward.to.line"
 }
 
 nonisolated enum NativeTimelineMessageMenuEntry: Equatable {
@@ -208,8 +214,13 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
         canEdit: Bool,
         canRetry: Bool,
         canReply: Bool,
-        canForward: Bool = false
+        canForward: Bool = false,
+        context: NativeTimelineMessageInteractionContext = .conversation
     ) -> [NativeTimelineMessageMenuEntry] {
+        if context == .searchResult {
+            return searchResultEntries(canDelete: canEdit)
+        }
+
         var result: [NativeTimelineMessageMenuEntry] = []
         if canRetry {
             result.append(.action(
@@ -274,6 +285,57 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
                 systemImage: "trash",
                 isDestructive: true
             ))
+        }
+        return result
+    }
+
+    private static func searchResultEntries(
+        canDelete: Bool
+    ) -> [NativeTimelineMessageMenuEntry] {
+        var result: [NativeTimelineMessageMenuEntry] = [
+            .action(
+                .jumpToMessage,
+                title: "Jump to Message",
+                systemImage: NativeTimelineSearchResultPresentation
+                    .jumpToMessageSystemImage
+            ),
+            .action(
+                .markUnread,
+                title: "Mark Unread",
+                systemImage: "envelope.badge"
+            ),
+            .separator,
+            .action(
+                .copyText,
+                title: "Copy Text",
+                systemImage: "doc.on.doc"
+            ),
+            .action(
+                .copyLink,
+                title: "Copy Link",
+                systemImage: "link"
+            ),
+            .action(
+                .copyMessageID,
+                title: "Copy Message ID",
+                systemImage: "number.square.fill"
+            ),
+            .action(
+                .copyAuthorID,
+                title: "Copy Message Author ID",
+                systemImage: "number.square.fill"
+            ),
+        ]
+        if canDelete {
+            result.append(contentsOf: [
+                .separator,
+                .action(
+                    .deleteMessage,
+                    title: "Delete Message",
+                    systemImage: "trash",
+                    isDestructive: true
+                ),
+            ])
         }
         return result
     }
@@ -701,6 +763,7 @@ nonisolated enum TimelineButtonActivationPolicy {
 
 nonisolated enum NativeTimelinePointerActivationTarget: Hashable {
     case loader
+    case message(MessageID)
     case componentReveal(MessageID, String)
     case componentImage(MessageID, String)
     case componentMedia(MessageID, String)
@@ -735,7 +798,7 @@ nonisolated enum NativeTimelinePointerActivationTarget: Hashable {
 
     var supportsTextSelection: Bool {
         switch self {
-        case .textMention, .textURL:
+        case .message, .textMention, .textURL:
             true
         default:
             false

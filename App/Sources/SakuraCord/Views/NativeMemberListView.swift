@@ -179,6 +179,26 @@ struct NativeMemberListView: NSViewRepresentable {
 }
 
 @MainActor
+final class NativeMemberListScrollView: NSScrollView {
+    override func layout() {
+        super.layout()
+        synchronizeCanvasFrame()
+    }
+
+    func synchronizeCanvasFrame() {
+        guard let canvas = documentView as? NativeMemberListCanvasView else { return }
+        let targetSize = NSSize(
+            width: max(0, contentSize.width),
+            height: max(1, canvas.contentHeight)
+        )
+        guard canvas.frame.size != targetSize else { return }
+        canvas.frame.size = targetSize
+        canvas.needsDisplay = true
+        canvas.updateVisibleOverlaysAndPrewarming(force: true)
+    }
+}
+
+@MainActor
 final class NativeMemberListCoordinator: NSObject {
     var parent: NativeMemberListView
     weak var scrollView: NSScrollView?
@@ -203,7 +223,7 @@ final class NativeMemberListCoordinator: NSObject {
         canvas.selectMember = { [weak self] member in
             self?.parent.selectMember(member)
         }
-        let scrollView = NSScrollView()
+        let scrollView = NativeMemberListScrollView()
         scrollView.documentView = canvas
         scrollView.drawsBackground = true
         scrollView.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.45)
@@ -250,12 +270,7 @@ final class NativeMemberListCoordinator: NSObject {
             isProfilePresented: parent.isProfilePresented,
             dismissProfile: parent.dismissProfile
         )
-        let width = max(1, scrollView.contentSize.width)
-        let height = max(1, canvas.contentHeight)
-        if canvas.frame.size != NSSize(width: width, height: height) {
-            canvas.frame = NSRect(x: 0, y: 0, width: width, height: height)
-            canvas.updateVisibleOverlaysAndPrewarming(force: true)
-        }
+        (scrollView as? NativeMemberListScrollView)?.synchronizeCanvasFrame()
         reportViewport(debounced: false)
         startPerformanceBenchmarkIfReady()
     }

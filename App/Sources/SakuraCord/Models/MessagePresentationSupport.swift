@@ -123,6 +123,14 @@ struct NativeTimelineTextPlan: Equatable, Sendable {
     }
 }
 
+nonisolated struct MessageSearchRowContext: Equatable, Sendable {
+    let channelID: ChannelID
+    let sectionTitle: String
+    let sectionSubtitle: String?
+    let systemImage: String
+    let showsSectionHeader: Bool
+}
+
 final class MessageRowPresentation: Identifiable, Equatable, Sendable {
     var id: MessageID {
         message.id
@@ -134,6 +142,7 @@ final class MessageRowPresentation: Identifiable, Equatable, Sendable {
     let replyPreview: MessageReplyPreview?
     let isReplyAvailable: Bool
     let textPlan: NativeTimelineTextPlan
+    let searchContext: MessageSearchRowContext?
 
     nonisolated init(
         message: Message,
@@ -141,7 +150,8 @@ final class MessageRowPresentation: Identifiable, Equatable, Sendable {
         startsDay: Bool,
         replyPreview: MessageReplyPreview?,
         isReplyAvailable: Bool,
-        textPlan: NativeTimelineTextPlan? = nil
+        textPlan: NativeTimelineTextPlan? = nil,
+        searchContext: MessageSearchRowContext? = nil
     ) {
         self.message = message
         self.startsGroup = startsGroup
@@ -149,6 +159,7 @@ final class MessageRowPresentation: Identifiable, Equatable, Sendable {
         self.replyPreview = replyPreview
         self.isReplyAvailable = isReplyAvailable
         self.textPlan = textPlan ?? NativeTimelineTextPlan.make(for: message)
+        self.searchContext = searchContext
     }
 
     nonisolated static func == (
@@ -164,6 +175,75 @@ final class MessageRowPresentation: Identifiable, Equatable, Sendable {
             && lhs.replyPreview == rhs.replyPreview
             && lhs.isReplyAvailable == rhs.isReplyAvailable
             && lhs.textPlan == rhs.textPlan
+            && lhs.searchContext == rhs.searchContext
+    }
+}
+
+nonisolated enum MessageSearchPresentation {
+    static func rows(
+        for page: MessageSearchPage,
+        channelsByID: [ChannelID: Channel]
+    ) -> [MessageRowPresentation] {
+        var previousChannelID: ChannelID?
+        return page.results.map { result in
+            let message = result.hit
+            let channel = channelsByID[message.channelID]
+            let contextMessagesByID = Dictionary(
+                uniqueKeysWithValues: result.messages.map { ($0.id, $0) }
+            )
+            let replyPreview = message.replyTo.flatMap { replyID in
+                contextMessagesByID[replyID].map(MessageReplyPreview.init(message:))
+                    ?? message.replyPreview
+            }
+            let showsSectionHeader = previousChannelID != message.channelID
+            previousChannelID = message.channelID
+            return MessageRowPresentation(
+                message: message,
+                startsGroup: true,
+                startsDay: false,
+                replyPreview: replyPreview,
+                isReplyAvailable: replyPreview != nil,
+                searchContext: MessageSearchRowContext(
+                    channelID: message.channelID,
+                    sectionTitle: sectionTitle(for: channel, message: message),
+                    sectionSubtitle: channel?.category,
+                    systemImage: sectionSystemImage(for: channel),
+                    showsSectionHeader: showsSectionHeader
+                )
+            )
+        }
+    }
+
+    private static func sectionTitle(
+        for channel: Channel?,
+        message: Message
+    ) -> String {
+        guard let channel else {
+            return "Channel \(message.channelID.description.suffix(6))"
+        }
+        switch channel.kind {
+        case .directMessage, .groupDirectMessage:
+            return channel.name
+        default:
+            return "# \(channel.name)"
+        }
+    }
+
+    private static func sectionSystemImage(for channel: Channel?) -> String {
+        switch channel?.kind {
+        case .directMessage:
+            return "at"
+        case .groupDirectMessage:
+            return "person.2.fill"
+        case .announcement:
+            return "megaphone.fill"
+        case .forum:
+            return "bubble.left.and.bubble.right.fill"
+        case .voice:
+            return "bubble.left.fill"
+        default:
+            return "number"
+        }
     }
 }
 

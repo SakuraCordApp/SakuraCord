@@ -219,6 +219,36 @@ private func containsScrollView(_ view: NSView) -> Bool {
 }
 
 @MainActor
+@Test func `native member scroll view resizes a zero width canvas after panel reentry`() {
+    let visibleMember = member(1, "Visible", status: .online)
+    let canvas = NativeMemberListCanvasView()
+    let scrollView = NativeMemberListScrollView(frame: .zero)
+    scrollView.documentView = canvas
+    canvas.update(
+        sections: [MemberSection(
+            id: .online,
+            title: "Online",
+            colorHex: nil,
+            totalCount: 1,
+            members: [visibleMember]
+        )],
+        profilePresentation: nil,
+        isProfilePresented: false,
+        dismissProfile: {}
+    )
+    scrollView.synchronizeCanvasFrame()
+    #expect(canvas.frame.width == 0)
+
+    scrollView.frame = CGRect(x: 0, y: 0, width: 250, height: 300)
+    scrollView.layoutSubtreeIfNeeded()
+
+    #expect(canvas.frame.width == scrollView.contentSize.width)
+    #expect(canvas.frame.width > 200)
+    #expect(canvas.accessibilityRows.keys.contains(.member(visibleMember.id)))
+    canvas.tearDown()
+}
+
+@MainActor
 @Test func `native member hover preserves avatar overlays and native foreground`() {
     let members = (1 ... 3).map {
         member(UInt64($0), "Member \($0)", status: .online)

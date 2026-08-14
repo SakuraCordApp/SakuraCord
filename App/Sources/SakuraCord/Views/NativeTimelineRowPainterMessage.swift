@@ -58,9 +58,58 @@ extension NativeTimelineRowPainter {
             let spoilerRevealStore = input.spoilerRevealStore
             let reactionCountTransitions = input.reactionCountTransitions
         let message = row.message
+        if let context = row.searchContext,
+           let region = layout.searchSectionRegion
+        {
+            NativeTimelineRowPainter.systemSymbol(
+                context.systemImage,
+                in: region.iconFrame,
+                color: .secondaryLabelColor,
+                inset: 1,
+                weight: .semibold
+            )
+            text(
+                context.sectionTitle,
+                in: region.titleFrame,
+                font: .systemFont(
+                    ofSize: NSFont.preferredFont(forTextStyle: .headline).pointSize,
+                    weight: .semibold
+                ),
+                color: .labelColor,
+                lineBreakMode: .byTruncatingTail
+            )
+            if let subtitle = context.sectionSubtitle,
+               let subtitleFrame = region.subtitleFrame
+            {
+                text(
+                    subtitle,
+                    in: subtitleFrame,
+                    font: .preferredFont(forTextStyle: .caption1),
+                    color: .secondaryLabelColor,
+                    lineBreakMode: .byTruncatingTail
+                )
+            }
+        }
         if highlighted {
             NSColor.controlAccentColor.withAlphaComponent(0.12).setFill()
-            bounds.fill()
+            (layout.searchCardFrame ?? bounds).fill()
+        }
+        if input.isHovered, let cardFrame = layout.searchCardFrame {
+            text(
+                "Jump",
+                in: CGRect(
+                    x: max(cardFrame.minX, cardFrame.maxX - 52),
+                    y: cardFrame.minY + 8,
+                    width: 40,
+                    height: 15
+                ),
+                font: .systemFont(
+                    ofSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize,
+                    weight: .semibold
+                ),
+                color: .controlAccentColor,
+                alignment: .right
+            )
         }
         if let frame = layout.daySeparatorFrame {
             dateSeparator(date: message.timestamp, frame: frame)

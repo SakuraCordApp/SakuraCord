@@ -568,6 +568,8 @@ extension NativeMessageTimelineCoordinator {
                 }
             } else {
                 canvas.model = parent.model
+                canvas.messageInteractionContext =
+                    parent.conversation.messageInteractionContext
                 canvas.actions = actions
             }
             let reserveCollapseAnchor: VisibleAnchor?
@@ -771,6 +773,11 @@ extension NativeMessageTimelineCoordinator {
         ) -> NativeTimelineRowActions {
             return NativeTimelineRowActions(
                 loadEarlier: parent.loadEarlier,
+                openMessage: parent.conversation.activatesMessageOnClick
+                    ? { [weak model = parent.model] message in
+                        model?.navigateToSearchResult(message)
+                    }
+                    : nil,
                 openReply: parent.openReply,
                 reply: parent.conversation.supportsReply
                     ? { [weak model = parent.model] message in

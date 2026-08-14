@@ -208,6 +208,8 @@ extension NativeMessageTimelineCoordinator {
                 )
             )
             canvas.presentedConversationID = parent.conversation.id
+            canvas.messageInteractionContext =
+                parent.conversation.messageInteractionContext
             canvas.apply(
                 storage: storage,
                 model: parent.model,

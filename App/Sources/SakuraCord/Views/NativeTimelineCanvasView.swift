@@ -159,6 +159,7 @@ final class NativeTimelineCanvasView: NSView {
 
     var model: AppModel?
     var presentedConversationID: ChannelID?
+    var messageInteractionContext: NativeTimelineMessageInteractionContext = .conversation
     var actions: NativeTimelineRowActions?
     var onWidthChange: ((CGFloat) -> Void)?
     var usesViewportSizedBacking = false
@@ -374,6 +375,21 @@ enum NativeTimelineRowPainter {
         transform.translateX(by: rowFrame.minX, yBy: rowFrame.minY)
         transform.concat()
         let bounds = CGRect(origin: .zero, size: rowFrame.size)
+
+        if let cardFrame = layout.searchCardFrame {
+            NSColor.controlBackgroundColor.withAlphaComponent(0.64).setFill()
+            NSBezierPath(
+                concentricRoundedRect: cardFrame,
+                cornerRadius: 9
+            ).fill()
+            NSColor.separatorColor.withAlphaComponent(0.42).setStroke()
+            let border = NSBezierPath(
+                concentricRoundedRect: cardFrame.insetBy(dx: 0.5, dy: 0.5),
+                cornerRadius: 8.5
+            )
+            border.lineWidth = 1
+            border.stroke()
+        }
 
         if case let .message(row, _, _) = item,
            let highlightFrame = layout.highlightFrame

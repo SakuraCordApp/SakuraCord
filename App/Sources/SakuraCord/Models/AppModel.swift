@@ -132,6 +132,7 @@ final class AppModel {
     var checkingChannelIDs: Set<ChannelID> = []
     var selectedChannel: Channel?
     var workspaceNavigationOverlay: WorkspaceNavigationOverlay?
+    let messageSearch = MessageSearchState()
     @ObservationIgnored var lastOpenedChannelIDsByGuild: [GuildID: ChannelID] = [:]
     @ObservationIgnored var messages: [Message] = []
     @ObservationIgnored var messageRows: [MessageRowPresentation] = []

@@ -1,0 +1,51 @@
+import Foundation
+import SakuraCordModels
+import Testing
+@testable import SakuraCord
+
+@Test func `message search operators resolve names ids multi value filters and content`() throws {
+    let maya = User(
+        id: UserID(rawValue: 4),
+        username: "maya_user",
+        displayName: "Maya Chen"
+    )
+    let releaseChannel = Channel(
+        id: ChannelID(rawValue: 200),
+        guildID: GuildID(rawValue: 100),
+        name: "release-notes"
+    )
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try #require(TimeZone(secondsFromGMT: 0))
+
+    let parsed = MessageSearchOperatorParser.parse(
+        #"roadmap from:"Maya Chen" in:release-notes mentions:4 has:image,video author_type:bot pinned:true before:2026-08-14 after:2026-08-10"#,
+        filters: .init(contentTypes: [.link]),
+        users: [maya],
+        channels: [releaseChannel],
+        calendar: calendar
+    )
+
+    #expect(parsed.content == "roadmap")
+    #expect(parsed.filters.authorIDs == [maya.id])
+    #expect(parsed.filters.channelIDs == [releaseChannel.id])
+    #expect(parsed.filters.mentionedUserIDs == [maya.id])
+    #expect(parsed.filters.contentTypes == [.link, .image, .video])
+    #expect(parsed.filters.authorTypes == [.bot])
+    #expect(parsed.filters.pinned == true)
+    let before = try #require(calendar.date(from: DateComponents(year: 2026, month: 8, day: 14)))
+    let after = try #require(calendar.date(from: DateComponents(year: 2026, month: 8, day: 11)))
+    #expect(parsed.filters.maximumMessageID == .messageSearchBoundary(at: before))
+    #expect(parsed.filters.minimumMessageID == .messageSearchBoundary(at: after))
+}
+
+@Test func `unresolved and unknown message search operators stay searchable text`() {
+    let parsed = MessageSearchOperatorParser.parse(
+        "hello from:unknown future:value before:2026-02-31",
+        filters: .init(),
+        users: [],
+        channels: []
+    )
+
+    #expect(parsed.content == "hello from:unknown future:value before:2026-02-31")
+    #expect(parsed.filters.isEmpty)
+}
