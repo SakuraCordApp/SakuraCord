@@ -27,6 +27,50 @@ struct GatewayLifecycleEventTests {
         #expect(channel.kind == .forum)
     }
 
+    @Test func `thread-shaped channel dispatch stays out of guild channels`() async {
+        let provider = makeProvider()
+        await provider.receiveGatewayDispatchForTesting(
+            name: "GUILD_CREATE",
+            data: guildCreatePayload(includesUnavailable: false)
+        )
+
+        let threadID = ChannelID(rawValue: 250)
+        await provider.receiveGatewayDispatchForTesting(
+            name: "CHANNEL_UPDATE",
+            data: channel(
+                id: threadID.description,
+                type: 11,
+                name: "Loose forum post",
+                parentID: forumChannelID.description
+            )
+        )
+
+        #expect(await provider.cachedChannelForTesting(channelID: threadID) == nil)
+        #expect(
+            await provider.cachedForumPostForTesting(threadID: threadID)?.thread.parentID
+                == forumChannelID
+        )
+    }
+
+    @Test func `guild channel projection excludes thread records`() throws {
+        let data = Data(
+            #"""
+            [
+              {"id":"201","guild_id":"100","type":15,"name":"forum"},
+              {
+                "id":"250","guild_id":"100","type":11,
+                "name":"Loose forum post","parent_id":"201"
+              }
+            ]
+            """#.utf8
+        )
+        let values = try JSONDecoder().decode([ChannelDTO].self, from: data)
+
+        let channels = try DiscordRESTProvider.domainChannels(values, guildID: guildID)
+
+        #expect(channels.map(\.id) == [forumChannelID])
+    }
+
     @Test func `guild channel role member and user lifecycle reconciles cached state`() async {
         let provider = makeProvider()
         await provider.receiveGatewayDispatchForTesting(

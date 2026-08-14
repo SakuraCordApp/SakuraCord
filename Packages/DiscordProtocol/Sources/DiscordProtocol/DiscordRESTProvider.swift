@@ -1030,7 +1030,7 @@ extension DiscordRESTProvider {
         let categories = Dictionary(
             uniqueKeysWithValues: values.filter { $0.type == 4 }.map { ($0.id, $0) }
         )
-        return try values.filter { $0.type != 4 }.map { dto in
+        return try values.filter { $0.type != 4 && !$0.isThread }.map { dto in
             let category = dto.parentID.flatMap { categories[$0] }
             return try dto.domain(
                 guildID: guildID,

@@ -1357,6 +1357,14 @@ extension DiscordRESTProvider {
             guard let dto = try? JSONDecoder().decode(ChannelDTO.self, from: data) else {
                 return
             }
+            if dto.isThread {
+                ingestForumThreads(
+                    [dto],
+                    fallbackGuildID: dto.guildID.flatMap(GuildID.init),
+                    advancesParentLatestThreadID: name == "CHANNEL_CREATE"
+                )
+                return
+            }
             if let guildID = dto.guildID.flatMap(GuildID.init) {
                 if name == "CHANNEL_CREATE", let channelID = ChannelID(dto.id) {
                     appendQuickSwitcherChannelStoreOrder([channelID])

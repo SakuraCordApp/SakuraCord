@@ -1509,6 +1509,14 @@ struct ChannelDTO: Decodable {
     var status: String?
     var voiceStartTime: DiscordTimestampDTO?
     var message: MessageDTO?
+
+    var isThread: Bool {
+        switch type {
+        case 10, 11, 12: true
+        default: false
+        }
+    }
+
     enum CodingKeys: String, CodingKey {
         case id
         case guildID = "guild_id"

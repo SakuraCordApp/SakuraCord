@@ -137,7 +137,7 @@ extension DiscordRESTProvider {
             }
         }
         let payload: ChannelDTO = try await request("/channels/\(threadID)")
-        guard [10, 11, 12].contains(payload.type) else {
+        guard payload.isThread else {
             throw ChatProviderError.invalidRequest("That link does not point to a thread.")
         }
         let post = try payload.forumPost(fallbackGuildID: nil)
