@@ -932,6 +932,7 @@ extension NativeMessageTimelineCoordinator {
                     bottomInset: bottomInset,
                     verticalPadding:
                         ChatDetailLayoutPolicy.timelineTopPadding
+                            + parent.topContentInset
                 )
         }
 

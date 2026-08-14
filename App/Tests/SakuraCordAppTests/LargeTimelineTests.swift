@@ -1479,6 +1479,14 @@ func `native scrolling removes installed pointer tracking immediately`() {
             verticalPadding: ChatDetailLayoutPolicy.timelineTopPadding
         )
     #expect(preservedEmptyChannelTop == 471)
+
+    let previewTop = NativeMessageTimelineLayoutPolicy.shortContentTopInset(
+        viewportHeight: 400,
+        contentHeight: 600,
+        bottomInset: 76,
+        verticalPadding: ChatDetailLayoutPolicy.timelineTopPadding + 46
+    )
+    #expect(previewTop == ChatDetailLayoutPolicy.timelineTopPadding + 46)
 }
 
 @Test func `native timeline bottom scroll includes the floating footer inset`() {

@@ -723,6 +723,10 @@ final class AccountReadStateModel {
         return value.canAcknowledge ? newestUnacknowledgedMessage(in: channelID) : nil
     }
 
+    func presentationState(channelID: ChannelID) -> Presentation? {
+        presentations[channelID]
+    }
+
     func markAcknowledgementPending(channelID: ChannelID, messageID: MessageID) {
         var entry = entry(for: channelID)
         if pendingRollbacks[channelID]?[messageID] == nil {

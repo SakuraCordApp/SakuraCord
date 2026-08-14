@@ -719,6 +719,7 @@ extension DiscordRESTProvider {
                 cachedGuildRailItems = guilds.map { .guild($0.id) }
                 var voiceStateCount = 0
                 var currentUserRolesByGuild: [GuildID: [RoleID]] = [:]
+                var currentUserFlagsByGuild: [GuildID: UInt64] = [:]
                 for guild in readyGuilds {
                     let guildID = GuildID(guild.id)
                     if let guildID {
@@ -762,6 +763,7 @@ extension DiscordRESTProvider {
                            let currentMember = members.first(where: { $0.id == currentUserID })
                         {
                             currentUserRolesByGuild[guildID] = currentMember.roles.map(\.id)
+                            currentUserFlagsByGuild[guildID] = currentMember.flags
                         }
                     }
                     if let guildID, let emojis = guild.emojis {
@@ -780,6 +782,9 @@ extension DiscordRESTProvider {
                 // learned from an earlier READY payload.
                 continuation?.yield(
                     .currentUserRolesSnapshot(currentUserRolesByGuild)
+                )
+                continuation?.yield(
+                    .currentUserMemberFlagsSnapshot(currentUserFlagsByGuild)
                 )
                 if voiceStateCount > 0 {
                     gatewayLogger.info(
@@ -898,6 +903,10 @@ extension DiscordRESTProvider {
                             guildID: guildID,
                             roleIDs: currentMember.roles.map(\.id)
                         ))
+                        continuation?.yield(.currentUserMemberFlagsChanged(
+                            guildID: guildID,
+                            flags: currentMember.flags
+                        ))
                     }
                 }
                 continuation?.yield(.knownUsersChanged(currentKnownUsers()))
@@ -982,6 +991,11 @@ extension DiscordRESTProvider {
                         continuation?.yield(
                             .currentUserRolesChanged(
                                 guildID: guildID, roleIDs: ownMember.roleIDs
+                            )
+                        )
+                        continuation?.yield(
+                            .currentUserMemberFlagsChanged(
+                                guildID: guildID, flags: ownMember.flags
                             )
                         )
                     }
@@ -1880,6 +1894,9 @@ extension DiscordRESTProvider {
         if member.id == currentUser?.id {
             continuation?.yield(
                 .currentUserRolesChanged(guildID: guildID, roleIDs: member.roleIDs)
+            )
+            continuation?.yield(
+                .currentUserMemberFlagsChanged(guildID: guildID, flags: member.flags)
             )
             if var guild = cachedGuilds[guildID] {
                 guild.currentUserPermissions = nil

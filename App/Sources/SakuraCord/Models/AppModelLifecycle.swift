@@ -239,6 +239,7 @@ extension AppModel {
         didAttemptDiscordEmojiSettings = false
         voiceStates = [:]
         privateCallsByChannel = [:]
+        resetOnboardingState()
         visibleChannels = []
         selectedChannel = nil
         selectedGuildID = nil
@@ -379,6 +380,7 @@ extension AppModel {
         didAttemptDiscordEmojiSettings = false
         voiceStates = [:]
         privateCallsByChannel = [:]
+        resetOnboardingState()
         visibleChannels = []
         selectedChannel = nil
         selectedGuildID = nil
@@ -690,6 +692,7 @@ extension AppModel {
         else { return }
         let roleIDs = Set(currentMember.roles.map(\.id))
         currentUserRoleIDsByGuild[firstGuildID] = roleIDs
+        currentUserMemberFlagsByGuild[firstGuildID] = currentMember.flags
         readState.updateCurrentUserRoles(roleIDs, guildID: firstGuildID)
     }
 
@@ -1077,6 +1080,10 @@ extension AppModel {
             )
         }
         dismissAllProfiles()
+        if guildID != selectedGuildID {
+            channelsAndRolesPreviewChannelID = nil
+            guildUtilityDestination = nil
+        }
         selectedGuildID = guildID
         restoreMemberPresentation(for: guildID)
         mentionAutocompleteMembers = []

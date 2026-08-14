@@ -1763,6 +1763,7 @@ struct GuildMemberDTO: Decodable {
     var user: UserDTO
     var nick: String?
     var roles: [String]?
+    var flags: UInt64?
     var presence: GuildPresenceDTO?
     var avatar: String?
     var banner: String?
@@ -1815,6 +1816,7 @@ struct GuildMemberDTO: Decodable {
             isRoleCategory: categoryRole != nil,
             roleIDs: (roles ?? []).compactMap(RoleID.init),
             roles: domainRoles,
+            flags: flags ?? 0,
             guildAvatarURL: guildAvatarURL,
             globalDisplayName: globalDisplayName,
             activityText: activities.first(where: { $0.type != 4 })?.displayText ?? customStatus,

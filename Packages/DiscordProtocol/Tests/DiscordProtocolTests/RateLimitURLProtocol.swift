@@ -75,6 +75,9 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var guildNotificationMethod: String?
     nonisolated(unsafe) static var guildNotificationBody: [String: Any]?
     nonisolated(unsafe) static var guildNotificationStatus = 200
+    nonisolated(unsafe) static var onboardingMethods: [String] = []
+    nonisolated(unsafe) static var onboardingPaths: [String] = []
+    nonisolated(unsafe) static var onboardingBodies: [[String: Any]] = []
     nonisolated(unsafe) static var channelNotificationRequestCount = 0
     nonisolated(unsafe) static var channelNotificationMethod: String?
     nonisolated(unsafe) static var channelNotificationPath: String?
@@ -162,6 +165,9 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
         guildNotificationMethod = nil
         guildNotificationBody = nil
         guildNotificationStatus = 200
+        onboardingMethods = []
+        onboardingPaths = []
+        onboardingBodies = []
         channelNotificationRequestCount = 0
         channelNotificationMethod = nil
         channelNotificationPath = nil
@@ -396,6 +402,36 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
                 status == 200
                 ? #"[{"guild_id":"100"}]"#
                 : #"{"retry_after":0.01,"global":false}"#
+        case "/api/v9/guilds/100/onboarding",
+             "/api/v9/guilds/100/onboarding-responses":
+            RateLimitURLProtocol.onboardingMethods.append(request.httpMethod ?? "")
+            RateLimitURLProtocol.onboardingPaths.append(path)
+            if let body = RateLimitURLProtocol.requestBody(request),
+               let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any]
+            {
+                RateLimitURLProtocol.onboardingBodies.append(object)
+            }
+            status = 200
+            if path.hasSuffix("onboarding-responses"), request.httpMethod == "PUT" {
+                json = #"{"guild_id":"100","responses":["option"]}"#
+            } else {
+                json = #"""
+                {
+                  "guild_id":"100",
+                  "prompts":[{
+                    "id":"prompt", "type":0, "title":"Choose",
+                    "single_select":false, "required":true, "in_onboarding":true,
+                    "options":[{
+                      "id":"option", "channel_ids":["200"],
+                      "role_ids":["300"], "title":"Option"
+                    }]
+                  }],
+                  "default_channel_ids":["201"], "responses":["option"],
+                  "onboarding_prompts_seen":{}, "onboarding_responses_seen":{},
+                  "mode":1, "enabled":true
+                }
+                """#
+            }
         case "/api/v9/users/@me/guilds/100/settings",
              "/api/v9/users/@me/guilds/@me/settings":
             RateLimitURLProtocol.channelNotificationRequestCount += 1

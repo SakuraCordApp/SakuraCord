@@ -370,6 +370,31 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
     }
 }
 
+/// Mirrors the native hover and selection material used by channel rows while
+/// allowing utility destinations to keep their own selection state.
+struct ChannelSidebarRowHighlightBridge: NSViewRepresentable {
+    let isSelected: Bool
+
+    func makeNSView(context: Context) -> ChannelContextMenuHitView {
+        let view = ChannelContextMenuHitView()
+        view.rendersSelectedHighlight = true
+        view.isSelected = isSelected
+        return view
+    }
+
+    func updateNSView(_ nsView: ChannelContextMenuHitView, context: Context) {
+        nsView.rendersSelectedHighlight = true
+        nsView.isSelected = isSelected
+    }
+
+    static func dismantleNSView(
+        _ nsView: ChannelContextMenuHitView,
+        coordinator: Void
+    ) {
+        nsView.uninstallFromNativeRow()
+    }
+}
+
 extension MessageNotificationLevel {
     nonisolated var menuTitle: String {
         switch self {
@@ -384,6 +409,11 @@ extension MessageNotificationLevel {
 final class ChannelContextMenuHitView: NSView {
     var menuProvider: (() -> NSMenu?)?
     var isSelected = false {
+        didSet {
+            updateNativeHoverPresentation()
+        }
+    }
+    var rendersSelectedHighlight = false {
         didSet {
             updateNativeHoverPresentation()
         }
@@ -491,7 +521,11 @@ final class ChannelContextMenuHitView: NSView {
     }
 
     private func updateNativeHoverPresentation() {
-        nativeHoverView.showsHover = isHovering && !isSelected
+        nativeHoverView.alphaValue =
+            rendersSelectedHighlight && isSelected ? 1 : 0.18
+        nativeHoverView.showsHover =
+            rendersSelectedHighlight && isSelected
+                || isHovering && !isSelected
         guard nativeHoverView.showsHover else { return }
         synchronizeNativeHoverGeometry()
     }

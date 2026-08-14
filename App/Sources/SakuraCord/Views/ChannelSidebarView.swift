@@ -94,6 +94,8 @@ struct ChannelSidebarView: View {
     let isAuthenticated: Bool
     let isOfflineTesting: Bool
     let activeVoiceChannelID: ChannelID?
+    let showsChannelsAndRoles: Bool
+    let openChannelsAndRoles: () -> Void
     let connectAccount: () -> Void
     let updateStatus: (PresenceStatus) async -> Void
     @Environment(\.displayScale) private var displayScale
@@ -122,12 +124,29 @@ struct ChannelSidebarView: View {
                         voiceModel.unreadCategoryIDs(guildID: $0.id)
                     } ?? []
                     List(selection: deferredGuildSelection) {
+                        if showsChannelsAndRoles {
+                            ChannelsAndRolesSidebarRow(
+                                isSelected: voiceModel.guildUtilityDestination != nil,
+                                action: openChannelsAndRoles
+                            )
+                            .listRowInsets(
+                                EdgeInsets(top: 5, leading: 8, bottom: 5, trailing: 8)
+                            )
+                            Divider()
+                                .listRowInsets(
+                                    EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12)
+                                )
+                                .environment(\.defaultMinListRowHeight, 1)
+                        }
                         let groups = ChannelGroup.make(from: displayedChannels)
                         ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
                             ChannelGroupRows(
                                 model: voiceModel,
                                 group: group,
-                                addsTopSpacing: index == groups.startIndex,
+                                addsTopSpacing: index == groups.startIndex
+                                    && !showsChannelsAndRoles,
+                                pullsTowardUtilityDivider: index == groups.startIndex
+                                    && showsChannelsAndRoles,
                                 rulesChannelID: guild?.rulesChannelID,
                                 activeVoiceChannelID: activeVoiceChannelID,
                                 hiddenChannelIDs: hiddenChannelIDs,
@@ -140,6 +159,7 @@ struct ChannelSidebarView: View {
                         }
                     }
                     .listStyle(.sidebar)
+                    .padding(.top, showsChannelsAndRoles ? 8 : 0)
                     .scrollContentBackground(.hidden)
                     .clipped()
                     .onChange(of: selection) { _, newSelection in
@@ -212,7 +232,9 @@ struct ChannelSidebarView: View {
     }
 
     private var displayedChannels: [Channel] {
-        channels
+        guard let guildID = guild?.id else { return channels }
+        let hidden = voiceModel.personalizationHiddenChannelIDs(guildID: guildID)
+        return channels.filter { !hidden.contains($0.id) }
     }
 
     private var directMessageChannels: [Channel] {
@@ -268,6 +290,35 @@ struct ChannelSidebarView: View {
             }
             return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }}
+    }
+}
+
+private struct ChannelsAndRolesSidebarRow: View {
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Color.clear.frame(width: 8, height: 8)
+                Image(systemName: ChannelIconPresentation.channelsAndRolesSystemImage)
+                    .frame(width: 16)
+                Text("Channels & Roles")
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(
+                isSelected ? Color.primary : Color.primary.opacity(0.78)
+            )
+            .contentShape(.rect)
+            .overlay {
+                ChannelSidebarRowHighlightBridge(isSelected: isSelected)
+            }
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(Color.clear)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityHint("Customize roles and visible channels")
     }
 }
 
@@ -362,6 +413,7 @@ private struct ChannelGroupRows: View {
     let model: AppModel
     let group: ChannelGroup
     let addsTopSpacing: Bool
+    let pullsTowardUtilityDivider: Bool
     let rulesChannelID: ChannelID?
     let activeVoiceChannelID: ChannelID?
     let hiddenChannelIDs: Set<ChannelID>
@@ -374,6 +426,7 @@ private struct ChannelGroupRows: View {
         model: AppModel,
         group: ChannelGroup,
         addsTopSpacing: Bool,
+        pullsTowardUtilityDivider: Bool,
         rulesChannelID: ChannelID?,
         activeVoiceChannelID: ChannelID?,
         hiddenChannelIDs: Set<ChannelID>,
@@ -384,6 +437,7 @@ private struct ChannelGroupRows: View {
         self.model = model
         self.group = group
         self.addsTopSpacing = addsTopSpacing
+        self.pullsTowardUtilityDivider = pullsTowardUtilityDivider
         self.rulesChannelID = rulesChannelID
         self.activeVoiceChannelID = activeVoiceChannelID
         self.hiddenChannelIDs = hiddenChannelIDs
@@ -403,34 +457,24 @@ private struct ChannelGroupRows: View {
     }
 
     var body: some View {
-        Section {
-            if group.name == nil || isExpanded {
-                ForEach(group.channels) { channel in
-                    if channel.kind == .voice {
-                        ChannelRow(
-                            model: model,
-                            channel: channel,
-                            rulesChannelID: rulesChannelID,
-                            isVoiceConnected: activeVoiceChannelID == channel.id,
-                            isHidden: hiddenChannelIDs.contains(channel.id),
-                            isChecking: checkingChannelIDs.contains(channel.id)
-                        )
-                        .tag(channel.id)
-                        ForEach(voiceParticipantsByChannel[channel.id] ?? []) { participant in
-                            VoiceParticipantRow(participant: participant)
-                        }
-                    } else {
-                        ChannelRow(
-                            model: model,
-                            channel: channel,
-                            rulesChannelID: rulesChannelID,
-                            isHidden: hiddenChannelIDs.contains(channel.id),
-                            isChecking: checkingChannelIDs.contains(channel.id)
-                        )
-                        .tag(channel.id)
-                    }
-                }
+        Group {
+            if group.name == nil {
+                channelRows
+            } else {
+                categorizedRows
             }
+        }
+        .onChange(of: shouldCollapseFromServer) { _, shouldCollapse in
+            guard shouldCollapse, isExpanded else { return }
+            withAnimation(.snappy(duration: 0.18)) {
+                isExpanded = false
+            }
+        }
+    }
+
+    private var categorizedRows: some View {
+        Section {
+            if isExpanded { channelRows }
         } header: {
             VStack(spacing: 0) {
                 if addsTopSpacing {
@@ -531,11 +575,34 @@ private struct ChannelGroupRows: View {
                     }
                 }
             }
+            .padding(.top, pullsTowardUtilityDivider ? -8 : 0)
         }
-        .onChange(of: shouldCollapseFromServer) { _, shouldCollapse in
-            guard shouldCollapse, isExpanded else { return }
-            withAnimation(.snappy(duration: 0.18)) {
-                isExpanded = false
+    }
+
+    @ViewBuilder private var channelRows: some View {
+        ForEach(group.channels) { channel in
+            if channel.kind == .voice {
+                ChannelRow(
+                    model: model,
+                    channel: channel,
+                    rulesChannelID: rulesChannelID,
+                    isVoiceConnected: activeVoiceChannelID == channel.id,
+                    isHidden: hiddenChannelIDs.contains(channel.id),
+                    isChecking: checkingChannelIDs.contains(channel.id)
+                )
+                .tag(channel.id)
+                ForEach(voiceParticipantsByChannel[channel.id] ?? []) { participant in
+                    VoiceParticipantRow(participant: participant)
+                }
+            } else {
+                ChannelRow(
+                    model: model,
+                    channel: channel,
+                    rulesChannelID: rulesChannelID,
+                    isHidden: hiddenChannelIDs.contains(channel.id),
+                    isChecking: checkingChannelIDs.contains(channel.id)
+                )
+                .tag(channel.id)
             }
         }
     }

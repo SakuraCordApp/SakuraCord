@@ -4,6 +4,7 @@ import SwiftUI
 struct MessageTimelineView: View {
     let model: AppModel
     let bottomContentInset: CGFloat
+    var topContentInset: CGFloat = 0
     var editRequest: MessageTimelineEditRequest?
     private let runsPerformanceAutoScroll =
         AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments)
@@ -44,6 +45,7 @@ struct MessageTimelineView: View {
                 model.messageLoadErrorIsEarlierPage
                     && model.messageLoadError != nil,
             bottomContentInset: bottomContentInset,
+            topContentInset: topContentInset,
             unreadMessageID: exactUnreadBoundaryMessageID,
             highlightedMessageID: highlightedMessageID,
             initialScrollTarget: initialScrollTarget,
@@ -73,7 +75,8 @@ struct MessageTimelineView: View {
                 messageCount: model.messages.count
             ) {
                 MessageTimelineLoadingSkeleton(
-                    bottomContentInset: bottomContentInset
+                    bottomContentInset: bottomContentInset,
+                    topContentInset: topContentInset
                 )
             }
         }
@@ -90,7 +93,9 @@ struct MessageTimelineView: View {
                     }
                 }
             }
-            .padding(8)
+            .padding(.horizontal, 8)
+            .padding(.top, 8 + topContentInset)
+            .padding(.bottom, 8)
         }
         .overlay(alignment: .bottom) {
             if hasEstablishedInitialPosition,
@@ -554,6 +559,7 @@ nonisolated enum TimelineUnreadBoundaryPolicy {
 
 struct MessageTimelineLoadingSkeleton: View {
     var bottomContentInset: CGFloat = 0
+    var topContentInset: CGFloat = 0
 
     private static let patterns = [
         MessageTimelineSkeletonRow(id: 0, firstLineWidth: 132, secondLineWidth: 330),
@@ -583,11 +589,16 @@ struct MessageTimelineLoadingSkeleton: View {
                         }
                     }
                     .padding(.horizontal, 16)
-                    .padding(.vertical, 18)
+                    .padding(.top, 18 + topContentInset)
+                    .padding(.bottom, 18)
                     .frame(
                         maxWidth: .infinity,
                         minHeight: 0,
-                        maxHeight: max(0, geometry.size.height - bottomContentInset),
+                        maxHeight: max(
+                            0,
+                            geometry.size.height - bottomContentInset
+                                - topContentInset
+                        ),
                         alignment: .topLeading
                     )
                     .clipped()

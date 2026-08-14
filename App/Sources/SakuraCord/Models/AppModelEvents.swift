@@ -431,6 +431,8 @@ extension AppModel {
         switch event {
         case .currentUserRolesChanged, .currentUserRolesSnapshot:
             consumeCurrentUserRoleEvent(event)
+        case .currentUserMemberFlagsChanged, .currentUserMemberFlagsSnapshot:
+            consumeCurrentUserMemberFlagsEvent(event)
         case .voiceStateChanged(let state):
             consumeVoiceStateChanged(state)
         case .privateCallChanged(var call):
@@ -452,6 +454,24 @@ extension AppModel {
             commandComposer.receiveAutocomplete(result)
         case .interaction(let event):
             consumeInteraction(event)
+        default:
+            break
+        }
+    }
+
+    func consumeCurrentUserMemberFlagsEvent(_ event: ClientEvent) {
+        switch event {
+        case .currentUserMemberFlagsChanged(let guildID, let flags):
+            currentUserMemberFlagsByGuild[guildID] = flags
+            if flags & DiscordGuildMemberFlags.completedOnboarding != 0 {
+                onboardingWaitingGuildIDs.remove(guildID)
+            }
+        case .currentUserMemberFlagsSnapshot(let flagsByGuild):
+            currentUserMemberFlagsByGuild = flagsByGuild
+            onboardingWaitingGuildIDs = onboardingWaitingGuildIDs.filter {
+                flagsByGuild[$0, default: 0]
+                    & DiscordGuildMemberFlags.completedOnboarding == 0
+            }
         default:
             break
         }
@@ -579,7 +599,13 @@ extension AppModel {
         } else {
             refreshUnreadPresentation()
         }
-        if disposition.shouldNotify {
+        let isPermittedMention = disposition.mentionKind != .none
+        if disposition.shouldNotify,
+           isPermittedMention
+            || !suppressesOrdinaryNotificationsForPersonalization(
+                channelID: message.channelID
+            )
+        {
             deliverNativeNotification(for: message)
         }
         if isFlushingCreatedMessageBatch {

@@ -24,6 +24,7 @@ struct NativeMessageTimelineView: NSViewRepresentable {
     let isLoadingEarlier: Bool
     let earlierHistoryLoadFailed: Bool
     let bottomContentInset: CGFloat
+    let topContentInset: CGFloat
     let unreadMessageID: MessageID?
     let highlightedMessageID: MessageID?
     let initialScrollTarget: MessageTimelineScrollRequest.Target?
@@ -47,6 +48,7 @@ struct NativeMessageTimelineView: NSViewRepresentable {
         isLoadingEarlier: Bool,
         earlierHistoryLoadFailed: Bool = false,
         bottomContentInset: CGFloat,
+        topContentInset: CGFloat = 0,
         unreadMessageID: MessageID?,
         highlightedMessageID: MessageID?,
         initialScrollTarget: MessageTimelineScrollRequest.Target? = nil,
@@ -71,6 +73,7 @@ struct NativeMessageTimelineView: NSViewRepresentable {
         self.isLoadingEarlier = isLoadingEarlier
         self.earlierHistoryLoadFailed = earlierHistoryLoadFailed
         self.bottomContentInset = bottomContentInset
+        self.topContentInset = topContentInset
         self.unreadMessageID = unreadMessageID
         self.highlightedMessageID = highlightedMessageID
         self.initialScrollTarget = initialScrollTarget

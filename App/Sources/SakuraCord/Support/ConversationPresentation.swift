@@ -33,6 +33,8 @@ nonisolated enum DiscordPermissionBits {
 }
 
 nonisolated enum ChannelIconPresentation {
+    static let channelsAndRolesSystemImage = "rectangle.and.text.magnifyingglass"
+
     static func systemImage(
         for channel: Channel,
         isHidden: Bool,

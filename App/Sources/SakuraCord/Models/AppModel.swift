@@ -17,6 +17,10 @@ enum ServerRailNavigationDestination: Equatable {
     case guild(GuildID)
 }
 
+enum GuildUtilityDestination: Equatable {
+    case channelsAndRoles(GuildID)
+}
+
 nonisolated struct ConversationPermissionBasis {
     let guild: Guild
     let currentUserID: UserID
@@ -448,6 +452,15 @@ final class AppModel {
         UserDefaults.standard.object(forKey: "voiceOutputVolume") as? Double ?? 1
     )
     var selectedGuildID: GuildID?
+    var guildUtilityDestination: GuildUtilityDestination?
+    var channelsAndRolesPreviewChannelID: ChannelID?
+    var onboardingConfigurationsByGuild: [GuildID: GuildOnboardingConfiguration] = [:]
+    var onboardingLoadingGuildIDs: Set<GuildID> = []
+    var onboardingErrorsByGuild: [GuildID: String] = [:]
+    var currentUserMemberFlagsByGuild: [GuildID: UInt64] = [:]
+    var onboardingSubmissionGuildIDs: Set<GuildID> = []
+    var onboardingWaitingGuildIDs: Set<GuildID> = []
+    @ObservationIgnored var onboardingSaveTasks: [GuildID: Task<Void, Never>] = [:]
     var incomingPrivateCalls: [PrivateCall] {
         guard let currentUserID = snapshot?.currentUser.id else { return [] }
         return privateCallsByChannel.values
@@ -882,6 +895,12 @@ final class AppModel {
     var selectedChannelID: ChannelID? {
         didSet {
             guard selectedChannelID != oldValue else { return }
+            if selectedChannelID != nil,
+               selectedChannelID != channelsAndRolesPreviewChannelID
+            {
+                channelsAndRolesPreviewChannelID = nil
+                guildUtilityDestination = nil
+            }
             if pendingAutomaticChannelAccessID != selectedChannelID {
                 pendingAutomaticChannelAccessID = nil
             }
