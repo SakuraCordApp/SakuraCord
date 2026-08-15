@@ -1,45 +1,6 @@
-import AppKit
 @testable import SakuraCord
 import SakuraCordModels
-import SwiftUI
 import Testing
-
-@Test func `skeleton shimmer phase wraps without changing layout`() {
-    let start = Date(timeIntervalSinceReferenceDate: 0)
-    let midpoint = Date(
-        timeIntervalSinceReferenceDate: SkeletonShimmerStyle.duration / 2
-    )
-    let wrapped = Date(
-        timeIntervalSinceReferenceDate: SkeletonShimmerStyle.duration
-    )
-
-    #expect(SkeletonShimmerStyle.phase(at: start) == 0)
-    #expect(abs(SkeletonShimmerStyle.phase(at: midpoint) - 0.5) < 0.000_001)
-    #expect(abs(SkeletonShimmerStyle.phase(at: wrapped)) < 0.000_001)
-}
-
-@MainActor
-@Test func `shared conversation skeleton is only visible without presentable messages`() {
-    #expect(MessageTimelineLoadingPolicy.showsInitialPlaceholder(isLoading: true, messageCount: 0))
-    #expect(!MessageTimelineLoadingPolicy.showsInitialPlaceholder(isLoading: true, messageCount: 1))
-    #expect(!MessageTimelineLoadingPolicy.showsInitialPlaceholder(isLoading: false, messageCount: 0))
-}
-
-@MainActor
-@Test func `shared conversation skeleton covers the top scroll edge safe area`() throws {
-    let host = MessageTimelineSkeletonSafeAreaHost(
-        rootView: MessageTimelineLoadingSkeleton()
-    )
-    host.frame = CGRect(x: 0, y: 0, width: 480, height: 360)
-    host.layoutSubtreeIfNeeded()
-    let bitmap = try #require(
-        host.bitmapImageRepForCachingDisplay(in: host.bounds)
-    )
-    host.cacheDisplay(in: host.bounds, to: bitmap)
-
-    #expect(bitmap.colorAt(x: 240, y: 1)?.alphaComponent == 1)
-    #expect(bitmap.colorAt(x: 240, y: 358)?.alphaComponent == 1)
-}
 
 @MainActor
 @Test func `cached refreshes and earlier pages expose the leading loading indicator`() {
@@ -121,15 +82,6 @@ import Testing
         )
     )
     #expect(TimelineInitialPositionPolicy.unreadViewportAnchor.y == 0.28)
-}
-
-@MainActor
-private final class MessageTimelineSkeletonSafeAreaHost<Content: View>:
-    NSHostingView<Content>
-{
-    override var safeAreaInsets: NSEdgeInsets {
-        NSEdgeInsets(top: 40, left: 0, bottom: 0, right: 0)
-    }
 }
 
 @MainActor

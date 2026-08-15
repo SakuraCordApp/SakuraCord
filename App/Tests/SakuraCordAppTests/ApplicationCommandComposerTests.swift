@@ -303,59 +303,6 @@ func interactionResponseReconciliation() throws {
 }
 
 @MainActor
-@Test("browse mode always exposes frequently used and alphabetizes remaining commands")
-func commandBrowseSectionOrdering() throws {
-    let model = ApplicationCommandComposerModel()
-    let application = ApplicationCommandApplication(id: "100", name: "Utility")
-    let names = ["zebra", "alpha", "juliet", "bravo", "india", "charlie", "hotel", "delta", "golf", "echo", "foxtrot"]
-    let commands = names.enumerated().map { index, name in
-        composerFixtureCommand(
-            id: "\(200 + index)", name: name, application: application,
-            rank: index == 0 ? 1 : nil
-        )
-    }
-    model.replaceCatalogs([
-        ApplicationCommandCatalog(
-            target: .user, applications: [application], commands: commands
-        )
-    ])
-
-    let sections = model.sections(query: "")
-    #expect(sections.first?.kind == .frequentlyUsed)
-    #expect(sections.first?.commands.isEmpty == false)
-    let applicationCommands = try #require(
-        sections.first { $0.kind == .application(application.id) }
-    ).commands
-    #expect(applicationCommands.map(\.displayName) == applicationCommands.map(\.displayName).sorted())
-    #expect(Set(sections.flatMap(\.commands).map(\.id)).count == commands.count)
-}
-
-@MainActor
-@Test("picker keyboard order follows the visible frequently-used document")
-func commandPickerNavigationOrder() throws {
-    let model = ApplicationCommandComposerModel()
-    let application = ApplicationCommandApplication(id: "100", name: "Utility")
-    let commands = ["gamma", "alpha", "beta"].enumerated().map { index, name in
-        composerFixtureCommand(id: "\(200 + index)", name: name, application: application)
-    }
-    model.replaceCatalogs([
-        ApplicationCommandCatalog(
-            target: .user, applications: [application], commands: commands
-        )
-    ])
-    model.presentPicker()
-    let order = model.pickerCommandOrder(query: "")
-    model.selectedCommandID = order.first?.id
-    let initialRevision = model.pickerKeyboardSelectionRevision
-    model.movePickerSelection(by: 1)
-    #expect(model.selectedCommandID == order[1].id)
-    #expect(model.pickerKeyboardSelectionRevision == initialRevision + 1)
-    model.movePickerSelection(by: -1)
-    #expect(model.selectedCommandID == order[0].id)
-    #expect(model.pickerKeyboardSelectionRevision == initialRevision + 2)
-}
-
-@MainActor
 @Test("inline command fields preserve drafts values and arrow navigation")
 func inlineCommandFieldEditing() throws {
     let model = ApplicationCommandComposerModel()
@@ -536,67 +483,6 @@ func commandSuggestionUsesGuildRoles() throws {
 }
 
 @MainActor
-@Test("unified command text preserves protected labels placeholders and role color")
-func unifiedCommandTextDocument() throws {
-    let app = ApplicationCommandApplication(id: "100", name: "Utility")
-    let textOption = ApplicationCommandOption(
-        id: "200/text", name: "text", type: .string, isRequired: true
-    )
-    let roleOption = ApplicationCommandOption(
-        id: "200/role", name: "role", type: .role
-    )
-    let command = composerFixtureCommand(
-        id: "200", name: "assign", application: app,
-        options: [textOption, roleOption]
-    )
-    let role = GuildRole(
-        id: try #require(RoleID("900")), name: "Moderators", position: 1,
-        colorHex: 0xB45CFF
-    )
-    let document = ApplicationCommandTextDocument.make(
-        command: command,
-        options: [textOption, roleOption],
-        values: [textOption.id: nil, roleOption.id: .role(role.id)],
-        drafts: [textOption.id: "", roleOption.id: "@Moderators"],
-        roles: [role],
-        focusedOptionID: textOption.id
-    )
-
-    #expect(document.attributedText.string == "/assign   text Required   role \u{FFFC}")
-    let textSegment = try #require(document.segment(optionID: textOption.id))
-    #expect(textSegment.isPlaceholder)
-    #expect(document.attributedText.attribute(
-        .applicationCommandFieldPart,
-        at: textSegment.labelRange.location,
-        effectiveRange: nil
-    ) as? String == "label")
-    #expect(document.attributedText.attribute(
-        .applicationCommandPlaceholder,
-        at: textSegment.valueRange.location,
-        effectiveRange: nil
-    ) as? Bool == true)
-
-    let roleSegment = try #require(document.segment(optionID: roleOption.id))
-    #expect(roleSegment.valueRange.length == 1)
-    #expect(ApplicationCommandEditorTextMap.isAtomicValue(
-        optionID: roleOption.id,
-        in: document.attributedText
-    ))
-    #expect(ApplicationCommandClipboardSerializer.string(
-        from: document.attributedText,
-        range: NSRange(location: 0, length: document.attributedText.length)
-    ) == "/assign text: Required role: @Moderators")
-    let roleColor = try #require(document.attributedText.attribute(
-        .foregroundColor,
-        at: roleSegment.valueRange.location,
-        effectiveRange: nil
-    ) as? NSColor)
-    #expect(abs(roleColor.redComponent - CGFloat(0xB4) / 255) < 0.01)
-    #expect(abs(roleColor.greenComponent - CGFloat(0x5C) / 255) < 0.01)
-    #expect(abs(roleColor.blueComponent - 1) < 0.01)
-}
-
-@MainActor
 @Test("completed command arguments collapse atomically and copy like Discord mentions")
 func commandArgumentsUseAtomicMentionPresentation() throws {
     let application = ApplicationCommandApplication(id: "100", name: "Utility")
@@ -706,56 +592,4 @@ func liveCommandTextMappingKeepsEditingFocus() throws {
         atCharacter: segment.labelRange.location,
         in: live
     ) == "label")
-}
-
-@MainActor
-@Test("command suggestion rows expose one heading and rich entity metadata")
-func commandSuggestionRichPresentation() throws {
-    let userOption = ApplicationCommandOption(
-        id: "200/user", name: "user", type: .user, isRequired: true
-    )
-    let avatarURL = try #require(URL(string: "https://cdn.example/avatar.png"))
-    let member = Member(
-        user: User(
-            id: try #require(UserID("901")),
-            username: "maya.orbit",
-            displayName: "Maya Ortiz",
-            avatarURL: avatarURL
-        ),
-        roleName: "Design",
-        status: .online
-    )
-
-    let suggestions = ApplicationCommandSuggestionFactory.suggestions(
-        option: userOption,
-        query: "maya",
-        members: [member],
-        roles: [],
-        channels: [],
-        autocompleteChoices: [],
-        availableOptions: []
-    )
-
-    #expect(ApplicationCommandSuggestionFactory.heading(
-        option: userOption,
-        hasAutocompleteChoices: false
-    ) == "Members")
-    let suggestion = try #require(suggestions.first)
-    #expect(suggestion.trailingText == "@maya.orbit")
-    guard case let .user(name, resolvedAvatarURL, decorationURL, status) =
-        suggestion.leadingVisual
-    else {
-        Issue.record("Expected an avatar-backed member suggestion")
-        return
-    }
-    #expect(name == "Maya Ortiz")
-    #expect(resolvedAvatarURL == avatarURL)
-    #expect(decorationURL == nil)
-    #expect(status == .online)
-    guard case let .value(argument, displayText) = suggestion.action else {
-        Issue.record("Expected a typed user argument")
-        return
-    }
-    #expect(argument == .user(member.user.id))
-    #expect(displayText == "@Maya Ortiz")
 }

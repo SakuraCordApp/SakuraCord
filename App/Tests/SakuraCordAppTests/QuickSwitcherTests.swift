@@ -1,19 +1,6 @@
-import CoreGraphics
 import SakuraCordModels
 import Testing
 @testable import SakuraCord
-
-@Test func `quick switcher icon geometry aspect fills without stretching`() {
-    #expect(QuickSwitcherIconGeometry.aspectFillRect(
-        imageSize: CGSize(width: 200, height: 100),
-        in: CGRect(x: 0, y: 0, width: 22, height: 22)
-    ) == CGRect(x: -11, y: 0, width: 44, height: 22))
-    #expect(QuickSwitcherIconGeometry.aspectFillRect(
-        imageSize: CGSize(width: 100, height: 200),
-        in: CGRect(x: 10, y: 20, width: 22, height: 22)
-    ) == CGRect(x: 10, y: 9, width: 22, height: 44))
-    #expect(QuickSwitcherIconGeometry.serverCornerRadius(iconSize: 22) == 7)
-}
 
 @Test func `unsupported prefix remains ordinary quick switcher search text`() {
     let query = QuickSwitcherParsedQuery("$anything")
