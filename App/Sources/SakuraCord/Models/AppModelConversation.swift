@@ -366,7 +366,7 @@ extension AppModel {
             let page = try await session.provider.messages(
                 in: channelID,
                 before: first.id,
-                limit: 50
+                limit: 20
             )
             guard !Task.isCancelled,
                   isCurrentAccountSession(session),

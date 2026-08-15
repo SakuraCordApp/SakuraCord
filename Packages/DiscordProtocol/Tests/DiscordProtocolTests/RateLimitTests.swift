@@ -3,6 +3,10 @@ import Foundation
 import SakuraCordModels
 import Testing
 
+// Rate-limit coverage is kept in one sequential suite because the tests share
+// deterministic URL-protocol and virtual-clock fixtures.
+// swiftlint:disable file_length
+
 @Suite(.serialized)
 struct ProviderRequestContractTests {
     @Test func `desktop ready lifecycle matches official opcode ordering`() async throws {
@@ -1657,7 +1661,7 @@ private struct BootstrapRequestScenario {
         )
         #expect((gatewayPayload["op"] as? NSNumber)?.intValue == 8)
         let searchData = try #require(gatewayPayload["d"] as? [String: Any])
-        #expect(searchData["guild_id"] as? String == "100")
+        #expect(searchData["guild_id"] as? [String] == ["100"])
         #expect(searchData["query"] as? String == "maya")
         #expect((searchData["limit"] as? NSNumber)?.intValue == 100)
         #expect(searchData["presences"] as? Bool == true)
@@ -1696,10 +1700,15 @@ private struct BootstrapRequestScenario {
         ))
         let memberMatches = try await memberSearch.value
         #expect(memberMatches.map(\.user.displayName) == ["Maya", "Maya Bot"])
+        #expect((await provider.currentMessageSearchUsers()).contains {
+            $0.id == UserID(rawValue: 2)
+        })
         let indexedQuickSwitcherMembers =
             await provider.currentQuickSwitcherGuildMemberUserIDs()
         #expect(indexedQuickSwitcherMembers[GuildID(rawValue: 100)] == [
-            UserID(rawValue: 2), UserID(rawValue: 3), UserID(rawValue: 4),
+            // GuildMemberStore retains READY insertion order, then appends
+            // query-member chunks in their returned order.
+            UserID(rawValue: 4), UserID(rawValue: 2), UserID(rawValue: 3),
         ])
         #expect(RateLimitURLProtocol.memberSearchRequestCount == 0)
 
@@ -1719,9 +1728,8 @@ private struct BootstrapRequestScenario {
         #expect(quickSwitcherSearch["query"] as? String == "hen")
         #expect((quickSwitcherSearch["limit"] as? NSNumber)?.intValue == 100)
         #expect(quickSwitcherSearch["presences"] as? Bool == true)
-        #expect(quickSwitcherSearch["user_ids"] is NSNull)
         #expect(Set(quickSwitcherSearch.keys) == [
-            "guild_id", "query", "limit", "presences", "user_ids",
+            "guild_id", "query", "limit", "presences",
         ])
 
         await provider.updateClientAppState(isFocused: false)

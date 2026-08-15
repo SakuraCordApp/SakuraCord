@@ -3,6 +3,12 @@ import Combine
 import SakuraCordModels
 import SwiftUI
 
+private enum MessageSearchFilterOverlayPresentation: Identifiable {
+    case filters
+
+    var id: Self { self }
+}
+
 struct RootView: View {
     let model: AppModel
 
@@ -143,15 +149,13 @@ private struct ChatRootView: View {
         .toolbar {
             conversationToolbar
         }
-        .searchable(
-            text: $model.messageSearchInputText,
-            isPresented: $search.isInputFocused,
-            placement: .toolbar,
-            prompt: messageSearchPrompt
-        )
-        .onSubmit(of: .search) {
-            model.submitMessageSearchInput()
-        }
+        .modifier(MessageSearchExperienceModifier(
+            model: model,
+            search: search,
+            isEnabled: showsMessageSearchToolbar,
+            prompt: messageSearchPrompt,
+            toolbarMetrics: toolbarSearchFieldMetrics
+        ))
         .overlay(alignment: .topLeading) {
             ZStack(alignment: .topLeading) {
                 if columnVisibility != .detailOnly {
@@ -206,11 +210,10 @@ private struct ChatRootView: View {
                 WindowChromeDimmingBridge(
                     isDimmed: isFileDropTargeted && canAcceptWindowDrops
                 )
-                ToolbarSearchFieldGeometryReader(
-                    searchText: $model.messageSearchInputText
-                ) { metrics in
-                    toolbarSearchFieldMetrics = metrics
-                }
+                MessageSearchToolbarBridge(
+                    model: model,
+                    metrics: $toolbarSearchFieldMetrics
+                )
             }
             .frame(width: 0, height: 0)
         }
@@ -421,6 +424,13 @@ private struct ChatRootView: View {
         }
     }
 
+    private var showsMessageSearchToolbar: Bool {
+        MessageSearchSurfacePolicy.showsToolbar(
+            channelKind: model.selectedChannel?.kind,
+            hasOpenThread: model.openThread != nil
+        )
+    }
+
     private func updateModifierPolling(isTargeted: Bool) {
         modifierPollingTask?.cancel()
         modifierPollingTask = nil
@@ -601,14 +611,7 @@ private struct ChatRootView: View {
     }
 
     private var messageSearchPrompt: Text {
-        if let guildID = model.messageSearch.submittedQuery?.scope.guildID
-            ?? model.selectedGuildID,
-           let guild = model.snapshot?.guilds.first(where: { $0.id == guildID })
-        {
-            Text("Search \(guild.name)")
-        } else {
-            Text("Search in DMs")
-        }
+        Text(model.messageSearchPromptTitle)
     }
 
     private var sidebarDisplayName: String {
@@ -848,6 +851,112 @@ final class DisplayCompleteFrameReportingView: NSView {
         self.presentationID = presentationID
         didReport = false
         needsDisplay = true
+    }
+}
+
+private struct MessageSearchExperienceModifier: ViewModifier {
+    let model: AppModel
+    let search: MessageSearchState
+    let isEnabled: Bool
+    let prompt: Text
+    let toolbarMetrics: ToolbarSearchFieldMetrics
+
+    func body(content: Content) -> some View {
+        content
+            .modifier(MessageSearchToolbarModifier(
+                model: model,
+                search: search,
+                isEnabled: isEnabled,
+                prompt: prompt
+            ))
+            .overlay(alignment: .topTrailing) {
+                if isEnabled, search.isInputFocused, toolbarMetrics.isValid {
+                    MessageSearchAutocompleteView(
+                        model: model,
+                        width: toolbarMetrics.fieldWidth
+                    )
+                    .padding(.trailing, toolbarMetrics.trailingInset)
+                    .zIndex(100_000)
+                }
+            }
+            .background {
+                WindowModalOverlay(
+                    presentation: search.isFilterSheetPresented
+                        ? MessageSearchFilterOverlayPresentation.filters : nil,
+                    zPosition: 100_110,
+                    dismiss: { search.isFilterSheetPresented = false },
+                    content: { _, animationState in
+                    MessageSearchFiltersOverlay(
+                        model: model,
+                        search: search,
+                        animationState: animationState,
+                        dismiss: {
+                            animationState.dismiss(committingPresentation: true)
+                        }
+                    )
+                })
+                .frame(width: 0, height: 0)
+            }
+            .onChange(of: isEnabled) { wasVisible, isVisible in
+                guard wasVisible, !isVisible else { return }
+                search.isFilterSheetPresented = false
+                model.dismissMessageSearch()
+            }
+    }
+}
+
+private struct MessageSearchToolbarBridge: View {
+    let model: AppModel
+    @Binding var metrics: ToolbarSearchFieldMetrics
+
+    var body: some View {
+        @Bindable var model = model
+        @Bindable var search = model.messageSearch
+        ToolbarSearchFieldGeometryReader(
+            searchText: $model.messageSearchInputText,
+            searchTokens: $search.tokens,
+            isSearchFocused: $search.isInputFocused,
+            didUseBuiltInClear: model.clearMessageSearchUsingBuiltInButton,
+            didEndEditing: model.messageSearchEditingDidEnd,
+            pasteCanonicalSyntax: { value in
+                MessageSearchTokenParser.parse(
+                    value,
+                    users: model.messageSearchUsers,
+                    channels: model.messageSearchChannels
+                )
+            },
+            changed: { metrics = $0 }
+        )
+    }
+}
+
+private struct MessageSearchToolbarModifier: ViewModifier {
+    let model: AppModel
+    let search: MessageSearchState
+    let isEnabled: Bool
+    let prompt: Text
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isEnabled {
+            @Bindable var model = model
+            @Bindable var search = search
+            content
+                .searchable(
+                    text: $model.messageSearchInputText,
+                    tokens: $search.tokens,
+                    isPresented: $search.isInputFocused,
+                    placement: .toolbar,
+                    prompt: prompt
+                ) { token in
+                    Text(token.title)
+                }
+                .onSubmit(of: .search) {
+                    model.submitMessageSearchInput()
+                }
+        } else {
+            content
+        }
     }
 }
 

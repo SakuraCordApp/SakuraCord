@@ -39,7 +39,9 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
 
     var credentialSource: DiscordCredentialSource
     var accountID: String?
-    let session: URLSession
+    var restSession: URLSession
+    let restSessionConfiguration: URLSessionConfiguration?
+    var restSessionGeneration = 0
     let gatewayTransport: any GatewayTransport
     let gatewayCodec: any GatewayCodec
     let gatewayEncoding: String
@@ -67,6 +69,7 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var privateChannelTasks: [UserID: Task<Channel, Error>] = [:]
     var messageSendTasks: [String: Task<Message, Error>] = [:]
     var cachedForumPosts: [ChannelID: [ChannelID: ForumPost]] = [:]
+    var cachedForumThreadOrder: [ChannelID] = []
     var cachedJoinedThreads: [ChannelID: MessageThreadSummary] = [:]
     var cachedJoinedThreadOrder: [ChannelID] = []
     var cachedGuildNotificationSettings: [GuildID?: GuildNotificationSettings] = [:]
@@ -110,6 +113,10 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var memberListSubscriptionOrder: [GuildID: [String]] = [:]
     var cachedGatewayUsersByID: [String: UserDTO] = [:]
     var cachedGatewayUserOrder: [String] = []
+    var cachedGatewayUserIDs: Set<String> = []
+    var messageSearchUserIDs: Set<UserID> = []
+    var messageSearchUserOrder: [UserID] = []
+    var lazyPrivateChannelIDs: Set<ChannelID> = []
     var forwardSearchEligibleUserIDs: Set<UserID> = []
     var forwardSearchEligibleUserOrder: [UserID] = []
     var cachedForwardSearchUsersByID: [UserID: User] = [:]
@@ -232,11 +239,16 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
         usesEmojiDiskCache: Bool = true,
         usesForwardSearchPeopleDiskCache: Bool? = nil
     ) {
-        let resolvedSession = session ?? URLSession(configuration: .default)
+        let defaultRESTConfiguration = URLSessionConfiguration.default
+        let resolvedSession = session ?? URLSession(
+            configuration: defaultRESTConfiguration
+        )
+        let gatewaySession = session ?? URLSession(configuration: .default)
         credentialSource = .stored(credentials, handle)
         accountID = handle.accountID
-        self.session = resolvedSession
-        gatewayTransport = URLSessionGatewayTransport(session: resolvedSession)
+        restSession = resolvedSession
+        restSessionConfiguration = session == nil ? defaultRESTConfiguration : nil
+        gatewayTransport = URLSessionGatewayTransport(session: gatewaySession)
         gatewayCodec = ETFGatewayCodec()
         gatewayEncoding = DiscordProductionBaseline.august2026.desktopGatewayEncoding
         gatewayCompression = .zstdStream
@@ -259,11 +271,16 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
         usesEmojiDiskCache: Bool = true,
         usesForwardSearchPeopleDiskCache: Bool? = nil
     ) {
-        let resolvedSession = session ?? URLSession(configuration: .default)
+        let defaultRESTConfiguration = URLSessionConfiguration.default
+        let resolvedSession = session ?? URLSession(
+            configuration: defaultRESTConfiguration
+        )
+        let gatewaySession = session ?? URLSession(configuration: .default)
         credentialSource = .pending(pendingCredential)
         accountID = nil
-        self.session = resolvedSession
-        gatewayTransport = URLSessionGatewayTransport(session: resolvedSession)
+        restSession = resolvedSession
+        restSessionConfiguration = session == nil ? defaultRESTConfiguration : nil
+        gatewayTransport = URLSessionGatewayTransport(session: gatewaySession)
         gatewayCodec = ETFGatewayCodec()
         gatewayEncoding = DiscordProductionBaseline.august2026.desktopGatewayEncoding
         gatewayCompression = .zstdStream
@@ -289,11 +306,13 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
         usesDesktopHeartbeat: Bool = false,
         installationID: String? = nil,
         apiDiagnostics: DiscordAPIDiagnosticStore = .shared,
-        usesEmojiDiskCache: Bool = true
+        usesEmojiDiskCache: Bool = true,
+        ownsRESTSession: Bool = false
     ) {
         credentialSource = .stored(credentials, handle)
         accountID = handle.accountID
-        self.session = session
+        restSession = session
+        restSessionConfiguration = ownsRESTSession ? session.configuration : nil
         self.gatewayTransport = gatewayTransport
         self.gatewayCodec = gatewayCodec
         self.gatewayEncoding = gatewayEncoding
@@ -316,11 +335,13 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
         usesDesktopHeartbeat: Bool = false,
         installationID: String? = nil,
         apiDiagnostics: DiscordAPIDiagnosticStore = .shared,
-        usesEmojiDiskCache: Bool = true
+        usesEmojiDiskCache: Bool = true,
+        ownsRESTSession: Bool = false
     ) {
         credentialSource = .pending(pendingCredential)
         accountID = nil
-        self.session = session
+        restSession = session
+        restSessionConfiguration = ownsRESTSession ? session.configuration : nil
         self.gatewayTransport = gatewayTransport
         self.gatewayCodec = gatewayCodec
         self.gatewayEncoding = gatewayEncoding
@@ -439,8 +460,10 @@ extension DiscordRESTProvider {
         let requestStarted = ContinuousClock.now
         let data: Data
         let rawResponse: URLResponse
+        let requestSession = restSession
+        let requestSessionGeneration = restSessionGeneration
         do {
-            (data, rawResponse) = try await session.data(for: request)
+            (data, rawResponse) = try await requestSession.data(for: request)
         } catch {
             apiDiagnostics.recordHTTPFailure(
                 transport: "authentication",
@@ -449,6 +472,10 @@ extension DiscordRESTProvider {
                 attempt: 1,
                 duration: requestStarted.duration(to: .now),
                 error: error
+            )
+            _ = recoverRESTSessionIfNeeded(
+                after: error,
+                requestGeneration: requestSessionGeneration
             )
             throw error
         }
@@ -478,6 +505,9 @@ extension DiscordRESTProvider {
         ).installation.flatMap { $0.isEmpty ? nil : $0 }
     }
 
+    // Bootstrap deliberately presents the complete READY-to-snapshot assembly
+    // in one place so account-state fallbacks remain auditable.
+    // swiftlint:disable:next function_body_length
     public func bootstrap() async throws -> BootstrapSnapshot {
         continuation?.yield(.connectionChanged(.connecting))
         _ = try await authorizationToken()
@@ -551,18 +581,31 @@ extension DiscordRESTProvider {
                     }
                 }
                 + channelsByID.values.sorted { $0.id < $1.id }
-        let startupThreads =
-            cachedForumPosts.values
-                .flatMap(\.values)
-                .map(\.thread)
-                .sorted { $0.id < $1.id }
+        let forumThreadsByID = Dictionary(
+            cachedForumPosts.values.flatMap(\.values).map { ($0.id, $0.thread) },
+            uniquingKeysWith: { _, newer in newer }
+        )
+        var remainingForumThreads = forumThreadsByID
+        let startupThreads = cachedForumThreadOrder.compactMap {
+            remainingForumThreads.removeValue(forKey: $0)
+        } + remainingForumThreads.values.sorted { $0.id < $1.id }
         let startupActiveJoinedThreads = currentActiveJoinedThreads()
         let userSearchAliasesByUserID = currentUserSearchAliasesByUserID()
         return BootstrapSnapshot(
             currentUser: user,
             knownUsers: currentKnownUsers(),
             quickSwitcherUserIDs: currentQuickSwitcherUsers().map(\.id),
+            messageSearchUsers: currentMessageSearchUsers(),
+            messageSearchUserBoosterChannelIDs: Set(
+                (cachedChannels[nil] ?? []).lazy
+                    .filter {
+                        $0.kind == .directMessage
+                            && !self.lazyPrivateChannelIDs.contains($0.id)
+                    }
+                    .map(\.id)
+            ),
             friendUserIDs: cachedFriendUserIDs,
+            blockedOrIgnoredUserIDs: cachedBlockedOrIgnoredUserIDs,
             relationshipNicknamesByUserID: cachedRelationshipNicknamesByUserID,
             userSearchAliasesByUserID: userSearchAliasesByUserID,
             quickSwitcherGuildMemberUserIDs: currentQuickSwitcherGuildMemberUserIDs(),
@@ -615,11 +658,17 @@ extension DiscordRESTProvider {
         var guildIDs = Set(gatewayGuildIDs)
         guildIDs.formUnion(quickSwitcherGuildMemberUserIDsByGuildID.keys)
         guildIDs.formUnion(cachedMembers.keys)
-        return Dictionary(uniqueKeysWithValues: guildIDs.map { guildID in
-            var userIDs = quickSwitcherGuildMemberUserIDsByGuildID[guildID] ?? []
-            userIDs.formUnion((cachedMembers[guildID] ?? []).map(\.id))
-            return (guildID, userIDs.sorted())
+        let result = Dictionary(uniqueKeysWithValues: guildIDs.map { guildID in
+            var remaining = quickSwitcherGuildMemberUserIDsByGuildID[guildID] ?? []
+            remaining.formUnion((cachedMembers[guildID] ?? []).map(\.id))
+            var ordered: [UserID] = []
+            for member in cachedMembers[guildID] ?? [] where remaining.remove(member.id) != nil {
+                ordered.append(member.id)
+            }
+            ordered.append(contentsOf: remaining.sorted())
+            return (guildID, ordered)
         })
+        return result
     }
 
     func currentQuickSwitcherGuildMemberAliases() -> [GuildID: [UserID: String]] {
@@ -686,16 +735,25 @@ extension DiscordRESTProvider {
         }
     }
 
+    func currentMessageSearchUsers() -> [User] {
+        messageSearchUserOrder.compactMap { userID in
+            cachedGatewayUsersByID[userID.description].flatMap { try? $0.domain() }
+        }
+    }
+
     @discardableResult
     func cacheGatewayUser(
         _ user: UserDTO,
-        forwardSearchEligible: Bool = true
+        forwardSearchEligible: Bool = true,
+        includeInKnownUserStore: Bool = true,
+        messageSearchEligible: Bool? = nil
     ) -> Bool {
         let userID = UserID(user.id)
         let previous = cachedGatewayUsersByID[user.id].flatMap { try? $0.domain() }
             ?? userID.flatMap { cachedForwardSearchUsersByID[$0] }
-        let inserted = previous == nil
-        if inserted {
+        let insertedIntoKnownUserStore = includeInKnownUserStore
+            && cachedGatewayUserIDs.insert(user.id).inserted
+        if insertedIntoKnownUserStore {
             cachedGatewayUserOrder.append(user.id)
         }
         cachedGatewayUsersByID[user.id] = user
@@ -705,7 +763,31 @@ extension DiscordRESTProvider {
         if let userID, becameForwardSearchEligible {
             forwardSearchEligibleUserOrder.append(userID)
         }
-        return becameForwardSearchEligible || inserted || previous != (try? user.domain())
+        let admitsToMessageSearch = messageSearchEligible ?? includeInKnownUserStore
+        let becameMessageSearchEligible = userID.map {
+            admitsToMessageSearch && messageSearchUserIDs.insert($0).inserted
+        } ?? false
+        if let userID, becameMessageSearchEligible {
+            messageSearchUserOrder.append(userID)
+        }
+        return becameMessageSearchEligible || becameForwardSearchEligible || insertedIntoKnownUserStore
+            || previous != (try? user.domain())
+    }
+
+    @discardableResult
+    func includeCachedGatewayUserInKnownUserStore(_ rawUserID: String) -> Bool {
+        guard cachedGatewayUsersByID[rawUserID] != nil,
+              let userID = UserID(rawUserID)
+        else { return false }
+        let insertedIntoKnownUserStore = cachedGatewayUserIDs.insert(rawUserID).inserted
+        if insertedIntoKnownUserStore {
+            cachedGatewayUserOrder.append(rawUserID)
+        }
+        let insertedIntoMessageSearch = messageSearchUserIDs.insert(userID).inserted
+        if insertedIntoMessageSearch {
+            messageSearchUserOrder.append(userID)
+        }
+        return insertedIntoKnownUserStore || insertedIntoMessageSearch
     }
 
     func cacheLiveSearchUsers(_ users: [UserDTO]) {
@@ -734,6 +816,7 @@ extension DiscordRESTProvider {
             continuation?.yield(
                 .quickSwitcherUserIDsChanged(currentQuickSwitcherUsers().map(\.id))
             )
+            continuation?.yield(.messageSearchUsersChanged(currentMessageSearchUsers()))
         }
     }
 
@@ -924,6 +1007,32 @@ extension DiscordRESTProvider {
                     channelID: value.id,
                     channelType: value.type
                 )
+        }
+    }
+
+    func admitCachedPrivateRecipientUsersToMessageSearch() {
+        for channel in cachedChannels[nil] ?? [] {
+            for recipientID in cachedPrivateRecipientIDsByChannelID[channel.id] ?? [] {
+                includeCachedGatewayUserInKnownUserStore(recipientID)
+            }
+        }
+    }
+
+    /// READY_SUPPLEMENTAL may carry a broad user hydration table, but Discord's
+    /// UserStore only admits the raw recipients referenced by lazy private
+    /// channels. Preserve their payload order independently of the deterministic
+    /// recipient ordering used to render a group DM.
+    func cacheLazyPrivateRecipientUsers(_ values: [ChannelDTO]) {
+        for value in values where value.type == 1 || value.type == 3 {
+            if let recipients = value.recipients {
+                for recipient in recipients {
+                    cacheGatewayUser(recipient)
+                }
+            } else {
+                for recipientID in value.recipientIDs ?? [] {
+                    includeCachedGatewayUserInKnownUserStore(recipientID)
+                }
+            }
         }
     }
 
@@ -1134,7 +1243,7 @@ extension DiscordRESTProvider {
                     do {
                         try await self?.sendGateway(
                             DiscordGatewayPayloadFactory.searchMembers(
-                                guildID: guildID,
+                                guildIDs: [guildID],
                                 query: normalized,
                                 limit: maximumResults
                             )

@@ -69,7 +69,6 @@ extension DiscordRESTProvider {
         for user in cache.users.suffix(DiscordForwardSearchPeopleCache.maximumUsers) {
             guard cachedForwardSearchUsersByID[user.id] == nil else { continue }
             cachedForwardSearchUserOrder.append(user.id)
-            cachedGatewayUserOrder.append(user.id.description)
             cachedForwardSearchUsersByID[user.id] = user
         }
         for alias in cache.aliases.suffix(DiscordForwardSearchPeopleCache.maximumAliases) {

@@ -1,4 +1,8 @@
 import Foundation
+
+// Gateway lifecycle and transport recovery share stateful invariants that are
+// safest to audit in one extension-oriented source file.
+// swiftlint:disable file_length
 import SakuraCordModels
 
 extension DiscordRESTProvider {
@@ -200,7 +204,7 @@ extension DiscordRESTProvider {
         await gatewaySession?.stop()
         gatewaySession = nil
         gatewayReady = false
-        session.getAllTasks { tasks in
+        restSession.getAllTasks { tasks in
             for task in tasks {
                 task.cancel()
             }
@@ -462,12 +466,22 @@ extension DiscordRESTProvider {
         }
     }
 
-    func mergeResolvedMembers(_ members: [Member], guildID: GuildID) {
+    func mergeResolvedMembers(
+        _ members: [Member], guildID: GuildID,
+        joinedUserIDs: Set<UserID>? = nil
+    ) {
         cachedMembers[guildID] = DiscordMemberStoreOrdering.merging(
             existing: cachedMembers[guildID] ?? [], updates: members
         )
-        quickSwitcherJoinedMemberIDsByGuildID[guildID, default: []]
-            .formUnion(members.lazy.filter { $0.isPending != true }.map(\.id))
+        if let joinedUserIDs {
+            quickSwitcherJoinedMemberIDsByGuildID[guildID, default: []]
+                .subtract(members.map(\.id))
+            quickSwitcherJoinedMemberIDsByGuildID[guildID, default: []]
+                .formUnion(joinedUserIDs)
+        } else {
+            quickSwitcherJoinedMemberIDsByGuildID[guildID, default: []]
+                .formUnion(members.lazy.filter { $0.isPending != true }.map(\.id))
+        }
     }
 
     func pendingRoleMemberRequestID(
@@ -613,6 +627,7 @@ extension DiscordRESTProvider {
                 cachedGuildChannelDTOs = [:]
                 cachedGuildRoles = [:]
                 cachedForumPosts = [:]
+                cachedForumThreadOrder = []
                 cachedJoinedThreads = [:]
                 cachedJoinedThreadOrder = []
                 gatewayOpcodeRateLimitDates = [:]
@@ -621,20 +636,24 @@ extension DiscordRESTProvider {
                 cachedPrivateRecipientIDsByChannelID = [:]
                 cachedGatewayUsersByID = [:]
                 cachedGatewayUserOrder = []
+                cachedGatewayUserIDs = []
+                messageSearchUserIDs = []
+                messageSearchUserOrder = []
+                lazyPrivateChannelIDs = []
                 forwardSearchEligibleUserIDs = []
                 forwardSearchEligibleUserOrder = []
                 loadForwardSearchPeopleCache()
                 loadQuickSwitcherChannelStoreCache()
                 cachedBlockedOrIgnoredUserIDs = ready.blockedOrIgnoredUserIDs
-                for user in ready.users {
-                    cacheGatewayUser(user)
-                }
                 cachedRelationshipNicknamesByUserID = ready.relationshipNicknamesByUserID
                 if let userDTO = ready.currentUser {
                     cacheGatewayUser(userDTO)
                     if let user = try? userDTO.domain() {
                         currentUser = user
                     }
+                }
+                for user in ready.users {
+                    cacheGatewayUser(user)
                 }
                 forumReadStates = ready.readState.channelEntriesByID.mapValues { entry in
                     ForumReadState(
@@ -750,7 +769,10 @@ extension DiscordRESTProvider {
                         ready.mergedMembers[index].compactMap { UserID($0.userID) }
                     )
                     quickSwitcherJoinedMemberIDsByGuildID[guildID] =
-                        quickSwitcherGuildMemberUserIDsByGuildID[guildID]
+                        Set(ready.mergedMembers[index].compactMap { member in
+                            guard member.joinedAt != nil, member.pending != true else { return nil }
+                            return UserID(member.userID)
+                        })
                 }
                 let guilds = readyGuilds.compactMap {
                     $0.domain(currentUserID: currentUser?.id)
@@ -877,10 +899,12 @@ extension DiscordRESTProvider {
                         user,
                         forwardSearchEligible: UserID(user.id).map {
                             supplementalMemberUserIDs.contains($0)
-                        } ?? false
+                        } ?? false,
+                        includeInKnownUserStore: false
                     )
                 }
                 cachePrivateRecipientReferences(supplemental.lazyPrivateChannels)
+                cacheLazyPrivateRecipientUsers(supplemental.lazyPrivateChannels)
                 for presence in supplemental.privatePresences {
                     cachePrivatePresence(presence)
                 }
@@ -906,6 +930,7 @@ extension DiscordRESTProvider {
                             nextSourceOrder += 1
                             indexByID[channel.id] = channels.count
                             channels.append(channel)
+                            lazyPrivateChannelIDs.insert(channel.id)
                         }
                     }
                     channels = Self.orderedPrivateChannels(channels)
@@ -915,6 +940,7 @@ extension DiscordRESTProvider {
                     )
                 }
                 rehydratePrivateChannelRecipients()
+                admitCachedPrivateRecipientUsersToMessageSearch()
                 if !supplemental.lazyPrivateChannels.isEmpty
                     || !supplemental.privatePresences.isEmpty
                 {
@@ -933,14 +959,18 @@ extension DiscordRESTProvider {
                             UserID($0.userID)
                         })
                     quickSwitcherJoinedMemberIDsByGuildID[guildID, default: []]
-                        .formUnion(supplemental.mergedMembers[index].compactMap {
-                            UserID($0.userID)
+                        .formUnion(supplemental.mergedMembers[index].compactMap { member in
+                            guard member.joinedAt != nil, member.pending != true else { return nil }
+                            return UserID(member.userID)
                         })
                 }
                 for guild in hydratedGuilds {
                     guard let guildID = GuildID(guild.id) else { continue }
                     for member in guild.members {
-                        cacheGatewayUser(member.user)
+                        // UserStore's CONNECTION_OPEN_SUPPLEMENTAL handler only
+                        // updates an existing record's primary-guild badge for
+                        // hydrated guild members. It does not admit a new user.
+                        cacheGatewayUser(member.user, messageSearchEligible: false)
                     }
                     if !guild.channels.isEmpty {
                         cachedGuildChannelDTOs[guildID] = Dictionary(
@@ -952,6 +982,16 @@ extension DiscordRESTProvider {
                     if !guild.roles.isEmpty {
                         cachedGuildRoles[guildID] = guild.roles
                         publishGuildRoles(guildID)
+                    }
+                    if !guild.threads.isEmpty {
+                        // CONNECTION_OPEN_SUPPLEMENTAL extends ChannelStore
+                        // after READY. These active threads participate in
+                        // message-search channel autocomplete in payload order.
+                        ingestForumThreads(
+                            guild.threads,
+                            fallbackGuildID: guildID,
+                            advancesParentLatestThreadID: true
+                        )
                     }
                     guard !guild.members.isEmpty else { continue }
                     let members = guild.members.compactMap {
@@ -978,7 +1018,7 @@ extension DiscordRESTProvider {
                     guard let guildID = GuildID(guild.id) else { continue }
                     for participant in guild.activityInstances.flatMap(\.participants) {
                         guard let member = participant.member else { continue }
-                        cacheGatewayUser(member.user)
+                        cacheGatewayUser(member.user, messageSearchEligible: false)
                         if let userID = UserID(member.user.id),
                            let nickname = member.nick?.trimmingCharacters(
                                in: .whitespacesAndNewlines
@@ -995,6 +1035,9 @@ extension DiscordRESTProvider {
                 continuation?.yield(.knownUsersChanged(currentKnownUsers()))
                 continuation?.yield(
                     .quickSwitcherUserIDsChanged(currentQuickSwitcherUsers().map(\.id))
+                )
+                continuation?.yield(
+                    .messageSearchUsersChanged(currentMessageSearchUsers())
                 )
                 publishUserSearchAliases()
                 persistForwardSearchPeopleCache()
@@ -1061,7 +1104,9 @@ extension DiscordRESTProvider {
                         existing: cachedMembers[guildID] ?? [], updates: members
                     )
                     quickSwitcherJoinedMemberIDsByGuildID[guildID, default: []]
-                        .formUnion(members.lazy.filter { $0.isPending != true }.map(\.id))
+                        .formUnion(zip(catalogMembers, members).compactMap { dto, member in
+                            dto.joinedAt != nil && dto.pending != true ? member.id : nil
+                        })
                     continuation?.yield(
                         .membersChanged(
                             guildID: guildID,
@@ -1170,9 +1215,11 @@ extension DiscordRESTProvider {
                 )
             else { return }
             quickSwitcherGuildMemberUserIDsByGuildID[guildID, default: []].insert(member.id)
-            if member.isPending != true {
+            if update.member.joinedAt != nil, member.isPending != true {
                 quickSwitcherJoinedMemberIDsByGuildID[guildID, default: []]
                     .insert(member.id)
+            } else {
+                quickSwitcherJoinedMemberIDsByGuildID[guildID]?.remove(member.id)
             }
             cacheLiveSearchUsers([update.member.user])
             publishMemberChange(member, guildID: guildID)
@@ -1225,6 +1272,7 @@ extension DiscordRESTProvider {
                   let parentID = deleted.parentID.flatMap(ChannelID.init)
             else { return }
             cachedForumPosts[parentID]?[threadID] = nil
+            cachedForumThreadOrder.removeAll { $0 == threadID }
             cachedJoinedThreads[threadID] = nil
             cachedJoinedThreadOrder.removeAll { $0 == threadID }
             publishForumPosts(parentID: parentID)
@@ -1392,6 +1440,9 @@ extension DiscordRESTProvider {
             if let recipients = dto.recipients {
                 cacheLiveSearchUsers(recipients)
             }
+            if let channelID = ChannelID(dto.id) {
+                lazyPrivateChannelIDs.remove(channelID)
+            }
             cachePrivateRecipientReferences([dto])
             guard dto.type == 1 || dto.type == 3,
                   var channel = try? dto.domain(
@@ -1463,6 +1514,7 @@ extension DiscordRESTProvider {
             }
             if cachedChannels[nil]?.contains(where: { $0.id == channelID }) == true {
                 cachedChannels[nil]?.removeAll { $0.id == channelID }
+                lazyPrivateChannelIDs.remove(channelID)
                 continuation?.yield(
                     .channelsChanged(guildID: nil, channels: cachedChannels[nil] ?? [])
                 )
@@ -1686,9 +1738,6 @@ extension DiscordRESTProvider {
                 let chunk = try? JSONDecoder().decode(GatewayGuildMembersChunkDTO.self, from: data),
                 let guildID = GuildID(chunk.guildID)
             else { return }
-            // SearchContextManager handles GUILD_MEMBERS_CHUNK_BATCH even
-            // when the member request originated outside the Forward picker.
-            cacheLiveSearchUsers(chunk.members.map(\.user))
             let decodedMembers = chunk.members.compactMap {
                 try? $0.domain(
                     currentUserID: currentUser?.id,
@@ -1697,7 +1746,33 @@ extension DiscordRESTProvider {
                     guildID: guildID
                 )
             }
-            mergeResolvedMembers(decodedMembers, guildID: guildID)
+            let responseUserIDs = Set(decodedMembers.map(\.id)).union(
+                (chunk.notFound ?? []).compactMap(UserID.init)
+            )
+            let roleMemberRequestID = pendingRoleMemberRequestID(
+                guildID: guildID,
+                responseUserIDs: responseUserIDs
+            )
+            if roleMemberRequestID == nil {
+                // Discord's SearchContextManager handles unsolicited and
+                // search-driven GUILD_MEMBERS_CHUNK_BATCH users. SakuraCord
+                // also issues private member-resolution requests solely to
+                // hydrate timeline presentation; those extra requests must
+                // not expand message-search UserStore beyond Discord's live
+                // source set.
+                cacheLiveSearchUsers(chunk.members.map(\.user))
+            } else {
+                for member in chunk.members {
+                    cacheGatewayUser(member.user, messageSearchEligible: false)
+                }
+            }
+            let joinedUserIDs = Set<UserID>(chunk.members.compactMap { member -> UserID? in
+                guard member.joinedAt != nil, member.pending != true else { return nil }
+                return UserID(member.user.id)
+            })
+            mergeResolvedMembers(
+                decodedMembers, guildID: guildID, joinedUserIDs: joinedUserIDs
+            )
             // The first-party SearchContext worker records membership from
             // every GUILD_MEMBERS_CHUNK_BATCH result. Keep this index separate
             // from the bounded visible-member cache so @ searches can filter
@@ -1705,13 +1780,7 @@ extension DiscordRESTProvider {
             quickSwitcherGuildMemberUserIDsByGuildID[guildID, default: []]
                 .formUnion(decodedMembers.map(\.id))
             publishUserSearchAliases()
-            let responseUserIDs = Set(decodedMembers.map(\.id)).union(
-                (chunk.notFound ?? []).compactMap(UserID.init)
-            )
-            if let requestID = pendingRoleMemberRequestID(
-                guildID: guildID,
-                responseUserIDs: responseUserIDs
-            ),
+            if let requestID = roleMemberRequestID,
                var request = pendingRoleMemberRequests[requestID]
             {
                 request.members.append(contentsOf: decodedMembers)

@@ -16,7 +16,7 @@ struct SakuraCordCommands: Commands {
             .keyboardShortcut("k")
 
             Button("Search Messages…") {
-                model.presentMessageSearch()
+                model.presentMessageSearchFromCommand()
             }
             .keyboardShortcut("f")
 

@@ -597,7 +597,14 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
                     "edited_timestamp":null,
                     "attachments":[],
                     "mentions":[]
-                  }]]
+                  }]],
+                  "threads":[{
+                    "id":"300",
+                    "guild_id":"100",
+                    "parent_id":"200",
+                    "type":11,
+                    "name":"Search result thread"
+                  }]
                 }
                 """#
             }

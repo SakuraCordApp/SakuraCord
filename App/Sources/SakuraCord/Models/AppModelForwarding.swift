@@ -14,39 +14,32 @@ extension AppModel {
         case .privateMembersChanged(let value):
             if selectedGuildID == nil { members = value }
         case .knownUsersChanged(let users):
-            guard var value = snapshot else { return true }
-            value.knownUsers = users
-            snapshot = value
-            forwardSearchSourceRevision &+= 1
+            updateForwardSnapshot { $0.knownUsers = users }
         case .quickSwitcherUserIDsChanged(let userIDs):
-            guard var value = snapshot else { return true }
-            value.quickSwitcherUserIDs = userIDs
-            snapshot = value
-            forwardSearchSourceRevision &+= 1
+            updateForwardSnapshot { $0.quickSwitcherUserIDs = userIDs }
+        case .messageSearchUsersChanged(let users):
+            updateForwardSnapshot { $0.messageSearchUsers = users }
         case .userSearchAliasesChanged(let aliases):
-            guard var value = snapshot else { return true }
-            value.userSearchAliasesByUserID = aliases
-            snapshot = value
-            forwardSearchSourceRevision &+= 1
+            updateForwardSnapshot { $0.userSearchAliasesByUserID = aliases }
         case .quickSwitcherGuildMemberUserIDsChanged(let userIDsByGuildID):
-            guard var value = snapshot else { return true }
-            value.quickSwitcherGuildMemberUserIDs = userIDsByGuildID
-            snapshot = value
-            forwardSearchSourceRevision &+= 1
+            updateForwardSnapshot { $0.quickSwitcherGuildMemberUserIDs = userIDsByGuildID }
         case .quickSwitcherJoinedMemberIDsChanged(let userIDsByGuildID):
-            guard var value = snapshot else { return true }
-            value.quickSwitcherJoinedGuildMemberUserIDs = userIDsByGuildID
-            snapshot = value
-            forwardSearchSourceRevision &+= 1
+            updateForwardSnapshot { $0.quickSwitcherJoinedGuildMemberUserIDs = userIDsByGuildID }
         case .quickSwitcherGuildMemberAliasesChanged(let aliasesByGuildID):
-            guard var value = snapshot else { return true }
-            value.quickSwitcherGuildMemberAliases = aliasesByGuildID
-            snapshot = value
-            forwardSearchSourceRevision &+= 1
+            updateForwardSnapshot { $0.quickSwitcherGuildMemberAliases = aliasesByGuildID }
         default:
             return false
         }
         return true
+    }
+
+    private func updateForwardSnapshot(
+        _ update: (inout BootstrapSnapshot) -> Void
+    ) {
+        guard var value = snapshot else { return }
+        update(&value)
+        snapshot = value
+        forwardSearchSourceRevision &+= 1
     }
 
     nonisolated static func updatedForwardDestinationHistory(

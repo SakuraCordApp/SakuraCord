@@ -221,7 +221,8 @@ extension DiscordRESTProvider {
         }
 
         let routeKey = "\(method) \(path)"
-        let maximumAttempts = requestedMaximumAttempts ?? (method == "GET" ? 2 : 1)
+        let canRetryAsRead = Self.canRetryAsRead(method: method, path: path)
+        let maximumAttempts = requestedMaximumAttempts ?? (canRetryAsRead ? 2 : 1)
         for attempt in 0 ..< maximumAttempts {
             try await reserveConservativeRequestSlot(routeKey: routeKey)
 
@@ -269,8 +270,10 @@ extension DiscordRESTProvider {
             let requestStarted = ContinuousClock.now
             let data: Data
             let rawResponse: URLResponse
+            let requestSession = restSession
+            let requestSessionGeneration = restSessionGeneration
             do {
-                (data, rawResponse) = try await session.data(for: request)
+                (data, rawResponse) = try await requestSession.data(for: request)
             } catch {
                 apiDiagnostics.recordHTTPFailure(
                     method: method,
@@ -279,6 +282,16 @@ extension DiscordRESTProvider {
                     duration: requestStarted.duration(to: .now),
                     error: error
                 )
+                let canRetryOnCurrentSession = recoverRESTSessionIfNeeded(
+                    after: error,
+                    requestGeneration: requestSessionGeneration
+                )
+                if canRetryAsRead,
+                   attempt + 1 < maximumAttempts,
+                   canRetryOnCurrentSession
+                {
+                    continue
+                }
                 throw error
             }
             guard let response = rawResponse as? HTTPURLResponse else {
@@ -416,6 +429,45 @@ extension DiscordRESTProvider {
         }
     }
 
+    /// A cancelled HTTP/3 stream can occasionally leave every subsequent REST
+    /// task on the reused URLSession waiting until its request timeout. Rotate
+    /// only an app-owned REST session after that timeout. The Gateway uses a
+    /// separate production session, so recovery cannot interrupt heartbeats.
+    ///
+    /// Reads already running on the retired generation may retry once. Writes
+    /// never retry because a timeout does not prove that Discord rejected the
+    /// mutation before applying it.
+    func recoverRESTSessionIfNeeded(
+        after error: any Error,
+        requestGeneration: Int
+    ) -> Bool {
+        guard !Task.isCancelled else { return false }
+        if requestGeneration != restSessionGeneration {
+            return true
+        }
+        guard let restSessionConfiguration,
+              Self.isRESTSessionStall(error)
+        else { return false }
+
+        let stalledSession = restSession
+        restSession = URLSession(configuration: restSessionConfiguration)
+        restSessionGeneration &+= 1
+        stalledSession.invalidateAndCancel()
+        gatewayLogger.error(
+            "Discord REST session timed out; replaced stalled transport generation \(requestGeneration, privacy: .public)"
+        )
+        return true
+    }
+
+    static func isRESTSessionStall(_ error: any Error) -> Bool {
+        (error as? URLError)?.code == .timedOut
+    }
+
+    static func canRetryAsRead(method: String, path: String) -> Bool {
+        method == "GET"
+            || (method == "POST" && path == "/users/@me/messages/search/tabs")
+    }
+
     func openSafetyCircuit(status: Int, discordCode: Int?, route: String) async {
         guard !requestSafetyCircuitIsOpen else { return }
         requestSafetyCircuitIsOpen = true
@@ -434,7 +486,7 @@ extension DiscordRESTProvider {
         // The provider owns a dedicated URLSession in production. Cancel every
         // outstanding REST/upload/socket task so a request already suspended at
         // the actor boundary cannot continue after a stop signal.
-        session.getAllTasks { tasks in
+        restSession.getAllTasks { tasks in
             for task in tasks {
                 task.cancel()
             }

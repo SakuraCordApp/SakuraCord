@@ -1,21 +1,61 @@
 import AppKit
 import SwiftUI
 
+nonisolated private final class SendableNotificationObject: @unchecked Sendable {
+    let value: AnyObject?
+
+    init(_ value: AnyObject?) {
+        self.value = value
+    }
+}
+
 nonisolated private final class ToolbarSearchFieldDelegateProxy: NSObject, NSSearchFieldDelegate {
     var forwardingDelegate: (any NSSearchFieldDelegate)?
-    let didEndSearching: @MainActor (String) -> Void
+    let didBeginEditing: @MainActor () -> Void
+    let didEndSearching: @MainActor () -> Void
+    let didEndEditing: @MainActor () -> Void
+    let handleCommand: @MainActor (NSTextView, Selector) -> Bool
 
     init(
         forwardingDelegate: (any NSSearchFieldDelegate)?,
-        didEndSearching: @escaping @MainActor (String) -> Void
+        didBeginEditing: @escaping @MainActor () -> Void,
+        didEndSearching: @escaping @MainActor () -> Void,
+        didEndEditing: @escaping @MainActor () -> Void,
+        handleCommand: @escaping @MainActor (NSTextView, Selector) -> Bool
     ) {
         self.forwardingDelegate = forwardingDelegate
+        self.didBeginEditing = didBeginEditing
         self.didEndSearching = didEndSearching
+        self.didEndEditing = didEndEditing
+        self.handleCommand = handleCommand
     }
 
     func searchFieldDidEndSearching(_ sender: NSSearchField) {
         forwardingDelegate?.searchFieldDidEndSearching?(sender)
-        didEndSearching(sender.stringValue)
+        didEndSearching()
+    }
+
+    func controlTextDidBeginEditing(_ notification: Notification) {
+        forwardingDelegate?.controlTextDidBeginEditing?(notification)
+        didBeginEditing()
+    }
+
+    func controlTextDidEndEditing(_ notification: Notification) {
+        forwardingDelegate?.controlTextDidEndEditing?(notification)
+        didEndEditing()
+    }
+
+    func control(
+        _ control: NSControl,
+        textView: NSTextView,
+        doCommandBy commandSelector: Selector
+    ) -> Bool {
+        if handleCommand(textView, commandSelector) { return true }
+        return forwardingDelegate?.control?(
+            control,
+            textView: textView,
+            doCommandBy: commandSelector
+        ) ?? false
     }
 
     override func responds(to selector: Selector!) -> Bool {
@@ -53,10 +93,23 @@ struct ToolbarSearchFieldMetrics: Equatable {
 /// end-search delegate event without duplicating the field or its layout.
 struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
     @Binding var searchText: String
+    @Binding var searchTokens: [MessageSearchToken]
+    @Binding var isSearchFocused: Bool
+    let didUseBuiltInClear: @MainActor () -> Void
+    let didEndEditing: @MainActor () -> Void
+    let pasteCanonicalSyntax: @MainActor (String) -> MessageSearchTokenParser.Result
     let changed: @MainActor (ToolbarSearchFieldMetrics) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(searchText: $searchText, changed: changed)
+        Coordinator(
+            searchText: $searchText,
+            searchTokens: $searchTokens,
+            isSearchFocused: $isSearchFocused,
+            didUseBuiltInClear: didUseBuiltInClear,
+            didEndEditing: didEndEditing,
+            pasteCanonicalSyntax: pasteCanonicalSyntax,
+            changed: changed
+        )
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -69,6 +122,11 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
 
     func updateNSView(_ view: NSView, context: Context) {
         context.coordinator.searchText = $searchText
+        context.coordinator.searchTokens = $searchTokens
+        context.coordinator.isSearchFocused = $isSearchFocused
+        context.coordinator.didUseBuiltInClear = didUseBuiltInClear
+        context.coordinator.didEndEditing = didEndEditing
+        context.coordinator.pasteCanonicalSyntax = pasteCanonicalSyntax
         context.coordinator.changed = changed
         Task { @MainActor in
             context.coordinator.update(window: view.window, changed: changed)
@@ -80,22 +138,53 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
     }
 
     @MainActor
-    final class Coordinator {
+    final class Coordinator: NSObject {
+        private struct MenuPatch {
+            let item: NSMenuItem
+            let target: AnyObject?
+            let action: Selector?
+        }
+
         var searchText: Binding<String>
+        var searchTokens: Binding<[MessageSearchToken]>
+        var isSearchFocused: Binding<Bool>
+        var didUseBuiltInClear: @MainActor () -> Void
+        var didEndEditing: @MainActor () -> Void
+        var pasteCanonicalSyntax: @MainActor (String) -> MessageSearchTokenParser.Result
         var changed: @MainActor (ToolbarSearchFieldMetrics) -> Void
         private weak var window: NSWindow?
         private weak var searchField: NSSearchField?
         private var observers: [NSObjectProtocol] = []
         private var searchFieldDelegateProxy: ToolbarSearchFieldDelegateProxy?
         private var retryTask: Task<Void, Never>?
+        private var keyMonitor: Any?
+        private var mouseMonitor: Any?
+        private var nativeClearPointerActivationPending = false
+        private var keyboardClearFocusRestorationPending = false
+        private var cancelButtonCell: NSButtonCell?
+        private weak var cancelButtonTarget: AnyObject?
+        private var cancelButtonAction: Selector?
         private var lastMetrics = ToolbarSearchFieldMetrics.zero
+        private var mainMenuPatches: [MenuPatch] = []
+        private var trackingMenuPatches: [MenuPatch] = []
 
         init(
             searchText: Binding<String>,
+            searchTokens: Binding<[MessageSearchToken]>,
+            isSearchFocused: Binding<Bool>,
+            didUseBuiltInClear: @escaping @MainActor () -> Void,
+            didEndEditing: @escaping @MainActor () -> Void,
+            pasteCanonicalSyntax: @escaping @MainActor (String) -> MessageSearchTokenParser.Result,
             changed: @escaping @MainActor (ToolbarSearchFieldMetrics) -> Void
         ) {
             self.searchText = searchText
+            self.searchTokens = searchTokens
+            self.isSearchFocused = isSearchFocused
+            self.didUseBuiltInClear = didUseBuiltInClear
+            self.didEndEditing = didEndEditing
+            self.pasteCanonicalSyntax = pasteCanonicalSyntax
             self.changed = changed
+            super.init()
         }
 
         func update(
@@ -112,11 +201,21 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
         func detach() {
             retryTask?.cancel()
             retryTask = nil
+            if let keyMonitor {
+                NSEvent.removeMonitor(keyMonitor)
+                self.keyMonitor = nil
+            }
+            if let mouseMonitor {
+                NSEvent.removeMonitor(mouseMonitor)
+                self.mouseMonitor = nil
+            }
             for observer in observers {
                 NotificationCenter.default.removeObserver(observer)
             }
             observers.removeAll()
             restoreSearchFieldDelegate()
+            restoreMenuPatches(&mainMenuPatches)
+            restoreMenuPatches(&trackingMenuPatches)
             searchField = nil
             window = nil
             lastMetrics = .zero
@@ -128,6 +227,32 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
             guard let window else { return }
             observe(NSWindow.didResizeNotification, object: window)
             observe(NSWindow.didEndLiveResizeNotification, object: window)
+            observe(NSMenu.didBeginTrackingNotification, object: nil)
+            observe(NSMenu.didEndTrackingNotification, object: nil)
+            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                let eventObject = SendableNotificationObject(event)
+                let handled = MainActor.assumeIsolated {
+                    guard let event = eventObject.value as? NSEvent else { return false }
+                    return self?.handleClipboardShortcut(event) == true
+                }
+                return handled ? nil : event
+            }
+            mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+                let eventObject = SendableNotificationObject(event)
+                MainActor.assumeIsolated {
+                    guard let self,
+                          let event = eventObject.value as? NSEvent,
+                          event.window === self.window,
+                          let field = self.searchField,
+                          let cell = field.cell as? NSSearchFieldCell
+                    else { return }
+                    let point = field.convert(event.locationInWindow, from: nil)
+                    self.nativeClearPointerActivationPending = cell
+                        .cancelButtonRect(forBounds: field.bounds)
+                        .contains(point)
+                }
+                return event
+            }
         }
 
         private func observe(_ name: Notification.Name, object: AnyObject?) {
@@ -135,9 +260,23 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
                 forName: name,
                 object: object,
                 queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    self?.scheduleMeasurement()
+            ) { [weak self] notification in
+                let notificationObject = SendableNotificationObject(
+                    notification.object as AnyObject?
+                )
+                Task { @MainActor [weak self, notificationObject] in
+                    guard let self else { return }
+                    if name == NSMenu.didBeginTrackingNotification,
+                       let menu = notificationObject.value as? NSMenu,
+                       self.activeSearchEditor != nil
+                    {
+                        self.restoreMenuPatches(&self.trackingMenuPatches)
+                        self.patchMenu(menu, storingIn: &self.trackingMenuPatches)
+                    } else if name == NSMenu.didEndTrackingNotification {
+                        self.restoreMenuPatches(&self.trackingMenuPatches)
+                    } else {
+                        self.scheduleMeasurement()
+                    }
                 }
             }
             observers.append(observer)
@@ -171,15 +310,36 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
                 searchField.postsFrameChangedNotifications = true
                 observe(NSView.frameDidChangeNotification, object: searchField)
                 let proxy = ToolbarSearchFieldDelegateProxy(
-                    forwardingDelegate: searchField.delegate
-                ) { [weak self] value in
-                    guard let self,
-                          searchText.wrappedValue != value
-                    else { return }
-                    searchText.wrappedValue = value
-                }
+                    forwardingDelegate: searchField.delegate,
+                    didBeginEditing: { [weak self] in
+                        guard let self else { return }
+                        isSearchFocused.wrappedValue = true
+                        installMainMenuPatches()
+                    },
+                    didEndSearching: { [weak self] in
+                        guard let self,
+                              nativeClearPointerActivationPending
+                                || currentEventTargetsNativeClearButton
+                        else { return }
+                        nativeClearPointerActivationPending = false
+                        didUseBuiltInClear()
+                    },
+                    didEndEditing: { [weak self] in
+                        guard let self else { return }
+                        restoreMenuPatches(&mainMenuPatches)
+                        guard !keyboardClearFocusRestorationPending else { return }
+                        didEndEditing()
+                    },
+                    handleCommand: { [weak self] editor, selector in
+                        self?.handleCommand(editor, selector: selector) ?? false
+                    }
+                )
                 searchFieldDelegateProxy = proxy
                 searchField.delegate = proxy
+                installNativeClearButtonAction(in: searchField)
+            }
+            if searchField.currentEditor() != nil {
+                installMainMenuPatches()
             }
 
             let fieldRect = searchField.convert(searchField.bounds, to: nil)
@@ -197,11 +357,258 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
         }
 
         private func restoreSearchFieldDelegate() {
+            restoreNativeClearButtonAction()
             guard let proxy = searchFieldDelegateProxy else { return }
             if searchField?.delegate as AnyObject? === proxy {
                 searchField?.delegate = proxy.forwardingDelegate
             }
             searchFieldDelegateProxy = nil
+        }
+
+        private func installNativeClearButtonAction(in searchField: NSSearchField) {
+            guard let cell = searchField.cell as? NSSearchFieldCell,
+                  let cancel = cell.cancelButtonCell
+            else { return }
+            cancelButtonCell = cancel
+            cancelButtonTarget = cancel.target as AnyObject?
+            cancelButtonAction = cancel.action
+            cancel.target = self
+            cancel.action = #selector(nativeClearButtonActivated(_:))
+        }
+
+        private func restoreNativeClearButtonAction() {
+            guard let cancelButtonCell,
+                  cancelButtonCell.target === self
+            else {
+                self.cancelButtonCell = nil
+                cancelButtonTarget = nil
+                cancelButtonAction = nil
+                return
+            }
+            cancelButtonCell.target = cancelButtonTarget
+            cancelButtonCell.action = cancelButtonAction
+            self.cancelButtonCell = nil
+            cancelButtonTarget = nil
+            cancelButtonAction = nil
+        }
+
+        @objc private func nativeClearButtonActivated(_ sender: Any?) {
+            if let cancelButtonAction {
+                NSApp.sendAction(
+                    cancelButtonAction,
+                    to: cancelButtonTarget,
+                    from: sender
+                )
+            }
+            nativeClearPointerActivationPending = false
+            didUseBuiltInClear()
+        }
+
+        private func handleCommand(_ editor: NSTextView, selector: Selector) -> Bool {
+            guard isSearchFocused.wrappedValue,
+                  editor.window === searchField?.window
+            else { return false }
+            switch selector {
+            case #selector(NSText.copy(_:)):
+                return copySearchSelection(in: editor)
+            case #selector(NSText.cut(_:)):
+                return cutSearchSelection(in: editor)
+            case #selector(NSText.paste(_:)):
+                return pasteCanonicalSyntax(in: editor)
+            default:
+                return false
+            }
+        }
+
+        private func handleClipboardShortcut(_ event: NSEvent) -> Bool {
+            nativeClearPointerActivationPending = false
+            guard let editor = activeSearchEditor else { return false }
+            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if modifiers.isEmpty,
+               event.keyCode == 51 || event.keyCode == 117,
+               deletionWillEmptyEditor(editor, keyCode: event.keyCode)
+            {
+                restoreSearchFocusAfterKeyboardClear()
+                return false
+            }
+            guard modifiers == .command,
+                  let character = event.charactersIgnoringModifiers?.lowercased()
+            else { return false }
+            switch character {
+            case "c":
+                return copySearchSelection(in: editor)
+            case "x":
+                return cutSearchSelection(in: editor)
+            case "v":
+                return pasteCanonicalSyntax(in: editor)
+            default:
+                return false
+            }
+        }
+
+        private var currentEventTargetsNativeClearButton: Bool {
+            guard let event = NSApp.currentEvent,
+                  event.type == .leftMouseDown || event.type == .leftMouseUp,
+                  event.window === window,
+                  let field = searchField,
+                  let cell = field.cell as? NSSearchFieldCell
+            else { return false }
+            let point = field.convert(event.locationInWindow, from: nil)
+            return cell.cancelButtonRect(forBounds: field.bounds).contains(point)
+        }
+
+        @objc private func copyMessageSearch(_ sender: Any?) {
+            guard let editor = activeSearchEditor,
+                  copySearchSelection(in: editor)
+            else {
+                forward(#selector(NSText.copy(_:)), sender: sender)
+                return
+            }
+        }
+
+        @objc private func cutMessageSearch(_ sender: Any?) {
+            guard let editor = activeSearchEditor,
+                  cutSearchSelection(in: editor)
+            else {
+                forward(#selector(NSText.cut(_:)), sender: sender)
+                return
+            }
+        }
+
+        @objc private func pasteMessageSearch(_ sender: Any?) {
+            guard let editor = activeSearchEditor else {
+                forward(#selector(NSText.paste(_:)), sender: sender)
+                return
+            }
+            if !pasteCanonicalSyntax(in: editor) {
+                editor.paste(sender)
+            }
+        }
+
+        private var activeSearchEditor: NSTextView? {
+            guard isSearchFocused.wrappedValue,
+                  let editor = searchField?.currentEditor() as? NSTextView,
+                  editor === window?.firstResponder
+            else { return nil }
+            return editor
+        }
+
+        private func copySearchSelection(in editor: NSTextView) -> Bool {
+            guard let value = canonicalSelection(in: editor) else { return false }
+            writeToPasteboard(value)
+            return true
+        }
+
+        private func cutSearchSelection(in editor: NSTextView) -> Bool {
+            guard let value = canonicalSelection(in: editor) else { return false }
+            let emptiesEditor = editor.selectedRange().length == editor.string.utf16.count
+            editor.delete(nil)
+            writeToPasteboard(value)
+            if emptiesEditor {
+                restoreSearchFocusAfterKeyboardClear()
+            }
+            return true
+        }
+
+        private func deletionWillEmptyEditor(_ editor: NSTextView, keyCode: UInt16) -> Bool {
+            let selection = editor.selectedRange()
+            let length = editor.string.utf16.count
+            if selection.length == length { return true }
+            guard selection.length == 0, length == 1 else { return false }
+            return keyCode == 51 ? selection.location == 1 : selection.location == 0
+        }
+
+        private func restoreSearchFocusAfterKeyboardClear() {
+            keyboardClearFocusRestorationPending = true
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(20))
+                guard let self else { return }
+                guard let searchField, let window else {
+                    keyboardClearFocusRestorationPending = false
+                    return
+                }
+                isSearchFocused.wrappedValue = true
+                window.makeFirstResponder(searchField)
+                installMainMenuPatches()
+                try? await Task.sleep(for: .milliseconds(50))
+                keyboardClearFocusRestorationPending = false
+            }
+        }
+
+        private func pasteCanonicalSyntax(in editor: NSTextView) -> Bool {
+            guard let value = NSPasteboard.general.string(forType: .string) else {
+                return false
+            }
+            let parsed = pasteCanonicalSyntax(value)
+            guard !parsed.tokens.isEmpty else { return false }
+            var tokens = searchTokens.wrappedValue
+            for token in parsed.tokens where !tokens.contains(token) {
+                tokens.append(token)
+            }
+            editor.insertText(parsed.text, replacementRange: editor.selectedRange())
+            let text = editor.string.replacingOccurrences(
+                of: "\u{FFFC}",
+                with: ""
+            )
+            // AppKit dispatches the field editor's native change notification
+            // after insertText returns. Apply semantic state on the following
+            // main-actor turn so that notification cannot overwrite the tokens
+            // we just reconstructed from the canonical clipboard syntax.
+            Task { @MainActor [weak self] in
+                await Task.yield()
+                guard let self else { return }
+                searchText.wrappedValue = text
+                searchTokens.wrappedValue = tokens
+            }
+            return true
+        }
+
+        private func installMainMenuPatches() {
+            guard mainMenuPatches.isEmpty, let menu = NSApp.mainMenu else { return }
+            patchMenu(menu, storingIn: &mainMenuPatches)
+        }
+
+        private func patchMenu(_ menu: NSMenu, storingIn patches: inout [MenuPatch]) {
+            for item in menu.items {
+                if let submenu = item.submenu {
+                    patchMenu(submenu, storingIn: &patches)
+                }
+                let replacement: Selector? = switch item.action {
+                case #selector(NSText.copy(_:)): #selector(copyMessageSearch(_:))
+                case #selector(NSText.cut(_:)): #selector(cutMessageSearch(_:))
+                case #selector(NSText.paste(_:)): #selector(pasteMessageSearch(_:))
+                default: nil
+                }
+                guard let replacement else { continue }
+                patches.append(MenuPatch(item: item, target: item.target, action: item.action))
+                item.target = self
+                item.action = replacement
+            }
+        }
+
+        private func restoreMenuPatches(_ patches: inout [MenuPatch]) {
+            for patch in patches where patch.item.target === self {
+                patch.item.target = patch.target
+                patch.item.action = patch.action
+            }
+            patches.removeAll()
+        }
+
+        private func forward(_ selector: Selector, sender: Any?) {
+            _ = window?.firstResponder?.tryToPerform(selector, with: sender)
+        }
+
+        private func canonicalSelection(in editor: NSTextView) -> String? {
+            MessageSearchClipboardSerialization.canonicalSelection(
+                editorString: editor.string,
+                selectedRange: editor.selectedRange(),
+                tokens: searchTokens.wrappedValue
+            )
+        }
+
+        private func writeToPasteboard(_ value: String) {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(value, forType: .string)
         }
 
         private func toolbarSearchField(in window: NSWindow) -> NSSearchField? {

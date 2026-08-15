@@ -1311,7 +1311,7 @@ private func appendETFBinary(_ value: String, to data: inout Data) {
     #expect(Set(data.keys) == ["guild_id", "query", "limit", "presences"])
 }
 
-@Test func `quick switcher member search uses current desktop payload shape`() throws {
+@Test func `account wide member search uses current desktop payload shape`() throws {
     let payload = DiscordGatewayPayloadFactory.searchMembers(
         guildIDs: [GuildID(rawValue: 10)],
         query: "hen",
@@ -1323,8 +1323,5 @@ private func appendETFBinary(_ value: String, to data: inout Data) {
     #expect(data["query"] as? String == "hen")
     #expect(data["limit"] as? Int == 100)
     #expect(data["presences"] as? Bool == true)
-    #expect(data["user_ids"] is NSNull)
-    #expect(Set(data.keys) == [
-        "guild_id", "query", "limit", "presences", "user_ids",
-    ])
+    #expect(Set(data.keys) == ["guild_id", "query", "limit", "presences"])
 }

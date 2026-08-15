@@ -26,6 +26,7 @@ public enum ClientEvent: Equatable, Sendable {
     case privateMembersChanged([Member])
     case knownUsersChanged([User])
     case quickSwitcherUserIDsChanged([UserID])
+    case messageSearchUsersChanged([User])
     case userSearchAliasesChanged([UserID: [String]])
     case quickSwitcherGuildMemberUserIDsChanged([GuildID: [UserID]])
     case quickSwitcherJoinedMemberIDsChanged([GuildID: [UserID]])

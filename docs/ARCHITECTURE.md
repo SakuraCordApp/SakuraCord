@@ -66,8 +66,12 @@ Within the production provider:
   scheduling, caches, capability gates, upload coordination, safety stops, and
   domain-event decoding.
 - REST and Gateway share one `DiscordClientMetadata` source and one provider
-  lifetime. A session-wide safety stop cancels both without affecting unrelated
-  app networking.
+  lifetime, but production gives them separate provider-owned `URLSession`
+  connection pools. A confirmed REST transport timeout can therefore replace
+  only the stalled pool without interrupting Gateway heartbeats. Safe reads may
+  retry once on the replacement; mutations are never replayed after an
+  ambiguous failure. A session-wide safety stop still cancels both without
+  affecting unrelated app networking.
 - Every authenticated REST route uses the central transport. Views and feature
   helpers do not create one-off authenticated `URLSession` paths.
 - `CatboxAttachmentUploader` is a separate unauthenticated app service used

@@ -73,7 +73,6 @@ enum DiscordGatewayPayloadFactory {
                 "query": query,
                 "limit": limit,
                 "presences": true,
-                "user_ids": NSNull(),
             ] as [String: Any],
         ]
     }
@@ -1067,10 +1066,12 @@ struct ReadyMergedMemberDTO: Decodable {
     var banner: String?
     var bio: String?
     var pending: Bool?
+    var joinedAt: String?
 
     enum CodingKeys: String, CodingKey {
         case userID = "user_id"
         case nick, roles, presence, avatar, banner, bio, pending
+        case joinedAt = "joined_at"
     }
 
     func hydrated(using usersByID: [String: UserDTO]) -> GuildMemberDTO? {
@@ -1083,7 +1084,8 @@ struct ReadyMergedMemberDTO: Decodable {
             avatar: avatar,
             banner: banner,
             bio: bio,
-            pending: pending
+            pending: pending,
+            joinedAt: joinedAt
         )
     }
 }

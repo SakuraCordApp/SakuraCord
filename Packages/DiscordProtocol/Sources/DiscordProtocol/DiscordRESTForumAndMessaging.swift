@@ -646,7 +646,10 @@ extension DiscordRESTProvider {
     }
 
     func publishForumPosts(parentID: ChannelID) {
-        let posts = Array(cachedForumPosts[parentID, default: [:]].values)
+        var remaining = cachedForumPosts[parentID, default: [:]]
+        let posts = cachedForumThreadOrder.compactMap {
+            remaining.removeValue(forKey: $0)
+        } + remaining.values.sorted { $0.id < $1.id }
         continuation?.yield(.forumPostsChanged(channelID: parentID, posts: posts))
     }
 
@@ -690,6 +693,9 @@ extension DiscordRESTProvider {
             guard var post = try? dto.forumPost(fallbackGuildID: fallbackGuildID),
                   let parentID = post.thread.parentID
             else { continue }
+            if !cachedForumThreadOrder.contains(post.id) {
+                cachedForumThreadOrder.append(post.id)
+            }
             if post.owner == nil, let ownerID = post.thread.ownerID,
                let ownerDTO = cachedGatewayUsersByID[ownerID.description]
             {
@@ -1745,8 +1751,10 @@ extension DiscordRESTProvider {
             )
             let uploadStarted = ContinuousClock.now
             let rawResponse: URLResponse
+            let uploadSession = restSession
+            let uploadSessionGeneration = restSessionGeneration
             do {
-                (_, rawResponse) = try await session.upload(
+                (_, rawResponse) = try await uploadSession.upload(
                     for: uploadRequest,
                     fromFile: fileURL
                 )
@@ -1758,6 +1766,10 @@ extension DiscordRESTProvider {
                     attempt: 1,
                     duration: uploadStarted.duration(to: .now),
                     error: error
+                )
+                _ = recoverRESTSessionIfNeeded(
+                    after: error,
+                    requestGeneration: uploadSessionGeneration
                 )
                 throw error
             }

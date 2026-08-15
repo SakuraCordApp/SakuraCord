@@ -3,11 +3,22 @@ import Foundation
 import Observation
 import SakuraCordModels
 
+nonisolated enum MessageSearchSurfacePolicy {
+    static func showsToolbar(channelKind: ChannelKindValue?, hasOpenThread: Bool) -> Bool {
+        guard !hasOpenThread else { return false }
+        return switch channelKind {
+        case .text, .announcement, .directMessage, .groupDirectMessage: true
+        case .forum, .voice, .unknown, nil: false
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class MessageSearchState {
     var isPresented = false
     var queryText = ""
+    var tokens: [MessageSearchToken] = []
     var filters = MessageSearchFilters()
     var operatorFilters = MessageSearchFilters()
     var sort = MessageSearchSort.newest
@@ -38,7 +49,9 @@ final class MessageSearchState {
     }
 
     var effectiveFilters: MessageSearchFilters {
-        filters.merging(operatorFilters)
+        tokens.reduce(filters.merging(operatorFilters)) { filters, token in
+            filters.merging(token.filters)
+        }
     }
 
     func requestInputFocus() {
@@ -54,6 +67,7 @@ final class MessageSearchState {
         AppPerformanceSignposts.endMessageSearchScroll()
         requestTask = nil
         queryText = ""
+        tokens = []
         parsedInputText = nil
         parsedContent = ""
         filters = .init()
@@ -76,8 +90,33 @@ extension AppModel {
     var messageSearchInputText: String {
         get { messageSearch.queryText }
         set {
-            messageSearch.queryText = newValue
-            dismissMessageSearchIfInputIsEmpty()
+            messageSearch.queryText = newValue.replacingOccurrences(of: "\u{FFFC}", with: "")
+            let text = messageSearch.queryText
+            let parsed = MessageSearchTokenParser.parse(
+                text,
+                users: messageSearchUsers,
+                channels: messageSearchChannels
+            )
+            let implicitTokens = parsed.tokens.filter { token in
+                switch token.kind {
+                case .contentType, .authorType, .pinned, .before, .after: true
+                case .from, .channel, .mentions: false
+                }
+            }
+            guard !implicitTokens.isEmpty else { return }
+            for token in implicitTokens where !messageSearch.tokens.contains(token) {
+                messageSearch.tokens.append(token)
+            }
+            messageSearch.queryText = MessageSearchTokenParser.lexicalTokens(in: text)
+                .filter { rawToken in
+                    let token = MessageSearchTokenParser.parse(
+                        rawToken,
+                        users: messageSearchUsers,
+                        channels: messageSearchChannels
+                    ).tokens.first
+                    return token.map { !implicitTokens.contains($0) } ?? true
+                }
+                .joined(separator: " ")
         }
     }
 
@@ -92,7 +131,13 @@ extension AppModel {
     }
 
     func presentMessageSearch() {
-        guard sessionState == .workspace, selectedChannelID != nil else { return }
+        guard sessionState == .workspace,
+              selectedChannelID != nil,
+              MessageSearchSurfacePolicy.showsToolbar(
+                  channelKind: selectedChannel?.kind,
+                  hasOpenThread: openThread != nil
+              )
+        else { return }
         let currentScope = selectedGuildID.map(MessageSearchScope.guild) ?? .directMessages
         if messageSearch.submittedQuery?.scope != currentScope {
             messageSearch.clear()
@@ -101,8 +146,23 @@ extension AppModel {
         messageSearch.requestInputFocus()
     }
 
+    func presentMessageSearchFromCommand() {
+        presentMessageSearch()
+        guard messageSearch.isInputFocused,
+              let selectedChannelID,
+              let channel = messageSearchChannels.first(where: { $0.id == selectedChannelID })
+        else { return }
+        messageSearch.tokens.removeAll { token in
+            if case .channel = token.kind { return true }
+            return false
+        }
+        messageSearch.tokens.append(MessageSearchToken(kind: .channel(
+            channelID: channel.id,
+            name: messageSearchPresentedName(for: channel)
+        )))
+    }
+
     func dismissMessageSearch() {
-        guard messageSearch.isPresented else { return }
         messageSearch.requestTask?.cancel()
         AppPerformanceSignposts.endResourceWindow(named: "MessageSearchBenchmark")
         AppPerformanceSignposts.endResourceWindow(named: "MessageSearchPaginationBenchmark")
@@ -116,8 +176,44 @@ extension AppModel {
     }
 
     func dismissMessageSearchIfInputIsEmpty() {
-        guard messageSearch.queryText.isEmpty else { return }
+        guard messageSearch.queryText.isEmpty, messageSearch.tokens.isEmpty else { return }
         dismissMessageSearch()
+    }
+
+    func clearMessageSearchUsingBuiltInButton() {
+        messageSearch.queryText = ""
+        messageSearch.tokens = []
+        messageSearch.operatorFilters = .init()
+        messageSearch.parsedInputText = nil
+        messageSearch.parsedContent = ""
+        dismissMessageSearch()
+    }
+
+    func messageSearchEditingDidEnd() {
+        messageSearch.isInputFocused = false
+        guard messageSearch.queryText.isEmpty, messageSearch.tokens.isEmpty else { return }
+        dismissMessageSearch()
+    }
+
+    func handleMessageSearchEscape() {
+        if messageSearch.queryText.isEmpty, messageSearch.tokens.isEmpty {
+            dismissMessageSearch()
+            return
+        }
+        messageSearch.queryText = ""
+        messageSearch.tokens = []
+        messageSearch.operatorFilters = .init()
+        messageSearch.parsedInputText = nil
+        messageSearch.parsedContent = ""
+        messageSearch.requestInputFocus()
+        Task { @MainActor [weak self] in
+            await Task.yield()
+            guard let self,
+                  messageSearch.queryText.isEmpty,
+                  messageSearch.tokens.isEmpty
+            else { return }
+            messageSearch.requestInputFocus()
+        }
     }
 
     func dismissWorkspaceNavigationOverlay() {
@@ -329,7 +425,8 @@ extension AppModel {
 
     func applyMessageSearchFilters(_ filters: MessageSearchFilters) {
         let parsed = parsedMessageSearchInput()
-        messageSearch.filters = filters
+        messageSearch.filters = .init()
+        messageSearch.tokens = messageSearchTokens(for: filters)
         messageSearch.parsedInputText = messageSearch.queryText
         messageSearch.parsedContent = parsed.content
         messageSearch.operatorFilters = parsed.filters
@@ -337,30 +434,186 @@ extension AppModel {
     }
 
     var messageSearchUsers: [User] {
-        var values: [UserID: User] = [:]
-        for member in members {
-            values[member.id] = member.user
+        var seen = Set<UserID>()
+        // Discord's queryAllUsers path reads UserStore insertion order. This
+        // projection contains every live Gateway user DTO, including broad
+        // READY_SUPPLEMENTAL hydration, without app-specific disk-only users.
+        var users = (snapshot?.messageSearchUsers ?? []).filter {
+            seen.insert($0.id).inserted
         }
-        for channel in snapshot?.channels ?? [] {
-            for user in channel.recipients {
-                values[user.id] = user
+        if let selectedGuildID {
+            // GuildMemberStore can resolve a member before the corresponding
+            // UserStore update reaches the app snapshot (notably members
+            // supplied by a live search chunk). Discord still admits that
+            // member to queryGuildUsers immediately. Resolve those IDs from
+            // the selected guild without changing their authoritative member
+            // store ordering, which is supplied separately to the matcher.
+            let localGuildUsers =
+                (membersByGuildID[selectedGuildID]?.values.map(\.user) ?? [])
+                + (memberListsByGuildID[selectedGuildID]?.map(\.user) ?? [])
+                + messages.map(\.author)
+            let localGuildUsersByID = Dictionary(
+                localGuildUsers.map { ($0.id, $0) },
+                uniquingKeysWith: { existing, _ in existing }
+            )
+            let orderedUserIDs =
+                (snapshot?.quickSwitcherGuildMemberUserIDs[selectedGuildID] ?? [])
+                + localGuildUsers.map(\.id)
+            for userID in orderedUserIDs where seen.insert(userID).inserted {
+                if let user = localGuildUsersByID[userID] {
+                    users.append(user)
+                }
             }
         }
-        return values.values.sorted {
-            $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending
+        if let currentUser = snapshot?.currentUser,
+           seen.insert(currentUser.id).inserted
+        {
+            users.insert(currentUser, at: 0)
         }
+        return users
     }
 
     var messageSearchChannels: [Channel] {
         let allChannels = snapshot?.channels ?? visibleChannels
-        return allChannels.filter { channel in
+        let eligible = allChannels.filter { channel in
             if let selectedGuildID {
-                return channel.guildID == selectedGuildID && channel.kind != .voice
+                return channel.guildID == selectedGuildID
             }
             return channel.kind == .directMessage || channel.kind == .groupDirectMessage
-        }.sorted {
-            $0.name.localizedStandardCompare($1.name) == .orderedAscending
         }
+        // Message search reads ChannelStore directly. Keep READY insertion
+        // order here; the quick switcher's persisted restoration order is a
+        // separate concern and must not leak into a clean search session.
+        guard selectedGuildID == nil else { return eligible }
+        return eligible.sorted { left, right in
+            left.position == right.position
+                ? left.id < right.id
+                : left.position < right.position
+        }
+    }
+
+    var messageSearchPromptTitle: String {
+        guard let selectedGuildID,
+              let guild = snapshot?.guilds.first(where: { $0.id == selectedGuildID })
+        else { return "Search in DMs" }
+        return "Search \(guild.name)"
+    }
+
+    func messageSearchPresentedName(for channel: Channel) -> String {
+        if channel.kind == .directMessage, let recipient = channel.recipients.first {
+            return recipient.username
+        }
+        return channel.name
+    }
+
+    func messageSearchGuildAliases(guildID: GuildID) -> [UserID: [String]] {
+        var aliases: [UserID: [String]] = [:]
+        func append(_ value: String?, for userID: UserID) {
+            guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !value.isEmpty,
+                  aliases[userID, default: []].contains(where: {
+                      $0.localizedCaseInsensitiveCompare(value) == .orderedSame
+                  }) == false
+            else { return }
+            aliases[userID, default: []].append(value)
+        }
+        for (userID, nickname) in snapshot?.quickSwitcherGuildMemberAliases[guildID] ?? [:] {
+            append(nickname, for: userID)
+        }
+        for member in membersByGuildID[guildID]?.values ?? [UserID: Member]().values {
+            append(member.globalDisplayName, for: member.id)
+            append(member.user.displayName, for: member.id)
+        }
+        for member in memberListsByGuildID[guildID] ?? [] {
+            append(member.globalDisplayName, for: member.id)
+            append(member.user.displayName, for: member.id)
+        }
+        return aliases
+    }
+
+    func parsePastedMessageSearchSyntax(_ value: String) {
+        let parsed = MessageSearchTokenParser.parse(
+            value,
+            users: messageSearchUsers,
+            channels: messageSearchChannels
+        )
+        for token in parsed.tokens where !messageSearch.tokens.contains(token) {
+            messageSearch.tokens.append(token)
+        }
+        messageSearch.queryText = parsed.text
+    }
+
+    private func messageSearchTokens(
+        for filters: MessageSearchFilters
+    ) -> [MessageSearchToken] {
+        let usersByID = Dictionary(
+            messageSearchUsers.map { ($0.id, $0) },
+            uniquingKeysWith: { _, newer in newer }
+        )
+        let channelsByID = Dictionary(
+            messageSearchChannels.map { ($0.id, $0) },
+            uniquingKeysWith: { _, newer in newer }
+        )
+        var values: [MessageSearchToken] = []
+        values += filters.authorIDs.compactMap { id in
+            usersByID[id].map {
+                MessageSearchToken(kind: .from(
+                    userID: id,
+                    username: $0.username,
+                    displayName: $0.displayName
+                ))
+            }
+        }
+        values += filters.channelIDs.compactMap { id in
+            channelsByID[id].map {
+                MessageSearchToken(kind: .channel(channelID: id, name: $0.name))
+            }
+        }
+        values += filters.contentTypes.map {
+            MessageSearchToken(kind: .contentType($0))
+        }
+        values += filters.mentionedUserIDs.compactMap { id in
+            usersByID[id].map {
+                MessageSearchToken(kind: .mentions(
+                    userID: id,
+                    username: $0.username,
+                    displayName: $0.displayName
+                ))
+            }
+        }
+        values += filters.authorTypes.map {
+            MessageSearchToken(kind: .authorType($0))
+        }
+        if let pinned = filters.pinned {
+            values.append(MessageSearchToken(kind: .pinned(pinned)))
+        }
+        let calendar = Calendar.current
+        if let boundary = filters.maximumMessageID {
+            let date = boundary.createdAt
+            values.append(MessageSearchToken(kind: .before(
+                value: Self.messageSearchISODate(date, calendar: calendar),
+                boundary: boundary
+            )))
+        }
+        if let boundary = filters.minimumMessageID,
+           let date = calendar.date(byAdding: .day, value: -1, to: boundary.createdAt)
+        {
+            values.append(MessageSearchToken(kind: .after(
+                value: Self.messageSearchISODate(date, calendar: calendar),
+                boundary: boundary
+            )))
+        }
+        return values
+    }
+
+    private static func messageSearchISODate(_ date: Date, calendar: Calendar) -> String {
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(
+            format: "%04d-%02d-%02d",
+            components.year ?? 0,
+            components.month ?? 0,
+            components.day ?? 0
+        )
     }
 
     private func parsedMessageSearchInput() -> MessageSearchParsedInput {

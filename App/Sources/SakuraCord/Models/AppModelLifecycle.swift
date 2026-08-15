@@ -231,6 +231,7 @@ extension AppModel {
         discordFrequentlyUsedEmojiKeys = []
         discordEmojiUsageScores = [:]
         discordGuildAndChannelUsageScores = [:]
+        discordSyncedGuildAndChannelUsageScores = [:]
         discordGuildAndChannelUsage = [:]
         discordGuildAndChannelUsageOrder = []
         pendingDiscordFrecencyUses = []
@@ -373,6 +374,7 @@ extension AppModel {
         discordFrequentlyUsedEmojiKeys = []
         discordEmojiUsageScores = [:]
         discordGuildAndChannelUsageScores = [:]
+        discordSyncedGuildAndChannelUsageScores = [:]
         discordGuildAndChannelUsage = [:]
         discordGuildAndChannelUsageOrder = []
         pendingDiscordFrecencyUses = []
@@ -1264,6 +1266,7 @@ extension AppModel {
             discordFrequentlyUsedEmojiKeys = settings.frequentlyUsedKeys
             discordEmojiUsageScores = settings.usageScores
             discordGuildAndChannelUsageScores = settings.guildAndChannelUsageScores
+            discordSyncedGuildAndChannelUsageScores = settings.guildAndChannelUsageScores
             discordGuildAndChannelUsage = settings.guildAndChannelUsage
             discordGuildAndChannelUsageOrder = settings.guildAndChannelUsageOrder
         }

@@ -20,16 +20,6 @@ struct MessageSearchPanelView: View {
             MessageSearchPagination(model: model, search: search)
         }
         .background(.ultraThinMaterial)
-        .overlay(alignment: .top) {
-            if search.isInputFocused {
-                MessageSearchSuggestionOverlay(model: model, search: search)
-                    .padding(.horizontal, 12)
-                    .padding(.top, 8)
-            }
-        }
-        .sheet(isPresented: $search.isFilterSheetPresented) {
-            MessageSearchFiltersSheet(model: model, search: search)
-        }
         .onAppear {
             AppPerformanceSignposts.reportMessageSearchPanelReady()
         }
@@ -38,407 +28,6 @@ struct MessageSearchPanelView: View {
             scrollRequest = MessageTimelineScrollRequest(
                 target: .message(firstID, anchor: .top)
             )
-        }
-    }
-}
-
-private struct MessageSearchSuggestionOverlay: View {
-    let model: AppModel
-    let search: MessageSearchState
-
-    var body: some View {
-        if !suggestions.isEmpty {
-            MessageSearchSuggestions(
-                title: suggestionTitle,
-                suggestions: suggestions,
-                activate: activate
-            )
-            .transition(.opacity.combined(with: .move(edge: .top)))
-        }
-    }
-
-    private var suggestions: [MessageSearchSuggestion] {
-        let fragment = activeFragment
-        if fragment.isEmpty {
-            var values: [MessageSearchSuggestion] = []
-            if model.selectedGuildID == nil,
-               let channel = model.selectedChannel,
-               channel.kind == .directMessage || channel.kind == .groupDirectMessage
-            {
-                values.append(.currentDirectMessage(channel))
-            }
-            values.append(contentsOf: [
-                .operator(.from),
-                .operator(.in),
-                .operator(.has),
-                .operator(.mentions),
-                .moreFilters,
-            ])
-            return values
-        }
-
-        guard !search.queryText.dropLast(fragment.count).contains(where: { !$0.isWhitespace })
-                || fragment.contains(":")
-        else { return [] }
-        guard let separator = fragment.firstIndex(of: ":") else {
-            return MessageSearchTextOperator.allCases
-                .filter { $0.rawValue.hasPrefix(fragment.lowercased()) }
-                .map(MessageSearchSuggestion.operator)
-        }
-
-        let operatorName = String(fragment[..<separator]).lowercased()
-        let value = String(fragment[fragment.index(after: separator)...])
-            .trimmingCharacters(in: CharacterSet(charactersIn: "\"@#"))
-        guard let searchOperator = MessageSearchTextOperator(alias: operatorName) else {
-            return []
-        }
-        switch searchOperator {
-        case .from, .mentions:
-            return model.messageSearchUsers
-                .filter { value.isEmpty || $0.displayName.localizedCaseInsensitiveContains(value)
-                    || $0.username.localizedCaseInsensitiveContains(value) }
-                .prefix(8)
-                .map { .user(searchOperator, $0) }
-        case .in:
-            return model.messageSearchChannels
-                .filter { value.isEmpty || $0.name.localizedCaseInsensitiveContains(value) }
-                .prefix(8)
-                .map(MessageSearchSuggestion.channel)
-        case .has:
-            return MessageSearchContentType.allCases
-                .filter { value.isEmpty || $0.rawValue.hasPrefix(value.lowercased()) }
-                .map(MessageSearchSuggestion.contentType)
-        case .authorType:
-            return MessageSearchAuthorType.allCases
-                .filter { value.isEmpty || $0.rawValue.hasPrefix(value.lowercased()) }
-                .map(MessageSearchSuggestion.authorType)
-        case .pinned:
-            return [.pinned(true), .pinned(false)]
-        case .before, .after:
-            return [.dateHint(searchOperator)]
-        }
-    }
-
-    private var activeFragment: String {
-        search.queryText.split(whereSeparator: \.isWhitespace).last.map(String.init) ?? ""
-    }
-
-    private var suggestionTitle: String {
-        guard let separator = activeFragment.firstIndex(of: ":"),
-              let searchOperator = MessageSearchTextOperator(
-                  alias: String(activeFragment[..<separator]).lowercased()
-              )
-        else { return "Filters" }
-        return switch searchOperator {
-        case .from, .mentions: "Users"
-        case .in: "Channels"
-        case .has: "Includes"
-        case .before, .after: "Date"
-        case .authorType: "Author Type"
-        case .pinned: "Pinned"
-        }
-    }
-
-    private func activate(_ suggestion: MessageSearchSuggestion) {
-        switch suggestion {
-        case .currentDirectMessage(let channel):
-            replaceActiveFragment(with: "in:\(quotedIfNeeded(channel.name))")
-        case .operator(let searchOperator):
-            replaceActiveFragment(with: "\(searchOperator.rawValue):")
-        case .user(let searchOperator, let user):
-            replaceActiveFragment(
-                with: "\(searchOperator.rawValue):\(quotedIfNeeded(user.username))"
-            )
-        case .channel(let channel):
-            replaceActiveFragment(with: "in:\(quotedIfNeeded(channel.name))")
-        case .contentType(let type):
-            replaceActiveFragment(with: "has:\(type.rawValue)")
-        case .authorType(let type):
-            replaceActiveFragment(with: "author_type:\(type.rawValue)")
-        case .pinned(let pinned):
-            replaceActiveFragment(with: "pinned:\(pinned)")
-        case .dateHint(let searchOperator):
-            replaceActiveFragment(
-                with: "\(searchOperator.rawValue):\(Self.isoDate(Date.now))"
-            )
-        case .moreFilters:
-            search.isInputFocused = false
-            search.isFilterSheetPresented = true
-            return
-        }
-        search.requestInputFocus()
-    }
-
-    private func replaceActiveFragment(with replacement: String) {
-        guard !activeFragment.isEmpty,
-              let range = search.queryText.range(of: activeFragment, options: .backwards)
-        else {
-            search.queryText = replacement
-            return
-        }
-        search.queryText.replaceSubrange(range, with: replacement)
-    }
-
-    private func quotedIfNeeded(_ value: String) -> String {
-        value.contains(where: \.isWhitespace) ? "\"\(value)\"" : value
-    }
-
-    private static func isoDate(_ date: Date) -> String {
-        let components = Calendar.current.dateComponents(
-            [.year, .month, .day],
-            from: date
-        )
-        return String(
-            format: "%04d-%02d-%02d",
-            components.year ?? 0,
-            components.month ?? 0,
-            components.day ?? 0
-        )
-    }
-}
-
-private enum MessageSearchTextOperator: String, CaseIterable, Identifiable {
-    case from
-    case `in`
-    case has
-    case mentions
-    case before
-    case after
-    case authorType
-    case pinned
-
-    init?(alias: String) {
-        switch alias {
-        case "from": self = .from
-        case "in": self = .in
-        case "has": self = .has
-        case "mentions": self = .mentions
-        case "before": self = .before
-        case "after": self = .after
-        case "authortype", "author_type", "type": self = .authorType
-        case "pinned": self = .pinned
-        default: return nil
-        }
-    }
-
-    var id: Self { self }
-
-    var title: String {
-        switch self {
-        case .from: "From"
-        case .in: "In"
-        case .has: "Has"
-        case .mentions: "Mentions"
-        case .before: "Before"
-        case .after: "After"
-        case .authorType: "Author Type"
-        case .pinned: "Pinned"
-        }
-    }
-
-    var suggestionTitle: String {
-        switch self {
-        case .from: "From a specific user"
-        case .in: "Sent in a specific channel"
-        case .has: "Includes a specific type of data"
-        case .mentions: "Mentions a specific user"
-        case .before: "Sent before a date"
-        case .after: "Sent after a date"
-        case .authorType: "Sent by a type of author"
-        case .pinned: "Pinned or unpinned"
-        }
-    }
-
-    var suggestionExample: String {
-        switch self {
-        case .from: "from: user"
-        case .in: "in: channel"
-        case .has: "has: link, embed or file"
-        case .mentions: "mentions: user"
-        case .before: "before: YYYY-MM-DD"
-        case .after: "after: YYYY-MM-DD"
-        case .authorType: "author_type: bot"
-        case .pinned: "pinned: true"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .from: "person.fill"
-        case .in: "number"
-        case .has: "paperclip"
-        case .mentions: "at"
-        case .before, .after: "calendar"
-        case .authorType: "person.badge.shield.checkmark"
-        case .pinned: "pin.fill"
-        }
-    }
-}
-
-private enum MessageSearchSuggestion: Identifiable {
-    case currentDirectMessage(Channel)
-    case `operator`(MessageSearchTextOperator)
-    case user(MessageSearchTextOperator, User)
-    case channel(Channel)
-    case contentType(MessageSearchContentType)
-    case authorType(MessageSearchAuthorType)
-    case pinned(Bool)
-    case dateHint(MessageSearchTextOperator)
-    case moreFilters
-
-    var id: String {
-        switch self {
-        case .currentDirectMessage(let channel): "scope:\(channel.id)"
-        case .operator(let value): "operator:\(value.id)"
-        case .user(let value, let user): "user:\(value.id):\(user.id)"
-        case .channel(let channel): "channel:\(channel.id)"
-        case .contentType(let value): "content:\(value.rawValue)"
-        case .authorType(let value): "author:\(value.rawValue)"
-        case .pinned(let value): "pinned:\(value)"
-        case .dateHint(let value): "date:\(value.id)"
-        case .moreFilters: "more-filters"
-        }
-    }
-}
-
-private struct MessageSearchSuggestions: View {
-    let title: String
-    let suggestions: [MessageSearchSuggestion]
-    let activate: (MessageSearchSuggestion) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            if case .some(.currentDirectMessage(let channel)) = suggestions.first {
-                Button { activate(suggestions[0]) } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.title3)
-                            .foregroundStyle(.secondary)
-                            .frame(width: 28, height: 28)
-                        Text("Find in")
-                            .font(.headline.weight(.semibold))
-                        AvatarView(
-                            name: channel.name,
-                            url: channel.iconURL ?? channel.recipients.first?.avatarURL,
-                            size: 22
-                        )
-                        Text(channel.name)
-                            .font(.headline.weight(.semibold))
-                        Spacer(minLength: 0)
-                    }
-                    .contentShape(.rect)
-                    .padding(.horizontal, 12)
-                    .frame(height: 54)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Find in \(channel.name)")
-
-                Divider()
-                    .padding(.horizontal, -5)
-            }
-
-            Text(title.uppercased())
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 12)
-                .padding(.top, 8)
-                .padding(.bottom, 3)
-
-            ForEach(filterSuggestions) { suggestion in
-                Button { activate(suggestion) } label: {
-                    HStack(spacing: 10) {
-                        suggestionIcon(suggestion)
-                            .frame(width: 22, height: 22)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(title(for: suggestion))
-                                .font(.callout.weight(.medium))
-                            Text(subtitle(for: suggestion))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .contentShape(.rect)
-                    .padding(.horizontal, 12)
-                    .frame(height: 56)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(5)
-        .frame(maxWidth: .infinity)
-        .glassEffect(.regular, in: .rect(cornerRadius: 12))
-        .shadow(color: .black.opacity(0.18), radius: 14, y: 7)
-    }
-
-    private var filterSuggestions: [MessageSearchSuggestion] {
-        guard case .some(.currentDirectMessage) = suggestions.first else {
-            return suggestions
-        }
-        return Array(suggestions.dropFirst())
-    }
-
-    private func title(for suggestion: MessageSearchSuggestion) -> String {
-        switch suggestion {
-        case .currentDirectMessage(let channel): "Find in \(channel.name)"
-        case .operator(let value): value.suggestionTitle
-        case .user(_, let user): user.displayName
-        case .channel(let channel): channel.name
-        case .contentType(let value): value.title
-        case .authorType(let value): value.title
-        case .pinned(let value): value ? "True" : "False"
-        case .dateHint: "YYYY-MM-DD"
-        case .moreFilters: "More filters"
-        }
-    }
-
-    private func subtitle(for suggestion: MessageSearchSuggestion) -> String {
-        switch suggestion {
-        case .currentDirectMessage: "Limit results to this conversation"
-        case .operator(let value): value.suggestionExample
-        case .user(_, let user): "@\(user.username)"
-        case .channel(let channel): channel.category ?? "Channel"
-        case .contentType: "Message content type"
-        case .authorType: "Message author type"
-        case .pinned: "Pinned state"
-        case .dateHint(let value): "Type a date after \(value.rawValue):"
-        case .moreFilters: "Dates, author type, pinned, and more"
-        }
-    }
-
-    private func systemImage(for suggestion: MessageSearchSuggestion) -> String {
-        switch suggestion {
-        case .currentDirectMessage: "bubble.left.and.bubble.right"
-        case .operator(let value): value.systemImage
-        case .user: "person.fill"
-        case .channel: "number"
-        case .contentType: "paperclip"
-        case .authorType: "person.badge.shield.checkmark"
-        case .pinned: "pin.fill"
-        case .dateHint: "calendar"
-        case .moreFilters: "line.3.horizontal.decrease"
-        }
-    }
-
-    @ViewBuilder
-    private func suggestionIcon(_ suggestion: MessageSearchSuggestion) -> some View {
-        switch suggestion {
-        case .user(_, let user):
-            AvatarView(
-                name: user.displayName,
-                url: user.avatarURL,
-                size: 22
-            )
-        case .currentDirectMessage(let channel):
-            AvatarView(
-                name: channel.name,
-                url: channel.iconURL ?? channel.recipients.first?.avatarURL,
-                size: 22
-            )
-        default:
-            Image(systemName: systemImage(for: suggestion))
-                .foregroundStyle(.secondary)
         }
     }
 }
@@ -675,12 +264,13 @@ private struct MessageSearchPagination: View {
     }
 }
 
-private struct MessageSearchFiltersSheet: View {
+struct MessageSearchFiltersOverlay: View {
     private static let contentWidth: CGFloat = 464
 
     let model: AppModel
     let search: MessageSearchState
-    @Environment(\.dismiss) private var dismiss
+    let animationState: WindowModalAnimationState
+    let dismiss: () -> Void
     @State private var draft = MessageSearchFilters()
     @State private var beforeEnabled = false
     @State private var beforeDate = Date.now
@@ -689,14 +279,52 @@ private struct MessageSearchFiltersSheet: View {
     @State private var pinnedChoice = MessageSearchPinnedChoice.any
 
     var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                Color.black.opacity(0.48)
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture(perform: dismiss)
+                GlassEffectContainer(spacing: 0) {
+                    panel
+                        .background(
+                            Color(nsColor: .windowBackgroundColor),
+                            in: ConcentricRectangle(cornerRadius: 16, style: .continuous)
+                        )
+                        .overlay {
+                            ConcentricRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(.separator, lineWidth: 1)
+                        }
+                        .shadow(color: .black.opacity(0.28), radius: 24, y: 10)
+                        .scaleEffect(animationState.isVisible ? 1 : 0.965)
+                        .frame(
+                            width: min(500, max(0, geometry.size.width - 48)),
+                            height: min(650, max(0, geometry.size.height - 48))
+                        )
+                        .padding(24)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .ignoresSafeArea()
+        .focusable()
+        .focusEffectDisabled()
+        .accessibilityAddTraits(.isModal)
+        .animation(
+            .easeOut(duration: WindowModalAnimationTiming.openingSeconds),
+            value: animationState.isVisible
+        )
+        .onExitCommand(perform: dismiss)
+        .onAppear { restoreDraft() }
+    }
+
+    private var panel: some View {
         VStack(spacing: 0) {
             HStack {
                 Text("Filters")
                     .font(.title2.weight(.semibold))
                 Spacer()
-                Button("Close", systemImage: "xmark") { dismiss() }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.plain)
+                ForwardCloseButton(action: dismiss)
             }
             .padding(18)
 
@@ -796,8 +424,6 @@ private struct MessageSearchFiltersSheet: View {
             }
             .padding(18)
         }
-        .frame(width: 500, height: 650)
-        .onAppear { restoreDraft() }
     }
 
     private var users: [User] {
@@ -815,7 +441,7 @@ private struct MessageSearchFiltersSheet: View {
     }
 
     private func restoreDraft() {
-        draft = search.filters
+        draft = search.effectiveFilters
         beforeEnabled = draft.maximumMessageID != nil
         beforeDate = draft.maximumMessageID?.createdAt ?? .now
         afterEnabled = draft.minimumMessageID != nil
@@ -1057,25 +683,18 @@ private struct MessageSearchFilterMenu<Content: View>: View {
     }
 
     var body: some View {
-        ZStack {
+        Menu {
+            content
+        } label: {
             MessageSearchFilterMenuLabel(
                 title: title,
                 leadingSystemImage: leadingSystemImage
             )
-            .allowsHitTesting(false)
-
-            Menu {
-                content
-            } label: {
-                Color.clear
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(.rect)
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .accessibilityLabel(title)
         }
+        .buttonStyle(.plain)
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .accessibilityLabel(title)
         .frame(height: 42)
     }
 }

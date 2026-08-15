@@ -107,7 +107,6 @@ extension DiscordRESTProvider {
             let channels = try (payload.threads ?? []).map {
                 try $0.domain(guildID: guildID)
             }
-            self.cacheSearchChannels(channels, guildID: guildID)
             return MessageSearchPage(
                 results: results,
                 channels: channels,
@@ -142,7 +141,7 @@ extension DiscordRESTProvider {
                     knownUsersByID: self.cachedGatewayUsersByID
                 )
             }
-            self.cacheSearchChannels(channels, guildID: nil)
+            self.cacheSearchPrivateChannels(channels)
             return MessageSearchPage(
                 results: results,
                 channels: channels,
@@ -220,18 +219,15 @@ extension DiscordRESTProvider {
         }
     }
 
-    private func cacheSearchChannels(
-        _ channels: [Channel],
-        guildID: GuildID?
-    ) {
+    private func cacheSearchPrivateChannels(_ channels: [Channel]) {
         guard !channels.isEmpty else { return }
         var merged = Dictionary(
-            uniqueKeysWithValues: (cachedChannels[guildID] ?? []).map { ($0.id, $0) }
+            uniqueKeysWithValues: (cachedChannels[nil] ?? []).map { ($0.id, $0) }
         )
         for channel in channels {
             merged[channel.id] = channel
         }
-        cachedChannels[guildID] = Array(merged.values)
+        cachedChannels[nil] = Array(merged.values)
     }
 
     private static func guildSearchQuery(

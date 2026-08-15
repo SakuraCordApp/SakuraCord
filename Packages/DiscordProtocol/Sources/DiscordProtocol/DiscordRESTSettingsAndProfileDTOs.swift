@@ -1776,6 +1776,12 @@ struct GuildMemberDTO: Decodable {
     var banner: String?
     var bio: String?
     var pending: Bool?
+    var joinedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case user, nick, roles, presence, avatar, banner, bio, pending
+        case joinedAt = "joined_at"
+    }
 
     func domain(
         currentUserID: UserID?,

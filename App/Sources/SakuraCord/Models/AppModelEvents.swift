@@ -765,20 +765,23 @@ extension AppModel {
         guard var value = snapshot else { return }
         value.threads.removeAll { $0.parentID == parentID }
         value.threads.append(contentsOf: threads)
-        value.threads.sort { $0.id < $1.id }
         snapshot = value
     }
 
     func mergeForwardDestinationThreads(_ threads: [MessageThreadSummary]) {
         guard var value = snapshot, !threads.isEmpty else { return }
-        var threadsByID = Dictionary(
-            value.threads.map { ($0.id, $0) },
-            uniquingKeysWith: { _, newer in newer }
+        var indicesByID = Dictionary(
+            value.threads.enumerated().map { ($0.element.id, $0.offset) },
+            uniquingKeysWith: { existing, _ in existing }
         )
         for thread in threads {
-            threadsByID[thread.id] = thread
+            if let index = indicesByID[thread.id] {
+                value.threads[index] = thread
+            } else {
+                indicesByID[thread.id] = value.threads.count
+                value.threads.append(thread)
+            }
         }
-        value.threads = threadsByID.values.sorted { $0.id < $1.id }
         snapshot = value
     }
 

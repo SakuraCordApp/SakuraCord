@@ -260,7 +260,7 @@ struct DirectMessageProviderContractTests {
         await provider.disconnect()
     }
 
-    @Test func `ready supplemental publishes newly known users without a REST lookup`() async throws {
+    @Test func `ready supplemental does not admit standalone hydration users`() async throws {
         DirectMessageURLProtocol.reset()
         let provider = makeProvider()
         let events = await provider.eventStream()
@@ -292,10 +292,42 @@ struct DirectMessageProviderContractTests {
         )
 
         let users = try #require(await published.value)
-        #expect(users.map(\.id) == [UserID(rawValue: 3), UserID(rawValue: 2)])
-        #expect(users.first?.id == UserID(rawValue: 3))
-        #expect(users.first?.tag == "legacy-bot#8860")
+        #expect(users.isEmpty)
+        #expect(await provider.currentMessageSearchUsers().isEmpty)
         #expect(DirectMessageURLProtocol.requests.isEmpty)
+        await provider.disconnect()
+    }
+
+    @Test func `ready supplemental admits only lazy private channel recipients in payload order`() async {
+        let provider = makeProvider()
+        await provider.receiveGatewayDispatchForTesting(
+            name: "READY_SUPPLEMENTAL",
+            data: .object([
+                "guilds": .array([]),
+                "users": .array([
+                    user(id: "9", username: "hydration", globalName: "Hydration"),
+                    user(id: "3", username: "third", globalName: "Third"),
+                    user(id: "2", username: "second", globalName: "Second"),
+                ]),
+                "lazy_private_channels": .array([
+                    .object([
+                        "id": .string("41"),
+                        "type": .number(3),
+                        "recipients": .array([
+                            user(id: "3", username: "third", globalName: "Third"),
+                            user(id: "2", username: "second", globalName: "Second"),
+                        ]),
+                    ])
+                ]),
+            ])
+        )
+
+        #expect(await provider.currentKnownUsers().map(\.id) == [
+            UserID(rawValue: 3), UserID(rawValue: 2),
+        ])
+        #expect(await provider.currentMessageSearchUsers().map(\.id) == [
+            UserID(rawValue: 3), UserID(rawValue: 2),
+        ])
         await provider.disconnect()
     }
 
@@ -363,13 +395,11 @@ struct DirectMessageProviderContractTests {
         )
 
         #expect(await second.currentKnownUsers().map(\.id) == [
-            UserID(rawValue: 2),
-            UserID(rawValue: 5),
-            UserID(rawValue: 3),
             UserID(rawValue: 1),
+            UserID(rawValue: 3),
         ])
         #expect(await second.currentQuickSwitcherUsers().map(\.id) == [
-            UserID(rawValue: 3), UserID(rawValue: 1),
+            UserID(rawValue: 1), UserID(rawValue: 3),
         ])
         let reloadedMemberships = await second.currentQuickSwitcherGuildMemberUserIDs()
         #expect(reloadedMemberships[GuildID(rawValue: 7)] == nil)
@@ -385,14 +415,13 @@ struct DirectMessageProviderContractTests {
         await seedLiveForwardSearchUsers(on: second)
 
         #expect(await second.currentKnownUsers().map(\.id) == [
-            UserID(rawValue: 2),
-            UserID(rawValue: 5),
-            UserID(rawValue: 3),
             UserID(rawValue: 1),
+            UserID(rawValue: 3),
+            UserID(rawValue: 2),
             UserID(rawValue: 4),
         ])
         #expect(await second.currentQuickSwitcherUsers().map(\.id) == [
-            UserID(rawValue: 3), UserID(rawValue: 1),
+            UserID(rawValue: 1), UserID(rawValue: 3),
             UserID(rawValue: 2), UserID(rawValue: 4),
         ])
         let reloadedAliases = await second.currentUserSearchAliasesByUserID()
@@ -480,6 +509,9 @@ struct DirectMessageProviderContractTests {
         let channel = try #require(await provider.cachedPrivateChannelsForTesting().first)
         #expect(channel.recipients.map(\.id) == [UserID(rawValue: 2)])
         #expect(channel.name == "Later User")
+        #expect(await provider.currentMessageSearchUsers().map(\.id) == [
+            UserID(rawValue: 1), UserID(rawValue: 2),
+        ])
         #expect(DirectMessageURLProtocol.requests.isEmpty)
         await provider.disconnect()
     }

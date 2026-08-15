@@ -116,15 +116,85 @@ import UserNotifications
     let replacementAuthor = try #require(
         model.messageSearchUsers.first(where: { $0.id != searchableMessage.author.id })
     )
-    model.messageSearchInputText = "from:\(replacementAuthor.username)"
+    model.parsePastedMessageSearchSyntax("from:\(replacementAuthor.username)")
     model.submitMessageSearchInput()
     #expect(model.messageSearch.effectiveFilters.authorIDs == [replacementAuthor.id])
     #expect(model.messageSearch.isPresented)
 
     model.messageSearchInputText = ""
+    #expect(model.messageSearch.isPresented)
+    model.messageSearch.tokens = []
+    model.messageSearchEditingDidEnd()
     #expect(!model.messageSearch.isPresented)
     #expect(!model.messageSearch.isInputFocused)
     model.messageSearch.requestTask?.cancel()
+}
+
+@MainActor
+@Test func `message search escape clears once then dismisses`() async {
+    let model = AppModel(launchMode: .offlineTesting)
+    await model.start()
+    model.presentMessageSearch()
+    model.messageSearch.queryText = "road"
+    model.messageSearch.isPresented = true
+
+    model.handleMessageSearchEscape()
+    #expect(model.messageSearch.queryText.isEmpty)
+    #expect(model.messageSearch.isPresented)
+    #expect(model.messageSearch.isInputFocused)
+
+    model.handleMessageSearchEscape()
+    #expect(!model.messageSearch.isPresented)
+    #expect(!model.messageSearch.isInputFocused)
+}
+
+@MainActor
+@Test func `command f scopes message search to the current conversation`() async throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    await model.start()
+    let channel = try #require(model.selectedChannel)
+
+    model.presentMessageSearchFromCommand()
+
+    let token = try #require(model.messageSearch.tokens.first)
+    guard case .channel(let channelID, let name) = token.kind else {
+        Issue.record("Command-F did not create an in: token")
+        return
+    }
+    #expect(channelID == channel.id)
+    #expect(name == model.messageSearchPresentedName(for: channel))
+    #expect(model.messageSearch.isInputFocused)
+}
+
+@MainActor
+@Test func `message search prompt always follows the visible scope`() async throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    await model.start()
+    let guilds = try #require(model.snapshot?.guilds)
+    let first = try #require(guilds.first)
+    let second = try #require(guilds.first(where: { $0.id != first.id }))
+    model.messageSearch.submittedQuery = MessageSearchQuery(scope: .guild(first.id))
+
+    model.selectedGuildID = second.id
+    #expect(model.messageSearchPromptTitle == "Search \(second.name)")
+
+    model.selectedGuildID = nil
+    #expect(model.messageSearchPromptTitle == "Search in DMs")
+}
+
+@MainActor
+@Test func `message search autocomplete focus ends without clearing active results`() async {
+    let model = AppModel(launchMode: .offlineTesting)
+    await model.start()
+    model.presentMessageSearch()
+    model.messageSearch.queryText = "road"
+    model.messageSearch.isPresented = true
+
+    model.messageSearchEditingDidEnd()
+
+    #expect(!model.messageSearch.isInputFocused)
+    #expect(model.messageSearch.isPresented)
+    #expect(model.messageSearch.queryText == "road")
 }
 
 @Test func `channel message cache keeps only the newest bounded history`() {
@@ -4158,14 +4228,14 @@ private func hiddenMockChannel(
             && model.hasCompletedInitialMessageLoad
     })
     let initialCount = model.messages.count
-    for _ in 0 ..< 5 {
+    for _ in 0 ..< 13 {
         await model.loadEarlier()
     }
-    #expect(model.messages.count == min(500, initialCount + 250))
+    #expect(model.messages.count == min(500, initialCount + 260))
 
     let updateTarget = model.messages[173]
     var updated = updateTarget
-    updated.content = "Updated after five prepended pages"
+    updated.content = "Updated after repeated prepended pages"
     await provider.emit(.messageUpdated(updated))
 
     #expect(await eventuallyOnMain {

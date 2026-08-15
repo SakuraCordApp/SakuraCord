@@ -395,6 +395,7 @@ final class AppModel {
     var discordFrequentlyUsedEmojiKeys: [String] = []
     var discordEmojiUsageScores: [String: Int] = [:]
     var discordGuildAndChannelUsageScores: [String: Int] = [:]
+    var discordSyncedGuildAndChannelUsageScores: [String: Int] = [:]
     var discordGuildAndChannelUsage: [String: DiscordFrecencyUsage] = [:]
     var discordGuildAndChannelUsageOrder: [String] = []
     @ObservationIgnored var forwardDestinationHistoryDefaultsKey =

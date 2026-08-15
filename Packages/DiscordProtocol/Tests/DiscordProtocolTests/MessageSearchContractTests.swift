@@ -39,6 +39,11 @@ extension ProviderRequestContractTests {
         #expect(page.totalResults == 1)
         #expect(page.results.map(\.hit.id) == [MessageID(rawValue: 351)])
         #expect(page.results.first?.hit.content == "searchable sakura message")
+        #expect(page.channels.map(\.id) == [ChannelID(rawValue: 300)])
+        let cachedThread = await provider.cachedChannelForTesting(
+            channelID: ChannelID(rawValue: 300)
+        )
+        #expect(cachedThread == nil)
     }
 
     @Test func `direct message search uses tabs body and top level channel scope`() async throws {

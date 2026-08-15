@@ -19,6 +19,7 @@ extension DiscordRESTProvider {
         cachedJoinedThreadOrder.removeAll {
             cachedJoinedThreads[$0] == nil
         }
+        cachedForumThreadOrder.removeAll { channelIDs.contains($0) }
         cachedChannels[guildID] = nil
         cachedGuildChannelDTOs[guildID] = nil
         cachedGuildRoles[guildID] = nil

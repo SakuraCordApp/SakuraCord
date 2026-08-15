@@ -1194,6 +1194,59 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     #expect(results.map(\.id) == [.user(friend.id), .user(existing.id)])
 }
 
+@Test func `message search user frecency ignores unreachable group DM usage`() {
+    let unboosted = User(
+        id: UserID(rawValue: 1), username: "match-plain", displayName: "Match Plain"
+    )
+    let groupFirst = User(
+        id: UserID(rawValue: 2), username: "match-group-a", displayName: "Match Group A"
+    )
+    let groupSecond = User(
+        id: UserID(rawValue: 3), username: "match-group-b", displayName: "Match Group B"
+    )
+    let direct = User(
+        id: UserID(rawValue: 4), username: "match-direct", displayName: "Match Direct"
+    )
+    let friend = User(
+        id: UserID(rawValue: 5), username: "match-friend", displayName: "Match Friend"
+    )
+    let groupChannel = Channel(
+        id: ChannelID(rawValue: 20), guildID: nil, name: "Group",
+        kind: .groupDirectMessage, recipients: [groupFirst, groupSecond]
+    )
+    let directChannel = Channel(
+        id: ChannelID(rawValue: 21), guildID: nil, name: direct.displayName,
+        kind: .directMessage, recipients: [direct]
+    )
+
+    let index = ForwardDestinationSearchPolicy.makeIndex(
+        channels: [groupChannel, directChannel],
+        users: [unboosted, groupFirst, groupSecond, direct, friend],
+        friendUserIDs: [friend.id],
+        guilds: [:],
+        usageScores: [
+            groupChannel.id.description: 1_000,
+            directChannel.id.description: 400,
+        ],
+        maximumUsageScore: 1_000
+    )
+
+    let results = index.scoredResults(
+        query: "match",
+        categories: [.user],
+        limitPerCategory: 10,
+        requiresDestinationEligibility: false,
+        preservesSourceOrderForEqualScores: true
+    )
+    #expect(results.map(\.destination.id) == [
+        .user(direct.id),
+        .user(friend.id),
+        .user(unboosted.id),
+        .user(groupFirst.id),
+        .user(groupSecond.id),
+    ])
+}
+
 @Test func `forward destination search obeys the permission-filtered channel set`() {
     let guild = Guild(id: GuildID(rawValue: 1), name: "Sakura Server")
     let visible = Channel(
@@ -1315,6 +1368,133 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     )
 
     #expect(results.isEmpty)
+}
+
+@Test func `message search worker user ranking uses prefix aliases and private channel boosters`() {
+    let aliasPrefix = User(
+        id: UserID(rawValue: 1), username: "plain-one", displayName: "First"
+    )
+    let boostedContains = User(
+        id: UserID(rawValue: 2), username: "bravo-match", displayName: "Boosted"
+    )
+    let plainContains = User(
+        id: UserID(rawValue: 3), username: "charlie-match", displayName: "Plain"
+    )
+    let privateChannel = Channel(
+        id: ChannelID(rawValue: 20), guildID: nil, name: boostedContains.displayName,
+        kind: .directMessage, recipients: [boostedContains]
+    )
+    let base = ForwardDestinationSearchPolicy.makeIndex(
+        channels: [],
+        users: [plainContains, boostedContains, aliasPrefix],
+        userBoosterChannels: [privateChannel],
+        userSearchAliasesByUserID: [aliasPrefix.id: ["match-alias"]],
+        guilds: [:],
+        usageScores: [:]
+    )
+
+    let results = base.quickSwitcherUserIndex(
+        userSearchAliasesByUserID: [aliasPrefix.id: ["match-alias"]]
+    ).scoredResults(
+        query: "match",
+        categories: [.user],
+        limitPerCategory: 10,
+        requiresDestinationEligibility: false,
+        allowedUserIDs: [aliasPrefix.id, boostedContains.id, plainContains.id]
+    )
+
+    #expect(results.map(\.destination.id) == [
+        .user(aliasPrefix.id), .user(boostedContains.id), .user(plainContains.id),
+    ])
+    #expect(results.map(\.score) == [10_000, 1_100, 1_000])
+}
+
+@Test func `message search DM channels keep Discord legacy prefix and fuzzy buckets`() {
+    let prefix = User(
+        id: UserID(rawValue: 1), username: "echo", displayName: "Echo"
+    )
+    let containsOnly = User(
+        id: UserID(rawValue: 2), username: "road-exit", displayName: "Road Exit"
+    )
+    let prefixDM = Channel(
+        id: ChannelID(rawValue: 20), guildID: nil, name: prefix.displayName,
+        kind: .directMessage, recipients: [prefix]
+    )
+    let containsDM = Channel(
+        id: ChannelID(rawValue: 21), guildID: nil, name: containsOnly.displayName,
+        kind: .directMessage, recipients: [containsOnly]
+    )
+    let group = Channel(
+        id: ChannelID(rawValue: 22), guildID: nil, name: "team room",
+        kind: .groupDirectMessage
+    )
+    let index = ForwardDestinationSearchPolicy.makeIndex(
+        channels: [prefixDM, containsDM, group],
+        users: [prefix, containsOnly],
+        guilds: [:],
+        usageScores: [:]
+    )
+
+    let results = index.messageSearchDirectMessageResults(query: "e", limit: 10)
+
+    #expect(results.map(\.destination.id) == [
+        .user(prefix.id), .channel(group.id), .user(containsOnly.id),
+    ])
+    #expect(results.map(\.score) == [11_000, 5_000, 1_100])
+}
+
+@Test func `message search threads keep matched penalized rows in Discord store order`() {
+    let guild = Guild(id: GuildID(rawValue: 1), name: "SakuraCord")
+    let bugForum = Channel(
+        id: ChannelID(rawValue: 10), guildID: guild.id,
+        name: "bug-reports", kind: .forum
+    )
+    let featureForum = Channel(
+        id: ChannelID(rawValue: 11), guildID: guild.id,
+        name: "feature-requests", kind: .forum
+    )
+    func thread(
+        id: UInt64, parentID: ChannelID, joined: Bool
+    ) -> MessageThreadSummary {
+        MessageThreadSummary(
+            id: ChannelID(rawValue: id), guildID: guild.id,
+            parentID: parentID, name: "matching \(id)",
+            notificationSettings: joined ? ThreadNotificationSettings() : nil
+        )
+    }
+    let activeLater = thread(id: 40, parentID: bugForum.id, joined: true)
+    let activeEarlier = thread(id: 20, parentID: featureForum.id, joined: true)
+    let unjoinedFeature = thread(id: 30, parentID: featureForum.id, joined: false)
+    let unjoinedBugLater = thread(id: 50, parentID: bugForum.id, joined: false)
+    let unjoinedBugEarlier = thread(id: 10, parentID: bugForum.id, joined: false)
+    let threads = [
+        unjoinedFeature, activeLater, unjoinedBugLater, activeEarlier, unjoinedBugEarlier,
+    ]
+    let index = ForwardDestinationSearchPolicy.makeIndex(
+        channels: [bugForum, featureForum],
+        threads: threads,
+        includesUnjoinedThreads: true,
+        channelStoreOrder: [bugForum.id, featureForum.id],
+        guilds: [guild.id: guild],
+        usageScores: [:],
+        searchableChannelIDs: Set(threads.map(\.id)),
+        eligibleChannelIDs: Set(threads.map(\.id))
+    )
+
+    let results = index.scoredResults(
+        query: "ing",
+        categories: [.selectableChannel],
+        limitPerCategory: 10,
+        requiresDestinationEligibility: false,
+        preservesSourceOrderForEqualScores: true
+    )
+
+    #expect(results.map(\.destination.id) == [
+        .channel(activeEarlier.id), .channel(activeLater.id),
+        .channel(unjoinedBugEarlier.id), .channel(unjoinedBugLater.id),
+        .channel(unjoinedFeature.id),
+    ])
+    #expect(results.suffix(3).allSatisfy { $0.score == 0 })
 }
 
 @Test func `forward menu action is capability gated beside reply`() {

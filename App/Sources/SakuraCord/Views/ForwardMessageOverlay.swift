@@ -1,6 +1,10 @@
 import SakuraCordModels
 import SwiftUI
 
+// The forwarding presentation and its shared ranking policy intentionally live
+// together so the native overlay and testable search policy cannot drift.
+// swiftlint:disable file_length
+
 struct PickerSearchField: View {
     @Binding var text: String
     let placeholder: String
@@ -159,6 +163,7 @@ nonisolated struct ForwardDestination: Identifiable, Equatable {
     }
 }
 
+// swiftlint:disable:next type_body_length
 nonisolated enum ForwardDestinationSearchPolicy {
     enum ResultCategory: Sendable {
         case user, groupDirectMessage, selectableChannel, voiceChannel
@@ -190,8 +195,10 @@ nonisolated enum ForwardDestinationSearchPolicy {
     private struct DestinationSource {
         let channels: [Channel]
         let threads: [MessageThreadSummary]
+        let includesUnjoinedThreads: Bool
         let channelStoreOrder: [ChannelID]
         let users: [User]
+        let includesChannelRecipientsAsUsers: Bool
         let relationshipNicknamesByUserID: [UserID: String]
         let currentUserID: UserID?
         let guilds: [GuildID: Guild]
@@ -271,6 +278,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
         let value: Double
         let comparator: String?
         let isFuzzyUserMatch: Bool
+        let isMatch: Bool
     }
 
     fileprivate struct PreparedUserIdentity: Sendable {
@@ -342,6 +350,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
         fileprivate let eligibleChannelIDs: Set<ChannelID>?
         fileprivate let friendUserIDs: Set<UserID>
         fileprivate let relationshipNicknamesByUserID: [UserID: String]
+        fileprivate let userBoosters: [UserID: Double]
         let maximumResolvableUsageScore: Int
 
         func quickSwitcherUserIndex(
@@ -358,6 +367,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
                     usageScores: usageScores,
                     maximumUsageScore: Double(maximumResolvableUsageScore),
                     friendUserIDs: friendUserIDs,
+                    userBoosters: userBoosters,
                     relationshipNicknamesByUserID: relationshipNicknamesByUserID,
                     userSearchAliasesByUserID: userSearchAliasesByUserID,
                     eligibleChannelIDs: nil
@@ -367,6 +377,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
                 eligibleChannelIDs: nil,
                 friendUserIDs: friendUserIDs,
                 relationshipNicknamesByUserID: relationshipNicknamesByUserID,
+                userBoosters: userBoosters,
                 maximumResolvableUsageScore: maximumResolvableUsageScore
             )
         }
@@ -404,17 +415,22 @@ nonisolated enum ForwardDestinationSearchPolicy {
             categories: Set<ResultCategory>,
             limitPerCategory: Int,
             requiresDestinationEligibility: Bool = true,
-            allowedUserIDs: Set<UserID>? = nil
+            allowedUserIDs: Set<UserID>? = nil,
+            preservesSourceOrderForEqualScores: Bool = false,
+            allowsEmptyQuery: Bool = false,
+            groupsBeforeUsersForEqualScores: Bool = false
         ) -> [ScoredResult] {
             let normalizedQuery = ForwardDestinationSearchPolicy.normalize(query)
-            guard !normalizedQuery.isEmpty else { return [] }
+            guard allowsEmptyQuery || !normalizedQuery.isEmpty else { return [] }
             return ForwardDestinationSearchPolicy.searchedResults(
                 searchRecords,
                 query: normalizedQuery,
                 categories: categories,
                 limitPerCategory: limitPerCategory,
                 requiresDestinationEligibility: requiresDestinationEligibility,
-                allowedUserIDs: allowedUserIDs
+                allowedUserIDs: allowedUserIDs,
+                preservesSourceOrderForEqualScores: preservesSourceOrderForEqualScores,
+                groupsBeforeUsersForEqualScores: groupsBeforeUsersForEqualScores
             )
         }
 
@@ -429,19 +445,66 @@ nonisolated enum ForwardDestinationSearchPolicy {
             )
         }
 
+        func messageSearchUnqueriedChannelResults(
+            currentGuildID: GuildID?,
+            currentChannelID: ChannelID?,
+            limit: Int
+        ) -> [ScoredResult] {
+            ForwardDestinationSearchPolicy.messageSearchUnqueriedChannelResults(
+                searchRecords,
+                currentGuildID: currentGuildID,
+                currentChannelID: currentChannelID,
+                limit: limit
+            )
+        }
+
+        func messageSearchUnqueriedDirectMessageResults(
+            currentChannelID: ChannelID?,
+            limit: Int
+        ) -> [ScoredResult] {
+            ForwardDestinationSearchPolicy.messageSearchUnqueriedDirectMessageResults(
+                searchRecords,
+                currentChannelID: currentChannelID,
+                limit: limit
+            )
+        }
+
+        func messageSearchDirectMessageResults(
+            query: String,
+            limit: Int
+        ) -> [ScoredResult] {
+            ForwardDestinationSearchPolicy.messageSearchDirectMessageResults(
+                searchRecords,
+                query: ForwardDestinationSearchPolicy.normalize(query),
+                relationshipNicknamesByUserID: relationshipNicknamesByUserID,
+                limit: limit
+            )
+        }
+
+        func messageSearchUnqueriedUserResults(limit: Int) -> [User] {
+            ForwardDestinationSearchPolicy.messageSearchUnqueriedUserResults(
+                searchRecords,
+                limit: limit
+            )
+        }
+
     }
 
     static func makeIndex(
         channels: [Channel],
         threads: [MessageThreadSummary] = [],
+        includesUnjoinedThreads: Bool = false,
         channelStoreOrder: [ChannelID] = [],
         users: [User] = [],
+        userBoosterChannels: [Channel]? = nil,
+        includesChannelRecipientsAsUsers: Bool = true,
         friendUserIDs: Set<UserID> = [],
         relationshipNicknamesByUserID: [UserID: String] = [:],
         userSearchAliasesByUserID: [UserID: [String]] = [:],
         currentUserID: UserID? = nil,
         guilds: [GuildID: Guild],
         usageScores: [String: Int],
+        maximumUsageScore: Int? = nil,
         usageOrder: [String] = [],
         searchableChannelIDs: Set<ChannelID>? = nil,
         eligibleChannelIDs: Set<ChannelID>? = nil
@@ -449,8 +512,10 @@ nonisolated enum ForwardDestinationSearchPolicy {
         let destinations = makeDestinations(source: DestinationSource(
             channels: channels,
             threads: threads,
+            includesUnjoinedThreads: includesUnjoinedThreads,
             channelStoreOrder: channelStoreOrder,
             users: users,
+            includesChannelRecipientsAsUsers: includesChannelRecipientsAsUsers,
             relationshipNicknamesByUserID: relationshipNicknamesByUserID,
             currentUserID: currentUserID,
             guilds: guilds,
@@ -463,7 +528,15 @@ nonisolated enum ForwardDestinationSearchPolicy {
         )
         let maximumUsageScore = max(
             1,
-            resolvableUsageKeys.compactMap { usageScores[$0] }.max() ?? 1
+            maximumUsageScore
+                ?? resolvableUsageKeys.compactMap { usageScores[$0] }.max()
+                ?? 1
+        )
+        let userBoosters = messageSearchUserBoosters(
+            channels: userBoosterChannels ?? channels,
+            usageScores: usageScores,
+            maximumUsageScore: Double(maximumUsageScore),
+            friendUserIDs: friendUserIDs
         )
         return Index(
             destinations: destinations,
@@ -472,6 +545,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
                 usageScores: usageScores,
                 maximumUsageScore: Double(maximumUsageScore),
                 friendUserIDs: friendUserIDs,
+                userBoosters: userBoosters,
                 relationshipNicknamesByUserID: relationshipNicknamesByUserID,
                 userSearchAliasesByUserID: userSearchAliasesByUserID,
                 eligibleChannelIDs: eligibleChannelIDs
@@ -481,6 +555,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
             eligibleChannelIDs: eligibleChannelIDs,
             friendUserIDs: friendUserIDs,
             relationshipNicknamesByUserID: relationshipNicknamesByUserID,
+            userBoosters: userBoosters,
             maximumResolvableUsageScore: maximumUsageScore
         )
     }
@@ -489,14 +564,17 @@ nonisolated enum ForwardDestinationSearchPolicy {
         query: String,
         channels: [Channel],
         threads: [MessageThreadSummary] = [],
+        includesUnjoinedThreads: Bool = false,
         channelStoreOrder: [ChannelID] = [],
         users: [User] = [],
+        userBoosterChannels: [Channel]? = nil,
         friendUserIDs: Set<UserID> = [],
         relationshipNicknamesByUserID: [UserID: String] = [:],
         userSearchAliasesByUserID: [UserID: [String]] = [:],
         currentUserID: UserID? = nil,
         guilds: [GuildID: Guild],
         usageScores: [String: Int],
+        maximumUsageScore: Int? = nil,
         usageOrder: [String] = [],
         recentChannelIDs: [ChannelID] = [],
         pinnedDestinationIDs: [ForwardDestinationID] = [],
@@ -507,14 +585,17 @@ nonisolated enum ForwardDestinationSearchPolicy {
         makeIndex(
             channels: channels,
             threads: threads,
+            includesUnjoinedThreads: includesUnjoinedThreads,
             channelStoreOrder: channelStoreOrder,
             users: users,
+            userBoosterChannels: userBoosterChannels,
             friendUserIDs: friendUserIDs,
             relationshipNicknamesByUserID: relationshipNicknamesByUserID,
             userSearchAliasesByUserID: userSearchAliasesByUserID,
             currentUserID: currentUserID,
             guilds: guilds,
             usageScores: usageScores,
+            maximumUsageScore: maximumUsageScore,
             usageOrder: usageOrder,
             searchableChannelIDs: searchableChannelIDs,
             eligibleChannelIDs: eligibleChannelIDs
@@ -526,6 +607,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
         )
     }
 
+    // swiftlint:disable:next function_body_length
     private static func makeDestinations(
         source: DestinationSource
     ) -> [ForwardDestination] {
@@ -544,7 +626,10 @@ nonisolated enum ForwardDestinationSearchPolicy {
             uniquingKeysWith: { existing, _ in existing }
         )
         var seenUserIDs = Set<UserID>()
-        let orderedUsers = (source.users + channels.flatMap(\.recipients)).filter { user in
+        let channelRecipients = source.includesChannelRecipientsAsUsers
+            ? channels.flatMap(\.recipients)
+            : []
+        let orderedUsers = (source.users + channelRecipients).filter { user in
             user.id != source.currentUserID && seenUserIDs.insert(user.id).inserted
         }
         let userDestinations = orderedUsers.map { user in
@@ -590,8 +675,8 @@ nonisolated enum ForwardDestinationSearchPolicy {
             return nil
         }
         let threadDestinations = source.threads.compactMap { thread -> ForwardDestination? in
-            guard !thread.isArchived,
-                  thread.notificationSettings != nil,
+            guard source.includesUnjoinedThreads || !thread.isArchived,
+                  source.includesUnjoinedThreads || thread.notificationSettings != nil,
                   source.searchableChannelIDs?.contains(thread.id) != false
             else { return nil }
             return ForwardDestination(
@@ -606,15 +691,28 @@ nonisolated enum ForwardDestinationSearchPolicy {
             source.channelStoreOrder.enumerated().map { ($0.element, $0.offset) },
             uniquingKeysWith: { earlier, _ in earlier }
         )
-        // ChannelStore supplies ordinary channels first. Discord then appends
-        // active joined threads, grouped by their parent channel's store
-        // position and in snowflake order within a parent. Interleaving thread
-        // IDs into ChannelStore changes equal-score ordering for normal search.
+        // ThreadStore returns a guild's threads grouped by parent-channel
+        // store position, with snowflake order inside each parent. Ordinary
+        // channels still precede the complete thread projection.
         func parentChannelID(of destination: ForwardDestination) -> ChannelID? {
             guard case .thread(_, let parent) = destination.kind else { return nil }
             return parent?.id
         }
-        let orderedThreadDestinations = threadDestinations.sorted { lhs, rhs in
+        let activeJoinedThreadDestinations = threadDestinations.filter { destination in
+            guard case .thread(let thread, _) = destination.kind else { return false }
+            return !thread.isArchived && thread.notificationSettings != nil
+        }.sorted { lhs, rhs in
+            guard let lhsID = lhs.resolvedChannelID,
+                  let rhsID = rhs.resolvedChannelID
+            else { return lhs.resolvedChannelID != nil }
+            return lhsID < rhsID
+        }
+        let activeJoinedThreadIDs = Set(
+            activeJoinedThreadDestinations.compactMap(\.resolvedChannelID)
+        )
+        let remainingThreadDestinations = threadDestinations.filter {
+            $0.resolvedChannelID.map(activeJoinedThreadIDs.contains) != true
+        }.sorted { lhs, rhs in
             let lhsParentOrder = parentChannelID(of: lhs).flatMap { parentSourceOrder[$0] }
                 ?? Int.max
             let rhsParentOrder = parentChannelID(of: rhs).flatMap { parentSourceOrder[$0] }
@@ -628,6 +726,8 @@ nonisolated enum ForwardDestinationSearchPolicy {
             }
             return false
         }
+        let orderedThreadDestinations = activeJoinedThreadDestinations
+            + remainingThreadDestinations
         let channelAndThreadDestinations = nonGroupChannelDestinations
             + orderedThreadDestinations
         return userDestinations
@@ -666,6 +766,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
         usageScores: [String: Int],
         maximumUsageScore: Double,
         friendUserIDs: Set<UserID>,
+        userBoosters: [UserID: Double]? = nil,
         relationshipNicknamesByUserID: [UserID: String],
         userSearchAliasesByUserID: [UserID: [String]],
         eligibleChannelIDs: Set<ChannelID>?
@@ -713,9 +814,10 @@ nonisolated enum ForwardDestinationSearchPolicy {
                             ].compactMap { $0 }
                                 + (userSearchAliasesByUserID[user.id] ?? [])
                         ).map(PreparedUserIdentity.init),
-                        booster: 1 + boosters.normalized
-                            + (friendUserIDs.contains(user.id) ? 0.2 : 0)
-                            + (directMessage == nil ? 0 : 0.1)
+                        booster: userBoosters?[user.id]
+                            ?? 1 + boosters.normalized
+                                + (friendUserIDs.contains(user.id) ? 0.2 : 0)
+                                + (directMessage == nil ? 0 : 0.1)
                     )
                 )]
             case .channel(let channel) where channel.kind == .groupDirectMessage:
@@ -770,13 +872,53 @@ nonisolated enum ForwardDestinationSearchPolicy {
                         title: normalize(thread.name),
                         metadata: [destination.guild?.name, parent?.name]
                             .compactMap { $0 }.map(normalize),
-                        boosters: boosters,
-                        basePenalty: thread.isArchived ? 3 : 0,
+                        // Discord's channel frecency projection excludes
+                        // ThreadStore rows. Reusing a historical thread ID's
+                        // channel score changes equal-match ordering.
+                        boosters: UsageBoosters(normalized: 0, internalChannel: 0),
+                        basePenalty: (thread.isArchived ? 3 : 0)
+                            + (thread.notificationSettings == nil ? 5 : 0),
                         minimumAfterPenalty: 0
                     )
                 )]
             }
         }
+    }
+
+    /// Reproduces Discord's `FrecencyUser` map. User frecency is derived from
+    /// private-channel usage. The current worker prefilters the frequent
+    /// entities to one-to-one DMs, making its group-DM switch branch
+    /// unreachable. Friend and DM membership bonuses are added afterward.
+    private static func messageSearchUserBoosters(
+        channels: [Channel],
+        usageScores: [String: Int],
+        maximumUsageScore: Double,
+        friendUserIDs: Set<UserID>
+    ) -> [UserID: Double] {
+        var result: [UserID: Double] = [:]
+        for channel in channels {
+            let usage = Double(usageScores[channel.id.description, default: 0])
+            guard usage > 0 else { continue }
+            let normalized = min(max(usage / maximumUsageScore, 0), 1)
+            switch channel.kind {
+            case .directMessage:
+                if let recipient = channel.recipients.first {
+                    result[recipient.id] = 1 + normalized
+                }
+            case .groupDirectMessage:
+                continue
+            default:
+                continue
+            }
+        }
+        for userID in friendUserIDs {
+            result[userID] = (result[userID] ?? 1) + 0.2
+        }
+        for channel in channels where channel.kind == .directMessage {
+            guard let recipient = channel.recipients.first else { continue }
+            result[recipient.id] = (result[recipient.id] ?? 1) + 0.1
+        }
+        return result
     }
 
     private static func searchedResults(
@@ -785,7 +927,9 @@ nonisolated enum ForwardDestinationSearchPolicy {
         categories: Set<ResultCategory>? = nil,
         limitPerCategory: Int = resultLimitPerCategory,
         requiresDestinationEligibility: Bool = true,
-        allowedUserIDs: Set<UserID>? = nil
+        allowedUserIDs: Set<UserID>? = nil,
+        preservesSourceOrderForEqualScores: Bool = false,
+        groupsBeforeUsersForEqualScores: Bool = false
     ) -> [ScoredResult] {
         let preparedQuery = PreparedQuery(query)
         var users: [RankedDestination] = []
@@ -810,7 +954,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
                 record.values,
                 query: preparedQuery
             )
-            guard match.value > 0 else { continue }
+            guard match.isMatch else { continue }
             if match.isFuzzyUserMatch {
                 guard fuzzyUserCount < 50 else { continue }
                 fuzzyUserCount += 1
@@ -830,22 +974,48 @@ nonisolated enum ForwardDestinationSearchPolicy {
             case .voiceChannel: voiceChannels.append(ranked)
             }
         }
-        users = sortedPrefix(users, limit: limitPerCategory)
-        groups = sortedPrefix(groups, limit: limitPerCategory)
-        textChannels = sortedPrefix(textChannels, limit: limitPerCategory)
-        voiceChannels = sortedPrefix(voiceChannels, limit: limitPerCategory)
+        users = sortedPrefix(
+            users,
+            limit: limitPerCategory,
+            preservesSourceOrderForEqualScores: preservesSourceOrderForEqualScores
+        )
+        groups = sortedPrefix(
+            groups,
+            limit: limitPerCategory,
+            preservesSourceOrderForEqualScores: preservesSourceOrderForEqualScores
+        )
+        textChannels = sortedPrefix(
+            textChannels,
+            limit: limitPerCategory,
+            preservesSourceOrderForEqualScores: preservesSourceOrderForEqualScores
+        )
+        voiceChannels = sortedPrefix(
+            voiceChannels,
+            limit: limitPerCategory,
+            preservesSourceOrderForEqualScores: preservesSourceOrderForEqualScores
+        )
+        let rankedCategories = groupsBeforeUsersForEqualScores
+            ? [groups, users, textChannels, voiceChannels]
+            : [users, groups, textChannels, voiceChannels]
         return mergedRankedDestinations(
-            [users, groups, textChannels, voiceChannels],
+            rankedCategories,
             limitPerCategory: limitPerCategory,
-            requiresDestinationEligibility: requiresDestinationEligibility
+            requiresDestinationEligibility: requiresDestinationEligibility,
+            preservesSourceOrderForEqualScores: preservesSourceOrderForEqualScores
         )
     }
 
     private static func sortedPrefix(
         _ results: [RankedDestination],
-        limit: Int
+        limit: Int,
+        preservesSourceOrderForEqualScores: Bool
     ) -> [RankedDestination] {
-        Array(results.sorted(by: ranksBefore).prefix(limit))
+        Array(results.sorted { lhs, rhs in
+            if preservesSourceOrderForEqualScores, lhs.score == rhs.score {
+                return lhs.sourceOrder < rhs.sourceOrder
+            }
+            return ranksBefore(lhs, rhs)
+        }.prefix(limit))
     }
 
     private static func ranksBefore(
@@ -884,7 +1054,8 @@ nonisolated enum ForwardDestinationSearchPolicy {
     private static func mergedRankedDestinations(
         _ rankedCategories: [[RankedDestination]],
         limitPerCategory: Int,
-        requiresDestinationEligibility: Bool
+        requiresDestinationEligibility: Bool,
+        preservesSourceOrderForEqualScores: Bool
     ) -> [ScoredResult] {
         let limited = rankedCategories.enumerated().flatMap { item -> [RankedMergeEntry] in
             let (categoryOrder, ranked) = item
@@ -909,7 +1080,8 @@ nonisolated enum ForwardDestinationSearchPolicy {
             if lhs.destination.score != rhs.destination.score {
                 return lhs.destination.score > rhs.destination.score
             }
-            if let left = lhs.destination.comparator,
+            if !preservesSourceOrderForEqualScores,
+               let left = lhs.destination.comparator,
                let right = rhs.destination.comparator,
                left != right
             {
@@ -995,6 +1167,215 @@ nonisolated enum ForwardDestinationSearchPolicy {
                 stableOrder: $0.sourceOrder
             )
         }
+    }
+
+    private static func messageSearchUnqueriedChannelResults(
+        _ records: [SearchRecord],
+        currentGuildID: GuildID?,
+        currentChannelID: ChannelID?,
+        limit: Int
+    ) -> [ScoredResult] {
+        let ranked = records.compactMap { record -> RankedDestination? in
+            guard record.category == .selectableChannel,
+                  record.destination.guild?.id == currentGuildID,
+                  case .text(
+                      let title,
+                      _,
+                      let boosters,
+                      let basePenalty,
+                      let minimumAfterPenalty
+                  ) = record.values
+            else { return nil }
+            return RankedDestination(
+                destination: record.destination,
+                category: record.category,
+                score: boostedTextDestinationScore(
+                    base: 7,
+                    boosters: boosters,
+                    basePenalty: basePenalty,
+                    minimumAfterPenalty: minimumAfterPenalty
+                ),
+                comparator: title,
+                sourceOrder: record.sourceOrder,
+                isEligible: record.isEligible
+            )
+        }.sorted { lhs, rhs in
+            if lhs.score != rhs.score { return lhs.score > rhs.score }
+            return lhs.sourceOrder < rhs.sourceOrder
+        }
+        var current: RankedDestination?
+        var remaining: [RankedDestination] = []
+        for row in ranked {
+            if row.destination.resolvedChannelID == currentChannelID {
+                current = row
+            } else {
+                remaining.append(row)
+            }
+        }
+        return ([current].compactMap { $0 } + remaining).prefix(limit).map {
+            ScoredResult(
+                destination: $0.destination,
+                category: $0.category,
+                score: $0.score,
+                comparator: $0.comparator,
+                stableOrder: $0.sourceOrder
+            )
+        }
+    }
+
+    private static func messageSearchUnqueriedDirectMessageResults(
+        _ records: [SearchRecord],
+        currentChannelID: ChannelID?,
+        limit: Int
+    ) -> [ScoredResult] {
+        let ranked = records.compactMap { record -> RankedDestination? in
+            let score: Double
+            switch (record.category, record.values) {
+            case (.user, .user(_, let booster)):
+                guard record.destination.resolvedChannelID != nil else { return nil }
+                score = 10_000 * booster
+            case (.groupDirectMessage, .groupDirectMessage(_, _, let usage)):
+                score = 10_000 * (1 + usage)
+            default:
+                return nil
+            }
+            return RankedDestination(
+                destination: record.destination,
+                category: record.category,
+                score: score,
+                comparator: nil,
+                sourceOrder: record.sourceOrder,
+                isEligible: true
+            )
+        }.sorted { lhs, rhs in
+            if lhs.score != rhs.score { return lhs.score > rhs.score }
+            return lhs.sourceOrder < rhs.sourceOrder
+        }
+        var current: RankedDestination?
+        var remaining: [RankedDestination] = []
+        for row in ranked {
+            if row.destination.resolvedChannelID == currentChannelID {
+                current = row
+            } else {
+                remaining.append(row)
+            }
+        }
+        return ([current].compactMap { $0 } + remaining).prefix(limit).map {
+            ScoredResult(
+                destination: $0.destination,
+                category: $0.category,
+                score: $0.score,
+                comparator: nil,
+                stableOrder: $0.sourceOrder
+            )
+        }
+    }
+
+    private static func messageSearchDirectMessageResults(
+        _ records: [SearchRecord],
+        query: String,
+        relationshipNicknamesByUserID: [UserID: String],
+        limit: Int
+    ) -> [ScoredResult] {
+        let preparedQuery = PreparedMatch(query)
+        var exactUsers: [RankedDestination] = []
+        var fuzzyUsers: [RankedDestination] = []
+        var groups: [RankedDestination] = []
+        var fuzzyUserCount = 0
+        for record in records {
+            switch (record.category, record.destination.kind, record.values) {
+            case (.user, .user(let user, let directMessage), .user(_, let booster)):
+                guard directMessage != nil else { continue }
+                let identities = [
+                    user.username,
+                    relationshipNicknamesByUserID[user.id],
+                    user.displayName,
+                ].compactMap { $0 }.map(PreparedUserIdentity.init)
+                var bestScore = 0
+                var isFuzzy = false
+                for identity in identities {
+                    let match = legacyDirectMessageUserMatch(
+                        identity,
+                        query: preparedQuery
+                    )
+                    if match.score > bestScore
+                        || match.score == bestScore && isFuzzy && !match.isFuzzy
+                    {
+                        bestScore = match.score
+                        isFuzzy = match.isFuzzy
+                    }
+                }
+                guard bestScore > 0 else { continue }
+                if isFuzzy {
+                    guard fuzzyUserCount < 50 else { continue }
+                    fuzzyUserCount += 1
+                }
+                let ranked = RankedDestination(
+                    destination: record.destination,
+                    category: .user,
+                    score: 1_000 * Double(bestScore) * booster,
+                    comparator: nil,
+                    sourceOrder: record.sourceOrder,
+                    isEligible: true
+                )
+                if isFuzzy { fuzzyUsers.append(ranked) } else { exactUsers.append(ranked) }
+            case (.groupDirectMessage, _, _):
+                let match = searchScore(record.values, query: PreparedQuery(query))
+                guard match.isMatch else { continue }
+                groups.append(RankedDestination(
+                    destination: record.destination,
+                    category: .groupDirectMessage,
+                    score: match.value,
+                    comparator: nil,
+                    sourceOrder: record.sourceOrder,
+                    isEligible: true
+                ))
+            default:
+                continue
+            }
+        }
+        exactUsers = sortedPrefix(
+            exactUsers,
+            limit: limit,
+            preservesSourceOrderForEqualScores: true
+        )
+        fuzzyUsers = sortedPrefix(
+            fuzzyUsers,
+            limit: limit,
+            preservesSourceOrderForEqualScores: true
+        )
+        var users = Array(exactUsers.prefix(limit))
+        if users.count < limit {
+            users += fuzzyUsers.prefix(limit - users.count)
+        }
+        groups = sortedPrefix(
+            groups,
+            limit: limit,
+            preservesSourceOrderForEqualScores: true
+        )
+        return mergedRankedDestinations(
+            [users, groups],
+            limitPerCategory: limit,
+            requiresDestinationEligibility: false,
+            preservesSourceOrderForEqualScores: true
+        ).prefix(limit).map { $0 }
+    }
+
+    private static func messageSearchUnqueriedUserResults(
+        _ records: [SearchRecord],
+        limit: Int
+    ) -> [User] {
+        // swiftlint:disable:next large_tuple
+        records.compactMap { record -> (User, Double, Int)? in
+            guard record.category == .user,
+                  case .user(let user, _) = record.destination.kind,
+                  case .user(_, let booster) = record.values
+            else { return nil }
+            return (user, 10_000 * booster, record.sourceOrder)
+        }.sorted { lhs, rhs in
+            if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
+            return lhs.2 < rhs.2
+        }.prefix(limit).map(\.0)
     }
 
     private static func isVoiceDestination(
@@ -1100,7 +1481,8 @@ nonisolated enum ForwardDestinationSearchPolicy {
             return SearchScore(
                 value: 1_000 * Double(bestScore) * booster,
                 comparator: comparator,
-                isFuzzyUserMatch: isFuzzy
+                isFuzzyUserMatch: isFuzzy,
+                isMatch: bestScore > 0
             )
         case .groupDirectMessage(let name, let recipientValues, let usage):
             // Group-DM search is the one channel category that Discord runs
@@ -1123,7 +1505,8 @@ nonisolated enum ForwardDestinationSearchPolicy {
             return SearchScore(
                 value: 1_000 * Double(max(ownNameScore, recipientScore)) * (1 + usage),
                 comparator: nil,
-                isFuzzyUserMatch: false
+                isFuzzyUserMatch: false,
+                isMatch: max(ownNameScore, recipientScore) > 0
             )
         case .text(
             let title,
@@ -1132,17 +1515,19 @@ nonisolated enum ForwardDestinationSearchPolicy {
             let basePenalty,
             let minimumAfterPenalty
         ):
-            return SearchScore(
-                value: textDestinationSearchScore(
+            let score = textDestinationSearchScore(
                     title: title,
                     metadata: metadata,
                     query: query,
                     boosters: boosters,
                     basePenalty: basePenalty,
                     minimumAfterPenalty: minimumAfterPenalty
-                ),
+                )
+            return SearchScore(
+                value: score.value,
                 comparator: nil,
-                isFuzzyUserMatch: false
+                isFuzzyUserMatch: false,
+                isMatch: score.isMatch
             )
         }
     }
@@ -1154,8 +1539,23 @@ nonisolated enum ForwardDestinationSearchPolicy {
         if identity.searchValue.hasPrefix(query.value) {
             return UserMatch(score: 10, isFuzzy: false)
         }
-        if identity.searchValue.contains(query.value) {
-            return UserMatch(score: 5, isFuzzy: false)
+        if identity.confusableSkeleton.hasPrefix(query.confusableSkeleton) {
+            return UserMatch(score: 1, isFuzzy: false)
+        }
+        let matchesFuzzy = isOrderedSubsequence(query.value, of: identity.searchValue)
+            || isOrderedSubsequence(
+                query.confusableSkeleton,
+                of: identity.confusableSkeleton
+            )
+        return UserMatch(score: matchesFuzzy ? 1 : 0, isFuzzy: matchesFuzzy)
+    }
+
+    private static func legacyDirectMessageUserMatch(
+        _ identity: PreparedUserIdentity,
+        query: PreparedMatch
+    ) -> UserMatch {
+        if identity.searchValue.hasPrefix(query.value) {
+            return UserMatch(score: 10, isFuzzy: false)
         }
         if identity.confusableSkeleton.hasPrefix(query.confusableSkeleton) {
             return UserMatch(score: 1, isFuzzy: false)
@@ -1218,14 +1618,17 @@ nonisolated enum ForwardDestinationSearchPolicy {
         boosters: UsageBoosters,
         basePenalty: Double,
         minimumAfterPenalty: Double = 0
-    ) -> Double {
+    ) -> (value: Double, isMatch: Bool) {
         if query.hasSingleDescriptor {
             let base = matchScore(title, query: query.match, fuzzy: true)
-            return boostedTextDestinationScore(
+            return (
+                boostedTextDestinationScore(
                 base: Double(base),
                 boosters: boosters,
                 basePenalty: basePenalty,
                 minimumAfterPenalty: minimumAfterPenalty
+                ),
+                base > 0
             )
         }
         var descriptors = query.descriptors
@@ -1234,7 +1637,7 @@ nonisolated enum ForwardDestinationSearchPolicy {
             descriptors: &descriptors,
             fuzzy: true
         )
-        guard base > 0 else { return 0 }
+        guard base > 0 else { return (0, false) }
         if !descriptors.isEmpty {
             for value in metadata {
                 let score = consumeBestMatch(
@@ -1246,12 +1649,15 @@ nonisolated enum ForwardDestinationSearchPolicy {
         }
         guard descriptors.count <= 1,
               descriptors.first?.isFullMatch != false
-        else { return 0 }
-        return boostedTextDestinationScore(
-            base: base,
-            boosters: boosters,
-            basePenalty: basePenalty,
-            minimumAfterPenalty: minimumAfterPenalty
+        else { return (0, false) }
+        return (
+            boostedTextDestinationScore(
+                base: base,
+                boosters: boosters,
+                basePenalty: basePenalty,
+                minimumAfterPenalty: minimumAfterPenalty
+            ),
+            true
         )
     }
 
@@ -1267,7 +1673,6 @@ nonisolated enum ForwardDestinationSearchPolicy {
         // result for every query.
         guard base > 0 else { return 0 }
         let adjustedBase = max(minimumAfterPenalty, base - basePenalty)
-        guard adjustedBase > 0 else { return 0 }
         let cap = adjustedBase >= 7 ? 10.0 : 7.0
         let internallyBoosted = min(
             adjustedBase + 3 * boosters.internalChannel,
@@ -1954,7 +2359,7 @@ struct ForwardMessageOverlay: View {
     }
 }
 
-private struct ForwardCloseButton: View {
+struct ForwardCloseButton: View {
     let action: () -> Void
     @State private var isHovered = false
 

@@ -1697,7 +1697,10 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
     public var currentUser: User
     public var knownUsers: [User]
     public var quickSwitcherUserIDs: [UserID]
+    public var messageSearchUsers: [User]
+    public var messageSearchUserBoosterChannelIDs: Set<ChannelID>
     public var friendUserIDs: Set<UserID>
+    public var blockedOrIgnoredUserIDs: Set<UserID>
     public var relationshipNicknamesByUserID: [UserID: String]
     public var userSearchAliasesByUserID: [UserID: [String]]
     public var quickSwitcherGuildMemberUserIDs: [GuildID: [UserID]]
@@ -1719,7 +1722,10 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
         currentUser: User,
         knownUsers: [User] = [],
         quickSwitcherUserIDs: [UserID]? = nil,
+        messageSearchUsers: [User]? = nil,
+        messageSearchUserBoosterChannelIDs: Set<ChannelID>? = nil,
         friendUserIDs: Set<UserID> = [],
+        blockedOrIgnoredUserIDs: Set<UserID> = [],
         relationshipNicknamesByUserID: [UserID: String] = [:],
         userSearchAliasesByUserID: [UserID: [String]] = [:],
         quickSwitcherGuildMemberUserIDs: [GuildID: [UserID]] = [:],
@@ -1740,7 +1746,11 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
         self.currentUser = currentUser
         self.knownUsers = knownUsers
         self.quickSwitcherUserIDs = quickSwitcherUserIDs ?? knownUsers.map(\.id)
+        self.messageSearchUsers = messageSearchUsers ?? knownUsers
+        self.messageSearchUserBoosterChannelIDs = messageSearchUserBoosterChannelIDs
+            ?? Set(channels.lazy.filter { $0.kind == .directMessage }.map(\.id))
         self.friendUserIDs = friendUserIDs
+        self.blockedOrIgnoredUserIDs = blockedOrIgnoredUserIDs
         self.relationshipNicknamesByUserID = relationshipNicknamesByUserID
         self.userSearchAliasesByUserID = userSearchAliasesByUserID
         self.quickSwitcherGuildMemberUserIDs = quickSwitcherGuildMemberUserIDs
@@ -1760,7 +1770,9 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case currentUser, knownUsers, quickSwitcherUserIDs, friendUserIDs
+        case currentUser, knownUsers, quickSwitcherUserIDs, messageSearchUsers
+        case messageSearchUserBoosterChannelIDs, friendUserIDs
+        case blockedOrIgnoredUserIDs
         case relationshipNicknamesByUserID
         case userSearchAliasesByUserID
         case quickSwitcherGuildMemberUserIDs
@@ -1781,7 +1793,18 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
             [UserID].self,
             forKey: .quickSwitcherUserIDs
         ) ?? knownUsers.map(\.id)
+        messageSearchUsers = try container.decodeIfPresent(
+            [User].self,
+            forKey: .messageSearchUsers
+        ) ?? knownUsers
+        let decodedSearchBoosterIDs = try container.decodeIfPresent(
+            Set<ChannelID>.self, forKey: .messageSearchUserBoosterChannelIDs
+        )
+        messageSearchUserBoosterChannelIDs = decodedSearchBoosterIDs ?? []
         friendUserIDs = try container.decodeIfPresent(Set<UserID>.self, forKey: .friendUserIDs) ?? []
+        blockedOrIgnoredUserIDs = try container.decodeIfPresent(
+            Set<UserID>.self, forKey: .blockedOrIgnoredUserIDs
+        ) ?? []
         relationshipNicknamesByUserID =
             try container.decodeIfPresent(
                 [UserID: String].self, forKey: .relationshipNicknamesByUserID
@@ -1812,6 +1835,11 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
             try container.decodeIfPresent([GuildID].self, forKey: .forwardGuildStoreOrder)
                 ?? guilds.map(\.id)
         channels = try container.decode([Channel].self, forKey: .channels)
+        if decodedSearchBoosterIDs == nil {
+            messageSearchUserBoosterChannelIDs = Set(
+                channels.lazy.filter { $0.kind == .directMessage }.map(\.id)
+            )
+        }
         forwardChannelStoreOrder =
             try container.decodeIfPresent(
                 [ChannelID].self, forKey: .forwardChannelStoreOrder
@@ -1836,7 +1864,13 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
         try container.encode(currentUser, forKey: .currentUser)
         try container.encode(knownUsers, forKey: .knownUsers)
         try container.encode(quickSwitcherUserIDs, forKey: .quickSwitcherUserIDs)
+        try container.encode(messageSearchUsers, forKey: .messageSearchUsers)
+        try container.encode(
+            messageSearchUserBoosterChannelIDs,
+            forKey: .messageSearchUserBoosterChannelIDs
+        )
         try container.encode(friendUserIDs, forKey: .friendUserIDs)
+        try container.encode(blockedOrIgnoredUserIDs, forKey: .blockedOrIgnoredUserIDs)
         try container.encode(
             relationshipNicknamesByUserID, forKey: .relationshipNicknamesByUserID
         )

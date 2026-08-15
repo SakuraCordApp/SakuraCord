@@ -1,6 +1,6 @@
 # Discord production protocol baseline
 
-Last repository audit: 14 August 2026, in a working tree based on SakuraCord
+Last repository audit: 15 August 2026, in a working tree based on SakuraCord
 commit `924e52e2`.
 
 This document describes SakuraCord's durable network contract and the dated
@@ -50,6 +50,23 @@ and repeated filters, newest/oldest/relevance sorts, zero results, result
 navigation, and pagination through the client maximum. No authorization value,
 message content, user/channel/guild identifier, or personal response payload was
 retained.
+
+REST transport recovery was audited on 15 August 2026 from a sanitized
+authenticated SakuraCord diagnostic captured during a live stall. The main
+Gateway continued sending QoS heartbeats and receiving ACKs, while one
+acknowledgement and otherwise independent channel-history, profile, and
+message-search requests all received no HTTP response and failed at their
+configured 30-second timeout. This isolates the failure to the reused REST
+connection pool, not account, Gateway, channel, or search state. Production now
+keeps REST and Gateway in separate provider-owned URL sessions. The first
+confirmed REST timeout replaces only the REST transport generation and cancels
+its remaining tasks. A safe read may use its existing two-attempt budget on the
+replacement; an authenticated mutation is never replayed because its timeout
+is ambiguous. Concurrent reads cancelled by that generation replacement may
+likewise consume their one remaining attempt. Deterministic transport tests
+cover timed-out GET, read-only DM-search POST, generation coalescing, and
+non-replayed mutation behavior. No new Discord route, header, body, or account
+action was introduced for this recovery audit.
 
 Server search uses `GET /guilds/{guild}/messages/search`; it does not use the
 older selected-channel route. The ordered query contains optional repeated
@@ -354,7 +371,10 @@ Every authenticated request goes through `DiscordRESTProvider.perform`:
 - sanitized route/status/bucket logging;
 - a bounded session-local diagnostics export covering REST attempts and
   responses, attachment uploads, native authentication, and main, voice, and
-  remote-auth Gateway envelopes; and
+  remote-auth Gateway envelopes;
+- a provider-owned REST connection pool distinct from the Gateway pool, with a
+  generation-coalesced replacement after a confirmed 30-second transport
+  timeout; and
 - one provider-wide safety circuit shared with the Gateway session.
 
 Normal cold startup is Gateway-first. `READY.user`, `READY.guilds`,
@@ -520,10 +540,10 @@ The default attempt budget is exact:
 
 | Operation | Maximum attempts |
 | --- | ---: |
-| Ordinary authenticated GET | 2; the second attempt occurs only after a server `429` cooldown. |
-| Authenticated mutation | 1; no automatic replay after `429`, timeout, or ambiguous failure. |
+| Ordinary authenticated read | 2 for GET and the read-only DM-search POST; the second attempt occurs only after a server `429` cooldown or on the replacement REST generation after a confirmed transport stall. |
+| Authenticated mutation | 1; no automatic replay after `429`, timeout, or ambiguous failure. A confirmed timeout may replace the REST generation only for later work. |
 | Application-command index readiness | 3 created GETs for the separately tested `202`/`429` flow. |
-| Message-search index readiness | 6 created requests: the original plus at most 5 retries after server `202`, each delayed by the server's `Retry-After` or `retry_after` value (with a five-second fallback only when neither is present). Each created GET or POST retains the ordinary bounded `429` contract. |
+| Message-search index readiness | 6 logical indexing attempts: the original plus at most 5 retries after server `202`, each delayed by the server's `Retry-After` or `retry_after` value (with a five-second fallback only when neither is present). Each logical guild GET or read-only DM POST retains the ordinary two-created-request budget for one server `429` cooldown or one confirmed REST-generation recovery. |
 | Cold native installation/fingerprint preflight status retry | Each created preflight request has its original attempt plus at most 3 bounded retries for `429`, `500`, `502`, or `504`, subject to the established delay ceiling. A missing Apex installation creates only the already-required `/experiments` request, without an additional probe. |
 | Pending-QR or stored-session missing-installation repair | Once per provider: 1 unauthenticated Apex GET, plus 1 unauthenticated `/experiments` GET only when Apex fails or omits the identity. Both are best-effort; no automatic retry or authentication replay, and Gateway proceeds without the optional identity when unavailable. |
 | Native password/MFA status retry | Original plus at most 2 current-official retries for `429`, `500`, `502`, or `504`, subject to the established delay ceiling. |
