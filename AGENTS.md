@@ -25,6 +25,7 @@ manifests.
 | change package ownership, runtime wiring, persistence, plugins, or packaging | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | add or materially change production REST, Gateway, authentication, upload, or other Discord communication | [docs/PROTOCOL_BASELINE.md](docs/PROTOCOL_BASELINE.md) |
 | build, run, test, package, or verify the app | [README.md — Build from source](README.md#build-from-source) |
+| add, change, or remove automated tests | [docs/TESTING.md](docs/TESTING.md) |
 | commit or push from a fresh clone | [docs/README.md — Developer and agent bootstrap](docs/README.md#developer-and-agent-bootstrap) |
 | use Computer Use against SakuraCord | run `./script/runtime.sh` and use the complete path from its `App:` line |
 | work on planned scope, priority, acceptance criteria, or progress | [Roadmap Management](plugin://roadmap-management@personal) |
@@ -44,6 +45,13 @@ manifests.
   and commits are evidence to assess, not proof that an item is complete.
 - Keep documentation canonical. Update an existing source of truth instead of
   duplicating architecture, protocol, workflow, or planning information.
+
+## Tests
+
+Reserve committed automated tests for critical behavior, major new
+functionality, and high-value regression coverage. Do not commit automated
+tests for purely visual UI changes. Temporary UI tests may be used during
+development, but remove them before committing.
 
 ## Before you finish
 
