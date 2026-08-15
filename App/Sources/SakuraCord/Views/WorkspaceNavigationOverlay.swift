@@ -966,7 +966,7 @@ private final class QuickSwitcherResultCanvas: NSView {
             drawText(
                 trailing,
                 font: trailingFont,
-                color: .tertiaryLabelColor,
+                color: .secondaryLabelColor,
                 rect: CGRect(x: trailingX, y: rect.minY + 9, width: trailingWidth, height: 18),
                 alignment: .right
             )
