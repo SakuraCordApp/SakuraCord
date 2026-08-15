@@ -245,7 +245,7 @@ struct ComposerTextView: NSViewRepresentable {
     let onSubmit: () -> Void
     var onEscape: () -> Void = {}
     var onEditLatestMessage: () -> Bool = { false }
-    var onCycleReplyContext: () -> Bool = { false }
+    var onNavigateReplySelection: (MessageReplyNavigationDirection) -> Bool = { _ in false }
     var onAutocompleteCommand: (ComposerAutocompleteCommand) -> Bool = { _ in false }
     var onPasteAttachments: (([URL]) -> Void)?
     var capturesUnfocusedTyping = false
@@ -306,8 +306,8 @@ struct ComposerTextView: NSViewRepresentable {
         textView.onEditLatestMessage = { [weak coordinator = context.coordinator] in
             coordinator?.parent.onEditLatestMessage() ?? false
         }
-        textView.onCycleReplyContext = { [weak coordinator = context.coordinator] in
-            coordinator?.parent.onCycleReplyContext() ?? false
+        textView.onNavigateReplySelection = { [weak coordinator = context.coordinator] direction in
+            coordinator?.parent.onNavigateReplySelection(direction) ?? false
         }
         textView.onPasteAttachments = onPasteAttachments
         textView.capturesUnfocusedTyping = capturesUnfocusedTyping
@@ -340,8 +340,8 @@ struct ComposerTextView: NSViewRepresentable {
         textView.onEditLatestMessage = { [weak coordinator = context.coordinator] in
             coordinator?.parent.onEditLatestMessage() ?? false
         }
-        textView.onCycleReplyContext = { [weak coordinator = context.coordinator] in
-            coordinator?.parent.onCycleReplyContext() ?? false
+        textView.onNavigateReplySelection = { [weak coordinator = context.coordinator] direction in
+            coordinator?.parent.onNavigateReplySelection(direction) ?? false
         }
         textView.onPasteAttachments = onPasteAttachments
         textView.capturesUnfocusedTyping = capturesUnfocusedTyping
@@ -647,7 +647,7 @@ final class ComposerNSTextView: NSTextView {
     var onReturn: ((NSEvent) -> Bool)?
     var onEscape: (() -> Void)?
     var onEditLatestMessage: (() -> Bool)?
-    var onCycleReplyContext: (() -> Bool)?
+    var onNavigateReplySelection: ((MessageReplyNavigationDirection) -> Bool)?
     var onAutocompleteCommand: ((ComposerAutocompleteCommand) -> Bool)?
     var onPasteAttachments: (([URL]) -> Void)?
     var commandPasteboard = NSPasteboard.general
@@ -659,7 +659,7 @@ final class ComposerNSTextView: NSTextView {
                 enabled: capturesUnfocusedTyping,
                 onUnfocusedReturn: unfocusedReturnHandler,
                 onEditLatestMessage: unfocusedEditLatestMessageHandler,
-                onCycleReplyContext: unfocusedCycleReplyContextHandler,
+                onNavigateReplySelection: unfocusedReplyNavigationHandler,
                 onEscape: escapeHandler,
                 onPasteAttachments: pasteAttachmentsHandler
             )
@@ -679,9 +679,11 @@ final class ComposerNSTextView: NSTextView {
         }
     }
 
-    private var unfocusedCycleReplyContextHandler: () -> Bool {
-        { [weak self] in
-            self?.onCycleReplyContext?() ?? false
+    private var unfocusedReplyNavigationHandler:
+        (MessageReplyNavigationDirection) -> Bool
+    {
+        { [weak self] direction in
+            self?.onNavigateReplySelection?(direction) ?? false
         }
     }
 
@@ -708,7 +710,7 @@ final class ComposerNSTextView: NSTextView {
             enabled: capturesUnfocusedTyping,
             onUnfocusedReturn: unfocusedReturnHandler,
             onEditLatestMessage: unfocusedEditLatestMessageHandler,
-            onCycleReplyContext: unfocusedCycleReplyContextHandler,
+            onNavigateReplySelection: unfocusedReplyNavigationHandler,
             onEscape: escapeHandler,
             onPasteAttachments: pasteAttachmentsHandler
         )
@@ -734,7 +736,7 @@ final class ComposerNSTextView: NSTextView {
         if let autocompleteCommand, onAutocompleteCommand?(autocompleteCommand) == true {
             return
         }
-        if handleReplyContextCycle(event) {
+        if handleReplyNavigation(event) {
             return
         }
         if ComposerLatestMessageEditingPolicy.shouldRequest(
@@ -779,14 +781,23 @@ final class ComposerNSTextView: NSTextView {
             }
     }
 
-    nonisolated static func requestsReplyContextCycle(_ event: NSEvent) -> Bool {
+    nonisolated static func replyNavigationDirection(
+        for event: NSEvent
+    ) -> MessageReplyNavigationDirection? {
         let relevant = event.modifierFlags.intersection([.command, .option, .control, .shift])
-        return event.keyCode == 126 && relevant == .command
+        guard relevant == .command else { return nil }
+        return switch event.keyCode {
+        case 126: .older
+        case 125: .newer
+        default: nil
+        }
     }
 
-    private func handleReplyContextCycle(_ event: NSEvent) -> Bool {
-        guard Self.requestsReplyContextCycle(event) else { return false }
-        return onCycleReplyContext?() == true
+    private func handleReplyNavigation(_ event: NSEvent) -> Bool {
+        guard let direction = Self.replyNavigationDirection(for: event) else {
+            return false
+        }
+        return onNavigateReplySelection?(direction) == true
     }
 
     private func shouldLeaveField(backward: Bool, event: NSEvent) -> Bool {
@@ -880,7 +891,8 @@ final class ComposerUnfocusedTypingMonitor {
     private var eventMonitor: Any?
     private var onUnfocusedReturn: ((NSEvent) -> Bool)?
     private var onEditLatestMessage: (() -> Bool)?
-    private var onCycleReplyContext: (() -> Bool)?
+    private var onNavigateReplySelection:
+        ((MessageReplyNavigationDirection) -> Bool)?
     private var onEscape: (() -> Void)?
     private var onPasteAttachments: (() -> Bool)?
 
@@ -895,14 +907,15 @@ final class ComposerUnfocusedTypingMonitor {
         enabled: Bool,
         onUnfocusedReturn: ((NSEvent) -> Bool)? = nil,
         onEditLatestMessage: (() -> Bool)? = nil,
-        onCycleReplyContext: (() -> Bool)? = nil,
+        onNavigateReplySelection:
+            ((MessageReplyNavigationDirection) -> Bool)? = nil,
         onEscape: (() -> Void)? = nil,
         onPasteAttachments: (() -> Bool)? = nil
     ) {
         self.textView = textView
         self.onUnfocusedReturn = onUnfocusedReturn
         self.onEditLatestMessage = onEditLatestMessage
-        self.onCycleReplyContext = onCycleReplyContext
+        self.onNavigateReplySelection = onNavigateReplySelection
         self.onEscape = onEscape
         self.onPasteAttachments = onPasteAttachments
         guard enabled, textView.window != nil
@@ -939,8 +952,8 @@ final class ComposerUnfocusedTypingMonitor {
             ) {
                 return nil
             }
-            if ComposerNSTextView.requestsReplyContextCycle(event),
-               self.onCycleReplyContext?() == true
+            if let direction = ComposerNSTextView.replyNavigationDirection(for: event),
+               self.onNavigateReplySelection?(direction) == true
             {
                 return nil
             }

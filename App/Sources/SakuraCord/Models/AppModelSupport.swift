@@ -183,6 +183,11 @@ nonisolated enum MessageComposerDestination: Hashable, Sendable {
     case thread
 }
 
+nonisolated enum MessageReplyNavigationDirection: Equatable, Sendable {
+    case older
+    case newer
+}
+
 nonisolated struct ComponentControlKey: Hashable, Sendable {
     let messageID: MessageID
     let customID: String

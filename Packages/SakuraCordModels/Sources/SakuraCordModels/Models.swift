@@ -1923,6 +1923,7 @@ public struct SendMessageDraft: Equatable, Sendable {
     public var channelID: ChannelID
     public var content: String
     public var replyTo: MessageID?
+    public var mentionsRepliedUser: Bool
     public var attachments: [ForumPostAttachment]
     public var attachmentURLs: [URL] {
         get { attachments.map(\.url) }
@@ -1933,6 +1934,7 @@ public struct SendMessageDraft: Equatable, Sendable {
 
     public init(
         channelID: ChannelID, content: String, replyTo: MessageID? = nil,
+        mentionsRepliedUser: Bool = true,
         attachmentURLs: [URL] = [],
         attachments: [ForumPostAttachment]? = nil,
         nonce: String = ClientNonce.make(), stickerIDs: [String] = []
@@ -1940,6 +1942,7 @@ public struct SendMessageDraft: Equatable, Sendable {
         self.channelID = channelID
         self.content = content
         self.replyTo = replyTo
+        self.mentionsRepliedUser = mentionsRepliedUser
         self.attachments =
             attachments ?? attachmentURLs.map { ForumPostAttachment(url: $0) }
         self.nonce = nonce

@@ -2590,21 +2590,40 @@ private actor FailingRemovalCredentialStore: CredentialStore {
 }
 
 @MainActor
-@Test func `reply context cycles backward through visible messages and wraps`() async throws {
+@Test func `reply selection navigates both directions without wrapping`() async throws {
     let model = AppModel(launchMode: .offlineTesting)
     await model.start()
     let messages = model.messages
     #expect(messages.count >= 2)
 
-    #expect(model.cycleReplyContext(in: .channel))
+    #expect(model.navigateReplySelection(in: .channel, direction: .older))
     #expect(model.replyingTo?.id == messages.last?.id)
 
-    #expect(model.cycleReplyContext(in: .channel))
+    #expect(model.navigateReplySelection(in: .channel, direction: .older))
     #expect(model.replyingTo?.id == messages.dropLast().last?.id)
 
     model.reply(to: messages.first!)
-    #expect(model.cycleReplyContext(in: .channel))
+    #expect(model.navigateReplySelection(in: .channel, direction: .older))
+    #expect(model.replyingTo?.id == messages.first?.id)
+
+    #expect(model.navigateReplySelection(in: .channel, direction: .newer))
+    #expect(model.replyingTo?.id == messages.dropFirst().first?.id)
+
+    model.reply(to: messages.last!)
+    #expect(model.navigateReplySelection(in: .channel, direction: .newer))
     #expect(model.replyingTo?.id == messages.last?.id)
+}
+
+@MainActor
+@Test func `reply Escape cancels reply state`() async throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    await model.start()
+    let target = try #require(model.messages.last)
+
+    model.reply(to: target)
+    #expect(model.consumeEscapeForReply(in: .channel))
+    #expect(model.replyingTo == nil)
+    #expect(!model.consumeEscapeForReply(in: .channel))
 }
 
 @MainActor

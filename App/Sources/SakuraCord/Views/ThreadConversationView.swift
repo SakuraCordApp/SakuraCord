@@ -281,6 +281,7 @@ private struct ThreadMessageTimelineView: View {
             bottomContentInset: bottomContentInset,
             unreadMessageID: exactUnreadBoundaryMessageID,
             highlightedMessageID: nil,
+            selectedMessageID: model.threadReplyingTo?.id,
             initialScrollTarget: initialScrollTarget,
             scrollRequest: scrollRequest,
             editRequest: editRequest,
@@ -373,6 +374,10 @@ private struct ThreadMessageTimelineView: View {
             requestScroll(.bottom)
             model.completeConversationNewestRequest(requestID: request.requestID)
         }
+        .onChange(of: model.threadReplyingTo?.id) { _, messageID in
+            guard let messageID else { return }
+            requestScroll(.message(messageID, anchor: .center))
+        }
         .onDisappear {
             if let conversationID {
                 model.reportTimelineLiveScrolling(
@@ -383,6 +388,7 @@ private struct ThreadMessageTimelineView: View {
         }
         .onExitCommand {
             guard !model.consumeEscapeForMediaViewer() else { return }
+            guard !model.consumeEscapeForReply(in: .thread) else { return }
             if let conversationID {
                 model.completeConversationReadingAndAdvance(
                     channelID: conversationID

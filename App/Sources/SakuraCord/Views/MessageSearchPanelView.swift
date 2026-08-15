@@ -324,7 +324,11 @@ struct MessageSearchFiltersOverlay: View {
                 Text("Filters")
                     .font(.title2.weight(.semibold))
                 Spacer()
-                ForwardCloseButton(action: dismiss)
+                HoverCloseButton(
+                    help: "Close",
+                    accessibilityIdentifier: "message-search-close",
+                    action: dismiss
+                )
             }
             .padding(18)
 

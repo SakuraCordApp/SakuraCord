@@ -17,6 +17,33 @@ struct HoverActionPill<Content: View>: View {
     }
 }
 
+struct HoverCloseButton: View {
+    let help: LocalizedStringResource
+    let accessibilityIdentifier: String
+    var diameter: CGFloat = 36
+    var iconSize: CGFloat = 15
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.system(size: iconSize, weight: .medium))
+                .frame(width: diameter, height: diameter)
+                .contentShape(Circle())
+                .background {
+                    Circle()
+                        .fill(.primary.opacity(isHovered ? 0.09 : 0.001))
+                }
+        }
+        .buttonStyle(.plain)
+        .contentShape(Circle())
+        .onHover { isHovered = $0 }
+        .help(help)
+        .accessibilityIdentifier(accessibilityIdentifier)
+    }
+}
+
 struct HoverActionButton: View {
     let systemImage: String
     let help: String

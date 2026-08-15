@@ -189,24 +189,28 @@ import Testing
 }
 
 @MainActor
-@Test func `command up requests reply context cycling`() throws {
+@Test func `command arrows request directional reply navigation`() throws {
     let textView = ComposerNSTextView()
-    var cycleRequestCount = 0
+    var directions: [MessageReplyNavigationDirection] = []
     textView.onAutocompleteCommand = { _ in false }
-    textView.onCycleReplyContext = {
-        cycleRequestCount += 1
+    textView.onNavigateReplySelection = { direction in
+        directions.append(direction)
         return true
     }
 
     textView.keyDown(with: try upArrowKeyEvent(modifiers: [.command]))
+    textView.keyDown(with: try downArrowKeyEvent(modifiers: [.command]))
 
-    #expect(cycleRequestCount == 1)
-    #expect(ComposerNSTextView.requestsReplyContextCycle(
-        try upArrowKeyEvent(modifiers: [.command])
-    ))
-    #expect(!ComposerNSTextView.requestsReplyContextCycle(
-        try upArrowKeyEvent(modifiers: [.command, .shift])
-    ))
+    #expect(directions == [.older, .newer])
+    #expect(ComposerNSTextView.replyNavigationDirection(
+        for: try upArrowKeyEvent(modifiers: [.command])
+    ) == .older)
+    #expect(ComposerNSTextView.replyNavigationDirection(
+        for: try downArrowKeyEvent(modifiers: [.command])
+    ) == .newer)
+    #expect(ComposerNSTextView.replyNavigationDirection(
+        for: try upArrowKeyEvent(modifiers: [.command, .shift])
+    ) == nil)
 }
 
 @MainActor
@@ -1800,6 +1804,26 @@ private func upArrowKeyEvent(
         ),
         isARepeat: false,
         keyCode: 126
+    ))
+}
+
+@MainActor
+private func downArrowKeyEvent(
+    modifiers: NSEvent.ModifierFlags = []
+) throws -> NSEvent {
+    try #require(NSEvent.keyEvent(
+        with: .keyDown,
+        location: .zero,
+        modifierFlags: modifiers,
+        timestamp: 0,
+        windowNumber: 0,
+        context: nil,
+        characters: String(NSEvent.SpecialKey.downArrow.unicodeScalar),
+        charactersIgnoringModifiers: String(
+            NSEvent.SpecialKey.downArrow.unicodeScalar
+        ),
+        isARepeat: false,
+        keyCode: 125
     ))
 }
 

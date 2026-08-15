@@ -856,7 +856,7 @@ extension NativeMessageTimelineCoordinator {
             return .message(
                 resolvedRow,
                 isUnreadBoundary: parent.unreadMessageID == row.id,
-                isHighlighted: parent.highlightedMessageID == row.id
+                isHighlighted: parent.selectedMessageID == row.id
             )
         }
 

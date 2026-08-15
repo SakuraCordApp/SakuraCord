@@ -445,9 +445,11 @@ extension AppModel {
         let destination: MessageComposerDestination
         if message.channelID == selectedChannelID {
             replyingTo = message
+            replyMentionsAuthor = true
             destination = .channel
         } else if message.channelID == openThread?.id {
             threadReplyingTo = message
+            threadReplyMentionsAuthor = true
             destination = .thread
         } else {
             return
@@ -459,7 +461,10 @@ extension AppModel {
     }
 
     @discardableResult
-    func cycleReplyContext(in destination: MessageComposerDestination) -> Bool {
+    func navigateReplySelection(
+        in destination: MessageComposerDestination,
+        direction: MessageReplyNavigationDirection
+    ) -> Bool {
         let availableMessages: [Message]
         let currentReply: Message?
         switch destination {
@@ -476,11 +481,21 @@ extension AppModel {
         if let currentReply,
            let currentIndex = availableMessages.firstIndex(where: { $0.id == currentReply.id })
         {
-            nextIndex = currentIndex > availableMessages.startIndex
-                ? availableMessages.index(before: currentIndex)
-                : availableMessages.index(before: availableMessages.endIndex)
+            switch direction {
+            case .older:
+                nextIndex = currentIndex > availableMessages.startIndex
+                    ? availableMessages.index(before: currentIndex)
+                    : currentIndex
+            case .newer:
+                nextIndex = currentIndex < availableMessages.index(before: availableMessages.endIndex)
+                    ? availableMessages.index(after: currentIndex)
+                    : currentIndex
+            }
         } else {
             nextIndex = availableMessages.index(before: availableMessages.endIndex)
+        }
+        if currentReply?.id == availableMessages[nextIndex].id {
+            return true
         }
         reply(to: availableMessages[nextIndex])
         return true
@@ -497,6 +512,31 @@ extension AppModel {
             name: .sakuracordFocusComposer,
             object: destination
         )
+    }
+
+    @discardableResult
+    func consumeEscapeForReply(
+        in destination: MessageComposerDestination
+    ) -> Bool {
+        let hasReply = switch destination {
+        case .channel: replyingTo != nil
+        case .thread: threadReplyingTo != nil
+        }
+        guard hasReply else { return false }
+        cancelReply(in: destination)
+        return true
+    }
+
+    func setReplyMentionsAuthor(
+        _ mentionsAuthor: Bool,
+        in destination: MessageComposerDestination
+    ) {
+        switch destination {
+        case .channel:
+            replyMentionsAuthor = mentionsAuthor
+        case .thread:
+            threadReplyMentionsAuthor = mentionsAuthor
+        }
     }
 
     func open(_ thread: MessageThreadSummary) {
@@ -779,9 +819,11 @@ extension AppModel {
         guard !content.isEmpty || !attachments.isEmpty else { return false }
         guard validateAttachmentCount(attachments) else { return false }
         let replyTo = threadReplyingTo?.id
+        let mentionsRepliedUser = threadReplyMentionsAuthor
         return await sendThreadMessage(
             content: content,
             replyTo: replyTo,
+            mentionsRepliedUser: mentionsRepliedUser,
             attachments: attachments,
             thread: thread,
             clearsComposer: true
@@ -792,6 +834,7 @@ extension AppModel {
     func sendThreadMessage(
         content: String,
         replyTo: MessageID? = nil,
+        mentionsRepliedUser: Bool = true,
         attachments: [ForumPostAttachment],
         thread: MessageThreadSummary,
         clearsComposer: Bool
@@ -800,6 +843,7 @@ extension AppModel {
             channelID: thread.id,
             content: content,
             replyTo: replyTo,
+            mentionsRepliedUser: mentionsRepliedUser,
             attachments: attachments
         )
         threadErrorMessage = nil
@@ -1540,6 +1584,7 @@ extension AppModel {
             guard await loadNewestMessageWindow() else { return false }
         }
         let replyTo = replyingTo?.id
+        let mentionsRepliedUser = replyMentionsAuthor
         let replyPreview = replyingTo.map {
             MessageReplyPreview(message: $0)
         }
@@ -1547,6 +1592,7 @@ extension AppModel {
             channelID: channelID,
             content: content,
             replyTo: replyTo,
+            mentionsRepliedUser: mentionsRepliedUser,
             replyPreview: replyPreview,
             attachments: attachments,
             clearsComposer: true
@@ -1558,12 +1604,17 @@ extension AppModel {
         channelID: ChannelID,
         content: String,
         replyTo: MessageID?,
+        mentionsRepliedUser: Bool = true,
         replyPreview: MessageReplyPreview?,
         attachments: [ForumPostAttachment],
         clearsComposer: Bool
     ) async -> Bool {
         let outgoing = SendMessageDraft(
-            channelID: channelID, content: content, replyTo: replyTo, attachments: attachments
+            channelID: channelID,
+            content: content,
+            replyTo: replyTo,
+            mentionsRepliedUser: mentionsRepliedUser,
+            attachments: attachments
         )
         if clearsComposer {
             stopLocalTyping(clearThrottle: true)

@@ -51,6 +51,16 @@ navigation, and pagination through the client maximum. No authorization value,
 message content, user/channel/guild identifier, or personal response payload was
 retained.
 
+Reply-author mention control was statically rechecked on 15 August 2026 against
+the official desktop `0.0.407` asset `web.206b719a7d513cf1.js`, the pinned
+Paicord and Swiftcord v1 revisions above, and Discord's public allowed-mentions
+documentation. The first-party send helper omits `allowed_mentions` while the
+reply-author notification is enabled. When it is disabled, the helper sends
+`allowed_mentions` with `parse:["users","roles","everyone"]` and
+`replied_user:false`, preserving ordinary content-mention parsing. Swiftcord
+v1 corroborates that complete disabled shape; Paicord sends the narrower
+`replied_user:false` form.
+
 REST transport recovery was audited on 15 August 2026 from a sanitized
 authenticated SakuraCord diagnostic captured during a live stall. The main
 Gateway continued sending QoS heartbeats and receiving ACKs, while one
@@ -451,7 +461,7 @@ and retained as evidence.
 | `PATCH /users/@me/guilds/settings` | One explicit server or category notification change; `guilds` contains exactly one partial guild entry. Category changes contain one category-keyed `channel_overrides` entry and only the selected notification, mute, or collapse fields. | Current first-party; P−, S−. |
 | `GET /guilds/{guild}/application-command-index`, `/channels/{channel}/application-command-index`, `/users/@me/application-command-index`, or `/applications/{application}/application-command-index` | Target-specific index; at most three created GETs for the reviewed `202`/`429` readiness flow. | Current first-party route family; P−, S−. |
 | `POST /interactions` | One explicit type-2 execution, type-4 autocomplete, or returned modal submission; nonce-keyed, one attempt. | Current first-party and Paicord command model; Swiftcord has no current index/interaction path. |
-| `POST /channels/{channel}/messages` | One explicit send; `content`, nonce, `tts:false`, `flags:0`, macOS `mobile_network_type:"unknown"`, optional reply/attachments, and `X-Context-Properties` location `chat_input`. SakuraCord deliberately adds `enforce_nonce:true` to ordinary composer sends. An explicit forward uses the same route once per selected destination (maximum five), empty `content`, nonce without `enforce_nonce`, `message_reference` with `type:1` and source IDs, and context location `forwarding`. Selected forwards start together and settle independently. Optional user-entered context is one later ordinary send per successful destination unless slowmode without bypass forbids it. Picker browsing and typing perform no HTTP or Gateway search. | Current first-party build and clean macOS CDP request/search observation. Pinned Paicord has no forward request/picker, and Swiftcord v1 has no forward path. DiscordKit's later DTO-only snapshot support is decoding evidence, not request or picker evidence. |
+| `POST /channels/{channel}/messages` | One explicit send; `content`, nonce, `tts:false`, `flags:0`, macOS `mobile_network_type:"unknown"`, optional reply/attachments, and `X-Context-Properties` location `chat_input`. A reply with its author notification enabled omits `allowed_mentions`; disabling it adds `parse:["users","roles","everyone"]` and `replied_user:false`. SakuraCord deliberately adds `enforce_nonce:true` to ordinary composer sends. An explicit forward uses the same route once per selected destination (maximum five), empty `content`, nonce without `enforce_nonce`, `message_reference` with `type:1` and source IDs, and context location `forwarding`. Selected forwards start together and settle independently. Optional user-entered context is one later ordinary send per successful destination unless slowmode without bypass forbids it. Picker browsing and typing perform no HTTP or Gateway search. | Current first-party build and clean macOS CDP request/search observation. Pinned Paicord has no forward request/picker; its ordinary reply path has the narrower disabled-mention shape. Swiftcord v1 corroborates the complete reply mention control but has no forward path. DiscordKit's later DTO-only snapshot support is decoding evidence, not request or picker evidence. |
 | `POST /channels/{channel}/attachments` | Explicit files only; `files` entries contain string index `id`, `filename`, `file_size`, and `is_clip:false`. | Current first-party upload action and Paicord; Swiftcord has no comparable presigned upload. |
 | `PUT {Discord-issued upload_url}` | One unauthenticated storage PUT per reserved file, `application/octet-stream`, raw bytes, no Discord authorization metadata. | Current first-party and Paicord; S−. |
 | `PATCH` or `DELETE /channels/{channel}/messages/{message}` | Explicit edit with only `content`, or explicit deletion with no body. | Public message semantics and all three references. |
@@ -1365,8 +1375,11 @@ account action or traffic capture was performed.
   first-party JSON shape is `mobile_network_type`, `content`, `nonce`, `tts`,
   and `flags`, plus attachments only when present and a reply reference
   containing type `0`, `message_id`, and `channel_id` when needed. The
-  `X-Context-Properties` location is `chat_input`. Concurrent calls with the
-  same channel and nonce share one in-flight mutation.
+  `X-Context-Properties` location is `chat_input`. Reply-author notifications
+  are enabled by omitting `allowed_mentions`; disabling them adds the complete
+  `parse:["users","roles","everyone"]`, `replied_user:false` object so
+  ordinary content mentions retain their default parsing. Concurrent calls
+  with the same channel and nonce share one in-flight mutation.
 - SakuraCord deliberately adds `enforce_nonce: true` to the first-party and
   Paicord bodies. Discord
   publicly documents this as returning the already-created message for a

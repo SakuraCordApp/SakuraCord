@@ -1821,6 +1821,22 @@ private struct BootstrapRequestScenario {
         #expect((reference["type"] as? NSNumber)?.intValue == 0)
         #expect(reference["message_id"] as? String == "299")
         #expect(reference["channel_id"] as? String == "200")
+        #expect(replyBody["allowed_mentions"] == nil)
+
+        _ = try await provider.send(SendMessageDraft(
+            channelID: ChannelID(rawValue: 200),
+            content: "quiet reply",
+            replyTo: MessageID(rawValue: 299),
+            mentionsRepliedUser: false
+        ))
+        let quietReplyBody = try #require(RateLimitURLProtocol.sentMessageBody)
+        let allowedMentions = try #require(
+            quietReplyBody["allowed_mentions"] as? [String: Any]
+        )
+        #expect(allowedMentions["replied_user"] as? Bool == false)
+        #expect(allowedMentions["parse"] as? [String] == [
+            "users", "roles", "everyone",
+        ])
 
         let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent("sakuracord-upload-test.txt")
         try Data("attachment".utf8).write(to: fileURL)

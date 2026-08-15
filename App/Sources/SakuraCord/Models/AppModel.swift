@@ -292,6 +292,8 @@ final class AppModel {
     var forumTagMatch: ForumTagMatch = .matchSome
     var replyingTo: Message?
     var threadReplyingTo: Message?
+    var replyMentionsAuthor = true
+    var threadReplyMentionsAuthor = true
     var presentedInteractionModal: InteractionModal?
     var interactionModalNonce: String?
     var interactionErrorMessage: String?

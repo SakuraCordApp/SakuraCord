@@ -48,7 +48,6 @@ nonisolated enum ForwardPickerLayoutMetrics {
     static let height: CGFloat = 679
     static let outerInset: CGFloat = 24
     static let cornerRadius: CGFloat = 16
-    static let closeHitTarget: CGFloat = 36
     static let rowHeight: CGFloat = 48
     static let selectionDiameter: CGFloat = 20
 }
@@ -2228,7 +2227,11 @@ struct ForwardMessageOverlay: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                ForwardCloseButton(action: dismiss)
+                HoverCloseButton(
+                    help: "Close",
+                    accessibilityIdentifier: "forward-close",
+                    action: dismiss
+                )
             }
             PickerSearchField(
                 text: $query,
@@ -2358,33 +2361,5 @@ struct ForwardMessageOverlay: View {
             return
         }
         selectedDestinationIDs.insert(destinationID, at: 0)
-    }
-}
-
-struct ForwardCloseButton: View {
-    let action: () -> Void
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "xmark")
-                .font(.system(size: 15, weight: .medium))
-                .frame(
-                    width: ForwardPickerLayoutMetrics.closeHitTarget,
-                    height: ForwardPickerLayoutMetrics.closeHitTarget
-                )
-                .contentShape(Circle())
-                .background {
-                    Circle()
-                        .fill(.primary.opacity(isHovered ? 0.09 : 0.001))
-                }
-        }
-        .buttonStyle(.plain)
-        .contentShape(Circle())
-        .onHover { hovering in
-            isHovered = hovering
-        }
-        .help("Close")
-        .accessibilityIdentifier("forward-close")
     }
 }

@@ -53,6 +53,7 @@ struct MessageTimelineView: View {
             bottomContentInset: bottomContentInset,
             unreadMessageID: exactUnreadBoundaryMessageID,
             highlightedMessageID: highlightedMessageID,
+            selectedMessageID: model.replyingTo?.id,
             initialScrollTarget: initialScrollTarget,
             scrollRequest: scrollRequest,
             editRequest: editRequest,
@@ -175,6 +176,10 @@ struct MessageTimelineView: View {
             requestScroll(.bottom)
             model.completeConversationNewestRequest(requestID: request.requestID)
         }
+        .onChange(of: model.replyingTo?.id) { _, messageID in
+            guard let messageID else { return }
+            requestScroll(.message(messageID, anchor: .center))
+        }
         .task(id: model.selectedChannelID) {
             allowsAutomaticHistoryLoading = false
             hasEarlierHistoryScrollIntent = false
@@ -197,6 +202,7 @@ struct MessageTimelineView: View {
         }
         .onExitCommand {
             guard !model.consumeEscapeForMediaViewer() else { return }
+            guard !model.consumeEscapeForReply(in: .channel) else { return }
             if let conversationID {
                 model.completeConversationReadingAndAdvance(
                     channelID: conversationID

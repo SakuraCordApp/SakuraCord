@@ -30,6 +30,7 @@ struct NativeMessageTimelineView: NSViewRepresentable {
     let bottomContentInset: CGFloat
     let unreadMessageID: MessageID?
     let highlightedMessageID: MessageID?
+    let selectedMessageID: MessageID?
     let initialScrollTarget: MessageTimelineScrollRequest.Target?
     let scrollRequest: MessageTimelineScrollRequest?
     let editRequest: MessageTimelineEditRequest?
@@ -57,6 +58,7 @@ struct NativeMessageTimelineView: NSViewRepresentable {
         bottomContentInset: CGFloat,
         unreadMessageID: MessageID?,
         highlightedMessageID: MessageID?,
+        selectedMessageID: MessageID? = nil,
         initialScrollTarget: MessageTimelineScrollRequest.Target? = nil,
         scrollRequest: MessageTimelineScrollRequest?,
         editRequest: MessageTimelineEditRequest? = nil,
@@ -85,6 +87,7 @@ struct NativeMessageTimelineView: NSViewRepresentable {
         self.bottomContentInset = bottomContentInset
         self.unreadMessageID = unreadMessageID
         self.highlightedMessageID = highlightedMessageID
+        self.selectedMessageID = selectedMessageID
         self.initialScrollTarget = initialScrollTarget
         self.scrollRequest = scrollRequest
         self.editRequest = editRequest
@@ -1079,11 +1082,11 @@ extension NativeMessageTimelineCoordinator {
                         affectedIDs.insert(id)
                     }
                 }
-                if oldParent.highlightedMessageID != newParent.highlightedMessageID {
-                    if let id = oldParent.highlightedMessageID {
+                if oldParent.selectedMessageID != newParent.selectedMessageID {
+                    if let id = oldParent.selectedMessageID {
                         affectedIDs.insert(id)
                     }
-                    if let id = newParent.highlightedMessageID {
+                    if let id = newParent.selectedMessageID {
                         affectedIDs.insert(id)
                     }
                 }
@@ -1400,13 +1403,13 @@ extension NativeMessageTimelineCoordinator {
                     changedMessageIDs.insert(id)
                 }
             }
-            if oldParent.highlightedMessageID
-                != newParent.highlightedMessageID
+            if oldParent.selectedMessageID
+                != newParent.selectedMessageID
             {
-                if let id = oldParent.highlightedMessageID {
+                if let id = oldParent.selectedMessageID {
                     changedMessageIDs.insert(id)
                 }
-                if let id = newParent.highlightedMessageID {
+                if let id = newParent.selectedMessageID {
                     changedMessageIDs.insert(id)
                 }
             }

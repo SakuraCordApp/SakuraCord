@@ -1588,11 +1588,10 @@ extension DiscordRESTProvider {
             "mobile_network_type": .string("unknown"),
         ]
         if let replyTo = draft.replyTo {
-            body["message_reference"] = .object([
-                "type": .number(0),
-                "message_id": .string(replyTo.description),
-                "channel_id": .string(draft.channelID.description),
-            ])
+            body["message_reference"] = draft.replyReferencePayload(for: replyTo)
+            if let allowedMentions = draft.replyAllowedMentionsPayload {
+                body["allowed_mentions"] = allowedMentions
+            }
         }
         if !draft.attachmentURLs.isEmpty {
             body["attachments"] = try await .array(
