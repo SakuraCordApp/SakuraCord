@@ -1315,6 +1315,31 @@ struct AccountReadStateModelTests {
         #expect(model.mentions(channelID: channelID) == 1)
     }
 
+    @Test func `nothing suppresses native alerts for every server mention kind`() {
+        let roleID = RoleID(rawValue: 77)
+        let model = makeModel(
+            latest: 10,
+            acknowledged: 10,
+            settings: GuildNotificationSettings(
+                guildID: guildID,
+                messageNotifications: .nothing
+            )
+        )
+        model.updateCurrentUserRoles([roleID], guildID: guildID)
+
+        let messages = [
+            message(id: 11, mentionedUsers: [currentUser]),
+            message(id: 12, mentionedRoles: [roleID]),
+            message(id: 13, mentionsEveryone: true),
+        ]
+        let dispositions = messages.map {
+            model.receive($0, currentUserID: currentUser.id)
+        }
+        #expect(dispositions.map(\.mentionKind) == [.direct, .role, .everyone])
+        #expect(dispositions.allSatisfy { !$0.shouldNotify })
+        #expect(model.mentions(channelID: channelID) == 3)
+    }
+
     @Test(
         arguments: [
             (MessageNotificationLevel.allMessages, false, true),
@@ -1449,7 +1474,8 @@ struct AccountReadStateModelTests {
                                 channelLevel == .inherit ? guildLevel : channelLevel
                             let expected =
                                 isMention
-                                ? (!guildMuted && !channelMuted)
+                                ? (!guildMuted && !channelMuted
+                                    && effectiveLevel != .nothing)
                                 : (!guildMuted && !channelMuted
                                     && effectiveLevel == .allMessages)
                             let disposition = model.receive(

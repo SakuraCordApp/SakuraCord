@@ -1417,7 +1417,6 @@ private struct ApplicationCommandScenario {
                     version: 73
                 )
         )
-
         let notificationSettingsEvent = Task { () -> GuildNotificationSettings? in
             for await event in events {
                 if case let .notificationSettingsChanged(settings) = event { return settings }
@@ -1432,6 +1431,9 @@ private struct ApplicationCommandScenario {
                 "muted": .bool(false),
                 "suppress_everyone": .bool(true),
                 "suppress_roles": .bool(false),
+                "notify_highlights": .number(1),
+                "mute_scheduled_events": .bool(true),
+                "mobile_push": .bool(false),
                 "channel_overrides": .array([
                     .object([
                         "channel_id": .string("200"),
@@ -1447,8 +1449,33 @@ private struct ApplicationCommandScenario {
         #expect(decodedSettings.guildID == GuildID(rawValue: 100))
         #expect(decodedSettings.messageNotifications == .onlyMentions)
         #expect(decodedSettings.suppressEveryone)
+        #expect(decodedSettings.notifyHighlights == .disabled)
+        #expect(decodedSettings.muteScheduledEvents)
+        #expect(!decodedSettings.mobilePush)
         #expect(decodedSettings.channelOverrides.first?.messageNotifications == .allMessages)
         #expect(decodedSettings.channelOverrides.first?.isMuted == true)
+        let partialSettingsEvent = Task { () -> GuildNotificationSettings? in
+            for await event in events {
+                if case let .notificationSettingsChanged(settings) = event { return settings }
+            }
+            return nil
+        }
+        await socket.push(gatewayMessage(
+            op: 0,
+            data: .object([
+                "guild_id": .string("100"),
+                "suppress_roles": .bool(true),
+            ]),
+            sequence: 9,
+            eventName: "USER_GUILD_SETTINGS_UPDATE"
+        ))
+        let mergedSettings = try #require(await partialSettingsEvent.value)
+        #expect(mergedSettings.suppressEveryone)
+        #expect(mergedSettings.suppressRoles)
+        #expect(mergedSettings.notifyHighlights == .disabled)
+        #expect(mergedSettings.muteScheduledEvents)
+        #expect(!mergedSettings.mobilePush)
+        #expect(mergedSettings.channelOverrides.first?.isMuted == true)
         await provider.disconnect()
         }
     }

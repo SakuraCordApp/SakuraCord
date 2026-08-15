@@ -34,6 +34,8 @@ public actor MockChatProvider: ChatProvider {
         public var level: MessageNotificationLevel?
         public var isMuted: Bool?
         public var muteEndTime: Date?
+        public var toggle: GuildNotificationToggle?
+        public var isEnabled: Bool?
     }
 
     public private(set) var guildNotificationRequests: [GuildNotificationRequest] = []
@@ -310,6 +312,20 @@ public actor MockChatProvider: ChatProvider {
                 guildID: guildID,
                 isMuted: isMuted,
                 muteEndTime: until
+            )
+        )
+    }
+
+    public func updateGuildNotificationToggle(
+        guildID: GuildID,
+        toggle: GuildNotificationToggle,
+        isEnabled: Bool
+    ) async throws {
+        guildNotificationRequests.append(
+            GuildNotificationRequest(
+                guildID: guildID,
+                toggle: toggle,
+                isEnabled: isEnabled
             )
         )
     }

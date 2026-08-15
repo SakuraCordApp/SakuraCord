@@ -990,6 +990,36 @@ extension DiscordRESTProvider {
         )
     }
 
+    public func updateGuildNotificationToggle(
+        guildID: GuildID,
+        toggle: GuildNotificationToggle,
+        isEnabled: Bool
+    ) async throws {
+        let setting: (key: String, value: JSONValue) = switch toggle {
+        case .suppressEveryone:
+            ("suppress_everyone", .bool(isEnabled))
+        case .suppressRoles:
+            ("suppress_roles", .bool(isEnabled))
+        case .suppressHighlights:
+            (
+                "notify_highlights",
+                .number(Double(
+                    isEnabled
+                        ? GuildHighlightNotificationLevel.disabled.rawValue
+                        : GuildHighlightNotificationLevel.inherit.rawValue
+                ))
+            )
+        case .muteScheduledEvents:
+            ("mute_scheduled_events", .bool(isEnabled))
+        case .mobilePush:
+            ("mobile_push", .bool(isEnabled))
+        }
+        try await updateGuildNotificationSettings(
+            guildID: guildID,
+            settings: [setting.key: setting.value]
+        )
+    }
+
     func updateGuildNotificationSettings(
         guildID: GuildID,
         settings: [String: JSONValue]

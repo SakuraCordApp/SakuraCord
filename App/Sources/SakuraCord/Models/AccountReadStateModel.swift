@@ -1335,12 +1335,12 @@ private extension AccountReadStateModel {
         for mentionKind: MentionKind,
         policy: EffectivePolicy
     ) -> Bool {
-        guard !policy.channelMuted else { return false }
+        guard !policy.channelMuted, policy.level != .nothing else { return false }
         switch mentionKind {
         case .none:
             return false
         case .directMessage:
-            return !policy.guildMuted && policy.level != .nothing
+            return !policy.guildMuted
         case .direct, .role:
             return !policy.guildMuted
         case .everyone:

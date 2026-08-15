@@ -1123,7 +1123,13 @@ capture was used for this recheck.
 - A user-selected server notification or mute change sends one immediate
   `PATCH /users/@me/guilds/settings` through the same central transport. Its
   body contains one guild ID under `guilds` and only the selected
-  `message_notifications`, or `muted` plus `mute_config`, fields. A server
+  setting. In addition to `message_notifications`, or `muted` plus
+  `mute_config`, the server-only menu supports `suppress_everyone`,
+  `suppress_roles`, `notify_highlights`, `mute_scheduled_events`, and
+  `mobile_push`. The four Boolean settings are sent directly. Suppress
+  Highlights maps to Discord's highlight enum `DISABLED` (`1`) when selected
+  and `NULL` (`0`) when cleared; `ENABLED` is `2`. Ready and
+  `USER_GUILD_SETTINGS_UPDATE` decode and retain all five fields. A server
   “Mark as Read” action sends only SakuraCord's currently unread, accessible
   channel and joined-thread states to `POST /read-states/ack-bulk`, with at
   most 100 entries in each sequential request. The UI applies those read
@@ -1138,6 +1144,15 @@ capture was used for this recheck.
   not describe either user-client route. Paicord's server-icon menu only
   copies the guild ID and neither pinned reference implements these server
   mutations. No authenticated request or traffic capture was used.
+  The expanded server settings contract was statically rechecked on
+  2026-08-15 against Discord's clean public asset
+  `web.4e1d701f13b1b022.js` (SHA-256
+  `593cfe3632fae5d3dd86ee87d4e92c2699e8ddd43271f87b617e655ff734ec28`),
+  which exposes the bulk route, partial-body action, exact field names,
+  defaults, store accessors, and highlight enum, plus Discord's current public
+  Notifications Settings help article. The same pinned Paicord and Swiftcord
+  revisions still have no comparable server settings mutations. No
+  authenticated account action or traffic capture was used for this recheck.
 - A category is a first-class user-guild-settings override keyed by its
   category channel ID; changing it does not rewrite or mute any child channel's
   server-side override. A category notification selection sends one immediate,
@@ -1277,7 +1292,10 @@ capture was used for this recheck.
   channel or thread unless that conversation or its parent carries opt-in bit
   12. Forum creation notifications additionally honor the parent forum's
   `NEW_FORUM_THREADS_ON` bit 14 and `NEW_FORUM_THREADS_OFF` bit 13. Native
-  notifications use the same decision, support foreground presentation and
+  notifications use the same decision. An effective `message_notifications`
+  value of `2` (Nothing) suppresses every native alert and sound, including
+  direct-user, role, and `@everyone`/`@here` mentions, without erasing unread
+  or mention badges. Native notifications support foreground presentation and
   exact account/channel/message navigation, and do not add authenticated
   requests.
 

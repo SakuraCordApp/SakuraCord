@@ -260,37 +260,6 @@ public struct ChannelNotificationOverride: Codable, Hashable, Sendable {
     }
 }
 
-public struct GuildNotificationSettings: Codable, Hashable, Sendable {
-    public var guildID: GuildID?
-    public var messageNotifications: MessageNotificationLevel
-    public var isMuted: Bool
-    public var muteConfiguration: DiscordMuteConfiguration?
-    public var suppressEveryone: Bool
-    public var suppressRoles: Bool
-    public var flags: UInt64
-    public var channelOverrides: [ChannelNotificationOverride]
-
-    public init(
-        guildID: GuildID?,
-        messageNotifications: MessageNotificationLevel = .onlyMentions,
-        isMuted: Bool = false,
-        muteConfiguration: DiscordMuteConfiguration? = nil,
-        suppressEveryone: Bool = false,
-        suppressRoles: Bool = false,
-        flags: UInt64 = 0,
-        channelOverrides: [ChannelNotificationOverride] = []
-    ) {
-        self.guildID = guildID
-        self.messageNotifications = messageNotifications
-        self.isMuted = isMuted
-        self.muteConfiguration = muteConfiguration
-        self.suppressEveryone = suppressEveryone
-        self.suppressRoles = suppressRoles
-        self.flags = flags
-        self.channelOverrides = channelOverrides
-    }
-}
-
 public struct ChannelReadState: Codable, Hashable, Sendable {
     public var channelID: ChannelID
     public var lastAcknowledgedMessageID: MessageID?

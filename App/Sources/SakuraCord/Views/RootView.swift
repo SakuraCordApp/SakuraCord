@@ -86,6 +86,13 @@ private struct ChatRootView: View {
                         },
                         setNotificationLevel: { guild, level in
                             model.setGuildNotificationLevel(level, for: guild)
+                        },
+                        setNotificationToggle: { guild, toggle, isEnabled in
+                            model.setGuildNotificationToggle(
+                                toggle,
+                                isEnabled: isEnabled,
+                                for: guild
+                            )
                         }
                     )
                 )

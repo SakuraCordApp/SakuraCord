@@ -108,6 +108,11 @@ public protocol ChatProvider: Sendable {
         isMuted: Bool,
         until: Date?
     ) async throws
+    func updateGuildNotificationToggle(
+        guildID: GuildID,
+        toggle: GuildNotificationToggle,
+        isEnabled: Bool
+    ) async throws
     func updateChannelNotificationLevel(
         guildID: GuildID?,
         channelID: ChannelID,
@@ -436,6 +441,12 @@ public extension ChatProvider {
         guildID: GuildID,
         isMuted: Bool,
         until: Date?
+    ) async throws {}
+
+    func updateGuildNotificationToggle(
+        guildID: GuildID,
+        toggle: GuildNotificationToggle,
+        isEnabled: Bool
     ) async throws {}
 
     func updateChannelMute(

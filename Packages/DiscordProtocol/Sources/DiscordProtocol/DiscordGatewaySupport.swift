@@ -844,6 +844,7 @@ struct GatewayUserGuildSettingsDTO: Decodable {
         var muteConfig: MuteConfigDTO?
         var flags: UInt64?
         var collapsed: Bool?
+        var hasMuteConfig: Bool
 
         enum CodingKeys: String, CodingKey {
             case channelID = "channel_id"
@@ -854,18 +855,48 @@ struct GatewayUserGuildSettingsDTO: Decodable {
             case collapsed
         }
 
-        var domain: ChannelNotificationOverride? {
-            guard let channelID = ChannelID(channelID) else { return nil }
-            return ChannelNotificationOverride(
-                channelID: channelID,
-                messageNotifications:
-                    messageNotifications.flatMap(MessageNotificationLevel.init(rawValue:))
-                    ?? .inherit,
-                isMuted: muted ?? false,
-                muteConfiguration: muteConfig?.domain,
-                flags: flags ?? 0,
-                isCollapsed: collapsed
+        init(from decoder: any Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            channelID = try values.decode(String.self, forKey: .channelID)
+            messageNotifications = try? values.decode(
+                Int.self,
+                forKey: .messageNotifications
             )
+            muted = try? values.decode(Bool.self, forKey: .muted)
+            hasMuteConfig = values.contains(.muteConfig)
+            muteConfig = try? values.decode(MuteConfigDTO.self, forKey: .muteConfig)
+            flags = try? values.decode(UInt64.self, forKey: .flags)
+            collapsed = try? values.decode(Bool.self, forKey: .collapsed)
+        }
+
+        func domain(
+            merging existing: ChannelNotificationOverride? = nil
+        ) -> ChannelNotificationOverride? {
+            guard let channelID = ChannelID(channelID) else { return nil }
+            var value = existing ?? ChannelNotificationOverride(channelID: channelID)
+            value.channelID = channelID
+            if let messageNotifications = messageNotifications.flatMap(
+                MessageNotificationLevel.init(rawValue:)
+            ) {
+                value.messageNotifications = messageNotifications
+            }
+            if let muted {
+                value.isMuted = muted
+            }
+            if hasMuteConfig || muted == false {
+                value.muteConfiguration = muteConfig?.domain
+            }
+            if let flags {
+                value.flags = flags
+            }
+            if let collapsed {
+                value.isCollapsed = collapsed
+            }
+            return value
+        }
+
+        var domain: ChannelNotificationOverride? {
+            domain(merging: nil)
         }
     }
 
@@ -873,10 +904,15 @@ struct GatewayUserGuildSettingsDTO: Decodable {
     var messageNotifications: Int?
     var muted: Bool?
     var muteConfig: MuteConfigDTO?
+    var hasMuteConfig: Bool
     var suppressEveryone: Bool?
     var suppressRoles: Bool?
+    var notifyHighlights: Int?
+    var muteScheduledEvents: Bool?
+    var mobilePush: Bool?
     var flags: UInt64?
     var channelOverrides: [OverrideDTO]
+    var hasChannelOverrides: Bool
 
     enum CodingKeys: String, CodingKey {
         case guildID = "guild_id"
@@ -885,6 +921,9 @@ struct GatewayUserGuildSettingsDTO: Decodable {
         case muteConfig = "mute_config"
         case suppressEveryone = "suppress_everyone"
         case suppressRoles = "suppress_roles"
+        case notifyHighlights = "notify_highlights"
+        case muteScheduledEvents = "mute_scheduled_events"
+        case mobilePush = "mobile_push"
         case flags
         case channelOverrides = "channel_overrides"
     }
@@ -894,29 +933,72 @@ struct GatewayUserGuildSettingsDTO: Decodable {
         guildID = try? values.decode(String.self, forKey: .guildID)
         messageNotifications = try? values.decode(Int.self, forKey: .messageNotifications)
         muted = try? values.decode(Bool.self, forKey: .muted)
+        hasMuteConfig = values.contains(.muteConfig)
         muteConfig = try? values.decode(MuteConfigDTO.self, forKey: .muteConfig)
         suppressEveryone = try? values.decode(Bool.self, forKey: .suppressEveryone)
         suppressRoles = try? values.decode(Bool.self, forKey: .suppressRoles)
+        notifyHighlights = try? values.decode(Int.self, forKey: .notifyHighlights)
+        muteScheduledEvents = try? values.decode(Bool.self, forKey: .muteScheduledEvents)
+        mobilePush = try? values.decode(Bool.self, forKey: .mobilePush)
         flags = try? values.decode(UInt64.self, forKey: .flags)
-        channelOverrides =
-            (try? values.decode(
+        hasChannelOverrides = values.contains(.channelOverrides)
+        channelOverrides = (try? values.decode(
                 LossyList<OverrideDTO>.self, forKey: .channelOverrides
-            ))?.elements ?? []
+            ).elements) ?? []
     }
 
     var domain: GuildNotificationSettings {
-        GuildNotificationSettings(
-            guildID: guildID.flatMap(GuildID.init),
-            messageNotifications:
-                messageNotifications.flatMap(MessageNotificationLevel.init(rawValue:))
-                ?? .inherit,
-            isMuted: muted ?? false,
-            muteConfiguration: muteConfig?.domain,
-            suppressEveryone: suppressEveryone ?? false,
-            suppressRoles: suppressRoles ?? false,
-            flags: flags ?? 0,
-            channelOverrides: channelOverrides.compactMap(\.domain)
+        domain(merging: nil)
+    }
+
+    func domain(merging existing: GuildNotificationSettings?) -> GuildNotificationSettings {
+        let parsedGuildID = guildID.flatMap(GuildID.init)
+        var value = existing ?? GuildNotificationSettings(
+            guildID: parsedGuildID,
+            messageNotifications: .inherit
         )
+        value.guildID = parsedGuildID
+        if let messageNotifications = messageNotifications.flatMap(
+            MessageNotificationLevel.init(rawValue:)
+        ) {
+            value.messageNotifications = messageNotifications
+        }
+        if let muted {
+            value.isMuted = muted
+        }
+        if hasMuteConfig || muted == false {
+            value.muteConfiguration = muteConfig?.domain
+        }
+        if let suppressEveryone {
+            value.suppressEveryone = suppressEveryone
+        }
+        if let suppressRoles {
+            value.suppressRoles = suppressRoles
+        }
+        if let notifyHighlights = notifyHighlights.flatMap(
+            GuildHighlightNotificationLevel.init(rawValue:)
+        ) {
+            value.notifyHighlights = notifyHighlights
+        }
+        if let muteScheduledEvents {
+            value.muteScheduledEvents = muteScheduledEvents
+        }
+        if let mobilePush {
+            value.mobilePush = mobilePush
+        }
+        if let flags {
+            value.flags = flags
+        }
+        if hasChannelOverrides {
+            let existingByID = Dictionary(
+                uniqueKeysWithValues: value.channelOverrides.map { ($0.channelID, $0) }
+            )
+            value.channelOverrides = channelOverrides.compactMap { override in
+                let channelID = ChannelID(override.channelID)
+                return override.domain(merging: channelID.flatMap { existingByID[$0] })
+            }
+        }
+        return value
     }
 }
 

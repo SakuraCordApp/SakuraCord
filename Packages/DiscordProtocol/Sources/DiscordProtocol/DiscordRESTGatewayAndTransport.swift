@@ -660,7 +660,17 @@ extension DiscordRESTProvider {
                             version: ready.readState.version
                         )
                     }
-                let readyNotificationSettings = ready.userGuildSettings.map(\.domain)
+                if !ready.userGuildSettingsPartial {
+                    cachedGuildNotificationSettings.removeAll(keepingCapacity: true)
+                }
+                let readyNotificationSettings = ready.userGuildSettings.map { update in
+                    let guildID = update.guildID.flatMap(GuildID.init)
+                    let settings = update.domain(
+                        merging: cachedGuildNotificationSettings[guildID]
+                    )
+                    cachedGuildNotificationSettings[guildID] = settings
+                    return settings
+                }
                 let guildAllUnreadSettingCount = readyNotificationSettings.count {
                     $0.flags & (1 << 11) != 0
                 }
@@ -847,7 +857,12 @@ extension DiscordRESTProvider {
             guard let update = try? JSONDecoder().decode(
                 GatewayUserGuildSettingsDTO.self, from: data
             ) else { return }
-            continuation?.yield(.notificationSettingsChanged(update.domain))
+            let guildID = update.guildID.flatMap(GuildID.init)
+            let settings = update.domain(
+                merging: cachedGuildNotificationSettings[guildID]
+            )
+            cachedGuildNotificationSettings[guildID] = settings
+            continuation?.yield(.notificationSettingsChanged(settings))
         case "READY_SUPPLEMENTAL":
             if let supplemental = try? JSONDecoder().decode(
                 GatewayReadyGuildsDTO.self, from: data

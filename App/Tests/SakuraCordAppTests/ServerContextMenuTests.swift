@@ -9,6 +9,7 @@ import Testing
     var markedRead = false
     var mutedFor: ChannelMuteDuration?
     var selectedLevel: MessageNotificationLevel?
+    var selectedToggle: (GuildNotificationToggle, Bool)?
     var copiedID = false
     let bridge = ServerContextMenuBridge(
         isUnread: true,
@@ -21,6 +22,7 @@ import Testing
         mute: { mutedFor = $0 },
         unmute: {},
         setNotificationLevel: { selectedLevel = $0 },
+        setNotificationToggle: { selectedToggle = ($0, $1) },
         copyServerID: { copiedID = true }
     )
 
@@ -48,8 +50,19 @@ import Testing
         menu.item(withTitle: "Notification Settings")?.submenu
     )
     #expect(
-        notifications.items.map(\.title)
-            == ["All Messages", "Only @mentions", "Nothing"]
+        notifications.items.map { $0.isSeparatorItem ? nil : $0.title }
+            == [
+                "All Messages",
+                "Only @mentions",
+                "Nothing",
+                nil,
+                "Suppress @everyone and @here",
+                "Suppress All Role @mentions",
+                "Suppress Highlights",
+                "Mute New Events",
+                nil,
+                "Mobile Push Notifications",
+            ]
     )
     #expect(notifications.item(withTitle: "Only @mentions")?.state == .on)
     #expect(menu.item(withTitle: "Notification Settings")?.subtitle == "Only @mentions")
@@ -61,6 +74,13 @@ import Testing
     _ = oneHour.target?.perform(oneHour.action, with: oneHour)
     let nothing = try #require(notifications.item(withTitle: "Nothing"))
     _ = nothing.target?.perform(nothing.action, with: nothing)
+    let suppressEveryone = try #require(
+        notifications.item(withTitle: "Suppress @everyone and @here")
+    )
+    _ = suppressEveryone.target?.perform(
+        suppressEveryone.action,
+        with: suppressEveryone
+    )
     _ = menu.item(withTitle: "Copy Server ID")?.target?.perform(
         menu.item(withTitle: "Copy Server ID")?.action
     )
@@ -68,6 +88,8 @@ import Testing
     #expect(markedRead)
     #expect(mutedFor == .oneHour)
     #expect(selectedLevel == .nothing)
+    #expect(selectedToggle?.0 == .suppressEveryone)
+    #expect(selectedToggle?.1 == true)
     #expect(copiedID)
 }
 
@@ -88,6 +110,7 @@ import Testing
         mute: { _ in },
         unmute: { unmuted = true },
         setNotificationLevel: { _ in },
+        setNotificationToggle: { _, _ in },
         copyServerID: {}
     )
 
@@ -137,11 +160,32 @@ import Testing
         await provider.guildNotificationRequests.count == 2
             && model.guildNotificationSettings(for: guild).isMuted
     })
+    let toggles: [(GuildNotificationToggle, Bool)] = [
+        (.suppressEveryone, true),
+        (.suppressRoles, true),
+        (.suppressHighlights, true),
+        (.muteScheduledEvents, true),
+        (.mobilePush, false),
+    ]
+    for (index, value) in toggles.enumerated() {
+        model.setGuildNotificationToggle(
+            value.0,
+            isEnabled: value.1,
+            for: guild
+        )
+        #expect(await eventuallyServerMenu {
+            await provider.guildNotificationRequests.count == index + 3
+                && model.guildNotificationSettings(for: guild)
+                    .isEnabled(value.0) == value.1
+        })
+    }
     let requests = await provider.guildNotificationRequests
-    #expect(requests.map(\.guildID) == [guild.id, guild.id])
+    #expect(requests.map(\.guildID) == Array(repeating: guild.id, count: 7))
     #expect(requests[0].level == .allMessages)
     #expect(requests[1].isMuted == true)
     #expect(requests[1].muteEndTime == endTime)
+    #expect(Array(requests.dropFirst(2)).compactMap(\.toggle) == toggles.map(\.0))
+    #expect(Array(requests.dropFirst(2)).compactMap(\.isEnabled) == toggles.map(\.1))
 }
 
 @MainActor

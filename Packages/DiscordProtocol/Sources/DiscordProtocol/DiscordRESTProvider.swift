@@ -69,6 +69,7 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var cachedForumPosts: [ChannelID: [ChannelID: ForumPost]] = [:]
     var cachedJoinedThreads: [ChannelID: MessageThreadSummary] = [:]
     var cachedJoinedThreadOrder: [ChannelID] = []
+    var cachedGuildNotificationSettings: [GuildID?: GuildNotificationSettings] = [:]
     var forumCatalogueTasks: [ForumCatalogueLoadKey: Task<Void, Never>] = [:]
     var forumCatalogueTaskIDs: [ForumCatalogueLoadKey: UUID] = [:]
     var forumPreviewHydrationTasks: [ChannelID: Task<Void, Never>] = [:]

@@ -65,6 +65,7 @@ struct ServerRailContextMenuActions {
     let mute: (Guild, ChannelMuteDuration) -> Void
     let unmute: (Guild) -> Void
     let setNotificationLevel: (Guild, MessageNotificationLevel) -> Void
+    let setNotificationToggle: (Guild, GuildNotificationToggle, Bool) -> Void
 }
 
 private struct ServerRailItemView: View {
@@ -153,6 +154,13 @@ struct GuildRailButton: View {
                     unmute: { contextMenuActions.unmute(guild) },
                     setNotificationLevel: {
                         contextMenuActions.setNotificationLevel(guild, $0)
+                    },
+                    setNotificationToggle: { toggle, isEnabled in
+                        contextMenuActions.setNotificationToggle(
+                            guild,
+                            toggle,
+                            isEnabled
+                        )
                     },
                     copyServerID: {
                         ChannelContextMenuValue.copy(guild.id.description)

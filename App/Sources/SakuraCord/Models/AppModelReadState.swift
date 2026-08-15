@@ -558,6 +558,47 @@ extension AppModel {
         }
     }
 
+    func setGuildNotificationToggle(
+        _ toggle: GuildNotificationToggle,
+        isEnabled: Bool,
+        for guild: Guild
+    ) {
+        guard guildNotificationMutationTasks[guild.id] == nil else { return }
+        let guildID = guild.id
+        let generation = channelNotificationMutationGeneration
+        let session = accountSession()
+        let activeProvider = session.provider
+        guildNotificationMutationTasks[guildID] = Task { [weak self] in
+            do {
+                try await activeProvider.updateGuildNotificationToggle(
+                    guildID: guildID,
+                    toggle: toggle,
+                    isEnabled: isEnabled
+                )
+                guard let self,
+                      self.isCurrentAccountSession(session),
+                      generation == self.channelNotificationMutationGeneration
+                else { return }
+                self.updateLocalGuildNotificationSettings(guild: guild) {
+                    $0.set(toggle, isEnabled: isEnabled)
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                guard let self,
+                      self.isCurrentAccountSession(session),
+                      generation == self.channelNotificationMutationGeneration
+                else { return }
+                self.errorMessage = "Discord did not accept the server notification setting."
+            }
+            guard let self,
+                  self.isCurrentAccountSession(session),
+                  generation == self.channelNotificationMutationGeneration
+            else { return }
+            self.guildNotificationMutationTasks[guildID] = nil
+        }
+    }
+
     func setChannelNotificationLevel(
         _ level: MessageNotificationLevel,
         for channel: Channel
