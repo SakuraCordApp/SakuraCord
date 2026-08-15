@@ -642,7 +642,7 @@ struct NativeTimelineRowLayout {
         }
 
         let highlightInsets = MessageRowLayoutMetrics.highlightInsets(
-            hasReplyPreview: row.replyPreview != nil,
+            hasReplyPreview: row.replyMessageID != nil,
             isEditing: false
         )
         let externalTopSeparation = MessageRowLayoutMetrics.separation(
@@ -655,7 +655,7 @@ struct NativeTimelineRowLayout {
         var verticalOffset = highlightMinY + highlightInsets.top
 
         var replyFrame: CGRect?
-        if row.replyPreview != nil {
+        if row.replyMessageID != nil {
             replyFrame = CGRect(
                 x: horizontalInset,
                 y: verticalOffset,

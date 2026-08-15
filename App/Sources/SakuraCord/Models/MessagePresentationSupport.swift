@@ -144,6 +144,10 @@ final class MessageRowPresentation: Identifiable, Equatable, Sendable {
     let textPlan: NativeTimelineTextPlan
     let searchContext: MessageSearchRowContext?
 
+    var replyMessageID: MessageID? {
+        message.replyTo ?? replyPreview?.messageID
+    }
+
     nonisolated init(
         message: Message,
         startsGroup: Bool,
@@ -584,6 +588,50 @@ nonisolated enum MessageGrouping {
             existingRows[insertedMessages.count + replacement.index] =
                 replacement.row
         }
+    }
+
+    static func appendRows(
+        for insertedMessages: [Message],
+        into existingRows: inout [MessageRowPresentation],
+        after previousMessage: Message?,
+        preparedInsertedRows: [MessageRowPresentation]? = nil,
+        existingMessage: ((MessageID) -> Message?)? = nil,
+        calendar: Calendar = .autoupdatingCurrent
+    ) {
+        guard !insertedMessages.isEmpty else { return }
+        var insertedRows =
+            if let preparedInsertedRows,
+               preparedInsertedRows.count == insertedMessages.count,
+               zip(preparedInsertedRows, insertedMessages).allSatisfy({ pair in
+                   pair.0.message.id == pair.1.id
+               })
+            {
+                preparedInsertedRows
+            } else {
+                rows(for: insertedMessages, calendar: calendar)
+            }
+
+        for index in insertedMessages.indices {
+            let message = insertedMessages[index]
+            let prepared = insertedRows[index]
+            let predecessor =
+                index == insertedMessages.startIndex
+                    ? previousMessage
+                    : insertedMessages[index - 1]
+            let referenced = message.replyTo.flatMap { existingMessage?($0) }
+            insertedRows[index] = appendingRow(
+                for: message,
+                after: predecessor,
+                replyPreview:
+                    referenced.map(MessageReplyPreview.init(message:))
+                        ?? prepared.replyPreview,
+                isReplyAvailable:
+                    referenced != nil || prepared.isReplyAvailable,
+                textPlan: prepared.textPlan,
+                calendar: calendar
+            )
+        }
+        existingRows.append(contentsOf: insertedRows)
     }
 
     private static func continuesGroup(

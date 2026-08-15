@@ -349,27 +349,26 @@ extension NativeTimelineCanvasView {
                 parent: element
             ))
         }
-        if let preview = row.replyPreview,
+        if let replyMessageID = row.replyMessageID,
            let frame = layout.replyFrame
         {
-            let summary = accessibilityResolvedText(
-                preview.content,
-                message: message
-            )
+            let label = if let preview = row.replyPreview {
+                "Replying to \(preview.author.displayName): \(accessibilityResolvedText(preview.content, message: message))"
+            } else {
+                "Message could not be loaded"
+            }
             children.append(accessibilityElement(
                 role: .button,
-                label: row.isReplyAvailable
-                    ? "Replying to \(preview.author.displayName): \(summary)"
-                    : "Original reply unavailable",
+                label: label,
                 help: row.isReplyAvailable
                     ? "Jump to original message"
-                    : "Original message unavailable",
+                    : "Load and jump to original message",
                 frame: accessibilityChildFrame(frame, rowIndex: rowIndex),
                 parent: element,
-                isEnabled: row.isReplyAvailable
+                isEnabled: true
             ) { [weak self] in
-                guard row.isReplyAvailable, let self else { return false }
-                self.actions?.openReply(preview.messageID)
+                guard let self else { return false }
+                self.actions?.openReply(replyMessageID)
                 return true
             })
         }

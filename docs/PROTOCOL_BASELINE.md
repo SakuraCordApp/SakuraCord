@@ -434,7 +434,7 @@ and retained as evidence.
 | `GET /gifs/trending?locale={locale}&media_format=webm` | Opening the GIF picker; one cacheable landing read returning the current base categories in server order and their preview media. | Current first-party route and clean-client request; P−, S−. |
 | `GET /gifs/trending-gifs?media_format=webm&locale={locale}` | Explicit Trending GIFs selection; no body. The returned order is preserved. | Current first-party route and clean-client request; P−, S−. |
 | `GET /gifs/search?q={query}&media_format=webm&locale={locale}` | Nonempty picker search after the current 250 ms debounce; no speculative or paginated follow-up. The live default response is 50 results and its order is preserved. | Current first-party route/action and clean-client `hello` request; P−, S−. |
-| `GET /channels/{channel}/messages` | Visible history only; guild history requires effective `VIEW_CHANNEL` and `READ_MESSAGE_HISTORY`, and voice-channel history additionally requires `CONNECT`. The current clean client uses `limit=10` for a newly selected uncached channel, which SakuraCord matches once per channel per uninterrupted Gateway connection. A dispatched newest-page read is allowed to finish and populate the session stores after a later selection supersedes its presentation; rapid navigation does not abort those reads. Reopening a loaded channel restores its bounded session-memory page and sends no history request. After a Gateway gap, the retained page is presented immediately but its completeness marker is invalidated; returning to Ready refreshes the selected page once and later reopened pages refresh once on selection. Older-page pagination uses ordered `before` then `limit=50`; no body. | Public message semantics, current first-party permission/message paths and stale-connection refresh, and Paicord's permission-checked channel store. Swiftcord v1 checks `VIEW_CHANNEL` before presentation but otherwise supplies only a historical unguarded/refetching history path. Paicord retains a per-channel in-memory store and uses a historical 50-message initial page. The current first-party cache behavior and connection-generation invalidation take precedence. |
+| `GET /channels/{channel}/messages` | Visible history only; guild history requires effective `VIEW_CHANNEL` and `READ_MESSAGE_HISTORY`, and voice-channel history additionally requires `CONNECT`. The current clean client uses `limit=10` for a newly selected uncached channel, which SakuraCord matches once per channel per uninterrupted Gateway connection. A dispatched newest-page read is allowed to finish and populate the session stores after a later selection supersedes its presentation; rapid navigation does not abort those reads. Reopening a loaded newest-backed channel restores its bounded session-memory page and sends no history request. After a Gateway gap, the retained page is presented immediately but its completeness marker is invalidated; returning to Ready refreshes the selected page once and later reopened pages refresh once on selection. Distant navigation uses `around={message}&limit=50` as a replacement window; its older and newer edges paginate independently with `before={oldest}&limit=20` and `after={newest}&limit=20`. A historical window is not cached as though it were newest-backed. No body. | Public message semantics and `before`/`after`/`around` pagination, current first-party permission/message paths and stale-connection refresh, and Paicord's permission-checked channel store. Swiftcord v1 checks `VIEW_CHANNEL` before presentation but otherwise supplies only a historical unguarded/refetching history path. Paicord retains a per-channel in-memory store and uses a historical 50-message initial page. The current first-party cache behavior and connection-generation invalidation take precedence. |
 | `GET /guilds/{guild}/messages/search` | One explicit server search on Return, filter/sort application, or page selection. Optional repeated `author_id`, `channel_id`, `mentions`, `has`, and `author_type`; optional `pinned`, date snowflakes, and trimmed `content`; then exact sort and 25-step offset fields. No `limit` query item. Nested groups select their `hit` message and retain context for shared timeline rendering and exact-result navigation. | Sanitized authenticated clean-client CDP matrix on 14 August 2026; P−, S−. |
 | `POST /users/@me/messages/search/tabs` | One explicit DM search with `tabs.messages`, `limit:25`, 25-step `offset`, exact sort/filter fields, and `track_exact_total_hits:true`. Optional top-level `channel_ids` scopes the same endpoint to one or more DMs; omitting it searches all DMs. Returned channel metadata is merged before exact-result navigation. | Sanitized authenticated clean-client CDP matrix on 14 August 2026; P−, S−. |
 | `GET /channels/{thread}` | One unknown-thread deep-link resolution; no body. | Public channel semantics and all three references. |
@@ -841,8 +841,15 @@ implementation records.
 - Nonempty member autocomplete uses Gateway opcode 8 after a 200 ms debounce,
   with a ten-result limit and one-minute equivalent-query cache. Channel
   autocomplete is local.
-- A loaded message link navigates locally. An absent target uses one existing
-  bounded channel-history GET; it does not probe multiple pages or routes.
+- A loaded message link navigates locally. An absent target uses one bounded
+  channel-history GET with `around={message_id}&limit=50`. That response
+  replaces the presented window instead of merging with a potentially distant
+  newest page. Scrolling beyond either loaded edge extends only that contiguous
+  window with `before={oldest_loaded_message_id}&limit=20` or
+  `after={newest_loaded_message_id}&limit=20`; it never fabricates adjacency
+  across an unloaded range. Gateway arrivals remain outside a historical
+  window until forward pagination reaches them or the user returns to the
+  newest window.
 
 ### Rich messages, reactions, and emoji
 
@@ -1247,9 +1254,9 @@ capture was used for this recheck.
   row in that page and the banner reports the loaded lower bound (`100+`).
   SakuraCord does not automatically walk backward to find an arbitrarily old
   acknowledgement boundary. An upward user scroll may request one older
-  50-message page with `before={oldest_loaded_message_id}&limit=50`; after that
+  20-message page with `before={oldest_loaded_message_id}&limit=20`; after that
   page is incorporated, the banner grows with the discovered unread rows
-  (`150+`, `200+`, and so on). Each additional page requires further user
+  (`120+`, `140+`, and so on). Each additional page requires further user
   scrolling. The conversation cannot acknowledge while the unread boundary is
   unresolved. Once the page containing the acknowledged boundary is loaded,
   the count becomes exact, the true unread divider is shown, and ordinary

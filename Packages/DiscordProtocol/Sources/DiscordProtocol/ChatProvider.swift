@@ -1,6 +1,13 @@
 import Foundation
 import SakuraCordModels
 
+public enum MessageHistoryAnchor: Equatable, Sendable {
+    case newest
+    case before(MessageID)
+    case after(MessageID)
+    case around(MessageID)
+}
+
 public struct PartialBulkReadAcknowledgementError: Error, Sendable {
     public let acceptedReadStates: [BulkReadStateAcknowledgement]
     public let failureDescription: String
@@ -37,6 +44,11 @@ public protocol ChatProvider: Sendable {
     func currentStatus() async -> PresenceStatus
     func updateStatus(_ status: PresenceStatus) async throws
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws -> MessagePage
+    func messages(
+        in channelID: ChannelID,
+        anchoredAt anchor: MessageHistoryAnchor,
+        limit: Int
+    ) async throws -> MessagePage
     func searchMessages(_ query: MessageSearchQuery) async throws -> MessageSearchPage
     func forumPosts(in channelID: ChannelID, query: ForumPostQuery) async throws -> ForumPostPage
     func forumPost(threadID: ChannelID) async throws -> ForumPost
@@ -187,6 +199,23 @@ public extension ChatProvider {
     func prepareAuthentication() async throws {}
 
     func updateClientAppState(isFocused: Bool) async {}
+
+    func messages(
+        in channelID: ChannelID,
+        anchoredAt anchor: MessageHistoryAnchor,
+        limit: Int
+    ) async throws -> MessagePage {
+        switch anchor {
+        case .newest:
+            return try await messages(in: channelID, before: nil, limit: limit)
+        case .before(let messageID):
+            return try await messages(in: channelID, before: messageID, limit: limit)
+        case .after, .around:
+            throw ChatProviderError.invalidRequest(
+                "This provider does not support bidirectional message history."
+            )
+        }
+    }
 
     func searchMessages(_ query: MessageSearchQuery) async throws -> MessageSearchPage {
         guard !query.isEmpty else {

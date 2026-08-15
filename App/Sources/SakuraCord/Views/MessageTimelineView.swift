@@ -12,6 +12,8 @@ struct MessageTimelineView: View {
     @State private var allowsAutomaticHistoryLoading = false
     @State private var hasEarlierHistoryScrollIntent = false
     @State private var isEarlierHistoryScrollGestureActive = false
+    @State private var hasLaterHistoryScrollIntent = false
+    @State private var isLaterHistoryScrollGestureActive = false
     @State private var highlightedMessageID: MessageID?
     @State private var hasEstablishedInitialPosition = false
     @State private var scrollRequest: MessageTimelineScrollRequest?
@@ -34,14 +36,19 @@ struct MessageTimelineView: View {
             },
             firstMessageStartsDayOverride: nil,
             hasMoreMessages: model.hasMoreMessages,
+            hasMoreLaterMessages: model.hasMoreLaterMessages,
             isLoadingEarlier:
                 MessageTimelineLoadingPolicy.showsEarlierIndicator(
                     isLoadingInitialPage: model.isLoadingMessages,
                     messageCount: model.messages.count,
                     isLoadingEarlierPage: model.isLoadingEarlier
                 ),
+            isLoadingLater: model.isLoadingLater,
             earlierHistoryLoadFailed:
                 model.messageLoadErrorIsEarlierPage
+                    && model.messageLoadError != nil,
+            laterHistoryLoadFailed:
+                model.messageLoadErrorIsLaterPage
                     && model.messageLoadError != nil,
             bottomContentInset: bottomContentInset,
             unreadMessageID: exactUnreadBoundaryMessageID,
@@ -51,6 +58,7 @@ struct MessageTimelineView: View {
             editRequest: editRequest,
             runsPerformanceAutoScroll: runsPerformanceAutoScroll,
             loadEarlier: loadEarlier,
+            loadLater: loadLater,
             openReply: openReply,
             onScrollActivityChange: { isScrolling in
                 if let conversationID {
@@ -101,8 +109,14 @@ struct MessageTimelineView: View {
                     if let channelID = model.selectedChannelID {
                         model.reportTimelineUserInteraction(channelID: channelID)
                     }
-                    scrollPolicy.didRequestBottom()
-                    requestScroll(.bottom)
+                    if model.hasMoreLaterMessages {
+                        Task {
+                            await model.loadNewestMessageWindow()
+                        }
+                    } else {
+                        scrollPolicy.didRequestBottom()
+                        requestScroll(.bottom)
+                    }
                 } label: {
                     Label("New messages", systemImage: "arrow.down")
                         .font(.callout.weight(.semibold))
@@ -134,6 +148,8 @@ struct MessageTimelineView: View {
             hasEstablishedInitialPosition = false
             hasEarlierHistoryScrollIntent = false
             isEarlierHistoryScrollGestureActive = false
+            hasLaterHistoryScrollIntent = false
+            isLaterHistoryScrollGestureActive = false
             scrollPolicy.didBeginChannel()
             latestScrollState = TimelineScrollState(
                 isNearTop: false,
@@ -163,10 +179,13 @@ struct MessageTimelineView: View {
             allowsAutomaticHistoryLoading = false
             hasEarlierHistoryScrollIntent = false
             isEarlierHistoryScrollGestureActive = false
+            hasLaterHistoryScrollIntent = false
+            isLaterHistoryScrollGestureActive = false
             try? await Task.sleep(for: .milliseconds(350))
             guard !Task.isCancelled else { return }
             allowsAutomaticHistoryLoading = true
-            loadEarlierIfNeeded(for: latestScrollState)
+            loadHistoryIfNeeded(.earlier, for: latestScrollState)
+            loadHistoryIfNeeded(.later, for: latestScrollState)
         }
         .onDisappear {
             if let conversationID {
@@ -208,14 +227,30 @@ struct MessageTimelineView: View {
         }
     }
 
+    private func loadLater() {
+        Task {
+            await model.loadLater()
+        }
+    }
+
     private func openReply(_ messageID: MessageID) {
-        scrollPolicy.didNavigateAwayFromBottom()
-        requestScroll(.message(messageID, anchor: .center))
-        highlight(messageID)
+        if model.messages.contains(where: { $0.id == messageID }) {
+            scrollPolicy.didNavigateAwayFromBottom()
+            requestScroll(.message(messageID, anchor: .center))
+            highlight(messageID)
+        } else if let channel = model.selectedChannel {
+            model.navigate(
+                to: channel.guildID,
+                channelID: channel.id,
+                messageID: messageID
+            )
+        }
     }
 
     private var unreadSummary: AccountReadStateModel.TimelineUnreadSummary? {
-        guard let channelID = model.selectedChannelID else { return nil }
+        guard !model.hasMoreLaterMessages,
+              let channelID = model.selectedChannelID
+        else { return nil }
         return model.timelineUnreadSummary(
             channelID: channelID,
             messages: model.messages,
@@ -287,7 +322,11 @@ struct MessageTimelineView: View {
     private func highlight(_ messageID: MessageID) {
         highlightedMessageID = messageID
         Task {
-            try? await Task.sleep(for: .seconds(1.5))
+            try? await Task.sleep(
+                for: .seconds(
+                    NativeTimelineMessageJumpHighlightPolicy.totalDuration
+                )
+            )
             if highlightedMessageID == messageID {
                 highlightedMessageID = nil
             }
@@ -297,7 +336,7 @@ struct MessageTimelineView: View {
     private func handleScrollState(_ value: TimelineScrollState) {
         latestScrollState = value
         let retainedHistoryIntent =
-            TimelineEarlierHistoryScrollIntentPolicy.shouldRetain(
+            TimelineHistoryScrollIntentPolicy.shouldRetain(
                 hasIntent: hasEarlierHistoryScrollIntent,
                 isGestureActive: isEarlierHistoryScrollGestureActive,
                 isInProvisionalHistory: value.isInProvisionalHistory
@@ -305,10 +344,21 @@ struct MessageTimelineView: View {
         if hasEarlierHistoryScrollIntent != retainedHistoryIntent {
             hasEarlierHistoryScrollIntent = retainedHistoryIntent
         }
+        let retainedLaterHistoryIntent =
+            TimelineHistoryScrollIntentPolicy.shouldRetain(
+                hasIntent: hasLaterHistoryScrollIntent,
+                isGestureActive: isLaterHistoryScrollGestureActive,
+                isInProvisionalHistory:
+                    value.isInProvisionalLaterHistory
+            )
+        if hasLaterHistoryScrollIntent != retainedLaterHistoryIntent {
+            hasLaterHistoryScrollIntent = retainedLaterHistoryIntent
+        }
         if scrollPolicy.isNearBottom != value.isNearBottom {
             scrollPolicy.updateGeometry(isNearBottom: value.isNearBottom)
         }
-        loadEarlierIfNeeded(for: value)
+        loadHistoryIfNeeded(.earlier, for: value)
+        loadHistoryIfNeeded(.later, for: value)
         guard value.hasEstablishedInitialPosition else { return }
         if !hasEstablishedInitialPosition {
             // Exact viewport state is repeatable, so it also recovers if a
@@ -327,25 +377,44 @@ struct MessageTimelineView: View {
         }
     }
 
-    private func loadEarlierIfNeeded(for state: TimelineScrollState) {
-        guard TimelineEarlierHistoryLoadingPolicy.shouldLoad(
-            isNearTop: state.isNearTop,
+    private func loadHistoryIfNeeded(
+        _ direction: TimelineHistoryDirection,
+        for state: TimelineScrollState
+    ) {
+        let isEarlier = direction == .earlier
+        guard TimelineHistoryLoadingPolicy.shouldLoad(
+            isNearBoundary:
+                isEarlier ? state.isNearTop : state.isNearLoadedBottom,
             contentFitsViewport: state.contentFitsViewport,
             allowsAutomaticLoading: allowsAutomaticHistoryLoading,
-            hasMoreMessages: model.hasMoreMessages,
-            isLoading: model.isLoadingEarlier,
-            hasUnresolvedUnreadBoundary:
-                hasUnresolvedInitialUnreadBoundary,
+            hasMoreMessages:
+                isEarlier
+                    ? model.hasMoreMessages
+                    : model.hasMoreLaterMessages,
+            isLoading:
+                isEarlier ? model.isLoadingEarlier : model.isLoadingLater,
+            requiresUserScrollIntent:
+                isEarlier && hasUnresolvedInitialUnreadBoundary,
             hasUserScrollIntent:
-                hasEarlierHistoryScrollIntent
+                isEarlier
+                    ? hasEarlierHistoryScrollIntent
+                    : hasLaterHistoryScrollIntent
         )
         else { return }
-        loadEarlier()
+        if isEarlier {
+            loadEarlier()
+        } else {
+            loadLater()
+        }
     }
 
     private func handleUserScrollBegan() {
         scrollPolicy.userScrollBegan()
         isEarlierHistoryScrollGestureActive = true
+        isLaterHistoryScrollGestureActive = true
+        if latestScrollState.isNearLoadedBottom {
+            hasLaterHistoryScrollIntent = true
+        }
         if hasUnresolvedInitialUnreadBoundary {
             // Keep the intent for the complete live gesture. A fast upward
             // scroll can consume more than one bounded history page before
@@ -360,14 +429,23 @@ struct MessageTimelineView: View {
 
     private func handleUserScrollEnded(_ value: TimelineScrollState) {
         isEarlierHistoryScrollGestureActive = false
+        isLaterHistoryScrollGestureActive = false
         hasEarlierHistoryScrollIntent =
-            TimelineEarlierHistoryScrollIntentPolicy.shouldRetain(
+            TimelineHistoryScrollIntentPolicy.shouldRetain(
                 hasIntent: hasEarlierHistoryScrollIntent,
                 isGestureActive: false,
                 isInProvisionalHistory: value.isInProvisionalHistory
             )
+        hasLaterHistoryScrollIntent =
+            TimelineHistoryScrollIntentPolicy.shouldRetain(
+                hasIntent: hasLaterHistoryScrollIntent,
+                isGestureActive: false,
+                isInProvisionalHistory:
+                    value.isInProvisionalLaterHistory
+            )
         scrollPolicy.userScrollEnded(isNearBottom: value.isNearBottom)
-        loadEarlierIfNeeded(for: value)
+        loadHistoryIfNeeded(.earlier, for: value)
+        loadHistoryIfNeeded(.later, for: value)
     }
 }
 
@@ -459,27 +537,34 @@ struct UnreadMessagesBanner: View {
 nonisolated struct TimelineScrollState: Equatable, Sendable {
     let isNearTop: Bool
     let isNearBottom: Bool
+    let isNearLoadedBottom: Bool
     let contentFitsViewport: Bool
     let hasEstablishedInitialPosition: Bool
     let hasReachedNewestMessageBoundary: Bool
     let isInProvisionalHistory: Bool
+    let isInProvisionalLaterHistory: Bool
 
     init(
         isNearTop: Bool,
         isNearBottom: Bool,
+        isNearLoadedBottom: Bool? = nil,
         contentFitsViewport: Bool = false,
         hasEstablishedInitialPosition: Bool = false,
         hasReachedNewestMessageBoundary: Bool = false,
-        isInProvisionalHistory: Bool = false
+        isInProvisionalHistory: Bool = false,
+        isInProvisionalLaterHistory: Bool = false
     ) {
         self.isNearTop = isNearTop
         self.isNearBottom = isNearBottom
+        self.isNearLoadedBottom = isNearLoadedBottom ?? isNearBottom
         self.contentFitsViewport = contentFitsViewport
         self.hasEstablishedInitialPosition =
             hasEstablishedInitialPosition
         self.hasReachedNewestMessageBoundary =
             hasReachedNewestMessageBoundary
         self.isInProvisionalHistory = isInProvisionalHistory
+        self.isInProvisionalLaterHistory =
+            isInProvisionalLaterHistory
     }
 
 }

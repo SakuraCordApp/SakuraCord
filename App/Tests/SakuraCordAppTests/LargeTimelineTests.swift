@@ -1657,27 +1657,27 @@ func `native scrolling removes installed pointer tracking immediately`() {
 
 @Test func `native timeline prepends consume reserved document coordinates`() {
     let absorbed =
-        NativeMessageTimelineLayoutPolicy.consumingLeadingHistoryReserve(
+        NativeMessageTimelineLayoutPolicy.consumingHistoryReserve(
             65_536,
-            prependedHeight: 3_200,
+            materializedHeight: 3_200,
             chunk: 65_536
         )
     #expect(absorbed.reserve == 62_336)
     #expect(!absorbed.grew)
 
     let replenished =
-        NativeMessageTimelineLayoutPolicy.consumingLeadingHistoryReserve(
+        NativeMessageTimelineLayoutPolicy.consumingHistoryReserve(
             1_000,
-            prependedHeight: 3_200,
+            materializedHeight: 3_200,
             chunk: 65_536
         )
     #expect(replenished.reserve == 63_336)
     #expect(replenished.grew)
 
     let proactivelyReplenished =
-        NativeMessageTimelineLayoutPolicy.consumingLeadingHistoryReserve(
+        NativeMessageTimelineLayoutPolicy.consumingHistoryReserve(
             65_536,
-            prependedHeight: 40_000,
+            materializedHeight: 40_000,
             chunk: 65_536
         )
     #expect(proactivelyReplenished.reserve == 91_072)
@@ -1915,28 +1915,28 @@ func `automated benchmark pagination never emits user interaction callbacks`() {
     #expect(
         !NativeMessageTimelineLayoutPolicy.showsHistorySkeleton(
             hasMoreMessages: true,
-            isLoadingEarlier: false,
+            isLoading: false,
             followsMaterializedHistoryBoundary: false
         )
     )
     #expect(
         NativeMessageTimelineLayoutPolicy.showsHistorySkeleton(
             hasMoreMessages: true,
-            isLoadingEarlier: true,
+            isLoading: true,
             followsMaterializedHistoryBoundary: false
         )
     )
     #expect(
         NativeMessageTimelineLayoutPolicy.showsHistorySkeleton(
             hasMoreMessages: true,
-            isLoadingEarlier: false,
+            isLoading: false,
             followsMaterializedHistoryBoundary: true
         )
     )
     #expect(
         !NativeMessageTimelineLayoutPolicy.showsHistorySkeleton(
             hasMoreMessages: false,
-            isLoadingEarlier: true,
+            isLoading: true,
             followsMaterializedHistoryBoundary: true
         )
     )
@@ -2553,24 +2553,24 @@ func `native compact timestamp follows the full message hover area`() {
 @Test func `native timeline chains successful earlier history pages`() {
     #expect(
         NativeTimelineAutomaticHistoryPolicy.shouldReevaluateAfterUpdate(
-            wasLoadingEarlier: true,
-            isLoadingEarlier: false,
+            wasLoading: true,
+            isLoading: false,
             previousRowCount: 100,
             currentRowCount: 150
         )
     )
     #expect(
         !NativeTimelineAutomaticHistoryPolicy.shouldReevaluateAfterUpdate(
-            wasLoadingEarlier: true,
-            isLoadingEarlier: false,
+            wasLoading: true,
+            isLoading: false,
             previousRowCount: 100,
             currentRowCount: 100
         )
     )
     #expect(
         !NativeTimelineAutomaticHistoryPolicy.shouldReevaluateAfterUpdate(
-            wasLoadingEarlier: false,
-            isLoadingEarlier: false,
+            wasLoading: false,
+            isLoading: false,
             previousRowCount: 100,
             currentRowCount: 150
         )
@@ -3590,6 +3590,107 @@ func `completed initial ten message page exposes history reserve before first up
 
     coordinator.liveScrollTrackingDidEnd()
     #expect(!coordinator.followsMaterializedHistoryBoundary)
+    #expect(canvas.historySkeleton == nil)
+    coordinator.stopObserving()
+}
+
+@MainActor @Test
+func `completed anchored page exposes the same history reserve below its loaded window`() throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    let channelID = ChannelID(rawValue: 99_241)
+    let author = User(
+        id: UserID(rawValue: 99_242),
+        username: "anchored-page",
+        displayName: "Anchored Page"
+    )
+    let messages = (0 ..< 10).map { index in
+        Message(
+            id: MessageID(rawValue: UInt64(99_250 + index)),
+            channelID: channelID,
+            author: author,
+            content: "Anchored page message \(index)"
+        )
+    }
+    model.replaceSelectedMessages(with: messages)
+    var loadLaterCount = 0
+    var userScrollBeganCount = 0
+    func timeline(
+        hasMoreLaterMessages: Bool,
+        isLoadingLater: Bool
+    ) -> NativeMessageTimelineView {
+        NativeMessageTimelineView(
+            model: model,
+            conversation: .channel(channelID),
+            beginning: nil,
+            firstMessageStartsDayOverride: nil,
+            hasMoreMessages: false,
+            hasMoreLaterMessages: hasMoreLaterMessages,
+            isLoadingEarlier: false,
+            isLoadingLater: isLoadingLater,
+            bottomContentInset: 0,
+            unreadMessageID: nil,
+            highlightedMessageID: nil,
+            initialScrollTarget: .bottom,
+            scrollRequest: nil,
+            runsPerformanceAutoScroll: false,
+            loadEarlier: {},
+            loadLater: { loadLaterCount += 1 },
+            openReply: { _ in },
+            onScrollActivityChange: { _ in },
+            onScrollStateChange: { _ in },
+            onUserScrollBegan: { userScrollBeganCount += 1 },
+            onUserScrollEnded: { _ in }
+        )
+    }
+
+    let loadingTimeline = timeline(
+        hasMoreLaterMessages: false,
+        isLoadingLater: true
+    )
+    let coordinator = loadingTimeline.makeCoordinator()
+    let scrollView = coordinator.makeScrollView()
+    scrollView.frame = CGRect(x: 0, y: 0, width: 820, height: 700)
+    scrollView.tile()
+    scrollView.layoutSubtreeIfNeeded()
+    coordinator.update(parent: loadingTimeline, scrollView: scrollView)
+    coordinator.reconcileViewportGeometryForTesting()
+    let canvas = try #require(coordinator.canvas)
+
+    #expect(coordinator.rowCount == 10)
+    #expect(coordinator.trailingHistoryReserve == 0)
+
+    let completedTimeline = timeline(
+        hasMoreLaterMessages: true,
+        isLoadingLater: false
+    )
+    coordinator.update(parent: completedTimeline, scrollView: scrollView)
+
+    #expect(
+        coordinator.trailingHistoryReserve
+            == NativeMessageTimelineCoordinator.historyReserveChunk
+    )
+    #expect(!coordinator.followsMaterializedLaterHistoryBoundary)
+    #expect(canvas.historySkeleton == nil)
+
+    coordinator.liveScrollTrackingWillBegin()
+
+    #expect(coordinator.followsMaterializedLaterHistoryBoundary)
+    #expect(canvas.historySkeleton != nil)
+    #expect(
+        coordinator.provisionalHistoryBoundaryY(
+            .later,
+            viewportHeight: scrollView.contentView.bounds.height
+        )
+            > coordinator.materializedHistoryScrollBoundaryY(
+                .later,
+                viewportHeight: scrollView.contentView.bounds.height
+            )
+    )
+    #expect(loadLaterCount == 1)
+    #expect(userScrollBeganCount == 1)
+
+    coordinator.liveScrollTrackingDidEnd()
+    #expect(!coordinator.followsMaterializedLaterHistoryBoundary)
     #expect(canvas.historySkeleton == nil)
     coordinator.stopObserving()
 }

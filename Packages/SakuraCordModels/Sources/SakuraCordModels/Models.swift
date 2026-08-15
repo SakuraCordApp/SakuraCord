@@ -1904,10 +1904,16 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
 public struct MessagePage: Codable, Equatable, Sendable {
     public var messages: [Message]
     public var hasMoreBefore: Bool
+    public var hasMoreAfter: Bool
 
-    public init(messages: [Message], hasMoreBefore: Bool) {
+    public init(
+        messages: [Message],
+        hasMoreBefore: Bool,
+        hasMoreAfter: Bool = false
+    ) {
         self.messages = messages
         self.hasMoreBefore = hasMoreBefore
+        self.hasMoreAfter = hasMoreAfter
     }
 }
 

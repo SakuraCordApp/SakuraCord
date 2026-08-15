@@ -268,6 +268,7 @@ extension NativeTimelineCanvasView {
     /// not synchronously raster every visible CoreText row again.
     func invalidateConversationTransientCaches() {
         pointer.cancelPrewarming()
+        cancelMessageJumpHighlight()
         mentionPointerRegionCache.removeAll(keepingCapacity: true)
         codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
         needsDisplay = true
@@ -546,6 +547,110 @@ extension NativeTimelineCanvasView {
         return items.indices.contains(lower) ? lower : nil
     }
 
+    func startMessageJumpHighlight(_ messageID: MessageID) {
+        cancelMessageJumpHighlight()
+        let highlight = MessageJumpHighlight(
+            messageID: messageID,
+            startedAt: ProcessInfo.processInfo.systemUptime
+        )
+        messageJumpHighlight = highlight
+        invalidateMessageJumpHighlight(messageID)
+        let reducesMotion =
+            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        messageJumpHighlightTask = Task { @MainActor [weak self] in
+            if reducesMotion {
+                do {
+                    try await Task.sleep(
+                        for: .seconds(
+                            NativeTimelineMessageJumpHighlightPolicy
+                                .totalDuration
+                        )
+                    )
+                } catch {
+                    return
+                }
+            } else {
+                while !Task.isCancelled {
+                    do {
+                        try await Task.sleep(for: .milliseconds(16))
+                    } catch {
+                        return
+                    }
+                    guard let self,
+                          self.messageJumpHighlight == highlight
+                    else { return }
+                    self.invalidateMessageJumpHighlight(messageID)
+                    let elapsed =
+                        ProcessInfo.processInfo.systemUptime
+                            - highlight.startedAt
+                    if elapsed
+                        >= NativeTimelineMessageJumpHighlightPolicy
+                            .totalDuration
+                    {
+                        break
+                    }
+                }
+            }
+            guard let self,
+                  self.messageJumpHighlight == highlight
+            else { return }
+            self.messageJumpHighlight = nil
+            self.messageJumpHighlightTask = nil
+            self.invalidateMessageJumpHighlight(messageID)
+        }
+    }
+
+    func cancelMessageJumpHighlight() {
+        messageJumpHighlightTask?.cancel()
+        messageJumpHighlightTask = nil
+        guard let messageID = messageJumpHighlight?.messageID else { return }
+        messageJumpHighlight = nil
+        invalidateMessageJumpHighlight(messageID)
+    }
+
+    func invalidateMessageJumpHighlight(_ messageID: MessageID) {
+        guard let index = items.firstIndex(where: {
+            $0.messageID == messageID
+        }) else { return }
+        setNeedsDisplay(rowFrame(at: index))
+    }
+
+    func messageJumpHighlightPresentation(
+        at index: Int,
+        uptime: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) -> MessageJumpHighlightPresentation? {
+        guard items.indices.contains(index),
+              layouts.indices.contains(index),
+              let highlightFrame = layouts[index].highlightFrame,
+              let messageID = items[index].messageID,
+              let highlight = messageJumpHighlight,
+              highlight.messageID == messageID
+        else { return nil }
+        let opacity = NativeTimelineMessageJumpHighlightPolicy.opacity(
+            elapsed: uptime - highlight.startedAt,
+            reducesMotion:
+                NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        )
+        guard opacity > 0 else { return nil }
+        let rowFrame = rowFrame(at: index)
+        return MessageJumpHighlightPresentation(
+            frame: highlightFrame.offsetBy(
+                dx: rowFrame.minX,
+                dy: rowFrame.minY
+            ),
+            opacity: opacity
+        )
+    }
+
+    func drawMessageJumpHighlight(at index: Int) {
+        guard let presentation = messageJumpHighlightPresentation(at: index)
+        else { return }
+        NSColor.controlAccentColor.withAlphaComponent(
+            0.12 * presentation.opacity
+        ).setFill()
+        presentation.frame.fill()
+    }
+
     func firstVisibleMessage(
         in rect: CGRect,
         preferringVisibleOrigin: Bool = false
@@ -596,6 +701,7 @@ extension NativeTimelineCanvasView {
         {
             let rowFrame = rowFrame(at: index)
             if rowFrame.intersects(dirtyRect) {
+                drawMessageJumpHighlight(at: index)
                 let revealedTextSpoilerState =
                     textSpoilerRevealState(
                         for: items[index].identifier

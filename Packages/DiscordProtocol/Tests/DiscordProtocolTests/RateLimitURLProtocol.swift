@@ -42,6 +42,7 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var typingHadBody = false
     nonisolated(unsafe) static var typingSuperProperties: String?
     nonisolated(unsafe) static var messageRequestCount = 0
+    nonisolated(unsafe) static var messageHistoryQueryItems: [[String]] = []
     nonisolated(unsafe) static var messageSearchRequestCount = 0
     nonisolated(unsafe) static var messageSearchQueries: [[String: String]] = []
     nonisolated(unsafe) static var messageSearchQueryItems: [[String]] = []
@@ -136,6 +137,7 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
         typingHadBody = false
         typingSuperProperties = nil
         messageRequestCount = 0
+        messageHistoryQueryItems = []
         messageSearchRequestCount = 0
         messageSearchQueries = []
         messageSearchQueryItems = []
@@ -466,6 +468,12 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
             RateLimitURLProtocol.messageSuperProperties = request.value(forHTTPHeaderField: "X-Super-Properties")
             RateLimitURLProtocol.messageUserAgent = request.value(forHTTPHeaderField: "User-Agent")
             if request.httpMethod == "GET" {
+                RateLimitURLProtocol.messageHistoryQueryItems.append(
+                    URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+                        .queryItems?
+                        .map { "\($0.name)=\($0.value ?? "")" }
+                        ?? []
+                )
                 status = 200
                 json = #"""
                 [{

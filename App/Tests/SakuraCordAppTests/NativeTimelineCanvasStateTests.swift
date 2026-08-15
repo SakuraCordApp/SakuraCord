@@ -48,6 +48,92 @@ func `forward overlay interaction block clears native hover and tracking state`(
     #expect(canvas.rowTrackingAreas.isEmpty)
 }
 
+@Test
+func `message jump highlight holds then fades to transparent`() {
+    let hold = NativeTimelineMessageJumpHighlightPolicy.holdDuration
+    let fade = NativeTimelineMessageJumpHighlightPolicy.fadeDuration
+
+    #expect(
+        NativeTimelineMessageJumpHighlightPolicy.opacity(elapsed: 0) == 1
+    )
+    #expect(
+        NativeTimelineMessageJumpHighlightPolicy.opacity(elapsed: hold) == 1
+    )
+    let midpointOpacity =
+        NativeTimelineMessageJumpHighlightPolicy.opacity(
+            elapsed: hold + fade / 2
+        )
+    #expect(abs(midpointOpacity - 0.5) < 0.000_001)
+    #expect(
+        NativeTimelineMessageJumpHighlightPolicy.opacity(
+            elapsed: hold + fade
+        ) == 0
+    )
+    #expect(
+        NativeTimelineMessageJumpHighlightPolicy.opacity(
+            elapsed: hold + fade / 2,
+            reducesMotion: true
+        ) == 1
+    )
+}
+
+@MainActor @Test
+func `message jump highlight uses the canonical message highlight frame`() throws {
+    let message = Message(
+        id: MessageID(rawValue: 73),
+        channelID: ChannelID(rawValue: 74),
+        author: User(
+            id: UserID(rawValue: 75),
+            username: "highlight",
+            displayName: "Highlight"
+        ),
+        content: "Jump highlighting must not include the day separator."
+    )
+    let item = NativeMessageTimelineItem.message(
+        MessageRowPresentation(
+            message: message,
+            startsGroup: true,
+            startsDay: true,
+            replyPreview: nil,
+            isReplyAvailable: false
+        ),
+        isUnreadBoundary: false,
+        isHighlighted: true
+    )
+    let layout = NativeTimelineRowLayout.make(item: item, width: 560)
+    let storage = NativeTimelineCanvasStorage()
+    storage.items = [item]
+    storage.layouts = [layout]
+    storage.rowOrigins = [0]
+    storage.contentHeight = layout.height
+    let canvas = NativeTimelineCanvasView(
+        frame: CGRect(x: 0, y: 0, width: 560, height: layout.height + 24)
+    )
+    canvas.storage = storage
+    canvas.baseContentOriginY = 24
+    canvas.contentOriginY = 24
+    let startedAt: TimeInterval = 100
+    canvas.messageJumpHighlight = .init(
+        messageID: message.id,
+        startedAt: startedAt
+    )
+
+    let presentation = try #require(
+        canvas.messageJumpHighlightPresentation(
+            at: 0,
+            uptime: startedAt
+        )
+    )
+    let highlightFrame = try #require(layout.highlightFrame)
+
+    #expect(
+        presentation.frame
+            == highlightFrame.offsetBy(dx: 0, dy: 24)
+    )
+    #expect(presentation.frame != canvas.rowFrame(at: 0))
+    #expect(presentation.opacity == 1)
+}
+
 @MainActor @Test
 func `editing session clear removes its overlay and all geometry`() {
     let parent = NSView()

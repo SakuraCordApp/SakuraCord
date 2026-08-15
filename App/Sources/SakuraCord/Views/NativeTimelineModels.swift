@@ -102,17 +102,22 @@ nonisolated enum TimelineInitialPositionPolicy {
     }
 }
 
-nonisolated enum TimelineEarlierHistoryLoadingPolicy {
+nonisolated enum TimelineHistoryDirection: CaseIterable, Sendable {
+    case earlier
+    case later
+}
+
+nonisolated enum TimelineHistoryLoadingPolicy {
     static func shouldLoad(
-        isNearTop: Bool,
+        isNearBoundary: Bool,
         contentFitsViewport: Bool,
         allowsAutomaticLoading: Bool,
         hasMoreMessages: Bool,
         isLoading: Bool,
-        hasUnresolvedUnreadBoundary: Bool,
+        requiresUserScrollIntent: Bool,
         hasUserScrollIntent: Bool
     ) -> Bool {
-        guard isNearTop,
+        guard isNearBoundary,
               allowsAutomaticLoading,
               hasMoreMessages,
               !isLoading
@@ -120,12 +125,12 @@ nonisolated enum TimelineEarlierHistoryLoadingPolicy {
             return false
         }
         return contentFitsViewport
-            || !hasUnresolvedUnreadBoundary
+            || !requiresUserScrollIntent
             || hasUserScrollIntent
     }
 }
 
-nonisolated enum TimelineEarlierHistoryScrollIntentPolicy {
+nonisolated enum TimelineHistoryScrollIntentPolicy {
     static func shouldRetain(
         hasIntent: Bool,
         isGestureActive: Bool,
@@ -383,14 +388,36 @@ enum NativeMessageTimelineItem: Equatable {
 
 nonisolated enum NativeTimelineAutomaticHistoryPolicy {
     static func shouldReevaluateAfterUpdate(
-        wasLoadingEarlier: Bool,
-        isLoadingEarlier: Bool,
+        wasLoading: Bool,
+        isLoading: Bool,
         previousRowCount: Int,
         currentRowCount: Int
     ) -> Bool {
-        wasLoadingEarlier
-            && !isLoadingEarlier
+        wasLoading
+            && !isLoading
             && currentRowCount > previousRowCount
+    }
+
+}
+
+nonisolated enum NativeTimelineMessageJumpHighlightPolicy {
+    static let holdDuration: TimeInterval = 0.3
+    static let fadeDuration: TimeInterval = 1.2
+    static let totalDuration = holdDuration + fadeDuration
+
+    static func opacity(
+        elapsed: TimeInterval,
+        reducesMotion: Bool = false
+    ) -> CGFloat {
+        let elapsed = max(0, elapsed)
+        guard elapsed < totalDuration else { return 0 }
+        guard !reducesMotion, elapsed > holdDuration else { return 1 }
+        let progress = min(
+            1,
+            (elapsed - holdDuration) / fadeDuration
+        )
+        let easedProgress = progress * progress * (3 - 2 * progress)
+        return CGFloat(1 - easedProgress)
     }
 }
 
@@ -558,29 +585,29 @@ nonisolated enum NativeTimelineEarlierLoaderPolicy {
 }
 
 nonisolated enum NativeMessageTimelineLayoutPolicy {
-    struct LeadingHistoryReserveUpdate: Equatable {
+    struct HistoryReserveUpdate: Equatable {
         let reserve: CGFloat
         let grew: Bool
     }
 
-    static func consumingLeadingHistoryReserve(
+    static func consumingHistoryReserve(
         _ currentReserve: CGFloat,
-        prependedHeight: CGFloat,
+        materializedHeight: CGFloat,
         chunk: CGFloat
-    ) -> LeadingHistoryReserveUpdate {
+    ) -> HistoryReserveUpdate {
         let currentReserve = max(0, currentReserve)
-        let prependedHeight = max(0, prependedHeight)
+        let materializedHeight = max(0, materializedHeight)
         let chunk = max(1, chunk)
-        guard prependedHeight > 0 else {
-            return LeadingHistoryReserveUpdate(
+        guard materializedHeight > 0 else {
+            return HistoryReserveUpdate(
                 reserve: currentReserve,
                 grew: false
             )
         }
-        let remainingReserve = currentReserve - prependedHeight
+        let remainingReserve = currentReserve - materializedHeight
         let minimumReserve = chunk / 2
         if remainingReserve >= minimumReserve {
-            return LeadingHistoryReserveUpdate(
+            return HistoryReserveUpdate(
                 reserve: remainingReserve,
                 grew: false
             )
@@ -595,7 +622,7 @@ nonisolated enum NativeMessageTimelineLayoutPolicy {
             1,
             ceil((minimumReserve - remainingReserve) / chunk)
         )
-        return LeadingHistoryReserveUpdate(
+        return HistoryReserveUpdate(
             reserve:
                 remainingReserve
                 + addedChunks * chunk,
@@ -634,14 +661,35 @@ nonisolated enum NativeMessageTimelineLayoutPolicy {
         )
     }
 
+    static func provisionalHistoryMaximumY(
+        materializedMaximumY: CGFloat,
+        reserve: CGFloat,
+        viewportHeight: CGFloat,
+        bottomInset: CGFloat,
+        allowsProvisionalHistory: Bool
+    ) -> CGFloat {
+        let materializedDocumentHeight =
+            materializedMaximumY + max(0, bottomInset)
+        let provisionalDepth = allowsProvisionalHistory
+            ? provisionalHistoryDepth(
+                reserve: reserve,
+                viewportHeight: viewportHeight
+            )
+            : 0
+        return max(
+            0,
+            materializedDocumentHeight + provisionalDepth - viewportHeight
+        )
+    }
+
     static func showsHistorySkeleton(
         hasMoreMessages: Bool,
-        isLoadingEarlier: Bool,
+        isLoading: Bool,
         followsMaterializedHistoryBoundary: Bool
     ) -> Bool {
         hasMoreMessages
             && (
-                isLoadingEarlier
+                isLoading
                     || followsMaterializedHistoryBoundary
             )
     }

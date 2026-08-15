@@ -249,6 +249,8 @@ extension AppModel {
         replaceSelectedMessages(with: [])
         hasCompletedInitialMessageLoad = false
         hasCompletedInitialThreadLoad = false
+        isLoadingLater = false
+        hasMoreLaterMessages = false
         messageCache = [:]
         messageCacheOrder = []
         messageRowCache = [:]
@@ -392,6 +394,8 @@ extension AppModel {
         replaceSelectedMessages(with: [])
         hasCompletedInitialMessageLoad = false
         hasCompletedInitialThreadLoad = false
+        isLoadingLater = false
+        hasMoreLaterMessages = false
         messageCache = [:]
         messageCacheOrder = []
         messageRowCache = [:]
@@ -1002,22 +1006,19 @@ extension AppModel {
 
             if !messages.contains(where: { $0.id == messageID }) {
                 do {
-                    let beforeID =
-                        messageID.rawValue == UInt64.max
-                            ? nil
-                            : MessageID(rawValue: messageID.rawValue + 1)
                     let page = try await session.provider.messages(
                         in: channel.id,
-                        before: beforeID,
+                        anchoredAt: .around(messageID),
                         limit: 50
                     )
                     guard !Task.isCancelled,
                           isCurrentAccountSession(session),
                           selectedChannelID == channel.id
                     else { return }
-                    replaceSelectedMessages(
-                        with: Self.merging(current: messages, fresh: page.messages)
-                    )
+                    replaceSelectedMessages(with: page.messages)
+                    hasMoreMessages = page.hasMoreBefore
+                    hasMoreLaterMessages = page.hasMoreAfter
+                    hasMoreCache[channel.id] = page.hasMoreBefore
                 } catch is CancellationError {
                     return
                 } catch {
@@ -1486,7 +1487,13 @@ extension AppModel {
         replaceSelectedMessages(with: [])
         draft = ""
         messageLoadError = nil
+        messageLoadErrorIsEarlierPage = false
+        messageLoadErrorIsLaterPage = false
         isLoadingMessages = false
+        isLoadingEarlier = false
+        isLoadingLater = false
+        hasMoreMessages = false
+        hasMoreLaterMessages = false
         if let channel = selectedChannel {
             forumSortOrder = channel.defaultSortOrder ?? .latestActivity
             forumLayout =

@@ -123,6 +123,16 @@ final class NativeTimelineCanvasView: NSView {
         let frame: CGRect
     }
 
+    struct MessageJumpHighlight: Equatable {
+        let messageID: MessageID
+        let startedAt: TimeInterval
+    }
+
+    struct MessageJumpHighlightPresentation: Equatable {
+        let frame: CGRect
+        let opacity: CGFloat
+    }
+
     static let bitmapCostLimit =
         NativeTimelineMediaMemoryPolicy.rowBitmapBytes
     static let prewarmRowLimit = 8
@@ -132,6 +142,8 @@ final class NativeTimelineCanvasView: NSView {
     var historySkeleton:
         TimelineHistorySkeletonPresentation?
     var historySkeletonShimmerTask: Task<Void, Never>?
+    var messageJumpHighlight: MessageJumpHighlight?
+    var messageJumpHighlightTask: Task<Void, Never>?
     var minimumHeight: CGFloat = 1
     var bottomSpacerHeight: CGFloat = 0
     var maximumDrawDuration = 0.0
@@ -306,6 +318,7 @@ final class NativeTimelineCanvasView: NSView {
             NotificationCenter.default.removeObserver(self)
             mediaInvalidationTask?.cancel()
             historySkeletonShimmerTask?.cancel()
+            messageJumpHighlightTask?.cancel()
             cancelReactionPreviewLoads()
             NativeTimelineMediaStore.shared.removeStaticRequests(
                 owner: visibleMediaPinOwner
@@ -374,7 +387,6 @@ enum NativeTimelineRowPainter {
         let transform = NSAffineTransform()
         transform.translateX(by: rowFrame.minX, yBy: rowFrame.minY)
         transform.concat()
-        let bounds = CGRect(origin: .zero, size: rowFrame.size)
 
         if let cardFrame = layout.searchCardFrame {
             NSColor.controlBackgroundColor.withAlphaComponent(0.64).setFill()
@@ -441,13 +453,11 @@ enum NativeTimelineRowPainter {
                 kind: kind,
                 layout: layout
             )
-        case let .message(row, _, isHighlighted):
+        case let .message(row, _, _):
             drawMessage(.init(
                 row: row,
                 layout: layout,
-                bounds: bounds,
                 model: model,
-                highlighted: isHighlighted,
                 isHovered: isHovered,
                 showsCompactTimestamp: showsCompactTimestamp,
                 hoveredMention: hoveredMention,

@@ -561,7 +561,7 @@ extension NativeTimelineCanvasView {
         }
         if let replyFrame = layout.replyFrame,
            replyFrame.contains(local),
-           let replyID = row.replyPreview?.messageID
+           let replyID = row.replyMessageID
         {
             actions.openReply(replyID)
             return
@@ -1232,7 +1232,7 @@ extension NativeTimelineCanvasView {
             return .invocationProfile(message.id)
         }
         if layout.replyFrame?.contains(local) == true,
-           let replyID = row.replyPreview?.messageID
+           let replyID = row.replyMessageID
         {
             return .reply(message.id, replyID)
         }

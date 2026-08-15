@@ -39,7 +39,10 @@ extension AppModel {
         let generation = channelLoadGeneration
         messageLoadError = nil
         messageLoadErrorIsEarlierPage = false
+        messageLoadErrorIsLaterPage = false
         isLoadingEarlier = false
+        isLoadingLater = false
+        hasMoreLaterMessages = false
         hasCompletedInitialMessageLoad = false
         stopLocalTyping(clearThrottle: true)
         replyingTo = nil
@@ -51,6 +54,7 @@ extension AppModel {
             replaceSelectedMessages(with: [])
             draft = ""
             hasMoreMessages = false
+            hasMoreLaterMessages = false
             isLoadingMessages = false
             hasCompletedInitialMessageLoad = true
             return
@@ -64,6 +68,7 @@ extension AppModel {
         )
         let cachedBoundary = hasMoreCache[channelID]
         hasMoreMessages = cachedBoundary ?? false
+        hasMoreLaterMessages = false
         if cachedBoundary != nil {
             isLoadingMessages = false
             hasCompletedInitialMessageLoad = true
@@ -105,7 +110,9 @@ extension AppModel {
         let generation = channelLoadGeneration
         messageLoadError = nil
         messageLoadErrorIsEarlierPage = false
+        messageLoadErrorIsLaterPage = false
         isLoadingEarlier = false
+        isLoadingLater = false
         let preservesLoadedHistory = !messages.isEmpty
             && messages.allSatisfy { $0.channelID == channelID }
         isLoadingMessages = !preservesLoadedHistory
@@ -182,8 +189,11 @@ extension AppModel {
                 initialMutations,
                 to: page.messages
             )
+            let reconciliationCurrent = hasMoreLaterMessages
+                ? messages.filter { $0.outboxState != .confirmed }
+                : messages
             let merged = Self.reconcilingNewestPage(
-                current: messages,
+                current: reconciliationCurrent,
                 fresh: refreshedMessages,
                 hasMoreBefore: page.hasMoreBefore,
                 authoritativeOldestMessageID: page.messages.map(\.id).min()
@@ -260,8 +270,11 @@ extension AppModel {
             mutations,
             to: freshMessages
         )
+        let reconciliationCurrent = hasMoreLaterMessages
+            ? messages.filter { $0.outboxState != .confirmed }
+            : messages
         let reconciledMessages = Self.reconcilingNewestPage(
-            current: messages,
+            current: reconciliationCurrent,
             fresh: refreshedMessages,
             hasMoreBefore: hasMoreBefore,
             authoritativeOldestMessageID: freshMessages.map(\.id).min()
@@ -270,9 +283,11 @@ extension AppModel {
             replaceSelectedMessages(with: reconciledMessages)
         }
         hasMoreMessages = hasMoreBefore
+        hasMoreLaterMessages = false
         hasMoreCache[channelID] = hasMoreBefore
         messageLoadError = nil
         messageLoadErrorIsEarlierPage = false
+        messageLoadErrorIsLaterPage = false
         isLoadingMessages = false
         hasCompletedInitialMessageLoad = true
         readState.observeLoadedMessages(channelID: channelID, messages: messages)
@@ -348,72 +363,72 @@ extension AppModel {
         }
     }
 
-    func loadEarlier(account: AppModelAccountSession? = nil) async {
+    @discardableResult
+    func loadNewestMessageWindow(account: AppModelAccountSession? = nil) async -> Bool {
         let session = account ?? accountSession()
-        guard !Task.isCancelled, isCurrentAccountSession(session) else { return }
-        guard let channelID = selectedChannelID, let first = messages.first, hasMoreMessages,
-              !isLoadingEarlier
-        else { return }
-        messageLoadError = nil
-        messageLoadErrorIsEarlierPage = false
-        isLoadingEarlier = true
+        guard !Task.isCancelled,
+              isCurrentAccountSession(session),
+              let channelID = selectedChannelID
+        else { return false }
+        if !hasMoreLaterMessages {
+            requestNewestMessagePresentation(channelID: channelID)
+            return true
+        }
+        isLoadingMessages = true
         defer {
             if isCurrentAccountSession(session), selectedChannelID == channelID {
-                isLoadingEarlier = false
+                isLoadingMessages = false
             }
         }
+        messageLoadError = nil
+        messageLoadErrorIsEarlierPage = false
+        messageLoadErrorIsLaterPage = false
         do {
             let page = try await session.provider.messages(
                 in: channelID,
-                before: first.id,
-                limit: 20
+                anchoredAt: .newest,
+                limit: 50
             )
             guard !Task.isCancelled,
                   isCurrentAccountSession(session),
                   selectedChannelID == channelID
-            else { return }
-            let reconcileStart = ProcessInfo.processInfo.systemUptime
-            let earlier = page.messages.filter {
-                !selectedMessageIDs.contains($0.id)
-            }
-            let filterEnd = ProcessInfo.processInfo.systemUptime
-            if !earlier.isEmpty {
-                guard await prependSelectedMessages(
-                    earlier,
-                    channelID: channelID
-                ) else { return }
-            }
-            let prependEnd = ProcessInfo.processInfo.systemUptime
+            else { return false }
+            replaceSelectedMessages(with: page.messages)
             hasMoreMessages = page.hasMoreBefore
+            hasMoreLaterMessages = false
             hasMoreCache[channelID] = page.hasMoreBefore
-            messageLoadError = nil
-            messageLoadErrorIsEarlierPage = false
-            let stateEnd = ProcessInfo.processInfo.systemUptime
-            if runsChatPerformanceBenchmark {
-                let milliseconds = (stateEnd - reconcileStart) * 1_000
-                if milliseconds >= 4 {
-                    NSLog(
-                        "SakuraCord history phases: filter %.2f ms; prepend %.2f ms; state %.2f ms (%d rows)",
-                        (filterEnd - reconcileStart) * 1_000,
-                        (prependEnd - filterEnd) * 1_000,
-                        (stateEnd - prependEnd) * 1_000,
-                        messages.count
-                    )
-                }
-            }
+            requestNewestMessagePresentation(channelID: channelID)
+            return true
         } catch is CancellationError {
-            return
+            return false
         } catch {
             guard isCurrentAccountSession(session),
                   selectedChannelID == channelID
-            else { return }
+            else { return false }
             messageLoadError = error.localizedDescription
-            messageLoadErrorIsEarlierPage = true
+            return false
         }
+    }
+
+    private func requestNewestMessagePresentation(channelID: ChannelID) {
+        conversationNewestRequestID &+= 1
+        conversationNewestRequest = ConversationNewestRequest(
+            requestID: conversationNewestRequestID,
+            channelID: channelID
+        )
     }
 
     func retryMessageLoad() {
         guard selectedChannelID != nil else { return }
+        if messageLoadErrorIsLaterPage {
+            messageLoadError = nil
+            messageLoadErrorIsLaterPage = false
+            let account = accountSession()
+            startAccountChildTask(account: account) { model, account in
+                await model.loadLater(account: account)
+            }
+            return
+        }
         if messageLoadErrorIsEarlierPage {
             messageLoadError = nil
             messageLoadErrorIsEarlierPage = false
@@ -1521,6 +1536,9 @@ extension AppModel {
         let content = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !content.isEmpty || !attachments.isEmpty else { return false }
         guard validateAttachmentCount(attachments) else { return false }
+        if hasMoreLaterMessages {
+            guard await loadNewestMessageWindow() else { return false }
+        }
         let replyTo = replyingTo?.id
         let replyPreview = replyingTo.map {
             MessageReplyPreview(message: $0)

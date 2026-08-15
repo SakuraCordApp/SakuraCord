@@ -1533,14 +1533,34 @@ extension DiscordRESTProvider {
     public func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
         -> MessagePage
     {
+        try await messages(
+            in: channelID,
+            anchoredAt: before.map(MessageHistoryAnchor.before) ?? .newest,
+            limit: limit
+        )
+    }
+
+    public func messages(
+        in channelID: ChannelID,
+        anchoredAt anchor: MessageHistoryAnchor,
+        limit: Int
+    ) async throws -> MessagePage {
         var query: [URLQueryItem] = []
-        if let before {
-            query.append(URLQueryItem(name: "before", value: before.description))
+        switch anchor {
+        case .newest:
+            break
+        case .before(let messageID):
+            query.append(URLQueryItem(name: "before", value: messageID.description))
+        case .after(let messageID):
+            query.append(URLQueryItem(name: "after", value: messageID.description))
+        case .around(let messageID):
+            query.append(URLQueryItem(name: "around", value: messageID.description))
         }
+        let boundedLimit = min(max(limit, 1), 100)
         query.append(
             URLQueryItem(
                 name: "limit",
-                value: String(min(max(limit, 1), 100))
+                value: String(boundedLimit)
             )
         )
         let payload: LossyList<MessageDTO> = try await request(
@@ -1566,7 +1586,29 @@ extension DiscordRESTProvider {
             }
             cachedMessages[values[index].id] = values[index]
         }
-        return MessagePage(messages: values, hasMoreBefore: values.count == min(max(limit, 1), 100))
+        let firstID = values.first?.id
+        let lastID = values.last?.id
+        let hasMoreBefore: Bool
+        let hasMoreAfter: Bool
+        switch anchor {
+        case .newest:
+            hasMoreBefore = values.count == boundedLimit
+            hasMoreAfter = false
+        case .before:
+            hasMoreBefore = values.count == boundedLimit
+            hasMoreAfter = true
+        case .after:
+            hasMoreBefore = false
+            hasMoreAfter = values.count == boundedLimit
+        case .around(let messageID):
+            hasMoreBefore = firstID.map { $0 < messageID } ?? false
+            hasMoreAfter = lastID.map { $0 > messageID } ?? false
+        }
+        return MessagePage(
+            messages: values,
+            hasMoreBefore: hasMoreBefore,
+            hasMoreAfter: hasMoreAfter
+        )
     }
 
     func hydrateHistoryMembers(_ values: inout [Message], channelID: ChannelID) async {

@@ -32,6 +32,17 @@ extension AppModel {
 
     func completeConversationReadingAndAdvance(channelID: ChannelID) {
         guard channelID == selectedChannelID || channelID == openThread?.id else { return }
+        if channelID == selectedChannelID, hasMoreLaterMessages {
+            let account = accountSession()
+            startAccountChildTask(account: account) { model, account in
+                guard await model.loadNewestMessageWindow(account: account),
+                      model.isCurrentAccountSession(account),
+                      model.selectedChannelID == channelID
+                else { return }
+                model.completeConversationReadingAndAdvance(channelID: channelID)
+            }
+            return
+        }
         markConversationRead(channelID: channelID)
         unreadDividerMessageIDs[channelID] = nil
         conversationNewestRequestID &+= 1

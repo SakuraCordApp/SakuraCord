@@ -503,7 +503,7 @@ private struct ThreadMessageTimelineView: View {
     private func handleScrollState(_ state: TimelineScrollState) {
         isNearBottom = state.isNearBottom
         let retainedHistoryIntent =
-            TimelineEarlierHistoryScrollIntentPolicy.shouldRetain(
+            TimelineHistoryScrollIntentPolicy.shouldRetain(
                 hasIntent: hasEarlierHistoryScrollIntent,
                 isGestureActive: isEarlierHistoryScrollGestureActive,
                 isInProvisionalHistory: state.isInProvisionalHistory
@@ -511,13 +511,13 @@ private struct ThreadMessageTimelineView: View {
         if hasEarlierHistoryScrollIntent != retainedHistoryIntent {
             hasEarlierHistoryScrollIntent = retainedHistoryIntent
         }
-        if TimelineEarlierHistoryLoadingPolicy.shouldLoad(
-            isNearTop: state.isNearTop,
+        if TimelineHistoryLoadingPolicy.shouldLoad(
+            isNearBoundary: state.isNearTop,
             contentFitsViewport: state.contentFitsViewport,
             allowsAutomaticLoading: true,
             hasMoreMessages: model.hasMoreThreadMessages,
             isLoading: model.isLoadingEarlierThread,
-            hasUnresolvedUnreadBoundary:
+            requiresUserScrollIntent:
                 hasUnresolvedInitialUnreadBoundary,
             hasUserScrollIntent:
                 hasEarlierHistoryScrollIntent
@@ -551,7 +551,7 @@ private struct ThreadMessageTimelineView: View {
     private func handleUserScrollEnded(_ state: TimelineScrollState) {
         isEarlierHistoryScrollGestureActive = false
         hasEarlierHistoryScrollIntent =
-            TimelineEarlierHistoryScrollIntentPolicy.shouldRetain(
+            TimelineHistoryScrollIntentPolicy.shouldRetain(
                 hasIntent: hasEarlierHistoryScrollIntent,
                 isGestureActive: false,
                 isInProvisionalHistory: state.isInProvisionalHistory

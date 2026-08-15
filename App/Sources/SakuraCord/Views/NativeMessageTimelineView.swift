@@ -22,8 +22,11 @@ struct NativeMessageTimelineView: NSViewRepresentable {
     let beginning: NativeTimelineBeginning?
     let firstMessageStartsDayOverride: Bool?
     let hasMoreMessages: Bool
+    let hasMoreLaterMessages: Bool
     let isLoadingEarlier: Bool
+    let isLoadingLater: Bool
     let earlierHistoryLoadFailed: Bool
+    let laterHistoryLoadFailed: Bool
     let bottomContentInset: CGFloat
     let unreadMessageID: MessageID?
     let highlightedMessageID: MessageID?
@@ -32,6 +35,7 @@ struct NativeMessageTimelineView: NSViewRepresentable {
     let editRequest: MessageTimelineEditRequest?
     let runsPerformanceAutoScroll: Bool
     let loadEarlier: () -> Void
+    let loadLater: () -> Void
     let openReply: (MessageID) -> Void
     let onScrollActivityChange: (Bool) -> Void
     let onScrollStateChange: (TimelineScrollState) -> Void
@@ -45,8 +49,11 @@ struct NativeMessageTimelineView: NSViewRepresentable {
         beginning: NativeTimelineBeginning?,
         firstMessageStartsDayOverride: Bool?,
         hasMoreMessages: Bool,
+        hasMoreLaterMessages: Bool = false,
         isLoadingEarlier: Bool,
+        isLoadingLater: Bool = false,
         earlierHistoryLoadFailed: Bool = false,
+        laterHistoryLoadFailed: Bool = false,
         bottomContentInset: CGFloat,
         unreadMessageID: MessageID?,
         highlightedMessageID: MessageID?,
@@ -55,6 +62,7 @@ struct NativeMessageTimelineView: NSViewRepresentable {
         editRequest: MessageTimelineEditRequest? = nil,
         runsPerformanceAutoScroll: Bool,
         loadEarlier: @escaping () -> Void,
+        loadLater: @escaping () -> Void = {},
         openReply: @escaping (MessageID) -> Void,
         onScrollActivityChange: @escaping (Bool) -> Void,
         onScrollStateChange: @escaping (TimelineScrollState) -> Void,
@@ -69,8 +77,11 @@ struct NativeMessageTimelineView: NSViewRepresentable {
         self.firstMessageStartsDayOverride =
             firstMessageStartsDayOverride
         self.hasMoreMessages = hasMoreMessages
+        self.hasMoreLaterMessages = hasMoreLaterMessages
         self.isLoadingEarlier = isLoadingEarlier
+        self.isLoadingLater = isLoadingLater
         self.earlierHistoryLoadFailed = earlierHistoryLoadFailed
+        self.laterHistoryLoadFailed = laterHistoryLoadFailed
         self.bottomContentInset = bottomContentInset
         self.unreadMessageID = unreadMessageID
         self.highlightedMessageID = highlightedMessageID
@@ -79,6 +90,7 @@ struct NativeMessageTimelineView: NSViewRepresentable {
         self.editRequest = editRequest
         self.runsPerformanceAutoScroll = runsPerformanceAutoScroll
         self.loadEarlier = loadEarlier
+        self.loadLater = loadLater
         self.openReply = openReply
         self.onScrollActivityChange = onScrollActivityChange
         self.onScrollStateChange = onScrollStateChange
@@ -156,7 +168,8 @@ final class NativeMessageTimelineCoordinator: NSObject {
         /// Start the next bounded history request before a fast gesture can
         /// consume the current headroom and visually pin at the loaded top.
         static let prefetchDistance: CGFloat = 8_000
-        static let leadingHistoryReserveChunk: CGFloat = 65_536
+        static let historyReserveChunk: CGFloat = 65_536
+        static let leadingHistoryReserveChunk = historyReserveChunk
         static let maximumCachedItemLayouts = 750
         static let cachedItemLayoutsPerConversation = 256
         static let performanceSignposter = OSSignposter(
@@ -211,7 +224,9 @@ final class NativeMessageTimelineCoordinator: NSObject {
         var appendedLayoutCount = 0
         var didPrependItems = false
         var leadingHistoryReserve: CGFloat = 0
+        var trailingHistoryReserve: CGFloat = 0
         var followsMaterializedHistoryBoundary = false
+        var followsMaterializedLaterHistoryBoundary = false
         var performanceUpdatePath = "none"
         var performanceFallbackReason = "none"
         var lastPerformanceUpdateDuration = 0.0
@@ -235,6 +250,9 @@ final class NativeMessageTimelineCoordinator: NSObject {
         var isEarlierHistoryScrollGestureActive = false
         var hasEarlierHistoryScrollIntent = false
         var hasIssuedEarlierHistoryRequest = false
+        var isLaterHistoryScrollGestureActive = false
+        var hasLaterHistoryScrollIntent = false
+        var hasIssuedLaterHistoryRequest = false
         var lastReportedScrollActivity: Bool?
         var scrollActivityCallbackGeneration: UInt64 = 0
         var initialPositionCallbackGeneration: UInt64 = 0
@@ -342,10 +360,15 @@ extension NativeMessageTimelineCoordinator {
                 widthRelayoutTask = nil
                 pendingLayoutWidth = nil
                 leadingHistoryReserve = 0
+                trailingHistoryReserve = 0
                 followsMaterializedHistoryBoundary = false
+                followsMaterializedLaterHistoryBoundary = false
                 isEarlierHistoryScrollGestureActive = false
                 hasEarlierHistoryScrollIntent = false
                 hasIssuedEarlierHistoryRequest = false
+                isLaterHistoryScrollGestureActive = false
+                hasLaterHistoryScrollIntent = false
+                hasIssuedLaterHistoryRequest = false
                 initialPositionConversation = nil
                 initialPositionCallbackGeneration &+= 1
                 scrollStateCallbackTask?.cancel()
@@ -361,6 +384,11 @@ extension NativeMessageTimelineCoordinator {
                 // provisional history, the scroll-state report at the end of
                 // this update may immediately request the next page.
                 hasIssuedEarlierHistoryRequest = false
+            }
+            if parent.isLoadingLater {
+                hasIssuedLaterHistoryRequest = true
+            } else if oldParent.isLoadingLater {
+                hasIssuedLaterHistoryRequest = false
             }
             let newRows = parent.conversation.rows(in: parent.model)
             let hasUnpublishedRows =
@@ -424,6 +452,14 @@ extension NativeMessageTimelineCoordinator {
             }
             if conversationChanged, presentationChanged {
                 canvas.invalidatePresentationCaches()
+            }
+            if oldParent.highlightedMessageID
+                != parent.highlightedMessageID
+                || conversationChanged
+                || oldItemCount == 0,
+               let highlightedMessageID = parent.highlightedMessageID
+            {
+                canvas.startMessageJumpHighlight(highlightedMessageID)
             }
             if widthChanged || presentationChanged {
                 layoutWidth = width
@@ -508,11 +544,11 @@ extension NativeMessageTimelineCoordinator {
                 if didPrependItems, parent.hasMoreMessages {
                     let reserveUpdate =
                         NativeMessageTimelineLayoutPolicy
-                        .consumingLeadingHistoryReserve(
+                        .consumingHistoryReserve(
                             leadingHistoryReserve,
-                            prependedHeight:
+                            materializedHeight:
                                 max(0, contentHeight - oldContentHeight),
-                            chunk: Self.leadingHistoryReserveChunk
+                            chunk: Self.historyReserveChunk
                         )
                     leadingHistoryReserve = reserveUpdate.reserve
                     if !reserveUpdate.grew {
@@ -541,7 +577,32 @@ extension NativeMessageTimelineCoordinator {
                     leadingHistoryReserve == 0
                 {
                     leadingHistoryReserve =
-                        Self.leadingHistoryReserveChunk
+                        Self.historyReserveChunk
+                }
+                let didAppendItems = appendedLayoutCount > 0
+                    && !didPrependItems
+                let establishesTrailingHistoryBoundary =
+                    oldItemCount == 0
+                        || conversationChanged
+                        || !oldParent.hasMoreLaterMessages
+                if didAppendItems, parent.hasMoreLaterMessages {
+                    let reserveUpdate =
+                        NativeMessageTimelineLayoutPolicy
+                        .consumingHistoryReserve(
+                            trailingHistoryReserve,
+                            materializedHeight:
+                                max(0, contentHeight - oldContentHeight),
+                            chunk: Self.historyReserveChunk
+                        )
+                    trailingHistoryReserve = reserveUpdate.reserve
+                    if reserveUpdate.grew {
+                        requiresAnchorRestore = true
+                    }
+                } else if establishesTrailingHistoryBoundary,
+                    parent.hasMoreLaterMessages,
+                    trailingHistoryReserve == 0
+                {
+                    trailingHistoryReserve = Self.historyReserveChunk
                 }
                 let originsEndUptime = ProcessInfo.processInfo.systemUptime
                 applySnapshot(to: canvas, in: scrollView)
@@ -572,15 +633,33 @@ extension NativeMessageTimelineCoordinator {
                     parent.conversation.messageInteractionContext
                 canvas.actions = actions
             }
-            let reserveCollapseAnchor: VisibleAnchor?
-            if !parent.hasMoreMessages {
-                followsMaterializedHistoryBoundary = false
-                reserveCollapseAnchor = leadingHistoryReserve > 0
+            if parent.hasMoreMessages,
+               leadingHistoryReserve == 0,
+               conversationChanged || !oldParent.hasMoreMessages
+            {
+                leadingHistoryReserve = Self.historyReserveChunk
+            }
+            if parent.hasMoreLaterMessages,
+               trailingHistoryReserve == 0,
+               conversationChanged || !oldParent.hasMoreLaterMessages
+            {
+                trailingHistoryReserve = Self.historyReserveChunk
+            }
+            let collapsesLeadingReserve =
+                !parent.hasMoreMessages && leadingHistoryReserve > 0
+            let collapsesTrailingReserve =
+                !parent.hasMoreLaterMessages && trailingHistoryReserve > 0
+            let reserveCollapseAnchor: VisibleAnchor? =
+                (collapsesLeadingReserve || collapsesTrailingReserve)
                     ? visibleAnchor()
                     : nil
+            if !parent.hasMoreMessages {
+                followsMaterializedHistoryBoundary = false
                 leadingHistoryReserve = 0
-            } else {
-                reserveCollapseAnchor = nil
+            }
+            if !parent.hasMoreLaterMessages {
+                followsMaterializedLaterHistoryBoundary = false
+                trailingHistoryReserve = 0
             }
             updateInsets()
             updateHistorySkeletonPresentation()
@@ -628,8 +707,15 @@ extension NativeMessageTimelineCoordinator {
                 force:
                     NativeTimelineAutomaticHistoryPolicy
                     .shouldReevaluateAfterUpdate(
-                        wasLoadingEarlier: oldParent.isLoadingEarlier,
-                        isLoadingEarlier: parent.isLoadingEarlier,
+                        wasLoading: oldParent.isLoadingEarlier,
+                        isLoading: parent.isLoadingEarlier,
+                        previousRowCount: oldRowCount,
+                        currentRowCount: rowCount
+                    )
+                    || NativeTimelineAutomaticHistoryPolicy
+                    .shouldReevaluateAfterUpdate(
+                        wasLoading: oldParent.isLoadingLater,
+                        isLoading: parent.isLoadingLater,
                         previousRowCount: oldRowCount,
                         currentRowCount: rowCount
                     )

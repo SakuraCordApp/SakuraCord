@@ -11,9 +11,7 @@ import SwiftUI
 struct NativeTimelineMessageDrawInput {
     let row: MessageRowPresentation
     let layout: NativeTimelineRowLayout
-    let bounds: CGRect
     let model: AppModel?
-    let highlighted: Bool
     let isHovered: Bool
     let showsCompactTimestamp: Bool
     let hoveredMention: NativeTimelineMentionHover?
@@ -39,9 +37,7 @@ extension NativeTimelineRowPainter {
         { input in
             let row = input.row
             let layout = input.layout
-            let bounds = input.bounds
             let model = input.model
-            let highlighted = input.highlighted
             let showsCompactTimestamp = input.showsCompactTimestamp
             let hoveredMention = input.hoveredMention
             let hoveredTextLink = input.hoveredTextLink
@@ -89,10 +85,6 @@ extension NativeTimelineRowPainter {
                     lineBreakMode: .byTruncatingTail
                 )
             }
-        }
-        if highlighted {
-            NSColor.controlAccentColor.withAlphaComponent(0.12).setFill()
-            (layout.searchCardFrame ?? bounds).fill()
         }
         if input.isHovered, let cardFrame = layout.searchCardFrame {
             text(
@@ -201,13 +193,16 @@ extension NativeTimelineRowPainter {
                 color: .tertiaryLabelColor
             )
         }
-        if let frame = layout.replyFrame, let preview = row.replyPreview {
-            replyContext(
-                preview: preview,
-                isAvailable: row.isReplyAvailable,
-                frame: frame,
-                model: model
-            )
+        if let frame = layout.replyFrame {
+            if let preview = row.replyPreview {
+                replyContext(
+                    preview: preview,
+                    frame: frame,
+                    model: model
+                )
+            } else {
+                unavailableReplyContext(frame: frame)
+            }
         }
         if let region = layout.commandInvocationRegion {
             commandInvocation(
@@ -750,7 +745,6 @@ extension NativeTimelineRowPainter {
 
     static func replyContext(
         preview: MessageReplyPreview,
-        isAvailable: Bool,
         frame: CGRect,
         model: AppModel?
     ) {
@@ -772,16 +766,13 @@ extension NativeTimelineRowPainter {
             model: model
         )
 
-        let summary: String
-        if isAvailable, let model {
-            summary = MessageReplySummary.text(
+        let summary = if let model {
+            MessageReplySummary.text(
                 content: preview.content,
                 mentionLabel: MessageMentionResolver(model: model).label
             )
-        } else if isAvailable {
-            summary = MessageReplySummary.text(content: preview.content)
         } else {
-            summary = "Original unavailable"
+            MessageReplySummary.text(content: preview.content)
         }
         text(
             summary,
@@ -792,6 +783,31 @@ extension NativeTimelineRowPainter {
                 height: 20
             ),
             font: NativeTimelineReplyMetrics.summaryFont,
+            color: .secondaryLabelColor
+        )
+    }
+
+    static func unavailableReplyContext(frame: CGRect) {
+        replyConnector(in: CGRect(
+            x: frame.minX,
+            y: frame.minY,
+            width: 30,
+            height: 20
+        ))
+        let baseFont = NativeTimelineReplyMetrics.summaryFont
+        let italicFont = NSFont(
+            descriptor: baseFont.fontDescriptor.withSymbolicTraits(.italic),
+            size: baseFont.pointSize
+        ) ?? baseFont
+        text(
+            "Message could not be loaded",
+            in: CGRect(
+                x: frame.minX + 35,
+                y: frame.minY,
+                width: max(0, frame.width - 35),
+                height: 20
+            ),
+            font: italicFont,
             color: .secondaryLabelColor
         )
     }

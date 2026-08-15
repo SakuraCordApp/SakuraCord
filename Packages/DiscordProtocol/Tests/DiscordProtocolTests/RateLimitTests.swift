@@ -9,6 +9,34 @@ import Testing
 
 @Suite(.serialized)
 struct ProviderRequestContractTests {
+    @Test func `message history encodes bounded around and after anchors`() async throws {
+        RateLimitURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RateLimitURLProtocol.self]
+        let provider = DiscordRESTProvider(
+            credentials: TestCredentialStore(),
+            handle: CredentialHandle(accountID: "1"),
+            session: URLSession(configuration: configuration),
+            installationID: "server-issued-installation"
+        )
+
+        _ = try await provider.messages(
+            in: ChannelID(rawValue: 200),
+            anchoredAt: .around(MessageID(rawValue: 350)),
+            limit: 50
+        )
+        _ = try await provider.messages(
+            in: ChannelID(rawValue: 200),
+            anchoredAt: .after(MessageID(rawValue: 350)),
+            limit: 20
+        )
+
+        #expect(RateLimitURLProtocol.messageHistoryQueryItems == [
+            ["around=350", "limit=50"],
+            ["after=350", "limit=20"],
+        ])
+    }
+
     @Test func `desktop ready lifecycle matches official opcode ordering`() async throws {
         let socket = ReadyGatewaySocket()
         await socket.push(gatewayMessage(

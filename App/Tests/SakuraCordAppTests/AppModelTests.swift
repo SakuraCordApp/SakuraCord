@@ -4254,6 +4254,55 @@ private func hiddenMockChannel(
 }
 
 @MainActor
+@Test func `distant message navigation owns a contiguous bidirectional history window`() async throws {
+    let provider = MockChatProvider(timelineMessageCount: 500)
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+
+    let channelID = ChannelID(rawValue: 210)
+    let targetID = MessageID(rawValue: 5_000_100)
+    model.navigate(to: GuildID(rawValue: 100), channelID: channelID, messageID: targetID)
+
+    #expect(await eventuallyOnMain {
+        model.messageNavigationRequest?.messageID == targetID
+            && model.messages.contains(where: { $0.id == targetID })
+    })
+    #expect(model.messages.map(\.id) == (75 ... 124).map {
+        MessageID(rawValue: 5_000_000 + UInt64($0))
+    })
+    #expect(model.hasMoreMessages)
+    #expect(model.hasMoreLaterMessages)
+
+    await model.loadEarlier()
+    #expect(model.messages.map(\.id) == (55 ... 124).map {
+        MessageID(rawValue: 5_000_000 + UInt64($0))
+    })
+
+    await model.loadLater()
+    #expect(model.messages.map(\.id) == (55 ... 144).map {
+        MessageID(rawValue: 5_000_000 + UInt64($0))
+    })
+    #expect(model.hasMoreLaterMessages)
+
+    let liveMessage = Message(
+        id: MessageID(rawValue: 6_000_000),
+        channelID: channelID,
+        author: try #require(model.snapshot?.currentUser),
+        content: "This must not bridge the unloaded history gap."
+    )
+    await provider.emit(.messageCreated(liveMessage))
+    try await Task.sleep(for: .milliseconds(20))
+    #expect(!model.messages.contains(where: { $0.id == liveMessage.id }))
+
+    #expect(await model.loadNewestMessageWindow())
+    #expect(model.messages.map(\.id) == (450 ... 499).map {
+        MessageID(rawValue: 5_000_000 + UInt64($0))
+    })
+    #expect(model.hasMoreMessages)
+    #expect(!model.hasMoreLaterMessages)
+}
+
+@MainActor
 @Test func `failed earlier thread page retries inside the shared conversation`() async throws {
     let provider = ChannelLoadTestProvider(failsFirstEarlierPage: true)
     let model = AppModel(launchMode: .offlineTesting, provider: provider)

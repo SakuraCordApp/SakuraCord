@@ -257,9 +257,12 @@ final class AppModel {
     var isLoadingMessages = false
     var hasCompletedInitialMessageLoad = false
     var isLoadingEarlier = false
+    var isLoadingLater = false
     var hasMoreMessages = false
+    var hasMoreLaterMessages = false
     var messageLoadError: String?
     @ObservationIgnored var messageLoadErrorIsEarlierPage = false
+    @ObservationIgnored var messageLoadErrorIsLaterPage = false
     var forumPosts: [ForumPost] = []
     var forumCataloguePosts: [ForumPost] = []
     var forumCatalogueIndexByID: [ChannelID: Int] = [:]
@@ -920,8 +923,16 @@ final class AppModel {
                 if conversationNewestRequest?.channelID == oldValue {
                     conversationNewestRequest = nil
                 }
-                storeCachedMessages(messages, for: oldValue)
-                storeCachedMessageRows(messageRows, for: oldValue)
+                if hasMoreLaterMessages {
+                    messageCache[oldValue] = nil
+                    messageCacheOrder.removeAll { $0 == oldValue }
+                    messageRowCache[oldValue] = nil
+                    messageRowCacheOrder.removeAll { $0 == oldValue }
+                    hasMoreCache[oldValue] = nil
+                } else {
+                    storeCachedMessages(messages, for: oldValue)
+                    storeCachedMessageRows(messageRows, for: oldValue)
+                }
                 lastTypingRequestAt[oldValue] = nil
                 _ = readState.updatePresentation(channelID: oldValue, isPresented: false)
                 readState.endForumVisit(channelID: oldValue)

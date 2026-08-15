@@ -203,13 +203,13 @@ private final class MessageTimelineSkeletonSafeAreaHost<Content: View>:
 
 @Test func `underfilled unread history loads without user scroll intent`() {
     #expect(
-        TimelineEarlierHistoryLoadingPolicy.shouldLoad(
-            isNearTop: true,
+        TimelineHistoryLoadingPolicy.shouldLoad(
+            isNearBoundary: true,
             contentFitsViewport: true,
             allowsAutomaticLoading: true,
             hasMoreMessages: true,
             isLoading: false,
-            hasUnresolvedUnreadBoundary: true,
+            requiresUserScrollIntent: true,
             hasUserScrollIntent: false
         )
     )
@@ -217,46 +217,46 @@ private final class MessageTimelineSkeletonSafeAreaHost<Content: View>:
 
 @Test func `filled unresolved unread history requires user scroll intent before loading`() {
     #expect(
-        !TimelineEarlierHistoryLoadingPolicy.shouldLoad(
-            isNearTop: true,
+        !TimelineHistoryLoadingPolicy.shouldLoad(
+            isNearBoundary: true,
             contentFitsViewport: false,
             allowsAutomaticLoading: true,
             hasMoreMessages: true,
             isLoading: false,
-            hasUnresolvedUnreadBoundary: true,
+            requiresUserScrollIntent: true,
             hasUserScrollIntent: false
         )
     )
     #expect(
-        TimelineEarlierHistoryLoadingPolicy.shouldLoad(
-            isNearTop: true,
+        TimelineHistoryLoadingPolicy.shouldLoad(
+            isNearBoundary: true,
             contentFitsViewport: false,
             allowsAutomaticLoading: true,
             hasMoreMessages: true,
             isLoading: false,
-            hasUnresolvedUnreadBoundary: true,
+            requiresUserScrollIntent: true,
             hasUserScrollIntent: true
         )
     )
     #expect(
-        TimelineEarlierHistoryLoadingPolicy.shouldLoad(
-            isNearTop: true,
+        TimelineHistoryLoadingPolicy.shouldLoad(
+            isNearBoundary: true,
             contentFitsViewport: false,
             allowsAutomaticLoading: true,
             hasMoreMessages: true,
             isLoading: false,
-            hasUnresolvedUnreadBoundary: false,
+            requiresUserScrollIntent: false,
             hasUserScrollIntent: false
         )
     )
     #expect(
-        !TimelineEarlierHistoryLoadingPolicy.shouldLoad(
-            isNearTop: true,
+        !TimelineHistoryLoadingPolicy.shouldLoad(
+            isNearBoundary: true,
             contentFitsViewport: true,
             allowsAutomaticLoading: true,
             hasMoreMessages: true,
             isLoading: true,
-            hasUnresolvedUnreadBoundary: true,
+            requiresUserScrollIntent: true,
             hasUserScrollIntent: true
         )
     )
@@ -264,24 +264,60 @@ private final class MessageTimelineSkeletonSafeAreaHost<Content: View>:
 
 @Test func `earlier history intent survives an active gesture or requested skeleton viewport`() {
     #expect(
-        TimelineEarlierHistoryScrollIntentPolicy.shouldRetain(
+        TimelineHistoryScrollIntentPolicy.shouldRetain(
             hasIntent: true,
             isGestureActive: true,
             isInProvisionalHistory: false
         )
     )
     #expect(
-        TimelineEarlierHistoryScrollIntentPolicy.shouldRetain(
+        TimelineHistoryScrollIntentPolicy.shouldRetain(
             hasIntent: true,
             isGestureActive: false,
             isInProvisionalHistory: true
         )
     )
     #expect(
-        !TimelineEarlierHistoryScrollIntentPolicy.shouldRetain(
+        !TimelineHistoryScrollIntentPolicy.shouldRetain(
             hasIntent: true,
             isGestureActive: false,
             isInProvisionalHistory: false
+        )
+    )
+}
+
+@Test func `later history loads only at the loaded window boundary`() {
+    #expect(
+        TimelineHistoryLoadingPolicy.shouldLoad(
+            isNearBoundary: true,
+            contentFitsViewport: false,
+            allowsAutomaticLoading: true,
+            hasMoreMessages: true,
+            isLoading: false,
+            requiresUserScrollIntent: false,
+            hasUserScrollIntent: false
+        )
+    )
+    #expect(
+        !TimelineHistoryLoadingPolicy.shouldLoad(
+            isNearBoundary: false,
+            contentFitsViewport: false,
+            allowsAutomaticLoading: true,
+            hasMoreMessages: true,
+            isLoading: false,
+            requiresUserScrollIntent: false,
+            hasUserScrollIntent: false
+        )
+    )
+    #expect(
+        !TimelineHistoryLoadingPolicy.shouldLoad(
+            isNearBoundary: true,
+            contentFitsViewport: false,
+            allowsAutomaticLoading: true,
+            hasMoreMessages: true,
+            isLoading: true,
+            requiresUserScrollIntent: false,
+            hasUserScrollIntent: false
         )
     )
 }

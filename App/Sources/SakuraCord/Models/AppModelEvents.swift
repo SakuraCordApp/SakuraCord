@@ -567,7 +567,11 @@ extension AppModel {
             reconcileThread(message)
         }
         if message.channelID == selectedChannelID {
-            reconcile(message, preparedTextPlan: preparedTextPlan)
+            if !hasMoreLaterMessages
+                || selectedMessageIDs.contains(message.id)
+            {
+                reconcile(message, preparedTextPlan: preparedTextPlan)
+            }
         } else {
             cache(message)
         }
@@ -1517,43 +1521,44 @@ extension AppModel {
 
     func appendSelectedMessages(
         _ appendedMessages: [Message],
-        preparedTextPlans: [MessageID: NativeTimelineTextPlan] = [:]
+        preparedTextPlans: [MessageID: NativeTimelineTextPlan] = [:],
+        preparedRows: [MessageRowPresentation]? = nil
     ) {
         guard !appendedMessages.isEmpty else { return }
         let insertionStart = messageRows.count
-        var appendedRows: [MessageRowPresentation] = []
-        appendedRows.reserveCapacity(appendedMessages.count)
-        var previous = messages.last
-        let appendedByID = Dictionary(
-            appendedMessages.map { ($0.id, $0) },
-            uniquingKeysWith: { _, newer in newer }
-        )
-        for message in appendedMessages {
-            let replyPreview =
-                message.replyTo.flatMap { replyID in
-                    (
-                        appendedByID[replyID]
-                            ?? selectedMessageIndex(for: replyID).map {
-                                messages[$0]
-                            }
-                    ).map {
-                        MessageReplyPreview(message: $0)
-                    }
-                } ?? message.replyPreview
-            let isReplyAvailable =
-                replyPreview.map { preview in
-                    appendedByID[preview.messageID] != nil
-                        || selectedMessageIDs.contains(preview.messageID)
-                } ?? false
-            let row = MessageGrouping.appendingRow(
-                for: message,
-                after: previous,
-                replyPreview: replyPreview,
-                isReplyAvailable: isReplyAvailable,
-                textPlan: preparedTextPlans[message.id]
+        let preparedRows = preparedRows?.map { row in
+            guard let textPlan = preparedTextPlans[row.id] else { return row }
+            return MessageRowPresentation(
+                message: row.message,
+                startsGroup: row.startsGroup,
+                startsDay: row.startsDay,
+                replyPreview: row.replyPreview,
+                isReplyAvailable: row.isReplyAvailable,
+                textPlan: textPlan
             )
-            appendedRows.append(row)
-            previous = message
+        }
+        MessageGrouping.appendRows(
+            for: appendedMessages,
+            into: &messageRows,
+            after: messages.last,
+            preparedInsertedRows: preparedRows,
+            existingMessage: { [self] id in
+                selectedMessageIndex(for: id).map { messages[$0] }
+            }
+        )
+        if preparedRows == nil, !preparedTextPlans.isEmpty {
+            for index in insertionStart ..< messageRows.count {
+                let row = messageRows[index]
+                guard let textPlan = preparedTextPlans[row.id] else { continue }
+                messageRows[index] = MessageRowPresentation(
+                    message: row.message,
+                    startsGroup: row.startsGroup,
+                    startsDay: row.startsDay,
+                    replyPreview: row.replyPreview,
+                    isReplyAvailable: row.isReplyAvailable,
+                    textPlan: textPlan
+                )
+            }
         }
         messages.append(contentsOf: appendedMessages)
         selectedMessageIDs.formUnion(appendedMessages.lazy.map(\.id))
@@ -1569,16 +1574,30 @@ extension AppModel {
                 ].insert(message.id)
             }
         }
-        messageRows.append(contentsOf: appendedRows)
         publishMessageRowsUpdate(
             change: .insert(
                 IndexSet(
                     integersIn:
-                        insertionStart ..< insertionStart + appendedRows.count
+                        insertionStart ..< insertionStart + appendedMessages.count
                 )
             ),
-            insertedMessageIDs: appendedRows.map(\.id)
+            insertedMessageIDs: appendedMessages.map(\.id)
         )
+    }
+
+    func appendSelectedHistoryMessages(
+        _ later: [Message],
+        channelID: ChannelID
+    ) async -> Bool {
+        guard !later.isEmpty else { return true }
+        let preparedRows = await Task.detached(priority: .utility) {
+            await MessageGrouping.rowsCooperatively(for: later)
+        }.value
+        guard !Task.isCancelled, selectedChannelID == channelID else {
+            return false
+        }
+        appendSelectedMessages(later, preparedRows: preparedRows)
+        return true
     }
 
     func commitBatchedSelectedMessages() {

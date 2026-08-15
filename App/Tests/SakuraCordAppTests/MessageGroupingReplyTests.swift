@@ -56,6 +56,41 @@ import Testing
     #expect(updated == MessageGrouping.rows(for: newMessages))
     #expect(updated.map(\.startsGroup) == [true, true, false])
     #expect(updated[1].replyPreview?.messageID == fixture.target.id)
+    #expect(updated[1].replyMessageID == fixture.target.id)
+}
+
+@MainActor
+@Test func `unresolved reply retains a visible navigable reference`() throws {
+    let fixture = replyGroupingFixture()
+    let row = try #require(MessageGrouping.rows(for: [fixture.reply]).first)
+
+    #expect(row.replyPreview == nil)
+    #expect(row.replyMessageID == fixture.target.id)
+
+    let item = NativeMessageTimelineItem.message(
+        row,
+        isUnreadBoundary: false,
+        isHighlighted: false
+    )
+    let layout = NativeTimelineRowLayout.make(
+        item: item,
+        width: 600
+    )
+    let replyFrame = try #require(layout.replyFrame)
+
+    let canvas = NativeTimelineCanvasView(
+        frame: CGRect(x: 0, y: 0, width: 600, height: layout.height)
+    )
+    canvas.storage.items = [item]
+    canvas.storage.layouts = [layout]
+    canvas.storage.rowOrigins = [0]
+    canvas.storage.contentHeight = layout.height
+
+    #expect(
+        canvas.pointerActivationTarget(
+            at: CGPoint(x: replyFrame.midX, y: replyFrame.midY)
+        ) == .reply(fixture.reply.id, fixture.target.id)
+    )
 }
 
 @MainActor
