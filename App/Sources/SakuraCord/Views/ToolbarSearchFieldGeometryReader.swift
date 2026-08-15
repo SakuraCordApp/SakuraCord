@@ -1,6 +1,183 @@
 import AppKit
 import SwiftUI
 
+@MainActor
+private enum ToolbarSearchFieldLocator {
+    static func searchField(in window: NSWindow) -> NSSearchField? {
+        for item in window.toolbar?.items ?? [] {
+            if let searchItem = item as? NSSearchToolbarItem {
+                return searchItem.searchField
+            }
+            if let view = item.view,
+               let searchField = firstSearchField(in: view)
+            {
+                return searchField
+            }
+        }
+        guard let frameView = window.contentView?.superview else { return nil }
+        return firstSearchField(in: frameView)
+    }
+
+    private static func firstSearchField(in view: NSView) -> NSSearchField? {
+        if let searchField = view as? NSSearchField {
+            return searchField
+        }
+        for subview in view.subviews {
+            if let searchField = firstSearchField(in: subview) {
+                return searchField
+            }
+        }
+        return nil
+    }
+}
+
+private final class ToolbarSearchFieldSkeletonOverlay: NSView {
+    private let shimmerLayer = CAGradientLayer()
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.white.withAlphaComponent(0.09).cgColor
+        layer?.cornerRadius = 10
+        layer?.cornerCurve = .continuous
+        layer?.masksToBounds = true
+
+        shimmerLayer.colors = [
+            NSColor.clear.cgColor,
+            NSColor.white.withAlphaComponent(0.04).cgColor,
+            NSColor.white.withAlphaComponent(0.2).cgColor,
+            NSColor.white.withAlphaComponent(0.04).cgColor,
+            NSColor.clear.cgColor,
+        ]
+        shimmerLayer.startPoint = CGPoint(x: 0, y: 0.5)
+        shimmerLayer.endPoint = CGPoint(x: 1, y: 0.5)
+        layer?.addSublayer(shimmerLayer)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layout() {
+        super.layout()
+        shimmerLayer.frame = bounds.insetBy(dx: -bounds.width, dy: 0)
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+              shimmerLayer.animation(forKey: "skeletonShimmer") == nil
+        else { return }
+        let animation = CABasicAnimation(keyPath: "transform.translation.x")
+        animation.fromValue = -bounds.width
+        animation.toValue = bounds.width
+        animation.duration = SkeletonShimmerStyle.duration
+        animation.repeatCount = .infinity
+        shimmerLayer.add(animation, forKey: "skeletonShimmer")
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+}
+
+struct ToolbarSearchFieldLoadingStyler: NSViewRepresentable {
+    let isActive: Bool
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        Task { @MainActor in
+            context.coordinator.update(window: view.window, isActive: isActive)
+        }
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        Task { @MainActor in
+            context.coordinator.update(window: view.window, isActive: isActive)
+        }
+    }
+
+    static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
+        coordinator.detach()
+    }
+
+    @MainActor
+    final class Coordinator {
+        private weak var searchField: NSSearchField?
+        private var originalAlphaValue: CGFloat?
+        private var originalIsEnabled: Bool?
+        private var overlay: ToolbarSearchFieldSkeletonOverlay?
+        private var retryTask: Task<Void, Never>?
+
+        func update(window: NSWindow?, isActive: Bool) {
+            retryTask?.cancel()
+            retryTask = nil
+            guard isActive else {
+                restore()
+                return
+            }
+            retryTask = Task { @MainActor [weak self, weak window] in
+                guard let self else { return }
+                for _ in 0 ..< 12 {
+                    guard !Task.isCancelled, let window else { return }
+                    if let field = ToolbarSearchFieldLocator.searchField(in: window) {
+                        presentSkeleton(over: field)
+                        return
+                    }
+                    try? await Task.sleep(for: .milliseconds(20))
+                }
+            }
+        }
+
+        func detach() {
+            retryTask?.cancel()
+            retryTask = nil
+            restore()
+        }
+
+        private func presentSkeleton(over field: NSSearchField) {
+            if searchField !== field {
+                restore()
+                searchField = field
+                originalAlphaValue = field.alphaValue
+                originalIsEnabled = field.isEnabled
+            }
+            field.alphaValue = 0
+            field.isEnabled = false
+
+            guard overlay == nil, let superview = field.superview else { return }
+            let overlay = ToolbarSearchFieldSkeletonOverlay(frame: .zero)
+            overlay.translatesAutoresizingMaskIntoConstraints = false
+            superview.addSubview(overlay, positioned: .above, relativeTo: field)
+            NSLayoutConstraint.activate([
+                overlay.leadingAnchor.constraint(equalTo: field.leadingAnchor),
+                overlay.trailingAnchor.constraint(equalTo: field.trailingAnchor),
+                overlay.topAnchor.constraint(equalTo: field.topAnchor),
+                overlay.bottomAnchor.constraint(equalTo: field.bottomAnchor),
+            ])
+            self.overlay = overlay
+        }
+
+        private func restore() {
+            overlay?.removeFromSuperview()
+            overlay = nil
+            if let searchField {
+                if let originalAlphaValue {
+                    searchField.alphaValue = originalAlphaValue
+                }
+                if let originalIsEnabled {
+                    searchField.isEnabled = originalIsEnabled
+                }
+            }
+            searchField = nil
+            originalAlphaValue = nil
+            originalIsEnabled = nil
+        }
+    }
+}
+
 nonisolated private final class SendableNotificationObject: @unchecked Sendable {
     let value: AnyObject?
 
@@ -300,7 +477,7 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
         private func measure() -> Bool {
             guard let window,
                   let contentView = window.contentView,
-                  let searchField = toolbarSearchField(in: window),
+                  let searchField = ToolbarSearchFieldLocator.searchField(in: window),
                   searchField.window === window
             else { return false }
 
@@ -611,31 +788,5 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
             NSPasteboard.general.setString(value, forType: .string)
         }
 
-        private func toolbarSearchField(in window: NSWindow) -> NSSearchField? {
-            for item in window.toolbar?.items ?? [] {
-                if let searchItem = item as? NSSearchToolbarItem {
-                    return searchItem.searchField
-                }
-                if let view = item.view,
-                   let searchField = firstSearchField(in: view)
-                {
-                    return searchField
-                }
-            }
-            guard let frameView = window.contentView?.superview else { return nil }
-            return firstSearchField(in: frameView)
-        }
-
-        private func firstSearchField(in view: NSView) -> NSSearchField? {
-            if let searchField = view as? NSSearchField {
-                return searchField
-            }
-            for subview in view.subviews {
-                if let searchField = firstSearchField(in: subview) {
-                    return searchField
-                }
-            }
-            return nil
-        }
     }
 }

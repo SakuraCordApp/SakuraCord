@@ -11,46 +11,108 @@ private enum MessageSearchFilterOverlayPresentation: Identifiable {
 
 struct RootView: View {
     let model: AppModel
+    @State private var toolbarSearchFieldMetrics = ToolbarSearchFieldMetrics.zero
 
     var body: some View {
-        switch model.sessionState {
-        case .workspace:
-            ChatRootView(model: model)
-        case .signedOut:
-            if model.launchMode == .normal {
-                if model.savedAccounts.isEmpty {
-                    DiscordLoginView(
-                        showsCancel: false,
-                        networkingEnabled: !model.isDiscordNetworkingDisabled
-                    ) { credential in
-                        await model.connectPendingAuthenticatedAccount(
-                            credential,
-                            preservesInteractivePresentation: true
-                        )
-                            ? nil
-                            : (model.errorMessage ?? "Discord account bootstrap failed for an unknown reason.")
+        @Bindable var model = model
+        @Bindable var search = model.messageSearch
+        Group {
+            switch model.sessionState {
+            case .workspace:
+                ChatRootView(
+                    model: model,
+                    toolbarSearchFieldMetrics: toolbarSearchFieldMetrics
+                )
+            case .signedOut:
+                if model.launchMode == .normal {
+                    if model.savedAccounts.isEmpty {
+                        DiscordLoginView(
+                            showsCancel: false,
+                            networkingEnabled: !model.isDiscordNetworkingDisabled
+                        ) { credential in
+                            await model.connectPendingAuthenticatedAccount(
+                                credential,
+                                preservesInteractivePresentation: true
+                            )
+                                ? nil
+                                : (model.errorMessage ?? "Discord account bootstrap failed for an unknown reason.")
+                        }
+                    } else {
+                        AccountSwitcherView(model: model, showsCancel: false)
                     }
                 } else {
-                    AccountSwitcherView(model: model, showsCancel: false)
+                    SakuraCordSessionLoadingView(
+                        state: model.sessionState,
+                        isOfflineTesting: model.isOfflineTesting
+                    )
                 }
-            } else {
+            case .restoring, .connecting:
                 SakuraCordSessionLoadingView(
                     state: model.sessionState,
-                    isOfflineTesting: model.isOfflineTesting
+                    isOfflineTesting: model.isOfflineTesting,
+                    isAccountSwitch: model.isSwitchingAccounts
                 )
             }
+        }
+        .modifier(MessageSearchExperienceModifier(
+            model: model,
+            search: search,
+            isEnabled: showsMessageSearchToolbar,
+            prompt: messageSearchPrompt,
+            toolbarMetrics: toolbarSearchFieldMetrics
+        ))
+        .background {
+            ZStack {
+                MessageSearchToolbarBridge(
+                    model: model,
+                    metrics: $toolbarSearchFieldMetrics
+                )
+                ToolbarSearchFieldLoadingStyler(isActive: showsSessionLoadingChrome)
+            }
+            .frame(width: 0, height: 0)
+        }
+        .onChange(of: model.isSwitchingAccounts) { _, isSwitching in
+            if isSwitching {
+                search.isFilterSheetPresented = false
+                model.dismissMessageSearch()
+            }
+        }
+    }
+
+    private var showsMessageSearchToolbar: Bool {
+        switch model.sessionState {
         case .restoring, .connecting:
-            SakuraCordSessionLoadingView(
-                state: model.sessionState,
-                isOfflineTesting: model.isOfflineTesting,
-                isAccountSwitch: model.isSwitchingAccounts
-            )
+            true
+        case .workspace:
+            model.isSwitchingAccounts
+                || MessageSearchSurfacePolicy.showsToolbar(
+                    channelKind: model.selectedChannel?.kind,
+                    hasOpenThread: model.openThread != nil
+                )
+        case .signedOut:
+            model.launchMode != .normal
+        }
+    }
+
+    private var messageSearchPrompt: Text {
+        Text(showsSessionLoadingChrome ? "" : model.messageSearchPromptTitle)
+    }
+
+    private var showsSessionLoadingChrome: Bool {
+        switch model.sessionState {
+        case .restoring, .connecting:
+            true
+        case .workspace:
+            model.isSwitchingAccounts
+        case .signedOut:
+            model.launchMode != .normal
         }
     }
 }
 
 private struct ChatRootView: View {
     let model: AppModel
+    let toolbarSearchFieldMetrics: ToolbarSearchFieldMetrics
     @State private var showAccountSwitcher = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var supplementaryPaneFrame = CGRect.zero
@@ -61,11 +123,9 @@ private struct ChatRootView: View {
     @State private var isInstantUpload = false
     @State private var hoveredFileDropDestination: MessageComposerDestination?
     @State private var modifierPollingTask: Task<Void, Never>?
-    @State private var toolbarSearchFieldMetrics = ToolbarSearchFieldMetrics.zero
 
     var body: some View {
         @Bindable var model = model
-        @Bindable var search = model.messageSearch
         NavigationSplitView(columnVisibility: $columnVisibility) {
             HStack(spacing: 0) {
                 ServerRailView(
@@ -149,13 +209,6 @@ private struct ChatRootView: View {
         .toolbar {
             conversationToolbar
         }
-        .modifier(MessageSearchExperienceModifier(
-            model: model,
-            search: search,
-            isEnabled: showsMessageSearchToolbar,
-            prompt: messageSearchPrompt,
-            toolbarMetrics: toolbarSearchFieldMetrics
-        ))
         .overlay(alignment: .topLeading) {
             ZStack(alignment: .topLeading) {
                 if columnVisibility != .detailOnly {
@@ -209,10 +262,6 @@ private struct ChatRootView: View {
                 }
                 WindowChromeDimmingBridge(
                     isDimmed: isFileDropTargeted && canAcceptWindowDrops
-                )
-                MessageSearchToolbarBridge(
-                    model: model,
-                    metrics: $toolbarSearchFieldMetrics
                 )
             }
             .frame(width: 0, height: 0)
@@ -424,13 +473,6 @@ private struct ChatRootView: View {
         }
     }
 
-    private var showsMessageSearchToolbar: Bool {
-        MessageSearchSurfacePolicy.showsToolbar(
-            channelKind: model.selectedChannel?.kind,
-            hasOpenThread: model.openThread != nil
-        )
-    }
-
     private func updateModifierPolling(isTargeted: Bool) {
         modifierPollingTask?.cancel()
         modifierPollingTask = nil
@@ -458,8 +500,8 @@ private struct ChatRootView: View {
 
     @ToolbarContentBuilder
     private var conversationToolbar: some ToolbarContent {
-        if model.isSwitchingAccounts {
-            ToolbarItem(placement: .navigation) {
+        ToolbarItem(placement: .navigation) {
+            if model.isSwitchingAccounts {
                 SkeletonShimmerTimeline {
                     HStack(spacing: 8) {
                         SkeletonShape(cornerRadius: 4)
@@ -470,24 +512,21 @@ private struct ChatRootView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
                 }
+            } else if let channel = model.selectedChannel {
+                ConversationToolbarLabel(
+                    title: channel.name,
+                    systemImage: channelToolbarSymbol(channel),
+                    subtitle: isDirectMessageSelected
+                        ? directMessageToolbarSubtitle(for: channel)
+                        : nil
+                )
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
             }
-            .visibilityPriority(.high)
-        } else {
-            if let channel = model.selectedChannel {
-                ToolbarItem(placement: .navigation) {
-                    ConversationToolbarLabel(
-                        title: channel.name,
-                        systemImage: channelToolbarSymbol(channel),
-                        subtitle: isDirectMessageSelected
-                            ? directMessageToolbarSubtitle(for: channel)
-                            : nil
-                    )
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                }
-                .visibilityPriority(.high)
-            }
+        }
+        .visibilityPriority(.high)
 
+        if !model.isSwitchingAccounts {
             if let presentation = supplementaryToolbarPresentation {
                 ToolbarItem {
                     HStack(spacing: 0) {
@@ -523,20 +562,7 @@ private struct ChatRootView: View {
     private var detailToolbar: some ToolbarContent {
         ToolbarSpacer(.flexible)
 
-        if model.isSwitchingAccounts {
-            ToolbarItem {
-                SkeletonShimmerTimeline {
-                    HStack(spacing: 0) {
-                        SkeletonShape(cornerRadius: 6)
-                            .frame(width: 20, height: 20)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .fixedSize()
-                }
-            }
-            .visibilityPriority(.high)
-        } else {
+        if !model.isSwitchingAccounts {
             if let channel = selectedPrivateChannel {
                 ToolbarItemGroup {
                     Button {
@@ -593,25 +619,34 @@ private struct ChatRootView: View {
                 }
                 .visibilityPriority(.high)
             }
+        }
 
-            if !hasOpenSupplementaryToolbarConversation, selectedVoiceChannel == nil {
-                if selectedPrivateChannel != nil {
-                    ToolbarSpacer(.fixed)
-                }
+        if model.isSwitchingAccounts
+            || (!hasOpenSupplementaryToolbarConversation && selectedVoiceChannel == nil)
+        {
+            if !model.isSwitchingAccounts, selectedPrivateChannel != nil {
+                ToolbarSpacer(.fixed)
+            }
 
-                ToolbarItem {
+            ToolbarItem {
+                ZStack {
                     Button { model.showInspector.toggle() } label: {
                         inspectorToolbarLabel
                     }
+                    .disabled(model.isSwitchingAccounts)
+                    .opacity(model.isSwitchingAccounts ? 0 : 1)
+
+                    if model.isSwitchingAccounts {
+                        SkeletonShimmerTimeline {
+                            SkeletonShape(cornerRadius: 6)
+                                .frame(width: 20, height: 20)
+                        }
+                        .accessibilityHidden(true)
+                    }
                 }
-                .visibilityPriority(.high)
             }
-
+            .visibilityPriority(.high)
         }
-    }
-
-    private var messageSearchPrompt: Text {
-        Text(model.messageSearchPromptTitle)
     }
 
     private var sidebarDisplayName: String {
