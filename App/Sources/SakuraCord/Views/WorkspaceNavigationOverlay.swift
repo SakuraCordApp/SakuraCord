@@ -16,7 +16,9 @@ struct WorkspaceNavigationOverlayView: View {
 
     var body: some View {
         ZStack {
-            Color.black.opacity(presentation == .quickSwitcher ? 0.14 : 0.32)
+            Color.black.opacity(
+                WindowModalVisualStyle.menuBackgroundDimmingOpacity
+            )
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture { model.dismissWorkspaceNavigationOverlay() }

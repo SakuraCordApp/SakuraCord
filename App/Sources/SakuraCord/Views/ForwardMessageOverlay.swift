@@ -2132,7 +2132,9 @@ struct ForwardMessageOverlay: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                Color.black.opacity(0.48)
+                Color.black.opacity(
+                    WindowModalVisualStyle.menuBackgroundDimmingOpacity
+                )
                     .ignoresSafeArea()
                     .contentShape(Rectangle())
                     .onTapGesture(perform: dismiss)

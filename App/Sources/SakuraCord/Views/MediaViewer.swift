@@ -31,7 +31,9 @@ struct MediaViewer: View {
         GlassEffectContainer(spacing: 12) {
             GeometryReader { proxy in
                 ZStack {
-                    Color.black.opacity(0.91)
+                    Color.black.opacity(
+                        WindowModalVisualStyle.mediaViewerBackgroundDimmingOpacity
+                    )
                         .opacity(isVisible ? 1 : 0)
                         .contentShape(Rectangle())
                         .onTapGesture(perform: close)

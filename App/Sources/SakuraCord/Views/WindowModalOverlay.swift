@@ -15,6 +15,11 @@ nonisolated enum WindowModalAnimationTiming {
     static let removalDelayMilliseconds = 170
 }
 
+nonisolated enum WindowModalVisualStyle {
+    static let menuBackgroundDimmingOpacity = 0.70
+    static let mediaViewerBackgroundDimmingOpacity = 0.91
+}
+
 nonisolated struct WindowModalBehavior: Sendable {
     var animates: Bool
     var capturesEscape: Bool
