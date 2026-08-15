@@ -77,6 +77,8 @@ enum NativeTimelineUnreadSeparatorMetrics {
 }
 
 enum NativeTimelineReplyMetrics {
+    static let horizontalSpacing: CGFloat = 5
+
     static var authorFont: NSFont {
         .systemFont(
             ofSize: NSFont.preferredFont(
@@ -849,10 +851,10 @@ nonisolated enum NativeTimelineAvatarPresentation {
         )
     }
 
-    static func replyAvatarFrame(in replyFrame: CGRect) -> CGRect {
+    static func replyAvatarFrame(in replyContentFrame: CGRect) -> CGRect {
         CGRect(
-            x: replyFrame.minX + 35,
-            y: replyFrame.minY + 3,
+            x: replyContentFrame.minX,
+            y: replyContentFrame.minY + 3,
             width: 14,
             height: 14
         )

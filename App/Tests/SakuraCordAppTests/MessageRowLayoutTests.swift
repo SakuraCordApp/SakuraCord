@@ -219,14 +219,23 @@ func `intrinsic reply and edit padding is not doubled`(_ row: CompensatedMessage
         ) == .none
     )
 
-    var ownMessage = base
-    ownMessage.author = currentUser
-    ownMessage.mentionsEveryone = true
+    var ownPing = base
+    ownPing.author = currentUser
+    ownPing.mentionedUsers = [currentUser]
     #expect(
         MessageRowPersistentHighlight.resolve(
-            message: ownMessage,
+            message: ownPing,
             currentUserID: currentUser.id
-        ) == .none
+        ) == .mention
+    )
+
+    var ownReplyPing = ownPing
+    ownReplyPing.replyTo = MessageID(rawValue: 7)
+    #expect(
+        MessageRowPersistentHighlight.resolve(
+            message: ownReplyPing,
+            currentUserID: currentUser.id
+        ) == .mention
     )
 }
 

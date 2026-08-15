@@ -193,15 +193,21 @@ extension NativeTimelineRowPainter {
                 color: .tertiaryLabelColor
             )
         }
-        if let frame = layout.replyFrame {
+        if let frame = layout.replyFrame,
+           let contentFrame = layout.replyContentFrame
+        {
             if let preview = row.replyPreview {
                 replyContext(
                     preview: preview,
                     frame: frame,
+                    contentFrame: contentFrame,
                     model: model
                 )
             } else {
-                unavailableReplyContext(frame: frame)
+                unavailableReplyContext(
+                    frame: frame,
+                    contentFrame: contentFrame
+                )
             }
         }
         if let region = layout.commandInvocationRegion {
@@ -746,19 +752,24 @@ extension NativeTimelineRowPainter {
     static func replyContext(
         preview: MessageReplyPreview,
         frame: CGRect,
+        contentFrame: CGRect,
         model: AppModel?
     ) {
         let connectorFrame = CGRect(
             x: frame.minX,
             y: frame.minY,
-            width: 30,
+            width: max(
+                0,
+                contentFrame.minX - frame.minX
+                    - NativeTimelineReplyMetrics.horizontalSpacing
+            ),
             height: 20
         )
         replyConnector(in: connectorFrame)
 
         let avatarFrame =
             NativeTimelineAvatarPresentation
-                .replyAvatarFrame(in: frame)
+                .replyAvatarFrame(in: contentFrame)
         let authorFrame = replyAuthor(
             preview: preview,
             frame: frame,
@@ -777,9 +788,14 @@ extension NativeTimelineRowPainter {
         text(
             summary,
             in: CGRect(
-                x: authorFrame.maxX + 5,
+                x: authorFrame.maxX
+                    + NativeTimelineReplyMetrics.horizontalSpacing,
                 y: frame.minY,
-                width: max(0, frame.maxX - 48 - authorFrame.maxX - 5),
+                width: max(
+                    0,
+                    frame.maxX - 48 - authorFrame.maxX
+                        - NativeTimelineReplyMetrics.horizontalSpacing
+                ),
                 height: 20
             ),
             font: NativeTimelineReplyMetrics.summaryFont,
@@ -787,11 +803,18 @@ extension NativeTimelineRowPainter {
         )
     }
 
-    static func unavailableReplyContext(frame: CGRect) {
+    static func unavailableReplyContext(
+        frame: CGRect,
+        contentFrame: CGRect
+    ) {
         replyConnector(in: CGRect(
             x: frame.minX,
             y: frame.minY,
-            width: 30,
+            width: max(
+                0,
+                contentFrame.minX - frame.minX
+                    - NativeTimelineReplyMetrics.horizontalSpacing
+            ),
             height: 20
         ))
         let baseFont = NativeTimelineReplyMetrics.summaryFont
@@ -802,9 +825,9 @@ extension NativeTimelineRowPainter {
         text(
             "Message could not be loaded",
             in: CGRect(
-                x: frame.minX + 35,
+                x: contentFrame.minX,
                 y: frame.minY,
-                width: max(0, frame.width - 35),
+                width: contentFrame.width,
                 height: 20
             ),
             font: italicFont,
@@ -831,9 +854,17 @@ extension NativeTimelineRowPainter {
             font: font
         )
         let authorFrame = CGRect(
-            x: avatarFrame.maxX + 5,
+            x: avatarFrame.maxX
+                + NativeTimelineReplyMetrics.horizontalSpacing,
             y: frame.minY,
-            width: min(width, max(0, frame.maxX - avatarFrame.maxX - 5)),
+            width: min(
+                width,
+                max(
+                    0,
+                    frame.maxX - avatarFrame.maxX
+                        - NativeTimelineReplyMetrics.horizontalSpacing
+                )
+            ),
             height: 20
         )
         text(

@@ -244,13 +244,13 @@ extension NativeTimelineCanvasView {
             }
             if let preview = row.replyPreview,
                let url = preview.author.avatarURL,
-               let replyFrame = layout.replyFrame,
+               let replyContentFrame = layout.replyContentFrame,
                NativeTimelineAvatarPresentation
                 .shouldDecodeAnimation(for: url)
             {
                 let frame =
                     NativeTimelineAvatarPresentation
-                        .replyAvatarFrame(in: replyFrame)
+                        .replyAvatarFrame(in: replyContentFrame)
                 append(
                     row: identifier,
                     role: .replyAvatar,

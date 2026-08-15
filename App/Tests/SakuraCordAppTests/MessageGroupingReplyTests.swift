@@ -77,6 +77,10 @@ import Testing
         width: 600
     )
     let replyFrame = try #require(layout.replyFrame)
+    let replyContentFrame = try #require(layout.replyContentFrame)
+    let authorFrame = try #require(layout.authorFrame)
+
+    #expect(replyContentFrame.minX == authorFrame.minX)
 
     let canvas = NativeTimelineCanvasView(
         frame: CGRect(x: 0, y: 0, width: 600, height: layout.height)

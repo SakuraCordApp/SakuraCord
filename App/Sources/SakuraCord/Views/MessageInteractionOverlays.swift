@@ -122,9 +122,7 @@ nonisolated enum MessageRowPersistentHighlight: Equatable {
         if message.flags.contains(.ephemeral) {
             return .ephemeral
         }
-        guard let currentUserID,
-              message.author.id != currentUserID
-        else {
+        guard let currentUserID else {
             return .none
         }
         if message.mentionedUsers.contains(where: {

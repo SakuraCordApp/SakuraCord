@@ -456,6 +456,7 @@ struct NativeTimelineRowLayout {
     let editedFrame: CGRect?
     let loadingIndicatorFrame: CGRect?
     let replyFrame: CGRect?
+    let replyContentFrame: CGRect?
     let commandInvocationRegion: CommandInvocationRegion?
     let systemIconFrame: CGRect?
     let contentFrame: CGRect?
@@ -537,6 +538,7 @@ struct NativeTimelineRowLayout {
             editedFrame: nil,
             loadingIndicatorFrame: loadingIndicatorFrame,
             replyFrame: nil,
+            replyContentFrame: nil,
             commandInvocationRegion: nil,
             systemIconFrame: nil,
             contentFrame: nil,
@@ -655,12 +657,20 @@ struct NativeTimelineRowLayout {
         var verticalOffset = highlightMinY + highlightInsets.top
 
         var replyFrame: CGRect?
+        var replyContentFrame: CGRect?
         if row.replyMessageID != nil {
-            replyFrame = CGRect(
+            let frame = CGRect(
                 x: horizontalInset,
                 y: verticalOffset,
                 width: width - horizontalInset * 2,
                 height: 20
+            )
+            replyFrame = frame
+            replyContentFrame = CGRect(
+                x: contentX,
+                y: frame.minY,
+                width: max(0, frame.maxX - contentX),
+                height: frame.height
             )
             verticalOffset += 20
         }
@@ -1157,6 +1167,7 @@ struct NativeTimelineRowLayout {
             editedFrame: editedFrame,
             loadingIndicatorFrame: loadingIndicatorFrame,
             replyFrame: replyFrame,
+            replyContentFrame: replyContentFrame,
             commandInvocationRegion: commandInvocationRegion,
             systemIconFrame: systemIconFrame,
             contentFrame: contentFrame,
