@@ -65,7 +65,7 @@ if [[ "$UPDATES_ENABLED" == "1" ]]; then
 fi
 BUILD_FLAGS=()
 if [[ "$MODE" == "package-release" ]]; then
-  BUILD_FLAGS=(-c release)
+  BUILD_FLAGS=(-c release --disable-index-store)
 fi
 APP_ICON_NAME="$SAKURACORD_PRODUCT_NAME"
 APP_ICON_SOURCE="${SAKURACORD_APP_ICON:-SakuraCord.icon}"
