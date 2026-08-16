@@ -198,7 +198,8 @@ extension NativeMessageTimelineCoordinator {
 
         func applySnapshot(
             to canvas: NativeTimelineCanvasView,
-            in scrollView: NSScrollView
+            in scrollView: NSScrollView,
+            redrawsMovedShortContentSynchronously: Bool = true
         ) {
             let viewportHeight = max(1, scrollView.contentView.bounds.height)
             updateDocumentSize(
@@ -224,7 +225,9 @@ extension NativeMessageTimelineCoordinator {
                 historySkeleton:
                     historySkeletonPresentation(
                         viewportHeight: viewportHeight
-                    )
+                    ),
+                redrawsMovedShortContentSynchronously:
+                    redrawsMovedShortContentSynchronously
             )
         }
 

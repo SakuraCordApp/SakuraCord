@@ -60,12 +60,16 @@ usage() {
 #       boundary records event-to-moving-frame latency. This scenario performs
 #       no synthetic input or account mutation. The exact 20-second interaction
 #       window begins after the initial conversation is ready. Defaults: 40 seconds.
-#   authenticated-loading-scroll-overlap [seconds]
-#       Relaunch with gesture probes, hold a three-second idle scrolling control,
+#   authenticated-loading-scroll-overlap [seconds] [surface]
+#       Relaunch with gesture probes, hold an eight-second idle scrolling control,
 #       then cold-open the real Google Labs server and load its initial members,
 #       roles, messages, first frame, and additional history in one exact window.
-#       Start continuous read-only trackpad scrolling when the workspace appears.
-#       The run is rejected if Google Labs was already selected. Defaults: 45 seconds.
+#       Start continuous read-only trackpad scrolling when the workspace appears
+#       and keep scrolling the selected timeline, member-list, channel-list, or
+#       server-list surface through the loading phase. Run once per surface; the
+#       summary rejects missing idle/loading gesture samples or a final history
+#       count that did not grow beyond the initial page. Defaults: 55 seconds and
+#       timeline.
 #   authenticated-navigation [seconds]
 #       Relaunch the authenticated debug app and deterministically open real
 #       DMs, servers, and same-server channels using live REST and Gateway data.
@@ -103,6 +107,9 @@ usage() {
 #       startup uses signpost-bounded Time Profiler samples. Writes summary.txt
 #       beside the raw capture. Activity Monitor's normalized Energy Impact
 #       number is private and is not the same measurement as top's power column.
+#       For diagnostic captures made without physical input, set
+#       SAKURACORD_PERFORMANCE_ALLOW_MISSING_GESTURES=1. The summary is then
+#       explicitly labeled as lacking gesture coverage; strict mode is default.
 #
 # Artifacts are written beneath .build/performance and remain untracked.
 
@@ -376,7 +383,7 @@ record_launch() {
     local scenario="$1" seconds="$2" pid output trace trace_pid notify_pid notification sampler
     local stopped_state sandbox_directory sandbox_result sandbox_window
     local performance_account_id debug_credential_directory newest_credential
-    local resource_window_name scroll_input_telemetry
+    local resource_window_name scroll_input_telemetry scroll_surface
     shift 2
     pid="$(running_pid || true)"
     if [[ -n "$pid" ]]; then
@@ -424,6 +431,7 @@ record_launch() {
     else
         scroll_input_telemetry=0
     fi
+    scroll_surface="${SAKURACORD_PERFORMANCE_SCROLL_SURFACE:-all}"
     performance_account_id="${SAKURACORD_PERFORMANCE_ACCOUNT_ID:-}"
     if [[ "$scenario" == "authenticated-scroll" \
           || "$scenario" == "authenticated-member-list-scroll" \
@@ -483,6 +491,7 @@ record_launch() {
         SAKURACORD_PERFORMANCE_WINDOW_PATH="$sandbox_window" \
         SAKURACORD_PERFORMANCE_RESULT_PATH="$sandbox_result" \
         SAKURACORD_SCROLL_INPUT_TELEMETRY="$scroll_input_telemetry" \
+        SAKURACORD_PERFORMANCE_SCROLL_SURFACE="$scroll_surface" \
         /bin/sh -c 'kill -STOP "$$"; exec "$@"' sh "$executable" "$@" \
         >"$output/app-output.log" 2>&1 &
     pid=$!
@@ -593,7 +602,17 @@ record_authenticated_gesture_scroll() {
 }
 
 record_authenticated_loading_scroll_overlap() {
-    record_launch authenticated-loading-scroll-overlap "$1" \
+    local seconds="$1" surface="$2"
+    case "$surface" in
+        timeline|member-list|channel-list|server-list) ;;
+        *)
+            printf '%s\n' \
+                'Loading-scroll surface must be timeline, member-list, channel-list, or server-list.' >&2
+            exit 2
+            ;;
+    esac
+    SAKURACORD_PERFORMANCE_SCROLL_SURFACE="$surface" \
+        record_launch authenticated-loading-scroll-overlap "$seconds" \
         --debug-authenticated-loading-scroll-overlap-performance
 }
 
@@ -630,7 +649,8 @@ summarize_recording() {
         printf '%s\n' "Benchmark artifact directory does not exist: $output" >&2
         exit 6
     fi
-    local scenario profile_process
+    local scenario profile_process allow_missing_gestures
+    allow_missing_gestures="${SAKURACORD_PERFORMANCE_ALLOW_MISSING_GESTURES:-0}"
     scenario="$(
         awk -F '\t' '$1 == "scenario" { print $2 }' "$output/metadata.tsv"
     )"
@@ -659,9 +679,11 @@ summarize_recording() {
             exit 6
         fi
     fi
-    /usr/bin/ruby -r csv -r rexml/document - "$output" <<'RUBY' \
+    /usr/bin/ruby -r csv -r rexml/document - \
+        "$output" "$allow_missing_gestures" <<'RUBY' \
         | tee "$output/summary.txt"
 directory = File.expand_path(ARGV.fetch(0))
+allows_missing_gestures = ARGV.fetch(1, "0") == "1"
 
 def percentile(values, fraction)
   return nil if values.empty?
@@ -893,6 +915,7 @@ scroll_interaction_benchmark = [
 ].include?(scenario)
 navigation_app_residuals = {}
 navigation_history_network = {}
+loading_scroll_overlap_metrics = {}
 measurement_interval = case scenario
                        when "authenticated-scroll"
                          "MessageTimelineAutoScrollBenchmark"
@@ -1116,11 +1139,77 @@ if scroll_interaction_benchmark
     raise "Authenticated scroll-interaction benchmark did not complete exactly once"
   end
   if scenario == "authenticated-loading-scroll-overlap"
+    initial_message_count = Integer(
+      benchmark_result["initial_message_count"], exception: false
+    )
+    message_count = Integer(benchmark_result["message_count"], exception: false)
+    display_fps = Float(
+      benchmark_result["display_maximum_frames_per_second"], exception: false
+    )
+    surface = benchmark_result["surface"]
+    gesture_intervals = {
+      "timeline" => "TimelineGestureInputToDisplay",
+      "member-list" => "MemberListGestureInputToDisplay",
+      "channel-list" => "ChannelListGestureInputToDisplay",
+      "server-list" => "ServerListGestureInputToDisplay",
+    }
     unless benchmark_result["target"] == "Google Labs" &&
            interval_bounds["AuthenticatedLoadingScrollIdleControl"].length == 1 &&
-           interval_bounds["AuthenticatedLoadingScrollWork"].length == 1
+           interval_bounds["AuthenticatedLoadingScrollWork"].length == 1 &&
+           gesture_intervals.key?(surface) &&
+           initial_message_count && initial_message_count >= 0 &&
+           message_count && message_count > 10 &&
+           message_count > initial_message_count &&
+           display_fps&.finite? && display_fps.positive?
       raise "Loading-scroll overlap requires Google Labs idle and loading intervals"
     end
+    refresh_interval_ms = 1_000.0 / display_fps
+    delayed_threshold_ms = refresh_interval_ms * 1.10
+    phase_windows = {
+      "idle" => interval_bounds["AuthenticatedLoadingScrollIdleControl"].first,
+      "loading" => interval_bounds["AuthenticatedLoadingScrollWork"].first,
+    }
+    gesture_intervals.each do |label, interval_name|
+      phase_metrics = {}
+      phase_windows.each do |phase, (phase_start, phase_end)|
+        durations = interval_bounds[interval_name].each_with_object([]) do |bounds, values|
+          start_at, end_at = bounds
+          values << end_at - start_at if start_at >= phase_start && end_at <= phase_end
+        end
+        next if durations.empty?
+        phase_metrics[phase] = {
+          count: durations.length,
+          median: percentile(durations, 0.50),
+          p95: percentile(durations, 0.95),
+          p99: percentile(durations, 0.99),
+          maximum: durations.max,
+          delayed_rate:
+            durations.count { |duration| duration > delayed_threshold_ms }.to_f /
+              durations.length,
+        }
+      end
+      next if phase_metrics.empty?
+      if phase_metrics.key?("idle") && phase_metrics.key?("loading")
+        idle_p95 = phase_metrics["idle"][:p95]
+        loading_p95 = phase_metrics["loading"][:p95]
+        phase_metrics["loading_to_idle_p95_ratio"] =
+          idle_p95.positive? ? loading_p95 / idle_p95 : nil
+      end
+      loading_scroll_overlap_metrics[label] = phase_metrics
+    end
+    expected_metrics = loading_scroll_overlap_metrics[surface]
+    has_gesture_coverage =
+      (expected_metrics&.dig("idle", :count) || 0) >= 2 &&
+      (expected_metrics&.dig("loading", :count) || 0) >= 2
+    unless has_gesture_coverage || allows_missing_gestures
+      raise "Loading-scroll overlap requires at least two idle and loading gestures on #{surface}"
+    end
+    loading_scroll_overlap_metrics["display_fps"] = display_fps
+    loading_scroll_overlap_metrics["refresh_interval_ms"] = refresh_interval_ms
+    loading_scroll_overlap_metrics["surface"] = surface
+    loading_scroll_overlap_metrics["initial_message_count"] = initial_message_count
+    loading_scroll_overlap_metrics["message_count"] = message_count
+    loading_scroll_overlap_metrics["has_gesture_coverage"] = has_gesture_coverage
   end
   lower_bound, upper_bound = interval_bounds[measurement_interval].first
   scoped_intervals = {}
@@ -1310,6 +1399,33 @@ end
 if history_pagination_benchmark
   puts "history-pagination.pages\t#{benchmark_result["page_count"]}"
 end
+unless loading_scroll_overlap_metrics.empty?
+  puts "loading-scroll.surface\t#{loading_scroll_overlap_metrics["surface"]}"
+  puts "loading-scroll.gesture-coverage\t#{loading_scroll_overlap_metrics["has_gesture_coverage"]}"
+  puts "loading-scroll.display-maximum-fps\t#{loading_scroll_overlap_metrics["display_fps"]} Hz"
+  puts "loading-scroll.refresh-interval\t#{format_metric(loading_scroll_overlap_metrics["refresh_interval_ms"], "ms")}"
+  puts "loading-scroll.initial-messages\t#{loading_scroll_overlap_metrics["initial_message_count"]}"
+  puts "loading-scroll.final-messages\t#{loading_scroll_overlap_metrics["message_count"]}"
+  %w[timeline member-list channel-list server-list].each do |surface|
+    metrics = loading_scroll_overlap_metrics[surface]
+    next unless metrics
+    %w[idle loading].each do |phase|
+      values = metrics[phase]
+      next unless values
+      prefix = "loading-scroll.#{surface}.#{phase}"
+      puts "#{prefix}.gestures\t#{values[:count]}"
+      puts "#{prefix}.input-latency.median\t#{format_metric(values[:median], "ms")}"
+      puts "#{prefix}.input-latency.p95\t#{format_metric(values[:p95], "ms")}"
+      puts "#{prefix}.input-latency.p99\t#{format_metric(values[:p99], "ms")}"
+      puts "#{prefix}.input-latency.maximum\t#{format_metric(values[:maximum], "ms")}"
+      puts "#{prefix}.delayed-over-refresh\t#{format_metric(values[:delayed_rate] * 100, "%")}"
+    end
+    ratio = metrics["loading_to_idle_p95_ratio"]
+    next unless ratio
+    puts "loading-scroll.#{surface}.loading-vs-idle.p95-ratio\t#{format_metric(ratio, "x")}"
+    puts "loading-scroll.#{surface}.loading-vs-idle.within-10-percent\t#{ratio <= 1.10}"
+  end
+end
 if reports_resource_metrics
   puts "samples\t#{cpu.length}"
   unless cpu.empty?
@@ -1389,7 +1505,7 @@ case "$command" in
         record_authenticated_gesture_scroll "${2:-40}"
         ;;
     authenticated-loading-scroll-overlap)
-        record_authenticated_loading_scroll_overlap "${2:-45}"
+        record_authenticated_loading_scroll_overlap "${2:-55}" "${3:-timeline}"
         ;;
     authenticated-navigation)
         record_authenticated_navigation "${2:-45}"

@@ -5,6 +5,9 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fixture="$root/script/fixtures/performance-overlap"
 temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-performance-test.XXXXXX")"
 member_list_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-member-list-performance-test.XXXXXX")"
+loading_scroll_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-loading-scroll-performance-test.XXXXXX")"
+loading_scroll_invalid_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-loading-scroll-invalid-test.XXXXXX")"
+loading_scroll_missing_gesture_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-loading-scroll-missing-gesture-test.XXXXXX")"
 startup_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-startup-test.XXXXXX")"
 insufficient_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-insufficient-test.XXXXXX")"
 cancelled_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-cancelled-test.XXXXXX")"
@@ -16,7 +19,7 @@ late_tick_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-late-tick-test.XXXX
 missing_profiler_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-missing-profiler-test.XXXXXX")"
 provenance_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-provenance-test.XXXXXX")"
 source_marker="$root/.performance-provenance-test.$$"
-trap 'rm -rf "$temporary" "$member_list_temporary" "$startup_temporary" "$insufficient_temporary" "$cancelled_temporary" "$missing_outcome_temporary" "$pagination_failed_temporary" "$short_distance_temporary" "$missing_elapsed_temporary" "$late_tick_temporary" "$missing_profiler_temporary" "$provenance_temporary"; rm -f "$source_marker"' EXIT
+trap 'rm -rf "$temporary" "$member_list_temporary" "$loading_scroll_temporary" "$loading_scroll_invalid_temporary" "$loading_scroll_missing_gesture_temporary" "$startup_temporary" "$insufficient_temporary" "$cancelled_temporary" "$missing_outcome_temporary" "$pagination_failed_temporary" "$short_distance_temporary" "$missing_elapsed_temporary" "$late_tick_temporary" "$missing_profiler_temporary" "$provenance_temporary"; rm -f "$source_marker"' EXIT
 
 cp "$fixture"/* "$temporary"/
 "$root/script/performance_benchmark.sh" summarize "$temporary" >/dev/null
@@ -66,6 +69,55 @@ grep -F $'measurement.window\tMemberListAutoScrollBenchmark' \
 grep -F $'resources.window\tMemberListAutoScrollBenchmark nominal 20.000 s' \
     "$member_list_summary" >/dev/null
 grep -F $'spatial.quality\t1.0 ratio' "$member_list_summary" >/dev/null
+
+cp "$root/script/fixtures/performance-loading-scroll-overlap"/* \
+    "$loading_scroll_temporary"/
+"$root/script/performance_benchmark.sh" summarize \
+    "$loading_scroll_temporary" >/dev/null
+loading_scroll_summary="$loading_scroll_temporary/summary.txt"
+grep -F $'loading-scroll.surface\ttimeline' "$loading_scroll_summary" >/dev/null
+grep -F $'loading-scroll.initial-messages\t10' "$loading_scroll_summary" >/dev/null
+grep -F $'loading-scroll.final-messages\t100' "$loading_scroll_summary" >/dev/null
+grep -F $'loading-scroll.timeline.idle.gestures\t2' \
+    "$loading_scroll_summary" >/dev/null
+grep -F $'loading-scroll.timeline.loading.gestures\t2' \
+    "$loading_scroll_summary" >/dev/null
+grep -F $'loading-scroll.timeline.idle.input-latency.p95\t15.000 ms' \
+    "$loading_scroll_summary" >/dev/null
+grep -F $'loading-scroll.timeline.loading.input-latency.p95\t16.000 ms' \
+    "$loading_scroll_summary" >/dev/null
+grep -F $'loading-scroll.timeline.loading-vs-idle.p95-ratio\t1.067 x' \
+    "$loading_scroll_summary" >/dev/null
+grep -F $'loading-scroll.timeline.loading-vs-idle.within-10-percent\ttrue' \
+    "$loading_scroll_summary" >/dev/null
+
+cp "$root/script/fixtures/performance-loading-scroll-overlap"/* \
+    "$loading_scroll_invalid_temporary"/
+perl -0pi -e 's/message_count\t100/message_count\t10/' \
+    "$loading_scroll_invalid_temporary/benchmark-result.tsv"
+if "$root/script/performance_benchmark.sh" summarize \
+    "$loading_scroll_invalid_temporary" >/dev/null 2>&1; then
+    printf '%s\n' \
+        'loading-scroll benchmark without additional history was accepted' >&2
+    exit 1
+fi
+
+cp "$root/script/fixtures/performance-loading-scroll-overlap"/* \
+    "$loading_scroll_missing_gesture_temporary"/
+perl -0pi -e \
+    's/TimelineGestureInputToDisplay/UnrelatedGestureInputToDisplay/g' \
+    "$loading_scroll_missing_gesture_temporary/signposts.xml"
+if "$root/script/performance_benchmark.sh" summarize \
+    "$loading_scroll_missing_gesture_temporary" >/dev/null 2>&1; then
+    printf '%s\n' \
+        'loading-scroll benchmark without physical gesture coverage was accepted' >&2
+    exit 1
+fi
+SAKURACORD_PERFORMANCE_ALLOW_MISSING_GESTURES=1 \
+    "$root/script/performance_benchmark.sh" summarize \
+    "$loading_scroll_missing_gesture_temporary" >/dev/null
+grep -F $'loading-scroll.gesture-coverage\tfalse' \
+    "$loading_scroll_missing_gesture_temporary/summary.txt" >/dev/null
 
 cp "$root/script/fixtures/performance-startup-order"/* "$startup_temporary"/
 "$root/script/performance_benchmark.sh" summarize "$startup_temporary" >/dev/null

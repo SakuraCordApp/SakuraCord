@@ -1009,6 +1009,162 @@ func `inline rich tokens inherit their enclosing spoiler`() {
             hasCachedBitmap: false
         )
     )
+    #expect(
+        NativeTimelineShortContentRedrawPolicy.redrawsSynchronously(
+            conversationChanged: false,
+            appendedAtTail: true
+        )
+    )
+    #expect(
+        !NativeTimelineShortContentRedrawPolicy.redrawsSynchronously(
+            conversationChanged: true,
+            appendedAtTail: true
+        )
+    )
+    #expect(
+        !NativeTimelineShortContentRedrawPolicy.redrawsSynchronously(
+            conversationChanged: false,
+            appendedAtTail: false
+        )
+    )
+    #expect(
+        TimelineAccessibilityWorkPolicy.reconcilesEagerly(
+            isVoiceOverEnabled: true,
+            isSwitchControlEnabled: false
+        )
+    )
+    #expect(
+        TimelineAccessibilityWorkPolicy.reconcilesEagerly(
+            isVoiceOverEnabled: false,
+            isSwitchControlEnabled: true
+        )
+    )
+    #expect(
+        !TimelineAccessibilityWorkPolicy.reconcilesEagerly(
+            isVoiceOverEnabled: false,
+            isSwitchControlEnabled: false
+        )
+    )
+    #expect(
+        HoverActionPillMetrics.size(controlCount: 1)
+            == CGSize(width: 36, height: 36)
+    )
+    #expect(
+        HoverActionPillMetrics.size(controlCount: 5)
+            == CGSize(width: 152, height: 36)
+    )
+}
+
+@MainActor
+@Test func `conversation replacement defers live append short content redraw`() {
+    let viewport = CGRect(x: 0, y: 0, width: 560, height: 400)
+    let canvas = NativeTimelineCanvasView(frame: viewport)
+    let scrollView = NSScrollView(frame: viewport)
+    scrollView.documentView = canvas
+    let window = NSWindow(
+        contentRect: viewport,
+        styleMask: .borderless,
+        backing: .buffered,
+        defer: false
+    )
+    window.contentView = scrollView
+    let storage = NativeTimelineCanvasStorage()
+    let model = AppModel(launchMode: .offlineTesting)
+    let actions = NativeTimelineRowActions(
+        loadEarlier: {},
+        openReply: { _ in },
+        reply: nil,
+        retry: { _ in },
+        edit: { _, _ in },
+        markUnread: { _ in },
+        delete: { _ in },
+        react: { _, _ in },
+        openThread: { _ in },
+        submitComponent: { _, _, _, _ in }
+    )
+    let shortContentOrigin =
+        ChatDetailLayoutPolicy.timelineTopPadding + 100
+
+    canvas.apply(
+        storage: storage,
+        model: model,
+        actions: actions,
+        viewportWidth: viewport.width,
+        minimumHeight: viewport.height,
+        bottomSpacerHeight: 0,
+        contentOriginY: shortContentOrigin,
+        redrawsMovedShortContentSynchronously: false
+    )
+    #expect(canvas.synchronousShortContentRedrawCount == 0)
+
+    canvas.apply(
+        storage: storage,
+        model: model,
+        actions: actions,
+        viewportWidth: viewport.width,
+        minimumHeight: viewport.height,
+        bottomSpacerHeight: 0,
+        contentOriginY: shortContentOrigin + 20
+    )
+    #expect(canvas.synchronousShortContentRedrawCount == 1)
+}
+
+@MainActor
+@Test func `timeline accessibility query materializes lazy row proxies`() {
+    let viewport = CGRect(x: 0, y: 0, width: 560, height: 400)
+    let channel = Channel(
+        id: ChannelID(rawValue: 9_001),
+        guildID: GuildID(rawValue: 9_002),
+        name: "accessibility",
+        kind: .text
+    )
+    let item = NativeMessageTimelineItem.beginning(
+        .channel(channel, rulesChannelID: nil)
+    )
+    let layout = NativeTimelineRowLayout.make(
+        item: item,
+        width: viewport.width
+    )
+    let storage = NativeTimelineCanvasStorage()
+    storage.items = [item]
+    storage.layouts = [layout]
+    storage.rowOrigins = [0]
+    storage.contentHeight = layout.height
+    let canvas = NativeTimelineCanvasView(frame: viewport)
+    let scrollView = NSScrollView(frame: viewport)
+    scrollView.documentView = canvas
+    let window = NSWindow(
+        contentRect: viewport,
+        styleMask: .borderless,
+        backing: .buffered,
+        defer: false
+    )
+    window.contentView = scrollView
+    canvas.apply(
+        storage: storage,
+        model: AppModel(launchMode: .offlineTesting),
+        actions: NativeTimelineRowActions(
+            loadEarlier: {},
+            openReply: { _ in },
+            reply: nil,
+            retry: { _ in },
+            edit: { _, _ in },
+            markUnread: { _ in },
+            delete: { _ in },
+            react: { _, _ in },
+            openThread: { _ in },
+            submitComponent: { _, _, _, _ in }
+        ),
+        viewportWidth: viewport.width,
+        minimumHeight: viewport.height,
+        bottomSpacerHeight: 0,
+        contentOriginY: 0
+    )
+    canvas.removeAccessibilityProxies()
+    #expect(canvas.accessibilityProxyRowsInTimelineOrder().isEmpty)
+
+    #expect(canvas.accessibilityRows()?.count == 1)
+    #expect(canvas.accessibilityProxyRowsInTimelineOrder().count == 1)
 }
 
 @MainActor

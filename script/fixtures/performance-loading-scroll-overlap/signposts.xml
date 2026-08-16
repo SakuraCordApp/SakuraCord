@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<trace-query-result>
+  <node>
+    <row>
+      <event-time fmt="00:01.000.000">1000000000</event-time>
+      <process fmt="SakuraCord (pid: 1)">1</process>
+      <event-type>Begin</event-type>
+      <os-signpost-identifier fmt="1">1</os-signpost-identifier>
+      <signpost-name>AuthenticatedLoadingScrollOverlapBenchmark</signpost-name>
+    </row>
+    <row>
+      <event-time fmt="00:02.000.000">2000000000</event-time>
+      <process fmt="SakuraCord (pid: 1)">1</process>
+      <event-type>Begin</event-type>
+      <os-signpost-identifier fmt="2">2</os-signpost-identifier>
+      <signpost-name>AuthenticatedLoadingScrollIdleControl</signpost-name>
+    </row>
+    <row>
+      <event-time fmt="00:03.000.000">3000000000</event-time>
+      <process fmt="SakuraCord (pid: 1)">1</process>
+      <event-type>Begin</event-type>
+      <os-signpost-identifier fmt="3">3</os-signpost-identifier>
+      <signpost-name>TimelineGestureInputToDisplay</signpost-name>
+    </row>
+    <row>
+      <event-time fmt="00:03.010.000">3010000000</event-time>
+      <process fmt="SakuraCord (pid: 1)">1</process>
+      <event-type>End</event-type>
+      <os-signpost-identifier fmt="3">3</os-signpost-identifier>
+      <signpost-name>TimelineGestureInputToDisplay</signpost-name>
+    </row>
+    <row>
+      <event-time fmt="00:05.000.000">5000000000</event-time>
+      <process fmt="SakuraCord (pid: 1)">1</process>
+      <event-type>Begin</event-type>
+      <os-signpost-identifier fmt="4">4</os-signpost-identifier>
+      <signpost-name>TimelineGestureInputToDisplay</signpost-name>
+    </row>
+    <row>
+      <event-time fmt="00:05.015.000">5015000000</event-time>
+      <process fmt="SakuraCord (pid: 1)">1</process>
+      <event-type>End</event-type>
+      <os-signpost-identifier fmt="4">4</os-signpost-identifier>
+      <signpost-name>TimelineGestureInputToDisplay</signpost-name>
+    </row>
+    <row>
+      <event-time fmt="00:10.000.000">10000000000</event-time>
+      <process fmt="SakuraCord (pid: 1)">1</process>
+      <event-type>End</event-type>
+      <os-signpost-identifier fmt="2">2</os-signpost-identifier>
+      <signpost-name>AuthenticatedLoadingScrollIdleControl</signpost-name>
+    </row>
+    <row>
+      <event-time fmt="00:10.000.000">10000000000</event-time>
+      <process fmt="SakuraCord (pid: 1)">1</process>
+      <event-type>Begin</event-type>
+      <os-signpost-identifier fmt="5">5</os-signpost-identifier>
+      <signpost-name>AuthenticatedLoadingScrollWork</signpost-name>
+    </row>
+    <row>
+      <event-time fmt="00:10.500.000">10500000000</event-time>
+      <process fmt="SakuraCord (pid: 1)">1</process>
+      <event-type>Begin</event-type>
+      <os-signpost-identifier fmt="6">6</os-signpost-identifier>
+      <signpost-name>TimelineGestureInputToDisplay</signpost-name>
+    </row>
+    <row>
+      <event-time fmt="00:10.512.000">10512000000</event-time>
+      <process fmt="SakuraCord (pid: 1)">1</process>
+      <event-type>End</event-type>
+      <os-signpost-identifier fmt="6">6</os-signpost-identifier>
+      <signpost-name>TimelineGestureInputToDisplay</signpost-name>
+    </row>
+    <row>
+      <event-time fmt="00:11.500.000">11500000000</event-time>
+      <process fmt="SakuraCord (pid: 1)">1</process>
+      <event-type>Begin</event-type>
+      <os-signpost-identifier fmt="7">7</os-signpost-identifier>
+      <signpost-name>TimelineGestureInputToDisplay</signpost-name>
+    </row>
+    <row>
+      <event-time fmt="00:11.516.000">11516000000</event-time>
+      <process fmt="SakuraCord (pid: 1)">1</process>
+      <event-type>End</event-type>
+      <os-signpost-identifier fmt="7">7</os-signpost-identifier>
+      <signpost-name>TimelineGestureInputToDisplay</signpost-name>
+    </row>
+    <row>
+      <event-time fmt="00:13.000.000">13000000000</event-time>
+      <process fmt="SakuraCord (pid: 1)">1</process>
+      <event-type>End</event-type>
+      <os-signpost-identifier fmt="5">5</os-signpost-identifier>
+      <signpost-name>AuthenticatedLoadingScrollWork</signpost-name>
+    </row>
+    <row>
+      <event-time fmt="00:14.000.000">14000000000</event-time>
+      <process fmt="SakuraCord (pid: 1)">1</process>
+      <event-type>End</event-type>
+      <os-signpost-identifier fmt="1">1</os-signpost-identifier>
+      <signpost-name>AuthenticatedLoadingScrollOverlapBenchmark</signpost-name>
+    </row>
+    <row>
+      <event-time fmt="00:14.000.000">14000000000</event-time>
+      <process fmt="SakuraCord (pid: 1)">1</process>
+      <event-type>Event</event-type>
+      <os-signpost-identifier fmt="8">8</os-signpost-identifier>
+      <signpost-name>AuthenticatedLoadingScrollOverlapBenchmarkCompleted</signpost-name>
+    </row>
+  </node>
+</trace-query-result>

@@ -1,3 +1,4 @@
+import AppKit
 import CoreAudio
 import CoreText
 import DiscordProtocol
@@ -29,6 +30,24 @@ nonisolated enum RestoredCredentialSelectionPolicy {
             return preferred
         }
         return handles.first
+    }
+}
+
+nonisolated enum PerformanceBenchmarkInitialGuildPolicy {
+    static func resolve(
+        guilds: [Guild],
+        retainedGuildID: GuildID?,
+        avoidingGuildNamed avoidedName: String?
+    ) -> GuildID? {
+        if let avoidedName,
+           let nonTargetGuild = guilds.first(where: {
+               $0.name.localizedCaseInsensitiveCompare(avoidedName)
+                   != .orderedSame
+           })
+        {
+            return nonTargetGuild.id
+        }
+        return retainedGuildID ?? guilds.first?.id
     }
 }
 
@@ -667,11 +686,14 @@ extension AppModel {
         let retainedChannel = selectedChannelID.flatMap { selectedChannelID in
             value.channels.first { $0.id == selectedChannelID }
         }
+        let initialGuildID = bootstrapInitialGuildID(
+            in: value,
+            retainedChannel: retainedChannel
+        )
         AppPerformanceSignposts.measureSync("BootstrapNavigationProjection") {
             logBootstrapUnreadState(value)
             applyBootstrapCurrentUserRoles(value)
             updateServerRail(from: value)
-            let initialGuildID = retainedChannel?.guildID ?? value.guilds.first?.id
             let initialChannels = value.channels.filter { channel in
                 initialGuildID == nil
                     ? channel.guildID == nil
@@ -736,12 +758,13 @@ extension AppModel {
         guard canPublishBootstrap(for: account) else { return }
         await AppPerformanceSignposts.measure("BootstrapInitialGuildActivation") {
             await activateGuild(
-                retainedChannel?.guildID ?? value.guilds.first?.id,
+                initialGuildID,
                 account: account
             )
         }
         guard canPublishBootstrap(for: account) else { return }
         if let retainedChannel,
+           retainedChannel.guildID == initialGuildID,
            selectedChannelID != retainedChannel.id
         {
             selectedChannelID = retainedChannel.id
@@ -754,6 +777,27 @@ extension AppModel {
         await AppPerformanceSignposts.measure("BootstrapInitialConversation") {
             await channelLoadTask?.value
         }
+    }
+
+    private func bootstrapInitialGuildID(
+        in value: BootstrapSnapshot,
+        retainedChannel: Channel?
+    ) -> GuildID? {
+        let runsLoadingOverlapBenchmark =
+            runsChatPerformanceBenchmark
+            && ProcessInfo.processInfo.arguments.contains(
+                "--debug-authenticated-loading-scroll-overlap-performance"
+            )
+        // Benchmark setup must not pre-open the measured guild. This is
+        // evaluated before history prefetch and initial guild activation,
+        // so each process launch retains a genuinely cold Google Labs
+        // conversation even when it is first in READY ordering.
+        return PerformanceBenchmarkInitialGuildPolicy.resolve(
+            guilds: value.guilds,
+            retainedGuildID: retainedChannel?.guildID,
+            avoidingGuildNamed:
+                runsLoadingOverlapBenchmark ? "Google Labs" : nil
+        )
     }
 
     func canPublishBootstrap(for session: AppModelAccountSession?) -> Bool {
@@ -2367,6 +2411,7 @@ extension AppModel {
             )
         }
 
+        // swiftlint:disable:next function_body_length
         func runAuthenticatedLoadingScrollOverlapPerformanceBenchmark() async {
             guard runsChatPerformanceBenchmark,
                   sessionState == .workspace
@@ -2377,24 +2422,40 @@ extension AppModel {
                     channelID: selectedChannelID
                 )
             }
-            guard !Task.isCancelled,
-                  let snapshot,
-                  let targetGuild = serverRailGuildsByID.values.first(where: {
-                      $0.name.localizedCaseInsensitiveCompare("Google Labs")
-                          == .orderedSame
-                  }),
-                  selectedGuildID != targetGuild.id,
-                  let channel = benchmarkEligibleChannels(
-                      snapshot.channels.filter {
-                          $0.guildID == targetGuild.id
-                      }
-                  ).first
-            else {
+            func finishUnavailable(_ detail: String) {
                 writeAuthenticatedScrollInteractionBenchmarkResult(
                     outcome: "unavailable",
                     target: "Google Labs",
-                    messageCount: 0
+                    messageCount: 0,
+                    initialMessageCount: 0,
+                    detail: detail
                 )
+            }
+            guard !Task.isCancelled else {
+                finishUnavailable("cancelled-before-setup")
+                return
+            }
+            guard let snapshot else {
+                finishUnavailable("snapshot-missing")
+                return
+            }
+            guard let targetGuild = serverRailGuildsByID.values.first(where: {
+                $0.name.localizedCaseInsensitiveCompare("Google Labs")
+                    == .orderedSame
+            }) else {
+                finishUnavailable("target-guild-missing")
+                return
+            }
+            guard selectedGuildID != targetGuild.id else {
+                finishUnavailable("target-preselected")
+                return
+            }
+            guard let channel = benchmarkConversationChannels(
+                snapshot.channels.filter {
+                    $0.guildID == targetGuild.id
+                }
+            ).sorted(by: Self.prefersActiveBenchmarkChannel).first else {
+                finishUnavailable("target-channels-missing")
                 return
             }
 
@@ -2410,7 +2471,7 @@ extension AppModel {
             let idleControl = AppPerformanceSignposts.signposter.beginInterval(
                 "AuthenticatedLoadingScrollIdleControl"
             )
-            try? await Task.sleep(for: .seconds(3))
+            try? await Task.sleep(for: .seconds(8))
             AppPerformanceSignposts.signposter.endInterval(
                 "AuthenticatedLoadingScrollIdleControl",
                 idleControl
@@ -2423,6 +2484,7 @@ extension AppModel {
                 channel: channel,
                 kind: .server
             )
+            let initialMessageCount = opened ? messages.count : 0
             if opened {
                 await memberLoadTask?.value
                 _ = await prepareSelectedTimelineScrollHistory()
@@ -2444,25 +2506,47 @@ extension AppModel {
             )
             writeAuthenticatedScrollInteractionBenchmarkResult(
                 outcome:
-                    opened && !Task.isCancelled
+                    opened
+                        && messages.count > initialMessageCount
+                        && messages.count > 10
+                        && !Task.isCancelled
                     ? "completed"
                     : (Task.isCancelled ? "cancelled" : "failed"),
                 target: targetGuild.name,
-                messageCount: messages.count
+                messageCount: messages.count,
+                initialMessageCount: initialMessageCount
             )
+        }
+
+        private nonisolated static func prefersActiveBenchmarkChannel(
+            _ lhs: Channel,
+            _ rhs: Channel
+        ) -> Bool {
+            let lhsLastMessage = lhs.lastMessageID?.rawValue ?? 0
+            let rhsLastMessage = rhs.lastMessageID?.rawValue ?? 0
+            if lhsLastMessage != rhsLastMessage {
+                return lhsLastMessage > rhsLastMessage
+            }
+            return lhs.id.rawValue < rhs.id.rawValue
         }
 
         private func writeAuthenticatedScrollInteractionBenchmarkResult(
             outcome: String,
             target: String,
-            messageCount: Int
+            messageCount: Int,
+            initialMessageCount: Int? = nil,
+            detail: String = ""
         ) {
             guard let path = ProcessInfo.processInfo.environment[
                 "SAKURACORD_PERFORMANCE_RESULT_PATH"
             ] else { return }
             let contents = """
             outcome\t\(outcome)
+            detail\t\(detail)
             target\t\(target)
+            surface\t\(ProcessInfo.processInfo.environment["SAKURACORD_PERFORMANCE_SCROLL_SURFACE"] ?? "all")
+            display_maximum_frames_per_second\t\(max(1, NSApp.keyWindow?.screen?.maximumFramesPerSecond ?? NSScreen.main?.maximumFramesPerSecond ?? 60))
+            initial_message_count\t\(initialMessageCount ?? messageCount)
             message_count\t\(messageCount)
 
             """
@@ -2584,9 +2668,17 @@ extension AppModel {
         }
 
         private func benchmarkEligibleChannels(_ channels: [Channel]) -> [Channel] {
-            channels.filter { channel in
+            benchmarkConversationChannels(channels).filter { channel in
                 guard conversationAccess(for: channel).isReadable else { return false }
-                return switch channel.kind {
+                return true
+            }
+        }
+
+        private func benchmarkConversationChannels(
+            _ channels: [Channel]
+        ) -> [Channel] {
+            channels.filter { channel in
+                switch channel.kind {
                 case .text, .announcement, .directMessage, .groupDirectMessage:
                     true
                 default:

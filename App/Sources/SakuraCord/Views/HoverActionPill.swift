@@ -1,9 +1,26 @@
 import SwiftUI
 
+nonisolated enum HoverActionPillMetrics {
+    static let controlDiameter: CGFloat = 28
+    static let spacing: CGFloat = 1
+    static let padding: CGFloat = 4
+
+    static func size(controlCount: Int) -> CGSize {
+        let count = max(1, controlCount)
+        return CGSize(
+            width:
+                padding * 2
+                + controlDiameter * CGFloat(count)
+                + spacing * CGFloat(count - 1),
+            height: padding * 2 + controlDiameter
+        )
+    }
+}
+
 struct HoverActionPill<Content: View>: View {
     var glass: Glass = .regular
-    var spacing: CGFloat = 1
-    var padding: CGFloat = 4
+    var spacing: CGFloat = HoverActionPillMetrics.spacing
+    var padding: CGFloat = HoverActionPillMetrics.padding
     @ViewBuilder let content: () -> Content
 
     var body: some View {
@@ -49,7 +66,7 @@ struct HoverActionButton: View {
     let help: String
     var role: ButtonRole?
     var isSelected: Bool?
-    var diameter: CGFloat = 28
+    var diameter: CGFloat = HoverActionPillMetrics.controlDiameter
     var iconFont: Font = .callout.weight(.medium)
     let action: () -> Void
 

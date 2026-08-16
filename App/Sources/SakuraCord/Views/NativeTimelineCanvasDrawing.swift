@@ -17,7 +17,8 @@ extension NativeTimelineCanvasView {
         minimumHeight: CGFloat,
         bottomSpacerHeight: CGFloat,
         contentOriginY: CGFloat,
-        historySkeleton: TimelineHistorySkeletonPresentation? = nil
+        historySkeleton: TimelineHistorySkeletonPresentation? = nil,
+        redrawsMovedShortContentSynchronously: Bool = true
     ) {
         precondition(storage.items.count == storage.layouts.count)
         precondition(storage.items.count == storage.rowOrigins.count)
@@ -113,17 +114,18 @@ extension NativeTimelineCanvasView {
             window?.invalidateCursorRects(for: self)
         }
         if !suppressesHoverPresentation {
-            reconcileAccessibilityProxies()
-        }
-        reconcileReactionHover()
-        reconcileActionCapsule()
-        if !suppressesHoverPresentation {
-            synchronizeHoverWithCurrentPointer()
+            reconcileAccessibilityProxiesIfActive()
         }
         redrawMovedShortContentSynchronously(
             from: previousContentOriginY,
-            contentOriginMoved: contentOriginMoved
+            contentOriginMoved: contentOriginMoved,
+            isEnabled: redrawsMovedShortContentSynchronously
         )
+        if !suppressesHoverPresentation {
+            synchronizeHoverWithCurrentPointer()
+        }
+        reconcileReactionHover()
+        reconcileActionCapsule()
     }
 
     func updateHistorySkeleton(
@@ -192,10 +194,8 @@ extension NativeTimelineCanvasView {
             window?.invalidateCursorRects(for: self)
         }
         if !suppressesHoverPresentation {
-            reconcileAccessibilityProxies()
+            reconcileAccessibilityProxiesIfActive()
         }
-        reconcileReactionHover()
-        reconcileActionCapsule()
         positionAnimatedMediaOverlays()
         reconcileBeginningSelectionOverlay()
         positionInlineVideoOverlays()
@@ -203,21 +203,26 @@ extension NativeTimelineCanvasView {
         reconcileLoadingIndicators()
         positionSpoilerOverlays()
         needsDisplay = true
-        if !suppressesHoverPresentation {
-            synchronizeHoverWithCurrentPointer()
-        }
         redrawMovedShortContentSynchronously(
             from: oldOriginY,
             contentOriginMoved:
-                abs(oldOriginY - contentOriginY) >= 0.5
+                abs(oldOriginY - contentOriginY) >= 0.5,
+            isEnabled: true
         )
+        if !suppressesHoverPresentation {
+            synchronizeHoverWithCurrentPointer()
+        }
+        reconcileReactionHover()
+        reconcileActionCapsule()
     }
 
     func redrawMovedShortContentSynchronously(
         from previousContentOriginY: CGFloat,
-        contentOriginMoved: Bool
+        contentOriginMoved: Bool,
+        isEnabled: Bool
     ) {
-        guard contentOriginMoved,
+        guard isEnabled,
+              contentOriginMoved,
               window != nil,
               max(previousContentOriginY, contentOriginY)
                 > ChatDetailLayoutPolicy.timelineTopPadding + 0.5
@@ -331,7 +336,7 @@ extension NativeTimelineCanvasView {
         closeMessageProfilePopover()
         removeActionCapsule()
         freezeEditingRowForScroll()
-        reconcileAccessibilityProxies()
+        reconcileAccessibilityProxiesIfActive()
         if let old = clearedTargets.row {
             setNeedsDisplay(rowFrame(at: old))
         }
@@ -407,7 +412,7 @@ extension NativeTimelineCanvasView {
         reconcileSpoilerOverlays()
         updateTrackingAreas()
         window?.invalidateCursorRects(for: self)
-        reconcileAccessibilityProxies()
+        reconcileAccessibilityProxiesIfActive()
         synchronizeHoverWithCurrentPointer()
     }
 
@@ -527,7 +532,7 @@ extension NativeTimelineCanvasView {
             installReactionMouseMonitor()
             Task { @MainActor [weak self] in
                 await Task.yield()
-                self?.reconcileAccessibilityProxies()
+                self?.reconcileAccessibilityProxiesIfActive()
             }
         }
     }
@@ -537,7 +542,7 @@ extension NativeTimelineCanvasView {
         if superview != nil {
             Task { @MainActor [weak self] in
                 await Task.yield()
-                self?.reconcileAccessibilityProxies()
+                self?.reconcileAccessibilityProxiesIfActive()
             }
         }
     }

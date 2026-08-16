@@ -212,6 +212,20 @@ extension NativeTimelineCanvasView {
         }
         removeActionCapsule()
 
+        installActionCapsule(
+            for: row,
+            at: index,
+            model: model,
+            actions: actions
+        )
+    }
+
+    private func installActionCapsule(
+        for row: MessageRowPresentation,
+        at index: Int,
+        model: AppModel,
+        actions: NativeTimelineRowActions
+    ) {
         let state = NativeTimelineActionCapsuleState()
         state.presentationDidChange = { [weak self, weak state] isPresented in
             Task { @MainActor [weak self, weak state] in
@@ -228,35 +242,42 @@ extension NativeTimelineCanvasView {
             }
         }
         let canEdit = row.message.author.id == model.snapshot?.currentUser.id
+        let jumpToMessage = actions.openMessage.map { openMessage in
+            { openMessage(row.message) }
+        }
+        let retry = row.message.outboxState == .failed
+            ? { actions.retry(row.message) }
+            : nil
+        let reply = actions.reply.map { reply in
+            { reply(row.message) }
+        }
+        let forward = model.canForward(row.message)
+            ? actions.forward.map { forward in
+                { forward(row.message) }
+            }
+            : nil
+        let openThread = row.message.thread.map { thread in
+            { actions.openThread(thread) }
+        }
         let root = NativeTimelineActionCapsuleOverlay(
             model: model,
             message: row.message,
             canEdit: canEdit,
             state: state,
-            jumpToMessage: actions.openMessage.map { openMessage in
-                { openMessage(row.message) }
-            },
-            retry: row.message.outboxState == .failed
-                ? { actions.retry(row.message) }
-                : nil,
+            jumpToMessage: jumpToMessage,
+            retry: retry,
             edit: { [weak self] in
                 self?.beginEditing(row: row, at: index)
             },
-            reply: actions.reply.map { reply in
-                { reply(row.message) }
-            },
-            forward: model.canForward(row.message) ? actions.forward.map { forward in
-                { forward(row.message) }
-            } : nil,
+            reply: reply,
+            forward: forward,
             react: { emoji in actions.react(emoji, row.message) },
             copy: { Self.copyText(row.message.content) },
             copyLink: { [weak self] in
                 guard let self else { return }
                 Self.copyText(self.messageLink(for: row.message))
             },
-            openThread: row.message.thread.map { thread in
-                { actions.openThread(thread) }
-            },
+            openThread: openThread,
             delete: { actions.delete(row.message) }
         )
         // The canvas owns the capsule's exact document-coordinate frame.
@@ -272,7 +293,18 @@ extension NativeTimelineCanvasView {
         actionCapsuleState = state
         actionCapsuleHost = host
         actionCapsuleMessageID = row.id
-        refreshActionCapsuleSizeAndPosition(at: index)
+        let controlCount = jumpToMessage == nil
+            ? 3
+                + (retry == nil ? 0 : 1)
+                + (reply == nil ? 0 : 1)
+                + (forward == nil ? 0 : 1)
+                + (canEdit ? 2 : 0)
+                + (openThread == nil ? 0 : 1)
+            : 1
+        actionCapsuleSize = HoverActionPillMetrics.size(
+            controlCount: controlCount
+        )
+        positionActionCapsule(at: index)
     }
 
     func refreshActionCapsuleSizeAndPosition(at knownIndex: Int? = nil) {

@@ -620,7 +620,16 @@ extension NativeMessageTimelineCoordinator {
                 }
                 let originsEndUptime = ProcessInfo.processInfo.systemUptime
                 AppPerformanceSignposts.measureSync("TimelineSnapshot") {
-                    applySnapshot(to: canvas, in: scrollView)
+                    applySnapshot(
+                        to: canvas,
+                        in: scrollView,
+                        redrawsMovedShortContentSynchronously:
+                            NativeTimelineShortContentRedrawPolicy
+                            .redrawsSynchronously(
+                                conversationChanged: conversationChanged,
+                                appendedAtTail: didAppendItems
+                            )
+                    )
                 }
                 let snapshotEndUptime = ProcessInfo.processInfo.systemUptime
                 if requiresVisibleRedraw {

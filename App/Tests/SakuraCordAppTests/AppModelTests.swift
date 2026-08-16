@@ -55,6 +55,26 @@ import UserNotifications
     }
 }
 
+@Test func `loading overlap bootstrap keeps measured guild cold`() {
+    let google = Guild(id: GuildID(rawValue: 10), name: "Google Labs")
+    let control = Guild(id: GuildID(rawValue: 20), name: "Control")
+
+    #expect(
+        PerformanceBenchmarkInitialGuildPolicy.resolve(
+            guilds: [google, control],
+            retainedGuildID: google.id,
+            avoidingGuildNamed: "google labs"
+        ) == control.id
+    )
+    #expect(
+        PerformanceBenchmarkInitialGuildPolicy.resolve(
+            guilds: [google, control],
+            retainedGuildID: google.id,
+            avoidingGuildNamed: nil
+        ) == google.id
+    )
+}
+
 @MainActor
 @Test func `numbered navigation maps and selects direct messages and eight servers in rail order`() async {
     let model = AppModel(launchMode: .offlineTesting)

@@ -885,6 +885,15 @@ nonisolated enum NativeTimelineScrollingRenderPolicy {
     }
 }
 
+nonisolated enum NativeTimelineShortContentRedrawPolicy {
+    static func redrawsSynchronously(
+        conversationChanged: Bool,
+        appendedAtTail: Bool
+    ) -> Bool {
+        appendedAtTail && !conversationChanged
+    }
+}
+
 nonisolated struct NativeTimelineTextSelection: Equatable {
     let itemIdentifier: NativeMessageTimelineItem.Identifier
     let region: NativeTimelineTextRegion

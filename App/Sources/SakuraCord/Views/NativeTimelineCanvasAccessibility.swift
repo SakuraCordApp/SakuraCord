@@ -8,6 +8,15 @@ import QuartzCore
 import SakuraCordModels
 import SwiftUI
 
+nonisolated enum TimelineAccessibilityWorkPolicy {
+    static func reconcilesEagerly(
+        isVoiceOverEnabled: Bool,
+        isSwitchControlEnabled: Bool
+    ) -> Bool {
+        isVoiceOverEnabled || isSwitchControlEnabled
+    }
+}
+
 struct NativeTimelineTextAccessibilityInput {
     let value: NSAttributedString
     let framesetter: CTFramesetter
@@ -47,6 +56,7 @@ extension NativeTimelineCanvasView {
     }
 
     override func accessibilityChildren() -> [Any]? {
+        reconcileAccessibilityProxies()
         var orderedChildren = accessibilityProxyRowsInTimelineOrder()
         var additionalChildren = (super.accessibilityChildren() ?? []).filter { child in
             guard let childView = child as? NSView else { return true }
@@ -73,10 +83,12 @@ extension NativeTimelineCanvasView {
     }
 
     override func accessibilityRows() -> [Any]? {
-        accessibilityProxyRowsInTimelineOrder()
+        reconcileAccessibilityProxies()
+        return accessibilityProxyRowsInTimelineOrder()
     }
 
     override func accessibilityVisibleRows() -> [Any]? {
+        reconcileAccessibilityProxies()
         let viewport =
             enclosingScrollView?.documentVisibleRect ?? visibleRect
         return accessibilityProxyRowsInTimelineOrder().filter {
@@ -148,6 +160,17 @@ extension NativeTimelineCanvasView {
             accessibilityProxies.remove(identifier)
         }
         accessibilityProxies.setOrder(desiredOrder)
+    }
+
+    func reconcileAccessibilityProxiesIfActive() {
+        let workspace = NSWorkspace.shared
+        guard TimelineAccessibilityWorkPolicy
+            .reconcilesEagerly(
+                isVoiceOverEnabled: workspace.isVoiceOverEnabled,
+                isSwitchControlEnabled: workspace.isSwitchControlEnabled
+            )
+        else { return }
+        reconcileAccessibilityProxies()
     }
 
     func accessibilityProxy(
