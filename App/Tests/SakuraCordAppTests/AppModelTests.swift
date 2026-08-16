@@ -9,6 +9,53 @@ import UserNotifications
 @testable import SakuraCord
 
 @MainActor
+@Test func `server rail projection isolates unrelated guild row updates`() {
+    var first = Guild(id: GuildID(rawValue: 1), name: "First")
+    let second = Guild(id: GuildID(rawValue: 2), name: "Second")
+    let missingID = GuildID(rawValue: 3)
+    let items: [GuildRailItem] = [
+        .guild(first.id),
+        .guild(second.id),
+        .guild(missingID),
+        .folder(
+            GuildFolder(
+                id: 4,
+                name: "Folder",
+                guildIDs: [first.id, missingID, second.id]
+            )
+        ),
+    ]
+    let settings: (Guild) -> GuildNotificationSettings = {
+        GuildNotificationSettings(guildID: $0.id)
+    }
+    let baseline = ServerRailPresentationItem.make(
+        items: items,
+        guildsByID: [first.id: first, second.id: second],
+        notificationSettings: settings,
+        isMutationPending: { _ in false }
+    )
+
+    first.mentionCount = 1
+    let updated = ServerRailPresentationItem.make(
+        items: items,
+        guildsByID: [first.id: first, second.id: second],
+        notificationSettings: settings,
+        isMutationPending: { _ in false }
+    )
+
+    #expect(baseline.map(\.id) == items.map(\.id))
+    #expect(baseline[0] != updated[0])
+    #expect(baseline[1] == updated[1])
+    #expect(baseline[2] == updated[2])
+    #expect(baseline[3] != updated[3])
+    if case .guild(_, let presentation) = baseline[2] {
+        #expect(presentation == nil)
+    } else {
+        Issue.record("Expected the missing top-level guild row")
+    }
+}
+
+@MainActor
 @Test func `numbered navigation maps and selects direct messages and eight servers in rail order`() async {
     let model = AppModel(launchMode: .offlineTesting)
     let guilds = (1 ... 10).map {
@@ -1401,6 +1448,27 @@ import UserNotifications
     #expect(authenticatedMemberListAutoScroll.mode == .normal)
     #expect(authenticatedMemberListAutoScroll.runsMemberListPerformanceAutoScroll)
     #expect(!authenticatedMemberListAutoScroll.runsChatPerformanceAutoScroll)
+    let authenticatedGestureScroll = AppLaunchConfiguration(
+        arguments: [
+            "SakuraCord",
+            "--debug-authenticated-gesture-scroll-performance",
+        ]
+    )
+    #expect(authenticatedGestureScroll.mode == .normal)
+    #expect(authenticatedGestureScroll.runsAuthenticatedGestureScrollBenchmark)
+    #expect(authenticatedGestureScroll.runsAnyReadOnlyPerformanceBenchmark)
+    let authenticatedLoadingOverlap = AppLaunchConfiguration(
+        arguments: [
+            "SakuraCord",
+            "--debug-authenticated-loading-scroll-overlap-performance",
+        ]
+    )
+    #expect(authenticatedLoadingOverlap.mode == .normal)
+    #expect(
+        authenticatedLoadingOverlap
+            .runsLoadingScrollOverlapBenchmark
+    )
+    #expect(authenticatedLoadingOverlap.runsAnyReadOnlyPerformanceBenchmark)
     let incomingPrivateCall = AppLaunchConfiguration(
         arguments: ["SakuraCord", "--offline-incoming-private-call"]
     )

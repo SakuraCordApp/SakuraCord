@@ -3,7 +3,7 @@ import SwiftUI
 
 struct ServerFolderRailView: View {
     let folder: GuildFolder
-    let guildsByID: [GuildID: Guild]
+    let guildsByID: [GuildID: ServerRailGuildPresentation]
     let selectedGuildID: GuildID?
     let selectGuild: (GuildID?) -> Void
     let contextMenuActions: ServerRailContextMenuActions
@@ -14,7 +14,7 @@ struct ServerFolderRailView: View {
 
     init(
         folder: GuildFolder,
-        guildsByID: [GuildID: Guild],
+        guildsByID: [GuildID: ServerRailGuildPresentation],
         selectedGuildID: GuildID?,
         selectGuild: @escaping (GuildID?) -> Void,
         contextMenuActions: ServerRailContextMenuActions,
@@ -115,7 +115,9 @@ struct ServerFolderRailView: View {
     }
 
     private var collapsedPreview: some View {
-        let preview = folder.guildIDs.prefix(4).compactMap { guildsByID[$0] }
+        let preview = folder.guildIDs.prefix(4).compactMap {
+            guildsByID[$0]?.guild
+        }
         return VStack(spacing: 2) {
             HStack(spacing: 2) {
                 previewIcon(preview[safe: 0])
@@ -158,17 +160,21 @@ struct ServerFolderRailView: View {
     }
 
     private var hasUnreadGuild: Bool {
-        folder.guildIDs.contains { guildsByID[$0]?.unreadCount ?? 0 > 0 }
+        folder.guildIDs.contains {
+            guildsByID[$0]?.guild.unreadCount ?? 0 > 0
+        }
     }
 
     private var folderMentionCount: Int {
-        folder.guildIDs.reduce(0) { $0 + (guildsByID[$1]?.mentionCount ?? 0) }
+        folder.guildIDs.reduce(0) {
+            $0 + (guildsByID[$1]?.guild.mentionCount ?? 0)
+        }
     }
 }
 
 private struct ExpandedFolderGuilds: View {
     let guildIDs: [GuildID]
-    let guildsByID: [GuildID: Guild]
+    let guildsByID: [GuildID: ServerRailGuildPresentation]
     let selectedGuildID: GuildID?
     let selectGuild: (GuildID?) -> Void
     let contextMenuActions: ServerRailContextMenuActions
@@ -176,13 +182,14 @@ private struct ExpandedFolderGuilds: View {
     var body: some View {
         VStack(spacing: 8) {
             ForEach(guildIDs, id: \.self) { guildID in
-                if let guild = guildsByID[guildID] {
+                if let presentation = guildsByID[guildID] {
                     GuildRailButton(
-                        guild: guild,
-                        isSelected: selectedGuildID == guild.id,
+                        presentation: presentation,
+                        isSelected:
+                            selectedGuildID == presentation.guild.id,
                         contextMenuActions: contextMenuActions
                     ) {
-                        selectGuild(guild.id)
+                        selectGuild(presentation.guild.id)
                     }
                 }
             }

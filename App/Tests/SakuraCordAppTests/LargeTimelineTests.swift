@@ -1686,6 +1686,47 @@ func `completed initial ten message page exposes history reserve before first up
 }
 
 @MainActor @Test
+func `rapid gesture boundary does not restore timeline presentation between swipes`() throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    let channelID = ChannelID(rawValue: 99_260)
+    let timeline = NativeMessageTimelineView(
+        model: model,
+        conversation: .channel(channelID),
+        beginning: nil,
+        firstMessageStartsDayOverride: nil,
+        hasMoreMessages: false,
+        isLoadingEarlier: false,
+        bottomContentInset: 0,
+        unreadMessageID: nil,
+        highlightedMessageID: nil,
+        initialScrollTarget: .bottom,
+        scrollRequest: nil,
+        runsPerformanceAutoScroll: false,
+        loadEarlier: {},
+        openReply: { _ in },
+        onScrollActivityChange: { _ in },
+        onScrollStateChange: { _ in },
+        onUserScrollBegan: {},
+        onUserScrollEnded: { _ in }
+    )
+    let coordinator = timeline.makeCoordinator()
+    let scrollView = coordinator.makeScrollView()
+    coordinator.update(parent: timeline, scrollView: scrollView)
+    let canvas = try #require(coordinator.canvas)
+
+    coordinator.liveScrollTrackingWillBegin()
+    #expect(canvas.suppressesHoverPresentation)
+
+    coordinator.liveScrollTrackingDidEnd()
+    #expect(canvas.suppressesHoverPresentation)
+    #expect(coordinator.scrollIdleTask != nil)
+
+    coordinator.liveScrollTrackingWillBegin()
+    #expect(canvas.suppressesHoverPresentation)
+    coordinator.stopObserving()
+}
+
+@MainActor @Test
 func `completed anchored page exposes the same history reserve below its loaded window`() throws {
     let model = AppModel(launchMode: .offlineTesting)
     let channelID = ChannelID(rawValue: 99_241)

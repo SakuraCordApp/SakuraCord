@@ -129,16 +129,20 @@ private struct ChatRootView: View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             HStack(spacing: 0) {
                 ServerRailView(
-                    guildsByID: model.serverRailGuildsByID,
-                    items: model.serverRailItems,
+                    items: ServerRailPresentationItem.make(
+                        items: model.serverRailItems,
+                        guildsByID: model.serverRailGuildsByID,
+                        notificationSettings:
+                            model.guildNotificationSettings,
+                        isMutationPending:
+                            model.isGuildNotificationMutationPending
+                    ),
                     selectedGuildID: model.selectedGuildID,
                     homeIsUnread: model.directMessageUnread,
                     homeMentionCount: model.directMessageMentionCount,
                     selectHome: { model.selectGuild(nil) },
                     selectGuild: model.selectGuild,
                     contextMenuActions: ServerRailContextMenuActions(
-                        settings: model.guildNotificationSettings,
-                        isMutationPending: model.isGuildNotificationMutationPending,
                         markRead: model.markGuildRead,
                         mute: { guild, duration in
                             model.setGuildMute(

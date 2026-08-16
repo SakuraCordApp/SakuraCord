@@ -967,6 +967,15 @@ extension NativeMessageTimelineCoordinator {
         }
 
         func liveScrollTrackingDidEnd() {
+            let interval = Self.performanceSignposter.beginInterval(
+                "TimelineLiveScrollEnd"
+            )
+            defer {
+                Self.performanceSignposter.endInterval(
+                    "TimelineLiveScrollEnd",
+                    interval
+                )
+            }
             let state = scrollState()
             isEarlierHistoryScrollGestureActive = false
             hasEarlierHistoryScrollIntent = state.isInProvisionalHistory
@@ -985,13 +994,29 @@ extension NativeMessageTimelineCoordinator {
                 followsMaterializedLaterHistoryBoundary = false
                 updateHistorySkeletonPresentation()
             }
-            finishScrollActivity()
+            // `didEndLiveScroll` also fires when a fresh trackpad gesture
+            // interrupts momentum. Restoring hover, accessibility, and media
+            // presentation synchronously here made that new gesture wait for
+            // a full reconciliation before AppKit could move its first frame.
+            // Keep the existing idle grace alive across rapid gestures; the
+            // task created by `noteScrollActivity` performs the same restore
+            // after input has genuinely settled.
+            noteScrollActivity()
             parent.onUserScrollEnded(state)
             requestHistoryIfNeeded(.earlier, for: state)
             requestHistoryIfNeeded(.later, for: state)
         }
 
         func liveScrollTrackingWillBegin() {
+            let interval = Self.performanceSignposter.beginInterval(
+                "TimelineLiveScrollStart"
+            )
+            defer {
+                Self.performanceSignposter.endInterval(
+                    "TimelineLiveScrollStart",
+                    interval
+                )
+            }
             canvas?.dismissHoverPresentationForScroll()
             noteScrollActivity()
             isEarlierHistoryScrollGestureActive = true

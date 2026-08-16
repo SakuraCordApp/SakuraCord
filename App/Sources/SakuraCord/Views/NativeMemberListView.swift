@@ -175,6 +175,8 @@ struct NativeMemberListView: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
+        (scrollView as? NativeMemberListScrollView)?
+            .inputPerformanceProbe.invalidate()
         coordinator.stop()
         scrollView.documentView = nil
     }
@@ -184,6 +186,10 @@ struct NativeMemberListView: NSViewRepresentable {
 
 @MainActor
 final class NativeMemberListScrollView: NSScrollView {
+    let inputPerformanceProbe = ScrollInputPerformanceProbe(
+        surface: .memberList
+    )
+
     override func layout() {
         super.layout()
         synchronizeCanvasFrame()
@@ -232,6 +238,7 @@ final class NativeMemberListCoordinator: NSObject {
             self?.parent.selectMember(member)
         }
         let scrollView = NativeMemberListScrollView()
+        scrollView.inputPerformanceProbe.install(on: scrollView)
         scrollView.documentView = canvas
         scrollView.drawsBackground = true
         scrollView.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.45)

@@ -14,6 +14,8 @@ struct SakuraCordApp: App {
     private let runsAuthenticatedNavigationBenchmark: Bool
     private let runsAuthenticatedAccountSwitchBenchmark: Bool
     private let runsHistoryPaginationBenchmark: Bool
+    private let runsAuthenticatedGestureScrollBenchmark: Bool
+    private let runsLoadingScrollOverlapBenchmark: Bool
     private let preparesTimelineScrollBenchmark: Bool
     private let activatesAuthenticatedScrollBenchmark: Bool
     private let performanceMockProvider: MockChatProvider?
@@ -45,6 +47,10 @@ struct SakuraCordApp: App {
             configuration.runsAuthenticatedAccountSwitchBenchmark
         runsHistoryPaginationBenchmark =
             configuration.runsHistoryPaginationBenchmark
+        runsAuthenticatedGestureScrollBenchmark =
+            configuration.runsAuthenticatedGestureScrollBenchmark
+        runsLoadingScrollOverlapBenchmark =
+            configuration.runsLoadingScrollOverlapBenchmark
         preparesTimelineScrollBenchmark =
             configuration.mode == .normal
             && configuration.runsChatPerformanceAutoScroll
@@ -53,6 +59,8 @@ struct SakuraCordApp: App {
             && (
                 configuration.runsChatPerformanceAutoScroll
                     || configuration.runsMemberListPerformanceAutoScroll
+                    || configuration.runsAuthenticatedGestureScrollBenchmark
+                    || configuration.runsLoadingScrollOverlapBenchmark
             )
         let mockProvider = configuration.mode == .offlineTesting
             ? MockChatProvider(
@@ -102,6 +110,12 @@ struct SakuraCordApp: App {
                     }
                     if runsHistoryPaginationBenchmark {
                         await model.runAuthenticatedHistoryPaginationPerformanceBenchmark()
+                    }
+                    if runsAuthenticatedGestureScrollBenchmark {
+                        await model.runAuthenticatedGestureScrollPerformanceBenchmark()
+                    }
+                    if runsLoadingScrollOverlapBenchmark {
+                        await model.runAuthenticatedLoadingScrollOverlapPerformanceBenchmark()
                     }
                     if activatesAuthenticatedScrollBenchmark {
                         // A display-link benchmark is only representative

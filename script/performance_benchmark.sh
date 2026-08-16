@@ -53,6 +53,19 @@ usage() {
 #       subscriptions are read-only; this scenario never sends messages,
 #       acknowledgements, reactions, or account mutations. Defaults: 70 seconds
 #       so an authenticated workspace can be selected before measurement.
+#   authenticated-gesture-scroll [seconds]
+#       Relaunch the authenticated debug app with benchmark-only gesture probes
+#       on the message timeline, member list, channel list, and server list.
+#       Use real trackpad gestures while recording; each new gesture or momentum
+#       boundary records event-to-moving-frame latency. This scenario performs
+#       no synthetic input or account mutation. The exact 20-second interaction
+#       window begins after the initial conversation is ready. Defaults: 40 seconds.
+#   authenticated-loading-scroll-overlap [seconds]
+#       Relaunch with gesture probes, hold a three-second idle scrolling control,
+#       then cold-open the real Google Labs server and load its initial members,
+#       roles, messages, first frame, and additional history in one exact window.
+#       Start continuous read-only trackpad scrolling when the workspace appears.
+#       The run is rejected if Google Labs was already selected. Defaults: 45 seconds.
 #   authenticated-navigation [seconds]
 #       Relaunch the authenticated debug app and deterministically open real
 #       DMs, servers, and same-server channels using live REST and Gateway data.
@@ -363,7 +376,7 @@ record_launch() {
     local scenario="$1" seconds="$2" pid output trace trace_pid notify_pid notification sampler
     local stopped_state sandbox_directory sandbox_result sandbox_window
     local performance_account_id debug_credential_directory newest_credential
-    local resource_window_name
+    local resource_window_name scroll_input_telemetry
     shift 2
     pid="$(running_pid || true)"
     if [[ -n "$pid" ]]; then
@@ -395,6 +408,8 @@ record_launch() {
     case "$scenario" in
         authenticated-scroll) resource_window_name="MessageTimelineAutoScrollBenchmark" ;;
         authenticated-member-list-scroll) resource_window_name="MemberListAutoScrollBenchmark" ;;
+        authenticated-gesture-scroll) resource_window_name="AuthenticatedGestureScrollBenchmark" ;;
+        authenticated-loading-scroll-overlap) resource_window_name="AuthenticatedLoadingScrollOverlapBenchmark" ;;
         authenticated-navigation) resource_window_name="AuthenticatedNavigationBenchmark" ;;
         authenticated-account-switch) resource_window_name="AuthenticatedAccountSwitchBenchmark" ;;
         authenticated-history-pagination) resource_window_name="AuthenticatedHistoryPaginationBenchmark" ;;
@@ -403,9 +418,17 @@ record_launch() {
         authenticated-search-scroll) resource_window_name="MessageSearchScrollBenchmark" ;;
         *) resource_window_name="" ;;
     esac
+    if [[ "$scenario" == "authenticated-gesture-scroll" \
+          || "$scenario" == "authenticated-loading-scroll-overlap" ]]; then
+        scroll_input_telemetry=1
+    else
+        scroll_input_telemetry=0
+    fi
     performance_account_id="${SAKURACORD_PERFORMANCE_ACCOUNT_ID:-}"
     if [[ "$scenario" == "authenticated-scroll" \
           || "$scenario" == "authenticated-member-list-scroll" \
+          || "$scenario" == "authenticated-gesture-scroll" \
+          || "$scenario" == "authenticated-loading-scroll-overlap" \
           || "$scenario" == "authenticated-navigation" \
           || "$scenario" == "authenticated-account-switch" \
           || "$scenario" == "authenticated-history-pagination" \
@@ -459,6 +482,7 @@ record_launch() {
         SAKURACORD_PERFORMANCE_WINDOW_NAME="$resource_window_name" \
         SAKURACORD_PERFORMANCE_WINDOW_PATH="$sandbox_window" \
         SAKURACORD_PERFORMANCE_RESULT_PATH="$sandbox_result" \
+        SAKURACORD_SCROLL_INPUT_TELEMETRY="$scroll_input_telemetry" \
         /bin/sh -c 'kill -STOP "$$"; exec "$@"' sh "$executable" "$@" \
         >"$output/app-output.log" 2>&1 &
     pid=$!
@@ -495,6 +519,8 @@ record_launch() {
     kill -CONT "$pid"
     if [[ ( "$scenario" == "authenticated-scroll" \
             || "$scenario" == "authenticated-member-list-scroll" \
+            || "$scenario" == "authenticated-gesture-scroll" \
+            || "$scenario" == "authenticated-loading-scroll-overlap" \
             || "$scenario" == "authenticated-navigation" \
             || "$scenario" == "authenticated-account-switch" \
             || "$scenario" == "authenticated-history-pagination" \
@@ -518,6 +544,8 @@ record_launch() {
     wait "$trace_pid"
     if [[ ( "$scenario" == "authenticated-scroll" \
             || "$scenario" == "authenticated-member-list-scroll" \
+            || "$scenario" == "authenticated-gesture-scroll" \
+            || "$scenario" == "authenticated-loading-scroll-overlap" \
             || "$scenario" == "authenticated-navigation" \
             || "$scenario" == "authenticated-account-switch" \
             || "$scenario" == "authenticated-history-pagination" \
@@ -557,6 +585,16 @@ record_authenticated_scroll() {
 record_authenticated_member_list_scroll() {
     record_launch authenticated-member-list-scroll "$1" \
         --debug-authenticated-member-list-performance-autoscroll
+}
+
+record_authenticated_gesture_scroll() {
+    record_launch authenticated-gesture-scroll "$1" \
+        --debug-authenticated-gesture-scroll-performance
+}
+
+record_authenticated_loading_scroll_overlap() {
+    record_launch authenticated-loading-scroll-overlap "$1" \
+        --debug-authenticated-loading-scroll-overlap-performance
 }
 
 record_authenticated_navigation() {
@@ -849,6 +887,10 @@ scroll_benchmark = [
 navigation_benchmark = scenario == "authenticated-navigation"
 account_switch_benchmark = scenario == "authenticated-account-switch"
 history_pagination_benchmark = scenario == "authenticated-history-pagination"
+scroll_interaction_benchmark = [
+  "authenticated-gesture-scroll",
+  "authenticated-loading-scroll-overlap",
+].include?(scenario)
 navigation_app_residuals = {}
 navigation_history_network = {}
 measurement_interval = case scenario
@@ -856,6 +898,10 @@ measurement_interval = case scenario
                          "MessageTimelineAutoScrollBenchmark"
                        when "authenticated-member-list-scroll"
                          "MemberListAutoScrollBenchmark"
+                       when "authenticated-gesture-scroll"
+                         "AuthenticatedGestureScrollBenchmark"
+                       when "authenticated-loading-scroll-overlap"
+                         "AuthenticatedLoadingScrollOverlapBenchmark"
                        when "authenticated-navigation"
                          "AuthenticatedNavigationBenchmark"
                        when "authenticated-account-switch"
@@ -1047,6 +1093,34 @@ if history_pagination_benchmark
          benchmark_result["outcome"] == "completed" &&
          page_count&.positive?
     raise "Authenticated history-pagination benchmark did not complete"
+  end
+  lower_bound, upper_bound = interval_bounds[measurement_interval].first
+  scoped_intervals = {}
+  intervals.each do |name, durations|
+    matching = []
+    durations.each_with_index do |duration, index|
+      bounds = interval_bounds[name][index]
+      if bounds && bounds[0] >= lower_bound && bounds[1] <= upper_bound
+        matching << duration
+      end
+    end
+    scoped_intervals[name] = matching unless matching.empty?
+  end
+  intervals = scoped_intervals
+end
+if scroll_interaction_benchmark
+  completion_event = "#{measurement_interval}Completed"
+  unless interval_bounds[measurement_interval].length == 1 &&
+         event_counts[completion_event] == 1 &&
+         benchmark_result["outcome"] == "completed"
+    raise "Authenticated scroll-interaction benchmark did not complete exactly once"
+  end
+  if scenario == "authenticated-loading-scroll-overlap"
+    unless benchmark_result["target"] == "Google Labs" &&
+           interval_bounds["AuthenticatedLoadingScrollIdleControl"].length == 1 &&
+           interval_bounds["AuthenticatedLoadingScrollWork"].length == 1
+      raise "Loading-scroll overlap requires Google Labs idle and loading intervals"
+    end
   end
   lower_bound, upper_bound = interval_bounds[measurement_interval].first
   scoped_intervals = {}
@@ -1279,6 +1353,7 @@ intervals.sort.each do |name, durations|
   puts "signpost.#{name}.count\t#{durations.length}"
   puts "signpost.#{name}.median\t#{format_metric(percentile(durations, 0.50), "ms")}"
   puts "signpost.#{name}.p95\t#{format_metric(percentile(durations, 0.95), "ms")}"
+  puts "signpost.#{name}.p99\t#{format_metric(percentile(durations, 0.99), "ms")}"
   puts "signpost.#{name}.maximum\t#{format_metric(durations.max, "ms")}"
 end
 unmatched_signposts.sort.each do |name, count|
@@ -1309,6 +1384,12 @@ case "$command" in
         ;;
     authenticated-member-list-scroll)
         record_authenticated_member_list_scroll "${2:-70}"
+        ;;
+    authenticated-gesture-scroll)
+        record_authenticated_gesture_scroll "${2:-40}"
+        ;;
+    authenticated-loading-scroll-overlap)
+        record_authenticated_loading_scroll_overlap "${2:-45}"
         ;;
     authenticated-navigation)
         record_authenticated_navigation "${2:-45}"

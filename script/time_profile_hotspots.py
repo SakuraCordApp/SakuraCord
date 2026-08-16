@@ -19,6 +19,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--app-only", action="store_true")
     parser.add_argument("--signposts", help="xctrace signpost XML export")
     parser.add_argument("--interval", help="use the outer bounds of this signpost interval")
+    parser.add_argument(
+        "--interval-selection",
+        choices=("only", "first", "last", "longest"),
+        default="only",
+        help="select an occurrence when an interval repeats",
+    )
     return parser.parse_args()
 
 
@@ -42,7 +48,7 @@ def print_table(title: str, values: dict[tuple[str, str], float], limit: int) ->
 
 
 def signpost_interval_bounds(
-    path: str, interval_name: str, process_query: str
+    path: str, interval_name: str, process_query: str, selection: str
 ) -> tuple[float, float]:
     displays: collections.defaultdict[str, dict[str, str]] = collections.defaultdict(dict)
     raw_values: collections.defaultdict[str, dict[str, str]] = collections.defaultdict(dict)
@@ -133,12 +139,23 @@ def signpost_interval_bounds(
             if time >= start:
                 intervals.append((start, time))
         row.clear()
-    if len(intervals) != 1:
+    if not intervals:
         raise SystemExit(
-            f"Expected exactly one {interval_name} interval for process "
-            f"{process_query}; found {len(intervals)}"
+            f"No {interval_name} intervals found for process {process_query}"
         )
-    return intervals[0]
+    if selection == "only":
+        if len(intervals) != 1:
+            raise SystemExit(
+                f"Expected exactly one {interval_name} interval for process "
+                f"{process_query}; found {len(intervals)}; choose "
+                "--interval-selection"
+            )
+        return intervals[0]
+    if selection == "first":
+        return intervals[0]
+    if selection == "last":
+        return intervals[-1]
+    return max(intervals, key=lambda bounds: bounds[1] - bounds[0])
 
 
 def main() -> None:
@@ -147,7 +164,10 @@ def main() -> None:
         if not args.signposts:
             raise SystemExit("--interval requires --signposts")
         args.start, args.end = signpost_interval_bounds(
-            args.signposts, args.interval, args.process
+            args.signposts,
+            args.interval,
+            args.process,
+            args.interval_selection,
         )
     process_pattern = re.compile(re.escape(args.process), re.IGNORECASE)
 

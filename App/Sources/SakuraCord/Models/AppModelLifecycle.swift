@@ -2328,6 +2328,151 @@ extension AppModel {
             )
         }
 
+        func runAuthenticatedGestureScrollPerformanceBenchmark() async {
+            guard runsChatPerformanceBenchmark,
+                  sessionState == .workspace
+            else { return }
+            await channelLoadTask?.value
+            if let selectedChannelID {
+                await AppPerformanceSignposts.waitForConversationFirstFrame(
+                    channelID: selectedChannelID
+                )
+            }
+            guard !Task.isCancelled else { return }
+
+            let overall = AppPerformanceSignposts.signposter.beginInterval(
+                "AuthenticatedGestureScrollBenchmark"
+            )
+            AppPerformanceSignposts.beginResourceWindow(
+                named: "AuthenticatedGestureScrollBenchmark"
+            )
+            AppPerformanceSignposts.signposter.emitEvent(
+                "AuthenticatedGestureScrollBenchmarkReady"
+            )
+            try? await Task.sleep(for: .seconds(20))
+            AppPerformanceSignposts.signposter.endInterval(
+                "AuthenticatedGestureScrollBenchmark",
+                overall
+            )
+            AppPerformanceSignposts.endResourceWindow(
+                named: "AuthenticatedGestureScrollBenchmark"
+            )
+            AppPerformanceSignposts.signposter.emitEvent(
+                "AuthenticatedGestureScrollBenchmarkCompleted"
+            )
+            writeAuthenticatedScrollInteractionBenchmarkResult(
+                outcome: Task.isCancelled ? "cancelled" : "completed",
+                target: "current",
+                messageCount: messages.count
+            )
+        }
+
+        func runAuthenticatedLoadingScrollOverlapPerformanceBenchmark() async {
+            guard runsChatPerformanceBenchmark,
+                  sessionState == .workspace
+            else { return }
+            await channelLoadTask?.value
+            if let selectedChannelID {
+                await AppPerformanceSignposts.waitForConversationFirstFrame(
+                    channelID: selectedChannelID
+                )
+            }
+            guard !Task.isCancelled,
+                  let snapshot,
+                  let targetGuild = serverRailGuildsByID.values.first(where: {
+                      $0.name.localizedCaseInsensitiveCompare("Google Labs")
+                          == .orderedSame
+                  }),
+                  selectedGuildID != targetGuild.id,
+                  let channel = benchmarkEligibleChannels(
+                      snapshot.channels.filter {
+                          $0.guildID == targetGuild.id
+                      }
+                  ).first
+            else {
+                writeAuthenticatedScrollInteractionBenchmarkResult(
+                    outcome: "unavailable",
+                    target: "Google Labs",
+                    messageCount: 0
+                )
+                return
+            }
+
+            let overall = AppPerformanceSignposts.signposter.beginInterval(
+                "AuthenticatedLoadingScrollOverlapBenchmark"
+            )
+            AppPerformanceSignposts.beginResourceWindow(
+                named: "AuthenticatedLoadingScrollOverlapBenchmark"
+            )
+            AppPerformanceSignposts.signposter.emitEvent(
+                "AuthenticatedLoadingScrollOverlapBenchmarkReady"
+            )
+            let idleControl = AppPerformanceSignposts.signposter.beginInterval(
+                "AuthenticatedLoadingScrollIdleControl"
+            )
+            try? await Task.sleep(for: .seconds(3))
+            AppPerformanceSignposts.signposter.endInterval(
+                "AuthenticatedLoadingScrollIdleControl",
+                idleControl
+            )
+
+            let loadingWork = AppPerformanceSignposts.signposter.beginInterval(
+                "AuthenticatedLoadingScrollWork"
+            )
+            let opened = await runAuthenticatedNavigationBenchmarkOperation(
+                channel: channel,
+                kind: .server
+            )
+            if opened {
+                await memberLoadTask?.value
+                _ = await prepareSelectedTimelineScrollHistory()
+            }
+            AppPerformanceSignposts.signposter.endInterval(
+                "AuthenticatedLoadingScrollWork",
+                loadingWork
+            )
+            try? await Task.sleep(for: .seconds(3))
+            AppPerformanceSignposts.signposter.endInterval(
+                "AuthenticatedLoadingScrollOverlapBenchmark",
+                overall
+            )
+            AppPerformanceSignposts.endResourceWindow(
+                named: "AuthenticatedLoadingScrollOverlapBenchmark"
+            )
+            AppPerformanceSignposts.signposter.emitEvent(
+                "AuthenticatedLoadingScrollOverlapBenchmarkCompleted"
+            )
+            writeAuthenticatedScrollInteractionBenchmarkResult(
+                outcome:
+                    opened && !Task.isCancelled
+                    ? "completed"
+                    : (Task.isCancelled ? "cancelled" : "failed"),
+                target: targetGuild.name,
+                messageCount: messages.count
+            )
+        }
+
+        private func writeAuthenticatedScrollInteractionBenchmarkResult(
+            outcome: String,
+            target: String,
+            messageCount: Int
+        ) {
+            guard let path = ProcessInfo.processInfo.environment[
+                "SAKURACORD_PERFORMANCE_RESULT_PATH"
+            ] else { return }
+            let contents = """
+            outcome\t\(outcome)
+            target\t\(target)
+            message_count\t\(messageCount)
+
+            """
+            try? contents.write(
+                to: URL(fileURLWithPath: path),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
+
         // swiftlint:disable:next cyclomatic_complexity function_body_length
         func runAuthenticatedNavigationPerformanceBenchmark() async {
             guard runsChatPerformanceBenchmark, sessionState == .workspace else { return }

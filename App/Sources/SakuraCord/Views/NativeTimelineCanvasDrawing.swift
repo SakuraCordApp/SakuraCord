@@ -279,6 +279,15 @@ extension NativeTimelineCanvasView {
     }
 
     func dismissHoverPresentationForScroll() {
+        let interval = AppPerformanceSignposts.signposter.beginInterval(
+            "TimelineScrollPresentationTeardown"
+        )
+        defer {
+            AppPerformanceSignposts.signposter.endInterval(
+                "TimelineScrollPresentationTeardown",
+                interval
+            )
+        }
         // Prewarming is idle work. A scroll can begin after a programmatic
         // position request has queued it but before that main-actor task gets
         // its first turn. Cancel it at the activity boundary so a cold bitmap
@@ -377,6 +386,15 @@ extension NativeTimelineCanvasView {
     }
 
     func allowHoverPresentationAfterScroll() {
+        let interval = AppPerformanceSignposts.signposter.beginInterval(
+            "TimelineScrollPresentationRestore"
+        )
+        defer {
+            AppPerformanceSignposts.signposter.endInterval(
+                "TimelineScrollPresentationRestore",
+                interval
+            )
+        }
         suppressesHoverPresentation = false
         for overlay in animatedMediaOverlays.values {
             overlay.setPlaybackSuppressed(false)

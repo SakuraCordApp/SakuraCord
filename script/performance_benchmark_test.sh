@@ -25,6 +25,7 @@ summary="$temporary/summary.txt"
 grep -F $'signpost.OverlappingWork.count\t2' "$summary" >/dev/null
 grep -F $'signpost.OverlappingWork.median\t2000.000 ms' "$summary" >/dev/null
 grep -F $'signpost.OverlappingWork.maximum\t3000.000 ms' "$summary" >/dev/null
+grep -F $'signpost.OverlappingWork.p99\t3000.000 ms' "$summary" >/dev/null
 grep -F $'signpost.AsyncThreadMigration.count\t1' "$summary" >/dev/null
 grep -F $'signpost.AsyncThreadMigration.median\t1250.000 ms' "$summary" >/dev/null
 grep -F $'measurement.window\tMessageTimelineAutoScrollBenchmark' "$summary" >/dev/null

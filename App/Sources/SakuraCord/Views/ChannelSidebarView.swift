@@ -146,6 +146,13 @@ struct ChannelSidebarView: View {
                     .listStyle(.sidebar)
                     .scrollContentBackground(.hidden)
                     .clipped()
+                    .background {
+                        ScrollInputPerformanceProbeAttachment(
+                            surface: .channelList
+                        )
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                    }
                     .onChange(of: selection) { _, newSelection in
                         selectionCommitter.selectedValueChanged(
                             to: newSelection

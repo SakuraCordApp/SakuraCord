@@ -17,6 +17,8 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
     let runsAuthenticatedNavigationBenchmark: Bool
     let runsAuthenticatedAccountSwitchBenchmark: Bool
     let runsHistoryPaginationBenchmark: Bool
+    let runsAuthenticatedGestureScrollBenchmark: Bool
+    let runsLoadingScrollOverlapBenchmark: Bool
     let runsChatLiveArrivalStress: Bool
 
     init(arguments: [String]) {
@@ -38,6 +40,12 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
             runsHistoryPaginationBenchmark = arguments.contains(
                 "--debug-authenticated-history-pagination-performance"
             )
+            runsAuthenticatedGestureScrollBenchmark = arguments.contains(
+                "--debug-authenticated-gesture-scroll-performance"
+            )
+            runsLoadingScrollOverlapBenchmark = arguments.contains(
+                "--debug-authenticated-loading-scroll-overlap-performance"
+            )
             runsMemberListPerformanceAutoScroll = arguments.contains(
                 "--debug-authenticated-member-list-performance-autoscroll"
             )
@@ -45,6 +53,8 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
             runsAuthenticatedNavigationBenchmark = false
             runsAuthenticatedAccountSwitchBenchmark = false
             runsHistoryPaginationBenchmark = false
+            runsAuthenticatedGestureScrollBenchmark = false
+            runsLoadingScrollOverlapBenchmark = false
             runsMemberListPerformanceAutoScroll = false
         #endif
         includesLongServerList = arguments.contains("--offline-long-server-list")
@@ -81,6 +91,8 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
             || runsAuthenticatedNavigationBenchmark
             || runsAuthenticatedAccountSwitchBenchmark
             || runsHistoryPaginationBenchmark
+            || runsAuthenticatedGestureScrollBenchmark
+            || runsLoadingScrollOverlapBenchmark
     }
 }
 

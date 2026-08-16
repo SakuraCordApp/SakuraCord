@@ -6,6 +6,9 @@ import SwiftUI
 @MainActor
 private final class NativeTimelineInputShieldScrollView: NSScrollView {
     weak var model: AppModel?
+    let inputPerformanceProbe = ScrollInputPerformanceProbe(
+        surface: .timeline
+    )
 
     override func scrollWheel(with event: NSEvent) {
         guard model?.mediaViewerPresentation == nil,
@@ -132,6 +135,8 @@ struct NativeMessageTimelineView: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
+        (scrollView as? NativeTimelineInputShieldScrollView)?
+            .inputPerformanceProbe.invalidate()
         coordinator.stopObserving()
         scrollView.documentView = nil
     }
@@ -300,6 +305,7 @@ extension NativeMessageTimelineCoordinator {
 
             let scrollView = NativeTimelineInputShieldScrollView()
             scrollView.model = parent.model
+            scrollView.inputPerformanceProbe.install(on: scrollView)
             scrollView.documentView = documentView
             scrollView.drawsBackground = false
             scrollView.borderType = .noBorder

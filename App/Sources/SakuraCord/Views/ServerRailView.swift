@@ -1,9 +1,79 @@
 import SakuraCordModels
 import SwiftUI
 
+struct ServerRailGuildPresentation: Equatable, Identifiable {
+    let guild: Guild
+    let notificationSettings: GuildNotificationSettings
+    let isNotificationMutationPending: Bool
+
+    var id: GuildID { guild.id }
+}
+
+enum ServerRailPresentationItem: Equatable, Identifiable {
+    case guild(id: GuildID, presentation: ServerRailGuildPresentation?)
+    case folder(
+        GuildFolder,
+        guildsByID: [GuildID: ServerRailGuildPresentation]
+    )
+
+    var id: GuildRailItem.RailIdentifier {
+        switch self {
+        case .guild(let id, _): .guild(id)
+        case .folder(let folder, _): .folder(folder.id)
+        }
+    }
+
+    static func make(
+        items: [GuildRailItem],
+        guildsByID: [GuildID: Guild],
+        notificationSettings: (Guild) -> GuildNotificationSettings,
+        isMutationPending: (GuildID) -> Bool
+    ) -> [Self] {
+        AppPerformanceSignposts.measureSync("ServerRailProjection") {
+            items.map { item in
+                switch item {
+                case .guild(let id):
+                    .guild(
+                        id: id,
+                        presentation: guildsByID[id].map { guild in
+                            ServerRailGuildPresentation(
+                                guild: guild,
+                                notificationSettings:
+                                    notificationSettings(guild),
+                                isNotificationMutationPending:
+                                    isMutationPending(id)
+                            )
+                        }
+                    )
+                case .folder(let folder):
+                    .folder(
+                        folder,
+                        guildsByID: Dictionary(
+                            uniqueKeysWithValues:
+                                folder.guildIDs.compactMap { id in
+                                    guildsByID[id].map { guild in
+                                        (
+                                            id,
+                                            ServerRailGuildPresentation(
+                                                guild: guild,
+                                                notificationSettings:
+                                                    notificationSettings(guild),
+                                                isNotificationMutationPending:
+                                                    isMutationPending(id)
+                                            )
+                                        )
+                                    }
+                                }
+                        )
+                    )
+                }
+            }
+        }
+    }
+}
+
 struct ServerRailView: View {
-    let guildsByID: [GuildID: Guild]
-    let items: [GuildRailItem]
+    let items: [ServerRailPresentationItem]
     let selectedGuildID: GuildID?
     let homeIsUnread: Bool
     let homeMentionCount: Int
@@ -27,7 +97,6 @@ struct ServerRailView: View {
                 ForEach(items) { item in
                     ServerRailItemView(
                         item: item,
-                        guildsByID: guildsByID,
                         selectedGuildID: selectedGuildID,
                         selectGuild: selectGuild,
                         contextMenuActions: contextMenuActions,
@@ -35,12 +104,18 @@ struct ServerRailView: View {
                             folderLayoutRevision &+= 1
                         }
                     )
+                    .equatable()
                 }
             }
             .padding(.bottom, 12)
             .animation(ServerRailAnimations.folderExpansion, value: folderLayoutRevision)
         }
         .scrollIndicators(.hidden)
+        .background {
+            ScrollInputPerformanceProbeAttachment(surface: .serverList)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
         .frame(width: ChatChromeMetrics.serverRailWidth)
         .overlayPreferenceValue(ServerRailHoverPreferenceKey.self) { hoverItem in
             GeometryReader { proxy in
@@ -59,8 +134,6 @@ struct ServerRailView: View {
 }
 
 struct ServerRailContextMenuActions {
-    let settings: (Guild) -> GuildNotificationSettings
-    let isMutationPending: (GuildID) -> Bool
     let markRead: (GuildID) -> Void
     let mute: (Guild, ChannelMuteDuration) -> Void
     let unmute: (Guild) -> Void
@@ -68,28 +141,45 @@ struct ServerRailContextMenuActions {
     let setNotificationToggle: (Guild, GuildNotificationToggle, Bool) -> Void
 }
 
-private struct ServerRailItemView: View {
-    let item: GuildRailItem
-    let guildsByID: [GuildID: Guild]
+private struct ServerRailItemView: View, Equatable {
+    let item: ServerRailPresentationItem
     let selectedGuildID: GuildID?
     let selectGuild: (GuildID?) -> Void
     let contextMenuActions: ServerRailContextMenuActions
     let folderExpansionChanged: () -> Void
 
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.item == rhs.item
+            && lhs.selectedItemGuildID == rhs.selectedItemGuildID
+    }
+
+    private var selectedItemGuildID: GuildID? {
+        guard let selectedGuildID else { return nil }
+        return switch item {
+        case .guild(let id, _):
+            id == selectedGuildID ? id : nil
+        case .folder(let folder, _):
+            folder.guildIDs.contains(selectedGuildID)
+                ? selectedGuildID
+                : nil
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             switch item {
-            case let .guild(id):
-                if let guild = guildsByID[id] {
+            case .guild(_, let presentation):
+                if let presentation {
                     GuildRailButton(
-                        guild: guild,
-                        isSelected: selectedGuildID == guild.id,
+                        presentation: presentation,
+                        isSelected:
+                            selectedGuildID == presentation.guild.id,
                         contextMenuActions: contextMenuActions
                     ) {
-                        selectGuild(guild.id)
+                        selectGuild(presentation.guild.id)
                     }
                 }
-            case let .folder(folder):
+            case .folder(let folder, let guildsByID):
                 ServerFolderRailView(
                     folder: folder,
                     guildsByID: guildsByID,
@@ -108,13 +198,14 @@ enum ServerRailAnimations {
 }
 
 struct GuildRailButton: View {
-    let guild: Guild
+    let presentation: ServerRailGuildPresentation
     let isSelected: Bool
     let contextMenuActions: ServerRailContextMenuActions
     let action: () -> Void
     @State private var isHovering = false
 
     var body: some View {
+        let guild = presentation.guild
         let displayName = guild.name.isEmpty ? "Unnamed Server" : guild.name
 
         HStack(spacing: 5) {
@@ -147,8 +238,9 @@ struct GuildRailButton: View {
             .overlay {
                 ServerContextMenuBridge(
                     isUnread: guild.unreadCount > 0,
-                    isMutationPending: contextMenuActions.isMutationPending(guild.id),
-                    notificationSettings: contextMenuActions.settings(guild),
+                    isMutationPending:
+                        presentation.isNotificationMutationPending,
+                    notificationSettings: presentation.notificationSettings,
                     markRead: { contextMenuActions.markRead(guild.id) },
                     mute: { contextMenuActions.mute(guild, $0) },
                     unmute: { contextMenuActions.unmute(guild) },
