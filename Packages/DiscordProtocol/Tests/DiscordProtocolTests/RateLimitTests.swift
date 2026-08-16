@@ -65,6 +65,95 @@ struct ProviderRequestContractTests {
         #expect(exhaustedElapsed < .seconds(1))
     }
 
+    @Test func `concurrent first requests serialize only until their route learns a bucket`() async throws {
+        let provider = DiscordRESTProvider(
+            credentials: TestCredentialStore(),
+            handle: CredentialHandle(accountID: "rate-limit-discovery"),
+            session: URLSession(configuration: .ephemeral),
+            installationID: "server-issued-installation"
+        )
+        let routeKey = "GET /channels/{id}/messages [channels:200]"
+        let first = try await provider.reserveRateLimitSlot(routeKey: routeKey)
+        #expect(first.discoveryToken != nil)
+
+        let second = Task {
+            try await provider.reserveRateLimitSlot(routeKey: routeKey)
+        }
+        #expect(await eventually {
+            await provider.rateLimitDiscoveryWaiterCountForTesting(
+                routeKey: routeKey
+            ) == 1
+        })
+
+        let response = try #require(HTTPURLResponse(
+            url: URL(string: "https://discord.com/api/v9/channels/200/messages")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: [
+                "X-RateLimit-Bucket": "message-history",
+                "X-RateLimit-Limit": "2",
+                "X-RateLimit-Remaining": "1",
+                "X-RateLimit-Reset-After": "1",
+            ]
+        ))
+        await provider.recordRateLimitState(
+            response: response,
+            routeKey: routeKey,
+            majorParameter: "channels:200"
+        )
+        await provider.finishRateLimitReservation(first)
+
+        let secondReservation = try await second.value
+        #expect(secondReservation.discoveryToken == nil)
+        await provider.finishRateLimitReservation(secondReservation)
+
+        let unbucketedRouteKey = "GET /users/@me/settings-proto/1 [none]"
+        let unbucketedDiscovery = try await provider.reserveRateLimitSlot(
+            routeKey: unbucketedRouteKey
+        )
+        #expect(unbucketedDiscovery.discoveryToken != nil)
+        let unbucketedResponse = try #require(HTTPURLResponse(
+            url: URL(string: "https://discord.com/api/v9/users/@me/settings-proto/1")!,
+            statusCode: 204,
+            httpVersion: "HTTP/1.1",
+            headerFields: [:]
+        ))
+        await provider.recordRateLimitState(
+            response: unbucketedResponse,
+            routeKey: unbucketedRouteKey,
+            majorParameter: "none"
+        )
+        await provider.finishRateLimitReservation(unbucketedDiscovery)
+
+        let laterUnbucketedRequest = try await provider.reserveRateLimitSlot(
+            routeKey: unbucketedRouteKey
+        )
+        #expect(laterUnbucketedRequest.discoveryToken == nil)
+
+        let cancellationRouteKey = "GET /guilds/{id}/channels [guilds:300]"
+        let cancellationDiscovery = try await provider.reserveRateLimitSlot(
+            routeKey: cancellationRouteKey
+        )
+        let cancelledWaiter = Task {
+            try await provider.reserveRateLimitSlot(
+                routeKey: cancellationRouteKey
+            )
+        }
+        #expect(await eventually {
+            await provider.rateLimitDiscoveryWaiterCountForTesting(
+                routeKey: cancellationRouteKey
+            ) == 1
+        })
+        cancelledWaiter.cancel()
+        await #expect(throws: CancellationError.self) {
+            try await cancelledWaiter.value
+        }
+        #expect(await provider.rateLimitDiscoveryWaiterCountForTesting(
+            routeKey: cancellationRouteKey
+        ) == 0)
+        await provider.finishRateLimitReservation(cancellationDiscovery)
+    }
+
     @Test func `message history encodes bounded around and after anchors`() async throws {
         RateLimitURLProtocol.reset()
         let configuration = URLSessionConfiguration.ephemeral
@@ -91,6 +180,32 @@ struct ProviderRequestContractTests {
             ["around=350", "limit=50"],
             ["after=350", "limit=20"],
         ])
+    }
+
+    @Test func `history reports incomplete member hydration when Gateway lookup is unavailable`() async throws {
+        RateLimitURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RateLimitURLProtocol.self]
+        let provider = DiscordRESTProvider(
+            credentials: TestCredentialStore(),
+            handle: CredentialHandle(accountID: "1"),
+            session: URLSession(configuration: configuration),
+            installationID: "server-issued-installation"
+        )
+        await provider.seedGuildChannelForTesting(Channel(
+            id: ChannelID(rawValue: 200),
+            guildID: GuildID(rawValue: 100),
+            name: "general"
+        ))
+
+        let page = try await provider.messages(
+            in: ChannelID(rawValue: 200),
+            before: nil,
+            limit: 10
+        )
+
+        #expect(page.resolvedMembers.isEmpty)
+        #expect(!page.hasCompleteMemberResolution)
     }
 
     @Test func `desktop ready lifecycle matches official opcode ordering`() async throws {
@@ -1727,6 +1842,8 @@ private struct BootstrapRequestScenario {
         #expect(historyMessage.guildID == GuildID(rawValue: 100))
         #expect(historyMessage.guildMember?.nickname == "Colored Author")
         #expect(historyMessage.guildMember?.roleIDs == [RoleID(rawValue: 101)])
+        #expect(historyPage.resolvedMembers.map(\.id) == [UserID(rawValue: 4)])
+        #expect(historyPage.hasCompleteMemberResolution)
         let historyMemberRequests = await socket.sentPayloadCount(opcode: 8)
         _ = try await provider.messages(in: ChannelID(rawValue: 200), before: nil, limit: 50)
         #expect(await socket.sentPayloadCount(opcode: 8) == historyMemberRequests)

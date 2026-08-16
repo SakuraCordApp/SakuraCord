@@ -251,8 +251,6 @@ extension DiscordRESTProvider {
                     id: discordPerformanceSignposter.makeSignpostID()
                 )
                 : nil
-            try await reserveRateLimitSlot(routeKey: requestRateLimitKey)
-
             guard var components = URLComponents(
                 string:
                 "https://discord.com/api/v\(DiscordProductionBaseline.august2026.apiVersion)\(path)"
@@ -285,6 +283,20 @@ extension DiscordRESTProvider {
             if let body {
                 request.httpBody = try JSONEncoder().encode(JSONValue.object(body))
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            }
+            let rateLimitReservation: RESTRateLimitReservation
+            do {
+                rateLimitReservation = try await reserveRateLimitSlot(
+                    routeKey: requestRateLimitKey
+                )
+            } catch {
+                if let scheduling {
+                    discordPerformanceSignposter.endInterval(
+                        "MessageHistoryRequestScheduling",
+                        scheduling
+                    )
+                }
+                throw error
             }
             let requestAttempt = attempt + 1
             apiDiagnostics.recordHTTPRequest(
@@ -321,6 +333,7 @@ extension DiscordRESTProvider {
                 }
                 (data, rawResponse) = try await requestSession.data(for: request)
             } catch {
+                finishRateLimitReservation(rateLimitReservation)
                 apiDiagnostics.recordHTTPFailure(
                     method: method,
                     path: path,
@@ -341,6 +354,7 @@ extension DiscordRESTProvider {
                 throw error
             }
             guard let response = rawResponse as? HTTPURLResponse else {
+                finishRateLimitReservation(rateLimitReservation)
                 let error = ChatProviderError.invalidRequest(
                     "Discord returned an invalid HTTP response."
                 )
@@ -366,6 +380,7 @@ extension DiscordRESTProvider {
                 routeKey: requestRateLimitKey,
                 majorParameter: majorParameter
             )
+            finishRateLimitReservation(rateLimitReservation)
 
             if response.statusCode == 429 {
                 let retryAfter = Self.retryAfter(from: data, response: response)
@@ -464,8 +479,12 @@ extension DiscordRESTProvider {
             path, method, query, body, headers, requestedMaximumAttempts
         )
     }
-    func reserveRateLimitSlot(routeKey: String) async throws {
+    @discardableResult
+    func reserveRateLimitSlot(
+        routeKey: String
+    ) async throws -> RESTRateLimitReservation {
         while true {
+            try Task.checkCancellation()
             guard !requestSafetyCircuitIsOpen else {
                 throw ChatProviderError.invalidRequest(
                     "Discord networking is stopped for this session."
@@ -495,6 +514,21 @@ extension DiscordRESTProvider {
                 try await Task.sleep(for: .seconds(delay))
                 continue
             }
+            if rateLimitBucketKeyByRoute[routeKey] == nil,
+               !rateLimitRoutesWithoutBuckets.contains(routeKey)
+            {
+                if rateLimitDiscoveryTokenByRoute[routeKey] != nil {
+                    await waitForRateLimitDiscovery(routeKey: routeKey)
+                    try Task.checkCancellation()
+                    continue
+                }
+                let token = UUID()
+                rateLimitDiscoveryTokenByRoute[routeKey] = token
+                return RESTRateLimitReservation(
+                    routeKey: routeKey,
+                    discoveryToken: token
+                )
+            }
             if let bucketKey = rateLimitBucketKeyByRoute[routeKey],
                var bucket = rateLimitBuckets[bucketKey],
                let remaining = bucket.remaining,
@@ -505,7 +539,59 @@ extension DiscordRESTProvider {
                 bucket.remaining = remaining - 1
                 rateLimitBuckets[bucketKey] = bucket
             }
-            return
+            return RESTRateLimitReservation(
+                routeKey: routeKey,
+                discoveryToken: nil
+            )
+        }
+    }
+
+    func waitForRateLimitDiscovery(routeKey: String) async {
+        let waiterID = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled else {
+                    continuation.resume()
+                    return
+                }
+                rateLimitDiscoveryWaitersByRoute[routeKey, default: [:]][waiterID]
+                    = continuation
+            }
+        } onCancel: {
+            Task {
+                await self.cancelRateLimitDiscoveryWaiter(
+                    routeKey: routeKey,
+                    waiterID: waiterID
+                )
+            }
+        }
+    }
+
+    func cancelRateLimitDiscoveryWaiter(
+        routeKey: String,
+        waiterID: UUID
+    ) {
+        guard let waiter = rateLimitDiscoveryWaitersByRoute[routeKey]?
+            .removeValue(forKey: waiterID)
+        else { return }
+        if rateLimitDiscoveryWaitersByRoute[routeKey]?.isEmpty == true {
+            rateLimitDiscoveryWaitersByRoute[routeKey] = nil
+        }
+        waiter.resume()
+    }
+
+    func finishRateLimitReservation(
+        _ reservation: RESTRateLimitReservation
+    ) {
+        guard let token = reservation.discoveryToken,
+              rateLimitDiscoveryTokenByRoute[reservation.routeKey] == token
+        else { return }
+        rateLimitDiscoveryTokenByRoute[reservation.routeKey] = nil
+        let waiters = rateLimitDiscoveryWaitersByRoute.removeValue(
+            forKey: reservation.routeKey
+        ) ?? [:]
+        for waiter in waiters.values {
+            waiter.resume()
         }
     }
 
@@ -527,9 +613,17 @@ extension DiscordRESTProvider {
                 )
             } else if response.statusCode != 429 {
                 routeRateLimitDates[routeKey] = nil
+                if (200 ..< 300).contains(response.statusCode) {
+                    // A successful response without a bucket header
+                    // establishes that this route does not need further
+                    // discovery serialization. Keep failures unknown so only
+                    // one request probes the route again.
+                    rateLimitRoutesWithoutBuckets.insert(routeKey)
+                }
             }
             return
         }
+        rateLimitRoutesWithoutBuckets.remove(routeKey)
         let key = RESTRateLimitBucketKey(
             identifier: identifier,
             majorParameter: majorParameter

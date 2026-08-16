@@ -638,7 +638,8 @@ extension AppModel {
             nil
         }
         async let accountPersistence: Void = persistBootstrapAccount(
-            bootstrapAccount
+            bootstrapAccount,
+            session: account
         )
         let readStateAccountID = credentialHandle?.accountID
             ?? (launchMode == .offlineTesting ? "offline" : nil)
@@ -658,6 +659,7 @@ extension AppModel {
                 )
             }.value
         }
+        guard canPublishBootstrap(for: account) else { return }
         AppPerformanceSignposts.measureSync("BootstrapReadStatePublication") {
             reconcilePrivateCallSounds()
             readState.applyInitialState(initialReadState)
@@ -723,26 +725,29 @@ extension AppModel {
             }
         } else {
             let statusProvider = account?.provider ?? provider
-            currentStatus = await AppPerformanceSignposts.measure(
+            let restoredStatus = await AppPerformanceSignposts.measure(
                 "BootstrapPresenceRestore"
             ) {
                 await statusProvider.currentStatus()
             }
+            guard canPublishBootstrap(for: account) else { return }
+            currentStatus = restoredStatus
         }
-        if let account, !isCurrentAccountSession(account) { return }
+        guard canPublishBootstrap(for: account) else { return }
         await AppPerformanceSignposts.measure("BootstrapInitialGuildActivation") {
             await activateGuild(
                 retainedChannel?.guildID ?? value.guilds.first?.id,
                 account: account
             )
         }
-        if let account, !isCurrentAccountSession(account) { return }
+        guard canPublishBootstrap(for: account) else { return }
         if let retainedChannel,
            selectedChannelID != retainedChannel.id
         {
             selectedChannelID = retainedChannel.id
         }
         await accountPersistence
+        guard canPublishBootstrap(for: account) else { return }
         if publishesSessionState {
             sessionState = .workspace
         }
@@ -751,10 +756,27 @@ extension AppModel {
         }
     }
 
-    func persistBootstrapAccount(_ account: SavedAccount?) async {
-        guard let account else { return }
+    func canPublishBootstrap(for session: AppModelAccountSession?) -> Bool {
+        guard !Task.isCancelled else { return false }
+        guard let session else { return true }
+        return isCurrentAccountSession(session)
+    }
+
+    func persistBootstrapAccount(
+        _ account: SavedAccount?,
+        session: AppModelAccountSession?
+    ) async {
+        guard let account, canPublishBootstrap(for: session) else { return }
         await AppPerformanceSignposts.measure("BootstrapAccountPersistence") {
             await savedAccountStore.record(account)
+            guard canPublishBootstrap(for: session) else {
+                // `record` also selects the account in persistent preferences.
+                // If cancellation or an external session invalidation won the
+                // actor hop, restore the currently installed account instead
+                // of letting stale bootstrap work change the next launch.
+                await savedAccountStore.setPreferredAccountID(activeAccountID)
+                return
+            }
             savedAccounts.removeAll { $0.accountID == account.accountID }
             savedAccounts.insert(account, at: 0)
             activeAccountID = account.accountID

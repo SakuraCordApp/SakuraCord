@@ -562,11 +562,14 @@ The default attempt budget is exact:
 
 Any `429` pauses authenticated traffic until the server-provided cooldown.
 Route and global bucket data come from response headers/body; SakuraCord does
-not hard-code Discord rate limits or probe early. Requests without learned
-bucket state are dispatched immediately rather than passing through an
-app-owned global cadence. Each response associates its bucket identifier with
-the normalized route and Discord major parameters; later requests wait only
-for that learned bucket, a route-specific cooldown, or a server-declared global
+not hard-code Discord rate limits or probe early. The first request for each
+normalized route and Discord major parameter is dispatched immediately. Only
+concurrent requests for that same, still-unknown key wait for the discovery
+response; different routes and major parameters remain independent. A
+successful response without a bucket header marks the key as unbucketed and
+releases later requests without an app-owned cadence. Otherwise, the response
+associates its bucket identifier with the key, and later requests wait only for
+that learned bucket, a route-specific cooldown, or a server-declared global
 cooldown.
 
 Mutations preserve their nonce or idempotency fields and rely on REST/Gateway

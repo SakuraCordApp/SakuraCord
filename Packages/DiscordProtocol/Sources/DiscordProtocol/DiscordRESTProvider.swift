@@ -33,6 +33,11 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
         var resetInterval: TimeInterval?
     }
 
+    struct RESTRateLimitReservation: Sendable {
+        let routeKey: String
+        let discoveryToken: UUID?
+    }
+
     struct ForumReadState: Sendable {
         var lastReadMessageID: MessageID?
         var mentionCount: Int
@@ -102,6 +107,10 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
         [String: RESTRateLimitBucketKey] = [:]
     var rateLimitBuckets:
         [RESTRateLimitBucketKey: RESTRateLimitBucketState] = [:]
+    var rateLimitRoutesWithoutBuckets: Set<String> = []
+    var rateLimitDiscoveryTokenByRoute: [String: UUID] = [:]
+    var rateLimitDiscoveryWaitersByRoute:
+        [String: [UUID: CheckedContinuation<Void, Never>]] = [:]
     var requestSafetyCircuitIsOpen = false
     var unexpectedNotFoundCounts: [String: Int] = [:]
     var gatewaySession: GatewaySession?
@@ -161,6 +170,7 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var pendingMemberSearchRequestByGuild: [GuildID: String] = [:]
     var pendingRoleMemberRequests: [String: PendingRoleMemberRequest] = [:]
     var requestedHistoryMemberIDs: [GuildID: Set<UserID>] = [:]
+    var resolvingHistoryMemberIDs: [GuildID: Set<UserID>] = [:]
     var cachedGuilds: [GuildID: Guild] = [:]
     var cachedGuildRailItems: [GuildRailItem] = []
     var cachedGuildLayout: DiscordGuildLayout?
@@ -1642,7 +1652,7 @@ extension DiscordRESTProvider {
             "MessageHistoryMemberHydration",
             id: discordPerformanceSignposter.makeSignpostID()
         )
-        let resolvedMembers = await hydrateHistoryMembers(
+        let memberHydration = await hydrateHistoryMembers(
             &values,
             channelID: channelID
         )
@@ -1682,15 +1692,15 @@ extension DiscordRESTProvider {
             messages: values,
             hasMoreBefore: hasMoreBefore,
             hasMoreAfter: hasMoreAfter,
-            resolvedMembers: resolvedMembers,
-            hasCompleteMemberResolution: true
+            resolvedMembers: memberHydration.members,
+            hasCompleteMemberResolution: memberHydration.isComplete
         )
     }
 
     func hydrateHistoryMembers(
         _ values: inout [Message],
         channelID: ChannelID
-    ) async -> [Member] {
+    ) async -> (members: [Member], isComplete: Bool) {
         if let guildID = cachedChannels.values.lazy.flatMap(\.self).first(where: {
             $0.id == channelID
         })?.guildID {
@@ -1699,20 +1709,35 @@ extension DiscordRESTProvider {
             }
 
             let requested = requestedHistoryMemberIDs[guildID] ?? []
+            let resolving = resolvingHistoryMemberIDs[guildID] ?? []
             var membersByID = cachedMemberIndex(guildID: guildID)
+            let requiredUserIDs = Set(
+                DiscordMessageMemberHydration.userIDs(in: values)
+            )
             let missing = DiscordMessageMemberHydration.missingUserIDs(
                 in: values,
                 cached: Set(membersByID.keys),
                 requested: requested
             )
+            var isComplete = requiredUserIDs.isDisjoint(with: resolving)
             if !missing.isEmpty {
                 requestedHistoryMemberIDs[guildID, default: []].formUnion(missing)
+                resolvingHistoryMemberIDs[guildID, default: []].formUnion(missing)
                 do {
                     try await requestMembersByID(missing, guildID: guildID)
+                    resolvingHistoryMemberIDs[guildID]?.subtract(missing)
+                    if resolvingHistoryMemberIDs[guildID]?.isEmpty == true {
+                        resolvingHistoryMemberIDs[guildID] = nil
+                    }
                 } catch {
+                    isComplete = false
                     requestedHistoryMemberIDs[guildID]?.subtract(missing)
                     if requestedHistoryMemberIDs[guildID]?.isEmpty == true {
                         requestedHistoryMemberIDs[guildID] = nil
+                    }
+                    resolvingHistoryMemberIDs[guildID]?.subtract(missing)
+                    if resolvingHistoryMemberIDs[guildID]?.isEmpty == true {
+                        resolvingHistoryMemberIDs[guildID] = nil
                     }
                     gatewayLogger.warning(
                         "History member lookup failed; count=\(missing.count), error=\(error.localizedDescription, privacy: .public)"
@@ -1729,11 +1754,14 @@ extension DiscordRESTProvider {
                     membersByID: membersByID
                 )
             }
-            return DiscordMessageMemberHydration.userIDs(in: values).compactMap {
-                membersByID[$0]
-            }
+            return (
+                DiscordMessageMemberHydration.userIDs(in: values).compactMap {
+                    membersByID[$0]
+                },
+                isComplete
+            )
         }
-        return []
+        return ([], true)
     }
 
     func cachedMemberIndex(guildID: GuildID) -> [UserID: Member] {

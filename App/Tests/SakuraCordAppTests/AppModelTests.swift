@@ -1572,6 +1572,35 @@ import UserNotifications
 }
 
 @MainActor
+@Test func `stale bootstrap persistence cannot replace the current account`() async {
+    let savedAccounts = SuspendedSavedAccountStore()
+    let model = AppModel(
+        launchMode: .normal,
+        discordNetworkDisabledOverride: false,
+        restoresStoredSession: false,
+        savedAccountStore: savedAccounts,
+        accountDatabaseFactory: { _ in nil }
+    )
+    model.activeAccountID = "current-account"
+    let staleSession = model.accountSession()
+    let persistence = Task { @MainActor in
+        await model.persistBootstrapAccount(
+            SavedAccount(accountID: "stale-account"),
+            session: staleSession
+        )
+    }
+    await savedAccounts.waitUntilRecordStarts()
+
+    model.invalidateAccountSession()
+    await savedAccounts.releaseRecord()
+    await persistence.value
+
+    #expect(model.activeAccountID == "current-account")
+    #expect(model.savedAccounts.isEmpty)
+    #expect(await savedAccounts.preferredAccountID() == "current-account")
+}
+
+@MainActor
 @Test func `workspace presentation does not wait for initial history`() async {
     let provider = SuspendedBootstrapTestProvider(suspendsMessages: true)
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
@@ -1849,6 +1878,52 @@ private actor SavedAccountStoreSpy: SavedAccountStoring {
 
     func setPreferredAccountID(_ accountID: String?) {
         preferredID = accountID
+    }
+}
+
+private actor SuspendedSavedAccountStore: SavedAccountStoring {
+    private var preferredID: String?
+    private var recordStarted = false
+    private var recordStartWaiters: [CheckedContinuation<Void, Never>] = []
+    private var recordRelease: CheckedContinuation<Void, Never>?
+
+    func accounts(matching handles: [CredentialHandle]) -> [SavedAccount] {
+        handles.map(SavedAccount.init(handle:))
+    }
+
+    func preferredAccountID() -> String? {
+        preferredID
+    }
+
+    func record(_ account: SavedAccount) async {
+        recordStarted = true
+        let waiters = recordStartWaiters
+        recordStartWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+        await withCheckedContinuation { continuation in
+            recordRelease = continuation
+        }
+        preferredID = account.accountID
+    }
+
+    func remove(accountID: String) {}
+
+    func setPreferredAccountID(_ accountID: String?) {
+        preferredID = accountID
+    }
+
+    func waitUntilRecordStarts() async {
+        guard !recordStarted else { return }
+        await withCheckedContinuation { continuation in
+            recordStartWaiters.append(continuation)
+        }
+    }
+
+    func releaseRecord() {
+        recordRelease?.resume()
+        recordRelease = nil
     }
 }
 

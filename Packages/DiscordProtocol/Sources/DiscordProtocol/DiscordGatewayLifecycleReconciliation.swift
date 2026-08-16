@@ -30,6 +30,7 @@ extension DiscordRESTProvider {
         memberListSubscriptionOrder[guildID] = nil
         cachedMemberListGroups[guildID] = nil
         requestedHistoryMemberIDs[guildID] = nil
+        resolvingHistoryMemberIDs[guildID] = nil
         cachedEmojis[guildID] = nil
         guildChannelTasks.removeValue(forKey: guildID)?.cancel()
         guildRoleTasks.removeValue(forKey: guildID)?.cancel()

@@ -193,6 +193,7 @@ extension DiscordRESTProvider {
         cancelPendingInteractionRequests()
         cancelPendingMemberRequests(error: CancellationError())
         requestedHistoryMemberIDs = [:]
+        resolvingHistoryMemberIDs = [:]
         voiceNegotiationTimeoutTask?.cancel()
         if let pendingVoiceNegotiation {
             pendingVoiceNegotiation.continuation.resume(throwing: CancellationError())
@@ -698,6 +699,7 @@ extension DiscordRESTProvider {
                 cachedJoinedThreadOrder = []
                 gatewayOpcodeRateLimitDates = [:]
                 requestedHistoryMemberIDs = [:]
+                resolvingHistoryMemberIDs = [:]
                 cachedPrivateMembersByID = [:]
                 cachedPrivateRecipientIDsByChannelID = [:]
                 cachedGatewayUsersByID = [:]
