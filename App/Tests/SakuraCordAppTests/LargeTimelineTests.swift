@@ -2038,6 +2038,47 @@ func `native timeline does not auto load third party linked images`() throws {
     #expect(layout.attributedContent?.string.contains("invoice") == true)
 }
 
+@MainActor @Test
+func `timeline mention text prewarms off main without changing its resolved presentation`() async throws {
+    let message = Message(
+        id: MessageID(rawValue: 98_001),
+        channelID: ChannelID(rawValue: 98_002),
+        author: User(
+            id: UserID(rawValue: 98_003),
+            username: "prewarm.fixture",
+            displayName: "Prewarm Fixture"
+        ),
+        content: "Hello <@98004>"
+    )
+    let plan = NativeTimelineTextPlan.make(for: message)
+    let preparation = try #require(
+        NativeTimelineTextPresentation.preparation(
+            message: message,
+            plan: plan,
+            model: nil
+        )
+    )
+
+    let prewarmed = await Task.detached(priority: .utility) {
+        NativeTimelineTextPresentation.prewarm(preparation)
+    }.value
+    let presentation = NativeTimelineTextPresentation.make(
+        message: message,
+        plan: plan,
+        model: nil
+    )
+
+    #expect(presentation.attributedContent === prewarmed.value)
+    let mention = try #require(
+        presentation.attributedContent?.attribute(
+            .nativeTimelineMention,
+            at: 6,
+            effectiveRange: nil
+        ) as? NativeTimelineMentionBox
+    )
+    #expect(mention.presentation.label == "@unknown-user")
+}
+
 @Test
 func `linked image trust rejects lookalike insecure and credential URLs`() throws {
     let accepted = try #require(URL(

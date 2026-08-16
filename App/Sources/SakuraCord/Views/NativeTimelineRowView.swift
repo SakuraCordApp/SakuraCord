@@ -57,7 +57,7 @@ extension NSAttributedString.Key {
     )
 }
 
-final class NativeTimelineMentionBox: NSObject {
+nonisolated final class NativeTimelineMentionBox: NSObject {
     let presentation: MentionPresentation
 
     init(_ presentation: MentionPresentation) {

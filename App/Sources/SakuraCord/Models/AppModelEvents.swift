@@ -96,113 +96,6 @@ extension AppModel {
         forumNotificationMutationTasks.removeAll()
     }
 
-    func refreshUnreadPresentation(
-        appliesAccessImmediately: Bool = false,
-        accessAffectedGuildIDs: Set<GuildID>? = nil
-    ) {
-        // Permission and unread projection walks every channel, role, guild,
-        // and sidebar row. Gateway bursts can request it repeatedly while the
-        // user is scrolling; doing that work mid-gesture caused hundreds of
-        // milliseconds of main-thread starvation. Access-affecting events are
-        // the exception: apply their security projection immediately, while
-        // retaining the broader sidebar/unread publication until scrolling
-        // ends.
-        var immediateAccessProjection: UnreadAccessProjection?
-        if appliesAccessImmediately, let channels = snapshot?.channels {
-            immediateAccessProjection = applyImmediateUnreadAccessProjection(
-                for: channels,
-                affectedGuildIDs: accessAffectedGuildIDs
-            )
-        }
-        guard liveScrollingConversationIDs.isEmpty else {
-            hasDeferredUnreadPresentationRefresh = true
-            return
-        }
-        hasDeferredUnreadPresentationRefresh = false
-        guard var value = snapshot else {
-            notificationService.setDockBadge(
-                readState.totalMentions,
-                enabled: notificationPreferences.showsDockBadge
-            )
-            return
-        }
-        // Ordinary read-state changes do not alter channel permissions. Access
-        // events already applied their projection above, so avoid rebuilding
-        // every guild's permission masks for message and acknowledgement churn.
-        let accessByChannelID = immediateAccessProjection?.accessByChannelID ?? [:]
-        let unreadProjection = readState.unreadPresentationProjection()
-        let projectedChannels = value.channels.map { channel in
-            var channel = channel
-            channel.unreadCount =
-                channel.kind == .forum
-                ? unreadProjection.newForumPostsByChannelID[channel.id, default: 0]
-                : (unreadProjection.unreadByChannelID[channel.id] == true ? 1 : 0)
-            channel.mentionCount = unreadProjection.mentionsByChannelID[
-                channel.id,
-                default: 0
-            ]
-            return channel
-        }
-        let projectedGuilds = value.guilds.map { guild in
-            var guild = guild
-            guild.unreadCount = unreadProjection.unreadByGuildID[guild.id] == true ? 1 : 0
-            guild.mentionCount = unreadProjection.mentionsByGuildID[
-                guild.id,
-                default: 0
-            ]
-            return guild
-        }
-        if UnreadPresentationPublicationPolicy.shouldPublish(
-            snapshot: value,
-            channels: projectedChannels,
-            guilds: projectedGuilds
-        ) {
-            value.channels = projectedChannels
-            value.guilds = projectedGuilds
-            snapshot = value
-        }
-        let projectedGuildsByID = Dictionary(
-            uniqueKeysWithValues: projectedGuilds.map { ($0.id, $0) }
-        )
-        if projectedGuildsByID != serverRailGuildsByID {
-            serverRailGuildsByID = projectedGuildsByID
-        }
-        let selectedGuildChannels: [Channel]
-        if let selectedGuildID {
-            selectedGuildChannels = projectedChannels.filter {
-                $0.guildID == selectedGuildID
-            }
-        } else {
-            selectedGuildChannels = projectedChannels.filter {
-                $0.guildID == nil
-            }
-        }
-        if selectedGuildChannels != visibleChannels {
-            visibleChannels = selectedGuildChannels
-        }
-        if let selectedChannelID,
-           !selectedGuildChannels.contains(where: { $0.id == selectedChannelID })
-        {
-            self.selectedChannelID = Self.preferredInitialChannelID(
-                in: selectedGuildChannels.filter {
-                    (accessByChannelID[$0.id] ?? conversationAccess(for: $0)) != .hidden
-                }
-            )
-        }
-        let projectedSelectedChannel =
-            selectedChannelID.flatMap { id in
-                projectedChannels.first { $0.id == id }
-            }
-                ?? selectedChannel
-        if projectedSelectedChannel != selectedChannel {
-            selectedChannel = projectedSelectedChannel
-        }
-        notificationService.setDockBadge(
-            unreadProjection.totalMentions,
-            enabled: notificationPreferences.showsDockBadge
-        )
-    }
-
     func deliverNativeNotification(for message: Message) {
         // The offline timeline benchmark measures event ingestion, layout,
         // drawing, and scroll scheduling. Enqueuing thousands of synthetic
@@ -711,12 +604,36 @@ extension AppModel {
     }
 
     func consumeForumPostsChanged(channelID: ChannelID, posts: [ForumPost]) {
-        replaceForwardDestinationThreads(
-            parentID: channelID,
-            with: posts.map(\.thread)
+        let interval = AppPerformanceSignposts.signposter.beginInterval(
+            "ForumPostsChanged"
         )
-        readState.replaceThreads(parentID: channelID, with: posts.map(\.thread))
-        refreshUnreadPresentation()
+        defer {
+            AppPerformanceSignposts.signposter.endInterval(
+                "ForumPostsChanged",
+                interval
+            )
+        }
+        let threads = AppPerformanceSignposts.measureSync(
+            "ForumThreadProjection"
+        ) {
+            posts.map(\.thread)
+        }
+        AppPerformanceSignposts.measureSync(
+            "ForumForwardDestinationReplacement"
+        ) {
+            replaceForwardDestinationThreads(
+                parentID: channelID,
+                with: threads
+            )
+        }
+        AppPerformanceSignposts.measureSync(
+            "ForumReadStateReplacement"
+        ) {
+            readState.replaceThreads(parentID: channelID, with: threads)
+        }
+        AppPerformanceSignposts.measureSync("ForumUnreadRefresh") {
+            refreshUnreadPresentation()
+        }
         guard channelID == selectedChannelID, selectedChannel?.kind == .forum else { return }
         replaceForumCatalogue(with: posts)
         applyForumPresentation()
@@ -1458,9 +1375,10 @@ extension AppModel {
         let preparedInsertedRows = await AppPerformanceSignposts.measure(
             "EarlierHistoryRowPreparation"
         ) {
-            await Task.detached(priority: .utility) {
-                await MessageGrouping.rowsCooperatively(for: earlier)
-            }.value
+            await prepareTimelineRows(
+                for: earlier,
+                priority: .utility
+            )
         }
         guard !Task.isCancelled, selectedChannelID == channelID else {
             return false
@@ -1631,9 +1549,10 @@ extension AppModel {
         let preparedRows = await AppPerformanceSignposts.measure(
             "LaterHistoryRowPreparation"
         ) {
-            await Task.detached(priority: .utility) {
-                await MessageGrouping.rowsCooperatively(for: later)
-            }.value
+            await prepareTimelineRows(
+                for: later,
+                priority: .utility
+            )
         }
         guard !Task.isCancelled, selectedChannelID == channelID else {
             return false

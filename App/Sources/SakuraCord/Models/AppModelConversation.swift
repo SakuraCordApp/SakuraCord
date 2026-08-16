@@ -227,11 +227,10 @@ extension AppModel {
                     await AppPerformanceSignposts.measure(
                         "ConversationRowPreprocessing"
                     ) {
-                        await Task.detached(priority: .userInitiated) {
-                            await MessageGrouping.rowsCooperatively(
-                                for: initiallyMerged
-                            )
-                        }.value
+                        await prepareTimelineRows(
+                            for: initiallyMerged,
+                            priority: .userInitiated
+                        )
                     }
                 } else {
                     nil

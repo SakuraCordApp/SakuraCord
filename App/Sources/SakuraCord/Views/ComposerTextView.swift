@@ -220,7 +220,10 @@ enum ComposerEmojiAttributedText {
         ]
     }
 
-    static func attachmentOriginY(font: NSFont, size: CGFloat) -> CGFloat {
+    nonisolated static func attachmentOriginY(
+        font: NSFont,
+        size: CGFloat
+    ) -> CGFloat {
         (font.ascender + font.descender - size) / 2
     }
 

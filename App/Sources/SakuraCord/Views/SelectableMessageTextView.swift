@@ -5,7 +5,7 @@ import SakuraCordModels
 import SwiftUI
 import Synchronization
 
-enum MentionTarget: Hashable {
+nonisolated enum MentionTarget: Hashable, Sendable {
     case unresolved
     case user(UserID)
     case role(RoleID)
@@ -14,7 +14,7 @@ enum MentionTarget: Hashable {
     case message(guildID: GuildID?, channelID: ChannelID, messageID: MessageID)
 }
 
-struct MentionPresentation: Hashable, Identifiable {
+nonisolated struct MentionPresentation: Hashable, Identifiable, Sendable {
     let rawToken: String
     let label: String
     let target: MentionTarget

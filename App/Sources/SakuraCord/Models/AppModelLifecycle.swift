@@ -2459,6 +2459,12 @@ extension AppModel {
                 return
             }
 
+            await settleAuthenticatedLoadingScrollIdleControl()
+            guard !Task.isCancelled else {
+                finishUnavailable("cancelled-during-idle-warmup")
+                return
+            }
+
             let overall = AppPerformanceSignposts.signposter.beginInterval(
                 "AuthenticatedLoadingScrollOverlapBenchmark"
             )
@@ -2467,6 +2473,9 @@ extension AppModel {
             )
             AppPerformanceSignposts.signposter.emitEvent(
                 "AuthenticatedLoadingScrollOverlapBenchmarkReady"
+            )
+            AppPerformanceSignposts.signposter.emitEvent(
+                "AuthenticatedLoadingScrollIdleControlReady"
             )
             let idleControl = AppPerformanceSignposts.signposter.beginInterval(
                 "AuthenticatedLoadingScrollIdleControl"
@@ -2516,6 +2525,39 @@ extension AppModel {
                 messageCount: messages.count,
                 initialMessageCount: initialMessageCount
             )
+        }
+
+        private func settleAuthenticatedLoadingScrollIdleControl() async {
+            await waitForSelectedTimelineHistoryIdle()
+            _ = await prepareSelectedTimelineScrollHistory()
+            await memberLoadTask?.value
+            guard !Task.isCancelled else { return }
+            // The model operations above await their state commits, while
+            // SwiftUI/AppKit presentation follows on the next display turns.
+            // Keep those final publications outside the idle control so its
+            // latency distribution contains only user scrolling, never a
+            // bootstrap pagination-boundary redraw.
+            await waitForSelectedTimelineHistoryIdle()
+        }
+
+        private func waitForSelectedTimelineHistoryIdle() async {
+            let clock = ContinuousClock()
+            let deadline = clock.now.advanced(by: .seconds(12))
+            var idleSince: ContinuousClock.Instant?
+            while !Task.isCancelled, clock.now < deadline {
+                if isLoadingEarlier || isLoadingLater {
+                    idleSince = nil
+                } else if let idleSince {
+                    if idleSince.duration(to: clock.now)
+                        >= .milliseconds(500)
+                    {
+                        return
+                    }
+                } else {
+                    idleSince = clock.now
+                }
+                try? await Task.sleep(for: .milliseconds(20))
+            }
         }
 
         private nonisolated static func prefersActiveBenchmarkChannel(
