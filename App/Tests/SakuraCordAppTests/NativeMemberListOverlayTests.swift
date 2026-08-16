@@ -46,7 +46,6 @@ func `member list reuses prepared text for unchanged members`() {
             members: [first]
         ),
     ])
-    canvas.prepareRows(in: canvas.items.indices)
     let firstPreparedName = canvas.preparedText[.member(first.id)]?.name
 
     canvas.updateDocumentIfNeeded(sections: [
@@ -58,8 +57,6 @@ func `member list reuses prepared text for unchanged members`() {
             members: [first, second]
         ),
     ])
-    canvas.prepareRows(in: canvas.items.indices)
-
     #expect(canvas.preparedText[.member(first.id)]?.name === firstPreparedName)
     #expect(canvas.preparedText[.member(second.id)] != nil)
 }
@@ -90,6 +87,7 @@ func `member list prepares stable gateway document off main`() async {
     ])
     #expect(document?.itemIndexesByID[.member(loaded.id)] == 1)
     #expect(document?.origins.count == document?.items.count)
+    #expect(document?.preparedText[.member(loaded.id)] != nil)
 }
 
 @Test @MainActor

@@ -258,7 +258,6 @@ extension NativeTimelineCanvasView {
     }
 
     func invalidatePresentationCaches() {
-        pointer.cancelPrewarming()
         clearBitmapCache(keepingCapacity: true)
         bitmapInsertionOrder.removeAll(keepingCapacity: true)
         bitmapEvictionIndex = 0
@@ -276,7 +275,6 @@ extension NativeTimelineCanvasView {
     /// those bounded bitmaps warm so returning to a recent conversation does
     /// not synchronously raster every visible CoreText row again.
     func invalidateConversationTransientCaches() {
-        pointer.cancelPrewarming()
         cancelMessageJumpHighlight()
         mentionPointerRegionCache.removeAll(keepingCapacity: true)
         codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
@@ -293,11 +291,6 @@ extension NativeTimelineCanvasView {
                 interval
             )
         }
-        // Prewarming is idle work. A scroll can begin after a programmatic
-        // position request has queued it but before that main-actor task gets
-        // its first turn. Cancel it at the activity boundary so a cold bitmap
-        // raster cannot block the first scrolling frames.
-        pointer.cancelPrewarming()
         // Bounds changes arrive for every momentum-scroll tick. All teardown
         // and playback suppression below must happen only at the transition
         // into scrolling, never for each tick.
@@ -887,7 +880,9 @@ extension NativeTimelineCanvasView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        drawOperation(dirtyRect)
+        AppPerformanceSignposts.measureSync("TimelineCanvasDraw") {
+            drawOperation(dirtyRect)
+        }
         if let presentedConversationID {
             AppPerformanceSignposts.reportConversationFirstFrame(
                 channelID: presentedConversationID
@@ -1186,59 +1181,6 @@ extension NativeTimelineCanvasView {
         maximumDrawDuration = 0
         maximumRowRasterDuration = 0
         maximumRowRasterHeight = 0
-    }
-
-    func prewarmRows(above rect: CGRect, count: Int) {
-        prewarmTask?.cancel()
-        let boundedCount = min(count, Self.prewarmRowLimit)
-        guard boundedCount > 0,
-              let firstVisible = rowIndex(at: rect.minY),
-              firstVisible > 0
-        else {
-            return
-        }
-        let lowerBound = max(0, firstVisible - boundedCount)
-        let indexes = Array(stride(
-            from: firstVisible - 1,
-            through: lowerBound,
-            by: -1
-        ))
-        prewarmTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            for index in indexes {
-                guard !Task.isCancelled,
-                      self.items.indices.contains(index),
-                      self.layouts.indices.contains(index)
-                else { return }
-                // Prewarmed row bitmaps must participate in the same media
-                // lifecycle as on-screen draws. Otherwise they can cache
-                // placeholders before a row becomes visible and, when the
-                // shared media store already has the image, no asynchronous
-                // completion remains to invalidate that stale bitmap.
-                self.requestMedia(
-                    for: self.items[index],
-                    at: index,
-                    priority: .prefetch
-                )
-                _ = self.bitmap(
-                    for: self.items[index],
-                    at: index,
-                    layout: self.layouts[index],
-                    width: self.bounds.width
-                )
-                // `Task.yield()` may immediately resume the same main-actor
-                // task, allowing dozens of full-width CoreText/Core Graphics
-                // rasters to bunch up before the next presentation pass.
-                // A short real delay keeps prewarming inside the benchmark's
-                // existing warm-up window without producing a visible
-                // launch-to-scroll hitch.
-                do {
-                    try await Task.sleep(for: .milliseconds(8))
-                } catch {
-                    return
-                }
-            }
-        }
     }
 
     func bitmap(

@@ -1064,12 +1064,8 @@ extension NativeMessageTimelineCoordinator {
             scrollIdleTask?.cancel()
             scrollIdleTask = nil
             publishScrollActivity(false)
-            if let canvas, let scrollView {
+            if let canvas {
                 canvas.allowHoverPresentationAfterScroll()
-                canvas.prewarmRows(
-                    above: scrollView.contentView.bounds,
-                    count: 48
-                )
             }
         }
 
@@ -1274,12 +1270,6 @@ extension NativeMessageTimelineCoordinator {
                     toDocumentY:
                         rowY - (viewportHeight - rowHeight) * anchor.y,
                     scrollView: scrollView
-                )
-            }
-            if let canvas {
-                canvas.prewarmRows(
-                    above: scrollView.contentView.bounds,
-                    count: 48
                 )
             }
             return true

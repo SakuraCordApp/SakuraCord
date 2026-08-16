@@ -135,7 +135,6 @@ final class NativeTimelineCanvasView: NSView {
 
     static let bitmapCostLimit =
         NativeTimelineMediaMemoryPolicy.rowBitmapBytes
-    static let prewarmRowLimit = 8
     var storage = NativeTimelineCanvasStorage()
     var baseContentOriginY: CGFloat = 0
     var contentOriginY: CGFloat = 0
