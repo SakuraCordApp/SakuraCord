@@ -241,6 +241,9 @@ extension AppModel {
     }
 
     func resetAccountPresentationState() {
+        unreadPresentationRefreshTask?.cancel()
+        unreadPresentationRefreshTask = nil
+        hasDeferredUnreadPresentationRefresh = false
         bootstrapHistoryPrefetch?.task.cancel()
         bootstrapHistoryPrefetch = nil
         workspaceNavigationOverlay = nil
@@ -272,6 +275,7 @@ extension AppModel {
         voiceStates = [:]
         privateCallsByChannel = [:]
         visibleChannels = []
+        unreadCategoryIDsByGuild = [:]
         selectedChannel = nil
         selectedGuildID = nil
         selectedChannelID = nil

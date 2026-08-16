@@ -15,6 +15,28 @@ import UserNotifications
 nonisolated struct UnreadAccessProjection {
     let accessByChannelID: [ChannelID: ConversationAccess]
     let accessibilityByChannelID: [ChannelID: Bool]
+    let hiddenChannelIDs: Set<ChannelID>
+    let checkingChannelIDs: Set<ChannelID>
+
+    init(
+        accessByChannelID: [ChannelID: ConversationAccess],
+        accessibilityByChannelID: [ChannelID: Bool],
+        hiddenChannelIDs: Set<ChannelID>? = nil,
+        checkingChannelIDs: Set<ChannelID>? = nil
+    ) {
+        self.accessByChannelID = accessByChannelID
+        self.accessibilityByChannelID = accessibilityByChannelID
+        self.hiddenChannelIDs = hiddenChannelIDs ?? Set(
+            accessByChannelID.compactMap { channelID, access in
+                access == .hidden ? channelID : nil
+            }
+        )
+        self.checkingChannelIDs = checkingChannelIDs ?? Set(
+            accessByChannelID.compactMap { channelID, access in
+                access == .checking ? channelID : nil
+            }
+        )
+    }
 }
 
 extension AppModel {
@@ -631,8 +653,8 @@ extension AppModel {
         ) {
             readState.replaceThreads(parentID: channelID, with: threads)
         }
-        AppPerformanceSignposts.measureSync("ForumUnreadRefresh") {
-            refreshUnreadPresentation()
+        AppPerformanceSignposts.measureSync("ForumUnreadRefreshRequest") {
+            requestCoalescedUnreadPresentationRefresh()
         }
         guard channelID == selectedChannelID, selectedChannel?.kind == .forum else { return }
         replaceForumCatalogue(with: posts)
@@ -647,7 +669,7 @@ extension AppModel {
     func consumeForumPostPreviewsChanged(channelID: ChannelID, posts: [ForumPost]) {
         mergeForwardDestinationThreads(posts.map(\.thread))
         for post in posts { readState.merge(thread: post.thread) }
-        refreshUnreadPresentation()
+        requestCoalescedUnreadPresentationRefresh()
         guard channelID == selectedChannelID, selectedChannel?.kind == .forum else { return }
         mergeForumCatalogue(posts)
         applyForumPresentation()
@@ -659,7 +681,7 @@ extension AppModel {
         page: ForumPostPage
     ) {
         for post in page.posts { readState.merge(thread: post.thread) }
-        refreshUnreadPresentation()
+        requestCoalescedUnreadPresentationRefresh()
         guard channelID == selectedChannelID,
               selectedChannel?.kind == .forum,
               forumSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -835,6 +857,10 @@ extension AppModel {
     }
 
     func consumeSnapshotChanged(_ value: BootstrapSnapshot) {
+        let previousChannelsByID = Dictionary(
+            uniqueKeysWithValues: (snapshot?.channels ?? []).map { ($0.id, $0) }
+        )
+        let previousGuildsByID = serverRailGuildsByID
         snapshot = value
         forwardSearchSourceRevision &+= 1
         readState.configure(
@@ -848,8 +874,45 @@ extension AppModel {
         for thread in value.threads {
             readState.merge(thread: thread)
         }
-        updateServerRail(from: value)
         refreshUnreadPresentation(appliesAccessImmediately: true)
+        // A Gateway snapshot carries protocol models whose unread fields are
+        // intentionally zero. Keep existing presentation values, and resolve
+        // only genuinely new IDs synchronously after access has been applied.
+        // The account-wide projection remains coalesced onto the next bounded
+        // turn, avoiding a transient visible zero without restoring the old
+        // access-plus-projection main-actor stall.
+        if var projected = snapshot {
+            for index in projected.channels.indices {
+                let channelID = projected.channels[index].id
+                if let previous = previousChannelsByID[channelID] {
+                    projected.channels[index].unreadCount = previous.unreadCount
+                    projected.channels[index].mentionCount = previous.mentionCount
+                } else {
+                    projected.channels[index].unreadCount =
+                        projected.channels[index].kind == .forum
+                        ? readState.forumNewPostCount(channelID: channelID)
+                        : (readState.unread(channelID: channelID) ? 1 : 0)
+                    projected.channels[index].mentionCount = readState.mentions(
+                        channelID: channelID
+                    )
+                }
+            }
+            for index in projected.guilds.indices {
+                let guildID = projected.guilds[index].id
+                if let previous = previousGuildsByID[guildID] {
+                    projected.guilds[index].unreadCount = previous.unreadCount
+                    projected.guilds[index].mentionCount = previous.mentionCount
+                } else {
+                    projected.guilds[index].unreadCount =
+                        readState.guildUnread(guildID) ? 1 : 0
+                    projected.guilds[index].mentionCount = readState.guildMentions(
+                        guildID
+                    )
+                }
+            }
+            snapshot = projected
+            updateServerRail(from: projected)
+        }
         selectGuild(selectedGuildID)
     }
 
@@ -857,8 +920,14 @@ extension AppModel {
         guard var value = snapshot,
               let index = value.guilds.firstIndex(where: { $0.id == guild.id })
         else { return }
-        value.guilds[index] = guild
+        var projectedGuild = guild
+        if let previous = serverRailGuildsByID[guild.id] {
+            projectedGuild.unreadCount = previous.unreadCount
+            projectedGuild.mentionCount = previous.mentionCount
+        }
+        value.guilds[index] = projectedGuild
         snapshot = value
+        serverRailGuildsByID[guild.id] = projectedGuild
         forwardSearchSourceRevision &+= 1
         readState.merge(guilds: [guild])
         // Gateway guild payloads do not carry SakuraCord's presentation-only
@@ -873,7 +942,15 @@ extension AppModel {
     func consumeGuildLayoutChanged(guilds: [Guild], railItems: [GuildRailItem]) {
         guard var value = snapshot else { return }
         let retainedGuildIDs = Set(guilds.map(\.id))
-        value.guilds = guilds
+        value.guilds = guilds.map { guild in
+            guard let previous = serverRailGuildsByID[guild.id] else {
+                return guild
+            }
+            var projected = guild
+            projected.unreadCount = previous.unreadCount
+            projected.mentionCount = previous.mentionCount
+            return projected
+        }
         value.guildRailItems = railItems
         snapshot = value
         forwardSearchSourceRevision &+= 1
@@ -1268,6 +1345,30 @@ extension AppModel {
             return
         }
         hasDeferredUnreadPresentationRefresh = true
+    }
+
+    func requestCoalescedUnreadPresentationRefresh() {
+        hasDeferredUnreadPresentationRefresh = true
+        guard liveScrollingConversationIDs.isEmpty,
+              unreadPresentationRefreshTask == nil
+        else { return }
+        AppPerformanceSignposts.signposter.emitEvent(
+            "UnreadPresentationRefreshScheduled"
+        )
+        let account = accountSession()
+        unreadPresentationRefreshTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(8))
+            } catch {
+                return
+            }
+            guard let self,
+                  !Task.isCancelled,
+                  self.isCurrentAccountSession(account)
+            else { return }
+            self.unreadPresentationRefreshTask = nil
+            self.flushUnreadPresentationRefresh()
+        }
     }
 
     func flushUnreadPresentationRefresh() {

@@ -8,17 +8,27 @@ extension AppModel {
         for channels: [Channel],
         affectedGuildIDs: Set<GuildID>?
     ) -> UnreadAccessProjection {
-        let affectedChannels = affectedGuildIDs.map { guildIDs in
-            channels.filter { channel in
-                channel.guildID.map(guildIDs.contains) == true
-            }
-        } ?? channels
-        let projection = unreadAccessProjection(for: affectedChannels)
-        applyUnreadAccessProjection(
-            projection,
-            replacingChannelIDs: affectedGuildIDs == nil
-                ? nil : Set(affectedChannels.map(\.id))
-        )
+        let affectedChannels = AppPerformanceSignposts.measureSync(
+            "UnreadAccessAffectedChannelProjection"
+        ) {
+            affectedGuildIDs.map { guildIDs in
+                channels.filter { channel in
+                    channel.guildID.map(guildIDs.contains) == true
+                }
+            } ?? channels
+        }
+        let projection = AppPerformanceSignposts.measureSync(
+            "UnreadAccessResolution"
+        ) {
+            unreadAccessProjection(for: affectedChannels)
+        }
+        AppPerformanceSignposts.measureSync("UnreadAccessApplication") {
+            applyUnreadAccessProjection(
+                projection,
+                replacingChannelIDs: affectedGuildIDs == nil
+                    ? nil : Set(projection.accessByChannelID.keys)
+            )
+        }
         return projection
     }
 
@@ -26,11 +36,7 @@ extension AppModel {
         _ projection: UnreadAccessProjection,
         replacingChannelIDs: Set<ChannelID>? = nil
     ) {
-        let updatedHiddenChannelIDs = Set(
-            projection.accessByChannelID.compactMap { channelID, access in
-                access == .hidden ? channelID : nil
-            }
-        )
+        let updatedHiddenChannelIDs = projection.hiddenChannelIDs
         let projectedHiddenChannelIDs = if let replacingChannelIDs {
             hiddenChannelIDs.subtracting(replacingChannelIDs)
                 .union(updatedHiddenChannelIDs)
@@ -41,11 +47,7 @@ extension AppModel {
             projectedHiddenChannelIDs.contains($0)
                 && !hiddenChannelIDs.contains($0)
         } ?? false
-        let updatedCheckingChannelIDs = Set(
-            projection.accessByChannelID.compactMap { channelID, access in
-                access == .checking ? channelID : nil
-            }
-        )
+        let updatedCheckingChannelIDs = projection.checkingChannelIDs
         let projectedCheckingChannelIDs = if let replacingChannelIDs {
             checkingChannelIDs.subtracting(replacingChannelIDs)
                 .union(updatedCheckingChannelIDs)
@@ -111,50 +113,63 @@ extension AppModel {
         var accessibilityByChannelID = [ChannelID: Bool](
             minimumCapacity: channels.count
         )
-        let authoritativeAccessEvidence =
+        var hiddenChannelIDs: Set<ChannelID> = []
+        var checkingChannelIDs: Set<ChannelID> = []
+        hiddenChannelIDs.reserveCapacity(channels.count / 4)
+        checkingChannelIDs.reserveCapacity(channels.count / 4)
+        let authoritativeAccessEvidence = AppPerformanceSignposts.measureSync(
+            "UnreadAccessEvidenceProjection"
+        ) {
             readState.authoritativeAccessEvidenceChannelIDs()
+        }
         var permissionBasisByGuildID: [GuildID: ConversationPermissionBasis] = [:]
         var unresolvedGuildIDs: Set<GuildID> = []
-        for channel in channels {
-            let access: ConversationAccess
-            if let guildID = channel.guildID {
-                let permissionBasis: ConversationPermissionBasis?
-                if let cached = permissionBasisByGuildID[guildID] {
-                    permissionBasis = cached
-                } else if unresolvedGuildIDs.contains(guildID) {
-                    permissionBasis = nil
-                } else if let resolved = conversationPermissionBasis(for: guildID) {
-                    permissionBasisByGuildID[guildID] = resolved
-                    permissionBasis = resolved
+        AppPerformanceSignposts.measureSync("UnreadAccessChannelResolution") {
+            for channel in channels {
+                let access: ConversationAccess
+                if let guildID = channel.guildID {
+                    let permissionBasis: ConversationPermissionBasis?
+                    if let cached = permissionBasisByGuildID[guildID] {
+                        permissionBasis = cached
+                    } else if unresolvedGuildIDs.contains(guildID) {
+                        permissionBasis = nil
+                    } else if let resolved = conversationPermissionBasis(for: guildID) {
+                        permissionBasisByGuildID[guildID] = resolved
+                        permissionBasis = resolved
+                    } else {
+                        unresolvedGuildIDs.insert(guildID)
+                        permissionBasis = nil
+                    }
+                    access = conversationAccess(
+                        for: channel,
+                        permissionBasis: permissionBasis
+                    )
                 } else {
-                    unresolvedGuildIDs.insert(guildID)
-                    permissionBasis = nil
+                    access = conversationAccess(for: channel)
                 }
-                access = conversationAccess(
-                    for: channel,
-                    permissionBasis: permissionBasis
-                )
-            } else {
-                access = conversationAccess(for: channel)
-            }
-            accessByChannelID[channel.id] = access
-            switch access {
-            case .hidden:
-                accessibilityByChannelID[channel.id] = false
-            case .checking:
-                // Untouched guilds can remain in permission-checking state
-                // until activation loads their member roles. Preserve unread
-                // supplied by Discord's authoritative account read state,
-                // without admitting channels for which no such evidence exists.
-                accessibilityByChannelID[channel.id] =
-                    authoritativeAccessEvidence.contains(channel.id)
-            case .readable:
-                accessibilityByChannelID[channel.id] = true
+                accessByChannelID[channel.id] = access
+                switch access {
+                case .hidden:
+                    hiddenChannelIDs.insert(channel.id)
+                    accessibilityByChannelID[channel.id] = false
+                case .checking:
+                    checkingChannelIDs.insert(channel.id)
+                    // Untouched guilds can remain in permission-checking state
+                    // until activation loads their member roles. Preserve unread
+                    // supplied by Discord's authoritative account read state,
+                    // without admitting channels for which no such evidence exists.
+                    accessibilityByChannelID[channel.id] =
+                        authoritativeAccessEvidence.contains(channel.id)
+                case .readable:
+                    accessibilityByChannelID[channel.id] = true
+                }
             }
         }
         return UnreadAccessProjection(
             accessByChannelID: accessByChannelID,
-            accessibilityByChannelID: accessibilityByChannelID
+            accessibilityByChannelID: accessibilityByChannelID,
+            hiddenChannelIDs: hiddenChannelIDs,
+            checkingChannelIDs: checkingChannelIDs
         )
     }
 }

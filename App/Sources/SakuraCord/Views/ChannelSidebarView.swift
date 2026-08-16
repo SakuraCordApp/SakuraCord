@@ -87,6 +87,8 @@ struct ChannelSidebarView: View {
     let voiceModel: AppModel
     let guild: Guild?
     let channels: [Channel]
+    let channelGroups: [ChannelGroup]
+    let unreadCategoryIDs: Set<ChannelID>
     @Binding var selection: ChannelID?
     let currentUser: User?
     let connectionState: ConnectionState
@@ -102,62 +104,52 @@ struct ChannelSidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ZStack {
+            if guild == nil {
                 DirectMessageInboxView(
                     model: voiceModel,
-                    channels: directMessageChannels,
+                    channels: channels,
                     membersByID: voiceModel.membersByID,
                     privateCallsByChannel: voiceModel.privateCallsByChannel.filter {
                         !$0.value.isUnavailable
                     },
-                    animatesAvatars: guild == nil,
+                    animatesAvatars: true,
                     selection: directMessageSelection
                 )
-                .opacity(guild == nil ? 1 : 0)
-                .allowsHitTesting(guild == nil)
-                .accessibilityHidden(guild != nil)
-
-                if guild != nil {
-                    let unreadCategoryIDs = guild.map {
-                        voiceModel.unreadCategoryIDs(guildID: $0.id)
-                    } ?? []
-                    List(selection: deferredGuildSelection) {
-                        let groups = AppPerformanceSignposts.measureSync(
-                            "ChannelSidebarGrouping"
-                        ) {
-                            ChannelGroup.make(from: displayedChannels)
-                        }
-                        ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
-                            ChannelGroupRows(
-                                model: voiceModel,
-                                group: group,
-                                addsTopSpacing: index == groups.startIndex,
-                                rulesChannelID: guild?.rulesChannelID,
-                                activeVoiceChannelID: activeVoiceChannelID,
-                                hiddenChannelIDs: hiddenChannelIDs,
-                                checkingChannelIDs: checkingChannelIDs,
-                                isUnread: group.categoryID.map(
-                                    unreadCategoryIDs.contains
-                                ) ?? false,
-                                voiceParticipantsByChannel: voiceSidebarParticipantsByChannel
-                            )
-                        }
-                    }
-                    .listStyle(.sidebar)
-                    .scrollContentBackground(.hidden)
-                    .clipped()
-                    .background {
-                        ScrollInputPerformanceProbeAttachment(
-                            surface: .channelList
-                        )
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                    }
-                    .onChange(of: selection) { _, newSelection in
-                        selectionCommitter.selectedValueChanged(
-                            to: newSelection
+            } else {
+                List(selection: deferredGuildSelection) {
+                    ForEach(
+                        Array(channelGroups.enumerated()),
+                        id: \.element.id
+                    ) { index, group in
+                        ChannelGroupRows(
+                            model: voiceModel,
+                            group: group,
+                            addsTopSpacing: index == channelGroups.startIndex,
+                            rulesChannelID: guild?.rulesChannelID,
+                            activeVoiceChannelID: activeVoiceChannelID,
+                            hiddenChannelIDs: hiddenChannelIDs,
+                            checkingChannelIDs: checkingChannelIDs,
+                            isUnread: group.categoryID.map(
+                                unreadCategoryIDs.contains
+                            ) ?? false,
+                            voiceParticipantsByChannel: voiceSidebarParticipantsByChannel
                         )
                     }
+                }
+                .listStyle(.sidebar)
+                .scrollContentBackground(.hidden)
+                .clipped()
+                .background {
+                    ScrollInputPerformanceProbeAttachment(
+                        surface: .channelList
+                    )
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                }
+                .onChange(of: selection) { _, newSelection in
+                    selectionCommitter.selectedValueChanged(
+                        to: newSelection
+                    )
                 }
             }
 
@@ -242,15 +234,6 @@ struct ChannelSidebarView: View {
 
     private var displayedChannels: [Channel] {
         channels
-    }
-
-    private var directMessageChannels: [Channel] {
-        let snapshotChannels = voiceModel.snapshot?.channels.filter {
-            $0.guildID == nil
-        }
-        return (snapshotChannels ?? channels).filter {
-            voiceModel.conversationAccess(for: $0) != .hidden
-        }
     }
 
     private var voiceSidebarParticipantsByChannel: [ChannelID: [VoiceSidebarParticipant]] {

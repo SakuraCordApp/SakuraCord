@@ -17,11 +17,10 @@ enum ServerRailNavigationDestination: Equatable {
     case guild(GuildID)
 }
 
-nonisolated struct ConversationPermissionBasis {
+nonisolated struct ConversationPermissionBasis: Sendable {
     let guild: Guild
-    let currentUserID: UserID
-    let roleIDs: Set<RoleID>
     let resolvedBasePermissions: UInt64?
+    let overwritePrincipals: PermissionOverwritePrincipals
     let hasCurrentRoleIdentity: Bool
     let currentUserIsPending: Bool
 }
@@ -127,7 +126,17 @@ final class AppModel {
     var serverRailItems: [GuildRailItem] = [] {
         didSet { requestOrderedCustomEmojiUpdate() }
     }
-    var visibleChannels: [Channel] = []
+    var visibleChannels: [Channel] = [] {
+        didSet {
+            visibleChannelGroups = AppPerformanceSignposts.measureSync(
+                "ChannelSidebarGrouping"
+            ) {
+                ChannelGroup.make(from: visibleChannels)
+            }
+        }
+    }
+    var visibleChannelGroups: [ChannelGroup] = []
+    var unreadCategoryIDsByGuild: [GuildID: Set<ChannelID>] = [:]
     var hiddenChannelIDs: Set<ChannelID> = []
     var checkingChannelIDs: Set<ChannelID> = []
     var selectedChannel: Channel?
@@ -594,14 +603,17 @@ final class AppModel {
         let roleIDs = storedRoleIDs ?? Set(member?.roles.map(\.id) ?? [])
         return ConversationPermissionBasis(
             guild: guild,
-            currentUserID: currentUserID,
-            roleIDs: roleIDs,
             resolvedBasePermissions: guild.currentUserPermissions
                 ?? ConversationPermissionResolver.basePermissions(
                     guildID: guildID,
                     roleIDs: roleIDs,
                     roles: roles
                 ),
+            overwritePrincipals: PermissionOverwritePrincipals(
+                guildID: guildID,
+                currentUserID: currentUserID,
+                roleIDs: roleIDs
+            ),
             hasCurrentRoleIdentity: storedRoleIDs != nil || member != nil,
             currentUserIsPending: member?.isPending == true
         )
@@ -618,9 +630,8 @@ final class AppModel {
         let permissions = ConversationPermissionResolver.effectivePermissions(
             guild: permissionBasis.guild,
             channel: channel,
-            currentUserID: permissionBasis.currentUserID,
             resolvedBasePermissions: permissionBasis.resolvedBasePermissions,
-            roleIDs: permissionBasis.roleIDs,
+            overwritePrincipals: permissionBasis.overwritePrincipals,
             hasCurrentRoleIdentity: permissionBasis.hasCurrentRoleIdentity
         )
         if channel.kind == .voice {
@@ -784,9 +795,8 @@ final class AppModel {
         return ConversationPermissionResolver.effectivePermissions(
             guild: permissionBasis.guild,
             channel: channel,
-            currentUserID: permissionBasis.currentUserID,
             resolvedBasePermissions: permissionBasis.resolvedBasePermissions,
-            roleIDs: permissionBasis.roleIDs,
+            overwritePrincipals: permissionBasis.overwritePrincipals,
             hasCurrentRoleIdentity: permissionBasis.hasCurrentRoleIdentity
         )
     }
@@ -1017,6 +1027,7 @@ final class AppModel {
     @ObservationIgnored var batchedUnreadPresentationNeedsRefresh =
         false
     @ObservationIgnored var hasDeferredUnreadPresentationRefresh = false
+    @ObservationIgnored var unreadPresentationRefreshTask: Task<Void, Never>?
     @ObservationIgnored var batchedAcknowledgementChannelIDs:
         Set<ChannelID> = []
     @ObservationIgnored let maximumCreatedMessagesPerFlush = 4

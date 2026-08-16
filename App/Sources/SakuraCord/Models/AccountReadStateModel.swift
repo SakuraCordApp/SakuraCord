@@ -29,6 +29,7 @@ final class AccountReadStateModel {
         var newForumPostsByChannelID: [ChannelID: Int]
         var unreadByGuildID: [GuildID: Bool]
         var mentionsByGuildID: [GuildID: Int]
+        var unreadCategoryIDsByGuild: [GuildID: Set<ChannelID>]
         var totalMentions: Int
     }
 
@@ -1324,20 +1325,58 @@ final class AccountReadStateModel {
         var newForumPostsByChannelID: [ChannelID: Int] = [:]
         var unreadByGuildID: [GuildID: Bool] = [:]
         var mentionsByGuildID: [GuildID: Int] = [:]
+        var unreadCategoryIDsByGuild: [GuildID: Set<ChannelID>] = [:]
         var totalMentions = 0
         unreadByChannelID.reserveCapacity(entries.count)
         mentionsByChannelID.reserveCapacity(entries.count)
 
         for entry in entries.values {
             let channelID = entry.channelID
-            let channelMentions = mentions(channelID: channelID)
-            let channelUnread = unread(channelID: channelID, now: now)
+            let isEligible = entry.isAccessible && !isGuildResourceChannel(entry)
+            let channelMentions = isEligible ? entry.mentionCount : 0
+            var channelUnread = false
+            var contributesToGuildUnread = false
+            if isEligible,
+               entry.isUnread,
+               entry.kind != .voice || entry.mentionCount > 0
+            {
+                // Both row and guild presentation use the same notification
+                // hierarchy. Resolve it once per entry instead of repeating
+                // the dictionary and override walk in `unread` and again in
+                // `contributesGuildUnread`.
+                let policy = effectivePolicy(for: entry, now: now)
+                channelUnread = entry.mentionCount > 0
+                    || (!policy.guildMuted
+                        && !policy.presentationChannelMuted
+                        && policy.showsUnread)
+                contributesToGuildUnread = !policy.categoryMuted
+                    && (entry.mentionCount > 0
+                        || (!policy.guildMuted
+                            && !policy.channelMuted
+                            && policy.showsUnread))
+            }
             mentionsByChannelID[channelID] = channelMentions
             unreadByChannelID[channelID] = channelUnread
             totalMentions += channelMentions
 
             if let guildID = entry.guildID {
                 mentionsByGuildID[guildID, default: 0] += channelMentions
+            }
+            if contributesToGuildUnread,
+               let guildID = channelByID[channelID]?.guildID
+            {
+                unreadByGuildID[guildID] = true
+            }
+            if isEligible,
+               entry.isUnread,
+               entry.kind != .voice || entry.mentionCount > 0,
+               let guildID = entry.guildID,
+               let parentID = entry.parentID
+            {
+                let categoryID = channelByID[parentID]?.categoryID ?? parentID
+                unreadCategoryIDsByGuild[guildID, default: []].insert(
+                    categoryID
+                )
             }
 
             guard let parentID = entry.parentID,
@@ -1353,21 +1392,13 @@ final class AccountReadStateModel {
             }
         }
 
-        // Category mute suppresses the guild aggregate without muting or
-        // dimming the child row itself.
-        for channel in channelByID.values {
-            guard let guildID = channel.guildID else { continue }
-            if contributesGuildUnread(channelID: channel.id, now: now) {
-                unreadByGuildID[guildID] = true
-            }
-        }
-
         return UnreadPresentationProjection(
             unreadByChannelID: unreadByChannelID,
             mentionsByChannelID: mentionsByChannelID,
             newForumPostsByChannelID: newForumPostsByChannelID,
             unreadByGuildID: unreadByGuildID,
             mentionsByGuildID: mentionsByGuildID,
+            unreadCategoryIDsByGuild: unreadCategoryIDsByGuild,
             totalMentions: totalMentions
         )
     }
@@ -1612,34 +1643,23 @@ private extension AccountReadStateModel {
         let isDirectMessage =
             entry.kind == .directMessage || entry.kind == .groupDirectMessage
         let guildSettings = settingsByGuild[entry.guildID]
-        let directOverride = notificationOverride(
-            channelID: entry.channelID,
-            guildID: entry.guildID
-        )
-        let parentOverride = entry.parentID.flatMap { parentID in
-            notificationOverride(channelID: parentID, guildID: entry.guildID)
-        }
-        let ancestorOverride =
-            entry.parentID
-            .flatMap { channelByID[$0]?.categoryID }
-            .flatMap { ancestorID in
-                notificationOverride(channelID: ancestorID, guildID: entry.guildID)
-            }
-        let overrideHierarchy = [directOverride, parentOverride, ancestorOverride]
-        let parentIsConversation = entry.parentID.flatMap { channelByID[$0] } != nil
+        let overrides = overridesByGuildAndChannelID[entry.guildID]
+        let directOverride = overrides?[entry.channelID]
+        let parentOverride = entry.parentID.flatMap { overrides?[$0] }
+        let parentChannel = entry.parentID.flatMap { channelByID[$0] }
+        let ancestorOverride = parentChannel?.categoryID.flatMap { overrides?[$0] }
+        let parentIsConversation = parentChannel != nil
         let categoryOverride = parentIsConversation ? ancestorOverride : parentOverride
-        let presentationOverrideHierarchy = parentIsConversation
-            ? [directOverride, parentOverride]
-            : [directOverride]
         let guildMuted =
             guildSettings?.isMuted == true
             && (guildSettings?.muteConfiguration?.isActive(at: now) ?? true)
-        let inheritedChannelMuted = overrideHierarchy.contains {
-            activeMute($0, now: now)
-        }
-        let presentationOverrideMuted = presentationOverrideHierarchy.contains {
-            activeMute($0, now: now)
-        }
+        let directMuted = activeMute(directOverride, now: now)
+        let parentMuted = activeMute(parentOverride, now: now)
+        let inheritedChannelMuted = directMuted
+            || parentMuted
+            || activeMute(ancestorOverride, now: now)
+        let presentationOverrideMuted = directMuted
+            || (parentIsConversation && parentMuted)
         let categoryMuted = activeMute(categoryOverride, now: now)
         let guildDefault =
             isDirectMessage
@@ -1649,12 +1669,22 @@ private extension AccountReadStateModel {
         let configuredGuildLevel = guildSettings?.messageNotifications ?? .inherit
         let inherited =
             configuredGuildLevel == .inherit ? guildDefault : configuredGuildLevel
-        let inheritedLevel = overrideHierarchy.compactMap { override in
-            guard let level = override?.messageNotifications,
-                  level != .inherit
-            else { return nil }
-            return level
-        }.first ?? inherited
+        let inheritedLevel =
+            if let level = directOverride?.messageNotifications,
+               level != .inherit
+            {
+                level
+            } else if let level = parentOverride?.messageNotifications,
+                      level != .inherit
+            {
+                level
+            } else if let level = ancestorOverride?.messageNotifications,
+                      level != .inherit
+            {
+                level
+            } else {
+                inherited
+            }
         let threadLevel =
             entry.threadNotificationSettings?.notificationLevel ?? .inherit
         let level =
@@ -1667,7 +1697,10 @@ private extension AccountReadStateModel {
             inheritedChannelMuted || threadMuted || threadLevel == .nothing
         let presentationChannelMuted =
             presentationOverrideMuted || threadMuted || threadLevel == .nothing
-        let channelFlags = overrideHierarchy.compactMap { $0?.flags }.first ?? 0
+        let channelFlags = directOverride?.flags
+            ?? parentOverride?.flags
+            ?? ancestorOverride?.flags
+            ?? 0
         let guildFlags = guildSettings?.flags ?? 0
         let directFlags = directOverride?.flags ?? 0
         let parentFlags = parentOverride?.flags ?? 0

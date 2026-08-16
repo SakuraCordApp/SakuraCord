@@ -1,5 +1,16 @@
 import SakuraCordModels
 
+private struct UnreadChannelPresentationProjection {
+    var channels: [Channel]
+    var visibleChannels: [Channel]
+    var changed: Bool
+}
+
+private struct UnreadGuildPresentationProjection {
+    var guilds: [Guild]
+    var changed: Bool
+}
+
 extension AppModel {
     func refreshUnreadPresentation(
         appliesAccessImmediately: Bool = false,
@@ -21,9 +32,8 @@ extension AppModel {
         // the exception: apply their security projection immediately, while
         // retaining the broader sidebar/unread publication until scrolling
         // ends.
-        var immediateAccessProjection: UnreadAccessProjection?
         if appliesAccessImmediately, let channels = snapshot?.channels {
-            immediateAccessProjection = AppPerformanceSignposts.measureSync(
+            _ = AppPerformanceSignposts.measureSync(
                 "UnreadImmediateAccessProjection"
             ) {
                 applyImmediateUnreadAccessProjection(
@@ -31,6 +41,13 @@ extension AppModel {
                     affectedGuildIDs: accessAffectedGuildIDs
                 )
             }
+            // Access revocation and checking/readable transitions are applied
+            // synchronously above. Publish the broader unread/sidebar
+            // projection on a separate bounded turn so two independently
+            // sub-frame operations never become one full-frame main-actor
+            // stall during a gateway burst.
+            requestCoalescedUnreadPresentationRefresh()
+            return
         }
         guard liveScrollingConversationIDs.isEmpty else {
             hasDeferredUnreadPresentationRefresh = true
@@ -47,90 +64,130 @@ extension AppModel {
         // Ordinary read-state changes do not alter channel permissions. Access
         // events already applied their projection above, so avoid rebuilding
         // every guild's permission masks for message and acknowledgement churn.
-        let accessByChannelID = immediateAccessProjection?.accessByChannelID ?? [:]
         let unreadProjection = AppPerformanceSignposts.measureSync(
             "UnreadStateProjection"
         ) {
             readState.unreadPresentationProjection()
         }
-        let projectedChannels = AppPerformanceSignposts.measureSync(
+        if unreadProjection.unreadCategoryIDsByGuild
+            != unreadCategoryIDsByGuild
+        {
+            unreadCategoryIDsByGuild = unreadProjection.unreadCategoryIDsByGuild
+        }
+        let channelProjection = AppPerformanceSignposts.measureSync(
             "UnreadChannelProjection"
         ) {
-            value.channels.map { channel in
-                var channel = channel
-                channel.unreadCount =
-                    channel.kind == .forum
-                    ? unreadProjection.newForumPostsByChannelID[
-                        channel.id,
-                        default: 0
-                    ]
-                    : (unreadProjection.unreadByChannelID[channel.id] == true ? 1 : 0)
-                channel.mentionCount = unreadProjection.mentionsByChannelID[
-                    channel.id,
-                    default: 0
-                ]
-                return channel
-            }
+            unreadChannelPresentationProjection(
+                channels: value.channels,
+                unread: unreadProjection
+            )
         }
-        let projectedGuilds = AppPerformanceSignposts.measureSync(
+        let guildProjection = AppPerformanceSignposts.measureSync(
             "UnreadGuildProjection"
         ) {
-            value.guilds.map { guild in
-                var guild = guild
-                guild.unreadCount =
-                    unreadProjection.unreadByGuildID[guild.id] == true ? 1 : 0
-                guild.mentionCount = unreadProjection.mentionsByGuildID[
-                    guild.id,
-                    default: 0
-                ]
-                return guild
-            }
+            unreadGuildPresentationProjection(
+                guilds: value.guilds,
+                unread: unreadProjection
+            )
         }
         publishUnreadPresentation(
             snapshotValue: value,
-            projectedChannels: projectedChannels,
-            projectedGuilds: projectedGuilds,
-            accessByChannelID: accessByChannelID,
+            channelProjection: channelProjection,
+            guildProjection: guildProjection,
             totalMentions: unreadProjection.totalMentions
+        )
+    }
+
+    private func unreadChannelPresentationProjection(
+        channels source: [Channel],
+        unread: AccountReadStateModel.UnreadPresentationProjection
+    ) -> UnreadChannelPresentationProjection {
+        var channels = source
+        var visibleChannels: [Channel] = []
+        visibleChannels.reserveCapacity(self.visibleChannels.count)
+        var changed = false
+        for index in channels.indices {
+            let unreadCount =
+                channels[index].kind == .forum
+                ? unread.newForumPostsByChannelID[channels[index].id, default: 0]
+                : (unread.unreadByChannelID[channels[index].id] == true ? 1 : 0)
+            let mentionCount = unread.mentionsByChannelID[
+                channels[index].id,
+                default: 0
+            ]
+            if channels[index].unreadCount != unreadCount
+                || channels[index].mentionCount != mentionCount
+            {
+                channels[index].unreadCount = unreadCount
+                channels[index].mentionCount = mentionCount
+                changed = true
+            }
+            let channel = channels[index]
+            if let selectedGuildID {
+                if channel.guildID == selectedGuildID {
+                    visibleChannels.append(channel)
+                }
+            } else if channel.guildID == nil {
+                visibleChannels.append(channel)
+            }
+        }
+        return UnreadChannelPresentationProjection(
+            channels: channels,
+            visibleChannels: visibleChannels,
+            changed: changed
+        )
+    }
+
+    private func unreadGuildPresentationProjection(
+        guilds source: [Guild],
+        unread: AccountReadStateModel.UnreadPresentationProjection
+    ) -> UnreadGuildPresentationProjection {
+        var guilds = source
+        var changed = false
+        for index in guilds.indices {
+            let unreadCount =
+                unread.unreadByGuildID[guilds[index].id] == true ? 1 : 0
+            let mentionCount = unread.mentionsByGuildID[
+                guilds[index].id,
+                default: 0
+            ]
+            if guilds[index].unreadCount != unreadCount
+                || guilds[index].mentionCount != mentionCount
+            {
+                guilds[index].unreadCount = unreadCount
+                guilds[index].mentionCount = mentionCount
+                changed = true
+            }
+        }
+        return UnreadGuildPresentationProjection(
+            guilds: guilds,
+            changed: changed
         )
     }
 
     private func publishUnreadPresentation(
         snapshotValue: BootstrapSnapshot,
-        projectedChannels: [Channel],
-        projectedGuilds: [Guild],
-        accessByChannelID: [ChannelID: ConversationAccess],
+        channelProjection: UnreadChannelPresentationProjection,
+        guildProjection: UnreadGuildPresentationProjection,
         totalMentions: Int
     ) {
         var value = snapshotValue
         AppPerformanceSignposts.measureSync(
             "UnreadPresentationPublication"
         ) {
-            if UnreadPresentationPublicationPolicy.shouldPublish(
-                snapshot: value,
-                channels: projectedChannels,
-                guilds: projectedGuilds
-            ) {
-                value.channels = projectedChannels
-                value.guilds = projectedGuilds
+            if channelProjection.changed || guildProjection.changed {
+                value.channels = channelProjection.channels
+                value.guilds = guildProjection.guilds
                 snapshot = value
             }
             let projectedGuildsByID = Dictionary(
-                uniqueKeysWithValues: projectedGuilds.map { ($0.id, $0) }
+                uniqueKeysWithValues: guildProjection.guilds.map { ($0.id, $0) }
             )
             if projectedGuildsByID != serverRailGuildsByID {
                 serverRailGuildsByID = projectedGuildsByID
             }
         }
-        let selectedGuildChannels = AppPerformanceSignposts.measureSync(
-            "UnreadVisibleChannelProjection"
-        ) {
-            if let selectedGuildID {
-                projectedChannels.filter { $0.guildID == selectedGuildID }
-            } else {
-                projectedChannels.filter { $0.guildID == nil }
-            }
-        }
+        let selectedGuildChannels = channelProjection.visibleChannels
         if selectedGuildChannels != visibleChannels {
             visibleChannels = selectedGuildChannels
         }
@@ -139,14 +196,13 @@ extension AppModel {
         {
             self.selectedChannelID = Self.preferredInitialChannelID(
                 in: selectedGuildChannels.filter {
-                    (accessByChannelID[$0.id] ?? conversationAccess(for: $0))
-                        != .hidden
+                    conversationAccess(for: $0) != .hidden
                 }
             )
         }
         let projectedSelectedChannel =
             selectedChannelID.flatMap { id in
-                projectedChannels.first { $0.id == id }
+                channelProjection.channels.first { $0.id == id }
             }
                 ?? selectedChannel
         if projectedSelectedChannel != selectedChannel {
