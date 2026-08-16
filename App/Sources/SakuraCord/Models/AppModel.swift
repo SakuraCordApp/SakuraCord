@@ -691,21 +691,10 @@ final class AppModel {
         _ channel: Channel,
         permissions: UInt64?
     ) -> Bool {
-        guard Self.supportsForwardSearchCandidate(channel.kind) else { return false }
-        guard channel.kind != .groupDirectMessage else { return true }
-        guard let permissions else {
-            // Discord's queryChannels path requires the resolved vocal
-            // `accessPermissions` value to contain CONNECT before the row can
-            // enter either raw channel category. Do not turn missing guild
-            // role/member state into connect access.
-            if channel.kind == .voice { return false }
-            return channel.permissionOverwrites?.isEmpty != false
-        }
-        var required = DiscordPermissionBits.viewChannel
-        if channel.kind == .voice {
-            required |= DiscordPermissionBits.connect
-        }
-        return permissions & required == required
+        ForwardDestinationPermissionPolicy.canSearchChannel(
+            channel,
+            permissions: permissions
+        )
     }
 
     /// Discord applies the actual forwarding filter after the raw per-category
@@ -722,18 +711,10 @@ final class AppModel {
         _ channel: Channel,
         permissions: UInt64?
     ) -> Bool {
-        guard Self.supportsForwardDestination(channel.kind) else { return false }
-        guard channel.kind != .groupDirectMessage else {
-            return !channel.isOfficialSystemDirectMessage
-        }
-        guard canSearchForwardDestination(channel, permissions: permissions) else {
-            return false
-        }
-        guard let permissions else {
-            return channel.permissionOverwrites?.isEmpty != false
-        }
-        let required = DiscordPermissionBits.viewChannel | DiscordPermissionBits.sendMessages
-        return permissions & required == required
+        ForwardDestinationPermissionPolicy.canUseChannel(
+            channel,
+            permissions: permissions
+        )
     }
 
     /// Active joined threads remain valid targets even when their parent is a
@@ -749,12 +730,10 @@ final class AppModel {
         parent: Channel,
         permissions: UInt64?
     ) -> Bool {
-        guard parent.kind == .text || parent.kind == .announcement || parent.kind == .forum
-        else { return false }
-        guard let permissions else {
-            return parent.permissionOverwrites?.isEmpty != false
-        }
-        return permissions & DiscordPermissionBits.viewChannel != 0
+        ForwardDestinationPermissionPolicy.canSearchThread(
+            parent: parent,
+            permissions: permissions
+        )
     }
 
     func canUseForwardThreadDestination(parent: Channel) -> Bool {
@@ -768,13 +747,10 @@ final class AppModel {
         parent: Channel,
         permissions: UInt64?
     ) -> Bool {
-        guard parent.kind == .text || parent.kind == .announcement || parent.kind == .forum
-        else { return false }
-        guard let permissions else {
-            return parent.permissionOverwrites?.isEmpty != false
-        }
-        let required = DiscordPermissionBits.viewChannel | DiscordPermissionBits.sendMessages
-        return permissions & required == required
+        ForwardDestinationPermissionPolicy.canUseThread(
+            parent: parent,
+            permissions: permissions
+        )
     }
 
     private func forwardDestinationPermissions(_ channel: Channel) -> UInt64? {

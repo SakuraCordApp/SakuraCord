@@ -117,14 +117,11 @@ struct ChannelSidebarView: View {
                 )
             } else {
                 List(selection: deferredGuildSelection) {
-                    ForEach(
-                        Array(channelGroups.enumerated()),
-                        id: \.element.id
-                    ) { index, group in
+                    ForEach(channelGroups) { group in
                         ChannelGroupRows(
                             model: voiceModel,
                             group: group,
-                            addsTopSpacing: index == channelGroups.startIndex,
+                            addsTopSpacing: group.id == channelGroups.first?.id,
                             rulesChannelID: guild?.rulesChannelID,
                             activeVoiceChannelID: activeVoiceChannelID,
                             hiddenChannelIDs: hiddenChannelIDs,
@@ -304,11 +301,15 @@ struct ChannelGroup: Identifiable {
 
     static func make(from channels: [Channel]) -> [ChannelGroup] {
         var result: [ChannelGroup] = []
+        var indexByID: [String: Int] = [:]
+        result.reserveCapacity(min(channels.count, 32))
+        indexByID.reserveCapacity(min(channels.count, 32))
         for channel in channels {
             let groupID = channel.categoryID?.description ?? "uncategorized"
-            if let index = result.firstIndex(where: { $0.id == groupID }) {
+            if let index = indexByID[groupID] {
                 result[index].channels.append(channel)
             } else {
+                indexByID[groupID] = result.count
                 result.append(ChannelGroup(
                     id: groupID,
                     categoryID: channel.categoryID,

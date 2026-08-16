@@ -231,13 +231,14 @@ private struct QuickSwitcherView: View {
                     userID: userID,
                     revision: revision
                 )
+                let latest = ForwardDestinationSearchIndexCache.shared.latestValue(
+                    for: model,
+                    userID: userID
+                )
                 if animationState.isVisible,
                    searchIndex == nil,
                    let immediatelyAvailable = exact
-                    ?? ForwardDestinationSearchIndexCache.shared.latestValue(
-                        for: model,
-                        userID: userID
-                    )
+                    ?? latest
                 {
                     applySearchIndex(immediatelyAvailable)
                 }
@@ -246,11 +247,10 @@ private struct QuickSwitcherView: View {
                     prepared = exact
                 } else {
                     if !animationState.isVisible {
-                        do {
-                            try await Task.sleep(for: .milliseconds(750))
-                        } catch {
-                            return
-                        }
+                        ForwardDestinationSearchIndexCache.shared.schedulePrewarm(
+                            for: model
+                        )
+                        return
                     }
                     prepared = await ForwardDestinationSearchIndexCache.shared.prepare(
                         for: model,

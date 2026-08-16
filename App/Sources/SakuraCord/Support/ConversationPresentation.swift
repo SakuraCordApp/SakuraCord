@@ -32,6 +32,82 @@ nonisolated enum DiscordPermissionBits {
     static let bypassSlowmode: UInt64 = 1 << 52
 }
 
+nonisolated enum ForwardDestinationPermissionPolicy {
+    static func canSearchChannel(
+        _ channel: Channel,
+        permissions: UInt64?
+    ) -> Bool {
+        guard AppModel.supportsForwardSearchCandidate(channel.kind) else {
+            return false
+        }
+        guard channel.kind != .groupDirectMessage else { return true }
+        guard let permissions else {
+            // Discord's queryChannels path requires the resolved vocal
+            // `accessPermissions` value to contain CONNECT before the row can
+            // enter either raw channel category. Do not turn missing guild
+            // role/member state into connect access.
+            if channel.kind == .voice { return false }
+            return channel.permissionOverwrites?.isEmpty != false
+        }
+        var required = DiscordPermissionBits.viewChannel
+        if channel.kind == .voice {
+            required |= DiscordPermissionBits.connect
+        }
+        return permissions & required == required
+    }
+
+    static func canUseChannel(
+        _ channel: Channel,
+        permissions: UInt64?
+    ) -> Bool {
+        guard AppModel.supportsForwardDestination(channel.kind) else {
+            return false
+        }
+        guard channel.kind != .groupDirectMessage else {
+            return !channel.isOfficialSystemDirectMessage
+        }
+        guard canSearchChannel(channel, permissions: permissions) else {
+            return false
+        }
+        guard let permissions else {
+            return channel.permissionOverwrites?.isEmpty != false
+        }
+        let required = DiscordPermissionBits.viewChannel
+            | DiscordPermissionBits.sendMessages
+        return permissions & required == required
+    }
+
+    static func canSearchThread(
+        parent: Channel,
+        permissions: UInt64?
+    ) -> Bool {
+        guard parent.kind == .text
+            || parent.kind == .announcement
+            || parent.kind == .forum
+        else { return false }
+        guard let permissions else {
+            return parent.permissionOverwrites?.isEmpty != false
+        }
+        return permissions & DiscordPermissionBits.viewChannel != 0
+    }
+
+    static func canUseThread(
+        parent: Channel,
+        permissions: UInt64?
+    ) -> Bool {
+        guard parent.kind == .text
+            || parent.kind == .announcement
+            || parent.kind == .forum
+        else { return false }
+        guard let permissions else {
+            return parent.permissionOverwrites?.isEmpty != false
+        }
+        let required = DiscordPermissionBits.viewChannel
+            | DiscordPermissionBits.sendMessages
+        return permissions & required == required
+    }
+}
+
 nonisolated struct PermissionOverwritePrincipals: Sendable {
     let guildID: String
     let currentUserID: String

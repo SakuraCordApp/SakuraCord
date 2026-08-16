@@ -27,14 +27,8 @@ struct ForwardMessageWindowOverlay: View {
         // picker instead of starting permission and fuzzy-index work on open.
         .task(id: model.forwardSearchSourceRevision) {
             guard model.snapshot != nil else { return }
-            // Permission inputs already degrade safely while lazy guild member
-            // state is unavailable. Waiting for the member-list UI could defer
-            // this cache forever and force Quick Switcher to build on open.
-            try? await Task.sleep(for: .milliseconds(75))
-            guard !Task.isCancelled else { return }
-            _ = await ForwardDestinationSearchIndexCache.shared.prepare(
-                for: model,
-                priority: .utility
+            ForwardDestinationSearchIndexCache.shared.schedulePrewarm(
+                for: model
             )
         }
     }
