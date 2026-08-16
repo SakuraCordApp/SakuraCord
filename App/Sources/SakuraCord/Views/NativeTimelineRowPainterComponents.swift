@@ -8,6 +8,30 @@ import QuartzCore
 import SakuraCordModels
 import SwiftUI
 
+@MainActor
+private enum NativeTimelineSystemSymbolCache {
+    private static var images: [String: NSImage] = [:]
+
+    static func image(named name: String) -> NSImage? {
+        if let image = images[name] { return image }
+        let interval = AppPerformanceSignposts.signposter.beginInterval(
+            "TimelineSystemSymbolCacheMiss"
+        )
+        defer {
+            AppPerformanceSignposts.signposter.endInterval(
+                "TimelineSystemSymbolCacheMiss",
+                interval
+            )
+        }
+        guard let image = NSImage(
+            systemSymbolName: name,
+            accessibilityDescription: nil
+        ) else { return nil }
+        images[name] = image
+        return image
+    }
+}
+
 struct NativeTimelineComponentsDrawInput {
     let layout: NativeTimelineComponentLayout
     let model: AppModel?
@@ -854,10 +878,8 @@ extension NativeTimelineRowPainter {
         ).applying(
             NSImage.SymbolConfiguration(paletteColors: [color])
         )
-        guard let image = NSImage(
-            systemSymbolName: name,
-            accessibilityDescription: nil
-        )?.withSymbolConfiguration(configuration)
+        guard let image = NativeTimelineSystemSymbolCache.image(named: name)?
+            .withSymbolConfiguration(configuration)
         else { return }
         let target = frame.insetBy(
             dx: min(max(0, inset), frame.width / 2 - 1),

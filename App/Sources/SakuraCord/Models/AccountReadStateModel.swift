@@ -30,7 +30,271 @@ final class AccountReadStateModel {
         var unreadByGuildID: [GuildID: Bool]
         var mentionsByGuildID: [GuildID: Int]
         var unreadCategoryIDsByGuild: [GuildID: Set<ChannelID>]
+        var directMessageUnread: Bool
+        var directMessageMentions: Int
         var totalMentions: Int
+    }
+
+    nonisolated struct UnreadPresentationSource: Sendable {
+        let entries: [ChannelID: Entry]
+        fileprivate let policy: UnreadPolicySource
+        fileprivate let forumPostArchivedByID: [ChannelID: Bool]
+
+        func projection(
+            now: Date = .now,
+            cancelsCooperatively: Bool = false
+        ) -> UnreadPresentationProjection? {
+            var unreadByChannelID: [ChannelID: Bool] = [:]
+            var mentionsByChannelID: [ChannelID: Int] = [:]
+            var newForumPostsByChannelID: [ChannelID: Int] = [:]
+            var unreadByGuildID: [GuildID: Bool] = [:]
+            var mentionsByGuildID: [GuildID: Int] = [:]
+            var unreadCategoryIDsByGuild: [GuildID: Set<ChannelID>] = [:]
+            var directMessageUnread = false
+            var directMessageMentions = 0
+            var totalMentions = 0
+            unreadByChannelID.reserveCapacity(entries.count)
+            mentionsByChannelID.reserveCapacity(entries.count)
+
+            for (offset, entry) in entries.values.enumerated() {
+                if cancelsCooperatively,
+                   offset.isMultiple(of: 64),
+                   Task.isCancelled
+                {
+                    return nil
+                }
+                let channelID = entry.channelID
+                let isEligible = entry.isAccessible
+                    && !policy.isGuildResourceChannel(entry)
+                let channelMentions = isEligible ? entry.mentionCount : 0
+                var channelUnread = false
+                var contributesToGuildUnread = false
+                if isEligible,
+                   entry.isUnread,
+                   entry.kind != .voice || entry.mentionCount > 0
+                {
+                    // Both row and guild presentation use the same
+                    // notification hierarchy. Resolve it once per entry.
+                    let effectivePolicy = policy.effectivePolicy(
+                        for: entry,
+                        now: now
+                    )
+                    channelUnread = entry.mentionCount > 0
+                        || (!effectivePolicy.guildMuted
+                            && !effectivePolicy.presentationChannelMuted
+                            && effectivePolicy.showsUnread)
+                    contributesToGuildUnread = !effectivePolicy.categoryMuted
+                        && (entry.mentionCount > 0
+                            || (!effectivePolicy.guildMuted
+                                && !effectivePolicy.channelMuted
+                                && effectivePolicy.showsUnread))
+                }
+                mentionsByChannelID[channelID] = channelMentions
+                unreadByChannelID[channelID] = channelUnread
+                totalMentions += channelMentions
+                if entry.kind == .directMessage
+                    || entry.kind == .groupDirectMessage
+                {
+                    directMessageUnread = directMessageUnread || channelUnread
+                    directMessageMentions += channelMentions
+                }
+
+                if let guildID = entry.guildID {
+                    mentionsByGuildID[guildID, default: 0] += channelMentions
+                }
+                if contributesToGuildUnread,
+                   let guildID = policy.channelByID[channelID]?.guildID
+                {
+                    unreadByGuildID[guildID] = true
+                }
+                if isEligible,
+                   entry.isUnread,
+                   entry.kind != .voice || entry.mentionCount > 0,
+                   let guildID = entry.guildID,
+                   let parentID = entry.parentID
+                {
+                    let categoryID = policy.channelByID[parentID]?.categoryID
+                        ?? parentID
+                    unreadCategoryIDsByGuild[guildID, default: []].insert(
+                        categoryID
+                    )
+                }
+
+                guard let parentID = entry.parentID,
+                      forumPostArchivedByID[channelID] != true,
+                      !entry.hasAuthoritativeReadState,
+                      let parent = entries[parentID],
+                      parent.kind == .forum,
+                      parent.hasAuthoritativeReadState
+                else { continue }
+                let boundary = parent.lastAcknowledgedMessageID
+                    ?? MessageID(rawValue: 0)
+                if MessageID(rawValue: channelID.rawValue) > boundary {
+                    newForumPostsByChannelID[parentID, default: 0] += 1
+                }
+            }
+
+            return UnreadPresentationProjection(
+                unreadByChannelID: unreadByChannelID,
+                mentionsByChannelID: mentionsByChannelID,
+                newForumPostsByChannelID: newForumPostsByChannelID,
+                unreadByGuildID: unreadByGuildID,
+                mentionsByGuildID: mentionsByGuildID,
+                unreadCategoryIDsByGuild: unreadCategoryIDsByGuild,
+                directMessageUnread: directMessageUnread,
+                directMessageMentions: directMessageMentions,
+                totalMentions: totalMentions
+            )
+        }
+    }
+
+    fileprivate nonisolated struct EffectivePolicy: Sendable {
+        var level: MessageNotificationLevel
+        var guildMuted: Bool
+        var channelMuted: Bool
+        var presentationChannelMuted: Bool
+        var categoryMuted: Bool
+        var showsUnread: Bool
+        var notifiesNewForumThreads: Bool
+    }
+
+    fileprivate nonisolated struct UnreadPolicySource: Sendable {
+        let settingsByGuild: [GuildID?: GuildNotificationSettings]
+        let overridesByGuildAndChannelID:
+            [GuildID?: [ChannelID: ChannelNotificationOverride]]
+        let channelByID: [ChannelID: Channel]
+        let defaultNotificationLevelByGuild:
+            [GuildID: MessageNotificationLevel]
+        let usesNewNotifications: Bool
+
+        // swiftlint:disable:next function_body_length
+        func effectivePolicy(for entry: Entry, now: Date) -> EffectivePolicy {
+            let isDirectMessage = entry.kind == .directMessage
+                || entry.kind == .groupDirectMessage
+            let guildSettings = settingsByGuild[entry.guildID]
+            let overrides = overridesByGuildAndChannelID[entry.guildID]
+            let directOverride = overrides?[entry.channelID]
+            let parentOverride = entry.parentID.flatMap { overrides?[$0] }
+            let parentChannel = entry.parentID.flatMap { channelByID[$0] }
+            let ancestorOverride = parentChannel?.categoryID.flatMap {
+                overrides?[$0]
+            }
+            let parentIsConversation = parentChannel != nil
+            let categoryOverride = parentIsConversation
+                ? ancestorOverride
+                : parentOverride
+            let guildMuted = guildSettings?.isMuted == true
+                && (guildSettings?.muteConfiguration?.isActive(at: now) ?? true)
+            let directMuted = activeMute(directOverride, now: now)
+            let parentMuted = activeMute(parentOverride, now: now)
+            let inheritedChannelMuted = directMuted
+                || parentMuted
+                || activeMute(ancestorOverride, now: now)
+            let presentationOverrideMuted = directMuted
+                || (parentIsConversation && parentMuted)
+            let categoryMuted = activeMute(categoryOverride, now: now)
+            let guildDefault = isDirectMessage
+                ? .allMessages
+                : (entry.guildID.flatMap {
+                    defaultNotificationLevelByGuild[$0]
+                } ?? .onlyMentions)
+            let configuredGuildLevel = guildSettings?.messageNotifications
+                ?? .inherit
+            let inherited = configuredGuildLevel == .inherit
+                ? guildDefault
+                : configuredGuildLevel
+            let inheritedLevel = if let level = directOverride?
+                .messageNotifications, level != .inherit
+            {
+                level
+            } else if let level = parentOverride?.messageNotifications,
+                      level != .inherit
+            {
+                level
+            } else if let level = ancestorOverride?.messageNotifications,
+                      level != .inherit
+            {
+                level
+            } else {
+                inherited
+            }
+            let threadLevel = entry.threadNotificationSettings?
+                .notificationLevel ?? .inherit
+            let level = threadLevel == .inherit ? inheritedLevel : threadLevel
+            let threadMuted = entry.threadNotificationSettings?.isMuted == true
+                && (entry.threadNotificationSettings?.muteConfiguration?
+                    .isActive(at: now) ?? true)
+            let channelMuted = inheritedChannelMuted
+                || threadMuted
+                || threadLevel == .nothing
+            let presentationChannelMuted = presentationOverrideMuted
+                || threadMuted
+                || threadLevel == .nothing
+            let channelFlags = directOverride?.flags
+                ?? parentOverride?.flags
+                ?? ancestorOverride?.flags
+                ?? 0
+            let guildFlags = guildSettings?.flags ?? 0
+            let directFlags = directOverride?.flags ?? 0
+            let parentFlags = parentOverride?.flags ?? 0
+            let channelIsOptedIn = directFlags & (1 << 12) != 0
+                || parentFlags & (1 << 12) != 0
+            let excludedByGuildOptIn = !isDirectMessage
+                && guildFlags & (1 << 14) != 0
+                && !channelIsOptedIn
+            let showsUnread = if excludedByGuildOptIn {
+                false
+            } else if !isDirectMessage, !usesNewNotifications {
+                true
+            } else if channelFlags & (1 << 9) != 0 {
+                false
+            } else if channelFlags & (1 << 10) != 0 {
+                true
+            } else if guildFlags & (1 << 12) != 0 {
+                false
+            } else if guildFlags & (1 << 11) != 0 {
+                true
+            } else {
+                level == .allMessages
+            }
+            let forumFlags = parentOverride?.flags ?? 0
+            let notifiesNewForumThreads = if forumFlags & (1 << 14) != 0 {
+                true
+            } else if forumFlags & (1 << 13) != 0 {
+                false
+            } else {
+                level == .allMessages
+            }
+            return EffectivePolicy(
+                level: level,
+                guildMuted: guildMuted,
+                channelMuted: channelMuted,
+                presentationChannelMuted: presentationChannelMuted,
+                categoryMuted: categoryMuted,
+                showsUnread: showsUnread,
+                notifiesNewForumThreads: notifiesNewForumThreads
+            )
+        }
+
+        func isGuildResourceChannel(_ entry: Entry) -> Bool {
+            let resourceFlag: UInt64 = 1 << 7
+            if let channel = channelByID[entry.channelID],
+               channel.flags & resourceFlag != 0
+            {
+                return true
+            }
+            let parentFlags = entry.parentID.flatMap { channelByID[$0] }?.flags
+                ?? 0
+            return parentFlags & resourceFlag != 0
+        }
+
+        private func activeMute(
+            _ override: ChannelNotificationOverride?,
+            now: Date
+        ) -> Bool {
+            override?.isMuted == true
+                && (override?.muteConfiguration?.isActive(at: now) ?? true)
+        }
     }
 
     struct TimelineUnreadSummary: Equatable, Sendable {
@@ -1320,86 +1584,28 @@ final class AccountReadStateModel {
     func unreadPresentationProjection(
         now: Date = .now
     ) -> UnreadPresentationProjection {
-        var unreadByChannelID: [ChannelID: Bool] = [:]
-        var mentionsByChannelID: [ChannelID: Int] = [:]
-        var newForumPostsByChannelID: [ChannelID: Int] = [:]
-        var unreadByGuildID: [GuildID: Bool] = [:]
-        var mentionsByGuildID: [GuildID: Int] = [:]
-        var unreadCategoryIDsByGuild: [GuildID: Set<ChannelID>] = [:]
-        var totalMentions = 0
-        unreadByChannelID.reserveCapacity(entries.count)
-        mentionsByChannelID.reserveCapacity(entries.count)
+        // Synchronous scalar callers retain their existing behavior. The app
+        // presentation path captures the same value-semantic source and runs
+        // this exact projection in a detached preparation task.
+        unreadPresentationSource().projection(now: now)
+            ?? UnreadPresentationProjection(
+                unreadByChannelID: [:],
+                mentionsByChannelID: [:],
+                newForumPostsByChannelID: [:],
+                unreadByGuildID: [:],
+                mentionsByGuildID: [:],
+                unreadCategoryIDsByGuild: [:],
+                directMessageUnread: false,
+                directMessageMentions: 0,
+                totalMentions: 0
+            )
+    }
 
-        for entry in entries.values {
-            let channelID = entry.channelID
-            let isEligible = entry.isAccessible && !isGuildResourceChannel(entry)
-            let channelMentions = isEligible ? entry.mentionCount : 0
-            var channelUnread = false
-            var contributesToGuildUnread = false
-            if isEligible,
-               entry.isUnread,
-               entry.kind != .voice || entry.mentionCount > 0
-            {
-                // Both row and guild presentation use the same notification
-                // hierarchy. Resolve it once per entry instead of repeating
-                // the dictionary and override walk in `unread` and again in
-                // `contributesGuildUnread`.
-                let policy = effectivePolicy(for: entry, now: now)
-                channelUnread = entry.mentionCount > 0
-                    || (!policy.guildMuted
-                        && !policy.presentationChannelMuted
-                        && policy.showsUnread)
-                contributesToGuildUnread = !policy.categoryMuted
-                    && (entry.mentionCount > 0
-                        || (!policy.guildMuted
-                            && !policy.channelMuted
-                            && policy.showsUnread))
-            }
-            mentionsByChannelID[channelID] = channelMentions
-            unreadByChannelID[channelID] = channelUnread
-            totalMentions += channelMentions
-
-            if let guildID = entry.guildID {
-                mentionsByGuildID[guildID, default: 0] += channelMentions
-            }
-            if contributesToGuildUnread,
-               let guildID = channelByID[channelID]?.guildID
-            {
-                unreadByGuildID[guildID] = true
-            }
-            if isEligible,
-               entry.isUnread,
-               entry.kind != .voice || entry.mentionCount > 0,
-               let guildID = entry.guildID,
-               let parentID = entry.parentID
-            {
-                let categoryID = channelByID[parentID]?.categoryID ?? parentID
-                unreadCategoryIDsByGuild[guildID, default: []].insert(
-                    categoryID
-                )
-            }
-
-            guard let parentID = entry.parentID,
-                  forumPostArchivedByID[channelID] != true,
-                  !entry.hasAuthoritativeReadState,
-                  let parent = entries[parentID],
-                  parent.kind == .forum,
-                  parent.hasAuthoritativeReadState
-            else { continue }
-            let boundary = parent.lastAcknowledgedMessageID ?? MessageID(rawValue: 0)
-            if MessageID(rawValue: channelID.rawValue) > boundary {
-                newForumPostsByChannelID[parentID, default: 0] += 1
-            }
-        }
-
-        return UnreadPresentationProjection(
-            unreadByChannelID: unreadByChannelID,
-            mentionsByChannelID: mentionsByChannelID,
-            newForumPostsByChannelID: newForumPostsByChannelID,
-            unreadByGuildID: unreadByGuildID,
-            mentionsByGuildID: mentionsByGuildID,
-            unreadCategoryIDsByGuild: unreadCategoryIDsByGuild,
-            totalMentions: totalMentions
+    func unreadPresentationSource() -> UnreadPresentationSource {
+        UnreadPresentationSource(
+            entries: entries,
+            policy: unreadPolicySource,
+            forumPostArchivedByID: forumPostArchivedByID
         )
     }
 
@@ -1592,14 +1798,14 @@ final class AccountReadStateModel {
 }
 
 private extension AccountReadStateModel {
-    private struct EffectivePolicy {
-        var level: MessageNotificationLevel
-        var guildMuted: Bool
-        var channelMuted: Bool
-        var presentationChannelMuted: Bool
-        var categoryMuted: Bool
-        var showsUnread: Bool
-        var notifiesNewForumThreads: Bool
+    var unreadPolicySource: UnreadPolicySource {
+        UnreadPolicySource(
+            settingsByGuild: settingsByGuild,
+            overridesByGuildAndChannelID: overridesByGuildAndChannelID,
+            channelByID: channelByID,
+            defaultNotificationLevelByGuild: defaultNotificationLevelByGuild,
+            usesNewNotifications: usesNewNotifications
+        )
     }
 
     private func contributesGuildUnread(
@@ -1638,132 +1844,12 @@ private extension AccountReadStateModel {
         }
     }
 
-    // swiftlint:disable:next function_body_length
     private func effectivePolicy(for entry: Entry, now: Date) -> EffectivePolicy {
-        let isDirectMessage =
-            entry.kind == .directMessage || entry.kind == .groupDirectMessage
-        let guildSettings = settingsByGuild[entry.guildID]
-        let overrides = overridesByGuildAndChannelID[entry.guildID]
-        let directOverride = overrides?[entry.channelID]
-        let parentOverride = entry.parentID.flatMap { overrides?[$0] }
-        let parentChannel = entry.parentID.flatMap { channelByID[$0] }
-        let ancestorOverride = parentChannel?.categoryID.flatMap { overrides?[$0] }
-        let parentIsConversation = parentChannel != nil
-        let categoryOverride = parentIsConversation ? ancestorOverride : parentOverride
-        let guildMuted =
-            guildSettings?.isMuted == true
-            && (guildSettings?.muteConfiguration?.isActive(at: now) ?? true)
-        let directMuted = activeMute(directOverride, now: now)
-        let parentMuted = activeMute(parentOverride, now: now)
-        let inheritedChannelMuted = directMuted
-            || parentMuted
-            || activeMute(ancestorOverride, now: now)
-        let presentationOverrideMuted = directMuted
-            || (parentIsConversation && parentMuted)
-        let categoryMuted = activeMute(categoryOverride, now: now)
-        let guildDefault =
-            isDirectMessage
-            ? .allMessages
-            : (entry.guildID.flatMap { defaultNotificationLevelByGuild[$0] }
-                ?? .onlyMentions)
-        let configuredGuildLevel = guildSettings?.messageNotifications ?? .inherit
-        let inherited =
-            configuredGuildLevel == .inherit ? guildDefault : configuredGuildLevel
-        let inheritedLevel =
-            if let level = directOverride?.messageNotifications,
-               level != .inherit
-            {
-                level
-            } else if let level = parentOverride?.messageNotifications,
-                      level != .inherit
-            {
-                level
-            } else if let level = ancestorOverride?.messageNotifications,
-                      level != .inherit
-            {
-                level
-            } else {
-                inherited
-            }
-        let threadLevel =
-            entry.threadNotificationSettings?.notificationLevel ?? .inherit
-        let level =
-            threadLevel == .inherit ? inheritedLevel : threadLevel
-        let threadMuted =
-            entry.threadNotificationSettings?.isMuted == true
-            && (entry.threadNotificationSettings?.muteConfiguration?
-                .isActive(at: now) ?? true)
-        let channelMuted =
-            inheritedChannelMuted || threadMuted || threadLevel == .nothing
-        let presentationChannelMuted =
-            presentationOverrideMuted || threadMuted || threadLevel == .nothing
-        let channelFlags = directOverride?.flags
-            ?? parentOverride?.flags
-            ?? ancestorOverride?.flags
-            ?? 0
-        let guildFlags = guildSettings?.flags ?? 0
-        let directFlags = directOverride?.flags ?? 0
-        let parentFlags = parentOverride?.flags ?? 0
-        let channelIsOptedIn =
-            directFlags & (1 << 12) != 0
-            || parentFlags & (1 << 12) != 0
-        let excludedByGuildOptIn =
-            !isDirectMessage
-            && guildFlags & (1 << 14) != 0
-            && !channelIsOptedIn
-        let showsUnread =
-            if excludedByGuildOptIn {
-                false
-            } else if !isDirectMessage, !usesNewNotifications {
-                true
-            } else if channelFlags & (1 << 9) != 0 {
-                false
-            } else if channelFlags & (1 << 10) != 0 {
-                true
-            } else if guildFlags & (1 << 12) != 0 {
-                false
-            } else if guildFlags & (1 << 11) != 0 {
-                true
-            } else {
-                level == .allMessages
-            }
-        let forumFlags = parentOverride?.flags ?? 0
-        let notifiesNewForumThreads =
-            if forumFlags & (1 << 14) != 0 {
-                true
-            } else if forumFlags & (1 << 13) != 0 {
-                false
-            } else {
-                level == .allMessages
-            }
-        return EffectivePolicy(
-            level: level,
-            guildMuted: guildMuted,
-            channelMuted: channelMuted,
-            presentationChannelMuted: presentationChannelMuted,
-            categoryMuted: categoryMuted,
-            showsUnread: showsUnread,
-            notifiesNewForumThreads: notifiesNewForumThreads
-        )
-    }
-
-    private func activeMute(
-        _ override: ChannelNotificationOverride?,
-        now: Date
-    ) -> Bool {
-        override?.isMuted == true
-            && (override?.muteConfiguration?.isActive(at: now) ?? true)
+        unreadPolicySource.effectivePolicy(for: entry, now: now)
     }
 
     private func isGuildResourceChannel(_ entry: Entry) -> Bool {
-        let resourceFlag: UInt64 = 1 << 7
-        if let channel = channelByID[entry.channelID],
-           channel.flags & resourceFlag != 0
-        {
-            return true
-        }
-        let parentFlags = entry.parentID.flatMap { channelByID[$0] }?.flags ?? 0
-        return parentFlags & resourceFlag != 0
+        unreadPolicySource.isGuildResourceChannel(entry)
     }
 }
 

@@ -128,44 +128,7 @@ private struct ChatRootView: View {
         @Bindable var model = model
         NavigationSplitView(columnVisibility: $columnVisibility) {
             HStack(spacing: 0) {
-                ServerRailView(
-                    items: ServerRailPresentationItem.make(
-                        items: model.serverRailItems,
-                        guildsByID: model.serverRailGuildsByID,
-                        notificationSettings:
-                            model.guildNotificationSettings,
-                        isMutationPending:
-                            model.isGuildNotificationMutationPending
-                    ),
-                    selectedGuildID: model.selectedGuildID,
-                    homeIsUnread: model.directMessageUnread,
-                    homeMentionCount: model.directMessageMentionCount,
-                    selectHome: { model.selectGuild(nil) },
-                    selectGuild: model.selectGuild,
-                    contextMenuActions: ServerRailContextMenuActions(
-                        markRead: model.markGuildRead,
-                        mute: { guild, duration in
-                            model.setGuildMute(
-                                true,
-                                until: duration.endDate(),
-                                for: guild
-                            )
-                        },
-                        unmute: { guild in
-                            model.setGuildMute(false, until: nil, for: guild)
-                        },
-                        setNotificationLevel: { guild, level in
-                            model.setGuildNotificationLevel(level, for: guild)
-                        },
-                        setNotificationToggle: { guild, toggle, isEnabled in
-                            model.setGuildNotificationToggle(
-                                toggle,
-                                isEnabled: isEnabled,
-                                for: guild
-                            )
-                        }
-                    )
-                )
+                ServerRailContainer(model: model)
                 .zIndex(200)
                 ChannelSidebarView(
                     voiceModel: model,

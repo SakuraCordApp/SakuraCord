@@ -31,6 +31,15 @@ enum ComponentUnicodeEmojiRenderer {
         if let cached = cache[value] {
             return cached
         }
+        let interval = AppPerformanceSignposts.signposter.beginInterval(
+            "ComponentUnicodeEmojiCacheMiss"
+        )
+        defer {
+            AppPerformanceSignposts.signposter.endInterval(
+                "ComponentUnicodeEmojiCacheMiss",
+                interval
+            )
+        }
 
         let font = NSFont(name: "Apple Color Emoji", size: sourceFontSize)
             ?? NSFont.systemFont(ofSize: sourceFontSize)

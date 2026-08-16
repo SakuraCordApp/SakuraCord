@@ -121,8 +121,12 @@ final class AppModel {
         var desiredCollapsed: Bool
     }
 
-    var snapshot: BootstrapSnapshot?
+    var snapshot: BootstrapSnapshot? {
+        didSet { snapshotSourceRevision &+= 1 }
+    }
     var serverRailGuildsByID: [GuildID: Guild] = [:]
+    var serverRailHomeIsUnread = false
+    var serverRailHomeMentionCount = 0
     var serverRailItems: [GuildRailItem] = [] {
         didSet { requestOrderedCustomEmojiUpdate() }
     }
@@ -1004,6 +1008,11 @@ final class AppModel {
         false
     @ObservationIgnored var hasDeferredUnreadPresentationRefresh = false
     @ObservationIgnored var unreadPresentationRefreshTask: Task<Void, Never>?
+    @ObservationIgnored var unreadPresentationPreparationTask: Task<Void, Never>?
+    @ObservationIgnored var unreadPresentationPreparationGeneration: UInt64 = 0
+    @ObservationIgnored var unreadPresentationPreparationSequence: UInt64 = 0
+    @ObservationIgnored var activeUnreadPreparationGeneration: UInt64?
+    @ObservationIgnored var snapshotSourceRevision: UInt64 = 0
     @ObservationIgnored var batchedAcknowledgementChannelIDs:
         Set<ChannelID> = []
     @ObservationIgnored let maximumCreatedMessagesPerFlush = 4

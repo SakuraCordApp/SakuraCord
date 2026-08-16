@@ -1,27 +1,188 @@
+import Foundation
+import OSLog
 import SakuraCordModels
 
-private struct UnreadChannelPresentationProjection {
+private nonisolated struct UnreadChannelPresentationProjection: Sendable {
     var channels: [Channel]
     var visibleChannels: [Channel]
     var changed: Bool
 }
 
-private struct UnreadGuildPresentationProjection {
+private nonisolated struct UnreadGuildPresentationProjection: Sendable {
     var guilds: [Guild]
     var changed: Bool
 }
 
+private nonisolated struct PreparedUnreadPresentation: Sendable {
+    var unread: AccountReadStateModel.UnreadPresentationProjection
+    var channels: UnreadChannelPresentationProjection
+    var guilds: UnreadGuildPresentationProjection
+    var serverRailGuildsByID: [GuildID: Guild]
+}
+
+private nonisolated struct UnreadPresentationPreparationSource: Sendable {
+    var readState: AccountReadStateModel.UnreadPresentationSource
+    var channels: [Channel]
+    var guilds: [Guild]
+    var selectedGuildID: GuildID?
+    var visibleChannelCapacity: Int
+
+    func prepare() -> PreparedUnreadPresentation? {
+        let signposter = OSSignposter(
+            subsystem: "dev.sakuracord.SakuraCord",
+            category: "PointsOfInterest"
+        )
+        let preparation = signposter.beginInterval(
+            "UnreadPresentationPreparation"
+        )
+        defer {
+            signposter.endInterval(
+                "UnreadPresentationPreparation",
+                preparation
+            )
+        }
+        let readInterval = signposter.beginInterval("UnreadStateProjection")
+        guard let unread = readState.projection(
+            cancelsCooperatively: true
+        ) else {
+            signposter.endInterval("UnreadStateProjection", readInterval)
+            return nil
+        }
+        signposter.endInterval("UnreadStateProjection", readInterval)
+
+        let channelInterval = signposter.beginInterval(
+            "UnreadChannelProjection"
+        )
+        guard let channelProjection = prepareChannels(unread: unread) else {
+            signposter.endInterval(
+                "UnreadChannelProjection",
+                channelInterval
+            )
+            return nil
+        }
+        signposter.endInterval("UnreadChannelProjection", channelInterval)
+
+        let guildInterval = signposter.beginInterval("UnreadGuildProjection")
+        guard let guildProjection = prepareGuilds(unread: unread) else {
+            signposter.endInterval("UnreadGuildProjection", guildInterval)
+            return nil
+        }
+        signposter.endInterval("UnreadGuildProjection", guildInterval)
+        guard !Task.isCancelled else { return nil }
+        let railInterval = signposter.beginInterval(
+            "UnreadServerRailProjection"
+        )
+        let serverRailGuildsByID = Dictionary(
+            uniqueKeysWithValues: guildProjection.guilds.map { ($0.id, $0) }
+        )
+        signposter.endInterval("UnreadServerRailProjection", railInterval)
+        return PreparedUnreadPresentation(
+            unread: unread,
+            channels: channelProjection,
+            guilds: guildProjection,
+            serverRailGuildsByID: serverRailGuildsByID
+        )
+    }
+
+    private func prepareChannels(
+        unread: AccountReadStateModel.UnreadPresentationProjection
+    ) -> UnreadChannelPresentationProjection? {
+        var projected = channels
+        var visibleChannels: [Channel] = []
+        visibleChannels.reserveCapacity(visibleChannelCapacity)
+        var changed = false
+        for index in projected.indices {
+            if index.isMultiple(of: 64), Task.isCancelled { return nil }
+            let unreadCount = projected[index].kind == .forum
+                ? unread.newForumPostsByChannelID[projected[index].id, default: 0]
+                : (unread.unreadByChannelID[projected[index].id] == true ? 1 : 0)
+            let mentionCount = unread.mentionsByChannelID[
+                projected[index].id,
+                default: 0
+            ]
+            if projected[index].unreadCount != unreadCount
+                || projected[index].mentionCount != mentionCount
+            {
+                projected[index].unreadCount = unreadCount
+                projected[index].mentionCount = mentionCount
+                changed = true
+            }
+            let channel = projected[index]
+            if let selectedGuildID {
+                if channel.guildID == selectedGuildID {
+                    visibleChannels.append(channel)
+                }
+            } else if channel.guildID == nil {
+                visibleChannels.append(channel)
+            }
+        }
+        return UnreadChannelPresentationProjection(
+            channels: projected,
+            visibleChannels: visibleChannels,
+            changed: changed
+        )
+    }
+
+    private func prepareGuilds(
+        unread: AccountReadStateModel.UnreadPresentationProjection
+    ) -> UnreadGuildPresentationProjection? {
+        var projected = guilds
+        var changed = false
+        for index in projected.indices {
+            if index.isMultiple(of: 64), Task.isCancelled { return nil }
+            let unreadCount = unread.unreadByGuildID[projected[index].id] == true
+                ? 1
+                : 0
+            let mentionCount = unread.mentionsByGuildID[
+                projected[index].id,
+                default: 0
+            ]
+            if projected[index].unreadCount != unreadCount
+                || projected[index].mentionCount != mentionCount
+            {
+                projected[index].unreadCount = unreadCount
+                projected[index].mentionCount = mentionCount
+                changed = true
+            }
+        }
+        return UnreadGuildPresentationProjection(
+            guilds: projected,
+            changed: changed
+        )
+    }
+}
+
 extension AppModel {
+    /// Bootstrap may expose the workspace before this finishes, but its async
+    /// API must not return while the initial sidebar unread projection is
+    /// still pending. This preserves the atomic startup contract without
+    /// putting the projection back on the main actor.
+    func waitForUnreadPresentationPreparation() async {
+        if unreadPresentationRefreshTask != nil {
+            unreadPresentationRefreshTask?.cancel()
+            unreadPresentationRefreshTask = nil
+        }
+        if hasDeferredUnreadPresentationRefresh,
+           liveScrollingConversationIDs.isEmpty
+        {
+            flushUnreadPresentationRefresh()
+        }
+        while let task = unreadPresentationPreparationTask {
+            await task.value
+            guard !Task.isCancelled else { return }
+        }
+    }
+
     func refreshUnreadPresentation(
         appliesAccessImmediately: Bool = false,
         accessAffectedGuildIDs: Set<GuildID>? = nil
     ) {
         let interval = AppPerformanceSignposts.signposter.beginInterval(
-            "UnreadPresentationRefresh"
+            "UnreadPresentationRefreshRequest"
         )
         defer {
             AppPerformanceSignposts.signposter.endInterval(
-                "UnreadPresentationRefresh",
+                "UnreadPresentationRefreshRequest",
                 interval
             )
         }
@@ -54,114 +215,143 @@ extension AppModel {
             return
         }
         hasDeferredUnreadPresentationRefresh = false
-        guard let value = snapshot else {
-            notificationService.setDockBadge(
-                readState.totalMentions,
-                enabled: notificationPreferences.showsDockBadge
-            )
+        // Notification delivery/cancellation and its Dock badge remain one
+        // observable transaction. The wider sidebar projection is allowed to
+        // finish asynchronously, but a delivered mention must never briefly
+        // expose the previous badge count.
+        let totalMentions = AppPerformanceSignposts.measureSync(
+            "UnreadDockBadgeProjection"
+        ) {
+            readState.totalMentions
+        }
+        notificationService.setDockBadge(
+            totalMentions,
+            enabled: notificationPreferences.showsDockBadge
+        )
+        unreadPresentationPreparationGeneration &+= 1
+        guard snapshot != nil else {
             return
         }
-        // Ordinary read-state changes do not alter channel permissions. Access
-        // events already applied their projection above, so avoid rebuilding
-        // every guild's permission masks for message and acknowledgement churn.
-        let unreadProjection = AppPerformanceSignposts.measureSync(
-            "UnreadStateProjection"
-        ) {
-            readState.unreadPresentationProjection()
+        beginUnreadPresentationPreparationIfNeeded()
+    }
+
+    private func beginUnreadPresentationPreparationIfNeeded() {
+        guard unreadPresentationPreparationTask == nil,
+              snapshot != nil,
+              liveScrollingConversationIDs.isEmpty
+        else { return }
+        let account = accountSession()
+        unreadPresentationPreparationSequence &+= 1
+        let sequence = unreadPresentationPreparationSequence
+        unreadPresentationPreparationTask = Task { @MainActor [weak self] in
+            do {
+                // Own this debounce in the model rather than a view or event
+                // task. READY and pagination bursts can then advance the
+                // generation freely while one guaranteed preparation starts
+                // from their latest value-semantic stores.
+                try await Task.sleep(for: .milliseconds(8))
+            } catch {
+                return
+            }
+            guard let self,
+                  self.unreadPresentationPreparationSequence == sequence
+            else { return }
+            guard !Task.isCancelled,
+                  self.isCurrentAccountSession(account),
+                  let value = self.snapshot
+            else {
+                self.unreadPresentationPreparationTask = nil
+                return
+            }
+            guard self.liveScrollingConversationIDs.isEmpty else {
+                self.unreadPresentationPreparationTask = nil
+                self.hasDeferredUnreadPresentationRefresh = true
+                return
+            }
+            let generation = self.unreadPresentationPreparationGeneration
+            let sourceRevision = self.snapshotSourceRevision
+            let sourceSelectedGuildID = self.selectedGuildID
+            let source = AppPerformanceSignposts.measureSync(
+                "UnreadPresentationSourceSnapshot"
+            ) {
+                UnreadPresentationPreparationSource(
+                    readState: self.readState.unreadPresentationSource(),
+                    channels: value.channels,
+                    guilds: value.guilds,
+                    selectedGuildID: sourceSelectedGuildID,
+                    visibleChannelCapacity: self.visibleChannels.count
+                )
+            }
+            self.activeUnreadPreparationGeneration = generation
+            let worker = Task.detached(priority: .userInitiated) {
+                source.prepare()
+            }
+            let prepared = await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: {
+                worker.cancel()
+            }
+            guard self.unreadPresentationPreparationSequence == sequence,
+                  self.activeUnreadPreparationGeneration == generation
+            else { return }
+            self.unreadPresentationPreparationTask = nil
+            self.activeUnreadPreparationGeneration = nil
+            guard !Task.isCancelled,
+                  self.isCurrentAccountSession(account)
+            else { return }
+            guard let prepared else {
+                if self.unreadPresentationPreparationGeneration != generation {
+                    self.beginUnreadPresentationPreparationIfNeeded()
+                }
+                return
+            }
+            guard self.liveScrollingConversationIDs.isEmpty else {
+                self.hasDeferredUnreadPresentationRefresh = true
+                return
+            }
+            guard self.unreadPresentationPreparationGeneration == generation,
+                  self.snapshotSourceRevision == sourceRevision,
+                  self.selectedGuildID == sourceSelectedGuildID
+            else {
+                self.beginUnreadPresentationPreparationIfNeeded()
+                return
+            }
+            self.applyPreparedUnreadPresentation(
+                prepared,
+                snapshotValue: value
+            )
         }
-        if unreadProjection.unreadCategoryIDsByGuild
+    }
+
+    private func applyPreparedUnreadPresentation(
+        _ prepared: PreparedUnreadPresentation,
+        snapshotValue: BootstrapSnapshot
+    ) {
+        let refresh = AppPerformanceSignposts.signposter.beginInterval(
+            "UnreadPresentationRefresh"
+        )
+        defer {
+            AppPerformanceSignposts.signposter.endInterval(
+                "UnreadPresentationRefresh",
+                refresh
+            )
+        }
+        if prepared.unread.unreadCategoryIDsByGuild
             != unreadCategoryIDsByGuild
         {
-            unreadCategoryIDsByGuild = unreadProjection.unreadCategoryIDsByGuild
+            unreadCategoryIDsByGuild = prepared.unread.unreadCategoryIDsByGuild
         }
-        let channelProjection = AppPerformanceSignposts.measureSync(
-            "UnreadChannelProjection"
-        ) {
-            unreadChannelPresentationProjection(
-                channels: value.channels,
-                unread: unreadProjection
-            )
+        if serverRailHomeIsUnread != prepared.unread.directMessageUnread {
+            serverRailHomeIsUnread = prepared.unread.directMessageUnread
         }
-        let guildProjection = AppPerformanceSignposts.measureSync(
-            "UnreadGuildProjection"
-        ) {
-            unreadGuildPresentationProjection(
-                guilds: value.guilds,
-                unread: unreadProjection
-            )
+        if serverRailHomeMentionCount != prepared.unread.directMessageMentions {
+            serverRailHomeMentionCount = prepared.unread.directMessageMentions
         }
         publishUnreadPresentation(
-            snapshotValue: value,
-            channelProjection: channelProjection,
-            guildProjection: guildProjection,
-            totalMentions: unreadProjection.totalMentions
-        )
-    }
-
-    private func unreadChannelPresentationProjection(
-        channels source: [Channel],
-        unread: AccountReadStateModel.UnreadPresentationProjection
-    ) -> UnreadChannelPresentationProjection {
-        var channels = source
-        var visibleChannels: [Channel] = []
-        visibleChannels.reserveCapacity(self.visibleChannels.count)
-        var changed = false
-        for index in channels.indices {
-            let unreadCount =
-                channels[index].kind == .forum
-                ? unread.newForumPostsByChannelID[channels[index].id, default: 0]
-                : (unread.unreadByChannelID[channels[index].id] == true ? 1 : 0)
-            let mentionCount = unread.mentionsByChannelID[
-                channels[index].id,
-                default: 0
-            ]
-            if channels[index].unreadCount != unreadCount
-                || channels[index].mentionCount != mentionCount
-            {
-                channels[index].unreadCount = unreadCount
-                channels[index].mentionCount = mentionCount
-                changed = true
-            }
-            let channel = channels[index]
-            if let selectedGuildID {
-                if channel.guildID == selectedGuildID {
-                    visibleChannels.append(channel)
-                }
-            } else if channel.guildID == nil {
-                visibleChannels.append(channel)
-            }
-        }
-        return UnreadChannelPresentationProjection(
-            channels: channels,
-            visibleChannels: visibleChannels,
-            changed: changed
-        )
-    }
-
-    private func unreadGuildPresentationProjection(
-        guilds source: [Guild],
-        unread: AccountReadStateModel.UnreadPresentationProjection
-    ) -> UnreadGuildPresentationProjection {
-        var guilds = source
-        var changed = false
-        for index in guilds.indices {
-            let unreadCount =
-                unread.unreadByGuildID[guilds[index].id] == true ? 1 : 0
-            let mentionCount = unread.mentionsByGuildID[
-                guilds[index].id,
-                default: 0
-            ]
-            if guilds[index].unreadCount != unreadCount
-                || guilds[index].mentionCount != mentionCount
-            {
-                guilds[index].unreadCount = unreadCount
-                guilds[index].mentionCount = mentionCount
-                changed = true
-            }
-        }
-        return UnreadGuildPresentationProjection(
-            guilds: guilds,
-            changed: changed
+            snapshotValue: snapshotValue,
+            channelProjection: prepared.channels,
+            guildProjection: prepared.guilds,
+            projectedGuildsByID: prepared.serverRailGuildsByID
         )
     }
 
@@ -169,7 +359,7 @@ extension AppModel {
         snapshotValue: BootstrapSnapshot,
         channelProjection: UnreadChannelPresentationProjection,
         guildProjection: UnreadGuildPresentationProjection,
-        totalMentions: Int
+        projectedGuildsByID: [GuildID: Guild]
     ) {
         var value = snapshotValue
         AppPerformanceSignposts.measureSync(
@@ -180,9 +370,6 @@ extension AppModel {
                 value.guilds = guildProjection.guilds
                 snapshot = value
             }
-            let projectedGuildsByID = Dictionary(
-                uniqueKeysWithValues: guildProjection.guilds.map { ($0.id, $0) }
-            )
             if projectedGuildsByID != serverRailGuildsByID {
                 serverRailGuildsByID = projectedGuildsByID
             }
@@ -208,9 +395,5 @@ extension AppModel {
         if projectedSelectedChannel != selectedChannel {
             selectedChannel = projectedSelectedChannel
         }
-        notificationService.setDockBadge(
-            totalMentions,
-            enabled: notificationPreferences.showsDockBadge
-        )
     }
 }

@@ -243,6 +243,11 @@ extension AppModel {
     func resetAccountPresentationState() {
         unreadPresentationRefreshTask?.cancel()
         unreadPresentationRefreshTask = nil
+        unreadPresentationPreparationTask?.cancel()
+        unreadPresentationPreparationTask = nil
+        unreadPresentationPreparationSequence &+= 1
+        activeUnreadPreparationGeneration = nil
+        unreadPresentationPreparationGeneration &+= 1
         hasDeferredUnreadPresentationRefresh = false
         bootstrapHistoryPrefetch?.task.cancel()
         bootstrapHistoryPrefetch = nil
@@ -255,6 +260,8 @@ extension AppModel {
         quickSwitcherDraftChannelIDs = []
         snapshot = nil
         serverRailGuildsByID = [:]
+        serverRailHomeIsUnread = false
+        serverRailHomeMentionCount = 0
         serverRailItems = []
         emojisByGuild = [:]
         loadingEmojiGuildIDs = []
@@ -403,6 +410,8 @@ extension AppModel {
         lastOpenedChannelIDsByGuild = [:]
         snapshot = nil
         serverRailGuildsByID = [:]
+        serverRailHomeIsUnread = false
+        serverRailHomeMentionCount = 0
         serverRailItems = []
         emojisByGuild = [:]
         loadingEmojiGuildIDs = []
@@ -778,6 +787,8 @@ extension AppModel {
         if publishesSessionState {
             sessionState = .workspace
         }
+        await waitForUnreadPresentationPreparation()
+        guard canPublishBootstrap(for: account) else { return }
         await AppPerformanceSignposts.measure("BootstrapInitialConversation") {
             await channelLoadTask?.value
         }

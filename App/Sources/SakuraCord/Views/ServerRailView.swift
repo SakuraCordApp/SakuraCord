@@ -72,6 +72,52 @@ enum ServerRailPresentationItem: Equatable, Identifiable {
     }
 }
 
+/// Keeps rail observation out of the workspace root. Timeline, member-list,
+/// composer, and loading publications can invalidate `ChatRootView` without
+/// rebuilding or comparing every server row.
+struct ServerRailContainer: View {
+    let model: AppModel
+
+    var body: some View {
+        ServerRailView(
+            items: ServerRailPresentationItem.make(
+                items: model.serverRailItems,
+                guildsByID: model.serverRailGuildsByID,
+                notificationSettings: model.guildNotificationSettings,
+                isMutationPending: model.isGuildNotificationMutationPending
+            ),
+            selectedGuildID: model.selectedGuildID,
+            homeIsUnread: model.serverRailHomeIsUnread,
+            homeMentionCount: model.serverRailHomeMentionCount,
+            selectHome: { model.selectGuild(nil) },
+            selectGuild: model.selectGuild,
+            contextMenuActions: ServerRailContextMenuActions(
+                markRead: model.markGuildRead,
+                mute: { guild, duration in
+                    model.setGuildMute(
+                        true,
+                        until: duration.endDate(),
+                        for: guild
+                    )
+                },
+                unmute: { guild in
+                    model.setGuildMute(false, until: nil, for: guild)
+                },
+                setNotificationLevel: { guild, level in
+                    model.setGuildNotificationLevel(level, for: guild)
+                },
+                setNotificationToggle: { guild, toggle, isEnabled in
+                    model.setGuildNotificationToggle(
+                        toggle,
+                        isEnabled: isEnabled,
+                        for: guild
+                    )
+                }
+            )
+        )
+    }
+}
+
 struct ServerRailView: View {
     let items: [ServerRailPresentationItem]
     let selectedGuildID: GuildID?

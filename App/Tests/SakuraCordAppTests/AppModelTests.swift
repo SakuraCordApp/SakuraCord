@@ -754,7 +754,10 @@ import UserNotifications
         usesNewNotifications: true
     )
     await provider.emit(.snapshotChanged(refreshed))
-    #expect(await eventuallyOnMain { model.snapshot == refreshed })
+    #expect(await eventuallyOnMain {
+        model.snapshot?.usesNewNotifications == true
+            && model.snapshot?.channels.contains(where: { $0.id == channelID }) == true
+    })
     #expect(!model.isChannelUnread(channelID))
 
     await provider.emit(
@@ -765,7 +768,9 @@ import UserNotifications
         model.snapshot?.usesNewNotifications == false
     })
     #expect(model.isChannelUnread(channelID))
-    #expect(model.serverRailGuildsByID[guildID]?.unreadCount == 1)
+    #expect(await eventuallyOnMain {
+        model.serverRailGuildsByID[guildID]?.unreadCount == 1
+    })
 }
 
 @MainActor
