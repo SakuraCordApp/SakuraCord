@@ -716,8 +716,12 @@ actor SharedAnimatedImageDecodeScheduler {
 
     private var activeCount = 0
     private var waiters: [Waiter] = []
-    private var defersForInteractiveScrolling = false
-    private var interactiveScrollingRevision: UInt64 = 0
+    private var interactiveScrollingSources: Set<AnimatedImageInteractiveScrollSource> = []
+    private var interactiveScrollingRevisions: [AnimatedImageInteractiveScrollSource: UInt64] = [:]
+
+    private var defersForInteractiveScrolling: Bool {
+        !interactiveScrollingSources.isEmpty
+    }
 
     /// Full frame expansion is optional background work. Keep already decoded
     /// animations playing, but do not start another memory-bandwidth-heavy
@@ -726,11 +730,17 @@ actor SharedAnimatedImageDecodeScheduler {
     /// available for immediate visual feedback.
     func setInteractiveScrolling(
         _ isScrolling: Bool,
+        source: AnimatedImageInteractiveScrollSource,
         revision: UInt64
     ) {
-        guard revision >= interactiveScrollingRevision else { return }
-        interactiveScrollingRevision = revision
-        defersForInteractiveScrolling = isScrolling
+        guard revision >= interactiveScrollingRevisions[source, default: 0]
+        else { return }
+        interactiveScrollingRevisions[source] = revision
+        if isScrolling {
+            interactiveScrollingSources.insert(source)
+        } else {
+            interactiveScrollingSources.remove(source)
+        }
         resumeNextIfPossible()
     }
 
@@ -819,6 +829,11 @@ actor SharedAnimatedImageDecodeScheduler {
         )
     }
 #endif
+}
+
+nonisolated enum AnimatedImageInteractiveScrollSource: Hashable, Sendable {
+    case timeline
+    case memberList(UUID)
 }
 
 nonisolated struct AnimatedImageDecodeSchedulerState: Equatable, Sendable {

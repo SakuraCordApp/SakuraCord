@@ -317,10 +317,7 @@ extension DiscordRESTProvider {
                 }
             }
         case .dispatch(let name, let value):
-            guard let data = try? JSONEncoder().encode(value),
-                  let body = try? JSONSerialization.jsonObject(with: data)
-            else { return }
-            await handleGatewayDispatch(name: name, body: body)
+            await handleGatewayDispatch(name: name, body: value)
         }
     }
 
@@ -433,10 +430,50 @@ extension DiscordRESTProvider {
             throw ChatProviderError.invalidRequest(
                 "Discord Gateway is not ready to resolve role members.")
         }
-        for batch in userIDs.chunked(into: 100) {
+        let resolution = discordPerformanceSignposter.beginInterval(
+            "GatewayMemberResolution",
+            id: discordPerformanceSignposter.makeSignpostID()
+        )
+        defer {
+            discordPerformanceSignposter.endInterval(
+                "GatewayMemberResolution", resolution
+            )
+        }
+        let batches = userIDs.chunked(into: 100)
+        let resolvedBatches = try await withThrowingTaskGroup(
+            of: (Int, [Member]).self,
+            returning: [[Member]].self
+        ) { group in
+            for (index, batch) in batches.enumerated() {
+                group.addTask { [self] in
+                    let members = try await requestMemberBatch(batch, guildID: guildID)
+                    return (index, members)
+                }
+            }
+            var results = [[Member]?](repeating: nil, count: batches.count)
+            for try await (index, members) in group {
+                results[index] = members
+            }
+            return results.compactMap(\.self)
+        }
+        for members in resolvedBatches {
+            mergeResolvedMembers(members, guildID: guildID)
+        }
+    }
+
+    func requestMemberBatch(_ batch: [UserID], guildID: GuildID) async throws -> [Member] {
+            let batchRequest = discordPerformanceSignposter.beginInterval(
+                "GatewayMemberBatchRequest",
+                id: discordPerformanceSignposter.makeSignpostID()
+            )
+            defer {
+                discordPerformanceSignposter.endInterval(
+                    "GatewayMemberBatchRequest", batchRequest
+                )
+            }
             // Local continuation identity only; this value is never sent to Discord.
             let requestID = UUID().uuidString.lowercased()
-            let members = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[Member], any Error>) in
+            return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[Member], any Error>) in
                 let timeout = Task { [weak self] in
                     try? await Task.sleep(for: .seconds(8))
                     await self?.timeoutRoleMemberRequest(requestID: requestID)
@@ -462,8 +499,6 @@ extension DiscordRESTProvider {
                     }
                 }
             }
-            mergeResolvedMembers(members, guildID: guildID)
-        }
     }
 
     func mergeResolvedMembers(
@@ -602,18 +637,49 @@ extension DiscordRESTProvider {
     }
 
     var gatewayDispatchOperation:
-        @isolated(any) (String, Any) async -> Void
+        @isolated(any) (String, JSONValue) async -> Void
     {
         { [self] name, body in
-        guard JSONSerialization.isValidJSONObject(body),
-              let data = try? JSONSerialization.data(withJSONObject: body)
-        else { return }
+        let data: Data
+        if name == "READY" || name == "RESUMED" {
+            data = Data()
+        } else {
+            let serialization = discordPerformanceSignposter.beginInterval(
+                "GatewayDispatchJSONSerialization",
+                id: discordPerformanceSignposter.makeSignpostID()
+            )
+            guard let encoded = try? JSONEncoder().encode(body) else {
+                discordPerformanceSignposter.endInterval(
+                    "GatewayDispatchJSONSerialization", serialization
+                )
+                return
+            }
+            discordPerformanceSignposter.endInterval(
+                "GatewayDispatchJSONSerialization", serialization
+            )
+            data = encoded
+        }
         switch name {
         case "READY", "RESUMED":
             subscribedPrivateCallChannelIDs = []
-            if name == "READY",
-               let ready = try? JSONDecoder().decode(GatewayReadyGuildsDTO.self, from: data)
-            {
+            let readyDecode = discordPerformanceSignposter.beginInterval(
+                "GatewayReadyDecode",
+                id: discordPerformanceSignposter.makeSignpostID()
+            )
+            let decodedReady = name == "READY"
+                ? try? JSONValueDecoder().decode(GatewayReadyGuildsDTO.self, from: body)
+                : nil
+            discordPerformanceSignposter.endInterval("GatewayReadyDecode", readyDecode)
+            if let ready = decodedReady {
+                let readyApplication = discordPerformanceSignposter.beginInterval(
+                    "GatewayReadyApplication",
+                    id: discordPerformanceSignposter.makeSignpostID()
+                )
+                defer {
+                    discordPerformanceSignposter.endInterval(
+                        "GatewayReadyApplication", readyApplication
+                    )
+                }
                 privateCallsByChannel = [:]
                 cancelPendingRoleMemberRequests(error: CancellationError())
                 cachedMembers = [:]
@@ -1944,7 +2010,7 @@ extension DiscordRESTProvider {
         }
     }
 
-    func handleGatewayDispatch(name: String, body: Any) async {
+    func handleGatewayDispatch(name: String, body: JSONValue) async {
         await gatewayDispatchOperation(name, body)
     }
     func reconcilePrivateCallVoiceState(_ state: VoiceParticipantState) {

@@ -122,7 +122,11 @@ struct ChannelSidebarView: View {
                         voiceModel.unreadCategoryIDs(guildID: $0.id)
                     } ?? []
                     List(selection: deferredGuildSelection) {
-                        let groups = ChannelGroup.make(from: displayedChannels)
+                        let groups = AppPerformanceSignposts.measureSync(
+                            "ChannelSidebarGrouping"
+                        ) {
+                            ChannelGroup.make(from: displayedChannels)
+                        }
                         ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
                             ChannelGroupRows(
                                 model: voiceModel,

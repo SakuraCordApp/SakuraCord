@@ -9,6 +9,62 @@ import Testing
 
 @Suite(.serialized)
 struct ProviderRequestContractTests {
+    @Test func `REST scheduling learns server buckets without a global cadence`() async throws {
+        let provider = DiscordRESTProvider(
+            credentials: TestCredentialStore(),
+            handle: CredentialHandle(accountID: "rate-limit-scheduler"),
+            session: URLSession(configuration: .ephemeral),
+            installationID: "server-issued-installation"
+        )
+        let route = DiscordRESTProvider.rateLimitRouteKey(
+            method: "GET",
+            path: "/channels/123456789012345200/messages"
+        )
+        #expect(route == "GET /channels/{id}/messages")
+        #expect(
+            DiscordRESTProvider.rateLimitMajorParameter(
+                path: "/channels/200/messages"
+            ) == "channels:200"
+        )
+        let firstMajorParameter = "channels:123456789012345200"
+        let secondMajorParameter = "channels:123456789012345201"
+        let firstChannelKey = "\(route) [\(firstMajorParameter)]"
+        let secondChannelKey = "\(route) [\(secondMajorParameter)]"
+        let response = try #require(HTTPURLResponse(
+            url: URL(
+                string: "https://discord.com/api/v9/channels/123456789012345200/messages"
+            )!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: [
+                "X-RateLimit-Bucket": "message-history",
+                "X-RateLimit-Limit": "1",
+                "X-RateLimit-Remaining": "0",
+                "X-RateLimit-Reset-After": "0.08",
+            ]
+        ))
+        await provider.recordRateLimitState(
+            response: response,
+            routeKey: firstChannelKey,
+            majorParameter: firstMajorParameter
+        )
+
+        let independentElapsed = try await ContinuousClock().measure {
+            try await provider.reserveRateLimitSlot(
+                routeKey: secondChannelKey
+            )
+        }
+        #expect(independentElapsed < .milliseconds(30))
+
+        let exhaustedElapsed = try await ContinuousClock().measure {
+            try await provider.reserveRateLimitSlot(
+                routeKey: firstChannelKey
+            )
+        }
+        #expect(exhaustedElapsed >= .milliseconds(40))
+        #expect(exhaustedElapsed < .seconds(1))
+    }
+
     @Test func `message history encodes bounded around and after anchors`() async throws {
         RateLimitURLProtocol.reset()
         let configuration = URLSessionConfiguration.ephemeral

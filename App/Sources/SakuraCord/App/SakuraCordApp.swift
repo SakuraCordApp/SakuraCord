@@ -11,6 +11,11 @@ struct SakuraCordApp: App {
     private let opensForumPerformanceFixture: Bool
     private let opensChatPerformanceFixture: Bool
     private let runsChatLiveArrivalStress: Bool
+    private let runsAuthenticatedNavigationBenchmark: Bool
+    private let runsAuthenticatedAccountSwitchBenchmark: Bool
+    private let runsHistoryPaginationBenchmark: Bool
+    private let preparesTimelineScrollBenchmark: Bool
+    private let activatesAuthenticatedScrollBenchmark: Bool
     private let performanceMockProvider: MockChatProvider?
 
     init() {
@@ -34,6 +39,21 @@ struct SakuraCordApp: App {
         opensForumPerformanceFixture = configuration.includesForumPerformanceFixture
         opensChatPerformanceFixture = configuration.includesChatPerformanceFixture
         runsChatLiveArrivalStress = configuration.runsChatLiveArrivalStress
+        runsAuthenticatedNavigationBenchmark =
+            configuration.runsAuthenticatedNavigationBenchmark
+        runsAuthenticatedAccountSwitchBenchmark =
+            configuration.runsAuthenticatedAccountSwitchBenchmark
+        runsHistoryPaginationBenchmark =
+            configuration.runsHistoryPaginationBenchmark
+        preparesTimelineScrollBenchmark =
+            configuration.mode == .normal
+            && configuration.runsChatPerformanceAutoScroll
+        activatesAuthenticatedScrollBenchmark =
+            configuration.mode == .normal
+            && (
+                configuration.runsChatPerformanceAutoScroll
+                    || configuration.runsMemberListPerformanceAutoScroll
+            )
         let mockProvider = configuration.mode == .offlineTesting
             ? MockChatProvider(
                 includesLongServerList: configuration.includesLongServerList,
@@ -74,6 +94,26 @@ struct SakuraCordApp: App {
                 }
                 .task {
                     await model.start()
+                    if runsAuthenticatedNavigationBenchmark {
+                        await model.runAuthenticatedNavigationPerformanceBenchmark()
+                    }
+                    if runsAuthenticatedAccountSwitchBenchmark {
+                        await model.runAuthenticatedAccountSwitchPerformanceBenchmark()
+                    }
+                    if runsHistoryPaginationBenchmark {
+                        await model.runAuthenticatedHistoryPaginationPerformanceBenchmark()
+                    }
+                    if activatesAuthenticatedScrollBenchmark {
+                        // A display-link benchmark is only representative
+                        // while AppKit is presenting this window normally.
+                        // Background/occluded windows are intentionally
+                        // throttled by WindowServer and would report machine
+                        // scheduling as SakuraCord frame loss.
+                        NSApp.activate(ignoringOtherApps: true)
+                    }
+                    if preparesTimelineScrollBenchmark {
+                        await model.prepareAuthenticatedTimelineScrollPerformanceBenchmark()
+                    }
                     if opensChatPerformanceFixture {
                         NSApp.activate(ignoringOtherApps: true)
                     }

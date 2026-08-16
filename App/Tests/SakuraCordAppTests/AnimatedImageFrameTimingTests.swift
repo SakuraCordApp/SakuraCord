@@ -51,10 +51,18 @@ import Testing
 
 @Test func `new animated expansion waits until interactive scrolling ends`() async {
     let scheduler = SharedAnimatedImageDecodeScheduler()
-    await scheduler.setInteractiveScrolling(true, revision: 2)
+    await scheduler.setInteractiveScrolling(
+        true,
+        source: .timeline,
+        revision: 2
+    )
     // A stale end callback must not reopen the lane after a newer scroll-start
     // callback has already arrived.
-    await scheduler.setInteractiveScrolling(false, revision: 1)
+    await scheduler.setInteractiveScrolling(
+        false,
+        source: .timeline,
+        revision: 1
+    )
     let decode = Task {
         try? await scheduler.decode(
             data: Data(),
@@ -72,7 +80,25 @@ import Testing
     #expect(state.waitingCount == 1)
     #expect(state.isDeferred)
 
-    await scheduler.setInteractiveScrolling(false, revision: 3)
+    let memberListSource = AnimatedImageInteractiveScrollSource.memberList(UUID())
+    await scheduler.setInteractiveScrolling(
+        true,
+        source: memberListSource,
+        revision: 1
+    )
+    await scheduler.setInteractiveScrolling(
+        false,
+        source: .timeline,
+        revision: 3
+    )
+    state = await scheduler.stateForTesting
+    #expect(state.isDeferred)
+
+    await scheduler.setInteractiveScrolling(
+        false,
+        source: memberListSource,
+        revision: 2
+    )
     _ = await decode.value
     state = await scheduler.stateForTesting
     #expect(state.activeCount == 0)

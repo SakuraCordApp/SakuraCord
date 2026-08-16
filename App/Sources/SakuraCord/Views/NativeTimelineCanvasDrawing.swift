@@ -231,7 +231,11 @@ extension NativeTimelineCanvasView {
         // one viewport, so finish this bounded redraw before hover tracking is
         // allowed to paint a partial row.
         synchronousShortContentRedrawCount += 1
-        displayIfNeeded()
+        AppPerformanceSignposts.measureSync(
+            "TimelineSynchronousShortContentRedraw"
+        ) {
+            displayIfNeeded()
+        }
     }
 
     func captureReactionCountsBeforeStorageMutation() {
@@ -1259,14 +1263,16 @@ extension NativeTimelineCanvasView {
             flipped: true
         )
         NSGraphicsContext.current = flippedGraphics
-        NativeTimelineRowPainter.draw(
-            item: item,
-            layout: layout,
-            in: CGRect(origin: .zero, size: size),
-            model: model,
-            isHovered: false,
-            spoilerRevealStore: spoilerRevealStore
-        )
+        AppPerformanceSignposts.measureSync("TimelineRowRaster") {
+            NativeTimelineRowPainter.draw(
+                item: item,
+                layout: layout,
+                in: CGRect(origin: .zero, size: size),
+                model: model,
+                isHovered: false,
+                spoilerRevealStore: spoilerRevealStore
+            )
+        }
         flippedGraphics.flushGraphics()
         NSGraphicsContext.restoreGraphicsState()
         representation.size = size

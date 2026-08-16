@@ -26,6 +26,114 @@ struct AccountReadStateModelTests {
         )
     }
 
+    @Test func `batched initial state matches incremental bootstrap semantics`() {
+        let forumID = ChannelID(rawValue: 201)
+        let threadID = ChannelID(rawValue: 202)
+        let guilds = [
+            Guild(
+                id: guildID,
+                name: "Guild",
+                defaultMessageNotifications: .allMessages
+            )
+        ]
+        let channels = [
+            Channel(
+                id: categoryID,
+                guildID: guildID,
+                name: "Category"
+            ),
+            Channel(
+                id: channelID,
+                guildID: guildID,
+                name: "General",
+                categoryID: categoryID,
+                lastMessageID: MessageID(rawValue: 20)
+            ),
+            Channel(
+                id: forumID,
+                guildID: guildID,
+                name: "Forum",
+                kind: .forum,
+                lastMessageID: MessageID(rawValue: 19)
+            ),
+        ]
+        let threads = [
+            MessageThreadSummary(
+                id: threadID,
+                guildID: guildID,
+                parentID: forumID,
+                name: "Post",
+                lastMessageID: MessageID(rawValue: 21)
+            )
+        ]
+        let readStates = [
+            ChannelReadState(
+                channelID: channelID,
+                lastAcknowledgedMessageID: MessageID(rawValue: 10),
+                mentionCount: 2,
+                version: 4
+            ),
+            ChannelReadState(
+                channelID: threadID,
+                lastAcknowledgedMessageID: MessageID(rawValue: 18),
+                version: 5
+            ),
+        ]
+        let settings = [
+            GuildNotificationSettings(
+                guildID: guildID,
+                channelOverrides: [
+                    ChannelNotificationOverride(
+                        channelID: categoryID,
+                        isMuted: true,
+                        isCollapsed: true
+                    ),
+                    ChannelNotificationOverride(
+                        channelID: channelID,
+                        messageNotifications: .allMessages
+                    ),
+                ]
+            )
+        ]
+
+        let incremental = AccountReadStateModel()
+        incremental.reset(accountID: "account")
+        incremental.configure(
+            accountID: "account",
+            guilds: guilds,
+            channels: channels,
+            readStates: readStates,
+            notificationSettings: settings
+        )
+        for thread in threads {
+            incremental.merge(thread: thread)
+        }
+        incremental.setCurrentUserID(currentUser.id)
+
+        let batched = AccountReadStateModel()
+        batched.applyInitialState(AccountReadStateModel.makeInitialState(
+            accountID: "account",
+            guilds: guilds,
+            channels: channels,
+            threads: threads,
+            readStates: readStates,
+            notificationSettings: settings,
+            usesNewNotifications: true,
+            currentUserID: currentUser.id
+        ))
+
+        #expect(batched.entries == incremental.entries)
+        #expect(batched.settingsByGuild == incremental.settingsByGuild)
+        #expect(batched.remoteReadStateOrder == incremental.remoteReadStateOrder)
+        #expect(batched.quickSwitcherProjection() == incremental.quickSwitcherProjection())
+        #expect(
+            batched.unreadPresentationProjection()
+                == incremental.unreadPresentationProjection()
+        )
+        #expect(batched.isCategoryMuted(categoryID: categoryID, guildID: guildID))
+        #expect(batched.isCategoryCollapsed(categoryID: categoryID, guildID: guildID))
+    }
+
     @Test func `quick switcher muted projection includes inherited and guild mutes`() {
         let otherChannelID = ChannelID(rawValue: 201)
         let child = Channel(

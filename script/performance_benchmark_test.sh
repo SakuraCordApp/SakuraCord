@@ -25,6 +25,8 @@ summary="$temporary/summary.txt"
 grep -F $'signpost.OverlappingWork.count\t2' "$summary" >/dev/null
 grep -F $'signpost.OverlappingWork.median\t2000.000 ms' "$summary" >/dev/null
 grep -F $'signpost.OverlappingWork.maximum\t3000.000 ms' "$summary" >/dev/null
+grep -F $'signpost.AsyncThreadMigration.count\t1' "$summary" >/dev/null
+grep -F $'signpost.AsyncThreadMigration.median\t1250.000 ms' "$summary" >/dev/null
 grep -F $'measurement.window\tMessageTimelineAutoScrollBenchmark' "$summary" >/dev/null
 grep -F $'resources.window\tMessageTimelineAutoScrollBenchmark nominal 20.000 s' "$summary" >/dev/null
 grep -F $'duration.nominal\t20.0 s' "$summary" >/dev/null
@@ -45,6 +47,10 @@ if grep -E '^(rss\.|footprint\.current|footprint\.peak)' "$summary" >/dev/null; 
 fi
 if grep -F 'signpost.OverlappingWork.unmatched' "$summary" >/dev/null; then
     printf '%s\n' 'overlap fixture produced unmatched signposts' >&2
+    exit 1
+fi
+if grep -F 'signpost.AsyncThreadMigration.unmatched' "$summary" >/dev/null; then
+    printf '%s\n' 'async thread migration produced unmatched signposts' >&2
     exit 1
 fi
 

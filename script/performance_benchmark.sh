@@ -38,12 +38,13 @@ usage() {
 #       Relaunch the authenticated debug app and run its deterministic native
 #       20-second display-link scroll workload in the persisted selected channel.
 #       Delayed frames remain reportable; spatial distance, deficit from the
-#       nominal 24,000-point path, and quality ratio are recorded separately. The
-#       channel must already have at least 100 cached messages. This never
-#       synthesizes user interaction, marks content read, sends a message, or
-#       enables an offline fixture. Set SAKURACORD_PERFORMANCE_ACCOUNT_ID to a
-#       stored debug account ID to compare accounts; otherwise the most recently
-#       selected account is used. Defaults: 35 seconds.
+#       nominal 24,000-point path, and quality ratio are recorded separately.
+#       Before measurement the app read-only loads up to five older pages until
+#       the native timeline has at least 100 messages. This never synthesizes user
+#       interaction, marks content read, sends a message, or enables an offline
+#       fixture. Set SAKURACORD_PERFORMANCE_ACCOUNT_ID to a stored debug account
+#       ID to compare accounts; otherwise the most recently selected account is
+#       used. Defaults: 35 seconds.
 #   authenticated-member-list-scroll [seconds]
 #       Relaunch the authenticated debug app and run the same deterministic
 #       20-second display-link workload through the native member list. The
@@ -52,6 +53,23 @@ usage() {
 #       subscriptions are read-only; this scenario never sends messages,
 #       acknowledgements, reactions, or account mutations. Defaults: 70 seconds
 #       so an authenticated workspace can be selected before measurement.
+#   authenticated-navigation [seconds]
+#       Relaunch the authenticated debug app and deterministically open real
+#       DMs, servers, and same-server channels using live REST and Gateway data.
+#       The workload disables acknowledgements and all account mutations. It
+#       records request, decode, member hydration, state commit, rendering, and
+#       first-frame stages inside one exact resource window. Defaults: 45 seconds.
+#   authenticated-account-switch [seconds]
+#       Relaunch with one stored debug account, switch to a second real account,
+#       and measure shutdown, authentication, Gateway bootstrap, state application,
+#       destination history, and its first rendered frame. Discord-side activity is
+#       read-only, and the prior local preferred-account setting is restored after
+#       the run. Requires at least two stored debug accounts. Defaults: 45 seconds.
+#   authenticated-history-pagination [seconds]
+#       Relaunch the authenticated debug app, select a real readable channel with
+#       older history, and load up to five live 20-message pages. Records network,
+#       member hydration, row preparation, state commit, rendering, and exact
+#       process resources. This is read-only. Defaults: 45 seconds.
 #   authenticated-search [seconds]
 #       Relaunch the authenticated debug app for a read-only search comparison.
 #       During the recording, submit one representative server or DM search in
@@ -377,6 +395,9 @@ record_launch() {
     case "$scenario" in
         authenticated-scroll) resource_window_name="MessageTimelineAutoScrollBenchmark" ;;
         authenticated-member-list-scroll) resource_window_name="MemberListAutoScrollBenchmark" ;;
+        authenticated-navigation) resource_window_name="AuthenticatedNavigationBenchmark" ;;
+        authenticated-account-switch) resource_window_name="AuthenticatedAccountSwitchBenchmark" ;;
+        authenticated-history-pagination) resource_window_name="AuthenticatedHistoryPaginationBenchmark" ;;
         authenticated-search) resource_window_name="MessageSearchBenchmark" ;;
         authenticated-search-pagination) resource_window_name="MessageSearchPaginationBenchmark" ;;
         authenticated-search-scroll) resource_window_name="MessageSearchScrollBenchmark" ;;
@@ -385,6 +406,9 @@ record_launch() {
     performance_account_id="${SAKURACORD_PERFORMANCE_ACCOUNT_ID:-}"
     if [[ "$scenario" == "authenticated-scroll" \
           || "$scenario" == "authenticated-member-list-scroll" \
+          || "$scenario" == "authenticated-navigation" \
+          || "$scenario" == "authenticated-account-switch" \
+          || "$scenario" == "authenticated-history-pagination" \
           || "$scenario" == "authenticated-search" \
           || "$scenario" == "authenticated-search-pagination" \
           || "$scenario" == "authenticated-search-scroll" ]]; then
@@ -408,6 +432,17 @@ record_launch() {
             printf '%s\n' \
                 "Authenticated performance recording requires a selected local debug credential." >&2
             exit 4
+        fi
+        if [[ "$scenario" == "authenticated-account-switch" ]]; then
+            credential_count="$((
+                $(find "$debug_credential_directory" -maxdepth 1 -type f \
+                    -name '*.credential' -print 2>/dev/null | wc -l)
+            ))"
+            if (( credential_count < 2 )); then
+                printf '%s\n' \
+                    "Authenticated account-switch recording requires at least two local debug credentials." >&2
+                exit 4
+            fi
         fi
     fi
     sandbox_directory="$HOME/Library/Containers/$bundle_id/Data/tmp"
@@ -460,6 +495,9 @@ record_launch() {
     kill -CONT "$pid"
     if [[ ( "$scenario" == "authenticated-scroll" \
             || "$scenario" == "authenticated-member-list-scroll" \
+            || "$scenario" == "authenticated-navigation" \
+            || "$scenario" == "authenticated-account-switch" \
+            || "$scenario" == "authenticated-history-pagination" \
             || "$scenario" == "authenticated-search" \
             || "$scenario" == "authenticated-search-pagination" \
             || "$scenario" == "authenticated-search-scroll" ) \
@@ -480,6 +518,9 @@ record_launch() {
     wait "$trace_pid"
     if [[ ( "$scenario" == "authenticated-scroll" \
             || "$scenario" == "authenticated-member-list-scroll" \
+            || "$scenario" == "authenticated-navigation" \
+            || "$scenario" == "authenticated-account-switch" \
+            || "$scenario" == "authenticated-history-pagination" \
             || "$scenario" == "authenticated-search" \
             || "$scenario" == "authenticated-search-pagination" \
             || "$scenario" == "authenticated-search-scroll" ) \
@@ -516,6 +557,21 @@ record_authenticated_scroll() {
 record_authenticated_member_list_scroll() {
     record_launch authenticated-member-list-scroll "$1" \
         --debug-authenticated-member-list-performance-autoscroll
+}
+
+record_authenticated_navigation() {
+    record_launch authenticated-navigation "$1" \
+        --debug-authenticated-navigation-performance
+}
+
+record_authenticated_account_switch() {
+    record_launch authenticated-account-switch "$1" \
+        --debug-authenticated-account-switch-performance
+}
+
+record_authenticated_history_pagination() {
+    record_launch authenticated-history-pagination "$1" \
+        --debug-authenticated-history-pagination-performance
 }
 
 record_authenticated_search() {
@@ -730,7 +786,18 @@ if File.file?(signpost_path) && File.size?(signpost_path)
     type = display_values["event-type"]
     formatted_time = display_values["event-time"]
     next unless name && type && formatted_time
-    process = display_values["process"] || display_values["thread"] || "unknown"
+    process = display_values["process"]
+    unless process
+      thread = display_values["thread"]
+      # Async intervals routinely resume on another cooperative-pool thread.
+      # xctrace places the only process definition inside the first thread
+      # element, so later `<process ref>` values can be unresolved by this
+      # streaming reference reader. Pair by the stable PID embedded in the
+      # thread display name instead of falsely treating a thread migration as
+      # two unmatched signposts.
+      pid = thread&.match(/\bpid:\s*(\d+)\b/)&.[](1)
+      process = pid ? "pid:#{pid}" : (thread || "unknown")
+    end
     if scenario == "startup" && name == "StartupToWorkspace" &&
        startup_pid && !process.match?(/\b#{Regexp.escape(startup_pid)}\b/)
       next
@@ -779,11 +846,22 @@ scroll_benchmark = [
   "authenticated-scroll",
   "authenticated-member-list-scroll",
 ].include?(scenario)
+navigation_benchmark = scenario == "authenticated-navigation"
+account_switch_benchmark = scenario == "authenticated-account-switch"
+history_pagination_benchmark = scenario == "authenticated-history-pagination"
+navigation_app_residuals = {}
+navigation_history_network = {}
 measurement_interval = case scenario
                        when "authenticated-scroll"
                          "MessageTimelineAutoScrollBenchmark"
                        when "authenticated-member-list-scroll"
                          "MemberListAutoScrollBenchmark"
+                       when "authenticated-navigation"
+                         "AuthenticatedNavigationBenchmark"
+                       when "authenticated-account-switch"
+                         "AuthenticatedAccountSwitchBenchmark"
+                       when "authenticated-history-pagination"
+                         "AuthenticatedHistoryPaginationBenchmark"
                        when "authenticated-search"
                          "MessageSearchRequestToResults"
                        when "authenticated-search-pagination"
@@ -830,6 +908,22 @@ if scroll_benchmark
   nominal_distance = Float(benchmark_result["nominal_distance_points"], exception: false)
   distance_deficit = Float(benchmark_result["distance_deficit_points"], exception: false)
   spatial_quality = Float(benchmark_result["spatial_quality_ratio"], exception: false)
+  completed_ticks = Integer(benchmark_result["completed_ticks"], exception: false)
+  delayed_ticks = Integer(
+    benchmark_result["delayed_ticks_over_33ms"], exception: false
+  )
+  maximum_tick_interval_ms = Float(
+    benchmark_result["maximum_tick_interval_ms"], exception: false
+  )
+  maximum_scroll_work_ms = Float(
+    benchmark_result["maximum_scroll_work_ms"], exception: false
+  )
+  history_starved_ticks = Integer(
+    benchmark_result["history_starved_ticks"], exception: false
+  )
+  maximum_consecutive_history_starved_ticks = Integer(
+    benchmark_result["maximum_consecutive_history_starved_ticks"], exception: false
+  )
   signpost_elapsed = intervals[measurement_interval].first.to_f / 1_000.0
   unless benchmark_result["outcome"] == "completed" &&
          benchmark_elapsed&.finite? && benchmark_elapsed >= 20 &&
@@ -846,6 +940,127 @@ if scroll_benchmark
          (spatial_quality - [completed_distance / nominal_distance, 1].min).abs < 0.000_001
     raise "Authenticated scroll benchmark has invalid duration or spatial metadata"
   end
+  has_tick_metadata = benchmark_result.key?("completed_ticks")
+  if has_tick_metadata &&
+     !(completed_ticks&.positive? && delayed_ticks && delayed_ticks >= 0 &&
+       delayed_ticks <= completed_ticks && maximum_tick_interval_ms&.finite? &&
+       maximum_tick_interval_ms >= 0 && maximum_scroll_work_ms&.finite? &&
+       maximum_scroll_work_ms >= 0 && history_starved_ticks &&
+       history_starved_ticks >= 0 &&
+       maximum_consecutive_history_starved_ticks &&
+       maximum_consecutive_history_starved_ticks >= 0 &&
+       maximum_consecutive_history_starved_ticks <= history_starved_ticks)
+    raise "Authenticated scroll benchmark has invalid tick metadata"
+  end
+  lower_bound, upper_bound = interval_bounds[measurement_interval].first
+  scoped_intervals = {}
+  intervals.each do |name, durations|
+    matching = []
+    durations.each_with_index do |duration, index|
+      bounds = interval_bounds[name][index]
+      if bounds && bounds[0] >= lower_bound && bounds[1] <= upper_bound
+        matching << duration
+      end
+    end
+    scoped_intervals[name] = matching unless matching.empty?
+  end
+  intervals = scoped_intervals
+end
+if navigation_benchmark
+  unless interval_bounds[measurement_interval].length == 1 &&
+         event_counts["AuthenticatedNavigationBenchmarkCompleted"] == 1 &&
+         benchmark_result["outcome"] == "completed"
+    raise "Authenticated navigation benchmark did not complete exactly once"
+  end
+  direct_message_count = Integer(
+    benchmark_result["direct_message_count"], exception: false
+  )
+  server_count = Integer(benchmark_result["server_count"], exception: false)
+  channel_count = Integer(benchmark_result["channel_count"], exception: false)
+  unless direct_message_count&.positive? && server_count&.positive? &&
+         channel_count&.positive?
+    raise "Authenticated navigation benchmark requires DM, server, and channel samples"
+  end
+  {
+    "direct-message" => "AuthenticatedDirectMessageOpen",
+    "server" => "AuthenticatedServerOpen",
+    "channel" => "AuthenticatedChannelOpen",
+  }.each do |label, interval_name|
+    local_residuals = []
+    network_durations = []
+    interval_bounds[interval_name].each do |outer_start, outer_end|
+      history_request = interval_bounds["ConversationHistoryRequest"].find do |start_at, end_at|
+        start_at >= outer_start && end_at <= outer_end
+      end
+      next unless history_request
+      history_start, history_end = history_request
+      contained_network = interval_bounds["MessageHistoryNetworkAttempt"].each_with_object([]) do |(start_at, end_at), values|
+        values << end_at - start_at if start_at >= history_start && end_at <= history_end
+      end
+      next if contained_network.empty?
+      network_duration = contained_network.sum
+      network_durations << network_duration
+      local_residuals << [outer_end - outer_start - network_duration, 0].max
+    end
+    navigation_app_residuals[label] = local_residuals
+    navigation_history_network[label] = network_durations
+  end
+  lower_bound, upper_bound = interval_bounds[measurement_interval].first
+  scoped_intervals = {}
+  intervals.each do |name, durations|
+    matching = []
+    durations.each_with_index do |duration, index|
+      bounds = interval_bounds[name][index]
+      if bounds && bounds[0] >= lower_bound && bounds[1] <= upper_bound
+        matching << duration
+      end
+    end
+    scoped_intervals[name] = matching unless matching.empty?
+  end
+  intervals = scoped_intervals
+end
+if account_switch_benchmark
+  unless interval_bounds[measurement_interval].length == 1 &&
+         event_counts["AuthenticatedAccountSwitchBenchmarkCompleted"] == 1 &&
+         benchmark_result["outcome"] == "completed" &&
+         benchmark_result["switch_count"] == "1"
+    raise "Authenticated account-switch benchmark did not complete exactly once"
+  end
+  lower_bound, upper_bound = interval_bounds[measurement_interval].first
+  scoped_intervals = {}
+  intervals.each do |name, durations|
+    matching = []
+    durations.each_with_index do |duration, index|
+      bounds = interval_bounds[name][index]
+      if bounds && bounds[0] >= lower_bound && bounds[1] <= upper_bound
+        matching << duration
+      end
+    end
+    scoped_intervals[name] = matching unless matching.empty?
+  end
+  intervals = scoped_intervals
+end
+if history_pagination_benchmark
+  page_count = Integer(benchmark_result["page_count"], exception: false)
+  unless interval_bounds[measurement_interval].length == 1 &&
+         event_counts["AuthenticatedHistoryPaginationBenchmarkCompleted"] == 1 &&
+         benchmark_result["outcome"] == "completed" &&
+         page_count&.positive?
+    raise "Authenticated history-pagination benchmark did not complete"
+  end
+  lower_bound, upper_bound = interval_bounds[measurement_interval].first
+  scoped_intervals = {}
+  intervals.each do |name, durations|
+    matching = []
+    durations.each_with_index do |duration, index|
+      bounds = interval_bounds[name][index]
+      if bounds && bounds[0] >= lower_bound && bounds[1] <= upper_bound
+        matching << duration
+      end
+    end
+    scoped_intervals[name] = matching unless matching.empty?
+  end
+  intervals = scoped_intervals
 end
 if scenario == "startup"
   if interval_bounds["StartupToWorkspace"].length != 1
@@ -991,6 +1206,35 @@ if scroll_benchmark
   puts "spatial.distance.nominal\t#{benchmark_result["nominal_distance_points"]} points"
   puts "spatial.distance.deficit\t#{benchmark_result["distance_deficit_points"]} points"
   puts "spatial.quality\t#{benchmark_result["spatial_quality_ratio"]} ratio"
+  if benchmark_result.key?("completed_ticks")
+    puts "frames.completed\t#{benchmark_result["completed_ticks"]}"
+    puts "frames.delayed-over-33ms\t#{benchmark_result["delayed_ticks_over_33ms"]}"
+    puts "frames.maximum-interval\t#{benchmark_result["maximum_tick_interval_ms"]} ms"
+    puts "scroll-work.maximum\t#{benchmark_result["maximum_scroll_work_ms"]} ms"
+    puts "history-starved.ticks\t#{benchmark_result["history_starved_ticks"]}"
+    puts "history-starved.maximum-consecutive\t#{benchmark_result["maximum_consecutive_history_starved_ticks"]}"
+  end
+end
+if navigation_benchmark
+  puts "navigation.direct-messages\t#{benchmark_result["direct_message_count"]}"
+  puts "navigation.servers\t#{benchmark_result["server_count"]}"
+  puts "navigation.channels\t#{benchmark_result["channel_count"]}"
+  navigation_app_residuals.each do |label, values|
+    next if values.empty?
+    puts "navigation.#{label}.app-controlled-residual.median\t#{format_metric(percentile(values, 0.5), "ms")}"
+    puts "navigation.#{label}.app-controlled-residual.p95\t#{format_metric(percentile(values, 0.95), "ms")}"
+  end
+  navigation_history_network.each do |label, values|
+    next if values.empty?
+    puts "navigation.#{label}.history-network.median\t#{format_metric(percentile(values, 0.5), "ms")}"
+    puts "navigation.#{label}.history-network.p95\t#{format_metric(percentile(values, 0.95), "ms")}"
+  end
+end
+if account_switch_benchmark
+  puts "account-switch.count\t#{benchmark_result["switch_count"]}"
+end
+if history_pagination_benchmark
+  puts "history-pagination.pages\t#{benchmark_result["page_count"]}"
 end
 if reports_resource_metrics
   puts "samples\t#{cpu.length}"
@@ -1065,6 +1309,15 @@ case "$command" in
         ;;
     authenticated-member-list-scroll)
         record_authenticated_member_list_scroll "${2:-70}"
+        ;;
+    authenticated-navigation)
+        record_authenticated_navigation "${2:-45}"
+        ;;
+    authenticated-account-switch)
+        record_authenticated_account_switch "${2:-45}"
+        ;;
+    authenticated-history-pagination)
+        record_authenticated_history_pagination "${2:-45}"
         ;;
     authenticated-search)
         record_authenticated_search "${2:-45}"

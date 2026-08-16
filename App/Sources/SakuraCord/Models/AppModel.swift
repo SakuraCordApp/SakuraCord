@@ -1032,6 +1032,7 @@ final class AppModel {
     @ObservationIgnored var profileCache:
         [ProfileCacheKey: UserProfile] = [:]
     @ObservationIgnored var channelLoadTask: Task<Void, Never>?
+    @ObservationIgnored var bootstrapHistoryPrefetch: BootstrapHistoryPrefetch?
     @ObservationIgnored var conversationRefreshJournals:
         [ChannelID: ConversationRefreshJournal] = [:]
     @ObservationIgnored var conversationRefreshJournalRevision: UInt64 = 0
@@ -1179,7 +1180,7 @@ final class AppModel {
             runsChatPerformanceBenchmarkOverride
                 ?? AppLaunchConfiguration(
                     arguments: ProcessInfo.processInfo.arguments
-                ).runsChatPerformanceAutoScroll
+                ).runsAnyReadOnlyPerformanceBenchmark
         discordNetworkDisabled =
             discordNetworkDisabledOverride
                 ?? (launchMode == .offlineTesting

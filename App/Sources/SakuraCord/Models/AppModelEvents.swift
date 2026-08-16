@@ -1390,14 +1390,39 @@ extension AppModel {
         }
     }
 
-    func replaceSelectedMessages(with newMessages: [Message]) {
+    func replaceSelectedMessages(
+        with newMessages: [Message],
+        preparedRows: [MessageRowPresentation]? = nil
+    ) {
+        let commit = AppPerformanceSignposts.signposter.beginInterval(
+            "MessageStateCommit"
+        )
+        defer {
+            AppPerformanceSignposts.signposter.endInterval(
+                "MessageStateCommit",
+                commit
+            )
+        }
         let oldMessages = messages
         messages = newMessages
         rebuildSelectedMessageIndexes()
-        messageRows = MessageGrouping.updating(
-            existing: messageRows,
-            oldMessages: oldMessages,
-            newMessages: newMessages
+        let rows = AppPerformanceSignposts.signposter.beginInterval(
+            "MessageRowPreparation"
+        )
+        if let preparedRows,
+           Self.rows(preparedRows, match: newMessages)
+        {
+            messageRows = preparedRows
+        } else {
+            messageRows = MessageGrouping.updating(
+                existing: messageRows,
+                oldMessages: oldMessages,
+                newMessages: newMessages
+            )
+        }
+        AppPerformanceSignposts.signposter.endInterval(
+            "MessageRowPreparation",
+            rows
         )
         publishMessageRowsUpdate(invalidatesAllRows: true)
         messageRowsNonAppendRevision &+= 1
@@ -1430,11 +1455,24 @@ extension AppModel {
         // The page is prefetched thousands of points ahead, so utility
         // priority preserves that headroom without priority-inverting UI
         // presentation on every pagination boundary.
-        let preparedInsertedRows = await Task.detached(priority: .utility) {
-            await MessageGrouping.rowsCooperatively(for: earlier)
-        }.value
+        let preparedInsertedRows = await AppPerformanceSignposts.measure(
+            "EarlierHistoryRowPreparation"
+        ) {
+            await Task.detached(priority: .utility) {
+                await MessageGrouping.rowsCooperatively(for: earlier)
+            }.value
+        }
         guard !Task.isCancelled, selectedChannelID == channelID else {
             return false
+        }
+        let stateCommit = AppPerformanceSignposts.signposter.beginInterval(
+            "EarlierHistoryStateCommit",
+            id: AppPerformanceSignposts.signposter.makeSignpostID()
+        )
+        defer {
+            AppPerformanceSignposts.signposter.endInterval(
+                "EarlierHistoryStateCommit", stateCommit
+            )
         }
         let commitStart = ProcessInfo.processInfo.systemUptime
         var potentiallyChangedMessageIDs = Set<MessageID>()
@@ -1590,13 +1628,19 @@ extension AppModel {
         channelID: ChannelID
     ) async -> Bool {
         guard !later.isEmpty else { return true }
-        let preparedRows = await Task.detached(priority: .utility) {
-            await MessageGrouping.rowsCooperatively(for: later)
-        }.value
+        let preparedRows = await AppPerformanceSignposts.measure(
+            "LaterHistoryRowPreparation"
+        ) {
+            await Task.detached(priority: .utility) {
+                await MessageGrouping.rowsCooperatively(for: later)
+            }.value
+        }
         guard !Task.isCancelled, selectedChannelID == channelID else {
             return false
         }
-        appendSelectedMessages(later, preparedRows: preparedRows)
+        AppPerformanceSignposts.measureSync("LaterHistoryStateCommit") {
+            appendSelectedMessages(later, preparedRows: preparedRows)
+        }
         return true
     }
 

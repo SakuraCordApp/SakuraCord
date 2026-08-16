@@ -263,6 +263,7 @@ final class NativeMessageTimelineCoordinator: NSObject {
             NativeTimelineConversation?
         var lastViewportSize = CGSize.zero
         var isApplyingUpdate = false
+        var pendingModelRowsUpdateTask: Task<Void, Never>?
         var scrollIdleTask: Task<Void, Never>?
         var lastScrollActivityUptime = 0.0
         var widthRelayoutTask: Task<Void, Never>?
@@ -448,79 +449,81 @@ extension NativeMessageTimelineCoordinator {
             performanceFallbackReason = "none"
             recentLayoutCacheHits = 0
             let reconcileStartUptime = ProcessInfo.processInfo.systemUptime
-            if conversationChanged {
-                canvas.invalidateConversationTransientCaches()
-            } else if presentationChanged {
-                canvas.invalidatePresentationCaches()
-            }
-            if conversationChanged, presentationChanged {
-                canvas.invalidatePresentationCaches()
-            }
-            if oldParent.highlightedMessageID
-                != parent.highlightedMessageID
-                || conversationChanged
-                || oldItemCount == 0,
-               let highlightedMessageID = parent.highlightedMessageID
-            {
-                canvas.startMessageJumpHighlight(highlightedMessageID)
-            }
-            if widthChanged || presentationChanged {
-                layoutWidth = width
-                if acceptsNewRows, !hasUnpublishedRows {
-                    rebuildAll(
-                        from: parent,
-                        rows: newRows,
-                        width: width,
-                        force: true
-                    )
-                } else {
-                    layouts = items.map { layout(for: $0, width: width) }
-                    rowHeights = layouts.map(\.height)
-                    didMutateItems = true
-                    performanceUpdatePath =
-                        presentationChanged
-                        ? "presentation-only"
-                        : "width-only"
+            AppPerformanceSignposts.measureSync("TimelineReconcile") {
+                if conversationChanged {
+                    canvas.invalidateConversationTransientCaches()
+                } else if presentationChanged {
+                    canvas.invalidatePresentationCaches()
                 }
-            } else if hasUnpublishedRows {
-                // Row storage can advance while its observable revision is
-                // being coalesced to one display-frame publication. Never
-                // reconcile that future storage under an older revision:
-                // doing so corrupts the journal's index basis and forces
-                // repeated full rebuilds. Metadata is applied with the next
-                // atomic row/revision snapshot, at most one frame later.
-                performanceUpdatePath = "awaiting-row-publication"
-            } else if !applyFastUpdate(
-                from: oldParent,
-                to: parent,
-                rows: newRows,
-                width: width
-            ) {
-                if !applyJournalUpdate(
+                if conversationChanged, presentationChanged {
+                    canvas.invalidatePresentationCaches()
+                }
+                if oldParent.highlightedMessageID
+                    != parent.highlightedMessageID
+                    || conversationChanged
+                    || oldItemCount == 0,
+                   let highlightedMessageID = parent.highlightedMessageID
+                {
+                    canvas.startMessageJumpHighlight(highlightedMessageID)
+                }
+                if widthChanged || presentationChanged {
+                    layoutWidth = width
+                    if acceptsNewRows, !hasUnpublishedRows {
+                        rebuildAll(
+                            from: parent,
+                            rows: newRows,
+                            width: width,
+                            force: true
+                        )
+                    } else {
+                        layouts = items.map { layout(for: $0, width: width) }
+                        rowHeights = layouts.map(\.height)
+                        didMutateItems = true
+                        performanceUpdatePath =
+                            presentationChanged
+                            ? "presentation-only"
+                            : "width-only"
+                    }
+                } else if hasUnpublishedRows {
+                    // Row storage can advance while its observable revision is
+                    // being coalesced to one display-frame publication. Never
+                    // reconcile that future storage under an older revision:
+                    // doing so corrupts the journal's index basis and forces
+                    // repeated full rebuilds. Metadata is applied with the next
+                    // atomic row/revision snapshot, at most one frame later.
+                    performanceUpdatePath = "awaiting-row-publication"
+                } else if !applyFastUpdate(
                     from: oldParent,
                     to: parent,
                     rows: newRows,
                     width: width
                 ) {
-                    let fallbackItemCount = items.count
-                    let fallbackOldRowCount = rowCount
-                    let fallbackOldLeadingCount = items.count - rowCount
-                    rebuildAll(from: parent, rows: newRows, width: width)
-                    if parent.runsPerformanceAutoScroll,
-                       lastLoggedPerformanceFallbackReason
-                        != performanceFallbackReason
-                    {
-                        lastLoggedPerformanceFallbackReason =
-                            performanceFallbackReason
-                        Self.performanceLogger.notice(
-                            """
-                            SakuraCord timeline fallback: \(self.performanceFallbackReason, privacy: .public); \
-                            coordinator \(String(describing: ObjectIdentifier(self)), privacy: .public); \
-                            items \(fallbackItemCount); old rows \(fallbackOldRowCount); new rows \(newRows.count); \
-                            old revision \(self.rowsRevision); new revision \(parent.rowsRevision); \
-                            old leading \(fallbackOldLeadingCount); new leading \(self.makeLeadingItems(from: parent).count)
-                            """
-                        )
+                    if !applyJournalUpdate(
+                        from: oldParent,
+                        to: parent,
+                        rows: newRows,
+                        width: width
+                    ) {
+                        let fallbackItemCount = items.count
+                        let fallbackOldRowCount = rowCount
+                        let fallbackOldLeadingCount = items.count - rowCount
+                        rebuildAll(from: parent, rows: newRows, width: width)
+                        if parent.runsPerformanceAutoScroll,
+                           lastLoggedPerformanceFallbackReason
+                            != performanceFallbackReason
+                        {
+                            lastLoggedPerformanceFallbackReason =
+                                performanceFallbackReason
+                            Self.performanceLogger.notice(
+                                """
+                                SakuraCord timeline fallback: \(self.performanceFallbackReason, privacy: .public); \
+                                coordinator \(String(describing: ObjectIdentifier(self)), privacy: .public); \
+                                items \(fallbackItemCount); old rows \(fallbackOldRowCount); new rows \(newRows.count); \
+                                old revision \(self.rowsRevision); new revision \(parent.rowsRevision); \
+                                old leading \(fallbackOldLeadingCount); new leading \(self.makeLeadingItems(from: parent).count)
+                                """
+                            )
+                        }
                     }
                 }
             }
@@ -535,10 +538,12 @@ extension NativeMessageTimelineCoordinator {
             presentationRevision = parent.presentationRevision
             let metadataEndUptime = ProcessInfo.processInfo.systemUptime
             if didMutateItems {
-                if requiresFullOriginRebuild {
-                    rebuildOrigins()
-                } else if appendedLayoutCount > 0 {
-                    appendOrigins(count: appendedLayoutCount)
+                AppPerformanceSignposts.measureSync("TimelineOrigins") {
+                    if requiresFullOriginRebuild {
+                        rebuildOrigins()
+                    } else if appendedLayoutCount > 0 {
+                        appendOrigins(count: appendedLayoutCount)
+                    }
                 }
                 let establishesLeadingHistoryBoundary =
                     oldItemCount == 0
@@ -608,7 +613,9 @@ extension NativeMessageTimelineCoordinator {
                     trailingHistoryReserve = Self.historyReserveChunk
                 }
                 let originsEndUptime = ProcessInfo.processInfo.systemUptime
-                applySnapshot(to: canvas, in: scrollView)
+                AppPerformanceSignposts.measureSync("TimelineSnapshot") {
+                    applySnapshot(to: canvas, in: scrollView)
+                }
                 let snapshotEndUptime = ProcessInfo.processInfo.systemUptime
                 if requiresVisibleRedraw {
                     canvas.invalidateVisibleContent()
@@ -730,6 +737,15 @@ extension NativeMessageTimelineCoordinator {
         }
 
         func update(parent: NativeMessageTimelineView, scrollView: NSScrollView) {
+            pendingModelRowsUpdateTask?.cancel()
+            pendingModelRowsUpdateTask = nil
+            applyUpdate(parent: parent, scrollView: scrollView)
+        }
+
+        func applyUpdate(
+            parent: NativeMessageTimelineView,
+            scrollView: NSScrollView
+        ) {
             (scrollView as? NativeTimelineInputShieldScrollView)?.model = parent.model
             canvas?.setOverlayInteractionBlocked(
                 parent.model.mediaViewerPresentation != nil
@@ -739,7 +755,35 @@ extension NativeMessageTimelineCoordinator {
             timelineUpdateOperation(parent, scrollView)
         }
 
+        func scheduleModelRowsUpdate() {
+            guard pendingModelRowsUpdateTask == nil else { return }
+            pendingModelRowsUpdateTask = Task { @MainActor [weak self] in
+                // NotificationCenter delivers model publications inline. A
+                // cold timeline can require tens of milliseconds of layout
+                // and raster work, so doing that work inside `post` couples
+                // network completion to an input-blocking render transaction.
+                // Give SwiftUI's observation transaction the first chance to
+                // publish an up-to-date parent and coalesce repeated model
+                // changes into one timeline reconciliation.
+                await Task.yield()
+                guard !Task.isCancelled, let self else { return }
+                self.pendingModelRowsUpdateTask = nil
+                guard !self.isApplyingUpdate,
+                      let scrollView = self.scrollView
+                else {
+                    self.scheduleModelRowsUpdate()
+                    return
+                }
+                self.applyUpdate(
+                    parent: self.parent,
+                    scrollView: scrollView
+                )
+            }
+        }
+
         func stopObserving() {
+            pendingModelRowsUpdateTask?.cancel()
+            pendingModelRowsUpdateTask = nil
             scrollStateCallbackTask?.cancel()
             scrollStateCallbackTask = nil
             pendingScrollState = nil

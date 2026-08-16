@@ -926,14 +926,7 @@ extension NativeMessageTimelineCoordinator {
                     queue: .main
                 ) { [weak self] _ in
                     MainActor.assumeIsolated {
-                        guard let self,
-                              !self.isApplyingUpdate,
-                              let scrollView = self.scrollView
-                        else { return }
-                        self.update(
-                            parent: self.parent,
-                            scrollView: scrollView
-                        )
+                        self?.scheduleModelRowsUpdate()
                     }
                 },
             ]
@@ -1686,7 +1679,14 @@ extension NativeMessageTimelineCoordinator {
                                     outcome: outcome,
                                     completedDistance:
                                         benchmarkController.completedDistance,
-                                    elapsed: elapsed
+                                    elapsed: elapsed,
+                                    completedTicks: completedTicks,
+                                    delayedTicks: delayedTicks,
+                                    maximumTickInterval: maximumTickInterval,
+                                    maximumScrollWork: maximumScrollWork,
+                                    historyStarvedTicks: historyStarvedTicks,
+                                    maximumConsecutiveHistoryStarvedTicks:
+                                        maximumHistoryStarvedTicks
                                 )
                                 AppPerformanceSignposts.endResourceWindow(
                                     named:

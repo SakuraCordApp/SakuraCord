@@ -512,7 +512,13 @@ enum NativeTimelineBenchmarkArtifact {
     static func write(
         outcome: NativeTimelineBenchmarkFinishOutcome,
         completedDistance: CGFloat,
-        elapsed: TimeInterval
+        elapsed: TimeInterval,
+        completedTicks: Int? = nil,
+        delayedTicks: Int? = nil,
+        maximumTickInterval: TimeInterval? = nil,
+        maximumScrollWork: TimeInterval? = nil,
+        historyStarvedTicks: Int? = nil,
+        maximumConsecutiveHistoryStarvedTicks: Int? = nil
     ) {
         guard let path = ProcessInfo.processInfo.environment[
             "SAKURACORD_PERFORMANCE_RESULT_PATH"
@@ -525,7 +531,7 @@ enum NativeTimelineBenchmarkArtifact {
         )
         let duration = NativeTimelineBenchmarkScrollPolicy.duration
         let overshoot = max(0, elapsed - duration)
-        let contents = """
+        var contents = """
         outcome\t\(outcome.rawValue)
         elapsed_seconds\t\(elapsed)
         nominal_duration_seconds\t\(duration)
@@ -536,6 +542,23 @@ enum NativeTimelineBenchmarkArtifact {
         spatial_quality_ratio\t\(quality)
 
         """
+        if let completedTicks,
+           let delayedTicks,
+           let maximumTickInterval,
+           let maximumScrollWork,
+           let historyStarvedTicks,
+           let maximumConsecutiveHistoryStarvedTicks
+        {
+            contents += """
+            completed_ticks\t\(completedTicks)
+            delayed_ticks_over_33ms\t\(delayedTicks)
+            maximum_tick_interval_ms\t\(maximumTickInterval * 1_000)
+            maximum_scroll_work_ms\t\(maximumScrollWork * 1_000)
+            history_starved_ticks\t\(historyStarvedTicks)
+            maximum_consecutive_history_starved_ticks\t\(maximumConsecutiveHistoryStarvedTicks)
+
+            """
+        }
         try? contents.write(
             to: URL(fileURLWithPath: path),
             atomically: true,

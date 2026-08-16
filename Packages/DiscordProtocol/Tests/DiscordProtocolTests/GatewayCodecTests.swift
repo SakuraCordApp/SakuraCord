@@ -968,6 +968,48 @@ private func appendETFBinary(_ value: String, to data: inout Data) {
     #expect(guild.members.map(\.user.username) == ["first", "second"])
 }
 
+@Test func `ready payload decodes directly from ETF value tree without JSON round trip`() throws {
+    let data = Data(#"""
+    {
+        "guilds": [
+            {
+                "id":"100",
+                "properties":{
+                    "name":"Direct Decode",
+                    "permissions":2048,
+                    "rules_channel_id":"101"
+                },
+                "channels":[{"id":"101","name":"rules","type":0}],
+                "members":[
+                    {"user":{"id":"200","username":"member"},"roles":[]},
+                    {"future_shape":true}
+                ]
+            }
+        ],
+        "relationships":[
+            {
+                "id":"201",
+                "type":1,
+                "nickname":"  Friend  ",
+                "user":{"id":"201","username":"friend"}
+            }
+        ]
+    }
+    """#.utf8)
+    let jsonReady = try JSONDecoder().decode(GatewayReadyGuildsDTO.self, from: data)
+    let value = try JSONDecoder().decode(JSONValue.self, from: data)
+    let directReady = try JSONValueDecoder().decode(GatewayReadyGuildsDTO.self, from: value)
+
+    let jsonGuild = try #require(jsonReady.guilds.first?.domain(currentUserID: nil))
+    let directGuild = try #require(directReady.guilds.first?.domain(currentUserID: nil))
+    #expect(directGuild == jsonGuild)
+    #expect(directReady.guilds.first?.channels.map(\.id) == ["101"])
+    #expect(directReady.guilds.first?.members.map(\.user.username) == ["member"])
+    #expect(directReady.friendUserIDs == jsonReady.friendUserIDs)
+    #expect(directReady.relationshipNicknamesByUserID == jsonReady.relationshipNicknamesByUserID)
+    #expect(directReady.users.map(\.id) == jsonReady.users.map(\.id))
+}
+
 @Test func `ready payload preserves relationship nickname and embedded legacy user`() throws {
     let data = Data(#"""
     {
@@ -1154,14 +1196,15 @@ private func appendETFBinary(_ value: String, to data: inout Data) {
         requested: [UserID(rawValue: 2)]
     )
 
-    #expect(missing.count == 100)
+    #expect(missing.count == 101)
     #expect(missing.prefix(3) == [
-        UserID(rawValue: 3), UserID(rawValue: 4), UserID(rawValue: 5)
+        UserID(rawValue: 100), UserID(rawValue: 99), UserID(rawValue: 98)
     ])
+    #expect(missing.count <= DiscordMessageMemberHydration.maximumUserIDsPerHistoryPage)
     #expect(missing.contains(UserID(rawValue: 100)))
     #expect(missing.contains(UserID(rawValue: 1_000)))
     #expect(missing.contains(UserID(rawValue: 1_001)))
-    #expect(!missing.contains(UserID(rawValue: 1_002)))
+    #expect(missing.contains(UserID(rawValue: 1_002)))
 }
 
 @Test func `ready and guild emoji updates decode complete custom emoji catalogs`() throws {

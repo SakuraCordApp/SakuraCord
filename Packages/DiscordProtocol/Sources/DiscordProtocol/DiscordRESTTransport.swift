@@ -159,6 +159,9 @@ extension DiscordRESTProvider {
         body: [String: JSONValue]? = nil,
         headers: [String: String] = [:]
     ) async throws -> Response {
+        let isMessageHistoryRequest = method == "GET"
+            && path.hasPrefix("/channels/")
+            && path.hasSuffix("/messages")
         let (data, response) = try await perform(
             path, method: method, query: query, body: body, headers: headers
         )
@@ -173,6 +176,19 @@ extension DiscordRESTProvider {
             )
         }
         do {
+            let decodeName: StaticString = isMessageHistoryRequest
+                ? "MessageHistoryResponseDecode"
+                : "RESTResponseDecode"
+            let decode = discordPerformanceSignposter.beginInterval(
+                decodeName,
+                id: discordPerformanceSignposter.makeSignpostID()
+            )
+            defer {
+                discordPerformanceSignposter.endInterval(
+                    decodeName,
+                    decode
+                )
+            }
             return try JSONDecoder().decode(Response.self, from: data)
         } catch {
             let route = Self.routeTemplate(method: method, path: path)
@@ -220,11 +236,22 @@ extension DiscordRESTProvider {
             )
         }
 
-        let routeKey = "\(method) \(path)"
+        let routeKey = Self.rateLimitRouteKey(method: method, path: path)
+        let majorParameter = Self.rateLimitMajorParameter(path: path)
+        let requestRateLimitKey = "\(routeKey) [\(majorParameter)]"
+        let isMessageHistoryRequest = method == "GET"
+            && path.hasPrefix("/channels/")
+            && path.hasSuffix("/messages")
         let canRetryAsRead = Self.canRetryAsRead(method: method, path: path)
         let maximumAttempts = requestedMaximumAttempts ?? (canRetryAsRead ? 2 : 1)
         for attempt in 0 ..< maximumAttempts {
-            try await reserveConservativeRequestSlot(routeKey: routeKey)
+            let scheduling = isMessageHistoryRequest
+                ? discordPerformanceSignposter.beginInterval(
+                    "MessageHistoryRequestScheduling",
+                    id: discordPerformanceSignposter.makeSignpostID()
+                )
+                : nil
+            try await reserveRateLimitSlot(routeKey: requestRateLimitKey)
 
             guard var components = URLComponents(
                 string:
@@ -272,7 +299,26 @@ extension DiscordRESTProvider {
             let rawResponse: URLResponse
             let requestSession = restSession
             let requestSessionGeneration = restSessionGeneration
+            if let scheduling {
+                discordPerformanceSignposter.endInterval(
+                    "MessageHistoryRequestScheduling",
+                    scheduling
+                )
+            }
             do {
+                let networkName: StaticString = isMessageHistoryRequest
+                    ? "MessageHistoryNetworkAttempt"
+                    : "RESTNetworkAttempt"
+                let network = discordPerformanceSignposter.beginInterval(
+                    networkName,
+                    id: discordPerformanceSignposter.makeSignpostID()
+                )
+                defer {
+                    discordPerformanceSignposter.endInterval(
+                        networkName,
+                        network
+                    )
+                }
                 (data, rawResponse) = try await requestSession.data(for: request)
             } catch {
                 apiDiagnostics.recordHTTPFailure(
@@ -315,20 +361,39 @@ extension DiscordRESTProvider {
                 body: data,
                 duration: requestStarted.duration(to: .now)
             )
+            recordRateLimitState(
+                response: response,
+                routeKey: requestRateLimitKey,
+                majorParameter: majorParameter
+            )
 
             if response.statusCode == 429 {
                 let retryAfter = Self.retryAfter(from: data, response: response)
                 let retryDate = Date.now.addingTimeInterval(retryAfter)
                 if Self.isGlobalRateLimit(data: data, response: response) {
                     globalRateLimitDate = retryDate
+                } else if let bucketKey = rateLimitBucketKeyByRoute[
+                    requestRateLimitKey
+                ] {
+                    var state = rateLimitBuckets[bucketKey]
+                        ?? RESTRateLimitBucketState(
+                            limit: nil,
+                            remaining: nil,
+                            resetDate: retryDate,
+                            resetInterval: retryAfter
+                        )
+                    state.remaining = 0
+                    state.resetDate = max(state.resetDate, retryDate)
+                    state.resetInterval = max(
+                        state.resetInterval ?? 0,
+                        retryAfter
+                    )
+                    rateLimitBuckets[bucketKey] = state
                 } else {
-                    routeRateLimitDates[routeKey] = retryDate
+                    routeRateLimitDates[requestRateLimitKey] = retryDate
                 }
-                // Pause every authenticated route as the conservative response to
-                // any 429. Mutations never retry automatically; GETs retry once.
-                globalRateLimitDate = max(globalRateLimitDate, retryDate)
                 gatewayLogger.error(
-                    "Discord returned 429; all REST traffic paused for \(retryAfter, privacy: .public) seconds"
+                    "Discord returned 429; affected REST traffic paused for \(retryAfter, privacy: .public) seconds"
                 )
                 if attempt + 1 >= maximumAttempts {
                     return (data, response)
@@ -381,15 +446,6 @@ extension DiscordRESTProvider {
             } else if (200 ..< 300).contains(response.statusCode) {
                 unexpectedNotFoundCounts[route] = nil
             }
-            if response.value(forHTTPHeaderField: "X-RateLimit-Remaining") == "0",
-               let reset = response.value(forHTTPHeaderField: "X-RateLimit-Reset-After").flatMap(
-                   Double.init
-               )
-            {
-                routeRateLimitDates[routeKey] = .now.addingTimeInterval(max(0, reset))
-            } else {
-                routeRateLimitDates[routeKey] = nil
-            }
             return (data, response)
         }
         throw ChatProviderError.invalidRequest("Discord rate limiting did not recover.")
@@ -408,24 +464,121 @@ extension DiscordRESTProvider {
             path, method, query, body, headers, requestedMaximumAttempts
         )
     }
-    func reserveConservativeRequestSlot(routeKey: String) async throws {
-        guard !requestSafetyCircuitIsOpen else {
-            throw ChatProviderError.invalidRequest(
-                "Discord networking is stopped for this session.")
+    func reserveRateLimitSlot(routeKey: String) async throws {
+        while true {
+            guard !requestSafetyCircuitIsOpen else {
+                throw ChatProviderError.invalidRequest(
+                    "Discord networking is stopped for this session."
+                )
+            }
+            let now = Date.now
+            let routeDate = routeRateLimitDates[routeKey] ?? .distantPast
+            var scheduledDate = max(now, max(globalRateLimitDate, routeDate))
+            if let bucketKey = rateLimitBucketKeyByRoute[routeKey],
+               var bucket = rateLimitBuckets[bucketKey]
+            {
+                if bucket.resetDate <= now {
+                    bucket.remaining = bucket.limit
+                    if let resetInterval = bucket.resetInterval {
+                        bucket.resetDate = now.addingTimeInterval(
+                            resetInterval
+                        )
+                    }
+                    rateLimitBuckets[bucketKey] = bucket
+                }
+                if bucket.remaining == 0 {
+                    scheduledDate = max(scheduledDate, bucket.resetDate)
+                }
+            }
+            let delay = scheduledDate.timeIntervalSince(now)
+            if delay > 0 {
+                try await Task.sleep(for: .seconds(delay))
+                continue
+            }
+            if let bucketKey = rateLimitBucketKeyByRoute[routeKey],
+               var bucket = rateLimitBuckets[bucketKey],
+               let remaining = bucket.remaining,
+               remaining > 0
+            {
+                // Reserve before leaving the actor so concurrent requests in a
+                // learned bucket cannot all consume the same remaining slot.
+                bucket.remaining = remaining - 1
+                rateLimitBuckets[bucketKey] = bucket
+            }
+            return
         }
+    }
+
+    func recordRateLimitState(
+        response: HTTPURLResponse,
+        routeKey: String,
+        majorParameter: String
+    ) {
+        guard let identifier = response.value(
+            forHTTPHeaderField: "X-RateLimit-Bucket"
+        ) else {
+            if response.value(forHTTPHeaderField: "X-RateLimit-Remaining") == "0",
+               let reset = response.value(
+                forHTTPHeaderField: "X-RateLimit-Reset-After"
+               ).flatMap(Double.init)
+            {
+                routeRateLimitDates[routeKey] = Date.now.addingTimeInterval(
+                    max(0, reset)
+                )
+            } else if response.statusCode != 429 {
+                routeRateLimitDates[routeKey] = nil
+            }
+            return
+        }
+        let key = RESTRateLimitBucketKey(
+            identifier: identifier,
+            majorParameter: majorParameter
+        )
+        rateLimitBucketKeyByRoute[routeKey] = key
+        routeRateLimitDates[routeKey] = nil
+
         let now = Date.now
-        let routeDate = routeRateLimitDates[routeKey] ?? .distantPast
-        let scheduledDate = max(max(now, nextRequestSlotDate), max(globalRateLimitDate, routeDate))
-        // Reserve before suspension so actor reentrancy cannot wake several calls
-        // into the same instant. Two authenticated REST calls/second is the ceiling.
-        nextRequestSlotDate = scheduledDate.addingTimeInterval(0.5)
-        let delay = scheduledDate.timeIntervalSince(now)
-        if delay > 0 {
-            try await Task.sleep(for: .seconds(delay))
-        }
-        guard !requestSafetyCircuitIsOpen else {
-            throw ChatProviderError.invalidRequest(
-                "Discord networking is stopped for this session.")
+        let limit = response.value(
+            forHTTPHeaderField: "X-RateLimit-Limit"
+        ).flatMap(Int.init)
+        let remaining = response.value(
+            forHTTPHeaderField: "X-RateLimit-Remaining"
+        ).flatMap(Int.init)
+        let resetAfter = response.value(
+            forHTTPHeaderField: "X-RateLimit-Reset-After"
+        ).flatMap(Double.init)
+        let resetDate = resetAfter.map {
+            now.addingTimeInterval(max(0, $0))
+        } ?? rateLimitBuckets[key]?.resetDate ?? .distantPast
+
+        if let existing = rateLimitBuckets[key],
+           existing.resetDate > now,
+           abs(existing.resetDate.timeIntervalSince(resetDate)) < 0.250
+        {
+            let conservativeRemaining: Int?
+            switch (existing.remaining, remaining) {
+            case let (.some(current), .some(server)):
+                conservativeRemaining = min(current, server)
+            case let (.some(current), .none):
+                conservativeRemaining = current
+            case let (.none, .some(server)):
+                conservativeRemaining = server
+            case (.none, .none):
+                conservativeRemaining = nil
+            }
+            rateLimitBuckets[key] = RESTRateLimitBucketState(
+                limit: limit ?? existing.limit,
+                remaining: conservativeRemaining,
+                resetDate: max(existing.resetDate, resetDate),
+                resetInterval: resetAfter ?? existing.resetInterval
+            )
+        } else {
+            rateLimitBuckets[key] = RESTRateLimitBucketState(
+                limit: limit,
+                remaining: remaining,
+                resetDate: resetDate,
+                resetInterval: resetAfter
+            )
         }
     }
 
@@ -567,6 +720,44 @@ extension DiscordRESTProvider {
             return String(segment)
         }
         return "\(method) \(segments.joined(separator: "/"))"
+    }
+
+    static func rateLimitRouteKey(method: String, path: String) -> String {
+        var segments = path.split(
+            separator: "/",
+            omittingEmptySubsequences: false
+        ).map(String.init)
+        for index in segments.indices where segments[index] == "webhooks" {
+            let tokenIndex = index + 2
+            if segments.indices.contains(tokenIndex) {
+                segments[tokenIndex] = "{token}"
+            }
+        }
+        return routeTemplate(
+            method: method,
+            path: segments.joined(separator: "/")
+        )
+    }
+
+    static func rateLimitMajorParameter(path: String) -> String {
+        let segments = path.split(separator: "/").map(String.init)
+        for resource in ["channels", "guilds"] {
+            guard let index = segments.firstIndex(of: resource),
+                  segments.indices.contains(index + 1)
+            else { continue }
+            return "\(resource):\(segments[index + 1])"
+        }
+        if let index = segments.firstIndex(of: "webhooks"),
+           segments.indices.contains(index + 1)
+        {
+            var hasher = Hasher()
+            hasher.combine(segments[index + 1])
+            if segments.indices.contains(index + 2) {
+                hasher.combine(segments[index + 2])
+            }
+            return "webhooks:\(hasher.finalize())"
+        }
+        return "none"
     }
 
     func authorizationToken() async throws -> String {

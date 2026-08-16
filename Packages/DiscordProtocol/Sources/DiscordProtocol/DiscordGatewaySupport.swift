@@ -382,10 +382,36 @@ enum DiscordMemberStoreOrdering {
 }
 
 enum DiscordMessageMemberHydration {
-    /// A history page contains at most 100 messages. Authors are prioritized so
-    /// resolving a page needs at most one bounded Gateway member request; any
-    /// remaining capacity mirrors Discord and Paicord by including mentions.
-    static let maximumUserIDsPerHistoryPage = 100
+    /// Preserve the app's existing two-batch resolution ceiling, but let the
+    /// provider issue Discord's 100-ID Gateway batches concurrently rather
+    /// than discovering the second batch only after the first completes.
+    static let maximumUserIDsPerHistoryPage = 200
+
+    static func userIDs(in messages: [Message]) -> [UserID] {
+        var seen: Set<UserID> = []
+        var result: [UserID] = []
+        result.reserveCapacity(min(messages.count * 2, maximumUserIDsPerHistoryPage))
+
+        func append(_ userID: UserID) {
+            guard result.count < maximumUserIDsPerHistoryPage,
+                  seen.insert(userID).inserted
+            else { return }
+            result.append(userID)
+        }
+
+        for message in messages.reversed() {
+            append(message.author.id)
+            if let replyAuthorID = message.replyPreview?.author.id {
+                append(replyAuthorID)
+            }
+        }
+        for message in messages.reversed() {
+            for user in message.mentionedUsers {
+                append(user.id)
+            }
+        }
+        return result
+    }
 
     static func missingUserIDs(
         in messages: [Message],
@@ -396,19 +422,19 @@ enum DiscordMessageMemberHydration {
         var result: [UserID] = []
 
         func append(_ userID: UserID) {
-            guard result.count < maximumUserIDsPerHistoryPage, seen.insert(userID).inserted else {
-                return
-            }
+            guard result.count < maximumUserIDsPerHistoryPage,
+                  seen.insert(userID).inserted
+            else { return }
             result.append(userID)
         }
 
-        for message in messages {
+        for message in messages.reversed() {
             append(message.author.id)
             if let replyAuthorID = message.replyPreview?.author.id {
                 append(replyAuthorID)
             }
         }
-        for message in messages {
+        for message in messages.reversed() {
             for user in message.mentionedUsers {
                 append(user.id)
             }

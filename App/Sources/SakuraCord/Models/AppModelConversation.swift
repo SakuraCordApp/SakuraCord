@@ -12,6 +12,10 @@ import SakuraCordPersistence
 import UniformTypeIdentifiers
 import UserNotifications
 
+// Conversation mutation, pagination, and composer operations intentionally
+// share the same account-session extension so cancellation guards stay local.
+// swiftlint:disable file_length
+
 extension AppModel {
     func removeForumPost(_ postID: ChannelID) {
         guard let index = forumCatalogueIndexByID.removeValue(forKey: postID) else { return }
@@ -128,6 +132,7 @@ extension AppModel {
         }
     }
 
+    // swiftlint:disable:next function_body_length
     func loadSelectedChannel(
         _ channelID: ChannelID,
         generation: Int,
@@ -152,7 +157,11 @@ extension AppModel {
                 revision: refreshRevision
             )
         }
-        async let storedDraft = storedDraft(in: channelID, account: account)
+        async let storedDraft = AppPerformanceSignposts.measure(
+            "ConversationDraftLoad"
+        ) {
+            await storedDraft(in: channelID, account: account)
+        }
         // Discord lets already-dispatched history reads finish when the user
         // switches channels. Besides retaining the response in MessageStore,
         // this also lets UserStore learn authors for account-wide picker
@@ -160,11 +169,20 @@ extension AppModel {
         // and discard only its stale UI result below. This avoids repeatedly
         // cancelling URLSession HTTP/3 streams during fast navigation, which
         // can leave the reused connection stalled on macOS.
-        let freshPageTask = Task {
-            try await account.provider.messages(
-                in: channelID,
-                before: nil,
-                limit: 10
+        let freshPageTask: Task<MessagePage, any Error>
+        if let prefetch = bootstrapHistoryPrefetch,
+           prefetch.accountGeneration == account.generation,
+           prefetch.accountRevision == account.installedRevision,
+           prefetch.channelID == channelID
+        {
+            bootstrapHistoryPrefetch = nil
+            freshPageTask = prefetch.task
+        } else {
+            bootstrapHistoryPrefetch?.task.cancel()
+            bootstrapHistoryPrefetch = nil
+            freshPageTask = makeHistoryRequestTask(
+                channelID: channelID,
+                account: account
             )
         }
 
@@ -181,42 +199,101 @@ extension AppModel {
             guard isCurrentAccountSession(account),
                   isCurrentLoad(channelID, generation: generation)
             else { return }
+            if !page.resolvedMembers.isEmpty {
+                let indexed = mergedMemberStore(with: page.resolvedMembers)
+                if membersByID != indexed {
+                    membersByID = indexed
+                }
+            }
             let initialMutations = conversationRefreshMutations(
                 in: channelID,
                 revision: refreshRevision
             )
-            let refreshedMessages = Self.applyingConversationRefreshMutations(
+            let initialRefreshedMessages = Self.applyingConversationRefreshMutations(
                 initialMutations,
                 to: page.messages
             )
-            let reconciliationCurrent = hasMoreLaterMessages
+            let initialReconciliationCurrent = hasMoreLaterMessages
                 ? messages.filter { $0.outboxState != .confirmed }
                 : messages
-            let merged = Self.reconcilingNewestPage(
-                current: reconciliationCurrent,
-                fresh: refreshedMessages,
+            let initiallyMerged = Self.reconcilingNewestPage(
+                current: initialReconciliationCurrent,
+                fresh: initialRefreshedMessages,
                 hasMoreBefore: page.hasMoreBefore,
                 authoritativeOldestMessageID: page.messages.map(\.id).min()
             )
-            if merged != messages {
-                replaceSelectedMessages(with: merged)
-            }
-            reportStartupContentReady(channelID)
-            await resolveSelectedHistoryMembers(
-                channelID: channelID,
-                generation: generation,
-                session: account
-            )
+            let preparedRows: [MessageRowPresentation]? =
+                if initiallyMerged != messages {
+                    await AppPerformanceSignposts.measure(
+                        "ConversationRowPreprocessing"
+                    ) {
+                        await Task.detached(priority: .userInitiated) {
+                            await MessageGrouping.rowsCooperatively(
+                                for: initiallyMerged
+                            )
+                        }.value
+                    }
+                } else {
+                    nil
+                }
             guard isCurrentAccountSession(account),
                   isCurrentLoad(channelID, generation: generation)
             else { return }
-            try await finishSelectedChannelLoad(
-                channelID: channelID,
-                freshMessages: page.messages,
-                refreshRevision: refreshRevision,
-                hasMoreBefore: page.hasMoreBefore,
-                session: account
-            )
+            AppPerformanceSignposts.measureSync("ConversationInitialCommit") {
+                let initialMutations = conversationRefreshMutations(
+                    in: channelID,
+                    revision: refreshRevision
+                )
+                let refreshedMessages = Self.applyingConversationRefreshMutations(
+                    initialMutations,
+                    to: page.messages
+                )
+                let reconciliationCurrent = hasMoreLaterMessages
+                    ? messages.filter { $0.outboxState != .confirmed }
+                    : messages
+                let merged = Self.reconcilingNewestPage(
+                    current: reconciliationCurrent,
+                    fresh: refreshedMessages,
+                    hasMoreBefore: page.hasMoreBefore,
+                    authoritativeOldestMessageID: page.messages.map(\.id).min()
+                )
+                if merged != messages {
+                    replaceSelectedMessages(
+                        with: merged,
+                        preparedRows: preparedRows
+                    )
+                }
+            }
+            reportStartupContentReady(channelID)
+            let freshMessageIDs = Set(page.messages.map(\.id))
+            let needsSupplementalMemberResolution =
+                !page.hasCompleteMemberResolution
+                || messages.contains { !freshMessageIDs.contains($0.id) }
+            if needsSupplementalMemberResolution {
+                await AppPerformanceSignposts.measure(
+                    "ConversationMemberResolution"
+                ) {
+                    await resolveSelectedHistoryMembers(
+                        channelID: channelID,
+                        generation: generation,
+                        session: account
+                    )
+                }
+            }
+            guard isCurrentAccountSession(account),
+                  isCurrentLoad(channelID, generation: generation)
+            else { return }
+            try await AppPerformanceSignposts.measure(
+                "ConversationFinalize"
+            ) {
+                try await finishSelectedChannelLoad(
+                    channelID: channelID,
+                    freshMessages: page.messages,
+                    refreshRevision: refreshRevision,
+                    hasMoreBefore: page.hasMoreBefore,
+                    session: account
+                )
+            }
         } catch is CancellationError {
             return
         } catch {
@@ -227,6 +304,52 @@ extension AppModel {
                 account: account
             )
         }
+    }
+
+    func beginBootstrapHistoryPrefetch(
+        channelID: ChannelID,
+        account: AppModelAccountSession
+    ) {
+        bootstrapHistoryPrefetch?.task.cancel()
+        bootstrapHistoryPrefetch = BootstrapHistoryPrefetch(
+            accountGeneration: account.generation,
+            accountRevision: account.installedRevision,
+            channelID: channelID,
+            task: makeHistoryRequestTask(channelID: channelID, account: account)
+        )
+    }
+
+    func makeHistoryRequestTask(
+        channelID: ChannelID,
+        account: AppModelAccountSession
+    ) -> Task<MessagePage, any Error> {
+        let provider = account.provider
+        return Task.detached(priority: .userInitiated) {
+            try await Self.requestInitialHistory(
+                provider: provider,
+                channelID: channelID
+            )
+        }
+    }
+
+    nonisolated static func requestInitialHistory(
+        provider: any ChatProvider,
+        channelID: ChannelID
+    ) async throws -> MessagePage {
+        let interval = AppPerformanceSignposts.signposter.beginInterval(
+            "ConversationHistoryRequest",
+            id: AppPerformanceSignposts.signposter.makeSignpostID()
+        )
+        defer {
+            AppPerformanceSignposts.signposter.endInterval(
+                "ConversationHistoryRequest", interval
+            )
+        }
+        return try await provider.messages(
+            in: channelID,
+            before: nil,
+            limit: 10
+        )
     }
 
     private func handleSelectedChannelLoadFailure(
@@ -249,6 +372,9 @@ extension AppModel {
         acceptsEmpty: Bool = false
     ) {
         guard acceptsEmpty || !messages.isEmpty else { return }
+        AppPerformanceSignposts.reportConversationHistoryReady(
+            channelID: channelID
+        )
         AppPerformanceSignposts.reportStartupConversationHistoryReady(
             channelID: channelID
         )

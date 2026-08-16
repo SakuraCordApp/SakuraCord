@@ -14,7 +14,7 @@ struct ServerRailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 10) {
+            LazyVStack(spacing: 10) {
                 HomeRailButton(
                     isSelected: selectedGuildID == nil,
                     isUnread: homeIsUnread,

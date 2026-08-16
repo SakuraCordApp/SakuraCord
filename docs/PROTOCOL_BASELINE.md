@@ -562,7 +562,12 @@ The default attempt budget is exact:
 
 Any `429` pauses authenticated traffic until the server-provided cooldown.
 Route and global bucket data come from response headers/body; SakuraCord does
-not hard-code Discord rate limits or probe early.
+not hard-code Discord rate limits or probe early. Requests without learned
+bucket state are dispatched immediately rather than passing through an
+app-owned global cadence. Each response associates its bucket identifier with
+the normalized route and Discord major parameters; later requests wait only
+for that learned bucket, a route-specific cooldown, or a server-declared global
+cooldown.
 
 Mutations preserve their nonce or idempotency fields and rely on REST/Gateway
 reconciliation. A definite failed message may expose one explicit user retry
@@ -616,6 +621,13 @@ two-integer `range` in `GUILD_MEMBER_LIST_UPDATE`; treating it as text caused
 the complete member-list update to fail decoding. The resulting JSON array
 matches the current first-party JSON shape and pinned Paicord's `IntPair`.
 Swiftcord v1 has no corresponding member-list implementation.
+
+The ETF parser reads directly from the decompressed payload's bounded byte
+buffer. READY is decoded from that JSON-compatible value tree without first
+serializing the tree to JSON and reparsing it. This is an internal allocation
+and latency optimization only: the same DTO validation, exact integer rules,
+diagnostics projection, event ordering, and malformed-payload failure behavior
+remain authoritative.
 
 The state machine covers:
 
@@ -967,14 +979,17 @@ implementation records.
   outside that range, while an authoritative update replaces the stored role
   list so a removed role cannot leave a stale color behind. This matches
   Paicord's `GuildStore`/`MessageAuthor` ownership. When a guild history page
-  contains an author absent from that store, SakuraCord performs at most one
-  Gateway opcode 8 request for at most 100 unique user IDs, with authors
-  prioritized before mentions and `presences: false`. The request deliberately omits `nonce`, as
+  contains an author absent from that store, SakuraCord resolves at most 200
+  unique user IDs, with newest authors and reply authors prioritized before
+  mentions. Discord's 100-ID opcode 8 limit is preserved by issuing at most two
+  disjoint batches concurrently with `presences: false`, then merging their
+  results in source-batch order. The request deliberately omits `nonce`, as
   do Discord's current `requestGuildMembers` implementation and pinned
   Paicord; the response is reconciled against its guild plus the union of
   returned member IDs and `not_found` IDs. IDs already cached or requested in
-  the current Gateway session are omitted. The same bounded lookup also runs
-  after locally persisted rows are merged, matching the official web client's
+  the current Gateway session are omitted. The app performs a supplemental
+  bounded lookup only when a locally retained timeline contains rows outside
+  the provider-completed fresh page, matching the official web client's
   `LOCAL_MESSAGES_LOADED` branch instead of limiting hydration to
   `LOAD_MESSAGES_SUCCESS`. Reply authors share that request budget. The
   returned raw role IDs are retained on both the member and history message so

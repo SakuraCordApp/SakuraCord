@@ -15,6 +15,13 @@ struct AppModelAccountSession {
     let database: SakuraCordDatabase?
 }
 
+struct BootstrapHistoryPrefetch {
+    let accountGeneration: UInt64
+    let accountRevision: UInt64
+    let channelID: ChannelID
+    let task: Task<MessagePage, any Error>
+}
+
 struct AppModelVoiceOperationIdentity {
     let generation: Int
     let channelID: ChannelID?

@@ -4,7 +4,7 @@ import OSLog
 import SakuraCordModels
 
 enum AppPerformanceSignposts {
-    static let signposter = OSSignposter(
+    nonisolated static let signposter = OSSignposter(
         subsystem: "dev.sakuracord.SakuraCord",
         category: "PointsOfInterest"
     )
@@ -14,6 +14,9 @@ enum AppPerformanceSignposts {
         StartupPresentationReadiness()
     private static var conversationNavigationInterval:
         (channelID: ChannelID, state: OSSignpostIntervalState)?
+    private static var navigationHistoryReadyChannelID: ChannelID?
+    private static var conversationFirstFrameWaiters:
+        [ChannelID: [CheckedContinuation<Void, Never>]] = [:]
     private static var quickSwitcherOpenInterval: OSSignpostIntervalState?
     private static var quickSwitcherQueryInterval: OSSignpostIntervalState?
     private static var quickSwitcherCloseInterval: OSSignpostIntervalState?
@@ -63,6 +66,7 @@ enum AppPerformanceSignposts {
                 current.state
             )
             signposter.emitEvent("ConversationNavigationSuperseded")
+            resumeConversationFirstFrameWaiters(for: current.channelID)
         }
         conversationNavigationInterval = (
             channelID,
@@ -70,6 +74,7 @@ enum AppPerformanceSignposts {
                 "ConversationNavigationToFirstFrame"
             )
         )
+        navigationHistoryReadyChannelID = nil
     }
 
     static func ensureConversationNavigation(to channelID: ChannelID) {
@@ -91,7 +96,8 @@ enum AppPerformanceSignposts {
             finishStartupPresentation()
         }
         guard let current = conversationNavigationInterval,
-              current.channelID == channelID
+              current.channelID == channelID,
+              navigationHistoryReadyChannelID == channelID
         else { return }
         signposter.emitEvent("ConversationFirstFrameDrawn")
         signposter.endInterval(
@@ -99,6 +105,14 @@ enum AppPerformanceSignposts {
             current.state
         )
         conversationNavigationInterval = nil
+        navigationHistoryReadyChannelID = nil
+        resumeConversationFirstFrameWaiters(for: channelID)
+    }
+
+    static func reportConversationHistoryReady(channelID: ChannelID) {
+        guard conversationNavigationInterval?.channelID == channelID else { return }
+        navigationHistoryReadyChannelID = channelID
+        signposter.emitEvent("ConversationHistoryReady")
     }
 
     static func cancelConversationNavigation() {
@@ -108,6 +122,22 @@ enum AppPerformanceSignposts {
             current.state
         )
         conversationNavigationInterval = nil
+        navigationHistoryReadyChannelID = nil
+        resumeConversationFirstFrameWaiters(for: current.channelID)
+    }
+
+    static func waitForConversationFirstFrame(channelID: ChannelID) async {
+        guard conversationNavigationInterval?.channelID == channelID else { return }
+        await withCheckedContinuation { continuation in
+            conversationFirstFrameWaiters[channelID, default: []].append(continuation)
+        }
+    }
+
+    private static func resumeConversationFirstFrameWaiters(for channelID: ChannelID) {
+        let waiters = conversationFirstFrameWaiters.removeValue(forKey: channelID) ?? []
+        for waiter in waiters {
+            waiter.resume()
+        }
     }
 
     static func beginQuickSwitcherOpen() {
@@ -289,7 +319,10 @@ enum AppPerformanceSignposts {
         _ name: StaticString,
         operation: () async throws -> T
     ) async rethrows -> T {
-        let interval = signposter.beginInterval(name)
+        let interval = signposter.beginInterval(
+            name,
+            id: signposter.makeSignpostID()
+        )
         defer { signposter.endInterval(name, interval) }
         return try await operation()
     }
@@ -298,7 +331,10 @@ enum AppPerformanceSignposts {
         _ name: StaticString,
         operation: () throws -> T
     ) rethrows -> T {
-        let interval = signposter.beginInterval(name)
+        let interval = signposter.beginInterval(
+            name,
+            id: signposter.makeSignpostID()
+        )
         defer { signposter.endInterval(name, interval) }
         return try operation()
     }

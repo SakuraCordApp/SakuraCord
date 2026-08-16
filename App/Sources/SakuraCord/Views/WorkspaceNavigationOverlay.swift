@@ -92,6 +92,11 @@ private nonisolated struct QuickSwitcherMemberQuery: Hashable, Sendable {
     let query: String
 }
 
+private nonisolated struct QuickSwitcherIndexRequest: Hashable, Sendable {
+    let revision: UInt64
+    let isVisible: Bool
+}
+
 private struct QuickSwitcherView: View {
     let model: AppModel
     let animationState: WindowModalAnimationState
@@ -205,12 +210,12 @@ private struct QuickSwitcherView: View {
                 // guild's member viewport may finish hydrating. Re-rank from
                 // the live member store instead of freezing that early,
                 // incomplete eligibility snapshot for the whole session.
-                if let searchIndex {
+                if animationState.isVisible, let searchIndex {
                     searchInput = makeSearchInput(searchIndex: searchIndex)
                     contextRevision &+= 1
                 }
             }
-            .task(id: model.forwardSearchSourceRevision) {
+            .task(id: indexRequest) {
                 if memberSearchRequest != nil {
                     ForwardDestinationSearchIndexCache.shared.invalidate(for: model)
                 }
@@ -226,7 +231,8 @@ private struct QuickSwitcherView: View {
                     userID: userID,
                     revision: revision
                 )
-                if searchIndex == nil,
+                if animationState.isVisible,
+                   searchIndex == nil,
                    let immediatelyAvailable = exact
                     ?? ForwardDestinationSearchIndexCache.shared.latestValue(
                         for: model,
@@ -239,9 +245,16 @@ private struct QuickSwitcherView: View {
                 if let exact {
                     prepared = exact
                 } else {
+                    if !animationState.isVisible {
+                        do {
+                            try await Task.sleep(for: .milliseconds(750))
+                        } catch {
+                            return
+                        }
+                    }
                     prepared = await ForwardDestinationSearchIndexCache.shared.prepare(
                         for: model,
-                        priority: animationState.isVisible ? .userInitiated : .utility
+                        priority: animationState.isVisible ? .userInitiated : .background
                     )
                 }
                 guard !Task.isCancelled else { return }
@@ -257,7 +270,7 @@ private struct QuickSwitcherView: View {
                 // ready. Discord does the same asynchronous store hydration;
                 // retaining the stale index for the whole first presentation
                 // made a clean launch rank differently until close/reopen.
-                if let prepared {
+                if animationState.isVisible, let prepared {
                     applySearchIndex(prepared)
                 }
             }
@@ -275,6 +288,13 @@ private struct QuickSwitcherView: View {
             query: query,
             indexRevision: searchIndexRevision,
             contextRevision: contextRevision
+        )
+    }
+
+    private var indexRequest: QuickSwitcherIndexRequest {
+        QuickSwitcherIndexRequest(
+            revision: model.forwardSearchSourceRevision,
+            isVisible: animationState.isVisible
         )
     }
 

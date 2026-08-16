@@ -3,6 +3,10 @@ import OSLog
 import SakuraCordModels
 
 let gatewayLogger = Logger(subsystem: "dev.sakuracord.SakuraCord", category: "Gateway")
+let discordPerformanceSignposter = OSSignposter(
+    subsystem: "dev.sakuracord.SakuraCord",
+    category: "PointsOfInterest"
+)
 
 nonisolated struct AttachmentUploadFile: Equatable, Sendable {
     let url: URL
@@ -17,6 +21,18 @@ nonisolated struct AttachmentUploadFile: Equatable, Sendable {
 }
 
 public actor DiscordRESTProvider: PendingCredentialChatProvider {
+    struct RESTRateLimitBucketKey: Hashable, Sendable {
+        let identifier: String
+        let majorParameter: String
+    }
+
+    struct RESTRateLimitBucketState: Sendable {
+        var limit: Int?
+        var remaining: Int?
+        var resetDate: Date
+        var resetInterval: TimeInterval?
+    }
+
     struct ForumReadState: Sendable {
         var lastReadMessageID: MessageID?
         var mentionCount: Int
@@ -82,7 +98,10 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var presenceStatus: PresenceStatus = .invisible
     var globalRateLimitDate: Date = .distantPast
     var routeRateLimitDates: [String: Date] = [:]
-    var nextRequestSlotDate: Date = .distantPast
+    var rateLimitBucketKeyByRoute:
+        [String: RESTRateLimitBucketKey] = [:]
+    var rateLimitBuckets:
+        [RESTRateLimitBucketKey: RESTRateLimitBucketState] = [:]
     var requestSafetyCircuitIsOpen = false
     var unexpectedNotFoundCounts: [String: Int] = [:]
     var gatewaySession: GatewaySession?
@@ -101,7 +120,15 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var initialGatewaySnapshotContinuation:
         CheckedContinuation<InitialGatewaySnapshot, any Error>?
     var pendingMemberGuildID: GuildID?
-    var cachedMembers: [GuildID: [Member]] = [:]
+    var cachedMembers: [GuildID: [Member]] = [:] {
+        didSet {
+            // Member arrays preserve Discord's store order. Keep a separate
+            // process-only lookup projection for bounded history/profile reads;
+            // any ordered-store mutation invalidates it atomically.
+            cachedMembersByID.removeAll(keepingCapacity: true)
+        }
+    }
+    var cachedMembersByID: [GuildID: [UserID: Member]] = [:]
     var cachedPrivateMembersByID: [UserID: Member] = [:]
     var cachedMemberListItems:
         [GuildID: [String: [GuildMemberListUpdateDTO.Item?]]] = [:]
@@ -510,15 +537,45 @@ extension DiscordRESTProvider {
     // swiftlint:disable:next function_body_length
     public func bootstrap() async throws -> BootstrapSnapshot {
         continuation?.yield(.connectionChanged(.connecting))
+        let authentication = discordPerformanceSignposter.beginInterval(
+            "ProviderBootstrapAuthentication",
+            id: discordPerformanceSignposter.makeSignpostID()
+        )
         _ = try await authorizationToken()
         if usesDesktopHeartbeat {
             try await ensureInstallationID()
         }
+        discordPerformanceSignposter.endInterval(
+            "ProviderBootstrapAuthentication", authentication
+        )
         presenceStatus = statusDefaultsKey.flatMap {
             UserDefaults.standard.string(forKey: $0)
         }.flatMap(PresenceStatus.init(rawValue:)) ?? .invisible
+        let gatewayStartup = discordPerformanceSignposter.beginInterval(
+            "ProviderGatewayStartup",
+            id: discordPerformanceSignposter.makeSignpostID()
+        )
         try await startGateway()
+        discordPerformanceSignposter.endInterval(
+            "ProviderGatewayStartup", gatewayStartup
+        )
+        let initialSnapshotWait = discordPerformanceSignposter.beginInterval(
+            "ProviderGatewayInitialSnapshotWait",
+            id: discordPerformanceSignposter.makeSignpostID()
+        )
         let ready = try await waitForInitialGatewaySnapshot()
+        discordPerformanceSignposter.endInterval(
+            "ProviderGatewayInitialSnapshotWait", initialSnapshotWait
+        )
+        let assembly = discordPerformanceSignposter.beginInterval(
+            "ProviderBootstrapSnapshotAssembly",
+            id: discordPerformanceSignposter.makeSignpostID()
+        )
+        defer {
+            discordPerformanceSignposter.endInterval(
+                "ProviderBootstrapSnapshotAssembly", assembly
+            )
+        }
 
         // Current Discord and Swiftcord v1 source a newly authenticated account
         // from Gateway READY. Paicord performs an additional /users/@me read,
@@ -1315,17 +1372,13 @@ extension DiscordRESTProvider {
         let requested = Array(userIDs.filter { seen.insert($0).inserted }.prefix(100))
         guard !requested.isEmpty else { return [] }
 
-        let cachedByID = Dictionary(
-            uniqueKeysWithValues: (cachedMembers[guildID] ?? []).map { ($0.id, $0) }
-        )
+        var cachedByID = cachedMemberIndex(guildID: guildID)
         let missing = requested.filter { cachedByID[$0] == nil }
         if !missing.isEmpty {
             try await requestMembersByID(missing, guildID: guildID)
+            cachedByID = cachedMemberIndex(guildID: guildID)
         }
-        let resolvedByID = Dictionary(
-            uniqueKeysWithValues: (cachedMembers[guildID] ?? []).map { ($0.id, $0) }
-        )
-        return requested.compactMap { resolvedByID[$0] }
+        return requested.compactMap { cachedByID[$0] }
     }
 
     public func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
@@ -1566,6 +1619,16 @@ extension DiscordRESTProvider {
         let payload: LossyList<MessageDTO> = try await request(
             "/channels/\(channelID)/messages", query: query
         )
+        let postprocess = discordPerformanceSignposter.beginInterval(
+            "MessageHistoryPostprocess",
+            id: discordPerformanceSignposter.makeSignpostID()
+        )
+        defer {
+            discordPerformanceSignposter.endInterval(
+                "MessageHistoryPostprocess",
+                postprocess
+            )
+        }
         cacheMessageSearchUsers(payload.elements.flatMap(\.searchIndexUsers))
         if payload.skippedCount > 0 {
             gatewayLogger.warning(
@@ -1575,7 +1638,18 @@ extension DiscordRESTProvider {
         var values = payload.elements.compactMap { try? $0.domain() }.sorted {
             $0.timestamp < $1.timestamp
         }
-        await hydrateHistoryMembers(&values, channelID: channelID)
+        let hydration = discordPerformanceSignposter.beginInterval(
+            "MessageHistoryMemberHydration",
+            id: discordPerformanceSignposter.makeSignpostID()
+        )
+        let resolvedMembers = await hydrateHistoryMembers(
+            &values,
+            channelID: channelID
+        )
+        discordPerformanceSignposter.endInterval(
+            "MessageHistoryMemberHydration",
+            hydration
+        )
         cacheForwardSearchMessageAliases(values)
         for index in values.indices {
             if let existing = cachedMessages[values[index].id] {
@@ -1607,11 +1681,16 @@ extension DiscordRESTProvider {
         return MessagePage(
             messages: values,
             hasMoreBefore: hasMoreBefore,
-            hasMoreAfter: hasMoreAfter
+            hasMoreAfter: hasMoreAfter,
+            resolvedMembers: resolvedMembers,
+            hasCompleteMemberResolution: true
         )
     }
 
-    func hydrateHistoryMembers(_ values: inout [Message], channelID: ChannelID) async {
+    func hydrateHistoryMembers(
+        _ values: inout [Message],
+        channelID: ChannelID
+    ) async -> [Member] {
         if let guildID = cachedChannels.values.lazy.flatMap(\.self).first(where: {
             $0.id == channelID
         })?.guildID {
@@ -1620,10 +1699,10 @@ extension DiscordRESTProvider {
             }
 
             let requested = requestedHistoryMemberIDs[guildID] ?? []
-            let cached = Set((cachedMembers[guildID] ?? []).map(\.id))
+            var membersByID = cachedMemberIndex(guildID: guildID)
             let missing = DiscordMessageMemberHydration.missingUserIDs(
                 in: values,
-                cached: cached,
+                cached: Set(membersByID.keys),
                 requested: requested
             )
             if !missing.isEmpty {
@@ -1641,16 +1720,32 @@ extension DiscordRESTProvider {
                 }
             }
 
-            let membersByID = Dictionary(
-                uniqueKeysWithValues: (cachedMembers[guildID] ?? []).map { ($0.id, $0) }
-            )
+            if !missing.isEmpty {
+                membersByID = cachedMemberIndex(guildID: guildID)
+            }
             for index in values.indices {
                 DiscordMessageMemberHydration.hydrate(
                     message: &values[index],
                     membersByID: membersByID
                 )
             }
+            return DiscordMessageMemberHydration.userIDs(in: values).compactMap {
+                membersByID[$0]
+            }
         }
+        return []
+    }
+
+    func cachedMemberIndex(guildID: GuildID) -> [UserID: Member] {
+        if let cached = cachedMembersByID[guildID] {
+            return cached
+        }
+        let indexed = Dictionary(
+            (cachedMembers[guildID] ?? []).map { ($0.id, $0) },
+            uniquingKeysWith: { _, newer in newer }
+        )
+        cachedMembersByID[guildID] = indexed
+        return indexed
     }
 
 }

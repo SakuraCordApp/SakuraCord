@@ -12,6 +12,10 @@ import SakuraCordPersistence
 import UniformTypeIdentifiers
 import UserNotifications
 
+// Account lifecycle and its DEBUG-only authenticated benchmark drivers share
+// one cancellation domain and account-generation contract.
+// swiftlint:disable file_length
+
 nonisolated enum RestoredCredentialSelectionPolicy {
     static func handle(
         from handles: [CredentialHandle],
@@ -100,7 +104,11 @@ extension AppModel {
             // without necessarily authorizing access to its secret. Preparing
             // the provider retains that value for bootstrap, avoiding a second
             // Keychain prompt after a one-time authorization.
-            try await nextProvider.prepareAuthentication()
+            try await AppPerformanceSignposts.measure(
+                "AccountAuthenticationPreparation"
+            ) {
+                try await nextProvider.prepareAuthentication()
+            }
         } catch {
             errorMessage = error.localizedDescription
             accountTransitionIsActive = false
@@ -214,6 +222,8 @@ extension AppModel {
     }
 
     func resetAccountPresentationState() {
+        bootstrapHistoryPrefetch?.task.cancel()
+        bootstrapHistoryPrefetch = nil
         workspaceNavigationOverlay = nil
         lastOpenedChannelIDsByGuild = [:]
         forwardingMessage = nil
@@ -344,6 +354,8 @@ extension AppModel {
     }
 
     private func installSignedOutAccountState() {
+        bootstrapHistoryPrefetch?.task.cancel()
+        bootstrapHistoryPrefetch = nil
         credentialHandle = nil
         activeAccountID = nil
         resetAcknowledgementWork()
@@ -604,67 +616,149 @@ extension AppModel {
         return true
     }
 
+    // swiftlint:disable:next function_body_length
     func applyBootstrap(
         _ value: BootstrapSnapshot,
         publishesSessionState: Bool,
         account: AppModelAccountSession? = nil
     ) async {
         if let account, !isCurrentAccountSession(account) { return }
-        snapshot = value
-        configureForwardDestinationHistoryScope(
-            credentialHandle?.accountID
-                ?? (launchMode == .offlineTesting ? "offline" : "signed-out")
-        )
-        if let handle = credentialHandle,
-           handle.accountID == value.currentUser.id.description
+        AppPerformanceSignposts.measureSync("BootstrapSnapshotPublish") {
+            snapshot = value
+            configureForwardDestinationHistoryScope(
+                credentialHandle?.accountID
+                    ?? (launchMode == .offlineTesting ? "offline" : "signed-out")
+            )
+        }
+        let bootstrapAccount: SavedAccount? = if let handle = credentialHandle,
+            handle.accountID == value.currentUser.id.description
         {
-            let account = SavedAccount(user: value.currentUser)
-            await savedAccountStore.record(account)
-            savedAccounts.removeAll { $0.accountID == account.accountID }
-            savedAccounts.insert(account, at: 0)
-            activeAccountID = account.accountID
+            SavedAccount(user: value.currentUser)
+        } else {
+            nil
         }
-        reconcilePrivateCallSounds()
-        readState.configure(
-            accountID: credentialHandle?.accountID ?? (launchMode == .offlineTesting ? "offline" : nil),
-            guilds: value.guilds,
-            channels: value.channels,
-            readStates: value.readStates,
-            notificationSettings: value.notificationSettings,
-            usesNewNotifications: value.usesNewNotifications
+        async let accountPersistence: Void = persistBootstrapAccount(
+            bootstrapAccount
         )
-        for thread in value.threads {
-            readState.merge(thread: thread)
+        let readStateAccountID = credentialHandle?.accountID
+            ?? (launchMode == .offlineTesting ? "offline" : nil)
+        let initialReadState = await AppPerformanceSignposts.measure(
+            "BootstrapReadStateBuild"
+        ) {
+            await Task.detached(priority: .userInitiated) {
+                AccountReadStateModel.makeInitialState(
+                    accountID: readStateAccountID,
+                    guilds: value.guilds,
+                    channels: value.channels,
+                    threads: value.threads,
+                    readStates: value.readStates,
+                    notificationSettings: value.notificationSettings,
+                    usesNewNotifications: value.usesNewNotifications,
+                    currentUserID: value.currentUser.id
+                )
+            }.value
         }
-        readState.setCurrentUserID(value.currentUser.id)
-        logBootstrapUnreadState(value)
-        applyBootstrapCurrentUserRoles(value)
-        updateServerRail(from: value)
-        refreshUnreadPresentation(appliesAccessImmediately: true)
-        if credentialHandle != nil {
-            isAuthenticated = true
+        AppPerformanceSignposts.measureSync("BootstrapReadStatePublication") {
+            reconcilePrivateCallSounds()
+            readState.applyInitialState(initialReadState)
         }
-        members = value.members
-        let status = await (account?.provider ?? provider).currentStatus()
-        if let account, !isCurrentAccountSession(account) { return }
-        currentStatus = status
         let retainedChannel = selectedChannelID.flatMap { selectedChannelID in
             value.channels.first { $0.id == selectedChannelID }
         }
-        await activateGuild(
-            retainedChannel?.guildID ?? value.guilds.first?.id,
-            account: account
-        )
+        AppPerformanceSignposts.measureSync("BootstrapNavigationProjection") {
+            logBootstrapUnreadState(value)
+            applyBootstrapCurrentUserRoles(value)
+            updateServerRail(from: value)
+            let initialGuildID = retainedChannel?.guildID ?? value.guilds.first?.id
+            let initialChannels = value.channels.filter { channel in
+                initialGuildID == nil
+                    ? channel.guildID == nil
+                    : channel.guildID == initialGuildID
+            }
+            let selectableInitialChannels = initialChannels.filter {
+                conversationAccess(for: $0) != .hidden
+            }
+            let rememberedInitialChannel = initialGuildID
+                .flatMap { lastOpenedChannelIDsByGuild[$0] }
+                .flatMap { rememberedID in
+                    selectableInitialChannels.first { $0.id == rememberedID }
+                }
+            let initialChannel = retainedChannel
+                ?? rememberedInitialChannel
+                ?? Self.preferredInitialChannelID(in: selectableInitialChannels)
+                    .flatMap { preferredID in
+                        selectableInitialChannels.first { $0.id == preferredID }
+                    }
+            if let initialChannel,
+               initialChannel.kind != .forum,
+               initialChannel.kind != .voice,
+               conversationAccess(for: initialChannel).isReadable,
+               let account
+            {
+                beginBootstrapHistoryPrefetch(
+                    channelID: initialChannel.id,
+                    account: account
+                )
+            }
+            refreshUnreadPresentation(appliesAccessImmediately: true)
+            if credentialHandle != nil {
+                isAuthenticated = true
+            }
+        }
+        AppPerformanceSignposts.measureSync("BootstrapMemberCacheSeed") {
+            if let firstGuildID = value.guilds.first?.id {
+                let indexed = Dictionary(
+                    value.members.map { ($0.id, $0) },
+                    uniquingKeysWith: { _, newer in newer }
+                )
+                membersByGuildID[firstGuildID] = indexed
+                memberListsByGuildID[firstGuildID] = value.members
+            }
+        }
+        if let bootstrapStatus = value.members.first(where: {
+            $0.id == value.currentUser.id
+        })?.status {
+            AppPerformanceSignposts.measureSync("BootstrapPresenceRestore") {
+                currentStatus = bootstrapStatus
+            }
+        } else {
+            let statusProvider = account?.provider ?? provider
+            currentStatus = await AppPerformanceSignposts.measure(
+                "BootstrapPresenceRestore"
+            ) {
+                await statusProvider.currentStatus()
+            }
+        }
+        if let account, !isCurrentAccountSession(account) { return }
+        await AppPerformanceSignposts.measure("BootstrapInitialGuildActivation") {
+            await activateGuild(
+                retainedChannel?.guildID ?? value.guilds.first?.id,
+                account: account
+            )
+        }
         if let account, !isCurrentAccountSession(account) { return }
         if let retainedChannel,
            selectedChannelID != retainedChannel.id
         {
             selectedChannelID = retainedChannel.id
         }
+        await accountPersistence
         if publishesSessionState {
             sessionState = .workspace
         }
-        await channelLoadTask?.value
+        await AppPerformanceSignposts.measure("BootstrapInitialConversation") {
+            await channelLoadTask?.value
+        }
+    }
+
+    func persistBootstrapAccount(_ account: SavedAccount?) async {
+        guard let account else { return }
+        await AppPerformanceSignposts.measure("BootstrapAccountPersistence") {
+            await savedAccountStore.record(account)
+            savedAccounts.removeAll { $0.accountID == account.accountID }
+            savedAccounts.insert(account, at: 0)
+            activeAccountID = account.accountID
+        }
     }
 
     func logBootstrapUnreadState(_ value: BootstrapSnapshot) {
@@ -760,11 +854,15 @@ extension AppModel {
     }
 
     func rebuildMemberSections() {
-        memberSections = MemberSection.make(
-            from: members,
-            groups: memberListGroups,
-            roles: guildRoles
-        )
+        memberSections = AppPerformanceSignposts.measureSync(
+            "MemberSectionBuild"
+        ) {
+            MemberSection.make(
+                from: members,
+                groups: memberListGroups,
+                roles: guildRoles
+            )
+        }
     }
 
     func updateMemberListViewport(_ visibleRange: ClosedRange<Int>) {
@@ -1430,21 +1528,29 @@ extension AppModel {
                 }
             }
             do {
-                let value = try await requestProvider.members(in: guildID)
+                let value = try await AppPerformanceSignposts.measure(
+                    "MemberListInitialRequest"
+                ) {
+                    try await requestProvider.members(in: guildID)
+                }
                 guard !Task.isCancelled,
                       isCurrentAccountSession(session),
                       memberLoadGeneration == requestGeneration,
                       selectedGuildID == guildID
                 else { return }
-                if let guildID {
-                    memberListsByGuildID[guildID] = value
+                AppPerformanceSignposts.measureSync(
+                    "MemberListInitialPublication"
+                ) {
+                    if let guildID {
+                        memberListsByGuildID[guildID] = value
+                    }
+                    members = value
+                    // Keep the pre-subscription GuildMemberStore snapshot for
+                    // composer search. Full member-list subscriptions feed the
+                    // inspector, but Discord does not use their visual list order
+                    // as autocomplete's candidate store.
+                    mentionAutocompleteMembers = value
                 }
-                members = value
-                // Keep the pre-subscription GuildMemberStore snapshot for
-                // composer search. Full member-list subscriptions feed the
-                // inspector, but Discord does not use their visual list order
-                // as autocomplete's candidate store.
-                mentionAutocompleteMembers = value
                 if let guildID {
                     await replayMemberListViewportIfNeeded(
                         for: guildID,
@@ -1452,7 +1558,12 @@ extension AppModel {
                     )
                 }
                 if let guildID {
-                    if let roles = try? await requestProvider.roles(in: guildID),
+                    let roles = try? await AppPerformanceSignposts.measure(
+                        "MemberListRoleRequest"
+                    ) {
+                        try await requestProvider.roles(in: guildID)
+                    }
+                    if let roles,
                        !Task.isCancelled,
                        isCurrentAccountSession(session),
                        memberLoadGeneration == requestGeneration,
@@ -1972,3 +2083,407 @@ extension AppModel {
         forumActionError = nil
     }
 }
+
+#if DEBUG
+    private enum AuthenticatedNavigationBenchmarkKind {
+        case directMessage
+        case server
+        case channel
+
+        var intervalName: StaticString {
+            switch self {
+            case .directMessage: "AuthenticatedDirectMessageOpen"
+            case .server: "AuthenticatedServerOpen"
+            case .channel: "AuthenticatedChannelOpen"
+            }
+        }
+    }
+
+    extension AppModel {
+        func prepareAuthenticatedTimelineScrollPerformanceBenchmark() async {
+            guard runsChatPerformanceBenchmark,
+                  sessionState == .workspace
+            else { return }
+            await channelLoadTask?.value
+            if await prepareSelectedTimelineScrollHistory() { return }
+            guard let snapshot else { return }
+            let originalChannelID = selectedChannelID
+            let candidates = benchmarkEligibleChannels(snapshot.channels)
+                .filter { $0.id != originalChannelID }
+                .sorted {
+                    ($0.lastMessageID?.rawValue ?? 0)
+                        > ($1.lastMessageID?.rawValue ?? 0)
+                }
+            for channel in candidates.prefix(12) {
+                guard !Task.isCancelled else { return }
+                let kind: AuthenticatedNavigationBenchmarkKind =
+                    channel.guildID != selectedGuildID ? .server : .channel
+                guard await runAuthenticatedNavigationBenchmarkOperation(
+                    channel: channel,
+                    kind: kind
+                ) else { continue }
+                if await prepareSelectedTimelineScrollHistory() { return }
+            }
+        }
+
+        private func prepareSelectedTimelineScrollHistory() async -> Bool {
+            let channelID = selectedChannelID
+            var pageCount = 0
+            while !Task.isCancelled,
+                  selectedChannelID == channelID,
+                  messages.count < 100,
+                  hasMoreMessages,
+                  pageCount < 5
+            {
+                let previousCount = messages.count
+                await loadEarlier()
+                pageCount += 1
+                guard messages.count > previousCount else { break }
+            }
+            return messages.count >= 100
+        }
+
+        func runAuthenticatedHistoryPaginationPerformanceBenchmark() async {
+            guard runsChatPerformanceBenchmark, sessionState == .workspace else { return }
+            await channelLoadTask?.value
+            if !hasMoreMessages, let snapshot {
+                let candidates = benchmarkEligibleChannels(snapshot.channels)
+                for channel in candidates where !hasMoreMessages {
+                    guard !Task.isCancelled else { return }
+                    _ = await runAuthenticatedNavigationBenchmarkOperation(
+                        channel: channel,
+                        kind: channel.guildID == nil ? .directMessage : .channel
+                    )
+                }
+            }
+            guard !Task.isCancelled, hasMoreMessages, selectedChannelID != nil else {
+                writeAuthenticatedHistoryPaginationBenchmarkResult(
+                    outcome: "unavailable",
+                    pageCount: 0
+                )
+                return
+            }
+
+            let overall = AppPerformanceSignposts.signposter.beginInterval(
+                "AuthenticatedHistoryPaginationBenchmark"
+            )
+            AppPerformanceSignposts.beginResourceWindow(
+                named: "AuthenticatedHistoryPaginationBenchmark"
+            )
+            var pageCount = 0
+            while pageCount < 5, hasMoreMessages, !Task.isCancelled {
+                let messageCount = messages.count
+                await loadEarlier()
+                if messages.count > messageCount {
+                    pageCount += 1
+                } else {
+                    break
+                }
+                await Task.yield()
+            }
+            AppPerformanceSignposts.signposter.endInterval(
+                "AuthenticatedHistoryPaginationBenchmark",
+                overall
+            )
+            AppPerformanceSignposts.endResourceWindow(
+                named: "AuthenticatedHistoryPaginationBenchmark"
+            )
+            AppPerformanceSignposts.signposter.emitEvent(
+                "AuthenticatedHistoryPaginationBenchmarkCompleted"
+            )
+            writeAuthenticatedHistoryPaginationBenchmarkResult(
+                outcome: pageCount > 0 ? "completed" : "failed",
+                pageCount: pageCount
+            )
+        }
+
+        private func writeAuthenticatedHistoryPaginationBenchmarkResult(
+            outcome: String,
+            pageCount: Int
+        ) {
+            guard let path = ProcessInfo.processInfo.environment[
+                "SAKURACORD_PERFORMANCE_RESULT_PATH"
+            ] else { return }
+            let contents = """
+            outcome\t\(outcome)
+            page_count\t\(pageCount)
+
+            """
+            try? contents.write(
+                to: URL(fileURLWithPath: path),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
+
+        func runAuthenticatedAccountSwitchPerformanceBenchmark() async {
+            guard runsChatPerformanceBenchmark, sessionState == .workspace else { return }
+            let originalPreferredAccountID = await savedAccountStore.preferredAccountID()
+            let handles: [CredentialHandle]
+            do {
+                handles = try await credentialStore.handles()
+            } catch {
+                writeAuthenticatedAccountSwitchBenchmarkResult(
+                    outcome: "credential-error",
+                    switchCount: 0
+                )
+                return
+            }
+            guard let target = handles
+                .filter({ $0.accountID != activeAccountID })
+                .sorted(by: { $0.accountID < $1.accountID })
+                .first
+            else {
+                writeAuthenticatedAccountSwitchBenchmarkResult(
+                    outcome: "unavailable",
+                    switchCount: 0
+                )
+                return
+            }
+
+            await channelLoadTask?.value
+            if let selectedChannelID {
+                await AppPerformanceSignposts.waitForConversationFirstFrame(
+                    channelID: selectedChannelID
+                )
+            }
+            guard !Task.isCancelled else { return }
+
+            let overall = AppPerformanceSignposts.signposter.beginInterval(
+                "AuthenticatedAccountSwitchBenchmark"
+            )
+            AppPerformanceSignposts.beginResourceWindow(
+                named: "AuthenticatedAccountSwitchBenchmark"
+            )
+            let switched = await switchAccount(to: target.accountID)
+            var reachedFirstFrame = false
+            if switched, let selectedChannelID {
+                async let firstFrame: Void =
+                    AppPerformanceSignposts.waitForConversationFirstFrame(
+                        channelID: selectedChannelID
+                    )
+                await channelLoadTask?.value
+                await firstFrame
+                reachedFirstFrame = hasCompletedInitialMessageLoad
+                    && self.selectedChannelID == selectedChannelID
+            }
+            AppPerformanceSignposts.signposter.endInterval(
+                "AuthenticatedAccountSwitchBenchmark",
+                overall
+            )
+            AppPerformanceSignposts.endResourceWindow(
+                named: "AuthenticatedAccountSwitchBenchmark"
+            )
+            AppPerformanceSignposts.signposter.emitEvent(
+                "AuthenticatedAccountSwitchBenchmarkCompleted"
+            )
+
+            await savedAccountStore.setPreferredAccountID(
+                originalPreferredAccountID
+            )
+            writeAuthenticatedAccountSwitchBenchmarkResult(
+                outcome: switched && reachedFirstFrame ? "completed" : "failed",
+                switchCount: switched && reachedFirstFrame ? 1 : 0
+            )
+        }
+
+        private func writeAuthenticatedAccountSwitchBenchmarkResult(
+            outcome: String,
+            switchCount: Int
+        ) {
+            guard let path = ProcessInfo.processInfo.environment[
+                "SAKURACORD_PERFORMANCE_RESULT_PATH"
+            ] else { return }
+            let contents = """
+            outcome\t\(outcome)
+            switch_count\t\(switchCount)
+
+            """
+            try? contents.write(
+                to: URL(fileURLWithPath: path),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
+
+        // swiftlint:disable:next cyclomatic_complexity function_body_length
+        func runAuthenticatedNavigationPerformanceBenchmark() async {
+            guard runsChatPerformanceBenchmark, sessionState == .workspace else { return }
+            await channelLoadTask?.value
+            if let selectedChannelID {
+                await AppPerformanceSignposts.waitForConversationFirstFrame(
+                    channelID: selectedChannelID
+                )
+            }
+            guard !Task.isCancelled, let snapshot else {
+                writeAuthenticatedNavigationBenchmarkResult(
+                    outcome: "unavailable",
+                    directMessageCount: 0,
+                    serverCount: 0,
+                    channelCount: 0
+                )
+                return
+            }
+
+            let overall = AppPerformanceSignposts.signposter.beginInterval(
+                "AuthenticatedNavigationBenchmark"
+            )
+            AppPerformanceSignposts.beginResourceWindow(
+                named: "AuthenticatedNavigationBenchmark"
+            )
+            var directMessageCount = 0
+            var serverCount = 0
+            var channelCount = 0
+            defer {
+                AppPerformanceSignposts.signposter.endInterval(
+                    "AuthenticatedNavigationBenchmark",
+                    overall
+                )
+                AppPerformanceSignposts.endResourceWindow(
+                    named: "AuthenticatedNavigationBenchmark"
+                )
+                AppPerformanceSignposts.signposter.emitEvent(
+                    "AuthenticatedNavigationBenchmarkCompleted"
+                )
+                writeAuthenticatedNavigationBenchmarkResult(
+                    outcome: Task.isCancelled ? "cancelled" : "completed",
+                    directMessageCount: directMessageCount,
+                    serverCount: serverCount,
+                    channelCount: channelCount
+                )
+            }
+
+            let initialChannelID = selectedChannelID
+            var visitedChannelIDs: Set<ChannelID> = initialChannelID.map { [$0] } ?? []
+            let unorderedPrivateChannels = benchmarkEligibleChannels(
+                snapshot.channels.filter { $0.guildID == nil }
+            )
+            let preferredPrivateChannelID = Self.preferredInitialChannelID(
+                in: unorderedPrivateChannels
+            )
+            let privateChannels = unorderedPrivateChannels.sorted { lhs, rhs in
+                lhs.id == preferredPrivateChannelID && rhs.id != preferredPrivateChannelID
+            }
+            for channel in privateChannels where directMessageCount < 2 {
+                guard !Task.isCancelled else { return }
+                guard visitedChannelIDs.insert(channel.id).inserted else { continue }
+                if await runAuthenticatedNavigationBenchmarkOperation(
+                    channel: channel,
+                    kind: .directMessage
+                ) {
+                    directMessageCount += 1
+                }
+            }
+
+            let initialGuildID = selectedGuildID
+            let orderedGuildIDs = serverRailItems.flatMap { item -> [GuildID] in
+                switch item {
+                case .guild(let guildID): [guildID]
+                case .folder(let folder): folder.guildIDs
+                }
+            }
+            var visitedGuildIDs: Set<GuildID> = []
+            for guildID in orderedGuildIDs where serverCount < 3 {
+                guard !Task.isCancelled else { return }
+                guard guildID != initialGuildID,
+                      visitedGuildIDs.insert(guildID).inserted
+                else { continue }
+                let candidates = benchmarkEligibleChannels(
+                    snapshot.channels.filter { $0.guildID == guildID }
+                )
+                guard let serverChannel = candidates.first(where: {
+                    !visitedChannelIDs.contains($0.id)
+                }) else { continue }
+                visitedChannelIDs.insert(serverChannel.id)
+                if await runAuthenticatedNavigationBenchmarkOperation(
+                    channel: serverChannel,
+                    kind: .server
+                ) {
+                    serverCount += 1
+                }
+                guard !Task.isCancelled,
+                      let secondChannel = candidates.first(where: {
+                          !visitedChannelIDs.contains($0.id)
+                      })
+                else { continue }
+                visitedChannelIDs.insert(secondChannel.id)
+                if await runAuthenticatedNavigationBenchmarkOperation(
+                    channel: secondChannel,
+                    kind: .channel
+                ) {
+                    channelCount += 1
+                }
+            }
+        }
+
+        private func benchmarkEligibleChannels(_ channels: [Channel]) -> [Channel] {
+            channels.filter { channel in
+                guard conversationAccess(for: channel).isReadable else { return false }
+                return switch channel.kind {
+                case .text, .announcement, .directMessage, .groupDirectMessage:
+                    true
+                default:
+                    false
+                }
+            }
+        }
+
+        private func runAuthenticatedNavigationBenchmarkOperation(
+            channel: Channel,
+            kind: AuthenticatedNavigationBenchmarkKind
+        ) async -> Bool {
+            let interval = AppPerformanceSignposts.signposter.beginInterval(
+                kind.intervalName
+            )
+            defer {
+                AppPerformanceSignposts.signposter.endInterval(
+                    kind.intervalName,
+                    interval
+                )
+            }
+            if selectedGuildID != channel.guildID {
+                if let guildID = channel.guildID {
+                    lastOpenedChannelIDsByGuild[guildID] = channel.id
+                }
+                await activateGuild(channel.guildID)
+            }
+            guard !Task.isCancelled else { return false }
+            if selectedChannelID != channel.id {
+                selectedChannelID = channel.id
+            }
+            guard selectedChannelID == channel.id else { return false }
+            async let firstFrame: Void =
+                AppPerformanceSignposts.waitForConversationFirstFrame(
+                    channelID: channel.id
+                )
+            await channelLoadTask?.value
+            await firstFrame
+            return !Task.isCancelled
+                && selectedChannelID == channel.id
+                && hasCompletedInitialMessageLoad
+        }
+
+        private func writeAuthenticatedNavigationBenchmarkResult(
+            outcome: String,
+            directMessageCount: Int,
+            serverCount: Int,
+            channelCount: Int
+        ) {
+            guard let path = ProcessInfo.processInfo.environment[
+                "SAKURACORD_PERFORMANCE_RESULT_PATH"
+            ] else { return }
+            let contents = """
+            outcome\t\(outcome)
+            direct_message_count\t\(directMessageCount)
+            server_count\t\(serverCount)
+            channel_count\t\(channelCount)
+
+            """
+            try? contents.write(
+                to: URL(fileURLWithPath: path),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
+    }
+#endif

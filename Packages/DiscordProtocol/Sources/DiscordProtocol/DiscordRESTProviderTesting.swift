@@ -50,10 +50,7 @@ import SakuraCordModels
         }
 
         func receiveGatewayDispatchForTesting(name: String, data: JSONValue) async {
-            guard let encoded = try? JSONEncoder().encode(data),
-                  let body = try? JSONSerialization.jsonObject(with: encoded)
-            else { return }
-            await handleGatewayDispatch(name: name, body: body)
+            await handleGatewayDispatch(name: name, body: data)
         }
 
         func cachedChannelForTesting(channelID: ChannelID) -> Channel? {

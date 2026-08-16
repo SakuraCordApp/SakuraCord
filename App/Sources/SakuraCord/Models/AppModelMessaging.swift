@@ -380,6 +380,7 @@ extension AppModel {
             await SharedAnimatedImageDecodeScheduler.shared
                 .setInteractiveScrolling(
                     isScrollingNow,
+                    source: .timeline,
                     revision: revision
                 )
         }
@@ -407,6 +408,7 @@ extension AppModel {
             await SharedAnimatedImageDecodeScheduler.shared
                 .setInteractiveScrolling(
                     false,
+                    source: .timeline,
                     revision: revision
                 )
         }
@@ -1958,6 +1960,9 @@ extension AppModel {
 
     func reportConversationHistoryLoaded(channelID: ChannelID) {
         guard channelID == selectedChannelID || channelID == openThread?.id else { return }
+        AppPerformanceSignposts.reportConversationHistoryReady(
+            channelID: channelID
+        )
         AppPerformanceSignposts.reportStartupConversationHistoryReady(
             channelID: channelID
         )

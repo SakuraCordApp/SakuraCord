@@ -4,7 +4,25 @@ import SakuraCordModels
 
 @MainActor
 @Observable
+// The model centralizes read-state invariants so one atomic initial-state
+// publication and incremental Gateway updates cannot diverge.
+// swiftlint:disable:next type_body_length
 final class AccountReadStateModel {
+    nonisolated struct InitialState: Sendable {
+        var accountID: String?
+        var entries: [ChannelID: Entry]
+        var settingsByGuild: [GuildID?: GuildNotificationSettings]
+        var overridesByGuildAndChannelID: [GuildID?: [ChannelID: ChannelNotificationOverride]]
+        var remoteReadStateOrder: [ChannelID]
+        var remoteReadStateOrderIDs: Set<ChannelID>
+        var channelByID: [ChannelID: Channel]
+        var defaultNotificationLevelByGuild: [GuildID: MessageNotificationLevel]
+        var forumPostArchivedByID: [ChannelID: Bool]
+        var readStateVersion: Int?
+        var usesNewNotifications: Bool
+        var currentUserID: UserID?
+    }
+
     struct UnreadPresentationProjection: Equatable, Sendable {
         var unreadByChannelID: [ChannelID: Bool]
         var mentionsByChannelID: [ChannelID: Int]
@@ -28,7 +46,7 @@ final class AccountReadStateModel {
         var mentionedChannelIDs: [ChannelID]
     }
 
-    struct Entry: Equatable, Sendable {
+    nonisolated struct Entry: Equatable, Sendable {
         var channelID: ChannelID
         var guildID: GuildID?
         var parentID: ChannelID?
@@ -100,6 +118,8 @@ final class AccountReadStateModel {
     private(set) var accountID: String?
     private(set) var entries: [ChannelID: Entry] = [:]
     private(set) var settingsByGuild: [GuildID?: GuildNotificationSettings] = [:]
+    private var overridesByGuildAndChannelID:
+        [GuildID?: [ChannelID: ChannelNotificationOverride]] = [:]
     private(set) var presentations: [ChannelID: Presentation] = [:]
     private(set) var acknowledgementToken: String?
     private(set) var readStateVersion: Int?
@@ -117,6 +137,7 @@ final class AccountReadStateModel {
         self.accountID = accountID
         entries.removeAll()
         settingsByGuild.removeAll()
+        overridesByGuildAndChannelID.removeAll()
         presentations.removeAll()
         acknowledgementToken = nil
         readStateVersion = nil
@@ -154,6 +175,233 @@ final class AccountReadStateModel {
         for settings in notificationSettings {
             apply(settings)
         }
+    }
+
+    // swiftlint:disable:next cyclomatic_complexity function_body_length function_parameter_count
+    nonisolated static func makeInitialState(
+        accountID: String?,
+        guilds: [Guild],
+        channels: [Channel],
+        threads: [MessageThreadSummary],
+        readStates: [ChannelReadState],
+        notificationSettings: [GuildNotificationSettings],
+        usesNewNotifications: Bool,
+        currentUserID: UserID
+    ) -> InitialState {
+        var channelByID: [ChannelID: Channel] = [:]
+        channelByID.reserveCapacity(channels.count)
+        var entries: [ChannelID: Entry] = [:]
+        entries.reserveCapacity(channels.count + threads.count)
+        var defaultNotificationLevelByGuild: [GuildID: MessageNotificationLevel] = [:]
+        defaultNotificationLevelByGuild.reserveCapacity(guilds.count)
+        for guild in guilds {
+            defaultNotificationLevelByGuild[guild.id] = guild.defaultMessageNotifications
+        }
+
+        func baseEntry(for channelID: ChannelID) -> Entry {
+            let channel = channelByID[channelID]
+            return Entry(
+                channelID: channelID,
+                guildID: channel?.guildID,
+                parentID: channel?.categoryID,
+                kind: channel?.kind ?? .unknown,
+                latestKnownMessageID: channel?.lastMessageID,
+                latestUnreadMessageID: channel?.lastMessageID,
+                lastAcknowledgedMessageID: nil,
+                mentionCount: 0,
+                unreadMessageCount: 0,
+                pendingAcknowledgementID: nil,
+                flags: nil,
+                lastViewed: nil,
+                threadNotificationSettings: nil,
+                isAccessible: true,
+                hasAuthoritativeReadState: false
+            )
+        }
+
+        for channel in channels {
+            channelByID[channel.id] = channel
+            var entry = entries[channel.id] ?? Entry(
+                channelID: channel.id,
+                guildID: channel.guildID,
+                parentID: channel.categoryID,
+                kind: channel.kind,
+                latestKnownMessageID: nil,
+                latestUnreadMessageID: nil,
+                lastAcknowledgedMessageID: nil,
+                mentionCount: 0,
+                unreadMessageCount: 0,
+                pendingAcknowledgementID: nil,
+                flags: nil,
+                lastViewed: nil,
+                threadNotificationSettings: nil,
+                isAccessible: true,
+                hasAuthoritativeReadState: false
+            )
+            entry.guildID = channel.guildID
+            entry.parentID = channel.categoryID
+            entry.kind = channel.kind
+            entry.latestKnownMessageID = maximum(
+                entry.latestKnownMessageID,
+                channel.lastMessageID
+            )
+            entries[channel.id] = entry
+        }
+
+        var remoteReadStateOrder: [ChannelID] = []
+        remoteReadStateOrder.reserveCapacity(readStates.count)
+        var remoteReadStateOrderIDs: Set<ChannelID> = []
+        remoteReadStateOrderIDs.reserveCapacity(readStates.count)
+        var readStateVersion: Int?
+        for state in readStates {
+            if let version = state.version,
+               let readStateVersion,
+               version < readStateVersion
+            {
+                continue
+            }
+            if remoteReadStateOrderIDs.insert(state.channelID).inserted {
+                remoteReadStateOrder.append(state.channelID)
+            }
+            var entry = entries[state.channelID] ?? baseEntry(for: state.channelID)
+            if let existing = entry.lastAcknowledgedMessageID,
+               let incoming = state.lastAcknowledgedMessageID,
+               incoming < existing,
+               !state.isManual
+            {
+                if let version = state.version {
+                    readStateVersion = max(readStateVersion ?? version, version)
+                }
+                continue
+            }
+            entry.lastAcknowledgedMessageID = state.isManual
+                ? state.lastAcknowledgedMessageID
+                : maximum(
+                    entry.lastAcknowledgedMessageID,
+                    state.lastAcknowledgedMessageID
+                )
+            entry.mentionCount = max(0, state.mentionCount)
+            entry.flags = state.flags ?? entry.flags
+            entry.lastViewed = state.lastViewed ?? entry.lastViewed
+            entry.hasAuthoritativeReadState = true
+            entry.latestUnreadMessageID = maximum(
+                entry.latestUnreadMessageID,
+                entry.latestKnownMessageID
+            )
+            entry.unreadMessageCount = entry.isUnread ? 1 : 0
+            entries[state.channelID] = entry
+            if let version = state.version {
+                readStateVersion = max(readStateVersion ?? version, version)
+            }
+        }
+
+        let authoritativeReadStateIDs = Set(readStates.map(\.channelID))
+        for channelID in Set(channels.map(\.id)).subtracting(authoritativeReadStateIDs) {
+            guard var entry = entries[channelID],
+                  let latestKnownMessageID = entry.latestKnownMessageID
+            else { continue }
+            entry.lastAcknowledgedMessageID = latestKnownMessageID
+            entry.mentionCount = 0
+            entry.unreadMessageCount = 0
+            entries[channelID] = entry
+        }
+
+        var forumPostArchivedByID: [ChannelID: Bool] = [:]
+        forumPostArchivedByID.reserveCapacity(threads.count)
+        for thread in threads {
+            var entry = entries[thread.id] ?? baseEntry(for: thread.id)
+            entry.guildID = thread.guildID
+            entry.parentID = thread.parentID
+            entry.kind = .text
+            if let settings = thread.notificationSettings {
+                entry.threadNotificationSettings = settings
+            }
+            entry.latestKnownMessageID = maximum(
+                entry.latestKnownMessageID,
+                thread.lastMessageID
+            )
+            if entry.hasAuthoritativeReadState {
+                entry.latestUnreadMessageID = maximum(
+                    entry.latestUnreadMessageID,
+                    thread.lastMessageID
+                )
+                entry.unreadMessageCount = entry.isUnread
+                    ? max(1, entry.unreadMessageCount)
+                    : 0
+            }
+            if let parentID = thread.parentID, let parent = entries[parentID] {
+                entry.isAccessible = parent.isAccessible
+            }
+            entries[thread.id] = entry
+            forumPostArchivedByID[thread.id] = thread.isArchived
+            if let parentID = thread.parentID,
+               var parent = entries[parentID],
+               parent.kind == .forum
+            {
+                let threadMessageID = MessageID(rawValue: thread.id.rawValue)
+                parent.latestKnownMessageID = maximum(
+                    parent.latestKnownMessageID,
+                    threadMessageID
+                )
+                if parent.hasAuthoritativeReadState {
+                    parent.latestUnreadMessageID = maximum(
+                        parent.latestUnreadMessageID,
+                        threadMessageID
+                    )
+                    parent.unreadMessageCount = parent.isUnread
+                        ? max(1, parent.unreadMessageCount)
+                        : 0
+                }
+                entries[parentID] = parent
+            }
+        }
+
+        var settingsByGuild: [GuildID?: GuildNotificationSettings] = [:]
+        var overridesByGuildAndChannelID:
+            [GuildID?: [ChannelID: ChannelNotificationOverride]] = [:]
+        for settings in notificationSettings {
+            settingsByGuild[settings.guildID] = settings
+            var overrides: [ChannelID: ChannelNotificationOverride] = [:]
+            overrides.reserveCapacity(settings.channelOverrides.count)
+            for override in settings.channelOverrides {
+                overrides[override.channelID] = override
+            }
+            overridesByGuildAndChannelID[settings.guildID] = overrides
+        }
+        return InitialState(
+            accountID: accountID,
+            entries: entries,
+            settingsByGuild: settingsByGuild,
+            overridesByGuildAndChannelID: overridesByGuildAndChannelID,
+            remoteReadStateOrder: remoteReadStateOrder,
+            remoteReadStateOrderIDs: remoteReadStateOrderIDs,
+            channelByID: channelByID,
+            defaultNotificationLevelByGuild: defaultNotificationLevelByGuild,
+            forumPostArchivedByID: forumPostArchivedByID,
+            readStateVersion: readStateVersion,
+            usesNewNotifications: usesNewNotifications,
+            currentUserID: currentUserID
+        )
+    }
+
+    func applyInitialState(_ state: InitialState) {
+        accountID = state.accountID
+        entries = state.entries
+        settingsByGuild = state.settingsByGuild
+        overridesByGuildAndChannelID = state.overridesByGuildAndChannelID
+        presentations = [:]
+        acknowledgementToken = nil
+        readStateVersion = state.readStateVersion
+        remoteReadStateOrder = state.remoteReadStateOrder
+        remoteReadStateOrderIDs = state.remoteReadStateOrderIDs
+        channelByID = state.channelByID
+        defaultNotificationLevelByGuild = state.defaultNotificationLevelByGuild
+        currentUserRoleIDsByGuild = [:]
+        pendingRollbacks = [:]
+        forumSelectionAcknowledgementBoundary = [:]
+        forumPostArchivedByID = state.forumPostArchivedByID
+        usesNewNotifications = state.usesNewNotifications
+        currentUserID = state.currentUserID
     }
 
     func merge(guilds: [Guild]) {
@@ -253,6 +501,10 @@ final class AccountReadStateModel {
             guard let guildID else { return true }
             return guildIDs.contains(guildID)
         }
+        overridesByGuildAndChannelID = overridesByGuildAndChannelID.filter { guildID, _ in
+            guard let guildID else { return true }
+            return guildIDs.contains(guildID)
+        }
         defaultNotificationLevelByGuild = defaultNotificationLevelByGuild.filter {
             guildIDs.contains($0.key)
         }
@@ -263,6 +515,12 @@ final class AccountReadStateModel {
 
     func apply(_ settings: GuildNotificationSettings) {
         settingsByGuild[settings.guildID] = settings
+        var overrides: [ChannelID: ChannelNotificationOverride] = [:]
+        overrides.reserveCapacity(settings.channelOverrides.count)
+        for override in settings.channelOverrides {
+            overrides[override.channelID] = override
+        }
+        overridesByGuildAndChannelID[settings.guildID] = overrides
     }
 
     func notificationSettings(guildID: GuildID?) -> GuildNotificationSettings? {
@@ -273,17 +531,15 @@ final class AccountReadStateModel {
         channelID: ChannelID,
         guildID: GuildID?
     ) -> ChannelNotificationOverride? {
-        settingsByGuild[guildID]?.channelOverrides.last {
-            $0.channelID == channelID
-        }
+        overridesByGuildAndChannelID[guildID]?[channelID]
     }
 
     func isChannelMuted(_ channel: Channel, at date: Date = .now) -> Bool {
         guard !channel.isMuted else { return true }
-        let settings = settingsByGuild[channel.guildID]
-        let directOverride = settings?.channelOverrides.last {
-            $0.channelID == channel.id
-        }
+        let directOverride = notificationOverride(
+            channelID: channel.id,
+            guildID: channel.guildID
+        )
         guard let override = directOverride else {
             return false
         }
@@ -294,7 +550,7 @@ final class AccountReadStateModel {
     func inheritedNotificationLevel(for channel: Channel) -> MessageNotificationLevel {
         let guildSettings = settingsByGuild[channel.guildID]
         let parentOverride = channel.categoryID.flatMap { parentID in
-            guildSettings?.channelOverrides.last { $0.channelID == parentID }
+            notificationOverride(channelID: parentID, guildID: channel.guildID)
         }
         if let level = parentOverride?.messageNotifications,
            level != .inherit
@@ -551,11 +807,12 @@ final class AccountReadStateModel {
         }
 
         let guildSettings = settingsByGuild[entry.guildID]
-        let directOverride = guildSettings?.channelOverrides.last {
-            $0.channelID == entry.channelID
-        }
+        let directOverride = notificationOverride(
+            channelID: entry.channelID,
+            guildID: entry.guildID
+        )
         let parentOverride = entry.parentID.flatMap { parentID in
-            guildSettings?.channelOverrides.last { $0.channelID == parentID }
+            notificationOverride(channelID: parentID, guildID: entry.guildID)
         }
 
         let unreadAllMessagesFlag: UInt64 = 1 << 10
@@ -1350,19 +1607,23 @@ private extension AccountReadStateModel {
         }
     }
 
+    // swiftlint:disable:next function_body_length
     private func effectivePolicy(for entry: Entry, now: Date) -> EffectivePolicy {
         let isDirectMessage =
             entry.kind == .directMessage || entry.kind == .groupDirectMessage
         let guildSettings = settingsByGuild[entry.guildID]
-        let directOverride = guildSettings?.channelOverrides.last { $0.channelID == entry.channelID }
+        let directOverride = notificationOverride(
+            channelID: entry.channelID,
+            guildID: entry.guildID
+        )
         let parentOverride = entry.parentID.flatMap { parentID in
-            guildSettings?.channelOverrides.last { $0.channelID == parentID }
+            notificationOverride(channelID: parentID, guildID: entry.guildID)
         }
         let ancestorOverride =
             entry.parentID
             .flatMap { channelByID[$0]?.categoryID }
             .flatMap { ancestorID in
-                guildSettings?.channelOverrides.last { $0.channelID == ancestorID }
+                notificationOverride(channelID: ancestorID, guildID: entry.guildID)
             }
         let overrideHierarchy = [directOverride, parentOverride, ancestorOverride]
         let parentIsConversation = entry.parentID.flatMap { channelByID[$0] } != nil
@@ -1584,7 +1845,7 @@ extension AccountReadStateModel {
     }
 }
 
-private func maximum<T: Comparable>(_ lhs: T?, _ rhs: T?) -> T? {
+nonisolated private func maximum<T: Comparable>(_ lhs: T?, _ rhs: T?) -> T? {
     switch (lhs, rhs) {
     case (.some(let lhs), .some(let rhs)): max(lhs, rhs)
     case (.some(let lhs), .none): lhs

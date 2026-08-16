@@ -28,6 +28,19 @@ extension AppModel {
         let session = account ?? accountSession()
         guard !Task.isCancelled, isCurrentAccountSession(session) else { return }
         guard let request = selectedMessageHistoryRequest(direction) else { return }
+        let paginationName: StaticString = switch direction {
+        case .earlier: "EarlierHistoryPagination"
+        case .later: "LaterHistoryPagination"
+        }
+        let pagination = AppPerformanceSignposts.signposter.beginInterval(
+            paginationName,
+            id: AppPerformanceSignposts.signposter.makeSignpostID()
+        )
+        defer {
+            AppPerformanceSignposts.signposter.endInterval(
+                paginationName, pagination
+            )
+        }
         clearSelectedMessageHistoryError()
         setSelectedMessageHistoryLoading(true, direction: direction)
         defer {
@@ -48,21 +61,32 @@ extension AppModel {
                   selectedChannelID == request.channelID
             else { return }
             let reconcileStart = ProcessInfo.processInfo.systemUptime
-            let inserted = page.messages.filter {
-                !selectedMessageIDs.contains($0.id)
+            let inserted = AppPerformanceSignposts.measureSync(
+                "HistoryPageReconciliation"
+            ) {
+                page.messages.filter {
+                    !selectedMessageIDs.contains($0.id)
+                }
             }
             let filterEnd = ProcessInfo.processInfo.systemUptime
-            guard await commitSelectedMessageHistory(
-                inserted,
-                direction: direction,
-                channelID: request.channelID
-            ) else { return }
+            let committed = await AppPerformanceSignposts.measure(
+                "HistoryPageCommit"
+            ) {
+                await commitSelectedMessageHistory(
+                    inserted,
+                    direction: direction,
+                    channelID: request.channelID
+                )
+            }
+            guard committed else { return }
             let commitEnd = ProcessInfo.processInfo.systemUptime
-            applySelectedMessageHistoryBoundary(
-                page,
-                direction: direction,
-                channelID: request.channelID
-            )
+            AppPerformanceSignposts.measureSync("HistoryBoundaryStateUpdate") {
+                applySelectedMessageHistoryBoundary(
+                    page,
+                    direction: direction,
+                    channelID: request.channelID
+                )
+            }
             clearSelectedMessageHistoryError()
             logSelectedMessageHistoryPerformance(
                 direction: direction,
