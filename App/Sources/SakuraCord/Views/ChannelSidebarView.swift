@@ -103,6 +103,17 @@ struct ChannelSidebarView: View {
         ChannelSidebarSelectionCommitter()
 
     var body: some View {
+        let voiceParticipantsByChannel: [
+            ChannelID: [VoiceSidebarParticipant]
+        ] = if guild == nil {
+            [:]
+        } else {
+            AppPerformanceSignposts.measureSync(
+                "ChannelSidebarVoiceProjection"
+            ) {
+                voiceSidebarParticipantsByChannel
+            }
+        }
         VStack(spacing: 0) {
             if guild == nil {
                 DirectMessageInboxView(
@@ -129,7 +140,8 @@ struct ChannelSidebarView: View {
                             isUnread: group.categoryID.map(
                                 unreadCategoryIDs.contains
                             ) ?? false,
-                            voiceParticipantsByChannel: voiceSidebarParticipantsByChannel
+                            voiceParticipantsByChannel:
+                                voiceParticipantsByChannel
                         )
                     }
                 }

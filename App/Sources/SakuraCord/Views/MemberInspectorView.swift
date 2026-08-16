@@ -147,8 +147,8 @@ struct MemberListLoadingSkeleton: View {
     }
 }
 
-struct MemberSection: Identifiable, Equatable {
-    enum SectionIdentifier: Hashable {
+nonisolated struct MemberSection: Identifiable, Equatable, Sendable {
+    nonisolated enum SectionIdentifier: Hashable, Sendable {
         case role(name: String, position: Int)
         case online
         case offline

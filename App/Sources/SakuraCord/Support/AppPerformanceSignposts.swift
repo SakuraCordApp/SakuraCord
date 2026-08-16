@@ -327,7 +327,7 @@ enum AppPerformanceSignposts {
         return try await operation()
     }
 
-    static func measureSync<T>(
+    nonisolated static func measureSync<T>(
         _ name: StaticString,
         operation: () throws -> T
     ) rethrows -> T {
