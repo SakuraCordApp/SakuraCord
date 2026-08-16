@@ -704,7 +704,7 @@ extension NativeTimelineCanvasView {
             )
         }
         drawSuperclassContent(in: dirtyRect)
-        refreshVisibleMediaPins()
+        let visibleMediaKeys = refreshVisibleMediaPins()
         reconcileVisibleReactionPreviewLoads()
         // This view is transparent and layer-backed. Core Graphics does not
         // guarantee that invalidating a region clears its previous backing
@@ -721,18 +721,25 @@ extension NativeTimelineCanvasView {
         {
             let rowFrame = rowFrame(at: index)
             if rowFrame.intersects(dirtyRect) {
+                let item = items[index]
+                let preparedMediaKeys = visibleMediaKeys[item.identifier]
+                    ?? mediaKeys(for: item, at: index)
                 drawMessageJumpHighlight(at: index)
                 let revealedTextSpoilerState =
                     textSpoilerRevealState(
-                        for: items[index].identifier
+                        for: item.identifier
                     )
-                if items[index].messageID == editingMessageID {
+                if item.messageID == editingMessageID {
                     NSGraphicsContext.current?.cgContext.clear(
                         rowFrame.intersection(dirtyRect)
                     )
-                    requestMedia(for: items[index], at: index)
+                    requestMedia(
+                        for: item,
+                        at: index,
+                        preparedMediaKeys: preparedMediaKeys
+                    )
                     NativeTimelineRowPainter.draw(
-                        item: items[index],
+                        item: item,
                         layout: layouts[index],
                         in: rowFrame,
                         model: model,
@@ -753,31 +760,35 @@ extension NativeTimelineCanvasView {
                     index += 1
                     continue
                 }
-                requestMedia(for: items[index], at: index)
+                requestMedia(
+                    for: item,
+                    at: index,
+                    preparedMediaKeys: preparedMediaKeys
+                )
                 let countTransitions = reactionCountTransitions(
                     inMessageAt: index
                 )
                 if hoveredRow == index
                     || hoveredCompactTimestampRow == index
                     || hoveredMention?.itemIdentifier
-                        == items[index].identifier
+                        == item.identifier
                     || hoveredTextLink?.itemIdentifier
-                        == items[index].identifier
+                        == item.identifier
                     || hoveredTextSpoiler?.itemIdentifier
-                        == items[index].identifier
+                        == item.identifier
                     || hoveredComponentButton?.messageID
-                        == items[index].messageID
+                        == item.messageID
                     || visualPressedComponentButton?.messageID
-                        == items[index].messageID
+                        == item.messageID
                     || hoveredForwardedSourceMessageID
-                        == items[index].messageID
+                        == item.messageID
                     || !countTransitions.isEmpty
                     || textSelection?.itemIdentifier
-                        == items[index].identifier
+                        == item.identifier
                     || !revealedTextSpoilerState.isEmpty
                 {
                     NativeTimelineRowPainter.draw(
-                        item: items[index],
+                        item: item,
                         layout: layouts[index],
                         in: rowFrame,
                         model: model,
@@ -786,27 +797,27 @@ extension NativeTimelineCanvasView {
                             hoveredCompactTimestampRow == index,
                         hoveredMention:
                             hoveredMention?.itemIdentifier
-                                == items[index].identifier
+                                == item.identifier
                             ? hoveredMention
                             : nil,
                         hoveredTextLink:
                             hoveredTextLink?.itemIdentifier
-                                == items[index].identifier
+                                == item.identifier
                             ? hoveredTextLink
                             : nil,
                         hoveredTextSpoiler:
                             hoveredTextSpoiler?.itemIdentifier
-                                == items[index].identifier
+                                == item.identifier
                             ? hoveredTextSpoiler
                             : nil,
                         hoveredComponentButton:
                             hoveredComponentButton?.messageID
-                                == items[index].messageID
+                                == item.messageID
                             ? hoveredComponentButton
                             : nil,
                         pressedComponentButton:
                             visualPressedComponentButton?.messageID
-                                == items[index].messageID
+                                == item.messageID
                             ? visualPressedComponentButton
                             : nil,
                         componentButtonPressProgress:
@@ -816,7 +827,7 @@ extension NativeTimelineCanvasView {
                             : 0,
                         isForwardedSourceHovered:
                             hoveredForwardedSourceMessageID
-                                == items[index].messageID,
+                                == item.messageID,
                         hoveredReactionID: hoveredReactionID(
                             inMessageAt: index
                         ),
@@ -831,7 +842,7 @@ extension NativeTimelineCanvasView {
                     )
                 } else {
                     let cachedBitmap = cachedBitmap(
-                        for: items[index],
+                        for: item,
                         width: rowFrame.width
                     )
                     if NativeTimelineScrollingRenderPolicy
@@ -841,7 +852,7 @@ extension NativeTimelineCanvasView {
                         )
                     {
                         NativeTimelineRowPainter.draw(
-                            item: items[index],
+                            item: item,
                             layout: layouts[index],
                             in: rowFrame,
                             model: model,
@@ -852,10 +863,11 @@ extension NativeTimelineCanvasView {
                         )
                     } else {
                         (cachedBitmap ?? bitmap(
-                            for: items[index],
+                            for: item,
                             at: index,
                             layout: layouts[index],
-                            width: rowFrame.width
+                            width: rowFrame.width,
+                            preparedMediaKeys: preparedMediaKeys
                         )).draw(
                             in: rowFrame,
                             from: .zero,
@@ -1187,7 +1199,8 @@ extension NativeTimelineCanvasView {
         for item: NativeMessageTimelineItem,
         at index: Int,
         layout: NativeTimelineRowLayout,
-        width: CGFloat
+        width: CGFloat,
+        preparedMediaKeys: Set<NativeTimelineMediaKey>
     ) -> NSImage {
         if let cached = cachedBitmap(for: item, width: width) {
             return cached
@@ -1252,7 +1265,7 @@ extension NativeTimelineCanvasView {
 
         let mediaPinOwner = UUID()
         NativeTimelineMediaStore.shared.pinLoadedImages(
-            for: mediaKeys(for: item, at: index),
+            for: preparedMediaKeys,
             owner: mediaPinOwner
         )
         let cost = max(1, Int(ceil(width * layout.height * 4 * scale * scale)))
@@ -1322,11 +1335,12 @@ extension NativeTimelineCanvasView {
     func requestMedia(
         for item: NativeMessageTimelineItem,
         at index: Int,
+        preparedMediaKeys: Set<NativeTimelineMediaKey>? = nil,
         priority: MediaLoadPriority = .visible
     ) {
         let identifier = item.identifier
         let requestOwner = visibleMediaPinOwner
-        let keys = mediaKeys(for: item, at: index)
+        let keys = preparedMediaKeys ?? mediaKeys(for: item, at: index)
         for key in keys {
             NativeTimelineMediaStore.shared.request(
                 key,
@@ -1439,7 +1453,19 @@ extension NativeTimelineCanvasView {
         }
     }
 
-    func refreshVisibleMediaPins() {
+    @discardableResult
+    func refreshVisibleMediaPins()
+        -> [NativeMessageTimelineItem.Identifier: Set<NativeTimelineMediaKey>]
+    {
+        let interval = AppPerformanceSignposts.signposter.beginInterval(
+            "TimelineVisibleMediaProjection"
+        )
+        defer {
+            AppPerformanceSignposts.signposter.endInterval(
+                "TimelineVisibleMediaProjection",
+                interval
+            )
+        }
         let viewport =
             enclosingScrollView?.documentVisibleRect ?? visibleRect
         guard viewport.height > 0,
@@ -1457,16 +1483,21 @@ extension NativeTimelineCanvasView {
                         owner: visibleMediaPinOwner
                     )
             }
-            return
+            return [:]
         }
 
         var keys: Set<NativeTimelineMediaKey> = []
+        var keysByIdentifier:
+            [NativeMessageTimelineItem.Identifier:
+                Set<NativeTimelineMediaKey>] = [:]
         while items.indices.contains(index),
               layouts.indices.contains(index),
               displayedRowOrigin(at: index) < viewport.maxY
         {
             if rowFrame(at: index).intersects(viewport) {
-                keys.formUnion(mediaKeys(for: items[index], at: index))
+                let rowKeys = mediaKeys(for: items[index], at: index)
+                keys.formUnion(rowKeys)
+                keysByIdentifier[items[index].identifier] = rowKeys
             }
             index += 1
         }
@@ -1480,6 +1511,7 @@ extension NativeTimelineCanvasView {
                     owner: visibleMediaPinOwner
                 )
         }
+        return keysByIdentifier
     }
 
     var mediaKeysOperation:
