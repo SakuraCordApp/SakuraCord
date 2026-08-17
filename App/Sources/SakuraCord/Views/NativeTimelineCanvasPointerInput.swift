@@ -1582,10 +1582,7 @@ extension NativeTimelineCanvasView {
             color: color
         ))
         let host = NativeTimelineReactionCountAnimationHost(rootView: root)
-        let countFont = NSFont.monospacedDigitSystemFont(
-            ofSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize,
-            weight: .semibold
-        )
+        let countFont = NativeTimelineReactionFonts.count
         let stableCountWidth = max(
             countFrame.width,
             ceil((String(from) as NSString).size(withAttributes: [

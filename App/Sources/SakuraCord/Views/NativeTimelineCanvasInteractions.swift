@@ -753,6 +753,8 @@ extension NativeTimelineCanvasView {
             $0.messageID == messageID
         }) else { return }
         let identifier = items[rowIndex].identifier
+        visibleMediaProjection = nil
+        mediaKeysByIdentifier[identifier] = nil
         invalidateBitmap(identifier)
         requestMedia(for: items[rowIndex], at: rowIndex)
         setNeedsDisplay(rowFrame(at: rowIndex))

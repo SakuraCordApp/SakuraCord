@@ -902,6 +902,39 @@ import Testing
     let imageURLs = DiscordCustomEmojiCatalog.imageURLsByID(from: [first, local])
     #expect(imageURLs["100"] == first.imageURL)
     #expect(imageURLs["300"] == localURL)
+
+    let prepared = try #require(DiscordCustomEmojiCatalog.prepare(
+        emojisByGuild: [
+            firstGuild: [first, local],
+            secondGuild: [second, other]
+        ],
+        guildOrder: [secondGuild, firstGuild],
+        previousOrderedEmojis: [],
+        previousImageURLsByID: [:]
+    ))
+    let preparedOrder = try #require(prepared.orderedEmojis)
+    let preparedURLs = try #require(prepared.imageURLsByID)
+    #expect(preparedOrder.map(\.id) == ["200", "201", "100", "300"])
+    #expect(preparedURLs["300"] == localURL)
+
+    let unchanged = try #require(DiscordCustomEmojiCatalog.prepare(
+        emojisByGuild: [
+            firstGuild: [first, local],
+            secondGuild: [second, other]
+        ],
+        guildOrder: [secondGuild, firstGuild],
+        previousOrderedEmojis: preparedOrder,
+        previousImageURLsByID: preparedURLs
+    ))
+    #expect(unchanged.orderedEmojis == nil)
+    #expect(unchanged.imageURLsByID == nil)
+    #expect(DiscordCustomEmojiCatalog.prepare(
+        emojisByGuild: [firstGuild: [first]],
+        guildOrder: [firstGuild],
+        previousOrderedEmojis: [],
+        previousImageURLsByID: [:],
+        cancellationCheck: { true }
+    ) == nil)
 }
 
 @MainActor
@@ -1465,6 +1498,40 @@ import Testing
     let presentation = MessageMentionResolver(model: model, message: message).presentation(mention)
     #expect(presentation.label == "@\(member.user.displayName)")
     #expect(presentation.label != "@Global Display Name")
+}
+
+@MainActor
+@Test func `mention media discovery only returns user avatars`() throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    let userID = UserID(rawValue: 7_001)
+    let userAvatarURL = try #require(
+        URL(string: "https://cdn.example/user-avatar.png")
+    )
+    let guildAvatarURL = try #require(
+        URL(string: "https://cdn.example/guild-avatar.png")
+    )
+    let member = Member(
+        user: User(
+            id: userID,
+            username: "avatar-user",
+            displayName: "Avatar User",
+            avatarURL: userAvatarURL
+        ),
+        roleName: "Member",
+        isOnline: true,
+        guildAvatarURL: guildAvatarURL
+    )
+    model.knownMentionMembers = [userID: member]
+    let userMention = try #require(
+        RenderedMention(rawToken: "<@\(userID.rawValue)>")
+    )
+    let channelMention = try #require(
+        RenderedMention(rawToken: "<#7002>")
+    )
+    let resolver = MessageMentionResolver(model: model)
+
+    #expect(resolver.avatarURL(userMention) == guildAvatarURL)
+    #expect(resolver.avatarURL(channelMention) == nil)
 }
 
 @MainActor

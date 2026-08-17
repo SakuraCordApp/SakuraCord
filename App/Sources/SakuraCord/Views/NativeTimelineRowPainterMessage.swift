@@ -643,6 +643,12 @@ extension NativeTimelineRowPainter {
                 threadSummary(thread, in: frame)
             }
         }
+        ComponentUnicodeEmojiRenderer.prepareImages(
+            for: layout.reactionRegions.compactMap { region in
+                let reference = region.reaction.emojiReference
+                return reference.id == nil ? reference.name : nil
+            }
+        )
         for region in layout.reactionRegions {
             reaction(
                 region,

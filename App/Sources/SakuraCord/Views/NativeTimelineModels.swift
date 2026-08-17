@@ -507,18 +507,50 @@ enum NativeTimelineBenchmarkFinishSequence {
     }
 }
 
+nonisolated struct NativeTimelineRenderTelemetry: Equatable, Sendable {
+    let canvasDrawCount: Int
+    let canvasDrawTotalDuration: TimeInterval
+    let canvasDrawMaximumDuration: TimeInterval
+    let rowRasterCount: Int
+    let rowRasterTotalDuration: TimeInterval
+    let rowRasterMaximumDuration: TimeInterval
+    let rowRasterMaximumHeight: CGFloat
+    let rowBitmapCacheHitCount: Int
+    let liveScrollDirectPaintCount: Int
+
+    var canvasDrawAverageDuration: TimeInterval {
+        canvasDrawCount > 0
+            ? canvasDrawTotalDuration / Double(canvasDrawCount)
+            : 0
+    }
+
+    var rowRasterAverageDuration: TimeInterval {
+        rowRasterCount > 0
+            ? rowRasterTotalDuration / Double(rowRasterCount)
+            : 0
+    }
+}
+
 @MainActor
 enum NativeTimelineBenchmarkArtifact {
+    struct DelayedTick {
+        let offset: TimeInterval
+        let interval: TimeInterval
+    }
+
     static func write(
         outcome: NativeTimelineBenchmarkFinishOutcome,
         completedDistance: CGFloat,
         elapsed: TimeInterval,
         completedTicks: Int? = nil,
         delayedTicks: Int? = nil,
+        tickIntervals: [TimeInterval]? = nil,
+        delayedTickSamples: [DelayedTick]? = nil,
         maximumTickInterval: TimeInterval? = nil,
         maximumScrollWork: TimeInterval? = nil,
         historyStarvedTicks: Int? = nil,
-        maximumConsecutiveHistoryStarvedTicks: Int? = nil
+        maximumConsecutiveHistoryStarvedTicks: Int? = nil,
+        renderTelemetry: NativeTimelineRenderTelemetry? = nil
     ) {
         guard let path = ProcessInfo.processInfo.environment[
             "SAKURACORD_PERFORMANCE_RESULT_PATH"
@@ -544,18 +576,60 @@ enum NativeTimelineBenchmarkArtifact {
         """
         if let completedTicks,
            let delayedTicks,
+           let tickIntervals,
+           let delayedTickSamples,
            let maximumTickInterval,
            let maximumScrollWork,
            let historyStarvedTicks,
            let maximumConsecutiveHistoryStarvedTicks
         {
+            let sortedTickIntervals = tickIntervals.sorted()
+            let medianTickInterval = percentile(
+                sortedTickIntervals,
+                percentile: 0.50
+            )
+            let p95TickInterval = percentile(
+                sortedTickIntervals,
+                percentile: 0.95
+            )
+            let p99TickInterval = percentile(
+                sortedTickIntervals,
+                percentile: 0.99
+            )
+            let delayedTickRate = completedTicks > 0
+                ? Double(delayedTicks) / Double(completedTicks)
+                : 0
+            let delayedTickSampleText = delayedTickSamples.map { sample in
+                "\(sample.offset * 1_000):\(sample.interval * 1_000)"
+            }.joined(separator: ",")
             contents += """
             completed_ticks\t\(completedTicks)
             delayed_ticks_over_33ms\t\(delayedTicks)
+            delayed_tick_rate\t\(delayedTickRate)
+            median_tick_interval_ms\t\(medianTickInterval * 1_000)
+            p95_tick_interval_ms\t\(p95TickInterval * 1_000)
+            p99_tick_interval_ms\t\(p99TickInterval * 1_000)
             maximum_tick_interval_ms\t\(maximumTickInterval * 1_000)
+            delayed_tick_samples_offset_ms_interval_ms\t\(delayedTickSampleText)
             maximum_scroll_work_ms\t\(maximumScrollWork * 1_000)
             history_starved_ticks\t\(historyStarvedTicks)
             maximum_consecutive_history_starved_ticks\t\(maximumConsecutiveHistoryStarvedTicks)
+
+            """
+        }
+        if let renderTelemetry {
+            contents += """
+            canvas_draw_count\t\(renderTelemetry.canvasDrawCount)
+            canvas_draw_total_ms\t\(renderTelemetry.canvasDrawTotalDuration * 1_000)
+            canvas_draw_average_ms\t\(renderTelemetry.canvasDrawAverageDuration * 1_000)
+            canvas_draw_maximum_ms\t\(renderTelemetry.canvasDrawMaximumDuration * 1_000)
+            row_raster_count\t\(renderTelemetry.rowRasterCount)
+            row_raster_total_ms\t\(renderTelemetry.rowRasterTotalDuration * 1_000)
+            row_raster_average_ms\t\(renderTelemetry.rowRasterAverageDuration * 1_000)
+            row_raster_maximum_ms\t\(renderTelemetry.rowRasterMaximumDuration * 1_000)
+            row_raster_maximum_height_points\t\(renderTelemetry.rowRasterMaximumHeight)
+            row_bitmap_cache_hit_count\t\(renderTelemetry.rowBitmapCacheHitCount)
+            live_scroll_direct_paint_count\t\(renderTelemetry.liveScrollDirectPaintCount)
 
             """
         }
@@ -564,6 +638,15 @@ enum NativeTimelineBenchmarkArtifact {
             atomically: true,
             encoding: .utf8
         )
+    }
+
+    private static func percentile(
+        _ sortedValues: [TimeInterval],
+        percentile: Double
+    ) -> TimeInterval {
+        guard !sortedValues.isEmpty else { return 0 }
+        let rank = Int(ceil(percentile * Double(sortedValues.count)))
+        return sortedValues[min(max(rank - 1, 0), sortedValues.count - 1)]
     }
 }
 

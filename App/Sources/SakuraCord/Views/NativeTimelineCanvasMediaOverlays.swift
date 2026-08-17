@@ -37,12 +37,31 @@ extension NativeTimelineCanvasView {
 
     func scheduleAnimatedMediaReconciliation() {
         animatedMediaReconcileTask?.cancel()
+        guard mediaReadyConversationID == presentedConversationID else {
+            animatedMediaReconcileTask = nil
+            return
+        }
         animatedMediaReconcileTask = Task { @MainActor [weak self] in
-            // The static first frame has its own visible-priority path. Give
-            // channel layout and that first paint one quiet frame budget
-            // before expanding every GIF/APNG frame at utility priority.
+            let interval = AppPerformanceSignposts.signposter.beginInterval(
+                "TimelinePostFirstFrameMediaDeferral"
+            )
+            defer {
+                AppPerformanceSignposts.signposter.endInterval(
+                    "TimelinePostFirstFrameMediaDeferral",
+                    interval
+                )
+            }
+            // Network/history preparation can make a cold first frame arrive
+            // well after an update. This is gated by the actual completed
+            // frame, not update time, so optional GIF/APNG expansion cannot
+            // compete with cold row rasterization. Keep a further quiet
+            // interval after that frame before starting utility work.
             try? await Task.sleep(for: .milliseconds(250))
-            guard !Task.isCancelled, let self else { return }
+            guard !Task.isCancelled,
+                  let self,
+                  self.mediaReadyConversationID
+                    == self.presentedConversationID
+            else { return }
             self.animatedMediaReconcileTask = nil
             self.reconcileAnimatedMedia()
         }

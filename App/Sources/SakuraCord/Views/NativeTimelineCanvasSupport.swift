@@ -879,9 +879,13 @@ nonisolated enum NativeTimelineAvatarPresentation {
 nonisolated enum NativeTimelineScrollingRenderPolicy {
     static func usesDirectPainter(
         isScrolling: Bool,
-        hasCachedBitmap: Bool
+        hasCachedBitmap: Bool,
+        estimatedBitmapCost: Int,
+        cacheCostLimit: Int
     ) -> Bool {
-        isScrolling && !hasCachedBitmap
+        isScrolling
+            && !hasCachedBitmap
+            && estimatedBitmapCost > cacheCostLimit / 2
     }
 }
 

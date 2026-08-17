@@ -1648,6 +1648,11 @@ extension NativeMessageTimelineCoordinator {
                 var maximumScrollWork = 0.0
                 var completedTicks = 0
                 var delayedTicks = 0
+                var tickIntervals: [TimeInterval] = []
+                tickIntervals.reserveCapacity(1_500)
+                var delayedTickSamples:
+                    [NativeTimelineBenchmarkArtifact.DelayedTick] = []
+                delayedTickSamples.reserveCapacity(64)
                 var maximumTickItemCount = items.count
                 var maximumTickDocumentY = 0.0
                 var historyStarvedTicks = 0
@@ -1659,6 +1664,7 @@ extension NativeMessageTimelineCoordinator {
                 let finish: (NativeTimelineBenchmarkFinishOutcome) -> Void = { [weak self, weak canvas, weak displayLinkTicker] outcome in
                     guard !didFinish else { return }
                     didFinish = true
+                    AppScrollWorkGate.endActivity()
                     displayLinkTicker?.stop()
                     switch outcome {
                     case .completed:
@@ -1700,11 +1706,14 @@ extension NativeMessageTimelineCoordinator {
                                     elapsed: elapsed,
                                     completedTicks: completedTicks,
                                     delayedTicks: delayedTicks,
+                                    tickIntervals: tickIntervals,
+                                    delayedTickSamples: delayedTickSamples,
                                     maximumTickInterval: maximumTickInterval,
                                     maximumScrollWork: maximumScrollWork,
                                     historyStarvedTicks: historyStarvedTicks,
                                     maximumConsecutiveHistoryStarvedTicks:
-                                        maximumHistoryStarvedTicks
+                                        maximumHistoryStarvedTicks,
+                                    renderTelemetry: canvas?.renderTelemetry
                                 )
                                 AppPerformanceSignposts.endResourceWindow(
                                     named:
@@ -1750,6 +1759,11 @@ extension NativeMessageTimelineCoordinator {
                     self?.finishScrollActivity()
                 }
                 self.performanceBenchmarkFinish = finish
+                // The deterministic workload bypasses NSEvent, but production
+                // loading isolation keys off the same cross-surface gate as a
+                // real gesture. Exercise that scheduling policy here so the
+                // permanent benchmark catches priority regressions.
+                AppScrollWorkGate.beginActivity()
                 displayLinkTicker.start(on: canvas) { [weak self, weak scrollView] in
                     guard let self, let scrollView else {
                         finish(.cancelled)
@@ -1759,9 +1773,16 @@ extension NativeMessageTimelineCoordinator {
                     let tickInterval = tickUptime - previousTickUptime
                     previousTickUptime = tickUptime
                     completedTicks += 1
+                    tickIntervals.append(tickInterval)
                     let visibleRect = scrollView.contentView.bounds
                     if tickInterval > 0.033 {
                         delayedTicks += 1
+                        delayedTickSamples.append(
+                            .init(
+                                offset: tickUptime - benchmarkStartUptime,
+                                interval: tickInterval
+                            )
+                        )
                     }
                     if tickInterval > maximumTickInterval {
                         maximumTickInterval = tickInterval

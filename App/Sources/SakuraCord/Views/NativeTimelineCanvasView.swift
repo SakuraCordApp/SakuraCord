@@ -133,6 +133,13 @@ final class NativeTimelineCanvasView: NSView {
         let opacity: CGFloat
     }
 
+    struct VisibleMediaProjection {
+        let rowRange: Range<Int>
+        let keysByIdentifier:
+            [NativeMessageTimelineItem.Identifier:
+                Set<NativeTimelineMediaKey>]
+    }
+
     static let bitmapCostLimit =
         NativeTimelineMediaMemoryPolicy.rowBitmapBytes
     var storage = NativeTimelineCanvasStorage()
@@ -146,16 +153,25 @@ final class NativeTimelineCanvasView: NSView {
     var minimumHeight: CGFloat = 1
     var bottomSpacerHeight: CGFloat = 0
     var maximumDrawDuration = 0.0
+    var totalDrawDuration = 0.0
+    var drawCount = 0
     var maximumRowRasterDuration = 0.0
     var maximumRowRasterHeight: CGFloat = 0
+    var totalRowRasterDuration = 0.0
+    var rowRasterCount = 0
+    var rowBitmapCacheHitCount = 0
+    var liveScrollDirectPaintCount = 0
     var contentOriginInvalidationCount = 0
     var synchronousShortContentRedrawCount = 0
     var bitmapCache:
         [NativeMessageTimelineItem.Identifier: CachedRowBitmap] = [:]
     var bitmapInsertionOrder: [NativeMessageTimelineItem.Identifier] = []
-    var bitmapEvictionIndex = 0
     var bitmapCost = 0
     let visibleMediaPinOwner = UUID()
+    var mediaKeysByIdentifier:
+        [NativeMessageTimelineItem.Identifier:
+            Set<NativeTimelineMediaKey>] = [:]
+    var visibleMediaProjection: VisibleMediaProjection?
     var presentationCacheInvalidationCount = 0
     var mentionPointerRegionCache:
         [NativeMessageTimelineItem.Identifier: [MentionPointerRegion]] = [:]
@@ -170,6 +186,7 @@ final class NativeTimelineCanvasView: NSView {
 
     var model: AppModel?
     var presentedConversationID: ChannelID?
+    var mediaReadyConversationID: ChannelID?
     var messageInteractionContext: NativeTimelineMessageInteractionContext = .conversation
     var actions: NativeTimelineRowActions?
     var onWidthChange: ((CGFloat) -> Void)?
@@ -241,6 +258,9 @@ final class NativeTimelineCanvasView: NSView {
     var mediaInvalidationTask: Task<Void, Never>?
     var pendingMediaInvalidations:
         Set<NativeMessageTimelineItem.Identifier> = []
+    var visibleMediaRequestTask: Task<Void, Never>?
+    var pendingVisibleMediaRequests:
+        [NativeMessageTimelineItem.Identifier: Set<NativeTimelineMediaKey>] = [:]
     lazy var mediaViewerHost = NSHostingView(
         rootView: AnyView(Color.clear.frame(width: 0, height: 0))
     )
@@ -316,6 +336,7 @@ final class NativeTimelineCanvasView: NSView {
         MainActor.assumeIsolated {
             NotificationCenter.default.removeObserver(self)
             mediaInvalidationTask?.cancel()
+            visibleMediaRequestTask?.cancel()
             historySkeletonShimmerTask?.cancel()
             messageJumpHighlightTask?.cancel()
             cancelReactionPreviewLoads()

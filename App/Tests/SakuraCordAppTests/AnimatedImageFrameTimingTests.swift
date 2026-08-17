@@ -123,7 +123,7 @@ import Testing
 @Test func `timeline media declares every byte limited memory cache`() {
     #expect(
         NativeTimelineMediaMemoryPolicy.decodedImageCacheBytes
-            == 148 * 1_024 * 1_024
+            == 168 * 1_024 * 1_024
     )
     #expect(
         SharedMediaDataMemoryPolicy.retainedBytes
@@ -131,7 +131,7 @@ import Testing
     )
     #expect(
         NativeTimelineMediaMemoryPolicy.declaredMemoryCacheBytes
-            == 204 * 1_024 * 1_024
+            == 224 * 1_024 * 1_024
     )
 }
 

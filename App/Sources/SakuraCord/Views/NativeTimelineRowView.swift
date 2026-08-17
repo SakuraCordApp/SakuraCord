@@ -345,6 +345,34 @@ struct NativeTimelineLoaderLayout {
     }
 }
 
+@MainActor
+enum NativeTimelineReactionFonts {
+    private static var cachedCount: (pointSize: CGFloat, font: NSFont)?
+
+    static var count: NSFont {
+        let pointSize = NSFont.preferredFont(forTextStyle: .caption1).pointSize
+        if let cachedCount, cachedCount.pointSize == pointSize {
+            return cachedCount.font
+        }
+        let font = AppPerformanceSignposts.measureSync(
+            "TimelineReactionCountFontCacheMiss"
+        ) {
+            NSFont.monospacedDigitSystemFont(
+                ofSize: pointSize,
+                weight: .semibold
+            )
+        }
+        cachedCount = (pointSize, font)
+        return font
+    }
+
+    static let overflow = AppPerformanceSignposts.measureSync(
+        "TimelineReactionOverflowFontCacheMiss"
+    ) {
+        NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .bold)
+    }
+}
+
 struct NativeTimelineRowLayout {
     struct SearchSectionRegion {
         let frame: CGRect
@@ -1403,12 +1431,7 @@ struct NativeTimelineRowLayout {
         if reaction.count > 0 {
             width += 4 + measuredTextWidth(
                 String(reaction.count),
-                font: .monospacedDigitSystemFont(
-                    ofSize: NSFont.preferredFont(
-                        forTextStyle: .caption1
-                    ).pointSize,
-                    weight: .semibold
-                )
+                font: NativeTimelineReactionFonts.count
             )
         }
         if !plan.isEmpty {
@@ -1432,10 +1455,7 @@ struct NativeTimelineRowLayout {
             MessageReactionMetrics.avatarSize,
             measuredTextWidth(
                 "+\(plan.overflowCount)",
-                font: .monospacedDigitSystemFont(
-                    ofSize: 10,
-                    weight: .bold
-                )
+                font: NativeTimelineReactionFonts.overflow
             )
         )
         return avatarsWidth
@@ -1461,12 +1481,7 @@ struct NativeTimelineRowLayout {
             horizontalOffset += 4
             let countWidth = measuredTextWidth(
                 String(reaction.count),
-                font: .monospacedDigitSystemFont(
-                    ofSize: NSFont.preferredFont(
-                        forTextStyle: .caption1
-                    ).pointSize,
-                    weight: .semibold
-                )
+                font: NativeTimelineReactionFonts.count
             )
             countFrame = CGRect(
                 x: horizontalOffset,

@@ -990,23 +990,38 @@ func `inline rich tokens inherit their enclosing spoiler`() {
     )
 }
 
-@Test func `native scrolling paints uncached rows without synchronous rasterization`() {
+@Test func `native scrolling caches bounded rows and directly paints oversized rows`() {
+    let cacheCostLimit = 32 * 1_024 * 1_024
     #expect(
-        NativeTimelineScrollingRenderPolicy.usesDirectPainter(
+        !NativeTimelineScrollingRenderPolicy.usesDirectPainter(
             isScrolling: true,
-            hasCachedBitmap: false
+            hasCachedBitmap: false,
+            estimatedBitmapCost: 2 * 1_024 * 1_024,
+            cacheCostLimit: cacheCostLimit
         )
     )
     #expect(
         !NativeTimelineScrollingRenderPolicy.usesDirectPainter(
             isScrolling: true,
-            hasCachedBitmap: true
+            hasCachedBitmap: true,
+            estimatedBitmapCost: 20 * 1_024 * 1_024,
+            cacheCostLimit: cacheCostLimit
+        )
+    )
+    #expect(
+        NativeTimelineScrollingRenderPolicy.usesDirectPainter(
+            isScrolling: true,
+            hasCachedBitmap: false,
+            estimatedBitmapCost: 20 * 1_024 * 1_024,
+            cacheCostLimit: cacheCostLimit
         )
     )
     #expect(
         !NativeTimelineScrollingRenderPolicy.usesDirectPainter(
             isScrolling: false,
-            hasCachedBitmap: false
+            hasCachedBitmap: false,
+            estimatedBitmapCost: 20 * 1_024 * 1_024,
+            cacheCostLimit: cacheCostLimit
         )
     )
     #expect(
@@ -2231,4 +2246,53 @@ func `timeline avatar animation policy avoids decoding ordinary static avatars`(
     #expect(decoded.frames.count == 2)
     #expect(decoded.frameDurations.count == 2)
     #expect(decoded.frameDurations.allSatisfy { $0 >= 0.09 })
+}
+
+@MainActor @Test
+func `batched unicode reaction rendering is pixel identical to individual rendering`() throws {
+    let values = ["👍", "❤️", "🏳️‍🌈", "👨‍👩‍👧‍👦"]
+    ComponentUnicodeEmojiRenderer.clearCacheForTesting()
+    let individual = values.map(ComponentUnicodeEmojiRenderer.image(for:))
+
+    ComponentUnicodeEmojiRenderer.clearCacheForTesting()
+    ComponentUnicodeEmojiRenderer.prepareImages(for: values)
+    let batched = values.map(ComponentUnicodeEmojiRenderer.image(for:))
+
+    for (expected, actual) in zip(individual, batched) {
+        let expectedImage = try #require(expected.cgImage(
+            forProposedRect: nil,
+            context: nil,
+            hints: nil
+        ))
+        let actualImage = try #require(actual.cgImage(
+            forProposedRect: nil,
+            context: nil,
+            hints: nil
+        ))
+        #expect(expectedImage.width == actualImage.width)
+        #expect(expectedImage.height == actualImage.height)
+        #expect(try rgbaBytes(expectedImage) == rgbaBytes(actualImage))
+    }
+}
+
+private func rgbaBytes(_ image: CGImage) throws -> [UInt8] {
+    let bytesPerRow = image.width * 4
+    var bytes = [UInt8](
+        repeating: 0,
+        count: bytesPerRow * image.height
+    )
+    let context = try #require(CGContext(
+        data: &bytes,
+        width: image.width,
+        height: image.height,
+        bitsPerComponent: 8,
+        bytesPerRow: bytesPerRow,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ))
+    context.draw(
+        image,
+        in: CGRect(x: 0, y: 0, width: image.width, height: image.height)
+    )
+    return bytes
 }
