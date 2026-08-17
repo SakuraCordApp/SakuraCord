@@ -1101,6 +1101,8 @@ final class AppModel {
     @ObservationIgnored let persistsEmojiPreferences: Bool
     @ObservationIgnored var didAttemptSessionRestore = false
     @ObservationIgnored var credentialHandle: CredentialHandle?
+    @ObservationIgnored var credentialHandlesByAccountID:
+        [String: CredentialHandle] = [:]
     @ObservationIgnored var didAttemptDiscordEmojiSettings = false
     @ObservationIgnored var acknowledgementTasks: [ChannelID: Task<Void, Never>] = [:]
     @ObservationIgnored var queuedAcknowledgements: [ChannelID: ReadStateMutation] = [:]

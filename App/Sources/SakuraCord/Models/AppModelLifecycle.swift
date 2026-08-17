@@ -67,6 +67,7 @@ extension AppModel {
         }
         do {
             let handles = try await credentialStore.handles()
+            rememberCredentialHandles(handles)
             savedAccounts = await savedAccountStore.accounts(matching: handles)
         } catch {
             errorMessage = error.localizedDescription
@@ -79,8 +80,15 @@ extension AppModel {
         isSwitchingAccounts = true
         defer { isSwitchingAccounts = false }
         do {
-            let handles = try await credentialStore.handles()
-            guard let handle = handles.first(where: { $0.accountID == accountID }) else {
+            let handle: CredentialHandle?
+            if let remembered = credentialHandlesByAccountID[accountID] {
+                handle = remembered
+            } else {
+                let handles = try await credentialStore.handles()
+                rememberCredentialHandles(handles)
+                handle = credentialHandlesByAccountID[accountID]
+            }
+            guard let handle else {
                 savedAccounts.removeAll { $0.accountID == accountID }
                 await savedAccountStore.remove(accountID: accountID)
                 errorMessage = "That saved Discord account is no longer available."
@@ -464,6 +472,7 @@ extension AppModel {
 
     private func removeSavedAccount(_ handle: CredentialHandle) async throws {
         try await credentialStore.remove(handle)
+        credentialHandlesByAccountID[handle.accountID] = nil
         await savedAccountStore.remove(accountID: handle.accountID)
         savedAccounts.removeAll { $0.accountID == handle.accountID }
         await savedAccountStore.setPreferredAccountID(
@@ -616,6 +625,7 @@ extension AppModel {
                 nil
             }
             if let handles {
+                rememberCredentialHandles(handles)
                 savedAccounts = await savedAccountStore.accounts(
                     matching: handles
                 )
@@ -646,6 +656,13 @@ extension AppModel {
             return false
         }
         return true
+    }
+
+    func rememberCredentialHandles(_ handles: [CredentialHandle]) {
+        credentialHandlesByAccountID = Dictionary(
+            handles.map { ($0.accountID, $0) },
+            uniquingKeysWith: { _, newer in newer }
+        )
     }
 
     // swiftlint:disable:next function_body_length
@@ -1228,6 +1245,9 @@ extension AppModel {
     func navigate(from notification: NotificationDeepLink) async {
         if readState.accountID != notification.accountID {
             let handles = try? await credentialStore.handles()
+            if let handles {
+                rememberCredentialHandles(handles)
+            }
             guard let handle = handles?.first(where: { $0.accountID == notification.accountID }) else {
                 errorMessage = "The account for this notification is no longer available."
                 return
