@@ -1055,6 +1055,55 @@ func `inline rich tokens inherit their enclosing spoiler`() {
     )
 }
 
+@Test
+@MainActor
+func `cross surface scroll work gate stays active until every surface ends`() {
+    let timelineScrollView = NSScrollView()
+    let serverListScrollView = NSScrollView()
+    let timelineProbe = ScrollInputPerformanceProbe(surface: .timeline)
+    let serverListProbe = ScrollInputPerformanceProbe(surface: .serverList)
+    var ownsBenchmarkActivity = true
+    AppScrollWorkGate.beginActivity()
+    timelineProbe.install(on: timelineScrollView)
+    serverListProbe.install(on: serverListScrollView)
+    defer {
+        if ownsBenchmarkActivity {
+            AppScrollWorkGate.endActivity()
+        }
+        timelineProbe.invalidate()
+        serverListProbe.invalidate()
+    }
+
+    NotificationCenter.default.post(
+        name: NSScrollView.willStartLiveScrollNotification,
+        object: timelineScrollView
+    )
+    #expect(AppScrollActivity.isActive)
+    #expect(AppScrollWorkGate.isActive)
+
+    NotificationCenter.default.post(
+        name: NSScrollView.willStartLiveScrollNotification,
+        object: serverListScrollView
+    )
+    NotificationCenter.default.post(
+        name: NSScrollView.didEndLiveScrollNotification,
+        object: timelineScrollView
+    )
+    #expect(AppScrollActivity.isActive)
+    #expect(AppScrollWorkGate.isActive)
+
+    NotificationCenter.default.post(
+        name: NSScrollView.didEndLiveScrollNotification,
+        object: serverListScrollView
+    )
+    #expect(!AppScrollActivity.isActive)
+    #expect(AppScrollWorkGate.isActive)
+
+    AppScrollWorkGate.endActivity()
+    ownsBenchmarkActivity = false
+    #expect(!AppScrollWorkGate.isActive)
+}
+
 @MainActor
 @Test func `conversation replacement defers live append short content redraw`() {
     let viewport = CGRect(x: 0, y: 0, width: 560, height: 400)
