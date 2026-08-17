@@ -169,6 +169,8 @@ extension DiscordRESTProvider {
 
     public func disconnect() async {
         requestSafetyCircuitIsOpen = true
+        cancelStartupSearchCacheLoad()
+        await flushForwardSearchPeopleCachePersistence()
         failInitialGatewaySnapshot(CancellationError())
         for task in forumCatalogueTasks.values {
             task.cancel()
@@ -710,8 +712,7 @@ extension DiscordRESTProvider {
                 lazyPrivateChannelIDs = []
                 forwardSearchEligibleUserIDs = []
                 forwardSearchEligibleUserOrder = []
-                loadForwardSearchPeopleCache()
-                loadQuickSwitcherChannelStoreCache()
+                await loadStartupSearchCaches()
                 cachedBlockedOrIgnoredUserIDs = ready.blockedOrIgnoredUserIDs
                 cachedRelationshipNicknamesByUserID = ready.relationshipNicknamesByUserID
                 if let userDTO = ready.currentUser {
@@ -1108,7 +1109,7 @@ extension DiscordRESTProvider {
                     .messageSearchUsersChanged(currentMessageSearchUsers())
                 )
                 publishUserSearchAliases()
-                persistForwardSearchPeopleCache()
+                scheduleForwardSearchPeopleCachePersistence()
             }
             let states = ReadySupplementalVoiceStateResolver.resolve(
                 data: data,
@@ -1189,7 +1190,7 @@ extension DiscordRESTProvider {
                     // separate snapshot and must advance even when every user
                     // was already known from READY.
                     publishUserSearchAliases()
-                    persistForwardSearchPeopleCache()
+                    scheduleForwardSearchPeopleCachePersistence()
                     if let currentUserID = currentUser?.id,
                        let ownMember = members.first(where: { $0.id == currentUserID })
                     {
@@ -1292,7 +1293,7 @@ extension DiscordRESTProvider {
             cacheLiveSearchUsers([update.member.user])
             publishMemberChange(member, guildID: guildID)
             publishUserSearchAliases()
-            persistForwardSearchPeopleCache()
+            scheduleForwardSearchPeopleCachePersistence()
         case "GUILD_MEMBER_REMOVE":
             guard
                 let deletion = try? JSONDecoder().decode(
@@ -1304,7 +1305,7 @@ extension DiscordRESTProvider {
             quickSwitcherJoinedMemberIDsByGuildID[guildID]?.remove(userID)
             removeMember(userID: userID, guildID: guildID)
             publishUserSearchAliases()
-            persistForwardSearchPeopleCache()
+            scheduleForwardSearchPeopleCachePersistence()
         case "USER_UPDATE":
             guard let dto = try? JSONDecoder().decode(UserDTO.self, from: data),
                   let user = try? dto.domain()

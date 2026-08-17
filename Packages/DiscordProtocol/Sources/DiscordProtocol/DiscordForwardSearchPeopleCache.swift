@@ -55,16 +55,102 @@ nonisolated struct DiscordForwardSearchPeopleCache: Codable, Sendable {
     }
 }
 
+nonisolated struct DiscordStartupSearchCacheSnapshot: Sendable {
+    let people: DiscordForwardSearchPeopleCache?
+    let channelStore: DiscordQuickSwitcherChannelStoreCache?
+
+    static let empty = Self(people: nil, channelStore: nil)
+}
+
+nonisolated private struct DiscordForwardSearchPeopleCacheWrite: Sendable {
+    let cache: DiscordForwardSearchPeopleCache
+    let url: URL
+
+    func perform() {
+        try? cache.save(to: url)
+    }
+}
+
 extension DiscordRESTProvider {
+    func beginStartupSearchCacheLoad() {
+        guard startupSearchCacheLoadTask == nil else { return }
+        let peopleURL = forwardSearchPeopleCacheURL()
+        let channelStoreURL = quickSwitcherChannelStoreCacheURL()
+        guard peopleURL != nil || channelStoreURL != nil else { return }
+
+        startupSearchCacheLoadGeneration &+= 1
+        startupSearchCacheLoadTask = Task.detached(priority: .userInitiated) {
+            let interval = discordPerformanceSignposter.beginInterval(
+                "StartupSearchCachePreparation"
+            )
+            defer {
+                discordPerformanceSignposter.endInterval(
+                    "StartupSearchCachePreparation",
+                    interval
+                )
+            }
+            let people = peopleURL.flatMap(
+                DiscordForwardSearchPeopleCache.load(from:)
+            )
+            guard !Task.isCancelled else { return .empty }
+            let channelStore = channelStoreURL.flatMap(
+                DiscordQuickSwitcherChannelStoreCache.load(from:)
+            )
+            guard !Task.isCancelled else { return .empty }
+            return DiscordStartupSearchCacheSnapshot(
+                people: people,
+                channelStore: channelStore
+            )
+        }
+        discordPerformanceSignposter.emitEvent(
+            "StartupSearchCachePreparationScheduled"
+        )
+    }
+
+    func cancelStartupSearchCacheLoad() {
+        startupSearchCacheLoadGeneration &+= 1
+        startupSearchCacheLoadTask?.cancel()
+        startupSearchCacheLoadTask = nil
+    }
+
+    func loadStartupSearchCaches() async {
+        let generation = startupSearchCacheLoadGeneration
+        let snapshot: DiscordStartupSearchCacheSnapshot
+        if let task = startupSearchCacheLoadTask {
+            snapshot = await task.value
+        } else {
+            snapshot = DiscordStartupSearchCacheSnapshot(
+                people: forwardSearchPeopleCacheURL().flatMap(
+                    DiscordForwardSearchPeopleCache.load(from:)
+                ),
+                channelStore: quickSwitcherChannelStoreCacheURL().flatMap(
+                    DiscordQuickSwitcherChannelStoreCache.load(from:)
+                )
+            )
+        }
+        guard generation == startupSearchCacheLoadGeneration else { return }
+        startupSearchCacheLoadTask = nil
+        installForwardSearchPeopleCache(snapshot.people)
+        installQuickSwitcherChannelStoreCache(snapshot.channelStore)
+    }
+
     func loadForwardSearchPeopleCache() {
+        installForwardSearchPeopleCache(
+            forwardSearchPeopleCacheURL().flatMap(
+                DiscordForwardSearchPeopleCache.load(from:)
+            )
+        )
+    }
+
+    private func installForwardSearchPeopleCache(
+        _ cache: DiscordForwardSearchPeopleCache?
+    ) {
         cachedForwardSearchUsersByID = [:]
         cachedForwardSearchUserOrder = []
         cachedForwardSearchAliasesByGuildID = [:]
         cachedForwardSearchAliasGuildOrder = []
         loadedForwardSearchAliasGuildOrder = []
-        guard let url = forwardSearchPeopleCacheURL(),
-              let cache = DiscordForwardSearchPeopleCache.load(from: url)
-        else { return }
+        guard let cache else { return }
 
         for user in cache.users.suffix(DiscordForwardSearchPeopleCache.maximumUsers) {
             guard cachedForwardSearchUsersByID[user.id] == nil else { continue }
@@ -139,12 +225,95 @@ extension DiscordRESTProvider {
             publishUserSearchAliases()
         }
         if changed {
-            persistForwardSearchPeopleCache()
+            scheduleForwardSearchPeopleCachePersistence()
         }
     }
 
-    func persistForwardSearchPeopleCache() {
-        guard let url = forwardSearchPeopleCacheURL() else { return }
+    /// History pages can discover hundreds of users and aliases in quick
+    /// succession. Encoding and atomically rewriting the complete bounded
+    /// cache for every page needlessly competes with rendering and network
+    /// ingestion. Keep the in-memory stores authoritative immediately, then
+    /// persist once after the discovery burst becomes quiet. Disconnect
+    /// explicitly flushes the pending generation.
+    func scheduleForwardSearchPeopleCachePersistence() {
+        forwardPeopleCachePersistenceGeneration &+= 1
+        let generation = forwardPeopleCachePersistenceGeneration
+        forwardPeopleCachePersistenceTask?.cancel()
+        discordPerformanceSignposter.emitEvent(
+            "ForwardSearchPeopleCachePersistenceScheduled"
+        )
+        forwardPeopleCachePersistenceTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(2))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            await self?.persistScheduledForwardSearchPeopleCache(
+                generation: generation
+            )
+        }
+    }
+
+    private func persistScheduledForwardSearchPeopleCache(
+        generation: UInt64
+    ) async {
+        guard forwardPeopleCachePersistenceGeneration == generation else {
+            return
+        }
+        forwardPeopleCachePersistenceTask = nil
+        await persistForwardSearchPeopleCache()
+    }
+
+    func flushForwardSearchPeopleCachePersistence() async {
+        if forwardPeopleCachePersistenceTask != nil {
+            forwardPeopleCachePersistenceGeneration &+= 1
+            forwardPeopleCachePersistenceTask?.cancel()
+            forwardPeopleCachePersistenceTask = nil
+            await persistForwardSearchPeopleCache()
+        } else if let forwardPeopleCacheWriteTask {
+            await forwardPeopleCacheWriteTask.value
+        }
+    }
+
+    func persistForwardSearchPeopleCache() async {
+        guard let write = forwardSearchPeopleCacheWrite() else { return }
+        let interval = discordPerformanceSignposter.beginInterval(
+            "ForwardSearchPeopleCachePersistence"
+        )
+        defer {
+            discordPerformanceSignposter.endInterval(
+                "ForwardSearchPeopleCachePersistence",
+                interval
+            )
+        }
+        let previousWrite = forwardPeopleCacheWriteTask
+        forwardPeopleCacheWriteGeneration &+= 1
+        let generation = forwardPeopleCacheWriteGeneration
+        let task = Task.detached(priority: .utility) {
+            await previousWrite?.value
+            write.perform()
+        }
+        forwardPeopleCacheWriteTask = task
+        await task.value
+        if forwardPeopleCacheWriteGeneration == generation {
+            forwardPeopleCacheWriteTask = nil
+        }
+    }
+
+    private func forwardSearchPeopleCacheWrite()
+        -> DiscordForwardSearchPeopleCacheWrite?
+    {
+        guard let url = forwardSearchPeopleCacheURL() else { return nil }
+        let snapshot = discordPerformanceSignposter.beginInterval(
+            "ForwardSearchPeopleCacheSnapshot"
+        )
+        defer {
+            discordPerformanceSignposter.endInterval(
+                "ForwardSearchPeopleCacheSnapshot",
+                snapshot
+            )
+        }
         var seenUserIDs = Set<UserID>()
         let orderedUserIDs = cachedGatewayUserOrder.compactMap(UserID.init).filter {
             seenUserIDs.insert($0).inserted
@@ -165,10 +334,13 @@ extension DiscordRESTProvider {
             }
             .sorted { $0.userID.rawValue < $1.userID.rawValue }
         }
-        try? DiscordForwardSearchPeopleCache(
-            users: users,
-            aliases: aliases
-        ).save(to: url)
+        return DiscordForwardSearchPeopleCacheWrite(
+            cache: DiscordForwardSearchPeopleCache(
+                users: users,
+                aliases: aliases
+            ),
+            url: url
+        )
     }
 
     func forwardSearchNickname(from member: Member?) -> String? {

@@ -161,6 +161,13 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var cachedForwardSearchAliasGuildOrder: [GuildID] = []
     var loadedForwardSearchAliasGuildOrder: [GuildID] = []
     var forwardPeopleCacheDirectoryOverride: URL?
+    var forwardPeopleCachePersistenceTask: Task<Void, Never>?
+    var forwardPeopleCachePersistenceGeneration: UInt64 = 0
+    var forwardPeopleCacheWriteTask: Task<Void, Never>?
+    var forwardPeopleCacheWriteGeneration: UInt64 = 0
+    var startupSearchCacheLoadTask:
+        Task<DiscordStartupSearchCacheSnapshot, Never>?
+    var startupSearchCacheLoadGeneration: UInt64 = 0
     var cachedFriendUserIDs: Set<UserID> = []
     var cachedBlockedOrIgnoredUserIDs: Set<UserID> = []
     var cachedRelationshipNicknamesByUserID: [UserID: String] = [:]
@@ -561,6 +568,7 @@ extension DiscordRESTProvider {
         presenceStatus = statusDefaultsKey.flatMap {
             UserDefaults.standard.string(forKey: $0)
         }.flatMap(PresenceStatus.init(rawValue:)) ?? .invisible
+        beginStartupSearchCacheLoad()
         let gatewayStartup = discordPerformanceSignposter.beginInterval(
             "ProviderGatewayStartup",
             id: discordPerformanceSignposter.makeSignpostID()
@@ -876,7 +884,7 @@ extension DiscordRESTProvider {
         let persistentChanged = persistToMessageCache
             ? cacheForwardSearchMessageUsers(users) : false
         if persistentChanged {
-            persistForwardSearchPeopleCache()
+            scheduleForwardSearchPeopleCachePersistence()
         }
         if changed || persistentChanged {
             continuation?.yield(.knownUsersChanged(currentKnownUsers()))

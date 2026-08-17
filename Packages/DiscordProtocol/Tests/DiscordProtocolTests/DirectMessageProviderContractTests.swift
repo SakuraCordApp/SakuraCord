@@ -383,6 +383,7 @@ struct DirectMessageProviderContractTests {
 
         let second = makeProvider(usesForwardSearchPeopleDiskCache: true)
         await second.setForwardSearchPeopleCacheDirectoryForTesting(cacheDirectory)
+        await second.beginStartupSearchCacheLoad()
         await second.receiveGatewayDispatchForTesting(
             name: "READY",
             data: .object([
