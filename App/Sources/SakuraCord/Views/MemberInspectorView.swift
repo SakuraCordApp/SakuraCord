@@ -287,9 +287,17 @@ nonisolated struct MemberSection: Identifiable, Equatable, Sendable {
         roles: [GuildRole]
     ) -> [MemberSection] {
         let rolesByID = Dictionary(uniqueKeysWithValues: roles.map { ($0.id, $0) })
-        let membersByGroup = Dictionary(grouping: members) { member in
+        let inferredMembersByGroup = Dictionary(grouping: members.lazy.filter {
+            $0.memberListIndex == nil
+        }) { member in
             member.roleID?.description ?? (member.isOnline ? "online" : "offline")
         }
+        let indexedMembers = members.lazy.compactMap { member -> (Int, Member)? in
+            member.memberListIndex.map { ($0, member) }
+        }.sorted { lhs, rhs in
+            lhs.0 < rhs.0
+        }
+        var indexedMemberCursor = 0
         var startIndex = 0
         var sections: [MemberSection] = []
         sections.reserveCapacity(groups.count)
@@ -300,18 +308,26 @@ nonisolated struct MemberSection: Identifiable, Equatable, Sendable {
             } else {
                 nil
             }
-            let indexedMembers = members
-                .filter { member in
-                    guard let memberRange else { return false }
-                    return member.memberListIndex.map(memberRange.contains) == true
+            var membersInRange: [Member] = []
+            if let memberRange {
+                while indexedMemberCursor < indexedMembers.count,
+                      indexedMembers[indexedMemberCursor].0 < memberRange.lowerBound
+                {
+                    indexedMemberCursor += 1
                 }
-                .sorted {
-                    ($0.memberListIndex ?? .max) < ($1.memberListIndex ?? .max)
+                let rangeStart = indexedMemberCursor
+                while indexedMemberCursor < indexedMembers.count,
+                      indexedMembers[indexedMemberCursor].0 <= memberRange.upperBound
+                {
+                    indexedMemberCursor += 1
                 }
-            let inferredMembers = (membersByGroup[group.id] ?? []).filter {
-                $0.memberListIndex == nil
+                membersInRange.reserveCapacity(indexedMemberCursor - rangeStart)
+                membersInRange.append(contentsOf: indexedMembers[
+                    rangeStart ..< indexedMemberCursor
+                ].map(\.1))
             }
-            let loadedMembers = indexedMembers + inferredMembers
+            let loadedMembers = membersInRange
+                + (inferredMembersByGroup[group.id] ?? [])
             if group.id == "online" || group.id == "offline" {
                 sections.append(MemberSection(
                     id: group.id == "online" ? .online : .offline,
