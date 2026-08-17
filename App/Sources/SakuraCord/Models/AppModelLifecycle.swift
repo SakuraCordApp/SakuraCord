@@ -2260,6 +2260,33 @@ extension AppModel {
     }
 
     extension AppModel {
+        func prepareAuthenticatedMemberListScrollPerformanceBenchmark() async {
+            guard runsChatPerformanceBenchmark,
+                  sessionState == .workspace
+            else { return }
+            await channelLoadTask?.value
+            guard !Task.isCancelled,
+                  let snapshot,
+                  let targetGuild = snapshot.guilds.first(where: {
+                      $0.name.localizedCaseInsensitiveCompare("Google Labs")
+                          == .orderedSame
+                  }),
+                  let channel = benchmarkConversationChannels(
+                      snapshot.channels.filter { $0.guildID == targetGuild.id }
+                  ).sorted(by: Self.prefersStableLoadingBenchmarkChannel).first
+            else {
+                AppPerformanceSignposts.signposter.emitEvent(
+                    "MemberListAutoScrollBenchmarkTargetUnavailable"
+                )
+                return
+            }
+            guard await runAuthenticatedNavigationBenchmarkOperation(
+                channel: channel,
+                kind: .server
+            ) else { return }
+            await memberLoadTask?.value
+        }
+
         func prepareAuthenticatedTimelineScrollPerformanceBenchmark() async {
             guard runsChatPerformanceBenchmark,
                   sessionState == .workspace
@@ -2297,15 +2324,33 @@ extension AppModel {
             {
                 let previousCount = messages.count
                 await loadEarlier()
+                await waitForSelectedEarlierHistoryRequest(channelID: channelID)
                 pageCount += 1
                 guard messages.count > previousCount else { break }
             }
             return messages.count >= 100
         }
 
+        private func waitForSelectedEarlierHistoryRequest(
+            channelID: ChannelID?
+        ) async {
+            let clock = ContinuousClock()
+            let deadline = clock.now.advanced(by: .seconds(12))
+            while !Task.isCancelled,
+                  selectedChannelID == channelID,
+                  isLoadingEarlier,
+                  clock.now < deadline
+            {
+                try? await Task.sleep(for: .milliseconds(10))
+            }
+        }
+
         func runAuthenticatedHistoryPaginationPerformanceBenchmark() async {
             guard runsChatPerformanceBenchmark, sessionState == .workspace else { return }
             await channelLoadTask?.value
+            await waitForSelectedEarlierHistoryIdle(
+                channelID: selectedChannelID
+            )
             if !hasMoreMessages, let snapshot {
                 let candidates = benchmarkEligibleChannels(snapshot.channels)
                 for channel in candidates where !hasMoreMessages {
@@ -2313,6 +2358,9 @@ extension AppModel {
                     _ = await runAuthenticatedNavigationBenchmarkOperation(
                         channel: channel,
                         kind: channel.guildID == nil ? .directMessage : .channel
+                    )
+                    await waitForSelectedEarlierHistoryIdle(
+                        channelID: selectedChannelID
                     )
                 }
             }
@@ -2357,6 +2405,31 @@ extension AppModel {
             )
         }
 
+        private func waitForSelectedEarlierHistoryIdle(
+            channelID: ChannelID?
+        ) async {
+            let clock = ContinuousClock()
+            let deadline = clock.now.advanced(by: .seconds(12))
+            var idleSince: ContinuousClock.Instant?
+            while !Task.isCancelled,
+                  selectedChannelID == channelID,
+                  clock.now < deadline
+            {
+                if isLoadingEarlier {
+                    idleSince = nil
+                } else if let idleSince {
+                    if idleSince.duration(to: clock.now)
+                        >= .milliseconds(250)
+                    {
+                        return
+                    }
+                } else {
+                    idleSince = clock.now
+                }
+                try? await Task.sleep(for: .milliseconds(10))
+            }
+        }
+
         private func writeAuthenticatedHistoryPaginationBenchmarkResult(
             outcome: String,
             pageCount: Int
@@ -2379,13 +2452,17 @@ extension AppModel {
         func runAuthenticatedAccountSwitchPerformanceBenchmark() async {
             guard runsChatPerformanceBenchmark, sessionState == .workspace else { return }
             let originalPreferredAccountID = await savedAccountStore.preferredAccountID()
+            let sourceAccountID = activeAccountID ?? originalPreferredAccountID
             let handles: [CredentialHandle]
             do {
                 handles = try await credentialStore.handles()
+                rememberCredentialHandles(handles)
             } catch {
                 writeAuthenticatedAccountSwitchBenchmarkResult(
                     outcome: "credential-error",
-                    switchCount: 0
+                    switchCount: 0,
+                    sourceAccountID: sourceAccountID,
+                    targetAccountID: nil
                 )
                 return
             }
@@ -2396,7 +2473,9 @@ extension AppModel {
             else {
                 writeAuthenticatedAccountSwitchBenchmarkResult(
                     outcome: "unavailable",
-                    switchCount: 0
+                    switchCount: 0,
+                    sourceAccountID: sourceAccountID,
+                    targetAccountID: nil
                 )
                 return
             }
@@ -2443,13 +2522,17 @@ extension AppModel {
             )
             writeAuthenticatedAccountSwitchBenchmarkResult(
                 outcome: switched && reachedFirstFrame ? "completed" : "failed",
-                switchCount: switched && reachedFirstFrame ? 1 : 0
+                switchCount: switched && reachedFirstFrame ? 1 : 0,
+                sourceAccountID: sourceAccountID,
+                targetAccountID: target.accountID
             )
         }
 
         private func writeAuthenticatedAccountSwitchBenchmarkResult(
             outcome: String,
-            switchCount: Int
+            switchCount: Int,
+            sourceAccountID: String?,
+            targetAccountID: String?
         ) {
             guard let path = ProcessInfo.processInfo.environment[
                 "SAKURACORD_PERFORMANCE_RESULT_PATH"
@@ -2457,6 +2540,8 @@ extension AppModel {
             let contents = """
             outcome\t\(outcome)
             switch_count\t\(switchCount)
+            source_account_id\t\(sourceAccountID ?? "")
+            target_account_id\t\(targetAccountID ?? "")
 
             """
             try? contents.write(
@@ -2548,7 +2633,7 @@ extension AppModel {
                 snapshot.channels.filter {
                     $0.guildID == targetGuild.id
                 }
-            ).sorted(by: Self.prefersActiveBenchmarkChannel).first else {
+            ).sorted(by: Self.prefersStableLoadingBenchmarkChannel).first else {
                 finishUnavailable("target-channels-missing")
                 return
             }
@@ -2610,14 +2695,15 @@ extension AppModel {
             writeAuthenticatedScrollInteractionBenchmarkResult(
                 outcome:
                     opened
-                        && messages.count > initialMessageCount
-                        && messages.count > 10
+                        && initialMessageCount == 10
+                        && messages.count >= 100
                         && !Task.isCancelled
                     ? "completed"
                     : (Task.isCancelled ? "cancelled" : "failed"),
                 target: targetGuild.name,
                 messageCount: messages.count,
-                initialMessageCount: initialMessageCount
+                initialMessageCount: initialMessageCount,
+                channel: channel
             )
         }
 
@@ -2666,12 +2752,30 @@ extension AppModel {
             return lhs.id.rawValue < rhs.id.rawValue
         }
 
+        private nonisolated static func prefersStableLoadingBenchmarkChannel(
+            _ lhs: Channel,
+            _ rhs: Channel
+        ) -> Bool {
+            let lhsIsGeneral = lhs.name.localizedLowercase.hasSuffix("general")
+            let rhsIsGeneral = rhs.name.localizedLowercase.hasSuffix("general")
+            if lhsIsGeneral != rhsIsGeneral {
+                return lhsIsGeneral
+            }
+            let lhsHasHistory = lhs.lastMessageID != nil
+            let rhsHasHistory = rhs.lastMessageID != nil
+            if lhsHasHistory != rhsHasHistory {
+                return lhsHasHistory
+            }
+            return lhs.id.rawValue < rhs.id.rawValue
+        }
+
         private func writeAuthenticatedScrollInteractionBenchmarkResult(
             outcome: String,
             target: String,
             messageCount: Int,
             initialMessageCount: Int? = nil,
-            detail: String = ""
+            detail: String = "",
+            channel: Channel? = nil
         ) {
             guard let path = ProcessInfo.processInfo.environment[
                 "SAKURACORD_PERFORMANCE_RESULT_PATH"
@@ -2680,6 +2784,8 @@ extension AppModel {
             outcome\t\(outcome)
             detail\t\(detail)
             target\t\(target)
+            target_channel_id\t\(channel?.id.rawValue.description ?? "")
+            target_channel_name\t\(channel?.name ?? "")
             surface\t\(ProcessInfo.processInfo.environment["SAKURACORD_PERFORMANCE_SCROLL_SURFACE"] ?? "all")
             display_maximum_frames_per_second\t\(max(1, NSApp.keyWindow?.screen?.maximumFramesPerSecond ?? NSScreen.main?.maximumFramesPerSecond ?? 60))
             initial_message_count\t\(initialMessageCount ?? messageCount)

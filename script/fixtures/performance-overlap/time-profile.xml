@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<trace-query-result>
+  <node>
+    <row>
+      <sample-time id="fixture-sample-time" fmt="00:01.500.000">1500000000</sample-time>
+      <thread id="fixture-thread" fmt="Main Thread (0x1) (SakuraCord, pid: 1)">
+        <process id="fixture-process" fmt="SakuraCord (1)">
+          <pid id="fixture-pid">1</pid>
+        </process>
+      </thread>
+      <process ref="fixture-process"/>
+      <thread-state id="fixture-thread-state" fmt="Running">Running</thread-state>
+      <weight id="fixture-weight" fmt="1.00 ms">1000000</weight>
+      <tagged-backtrace id="fixture-stack">
+        <frame id="fixture-frame" name="FixtureWork">
+          <binary id="fixture-binary" name="SakuraCord"/>
+        </frame>
+      </tagged-backtrace>
+    </row>
+    <row>
+      <sample-time fmt="00:02.500.000">2500000000</sample-time>
+      <thread fmt="Main Thread (0x1) (SakuraCord, pid: 1)">1</thread>
+      <process fmt="SakuraCord (1)">1</process>
+      <thread-state fmt="Running">Running</thread-state>
+      <weight fmt="2.00 ms">2000000</weight>
+    </row>
+    <row>
+      <sample-time fmt="00:02.600.000">2600000000</sample-time>
+      <thread fmt="Worker Thread (0x2) (SakuraCord, pid: 1)">2</thread>
+      <process fmt="SakuraCord (1)">1</process>
+      <thread-state fmt="Running">Running</thread-state>
+      <weight fmt="5.00 ms">5000000</weight>
+    </row>
+    <row>
+      <sample-time fmt="00:04.000.000">4000000000</sample-time>
+      <thread fmt="Main Thread (0x1) (SakuraCord, pid: 1)">1</thread>
+      <process fmt="SakuraCord (1)">1</process>
+      <thread-state fmt="Running">Running</thread-state>
+      <weight fmt="3.00 ms">3000000</weight>
+    </row>
+    <row>
+      <sample-time fmt="00:06.500.000">6500000000</sample-time>
+      <thread fmt="Main Thread (0x1) (SakuraCord, pid: 1)">1</thread>
+      <process fmt="SakuraCord (1)">1</process>
+      <thread-state fmt="Running">Running</thread-state>
+      <weight fmt="4.00 ms">4000000</weight>
+    </row>
+  </node>
+</trace-query-result>

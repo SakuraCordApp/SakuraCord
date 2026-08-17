@@ -17,6 +17,7 @@ struct SakuraCordApp: App {
     private let runsAuthenticatedGestureScrollBenchmark: Bool
     private let runsLoadingScrollOverlapBenchmark: Bool
     private let preparesTimelineScrollBenchmark: Bool
+    private let preparesMemberListScrollBenchmark: Bool
     private let activatesAuthenticatedScrollBenchmark: Bool
     private let performanceMockProvider: MockChatProvider?
 
@@ -54,6 +55,9 @@ struct SakuraCordApp: App {
         preparesTimelineScrollBenchmark =
             configuration.mode == .normal
             && configuration.runsChatPerformanceAutoScroll
+        preparesMemberListScrollBenchmark =
+            configuration.mode == .normal
+            && configuration.runsMemberListPerformanceAutoScroll
         activatesAuthenticatedScrollBenchmark =
             configuration.mode == .normal
             && (
@@ -127,6 +131,9 @@ struct SakuraCordApp: App {
                     }
                     if preparesTimelineScrollBenchmark {
                         await model.prepareAuthenticatedTimelineScrollPerformanceBenchmark()
+                    }
+                    if preparesMemberListScrollBenchmark {
+                        await model.prepareAuthenticatedMemberListScrollPerformanceBenchmark()
                     }
                     if opensChatPerformanceFixture {
                         NSApp.activate(ignoringOtherApps: true)
