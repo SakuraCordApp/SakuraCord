@@ -1,7 +1,7 @@
 import Foundation
 import SakuraCordModels
 
-nonisolated enum ConversationAccess: Equatable {
+nonisolated enum ConversationAccess: Equatable, Sendable {
     case checking
     case readable(canSend: Bool)
     case hidden

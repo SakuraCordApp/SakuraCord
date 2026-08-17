@@ -94,7 +94,6 @@ private nonisolated struct QuickSwitcherMemberQuery: Hashable, Sendable {
 
 private nonisolated struct QuickSwitcherIndexRequest: Hashable, Sendable {
     let revision: UInt64
-    let isVisible: Bool
 }
 
 private struct QuickSwitcherView: View {
@@ -205,7 +204,9 @@ private struct QuickSwitcherView: View {
                 lastPointerLocation = nil
                 selectedResultID = nil
             }
-            .onChange(of: model.members.map(\.id)) { _, _ in
+            .onChange(
+                of: animationState.isVisible ? model.members.map(\.id) : []
+            ) { _, _ in
                 // The retained quick switcher is preloaded before the current
                 // guild's member viewport may finish hydrating. Re-rank from
                 // the live member store instead of freezing that early,
@@ -215,8 +216,19 @@ private struct QuickSwitcherView: View {
                     contextRevision &+= 1
                 }
             }
-            .task(id: indexRequest) {
-                if memberSearchRequest != nil {
+            .task(id: activeIndexRequest) {
+                guard let activeIndexRequest else {
+                    // Keep the immutable corpus warm without making the
+                    // retained, invisible view observe every source revision.
+                    // The cache owns and coalesces this background work.
+                    if model.snapshot != nil {
+                        ForwardDestinationSearchIndexCache.shared.schedulePrewarm(
+                            for: model
+                        )
+                    }
+                    return
+                }
+                if activeMemberSearchRequest != nil {
                     ForwardDestinationSearchIndexCache.shared.invalidate(for: model)
                 }
                 if !model.hasLoadedDiscordEmojiSettings {
@@ -225,7 +237,7 @@ private struct QuickSwitcherView: View {
                     }
                 }
                 let userID = model.snapshot?.currentUser.id
-                let revision = model.forwardSearchSourceRevision
+                let revision = activeIndexRequest.revision
                 let exact = ForwardDestinationSearchIndexCache.shared.value(
                     for: model,
                     userID: userID,
@@ -235,8 +247,7 @@ private struct QuickSwitcherView: View {
                     for: model,
                     userID: userID
                 )
-                if animationState.isVisible,
-                   searchIndex == nil,
+                if searchIndex == nil,
                    let immediatelyAvailable = exact
                     ?? latest
                 {
@@ -246,19 +257,13 @@ private struct QuickSwitcherView: View {
                 if let exact {
                     prepared = exact
                 } else {
-                    if !animationState.isVisible {
-                        ForwardDestinationSearchIndexCache.shared.schedulePrewarm(
-                            for: model
-                        )
-                        return
-                    }
                     prepared = await ForwardDestinationSearchIndexCache.shared.prepare(
                         for: model,
-                        priority: animationState.isVisible ? .userInitiated : .background
+                        priority: .userInitiated
                     )
                 }
                 guard !Task.isCancelled else { return }
-                if animationState.isVisible, let searchIndex {
+                if let searchIndex {
                     // Membership/read-state projections are small live inputs
                     // to the retained index. Refresh those without rebuilding
                     // or swapping the expensive immutable search corpus.
@@ -270,16 +275,19 @@ private struct QuickSwitcherView: View {
                 // ready. Discord does the same asynchronous store hydration;
                 // retaining the stale index for the whole first presentation
                 // made a clean launch rank differently until close/reopen.
-                if animationState.isVisible, let prepared {
+                if let prepared {
                     applySearchIndex(prepared)
                 }
             }
-            .task(id: searchRequest) {
-                await refreshDisplayedResults(for: searchRequest)
+            .task(id: activeSearchRequest) {
+                guard let activeSearchRequest else { return }
+                await refreshDisplayedResults(for: activeSearchRequest)
             }
-            .task(id: memberSearchRequest) {
-                guard let memberSearchRequest else { return }
-                await requestQuickSwitcherMembersIfNeeded(for: memberSearchRequest)
+            .task(id: activeMemberSearchRequest) {
+                guard let activeMemberSearchRequest else { return }
+                await requestQuickSwitcherMembersIfNeeded(
+                    for: activeMemberSearchRequest
+                )
             }
     }
 
@@ -291,14 +299,19 @@ private struct QuickSwitcherView: View {
         )
     }
 
-    private var indexRequest: QuickSwitcherIndexRequest {
-        QuickSwitcherIndexRequest(
-            revision: model.forwardSearchSourceRevision,
-            isVisible: animationState.isVisible
+    private var activeIndexRequest: QuickSwitcherIndexRequest? {
+        guard animationState.isVisible else { return nil }
+        return QuickSwitcherIndexRequest(
+            revision: model.forwardSearchSourceRevision
         )
     }
 
-    private var memberSearchRequest: QuickSwitcherMemberQuery? {
+    private var activeSearchRequest: QuickSwitcherSearchRequest? {
+        animationState.isVisible ? searchRequest : nil
+    }
+
+    private var activeMemberSearchRequest: QuickSwitcherMemberQuery? {
+        guard animationState.isVisible else { return nil }
         let parsed = QuickSwitcherParsedQuery(query)
         guard parsed.mode == .user,
               !parsed.searchValue.isEmpty,
@@ -420,7 +433,7 @@ private struct QuickSwitcherView: View {
         // presentation task avoids a detached-task hop plus a second main-actor
         // hop before rows can be committed to the native viewport.
         let results = input.results(query: request.query)
-        guard !Task.isCancelled, searchRequest == request else { return }
+        guard !Task.isCancelled, activeSearchRequest == request else { return }
         let selectable = results.filter(\.isSelectable)
         let preservesSelection = completedQuery == request.query
         displayedResults = results

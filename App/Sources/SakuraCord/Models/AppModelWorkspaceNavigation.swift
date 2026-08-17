@@ -7,8 +7,10 @@ nonisolated enum MessageSearchSurfacePolicy {
     static func showsToolbar(channelKind: ChannelKindValue?, hasOpenThread: Bool) -> Bool {
         guard !hasOpenThread else { return false }
         return switch channelKind {
-        case .text, .announcement, .directMessage, .groupDirectMessage: true
-        case .forum, .voice, .unknown, nil: false
+        case .text, .announcement, .forum, .directMessage, .groupDirectMessage:
+            true
+        case .voice, .unknown, nil:
+            false
         }
     }
 }

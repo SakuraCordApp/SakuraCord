@@ -158,7 +158,7 @@ private struct DirectMessageInboxRow: View {
         .overlay {
             ChannelContextMenuBridge(
                 isSelected: model.selectedChannelID == channel.id,
-                isUnread: model.isChannelUnread(channel.id),
+                isUnread: channel.unreadCount > 0,
                 isMutationPending:
                     model.isChannelNotificationMutationPending(channel.id),
                 directOverride: model.channelNotificationOverride(for: channel),

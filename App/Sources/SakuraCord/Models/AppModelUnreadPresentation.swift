@@ -26,6 +26,7 @@ private nonisolated struct UnreadPresentationPreparationSource: Sendable {
     var guilds: [Guild]
     var selectedGuildID: GuildID?
     var visibleChannelCapacity: Int
+    var observesAppScrollWorkGate: Bool
 
     func prepare() -> PreparedUnreadPresentation? {
         let signposter = OSSignposter(
@@ -43,7 +44,12 @@ private nonisolated struct UnreadPresentationPreparationSource: Sendable {
         }
         let readInterval = signposter.beginInterval("UnreadStateProjection")
         guard let unread = readState.projection(
-            cancelsCooperatively: true
+            cancelsCooperatively: true,
+            cancellationCheck: {
+                Task.isCancelled
+                    || (observesAppScrollWorkGate
+                        && AppScrollWorkGate.isActive)
+            }
         ) else {
             signposter.endInterval("UnreadStateProjection", readInterval)
             return nil
@@ -68,7 +74,11 @@ private nonisolated struct UnreadPresentationPreparationSource: Sendable {
             return nil
         }
         signposter.endInterval("UnreadGuildProjection", guildInterval)
-        guard !Task.isCancelled else { return nil }
+        guard !Task.isCancelled,
+              !observesAppScrollWorkGate || !AppScrollWorkGate.isActive
+        else {
+            return nil
+        }
         let railInterval = signposter.beginInterval(
             "UnreadServerRailProjection"
         )
@@ -92,7 +102,13 @@ private nonisolated struct UnreadPresentationPreparationSource: Sendable {
         visibleChannels.reserveCapacity(visibleChannelCapacity)
         var changed = false
         for index in projected.indices {
-            if index.isMultiple(of: 64), Task.isCancelled { return nil }
+            if index.isMultiple(of: 64),
+               Task.isCancelled
+                   || (observesAppScrollWorkGate
+                       && AppScrollWorkGate.isActive)
+            {
+                return nil
+            }
             let unreadCount = projected[index].kind == .forum
                 ? unread.newForumPostsByChannelID[projected[index].id, default: 0]
                 : (unread.unreadByChannelID[projected[index].id] == true ? 1 : 0)
@@ -129,7 +145,13 @@ private nonisolated struct UnreadPresentationPreparationSource: Sendable {
         var projected = guilds
         var changed = false
         for index in projected.indices {
-            if index.isMultiple(of: 64), Task.isCancelled { return nil }
+            if index.isMultiple(of: 64),
+               Task.isCancelled
+                   || (observesAppScrollWorkGate
+                       && AppScrollWorkGate.isActive)
+            {
+                return nil
+            }
             let unreadCount = unread.unreadByGuildID[projected[index].id] == true
                 ? 1
                 : 0
@@ -153,6 +175,10 @@ private nonisolated struct UnreadPresentationPreparationSource: Sendable {
 }
 
 extension AppModel {
+    var isAppScrollDeferringUnread: Bool {
+        launchMode == .normal && AppScrollActivity.isActive
+    }
+
     /// Bootstrap may expose the workspace before this finishes, but its async
     /// API must not return while the initial sidebar unread projection is
     /// still pending. This preserves the atomic startup contract without
@@ -175,7 +201,10 @@ extension AppModel {
 
     func refreshUnreadPresentation(
         appliesAccessImmediately: Bool = false,
-        accessAffectedGuildIDs: Set<GuildID>? = nil
+        accessAffectedGuildIDs: Set<GuildID>? = nil,
+        accessAffectedChannelIDs: Set<ChannelID> = [],
+        accessReplacingChannelIDs: Set<ChannelID>? = nil,
+        accessAffectedChannels: [Channel]? = nil
     ) {
         let interval = AppPerformanceSignposts.signposter.beginInterval(
             "UnreadPresentationRefreshRequest"
@@ -199,7 +228,10 @@ extension AppModel {
             ) {
                 applyImmediateUnreadAccessProjection(
                     for: channels,
-                    affectedGuildIDs: accessAffectedGuildIDs
+                    affectedGuildIDs: accessAffectedGuildIDs,
+                    affectedChannelIDs: accessAffectedChannelIDs,
+                    replacingChannelIDs: accessReplacingChannelIDs,
+                    affectedChannels: accessAffectedChannels
                 )
             }
             // Access revocation and checking/readable transitions are applied
@@ -210,8 +242,11 @@ extension AppModel {
             requestCoalescedUnreadPresentationRefresh()
             return
         }
-        guard liveScrollingConversationIDs.isEmpty else {
+        guard liveScrollingConversationIDs.isEmpty,
+              !isAppScrollDeferringUnread
+        else {
             hasDeferredUnreadPresentationRefresh = true
+            requestCoalescedUnreadPresentationRefresh()
             return
         }
         hasDeferredUnreadPresentationRefresh = false
@@ -238,7 +273,8 @@ extension AppModel {
     private func beginUnreadPresentationPreparationIfNeeded() {
         guard unreadPresentationPreparationTask == nil,
               snapshot != nil,
-              liveScrollingConversationIDs.isEmpty
+              liveScrollingConversationIDs.isEmpty,
+              !isAppScrollDeferringUnread
         else { return }
         let account = accountSession()
         unreadPresentationPreparationSequence &+= 1
@@ -263,9 +299,12 @@ extension AppModel {
                 self.unreadPresentationPreparationTask = nil
                 return
             }
-            guard self.liveScrollingConversationIDs.isEmpty else {
+            guard self.liveScrollingConversationIDs.isEmpty,
+                  !self.isAppScrollDeferringUnread
+            else {
                 self.unreadPresentationPreparationTask = nil
                 self.hasDeferredUnreadPresentationRefresh = true
+                self.requestCoalescedUnreadPresentationRefresh()
                 return
             }
             let generation = self.unreadPresentationPreparationGeneration
@@ -279,7 +318,8 @@ extension AppModel {
                     channels: value.channels,
                     guilds: value.guilds,
                     selectedGuildID: sourceSelectedGuildID,
-                    visibleChannelCapacity: self.visibleChannels.count
+                    visibleChannelCapacity: self.visibleChannels.count,
+                    observesAppScrollWorkGate: self.launchMode == .normal
                 )
             }
             self.activeUnreadPreparationGeneration = generation
@@ -300,13 +340,15 @@ extension AppModel {
                   self.isCurrentAccountSession(account)
             else { return }
             guard let prepared else {
-                if self.unreadPresentationPreparationGeneration != generation {
-                    self.beginUnreadPresentationPreparationIfNeeded()
-                }
+                self.hasDeferredUnreadPresentationRefresh = true
+                self.requestCoalescedUnreadPresentationRefresh()
                 return
             }
-            guard self.liveScrollingConversationIDs.isEmpty else {
+            guard self.liveScrollingConversationIDs.isEmpty,
+                  !self.isAppScrollDeferringUnread
+            else {
                 self.hasDeferredUnreadPresentationRefresh = true
+                self.requestCoalescedUnreadPresentationRefresh()
                 return
             }
             guard self.unreadPresentationPreparationGeneration == generation,
@@ -371,7 +413,12 @@ extension AppModel {
                 snapshot = value
             }
             if projectedGuildsByID != serverRailGuildsByID {
-                serverRailGuildsByID = projectedGuildsByID
+                replaceServerRailGuilds(projectedGuildsByID)
+            } else {
+                // Notification settings can change without changing the Guild
+                // projection. Refreshing the stable entries updates only rows
+                // whose projected menu state actually changed.
+                refreshServerRailPresentation()
             }
         }
         let selectedGuildChannels = channelProjection.visibleChannels

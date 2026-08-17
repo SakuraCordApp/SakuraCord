@@ -17,6 +17,7 @@ enum AppPerformanceSignposts {
     private static var navigationHistoryReadyChannelID: ChannelID?
     private static var conversationFirstFrameWaiters:
         [ChannelID: [CheckedContinuation<Void, Never>]] = [:]
+    private static var guildActivationDepth = 0
     private static var quickSwitcherOpenInterval: OSSignpostIntervalState?
     private static var quickSwitcherQueryInterval: OSSignpostIntervalState?
     private static var quickSwitcherCloseInterval: OSSignpostIntervalState?
@@ -84,9 +85,11 @@ enum AppPerformanceSignposts {
         beginConversationNavigation(to: channelID)
     }
 
+    @discardableResult
     static func reportConversationFirstFrame(
         channelID: ChannelID
-    ) {
+    ) -> Bool {
+        var completedPresentation = false
         if startupInterval != nil,
            startupPresentationReadiness.reportFramePresented(
             channelID: channelID
@@ -94,11 +97,12 @@ enum AppPerformanceSignposts {
         {
             signposter.emitEvent("StartupConversationFramePresented")
             finishStartupPresentation()
+            completedPresentation = true
         }
         guard let current = conversationNavigationInterval,
               current.channelID == channelID,
               navigationHistoryReadyChannelID == channelID
-        else { return }
+        else { return completedPresentation }
         signposter.emitEvent("ConversationFirstFrameDrawn")
         signposter.endInterval(
             "ConversationNavigationToFirstFrame",
@@ -107,6 +111,7 @@ enum AppPerformanceSignposts {
         conversationNavigationInterval = nil
         navigationHistoryReadyChannelID = nil
         resumeConversationFirstFrameWaiters(for: channelID)
+        return true
     }
 
     static func reportConversationHistoryReady(channelID: ChannelID) {
@@ -131,6 +136,18 @@ enum AppPerformanceSignposts {
         await withCheckedContinuation { continuation in
             conversationFirstFrameWaiters[channelID, default: []].append(continuation)
         }
+    }
+
+    static var isConversationPresentationWorkActive: Bool {
+        conversationNavigationInterval != nil || guildActivationDepth > 0
+    }
+
+    static func beginGuildActivationWork() {
+        guildActivationDepth += 1
+    }
+
+    static func endGuildActivationWork() {
+        guildActivationDepth = max(0, guildActivationDepth - 1)
     }
 
     private static func resumeConversationFirstFrameWaiters(for channelID: ChannelID) {

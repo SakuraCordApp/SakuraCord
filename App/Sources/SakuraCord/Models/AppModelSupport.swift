@@ -421,7 +421,12 @@ actor ReactionReactorLoadLimiter {
     }
 }
 
-enum DiscordCustomEmojiCatalog {
+nonisolated struct PreparedDiscordCustomEmojiCatalog: Sendable {
+    var orderedEmojis: [DiscordEmoji]?
+    var imageURLsByID: [String: URL]?
+}
+
+nonisolated enum DiscordCustomEmojiCatalog {
     static func ordered(
         emojisByGuild: [GuildID: [DiscordEmoji]],
         guildOrder: [GuildID]
@@ -440,6 +445,106 @@ enum DiscordCustomEmojiCatalog {
                 urls[emoji.id] = url
             }
         }
+    }
+
+    static func prepare(
+        emojisByGuild: [GuildID: [DiscordEmoji]],
+        guildOrder: [GuildID],
+        previousOrderedEmojis: [DiscordEmoji],
+        previousImageURLsByID: [String: URL],
+        cancellationCheck: @Sendable () -> Bool = { Task.isCancelled }
+    ) -> PreparedDiscordCustomEmojiCatalog? {
+        guard !cancellationCheck() else { return nil }
+        guard let orderedEmojis = orderedCooperatively(
+            emojisByGuild: emojisByGuild,
+            guildOrder: guildOrder,
+            cancellationCheck: cancellationCheck
+        ) else { return nil }
+        guard let imageURLs = imageURLsByIDCooperatively(
+            from: orderedEmojis,
+            cancellationCheck: cancellationCheck
+        ) else { return nil }
+        guard let orderedChanged = differsCooperatively(
+            previousOrderedEmojis,
+            orderedEmojis,
+            cancellationCheck: cancellationCheck
+        ) else { return nil }
+        guard let imageURLsChanged = differsCooperatively(
+            previousImageURLsByID,
+            imageURLs,
+            cancellationCheck: cancellationCheck
+        ) else { return nil }
+        return PreparedDiscordCustomEmojiCatalog(
+            orderedEmojis: orderedChanged ? orderedEmojis : nil,
+            imageURLsByID: imageURLsChanged ? imageURLs : nil
+        )
+    }
+
+    private static func orderedCooperatively(
+        emojisByGuild: [GuildID: [DiscordEmoji]],
+        guildOrder: [GuildID],
+        cancellationCheck: @Sendable () -> Bool
+    ) -> [DiscordEmoji]? {
+        var seenGuilds = Set<GuildID>()
+        var orderedGuilds: [GuildID] = []
+        orderedGuilds.reserveCapacity(emojisByGuild.count)
+        for (index, guildID) in guildOrder.enumerated() {
+            if index.isMultiple(of: 64), cancellationCheck() { return nil }
+            if seenGuilds.insert(guildID).inserted {
+                orderedGuilds.append(guildID)
+            }
+        }
+        let remainingGuilds = emojisByGuild.keys
+            .filter { seenGuilds.insert($0).inserted }
+            .sorted { $0.rawValue > $1.rawValue }
+        orderedGuilds.append(contentsOf: remainingGuilds)
+        var result: [DiscordEmoji] = []
+        for (index, guildID) in orderedGuilds.enumerated() {
+            if index.isMultiple(of: 16), cancellationCheck() { return nil }
+            result.append(contentsOf: emojisByGuild[guildID] ?? [])
+        }
+        return cancellationCheck() ? nil : result
+    }
+
+    private static func imageURLsByIDCooperatively(
+        from emojis: [DiscordEmoji],
+        cancellationCheck: @Sendable () -> Bool
+    ) -> [String: URL]? {
+        var result: [String: URL] = [:]
+        result.reserveCapacity(emojis.count)
+        for (index, emoji) in emojis.enumerated() {
+            if index.isMultiple(of: 128), cancellationCheck() { return nil }
+            if let url = emoji.assetURL ?? emoji.imageURL {
+                result[emoji.id] = url
+            }
+        }
+        return cancellationCheck() ? nil : result
+    }
+
+    private static func differsCooperatively(
+        _ lhs: [DiscordEmoji],
+        _ rhs: [DiscordEmoji],
+        cancellationCheck: @Sendable () -> Bool
+    ) -> Bool? {
+        guard lhs.count == rhs.count else { return true }
+        for index in lhs.indices {
+            if index.isMultiple(of: 128), cancellationCheck() { return nil }
+            if lhs[index] != rhs[index] { return true }
+        }
+        return cancellationCheck() ? nil : false
+    }
+
+    private static func differsCooperatively(
+        _ lhs: [String: URL],
+        _ rhs: [String: URL],
+        cancellationCheck: @Sendable () -> Bool
+    ) -> Bool? {
+        guard lhs.count == rhs.count else { return true }
+        for (index, entry) in rhs.enumerated() {
+            if index.isMultiple(of: 128), cancellationCheck() { return nil }
+            if lhs[entry.key] != entry.value { return true }
+        }
+        return cancellationCheck() ? nil : false
     }
 }
 
@@ -776,13 +881,28 @@ nonisolated enum TimelineMemberPresentationImpact {
     static func changedUserIDs(
         from oldMembers: [UserID: Member],
         to newMembers: [UserID: Member],
-        guildRoles: [GuildRole]
+        guildRoles: [GuildRole],
+        candidates: Set<UserID>? = nil
     ) -> Set<UserID> {
-        let candidates = Set(oldMembers.keys).union(newMembers.keys)
-        return Set(candidates.filter { userID in
+        let comparedUserIDs = candidates
+            ?? Set(oldMembers.keys).union(newMembers.keys)
+        return Set(comparedUserIDs.filter { userID in
             signature(for: oldMembers[userID], guildRoles: guildRoles)
                 != signature(for: newMembers[userID], guildRoles: guildRoles)
         })
+    }
+
+    static func referencedUserIDs(in messages: [Message]) -> Set<UserID> {
+        var userIDs: Set<UserID> = []
+        userIDs.reserveCapacity(messages.count)
+        for message in messages {
+            userIDs.insert(message.author.id)
+            if let replyAuthorID = message.replyPreview?.author.id {
+                userIDs.insert(replyAuthorID)
+            }
+            userIDs.formUnion(message.mentionedUsers.lazy.map(\.id))
+        }
+        return userIDs
     }
 
     static func affectedMessageIDs(
@@ -817,6 +937,33 @@ nonisolated enum TimelineMemberPresentationImpact {
                     ?? MessageAuthorPresentation.topRoleColor(
                         in: guildRoles.filter { roleIDs.contains($0.id) }
                     )
+        )
+    }
+}
+
+nonisolated struct PreparedMemberListPresentation: Sendable {
+    let guildID: GuildID
+    let roles: [GuildRole]
+    let sections: [MemberSection]
+
+    static func make(
+        guildID: GuildID,
+        members: [Member],
+        groups: [GuildMemberListGroup],
+        roles: [GuildRole]
+    ) -> Self {
+        Self(
+            guildID: guildID,
+            roles: roles,
+            sections: AppPerformanceSignposts.measureSync(
+                "MemberSectionBuild"
+            ) {
+                MemberSection.make(
+                    from: members,
+                    groups: groups,
+                    roles: roles
+                )
+            }
         )
     }
 }

@@ -456,7 +456,9 @@ extension AppModel {
             let changedUserIDs = TimelineMemberPresentationImpact.changedUserIDs(
                 from: previousMembersByID,
                 to: indexed,
-                guildRoles: guildRoles
+                guildRoles: guildRoles,
+                candidates: TimelineMemberPresentationImpact
+                    .referencedUserIDs(in: messages)
             )
             let affectedMessageIDs = TimelineMemberPresentationImpact
                 .affectedMessageIDs(

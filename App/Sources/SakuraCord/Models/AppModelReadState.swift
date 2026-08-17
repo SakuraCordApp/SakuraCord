@@ -387,7 +387,9 @@ extension AppModel {
             else { return }
             self.refreshUnreadPresentation()
             self.guildAcknowledgementTasks[guildID] = nil
+            self.refreshServerRailPresentation(guildID: guildID)
         }
+        refreshServerRailPresentation(guildID: guildID)
     }
 
     func markCategoryRead(categoryID: ChannelID, guildID: GuildID) {
@@ -523,7 +525,9 @@ extension AppModel {
                   generation == self.channelNotificationMutationGeneration
             else { return }
             self.guildNotificationMutationTasks[guildID] = nil
+            self.refreshServerRailPresentation(guildID: guildID)
         }
+        refreshServerRailPresentation(guildID: guildID)
     }
 
     func setGuildMute(
@@ -566,7 +570,9 @@ extension AppModel {
                   generation == self.channelNotificationMutationGeneration
             else { return }
             self.guildNotificationMutationTasks[guildID] = nil
+            self.refreshServerRailPresentation(guildID: guildID)
         }
+        refreshServerRailPresentation(guildID: guildID)
     }
 
     func setGuildNotificationToggle(
@@ -607,7 +613,9 @@ extension AppModel {
                   generation == self.channelNotificationMutationGeneration
             else { return }
             self.guildNotificationMutationTasks[guildID] = nil
+            self.refreshServerRailPresentation(guildID: guildID)
         }
+        refreshServerRailPresentation(guildID: guildID)
     }
 
     func setChannelNotificationLevel(
@@ -1006,6 +1014,7 @@ extension AppModel {
             )
         mutation(&settings)
         applyNotificationSettings(settings)
+        refreshServerRailPresentation(guildID: guild.id)
         refreshUnreadPresentation()
     }
 

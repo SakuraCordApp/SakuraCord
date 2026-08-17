@@ -28,31 +28,141 @@ import UserNotifications
     let settings: (Guild) -> GuildNotificationSettings = {
         GuildNotificationSettings(guildID: $0.id)
     }
-    let baseline = ServerRailPresentationItem.make(
-        items: items,
-        guildsByID: [first.id: first, second.id: second],
+    let store = ServerRailPresentationStore()
+    store.updateLayout(items)
+    store.updateGuilds(
+        [first.id: first, second.id: second],
         notificationSettings: settings,
         isMutationPending: { _ in false }
     )
+    let baseline = store.items
+    guard case .guild(let firstEntry) = baseline[0],
+          case .guild(let secondEntry) = baseline[1],
+          case .guild(let missingEntry) = baseline[2],
+          case .folder(let folderEntry) = baseline[3]
+    else {
+        Issue.record("Expected the projected server rail layout")
+        return
+    }
+    let secondPresentation = secondEntry.presentation
 
     first.mentionCount = 1
-    let updated = ServerRailPresentationItem.make(
-        items: items,
-        guildsByID: [first.id: first, second.id: second],
+    store.updateGuilds(
+        [first.id: first, second.id: second],
         notificationSettings: settings,
         isMutationPending: { _ in false }
     )
+    let updated = store.items
 
     #expect(baseline.map(\.id) == items.map(\.id))
-    #expect(baseline[0] != updated[0])
-    #expect(baseline[1] == updated[1])
-    #expect(baseline[2] == updated[2])
-    #expect(baseline[3] != updated[3])
-    if case .guild(_, let presentation) = baseline[2] {
-        #expect(presentation == nil)
-    } else {
-        Issue.record("Expected the missing top-level guild row")
+    guard case .guild(let updatedFirstEntry) = updated[0],
+          case .guild(let updatedSecondEntry) = updated[1],
+          case .guild(let updatedMissingEntry) = updated[2],
+          case .folder(let updatedFolderEntry) = updated[3]
+    else {
+        Issue.record("Expected the stable projected server rail layout")
+        return
     }
+    #expect(firstEntry === updatedFirstEntry)
+    #expect(secondEntry === updatedSecondEntry)
+    #expect(missingEntry === updatedMissingEntry)
+    #expect(folderEntry === updatedFolderEntry)
+    #expect(firstEntry.presentation?.guild.mentionCount == 1)
+    #expect(secondEntry.presentation == secondPresentation)
+    #expect(missingEntry.presentation == nil)
+    #expect(folderEntry.mentionCount == 1)
+}
+
+@MainActor
+@Test func `voice sidebar projection isolates unrelated channel updates`() {
+    let firstChannelID = ChannelID(rawValue: 10)
+    let secondChannelID = ChannelID(rawValue: 20)
+    let firstUserID = UserID(rawValue: 11)
+    let secondUserID = UserID(rawValue: 21)
+    let firstEntry: VoiceSidebarChannelEntry
+    let secondEntry: VoiceSidebarChannelEntry
+    let store = VoiceSidebarPresentationStore()
+
+    firstEntry = store.entry(for: firstChannelID)
+    secondEntry = store.entry(for: secondChannelID)
+    let firstState = VoiceParticipantState(
+        userID: firstUserID,
+        channelID: firstChannelID,
+        guildID: GuildID(rawValue: 1),
+        sessionID: "first"
+    )
+    let secondState = VoiceParticipantState(
+        userID: secondUserID,
+        channelID: secondChannelID,
+        guildID: GuildID(rawValue: 1),
+        sessionID: "second"
+    )
+    let states = [firstUserID: firstState, secondUserID: secondState]
+    var firstMember = Member(
+        user: User(
+            id: firstUserID,
+            username: "first",
+            displayName: "First"
+        ),
+        roleName: "Member",
+        status: .online
+    )
+    let secondMember = Member(
+        user: User(
+            id: secondUserID,
+            username: "second",
+            displayName: "Second"
+        ),
+        roleName: "Member",
+        status: .online
+    )
+    store.update(
+        voiceStates: states,
+        membersByID: [firstUserID: firstMember, secondUserID: secondMember],
+        currentUser: nil,
+        activeVoiceChannel: nil,
+        isVoiceMuted: false,
+        isVoiceDeafened: false,
+        isCameraEnabled: false
+    )
+    let unchangedParticipants = secondEntry.participants
+
+    firstMember = Member(
+        user: User(
+            id: firstUserID,
+            username: "first",
+            displayName: "Renamed First"
+        ),
+        roleName: "Member",
+        status: .online
+    )
+    store.update(
+        voiceStates: states,
+        membersByID: [firstUserID: firstMember, secondUserID: secondMember],
+        currentUser: nil,
+        activeVoiceChannel: nil,
+        isVoiceMuted: false,
+        isVoiceDeafened: false,
+        isCameraEnabled: false
+    )
+
+    #expect(store.entry(for: firstChannelID) === firstEntry)
+    #expect(store.entry(for: secondChannelID) === secondEntry)
+    #expect(firstEntry.participants.map(\.name) == ["Renamed First"])
+    #expect(secondEntry.participants == unchangedParticipants)
+
+    store.update(
+        voiceStates: [secondUserID: secondState],
+        membersByID: [secondUserID: secondMember],
+        currentUser: nil,
+        activeVoiceChannel: nil,
+        isVoiceMuted: false,
+        isVoiceDeafened: false,
+        isCameraEnabled: false
+    )
+
+    #expect(firstEntry.participants.isEmpty)
+    #expect(secondEntry.participants == unchangedParticipants)
 }
 
 @Test func `loading overlap bootstrap keeps measured guild cold`() {
@@ -161,6 +271,17 @@ import UserNotifications
     model.handleMessageSearchEscape()
     #expect(!model.messageSearch.isPresented)
     #expect(!model.messageSearch.isInputFocused)
+}
+
+@Test func `forum navigation keeps the toolbar search surface installed`() {
+    #expect(MessageSearchSurfacePolicy.showsToolbar(
+        channelKind: .forum,
+        hasOpenThread: false
+    ))
+    #expect(!MessageSearchSurfacePolicy.showsToolbar(
+        channelKind: .forum,
+        hasOpenThread: true
+    ))
 }
 
 @MainActor
@@ -2876,6 +2997,63 @@ private actor FailingRemovalCredentialStore: CredentialStore {
     #expect(merged[other.id] == other)
 }
 
+@Test func `timeline member impact ignores members absent from retained message rows`() {
+    let author = User(
+        id: UserID(rawValue: 81), username: "author", displayName: "Author"
+    )
+    let replyAuthor = User(
+        id: UserID(rawValue: 82), username: "reply", displayName: "Reply"
+    )
+    let mentioned = User(
+        id: UserID(rawValue: 83), username: "mention", displayName: "Mention"
+    )
+    let unrelated = User(
+        id: UserID(rawValue: 84), username: "other", displayName: "Other"
+    )
+    let message = Message(
+        id: MessageID(rawValue: 8_100),
+        channelID: ChannelID(rawValue: 8_101),
+        author: author,
+        content: "Member presentation dependencies",
+        replyPreview: MessageReplyPreview(
+            messageID: MessageID(rawValue: 8_099),
+            author: replyAuthor,
+            content: "Referenced reply"
+        ),
+        mentionedUsers: [mentioned]
+    )
+    let referenced = TimelineMemberPresentationImpact.referencedUserIDs(
+        in: [message]
+    )
+    #expect(referenced == [author.id, replyAuthor.id, mentioned.id])
+
+    let oldMembers = Dictionary(
+        uniqueKeysWithValues: [author, replyAuthor, mentioned, unrelated].map {
+            ($0.id, Member(user: $0, roleName: "Member", status: .online))
+        }
+    )
+    let newMembers = oldMembers.mapValues { member in
+        var changed = member
+        changed.user.displayName += " updated"
+        return changed
+    }
+    let changed = TimelineMemberPresentationImpact.changedUserIDs(
+        from: oldMembers,
+        to: newMembers,
+        guildRoles: [],
+        candidates: referenced
+    )
+
+    #expect(changed == referenced)
+    #expect(!changed.contains(unrelated.id))
+    #expect(
+        TimelineMemberPresentationImpact.affectedMessageIDs(
+            in: [message],
+            changedUserIDs: changed
+        ) == [message.id]
+    )
+}
+
 @MainActor
 @Test func `member viewport replays after subscription arming and guild reentry`() async throws {
     let provider = DelayedMemberViewportTestProvider()
@@ -3619,6 +3797,170 @@ private func hiddenMockChannel(
     #expect(model.conversationAccess(for: updatedChannel).isReadable)
     #expect(!model.hiddenChannelIDs.contains(updatedChannel.id))
     #expect(model.hiddenChannelIDs.contains(unrelatedChannel.id))
+}
+
+@MainActor
+@Test func `role snapshot preserves unchanged guild access projection`() {
+    let model = AppModel(launchMode: .offlineTesting)
+    let user = User(
+        id: UserID(rawValue: 92_200), username: "member", displayName: "Member"
+    )
+    let changedGuild = Guild(id: GuildID(rawValue: 92_201), name: "Changed")
+    let unchangedGuild = Guild(id: GuildID(rawValue: 92_202), name: "Unchanged")
+    let changedChannel = Channel(
+        id: ChannelID(rawValue: 92_203),
+        guildID: changedGuild.id,
+        name: "changed",
+        kind: .text
+    )
+    let unchangedChannel = Channel(
+        id: ChannelID(rawValue: 92_204),
+        guildID: unchangedGuild.id,
+        name: "unchanged",
+        kind: .text
+    )
+    model.snapshot = BootstrapSnapshot(
+        currentUser: user,
+        guilds: [changedGuild, unchangedGuild],
+        channels: [changedChannel, unchangedChannel],
+        members: []
+    )
+    model.serverRailGuildsByID = [
+        changedGuild.id: changedGuild,
+        unchangedGuild.id: unchangedGuild,
+    ]
+    let readablePermissions = DiscordPermissionBits.viewChannel
+        | DiscordPermissionBits.sendMessages
+        | DiscordPermissionBits.readMessageHistory
+    model.guildRolesByGuildID = [
+        changedGuild.id: [
+            GuildRole(
+                id: RoleID(rawValue: changedGuild.id.rawValue),
+                name: "@everyone",
+                position: 0,
+                permissions: readablePermissions
+            )
+        ],
+        unchangedGuild.id: [
+            GuildRole(
+                id: RoleID(rawValue: unchangedGuild.id.rawValue),
+                name: "@everyone",
+                position: 0,
+                permissions: readablePermissions
+            )
+        ],
+    ]
+    let changedRoleID = RoleID(rawValue: 92_205)
+    model.currentUserRoleIDsByGuild = [
+        changedGuild.id: [],
+        unchangedGuild.id: [],
+    ]
+    model.hiddenChannelIDs = [unchangedChannel.id]
+
+    model.consumeCurrentUserRolesSnapshot([
+        changedGuild.id: [changedRoleID],
+        unchangedGuild.id: [],
+    ])
+
+    #expect(!model.hiddenChannelIDs.contains(changedChannel.id))
+    #expect(model.hiddenChannelIDs.contains(unchangedChannel.id))
+}
+
+@MainActor
+@Test func `channel replacement removes deleted access projection entries`() {
+    let model = AppModel(launchMode: .offlineTesting)
+    let user = User(
+        id: UserID(rawValue: 92_300), username: "member", displayName: "Member"
+    )
+    let guild = Guild(id: GuildID(rawValue: 92_301), name: "Guild")
+    let deletedChannel = Channel(
+        id: ChannelID(rawValue: 92_302),
+        guildID: guild.id,
+        name: "deleted",
+        kind: .text
+    )
+    let replacementChannel = Channel(
+        id: ChannelID(rawValue: 92_303),
+        guildID: guild.id,
+        name: "replacement",
+        kind: .text
+    )
+    model.snapshot = BootstrapSnapshot(
+        currentUser: user,
+        guilds: [guild],
+        channels: [deletedChannel],
+        members: []
+    )
+    model.serverRailGuildsByID = [guild.id: guild]
+    model.currentUserRoleIDsByGuild[guild.id] = []
+    model.hiddenChannelIDs = [deletedChannel.id]
+    model.checkingChannelIDs = [deletedChannel.id]
+
+    model.consumeChannelsChanged(
+        guildID: guild.id,
+        channels: [replacementChannel]
+    )
+
+    #expect(!model.hiddenChannelIDs.contains(deletedChannel.id))
+    #expect(!model.checkingChannelIDs.contains(deletedChannel.id))
+    #expect(model.snapshot?.channels == [replacementChannel])
+}
+
+@MainActor
+@Test func `channel access replacement preserves unchanged access projections`() {
+    let model = AppModel(launchMode: .offlineTesting)
+    let user = User(
+        id: UserID(rawValue: 92_310), username: "member", displayName: "Member"
+    )
+    let guild = Guild(
+        id: GuildID(rawValue: 92_311),
+        name: "Guild",
+        currentUserPermissions: DiscordPermissionBits.viewChannel
+            | DiscordPermissionBits.sendMessages
+            | DiscordPermissionBits.readMessageHistory
+    )
+    let changedChannel = Channel(
+        id: ChannelID(rawValue: 92_312),
+        guildID: guild.id,
+        name: "changed",
+        kind: .text
+    )
+    let unchangedChannel = Channel(
+        id: ChannelID(rawValue: 92_313),
+        guildID: guild.id,
+        name: "unchanged",
+        kind: .text
+    )
+    model.snapshot = BootstrapSnapshot(
+        currentUser: user,
+        guilds: [guild],
+        channels: [changedChannel, unchangedChannel],
+        members: []
+    )
+    model.serverRailGuildsByID = [guild.id: guild]
+    model.currentUserRoleIDsByGuild[guild.id] = []
+    model.hiddenChannelIDs = [unchangedChannel.id]
+
+    let revokedChannel = Channel(
+        id: changedChannel.id,
+        guildID: guild.id,
+        name: changedChannel.name,
+        kind: changedChannel.kind,
+        permissionOverwrites: [
+            ChannelPermissionOverwrite(
+                id: guild.id.description,
+                type: 0,
+                deny: DiscordPermissionBits.viewChannel
+            ),
+        ]
+    )
+    model.consumeChannelsChanged(
+        guildID: guild.id,
+        channels: [revokedChannel, unchangedChannel]
+    )
+
+    #expect(model.hiddenChannelIDs.contains(revokedChannel.id))
+    #expect(model.hiddenChannelIDs.contains(unchangedChannel.id))
 }
 
 @MainActor

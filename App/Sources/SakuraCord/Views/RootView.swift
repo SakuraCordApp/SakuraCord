@@ -166,12 +166,17 @@ private struct ChatRootView: View {
                 max: ChatChromeMetrics.serverRailWidth + 310
             )
         } detail: {
-            ChatWorkspaceView(
-                model: model,
-                presentsForumComposer: $presentsForumComposer,
-                toolbarSearchFieldMetrics: toolbarSearchFieldMetrics
-            )
-            .opacity(model.isSwitchingAccounts ? 0 : 1)
+            Group {
+                if model.isSwitchingAccounts {
+                    Color.clear
+                } else {
+                    ChatWorkspaceView(
+                        model: model,
+                        presentsForumComposer: $presentsForumComposer,
+                        toolbarSearchFieldMetrics: toolbarSearchFieldMetrics
+                    )
+                }
+            }
             .navigationTitle("")
             .toolbar {
                 detailToolbar

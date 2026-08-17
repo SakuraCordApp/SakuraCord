@@ -122,13 +122,34 @@ final class AppModel {
     }
 
     var snapshot: BootstrapSnapshot? {
-        didSet { snapshotSourceRevision &+= 1 }
+        didSet {
+            snapshotSourceRevision &+= 1
+            if oldValue?.currentUser != snapshot?.currentUser {
+                refreshVoiceSidebarPresentation()
+            }
+        }
     }
+    @ObservationIgnored let serverRailPresentation =
+        ServerRailPresentationStore()
+    @ObservationIgnored let voiceSidebarPresentation =
+        VoiceSidebarPresentationStore()
     var serverRailGuildsByID: [GuildID: Guild] = [:]
-    var serverRailHomeIsUnread = false
-    var serverRailHomeMentionCount = 0
+    var serverRailHomeIsUnread = false {
+        didSet {
+            serverRailPresentation.home.isUnread = serverRailHomeIsUnread
+        }
+    }
+    var serverRailHomeMentionCount = 0 {
+        didSet {
+            serverRailPresentation.home.mentionCount =
+                serverRailHomeMentionCount
+        }
+    }
     var serverRailItems: [GuildRailItem] = [] {
-        didSet { requestOrderedCustomEmojiUpdate() }
+        didSet {
+            serverRailPresentation.updateLayout(serverRailItems)
+            requestOrderedCustomEmojiUpdate()
+        }
     }
     var visibleChannels: [Channel] = [] {
         didSet {
@@ -183,6 +204,7 @@ final class AppModel {
             if membersByID != indexed {
                 membersByID = indexed
             }
+            refreshVoiceSidebarPresentation(using: indexed)
             var permissionsChanged = false
             if let guildID = selectedGuildID,
                let currentUserID = snapshot?.currentUser.id,
@@ -390,7 +412,12 @@ final class AppModel {
     var profileErrorMessage: String? {
         inspectorProfilePresentation?.errorMessage
     }
-    var activeVoiceChannel: Channel?
+    var activeVoiceChannel: Channel? {
+        didSet {
+            guard oldValue != activeVoiceChannel else { return }
+            refreshVoiceSidebarPresentation()
+        }
+    }
     var voiceSessionState: VoiceSessionState = .idle
     var voiceParticipants: [VoiceRemoteParticipant] = []
     var isLocallySpeaking = false
@@ -398,7 +425,12 @@ final class AppModel {
     var voiceEncryptionVersion: UInt16?
     var voiceLatencyMilliseconds: Int?
     var voiceErrorMessage: String?
-    var voiceStates: [UserID: VoiceParticipantState] = [:]
+    var voiceStates: [UserID: VoiceParticipantState] = [:] {
+        didSet {
+            guard oldValue != voiceStates else { return }
+            refreshVoiceSidebarPresentation()
+        }
+    }
     var privateCallsByChannel: [ChannelID: PrivateCall] = [:]
     var privateCallActionChannelIDs: Set<ChannelID> = []
     var mediaDevices: MediaDeviceSnapshot = .empty
@@ -429,54 +461,36 @@ final class AppModel {
     var orderedCustomEmojis: [DiscordEmoji] = []
     var customEmojiURLsByID: [String: URL] = [:]
     @ObservationIgnored var orderedCustomEmojiUpdateTask: Task<Void, Never>?
+    @ObservationIgnored var orderedCustomEmojiUpdateGeneration: UInt64 = 0
 
-    func requestOrderedCustomEmojiUpdate() {
-        orderedCustomEmojiUpdateTask?.cancel()
-        if emojisByGuild.isEmpty {
-            orderedCustomEmojiUpdateTask = nil
-            updateOrderedCustomEmojis()
-            return
-        }
-        orderedCustomEmojiUpdateTask = Task { @MainActor [weak self] in
-            do {
-                try await Task.sleep(for: .milliseconds(150))
-            } catch {
-                return
-            }
-            guard let self, !Task.isCancelled else { return }
-            orderedCustomEmojiUpdateTask = nil
-            updateOrderedCustomEmojis()
+    var isVoiceMuted = UserDefaults.standard.bool(forKey: "voiceMuted") {
+        didSet {
+            guard oldValue != isVoiceMuted else { return }
+            refreshVoiceSidebarPresentation()
         }
     }
-
-    func updateOrderedCustomEmojis() {
-        let guildOrder = serverRailItems.flatMap { item -> [GuildID] in
-            switch item {
-            case .guild(let id): [id]
-            case .folder(let folder): folder.guildIDs
-            }
-        }
-        let value = DiscordCustomEmojiCatalog.ordered(
-            emojisByGuild: emojisByGuild,
-            guildOrder: guildOrder
-        )
-        if orderedCustomEmojis != value {
-            orderedCustomEmojis = value
-        }
-        let imageURLsByID = DiscordCustomEmojiCatalog.imageURLsByID(from: value)
-        if customEmojiURLsByID != imageURLsByID {
-            customEmojiURLsByID = imageURLsByID
+    var isVoiceDeafened = UserDefaults.standard.bool(forKey: "voiceDeafened") {
+        didSet {
+            guard oldValue != isVoiceDeafened else { return }
+            refreshVoiceSidebarPresentation()
         }
     }
-    var isVoiceMuted = UserDefaults.standard.bool(forKey: "voiceMuted")
-    var isVoiceDeafened = UserDefaults.standard.bool(forKey: "voiceDeafened")
-    var isCameraEnabled = false
+    var isCameraEnabled = false {
+        didSet {
+            guard oldValue != isCameraEnabled else { return }
+            refreshVoiceSidebarPresentation()
+        }
+    }
     var inputVolume = Float(
         UserDefaults.standard.object(forKey: "voiceInputVolume") as? Double ?? 1)
     var outputVolume = Float(
         UserDefaults.standard.object(forKey: "voiceOutputVolume") as? Double ?? 1
     )
-    var selectedGuildID: GuildID?
+    var selectedGuildID: GuildID? {
+        didSet {
+            serverRailPresentation.updateSelection(selectedGuildID)
+        }
+    }
     var incomingPrivateCalls: [PrivateCall] {
         guard let currentUserID = snapshot?.currentUser.id else { return [] }
         return privateCallsByChannel.values
@@ -583,7 +597,7 @@ final class AppModel {
         guard let guildID = channel.guildID else {
             return .readable(canSend: !channel.isOfficialSystemDirectMessage)
         }
-        return conversationAccess(
+        return Self.resolveConversationAccess(
             for: channel,
             permissionBasis: conversationPermissionBasis(for: guildID)
         )
@@ -624,6 +638,16 @@ final class AppModel {
     }
 
     func conversationAccess(
+        for channel: Channel,
+        permissionBasis: ConversationPermissionBasis?
+    ) -> ConversationAccess {
+        Self.resolveConversationAccess(
+            for: channel,
+            permissionBasis: permissionBasis
+        )
+    }
+
+    nonisolated static func resolveConversationAccess(
         for channel: Channel,
         permissionBasis: ConversationPermissionBasis?
     ) -> ConversationAccess {
@@ -1012,6 +1036,7 @@ final class AppModel {
     @ObservationIgnored var unreadPresentationPreparationGeneration: UInt64 = 0
     @ObservationIgnored var unreadPresentationPreparationSequence: UInt64 = 0
     @ObservationIgnored var activeUnreadPreparationGeneration: UInt64?
+    @ObservationIgnored var unreadAccessProjectionGeneration: UInt64 = 0
     @ObservationIgnored var snapshotSourceRevision: UInt64 = 0
     @ObservationIgnored var batchedAcknowledgementChannelIDs:
         Set<ChannelID> = []

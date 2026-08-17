@@ -267,7 +267,7 @@ extension AppModel {
         forwardDestinationHistory = []
         quickSwitcherDraftChannelIDs = []
         snapshot = nil
-        serverRailGuildsByID = [:]
+        replaceServerRailGuilds([:])
         serverRailHomeIsUnread = false
         serverRailHomeMentionCount = 0
         serverRailItems = []
@@ -417,7 +417,7 @@ extension AppModel {
         workspaceNavigationOverlay = nil
         lastOpenedChannelIDsByGuild = [:]
         snapshot = nil
-        serverRailGuildsByID = [:]
+        replaceServerRailGuilds([:])
         serverRailHomeIsUnread = false
         serverRailHomeMentionCount = 0
         serverRailItems = []
@@ -665,7 +665,7 @@ extension AppModel {
         )
     }
 
-    // swiftlint:disable:next function_body_length
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
     func applyBootstrap(
         _ value: BootstrapSnapshot,
         publishesSessionState: Bool,
@@ -720,44 +720,85 @@ extension AppModel {
             in: value,
             retainedChannel: retainedChannel
         )
-        AppPerformanceSignposts.measureSync("BootstrapNavigationProjection") {
-            logBootstrapUnreadState(value)
-            applyBootstrapCurrentUserRoles(value)
-            updateServerRail(from: value)
-            let initialChannels = value.channels.filter { channel in
-                initialGuildID == nil
-                    ? channel.guildID == nil
-                    : channel.guildID == initialGuildID
+        let initialHistoryChannelID = AppPerformanceSignposts.measureSync(
+            "BootstrapNavigationProjection"
+        ) { () -> ChannelID? in
+            AppPerformanceSignposts.measureSync("BootstrapUnreadDiagnostics") {
+                logBootstrapUnreadState(value)
             }
-            let selectableInitialChannels = initialChannels.filter {
-                conversationAccess(for: $0) != .hidden
+            AppPerformanceSignposts.measureSync("BootstrapAccessSourcePublication") {
+                applyBootstrapCurrentUserRoles(value)
+                updateServerRail(from: value)
             }
-            let rememberedInitialChannel = initialGuildID
-                .flatMap { lastOpenedChannelIDsByGuild[$0] }
-                .flatMap { rememberedID in
-                    selectableInitialChannels.first { $0.id == rememberedID }
+            let initialPermissionBasis = initialGuildID.flatMap {
+                conversationPermissionBasis(for: $0)
+            }
+            let initialChannel = AppPerformanceSignposts.measureSync(
+                "BootstrapInitialChannelProjection"
+            ) {
+                let initialChannels = value.channels.filter { channel in
+                    initialGuildID == nil
+                        ? channel.guildID == nil
+                        : channel.guildID == initialGuildID
                 }
-            let initialChannel = retainedChannel
-                ?? rememberedInitialChannel
-                ?? Self.preferredInitialChannelID(in: selectableInitialChannels)
-                    .flatMap { preferredID in
+                let selectableInitialChannels = initialChannels.filter {
+                    conversationAccess(
+                        for: $0,
+                        permissionBasis: initialPermissionBasis
+                    ) != .hidden
+                }
+                let rememberedInitialChannel = initialGuildID
+                    .flatMap { lastOpenedChannelIDsByGuild[$0] }
+                    .flatMap { rememberedID in
+                        selectableInitialChannels.first { $0.id == rememberedID }
+                    }
+                return retainedChannel
+                    ?? rememberedInitialChannel
+                    ?? Self.preferredInitialChannelID(
+                        in: selectableInitialChannels
+                    ).flatMap { preferredID in
                         selectableInitialChannels.first { $0.id == preferredID }
                     }
-            if let initialChannel,
-               initialChannel.kind != .forum,
-               initialChannel.kind != .voice,
-               conversationAccess(for: initialChannel).isReadable,
-               let account
-            {
-                beginBootstrapHistoryPrefetch(
-                    channelID: initialChannel.id,
-                    account: account
-                )
             }
-            refreshUnreadPresentation(appliesAccessImmediately: true)
-            if credentialHandle != nil {
-                isAuthenticated = true
+            guard let initialChannel,
+                  initialChannel.kind != .forum,
+                  initialChannel.kind != .voice,
+                  conversationAccess(
+                      for: initialChannel,
+                      permissionBasis: initialPermissionBasis
+                  ).isReadable
+            else { return nil }
+            return initialChannel.id
+        }
+        let initialAccess: UnreadAccessProjection?
+        if launchMode == .offlineTesting {
+            initialAccess = snapshot.map {
+                unreadAccessProjection(for: $0.channels)
             }
+        } else if let account {
+            initialAccess = await prepareBootstrapUnreadAccessProjection(
+                account: account
+            )
+        } else {
+            initialAccess = snapshot.map {
+                unreadAccessProjection(for: $0.channels)
+            }
+        }
+        guard let initialAccess else { return }
+        guard canPublishBootstrap(for: account) else { return }
+        AppPerformanceSignposts.measureSync("BootstrapUnreadAccessPublication") {
+            applyUnreadAccessProjection(initialAccess)
+        }
+        requestCoalescedUnreadPresentationRefresh()
+        publishBootstrapAuthenticationState()
+        if publishesSessionState {
+            sessionState = .workspace
+        }
+        if let initialHistoryChannelID, let account {
+            beginBootstrapHistoryPrefetch(
+                channelID: initialHistoryChannelID,
+                account: account
+            )
         }
         AppPerformanceSignposts.measureSync("BootstrapMemberCacheSeed") {
             if let firstGuildID = value.guilds.first?.id {
@@ -801,9 +842,6 @@ extension AppModel {
         }
         await accountPersistence
         guard canPublishBootstrap(for: account) else { return }
-        if publishesSessionState {
-            sessionState = .workspace
-        }
         await waitForUnreadPresentationPreparation()
         guard canPublishBootstrap(for: account) else { return }
         await AppPerformanceSignposts.measure("BootstrapInitialConversation") {
@@ -860,9 +898,6 @@ extension AppModel {
     }
 
     func logBootstrapUnreadState(_ value: BootstrapSnapshot) {
-        let derivedUnreadGuildCount = value.guilds.count {
-            readState.guildUnread($0.id)
-        }
         let firstGuildHasNotificationSettings = value.guilds.first.map { guild in
             value.notificationSettings.contains { $0.guildID == guild.id }
         } ?? false
@@ -885,8 +920,7 @@ extension AppModel {
             guilds=\(value.guilds.count), \
             firstGuildHasSettings=\(firstGuildHasNotificationSettings), \
             firstGuildMuted=\(firstGuildMuteIsActive), \
-            firstGuildMutedOverrides=\(firstGuildMutedOverrideCount), \
-            derivedUnreadGuilds=\(derivedUnreadGuildCount)
+            firstGuildMutedOverrides=\(firstGuildMutedOverrideCount)
             """
         )
     }
@@ -898,6 +932,12 @@ extension AppModel {
         let roleIDs = Set(currentMember.roles.map(\.id))
         currentUserRoleIDsByGuild[firstGuildID] = roleIDs
         readState.updateCurrentUserRoles(roleIDs, guildID: firstGuildID)
+    }
+
+    func publishBootstrapAuthenticationState() {
+        if credentialHandle != nil {
+            isAuthenticated = true
+        }
     }
 
     func refreshSupportedCapabilities(
@@ -1279,6 +1319,7 @@ extension AppModel {
         guard !Task.isCancelled,
               isCurrentAccountSession(session)
         else { return }
+        AppPerformanceSignposts.beginGuildActivationWork()
         let activationSignpost = AppPerformanceSignposts.signposter.beginInterval(
             "GuildActivation"
         )
@@ -1287,6 +1328,7 @@ extension AppModel {
                 "GuildActivation",
                 activationSignpost
             )
+            AppPerformanceSignposts.endGuildActivationWork()
         }
         // Snapshot this before changing the selected guild. A synchronous
         // workspace projection may select that guild's first channel while
@@ -1294,7 +1336,11 @@ extension AppModel {
         let rememberedChannelID = guildID.flatMap { lastOpenedChannelIDsByGuild[$0] }
         dismissAllProfiles()
         selectedGuildID = guildID
-        restoreMemberPresentation(for: guildID)
+        AppPerformanceSignposts.measureSync(
+            "GuildActivationMemberPresentationRestore"
+        ) {
+            restoreMemberPresentation(for: guildID)
+        }
         mentionAutocompleteMembers = []
         var channels =
             snapshot?.channels.filter { channel in
@@ -1313,6 +1359,7 @@ extension AppModel {
                     value.channels.append(contentsOf: channels)
                     snapshot = value
                 }
+                visibleChannels = channels
             } catch {
                 guard !Task.isCancelled,
                       isCurrentAccountSession(session)
@@ -1324,7 +1371,6 @@ extension AppModel {
               isCurrentAccountSession(session),
               selectedGuildID == guildID
         else { return }
-        visibleChannels = channels
         if let guildID {
             refreshUnreadPresentation(
                 appliesAccessImmediately: true,
@@ -1335,8 +1381,18 @@ extension AppModel {
             await loadEmojis(for: guildID)
             guard isCurrentAccountSession(session) else { return }
         }
-        let selectableChannels = visibleChannels.filter {
-            conversationAccess(for: $0) != .hidden
+        let permissionBasis = guildID.flatMap {
+            conversationPermissionBasis(for: $0)
+        }
+        let selectableChannels = AppPerformanceSignposts.measureSync(
+            "GuildActivationChannelSelection"
+        ) {
+            visibleChannels.filter {
+                conversationAccess(
+                    for: $0,
+                    permissionBasis: permissionBasis
+                ) != .hidden
+            }
         }
         let restoredChannelID = rememberedChannelID.flatMap { rememberedID in
             selectableChannels.contains(where: { $0.id == rememberedID })
@@ -1350,7 +1406,10 @@ extension AppModel {
                 ?? Self.preferredInitialChannelID(in: selectableChannels)
             pendingAutomaticChannelAccessID = preferredChannelID.flatMap { id in
                 selectableChannels.first(where: { $0.id == id }).flatMap { channel in
-                    conversationAccess(for: channel) == .checking ? id : nil
+                    conversationAccess(
+                        for: channel,
+                        permissionBasis: permissionBasis
+                    ) == .checking ? id : nil
                 }
             }
             selectedChannelID = preferredChannelID

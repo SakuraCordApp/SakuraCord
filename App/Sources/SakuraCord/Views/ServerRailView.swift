@@ -1,76 +1,6 @@
+import Observation
 import SakuraCordModels
 import SwiftUI
-
-struct ServerRailGuildPresentation: Equatable, Identifiable {
-    let guild: Guild
-    let notificationSettings: GuildNotificationSettings
-    let isNotificationMutationPending: Bool
-
-    var id: GuildID { guild.id }
-}
-
-enum ServerRailPresentationItem: Equatable, Identifiable {
-    case guild(id: GuildID, presentation: ServerRailGuildPresentation?)
-    case folder(
-        GuildFolder,
-        guildsByID: [GuildID: ServerRailGuildPresentation]
-    )
-
-    var id: GuildRailItem.RailIdentifier {
-        switch self {
-        case .guild(let id, _): .guild(id)
-        case .folder(let folder, _): .folder(folder.id)
-        }
-    }
-
-    static func make(
-        items: [GuildRailItem],
-        guildsByID: [GuildID: Guild],
-        notificationSettings: (Guild) -> GuildNotificationSettings,
-        isMutationPending: (GuildID) -> Bool
-    ) -> [Self] {
-        AppPerformanceSignposts.measureSync("ServerRailProjection") {
-            items.map { item in
-                switch item {
-                case .guild(let id):
-                    .guild(
-                        id: id,
-                        presentation: guildsByID[id].map { guild in
-                            ServerRailGuildPresentation(
-                                guild: guild,
-                                notificationSettings:
-                                    notificationSettings(guild),
-                                isNotificationMutationPending:
-                                    isMutationPending(id)
-                            )
-                        }
-                    )
-                case .folder(let folder):
-                    .folder(
-                        folder,
-                        guildsByID: Dictionary(
-                            uniqueKeysWithValues:
-                                folder.guildIDs.compactMap { id in
-                                    guildsByID[id].map { guild in
-                                        (
-                                            id,
-                                            ServerRailGuildPresentation(
-                                                guild: guild,
-                                                notificationSettings:
-                                                    notificationSettings(guild),
-                                                isNotificationMutationPending:
-                                                    isMutationPending(id)
-                                            )
-                                        )
-                                    }
-                                }
-                        )
-                    )
-                }
-            }
-        }
-    }
-}
 
 /// Keeps rail observation out of the workspace root. Timeline, member-list,
 /// composer, and loading publications can invalidate `ChatRootView` without
@@ -80,15 +10,8 @@ struct ServerRailContainer: View {
 
     var body: some View {
         ServerRailView(
-            items: ServerRailPresentationItem.make(
-                items: model.serverRailItems,
-                guildsByID: model.serverRailGuildsByID,
-                notificationSettings: model.guildNotificationSettings,
-                isMutationPending: model.isGuildNotificationMutationPending
-            ),
-            selectedGuildID: model.selectedGuildID,
-            homeIsUnread: model.serverRailHomeIsUnread,
-            homeMentionCount: model.serverRailHomeMentionCount,
+            items: model.serverRailPresentation.items,
+            home: model.serverRailPresentation.home,
             selectHome: { model.selectGuild(nil) },
             selectGuild: model.selectGuild,
             contextMenuActions: ServerRailContextMenuActions(
@@ -120,9 +43,7 @@ struct ServerRailContainer: View {
 
 struct ServerRailView: View {
     let items: [ServerRailPresentationItem]
-    let selectedGuildID: GuildID?
-    let homeIsUnread: Bool
-    let homeMentionCount: Int
+    let home: ServerRailHomeEntry
     let selectHome: () -> Void
     let selectGuild: (GuildID?) -> Void
     let contextMenuActions: ServerRailContextMenuActions
@@ -132,9 +53,7 @@ struct ServerRailView: View {
         ScrollView {
             LazyVStack(spacing: 10) {
                 HomeRailButton(
-                    isSelected: selectedGuildID == nil,
-                    isUnread: homeIsUnread,
-                    mentionCount: homeMentionCount,
+                    home: home,
                     action: selectHome
                 )
 
@@ -143,14 +62,12 @@ struct ServerRailView: View {
                 ForEach(items) { item in
                     ServerRailItemView(
                         item: item,
-                        selectedGuildID: selectedGuildID,
                         selectGuild: selectGuild,
                         contextMenuActions: contextMenuActions,
                         folderExpansionChanged: {
                             folderLayoutRevision &+= 1
                         }
                     )
-                    .equatable()
                 }
             }
             .padding(.bottom, 12)
@@ -187,53 +104,46 @@ struct ServerRailContextMenuActions {
     let setNotificationToggle: (Guild, GuildNotificationToggle, Bool) -> Void
 }
 
-private struct ServerRailItemView: View, Equatable {
+private struct ServerRailItemView: View {
     let item: ServerRailPresentationItem
-    let selectedGuildID: GuildID?
     let selectGuild: (GuildID?) -> Void
     let contextMenuActions: ServerRailContextMenuActions
     let folderExpansionChanged: () -> Void
 
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.item == rhs.item
-            && lhs.selectedItemGuildID == rhs.selectedItemGuildID
-    }
-
-    private var selectedItemGuildID: GuildID? {
-        guard let selectedGuildID else { return nil }
-        return switch item {
-        case .guild(let id, _):
-            id == selectedGuildID ? id : nil
-        case .folder(let folder, _):
-            folder.guildIDs.contains(selectedGuildID)
-                ? selectedGuildID
-                : nil
-        }
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             switch item {
-            case .guild(_, let presentation):
-                if let presentation {
-                    GuildRailButton(
-                        presentation: presentation,
-                        isSelected:
-                            selectedGuildID == presentation.guild.id,
-                        contextMenuActions: contextMenuActions
-                    ) {
-                        selectGuild(presentation.guild.id)
-                    }
-                }
-            case .folder(let folder, let guildsByID):
+            case .guild(let entry):
+                ServerRailGuildItemView(
+                    entry: entry,
+                    selectGuild: selectGuild,
+                    contextMenuActions: contextMenuActions
+                )
+            case .folder(let entry):
                 ServerFolderRailView(
-                    folder: folder,
-                    guildsByID: guildsByID,
-                    selectedGuildID: selectedGuildID,
+                    entry: entry,
                     selectGuild: selectGuild,
                     contextMenuActions: contextMenuActions,
                     expansionChanged: folderExpansionChanged
                 )
+            }
+        }
+    }
+}
+
+struct ServerRailGuildItemView: View {
+    let entry: ServerRailGuildEntry
+    let selectGuild: (GuildID?) -> Void
+    let contextMenuActions: ServerRailContextMenuActions
+
+    var body: some View {
+        if let presentation = entry.presentation {
+            GuildRailButton(
+                presentation: presentation,
+                isSelected: entry.isSelected,
+                contextMenuActions: contextMenuActions
+            ) {
+                selectGuild(entry.id)
             }
         }
     }
@@ -354,27 +264,25 @@ struct ServerRailHoverPreferenceKey: PreferenceKey {
 }
 
 private struct HomeRailButton: View {
-    let isSelected: Bool
-    let isUnread: Bool
-    let mentionCount: Int
+    let home: ServerRailHomeEntry
     let action: () -> Void
     @State private var isHovering = false
 
     var body: some View {
         HStack(spacing: 5) {
             ServerRailSelectionIndicator(
-                isSelected: isSelected,
+                isSelected: home.isSelected,
                 isHovering: isHovering,
-                hasNotification: isUnread
+                hasNotification: home.isUnread
             )
             Button(action: action) {
                 Image(systemName: "message.fill")
                     .font(.title2)
                     .frame(width: 44, height: 44)
-                    .background(isSelected ? Color.accentColor : Color.secondary.opacity(0.16), in: ConcentricRectangle(cornerRadius: 14, style: .continuous))
+                    .background(home.isSelected ? Color.accentColor : Color.secondary.opacity(0.16), in: ConcentricRectangle(cornerRadius: 14, style: .continuous))
                     .overlay(alignment: .bottomTrailing) {
-                        if mentionCount > 0 {
-                            Text(mentionCount, format: .number)
+                        if home.mentionCount > 0 {
+                            Text(home.mentionCount, format: .number)
                                 .font(.system(size: 10, weight: .bold))
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 5)
@@ -387,9 +295,9 @@ private struct HomeRailButton: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Direct Messages")
             .accessibilityValue(
-                mentionCount > 0
-                    ? "\(mentionCount) unread mentions"
-                    : (isUnread ? "Unread" : "")
+                home.mentionCount > 0
+                    ? "\(home.mentionCount) unread mentions"
+                    : (home.isUnread ? "Unread" : "")
             )
         }
         .frame(width: ChatChromeMetrics.serverRailWidth, height: 46, alignment: .leading)

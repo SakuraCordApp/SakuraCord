@@ -81,6 +81,43 @@ import Testing
 }
 
 @MainActor
+@Test func `gateway member sections assign indexed members to ordered ranges once`() {
+    let role = GuildRole(
+        id: RoleID(rawValue: 40), name: "Indexed", position: 20,
+        colorHex: 0x44_55_66
+    )
+    var offlineFirst = member(1, "Offline first", status: .offline)
+    offlineFirst.memberListIndex = 1
+    var offlineSecond = member(2, "Offline second", status: .offline)
+    offlineSecond.memberListIndex = 2
+    var skipped = member(3, "Unknown group", status: .online)
+    skipped.memberListIndex = 4
+    var roleFirst = member(4, "Role first", status: .online, role: role)
+    roleFirst.memberListIndex = 6
+    var roleSecond = member(5, "Role second", status: .online, role: role)
+    roleSecond.memberListIndex = 7
+
+    let sections = MemberSection.make(
+        from: [roleSecond, skipped, offlineSecond, roleFirst, offlineFirst],
+        groups: [
+            GuildMemberListGroup(id: "offline", count: 2),
+            GuildMemberListGroup(id: "future-group", count: 1),
+            GuildMemberListGroup(id: role.id.description, count: 2),
+        ],
+        roles: [role]
+    )
+
+    #expect(sections.map(\.id) == [
+        .offline,
+        .role(name: "Indexed", position: 20),
+    ])
+    #expect(sections.map { $0.members.map(\.id) } == [
+        [offlineFirst.id, offlineSecond.id],
+        [roleFirst.id, roleSecond.id],
+    ])
+}
+
+@MainActor
 @Test func `fallback member sections preserve role priority name tie break and member sorting`() {
     let alphaRole = GuildRole(
         id: RoleID(rawValue: 10), name: "Alpha", position: 10, colorHex: 0x11_22_33

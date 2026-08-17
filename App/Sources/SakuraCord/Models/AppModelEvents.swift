@@ -12,33 +12,6 @@ import SakuraCordPersistence
 import UniformTypeIdentifiers
 import UserNotifications
 
-nonisolated struct UnreadAccessProjection {
-    let accessByChannelID: [ChannelID: ConversationAccess]
-    let accessibilityByChannelID: [ChannelID: Bool]
-    let hiddenChannelIDs: Set<ChannelID>
-    let checkingChannelIDs: Set<ChannelID>
-
-    init(
-        accessByChannelID: [ChannelID: ConversationAccess],
-        accessibilityByChannelID: [ChannelID: Bool],
-        hiddenChannelIDs: Set<ChannelID>? = nil,
-        checkingChannelIDs: Set<ChannelID>? = nil
-    ) {
-        self.accessByChannelID = accessByChannelID
-        self.accessibilityByChannelID = accessibilityByChannelID
-        self.hiddenChannelIDs = hiddenChannelIDs ?? Set(
-            accessByChannelID.compactMap { channelID, access in
-                access == .hidden ? channelID : nil
-            }
-        )
-        self.checkingChannelIDs = checkingChannelIDs ?? Set(
-            accessByChannelID.compactMap { channelID, access in
-                access == .checking ? channelID : nil
-            }
-        )
-    }
-}
-
 extension AppModel {
     func logReadAcknowledgementSending(
         channelID: ChannelID,
@@ -208,8 +181,35 @@ extension AppModel {
             } else {
                 nil
         }
+        let preparedMemberListPresentation: PreparedMemberListPresentation? =
+            if case let .membersChanged(guildID, members, groups) = event,
+               guildID == selectedGuildID
+            {
+                await AppPerformanceSignposts.measure(
+                    "MemberListEventPreparation"
+                ) {
+                    let roles = guildRoles
+                    let priority: TaskPriority = AppScrollWorkGate.isActive
+                        ? .background
+                        : .utility
+                    return await Task.detached(priority: priority) {
+                        PreparedMemberListPresentation.make(
+                            guildID: guildID,
+                            members: members,
+                            groups: groups,
+                            roles: roles
+                        )
+                    }.value
+                }
+            } else {
+                nil
+            }
         guard !Task.isCancelled else { return }
-        consumeImmediately(event, preparedTextPlan: preparedTextPlan)
+        consumeImmediately(
+            event,
+            preparedTextPlan: preparedTextPlan,
+            preparedMemberListPresentation: preparedMemberListPresentation
+        )
     }
 
     func flushPendingCreatedMessages(
@@ -278,7 +278,8 @@ extension AppModel {
 
     func consumeImmediately(
         _ event: ClientEvent,
-        preparedTextPlan: NativeTimelineTextPlan? = nil
+        preparedTextPlan: NativeTimelineTextPlan? = nil,
+        preparedMemberListPresentation: PreparedMemberListPresentation? = nil
     ) {
         switch event {
         case .connectionChanged(let state):
@@ -300,11 +301,17 @@ extension AppModel {
         case .readStateChanged(let state):
             consumeReadStateChange(state)
         default:
-            consumeWorkspaceEvent(event)
+            consumeWorkspaceEvent(
+                event,
+                preparedMemberListPresentation: preparedMemberListPresentation
+            )
         }
     }
 
-    func consumeWorkspaceEvent(_ event: ClientEvent) {
+    func consumeWorkspaceEvent(
+        _ event: ClientEvent,
+        preparedMemberListPresentation: PreparedMemberListPresentation? = nil
+    ) {
         switch event {
         case .notificationModeChanged(let usesNewNotifications):
             readState.updateNotificationMode(
@@ -339,7 +346,12 @@ extension AppModel {
         case .forumPageLoaded(let channelID, let query, let page):
             consumeForumPageLoaded(channelID: channelID, query: query, page: page)
         case .membersChanged(let guildID, let value, let groups):
-            consumeMembersChanged(guildID: guildID, members: value, groups: groups)
+            consumeMembersChanged(
+                guildID: guildID,
+                members: value,
+                groups: groups,
+                preparedPresentation: preparedMemberListPresentation
+            )
         default:
             consumePresenceAndCommandEvent(event)
         }
@@ -422,8 +434,11 @@ extension AppModel {
     ) {
         let replacement = roleIDsByGuild.mapValues(Set.init)
         guard currentUserRoleIDsByGuild != replacement else { return }
-        let affectedGuildIDs = Set(currentUserRoleIDsByGuild.keys)
-            .union(replacement.keys)
+        let previous = currentUserRoleIDsByGuild
+        let affectedGuildIDs = Self.changedCurrentUserRoleGuildIDs(
+            from: previous,
+            to: replacement
+        )
         currentUserRoleIDsByGuild = replacement
         for guildID in affectedGuildIDs {
             readState.updateCurrentUserRoles(
@@ -431,7 +446,9 @@ extension AppModel {
                 guildID: guildID
             )
         }
-        refreshUnreadPresentation(appliesAccessImmediately: true)
+        refreshUnreadAccessAfterCurrentRoleSnapshot(
+            affectedGuildIDs: affectedGuildIDs
+        )
     }
 
     func consumeConnectionChange(_ state: ConnectionState) {
@@ -601,6 +618,7 @@ extension AppModel {
     }
 
     func consumeChannelsChanged(guildID: GuildID?, channels: [Channel]) {
+        let previousChannels = snapshot?.channels ?? []
         if var value = snapshot {
             if let firstIndex = value.channels.firstIndex(where: { $0.guildID == guildID }) {
                 value.channels.removeAll { $0.guildID == guildID }
@@ -622,7 +640,11 @@ extension AppModel {
             }
         }
         readState.replaceChannels(in: guildID, with: channels)
-        refreshUnreadPresentation(appliesAccessImmediately: true)
+        refreshUnreadAccessAfterChannelsChanged(
+            guildID: guildID,
+            channels: channels,
+            previousChannels: previousChannels
+        )
     }
 
     func consumeForumPostsChanged(channelID: ChannelID, posts: [ForumPost]) {
@@ -728,78 +750,6 @@ extension AppModel {
         snapshot = value
     }
 
-    func consumeMembersChanged(
-        guildID: GuildID,
-        members value: [Member],
-        groups: [GuildMemberListGroup]
-    ) {
-        updateCurrentUserRoles(from: value, guildID: guildID)
-        memberListsByGuildID[guildID] = value
-        memberListGroupsByGuildID[guildID] = groups
-        guard guildID == selectedGuildID else { return }
-        memberListGroups = groups
-        members = value
-        refreshMentionAutocompleteMembers(from: value)
-        refreshPresentedMembers(from: value)
-    }
-
-    func updateCurrentUserRoles(from members: [Member], guildID: GuildID) {
-        guard let currentUserID = snapshot?.currentUser.id,
-              let currentMember = members.first(where: { $0.id == currentUserID })
-        else { return }
-        let roleIDs = Set(currentMember.roles.map(\.id))
-        guard currentUserRoleIDsByGuild[guildID] != roleIDs else { return }
-        currentUserRoleIDsByGuild[guildID] = roleIDs
-        readState.updateCurrentUserRoles(roleIDs, guildID: guildID)
-        guard selectedGuildID == guildID else { return }
-        refreshUnreadPresentation(
-            appliesAccessImmediately: true,
-            accessAffectedGuildIDs: [guildID]
-        )
-    }
-
-    func refreshMentionAutocompleteMembers(from members: [Member]) {
-        if mentionAutocompleteMembers.isEmpty {
-            // A guild activation can finish before Discord's lazy member list
-            // has delivered its first store snapshot. Seed the dedicated
-            // autocomplete store from that first Gateway update.
-            mentionAutocompleteMembers = members
-        } else {
-            // Refresh known values without letting visual member-list sorting
-            // reorder or expand the autocomplete store.
-            let updatesByID = Dictionary(
-                members.map { ($0.id, $0) },
-                uniquingKeysWith: { _, newer in newer }
-            )
-            mentionAutocompleteMembers = mentionAutocompleteMembers.map {
-                updatesByID[$0.id] ?? $0
-            }
-        }
-    }
-
-    func refreshPresentedMembers(from members: [Member]) {
-        if let selectedMember,
-           let updated = members.first(where: { $0.id == selectedMember.id })
-        {
-            inspectorProfilePresentation?.member = updated
-            if var profile = inspectorProfilePresentation?.profile {
-                profile.status = updated.status
-                profile.customStatus = updated.customStatus
-                inspectorProfilePresentation?.profile = profile
-            }
-        }
-        if let contextualMember = contextualProfilePresentation?.member,
-           let updated = members.first(where: { $0.id == contextualMember.id })
-        {
-            contextualProfilePresentation?.member = updated
-            if var profile = contextualProfilePresentation?.profile {
-                profile.status = updated.status
-                profile.customStatus = updated.customStatus
-                contextualProfilePresentation?.profile = profile
-            }
-        }
-    }
-
     func consumeVoiceStateChanged(_ state: VoiceParticipantState) {
         let effects = VoiceStateSoundPolicy.effects(
             previous: voiceStates[state.userID],
@@ -857,10 +807,12 @@ extension AppModel {
     }
 
     func consumeSnapshotChanged(_ value: BootstrapSnapshot) {
+        let previousSnapshot = snapshot
         let previousChannelsByID = Dictionary(
-            uniqueKeysWithValues: (snapshot?.channels ?? []).map { ($0.id, $0) }
+            uniqueKeysWithValues: (previousSnapshot?.channels ?? []).map { ($0.id, $0) }
         )
         let previousGuildsByID = serverRailGuildsByID
+        let previousAccessEvidence = readState.authoritativeAccessEvidenceChannelIDs()
         snapshot = value
         forwardSearchSourceRevision &+= 1
         readState.configure(
@@ -874,7 +826,12 @@ extension AppModel {
         for thread in value.threads {
             readState.merge(thread: thread)
         }
-        refreshUnreadPresentation(appliesAccessImmediately: true)
+        refreshUnreadAccessAfterSnapshotChanged(
+            previousSnapshot: previousSnapshot,
+            previousGuildsByID: previousGuildsByID,
+            previousAccessEvidence: previousAccessEvidence,
+            currentSnapshot: value
+        )
         // A Gateway snapshot carries protocol models whose unread fields are
         // intentionally zero. Keep existing presentation values, and resolve
         // only genuinely new IDs synchronously after access has been applied.
@@ -927,7 +884,7 @@ extension AppModel {
         }
         value.guilds[index] = projectedGuild
         snapshot = value
-        serverRailGuildsByID[guild.id] = projectedGuild
+        updateServerRailGuild(projectedGuild)
         forwardSearchSourceRevision &+= 1
         readState.merge(guilds: [guild])
         // Gateway guild payloads do not carry SakuraCord's presentation-only
@@ -941,6 +898,7 @@ extension AppModel {
 
     func consumeGuildLayoutChanged(guilds: [Guild], railItems: [GuildRailItem]) {
         guard var value = snapshot else { return }
+        let previousGuildsByID = serverRailGuildsByID
         let retainedGuildIDs = Set(guilds.map(\.id))
         value.guilds = guilds.map { guild in
             guard let previous = serverRailGuildsByID[guild.id] else {
@@ -962,7 +920,10 @@ extension AppModel {
         updateServerRail(from: value)
         // Layout events likewise contain raw guild models. Preserve the
         // account read-state projection when rebuilding the server rail.
-        refreshUnreadPresentation(appliesAccessImmediately: true)
+        refreshUnreadAccessAfterGuildLayoutChanged(
+            previousGuildsByID: previousGuildsByID,
+            currentGuilds: guilds
+        )
         if let selectedGuildID,
            !guilds.contains(where: { $0.id == selectedGuildID })
         {
@@ -1009,7 +970,11 @@ extension AppModel {
     }
 
     func updateServerRail(from snapshot: BootstrapSnapshot) {
-        serverRailGuildsByID = Dictionary(uniqueKeysWithValues: snapshot.guilds.map { ($0.id, $0) })
+        replaceServerRailGuilds(
+            Dictionary(
+                uniqueKeysWithValues: snapshot.guilds.map { ($0.id, $0) }
+            )
+        )
         serverRailItems = snapshot.guildRailItems
     }
 
@@ -1223,11 +1188,31 @@ extension AppModel {
         to newMembers: [UserID: Member],
         publishesCurrentRows: Bool = true
     ) {
-        let changedUserIDs = TimelineMemberPresentationImpact.changedUserIDs(
-            from: oldMembers,
-            to: newMembers,
-            guildRoles: guildRoles
-        )
+        let changedUserIDs = AppPerformanceSignposts.measureSync(
+            "TimelineMemberPresentationImpact"
+        ) {
+            var referencedUserIDs = TimelineMemberPresentationImpact
+                .referencedUserIDs(in: messages)
+            referencedUserIDs.formUnion(
+                TimelineMemberPresentationImpact.referencedUserIDs(
+                    in: threadMessages
+                )
+            )
+            for cachedMessages in messageCache.values {
+                referencedUserIDs.formUnion(
+                    TimelineMemberPresentationImpact.referencedUserIDs(
+                        in: cachedMessages
+                    )
+                )
+            }
+            guard !referencedUserIDs.isEmpty else { return Set<UserID>() }
+            return TimelineMemberPresentationImpact.changedUserIDs(
+                from: oldMembers,
+                to: newMembers,
+                guildRoles: guildRoles,
+                candidates: referencedUserIDs
+            )
+        }
         guard !changedUserIDs.isEmpty else { return }
 
         let channelMessageIDs = TimelineMemberPresentationImpact
@@ -1340,17 +1325,18 @@ extension AppModel {
     }
 
     func requestUnreadPresentationRefresh() {
-        guard !liveScrollingConversationIDs.isEmpty else {
-            refreshUnreadPresentation()
+        guard liveScrollingConversationIDs.isEmpty,
+              !isAppScrollDeferringUnread
+        else {
+            requestCoalescedUnreadPresentationRefresh()
             return
         }
-        hasDeferredUnreadPresentationRefresh = true
+        refreshUnreadPresentation()
     }
 
     func requestCoalescedUnreadPresentationRefresh() {
         hasDeferredUnreadPresentationRefresh = true
-        guard liveScrollingConversationIDs.isEmpty,
-              unreadPresentationRefreshTask == nil
+        guard unreadPresentationRefreshTask == nil
         else { return }
         AppPerformanceSignposts.signposter.emitEvent(
             "UnreadPresentationRefreshScheduled"
@@ -1366,6 +1352,15 @@ extension AppModel {
                   !Task.isCancelled,
                   self.isCurrentAccountSession(account)
             else { return }
+            while !self.liveScrollingConversationIDs.isEmpty
+                || self.isAppScrollDeferringUnread
+            {
+                do {
+                    try await Task.sleep(for: .milliseconds(40))
+                } catch {
+                    return
+                }
+            }
             self.unreadPresentationRefreshTask = nil
             self.flushUnreadPresentationRefresh()
         }
@@ -1473,12 +1468,15 @@ extension AppModel {
         // The page is prefetched thousands of points ahead, so utility
         // priority preserves that headroom without priority-inverting UI
         // presentation on every pagination boundary.
+        let preparationPriority: TaskPriority = AppScrollWorkGate.isActive
+            ? .background
+            : .utility
         let preparedInsertedRows = await AppPerformanceSignposts.measure(
             "EarlierHistoryRowPreparation"
         ) {
             await prepareTimelineRows(
                 for: earlier,
-                priority: .utility
+                priority: preparationPriority
             )
         }
         guard !Task.isCancelled, selectedChannelID == channelID else {
@@ -1647,12 +1645,15 @@ extension AppModel {
         channelID: ChannelID
     ) async -> Bool {
         guard !later.isEmpty else { return true }
+        let preparationPriority: TaskPriority = AppScrollWorkGate.isActive
+            ? .background
+            : .utility
         let preparedRows = await AppPerformanceSignposts.measure(
             "LaterHistoryRowPreparation"
         ) {
             await prepareTimelineRows(
                 for: later,
-                priority: .utility
+                priority: preparationPriority
             )
         }
         guard !Task.isCancelled, selectedChannelID == channelID else {

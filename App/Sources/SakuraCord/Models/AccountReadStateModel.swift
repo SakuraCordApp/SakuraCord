@@ -4,8 +4,7 @@ import SakuraCordModels
 
 @MainActor
 @Observable
-// The model centralizes read-state invariants so one atomic initial-state
-// publication and incremental Gateway updates cannot diverge.
+// Centralize read-state invariants so atomic snapshots and Gateway updates cannot diverge.
 // swiftlint:disable:next type_body_length
 final class AccountReadStateModel {
     nonisolated struct InitialState: Sendable {
@@ -42,7 +41,8 @@ final class AccountReadStateModel {
 
         func projection(
             now: Date = .now,
-            cancelsCooperatively: Bool = false
+            cancelsCooperatively: Bool = false,
+            cancellationCheck: @Sendable () -> Bool = { Task.isCancelled }
         ) -> UnreadPresentationProjection? {
             var unreadByChannelID: [ChannelID: Bool] = [:]
             var mentionsByChannelID: [ChannelID: Int] = [:]
@@ -59,7 +59,7 @@ final class AccountReadStateModel {
             for (offset, entry) in entries.values.enumerated() {
                 if cancelsCooperatively,
                    offset.isMultiple(of: 64),
-                   Task.isCancelled
+                   cancellationCheck()
                 {
                     return nil
                 }
@@ -277,6 +277,13 @@ final class AccountReadStateModel {
         }
 
         func isGuildResourceChannel(_ entry: Entry) -> Bool {
+            Self.isGuildResourceChannel(entry, channelByID: channelByID)
+        }
+
+        static func isGuildResourceChannel(
+            _ entry: Entry,
+            channelByID: [ChannelID: Channel]
+        ) -> Bool {
             let resourceFlag: UInt64 = 1 << 7
             if let channel = channelByID[entry.channelID],
                channel.flags & resourceFlag != 0
@@ -844,11 +851,9 @@ final class AccountReadStateModel {
     /// Applies resolved channel accessibility and propagates each value to the
     /// threads and forum posts hanging off that channel.
     ///
-    /// A channel present in `resolved` keeps its own value. Entries absent from
-    /// it inherit from their parent when that parent resolved. The account-wide
-    /// reconcile runs on every unread refresh, so it must walk the entry table
-    /// a fixed number of times rather than rescan it once per channel. It also
-    /// publishes only when a value changed because `entries` is observable.
+    /// A channel present in `resolved` keeps its value; absent entries inherit a
+    /// resolved parent. This account-wide refresh uses fixed passes rather than
+    /// rescanning per channel, and publishes only when observable entries change.
     @discardableResult
     func applyAccessibility(_ resolved: [ChannelID: Bool]) -> Bool {
         guard !resolved.isEmpty else { return false }
@@ -984,19 +989,15 @@ final class AccountReadStateModel {
         let ordered = remoteReadStateOrder + entries.keys.filter {
             !remoteReadStateOrderIDs.contains($0)
         }
-        // Discord's ReadStateStore maintains a Set whose insertion order is
-        // established by CONNECTION_OPEN and subsequent mention-count
-        // transitions. QuickSwitcherStore reverses that order when rendering;
-        // sorting by message snowflake changes otherwise equivalent results.
+        // ReadStateStore insertion order follows CONNECTION_OPEN and later mention
+        // transitions. QuickSwitcherStore reverses it; snowflake sorting differs.
         return ordered.filter {
             seen.insert($0).inserted && mentionCounts[$0, default: 0] > 0
         }
     }
 
-    /// Produces only the local read-state fields consumed by Discord's quick
-    /// switcher. The full sidebar projection also resolves guild aggregates,
-    /// forum counters, and notification policies, which are irrelevant here
-    /// and expensive across a large account.
+    /// Produces only local quick-switcher read state. Full sidebar guild aggregates,
+    /// forum counters, and notification policies are irrelevant and expensive here.
     func quickSwitcherProjection() -> QuickSwitcherProjection {
         var unreadChannelIDs = Set<ChannelID>()
         var mutedChannelIDs = Set<ChannelID>()
@@ -1057,10 +1058,8 @@ final class AccountReadStateModel {
         )
     }
 
-    /// Mirrors Discord's `UserGuildSettingsStore.resolveUnreadSetting` for
-    /// the `QuickSwitcherStore` unread-candidate predicate. This is narrower
-    /// than the sidebar's presentation policy: quick-switcher unread results
-    /// require the effective unread setting to be `ALL_MESSAGES`.
+    /// Mirrors Discord's quick-switcher unread candidate policy, which is narrower
+    /// than the sidebar and requires the effective setting to be `ALL_MESSAGES`.
     private func quickSwitcherUsesAllMessagesUnreadSetting(
         for entry: Entry
     ) -> Bool {
@@ -1229,10 +1228,8 @@ final class AccountReadStateModel {
         let mentionKind = mentionKind(for: message, entry: entry, policy: policy)
         if mentionKind != .none {
             if entry.mentionCount == 0 {
-                // Discord's MentionStore appends a channel when it first
-                // becomes mentioned. The quick switcher walks that order in
-                // reverse, so a newly mentioned channel appears first even
-                // when its read-state entry was created much earlier.
+                // MentionStore appends newly mentioned channels. The quick switcher
+                // reverses that order, independent of read-state creation time.
                 remoteReadStateOrder.removeAll { $0 == message.channelID }
                 remoteReadStateOrder.append(message.channelID)
                 remoteReadStateOrderIDs.insert(message.channelID)
@@ -1577,16 +1574,13 @@ final class AccountReadStateModel {
         return max(1, entry.unreadMessageCount)
     }
 
-    /// Produces every account-wide sidebar unread value in linear entry and
-    /// channel-table passes. The scalar helpers remain useful for narrow
-    /// updates, but calling them once per guild or forum turns a refresh into
-    /// a quadratic scan on large accounts.
+    /// Produces all sidebar unread values in linear passes. Scalar helpers suit
+    /// narrow updates, but per-guild/forum calls become quadratic on large accounts.
     func unreadPresentationProjection(
         now: Date = .now
     ) -> UnreadPresentationProjection {
-        // Synchronous scalar callers retain their existing behavior. The app
-        // presentation path captures the same value-semantic source and runs
-        // this exact projection in a detached preparation task.
+        // Scalar callers retain behavior; the app runs this same value-semantic
+        // projection in a detached preparation task.
         unreadPresentationSource().projection(now: now)
             ?? UnreadPresentationProjection(
                 unreadByChannelID: [:],
@@ -1617,8 +1611,13 @@ final class AccountReadStateModel {
     }
 
     func guildMentions(_ guildID: GuildID) -> Int {
-        entries.values.lazy.filter { $0.guildID == guildID }.reduce(0) {
-            $0 + mentions(channelID: $1.channelID)
+        let policy = unreadPolicySource
+        return entries.values.reduce(0) { total, entry in
+            guard entry.guildID == guildID,
+                  entry.isAccessible,
+                  !policy.isGuildResourceChannel(entry)
+            else { return total }
+            return total + entry.mentionCount
         }
     }
 
@@ -1627,7 +1626,15 @@ final class AccountReadStateModel {
     }
 
     func folderMentions(_ guildIDs: [GuildID]) -> Int {
-        guildIDs.reduce(0) { $0 + guildMentions($1) }
+        let guildIDs = Set(guildIDs)
+        let policy = unreadPolicySource
+        return entries.values.reduce(0) { total, entry in
+            guard entry.guildID.map(guildIDs.contains) == true,
+                  entry.isAccessible,
+                  !policy.isGuildResourceChannel(entry)
+            else { return total }
+            return total + entry.mentionCount
+        }
     }
 
     func directMessageUnread(now: Date = .now) -> Bool {
@@ -1638,15 +1645,25 @@ final class AccountReadStateModel {
     }
 
     var directMessageMentions: Int {
-        entries.values.lazy.filter {
-            $0.kind == .directMessage || $0.kind == .groupDirectMessage
-        }.reduce(0) {
-            $0 + mentions(channelID: $1.channelID)
+        let policy = unreadPolicySource
+        return entries.values.reduce(0) { total, entry in
+            guard entry.kind == .directMessage
+                    || entry.kind == .groupDirectMessage,
+                  entry.isAccessible,
+                  !policy.isGuildResourceChannel(entry)
+            else { return total }
+            return total + entry.mentionCount
         }
     }
 
     var totalMentions: Int {
-        entries.keys.reduce(0) { $0 + mentions(channelID: $1) }
+        let policy = unreadPolicySource
+        return entries.values.reduce(0) { total, entry in
+            guard entry.isAccessible,
+                  !policy.isGuildResourceChannel(entry)
+            else { return total }
+            return total + entry.mentionCount
+        }
     }
 
     func isVisibleAtNewest(_ channelID: ChannelID) -> Bool {
@@ -1849,7 +1866,10 @@ private extension AccountReadStateModel {
     }
 
     private func isGuildResourceChannel(_ entry: Entry) -> Bool {
-        unreadPolicySource.isGuildResourceChannel(entry)
+        UnreadPolicySource.isGuildResourceChannel(
+            entry,
+            channelByID: channelByID
+        )
     }
 }
 
