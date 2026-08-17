@@ -39,14 +39,24 @@ import Testing
     #expect(abs(selections.map(\.duration).reduce(0, +) - 0.02) < 0.000_001)
 }
 
-@Test func `full animated expansion is serialized at utility priority`() {
+@Test func `full animated expansion is serialized at background priority`() {
     #expect(
         AnimatedImageDecodePolicy
             .maximumConcurrentDecodes == 1
     )
     #expect(
-        AnimatedImageDecodePolicy.taskPriority == .utility
+        AnimatedImageDecodePolicy.taskPriority == .background
     )
+}
+
+@Test func `animated expansion cooperatively interrupts for scrolling`() {
+    #expect(throws: AnimatedImageDecodeInterruption.self) {
+        _ = try DecodedAnimatedImage(
+            data: Data(),
+            maximumPixelDimension: 68,
+            shouldInterrupt: { true }
+        )
+    }
 }
 
 @Test func `new animated expansion waits until interactive scrolling ends`() async {
