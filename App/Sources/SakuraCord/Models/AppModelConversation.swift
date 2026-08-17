@@ -268,17 +268,6 @@ extension AppModel {
             let needsSupplementalMemberResolution =
                 !page.hasCompleteMemberResolution
                 || messages.contains { !freshMessageIDs.contains($0.id) }
-            if needsSupplementalMemberResolution {
-                await AppPerformanceSignposts.measure(
-                    "ConversationMemberResolution"
-                ) {
-                    await resolveSelectedHistoryMembers(
-                        channelID: channelID,
-                        generation: generation,
-                        session: account
-                    )
-                }
-            }
             guard isCurrentAccountSession(account),
                   isCurrentLoad(channelID, generation: generation)
             else { return }
@@ -292,6 +281,19 @@ extension AppModel {
                     hasMoreBefore: page.hasMoreBefore,
                     session: account
                 )
+            }
+            if needsSupplementalMemberResolution {
+                startAccountChildTask(account: account) { model, account in
+                    await AppPerformanceSignposts.measure(
+                        "ConversationMemberResolution"
+                    ) {
+                        await model.resolveSelectedHistoryMembers(
+                            channelID: channelID,
+                            generation: generation,
+                            session: account
+                        )
+                    }
+                }
             }
         } catch is CancellationError {
             return
@@ -344,9 +346,9 @@ extension AppModel {
                 "ConversationHistoryRequest", interval
             )
         }
-        return try await provider.messages(
+        return try await provider.messagesForImmediatePresentation(
             in: channelID,
-            before: nil,
+            anchoredAt: .newest,
             limit: 10
         )
     }

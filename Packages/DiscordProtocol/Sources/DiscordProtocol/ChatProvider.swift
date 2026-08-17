@@ -49,6 +49,11 @@ public protocol ChatProvider: Sendable {
         anchoredAt anchor: MessageHistoryAnchor,
         limit: Int
     ) async throws -> MessagePage
+    func messagesForImmediatePresentation(
+        in channelID: ChannelID,
+        anchoredAt anchor: MessageHistoryAnchor,
+        limit: Int
+    ) async throws -> MessagePage
     func searchMessages(_ query: MessageSearchQuery) async throws -> MessageSearchPage
     func forumPosts(in channelID: ChannelID, query: ForumPostQuery) async throws -> ForumPostPage
     func forumPost(threadID: ChannelID) async throws -> ForumPost
@@ -215,6 +220,22 @@ public extension ChatProvider {
                 "This provider does not support bidirectional message history."
             )
         }
+    }
+
+    /// Returns the history payload required to draw the conversation. Providers
+    /// may defer supplemental member resolution because Discord message payloads
+    /// already carry the nickname, roles, and guild avatar used by the timeline.
+    /// The default retains the complete-history behavior for other providers.
+    func messagesForImmediatePresentation(
+        in channelID: ChannelID,
+        anchoredAt anchor: MessageHistoryAnchor,
+        limit: Int
+    ) async throws -> MessagePage {
+        try await messages(
+            in: channelID,
+            anchoredAt: anchor,
+            limit: limit
+        )
     }
 
     func searchMessages(_ query: MessageSearchQuery) async throws -> MessageSearchPage {

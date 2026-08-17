@@ -1608,6 +1608,33 @@ extension DiscordRESTProvider {
         anchoredAt anchor: MessageHistoryAnchor,
         limit: Int
     ) async throws -> MessagePage {
+        try await messages(
+            in: channelID,
+            anchoredAt: anchor,
+            limit: limit,
+            resolvesMissingHistoryMembers: true
+        )
+    }
+
+    public func messagesForImmediatePresentation(
+        in channelID: ChannelID,
+        anchoredAt anchor: MessageHistoryAnchor,
+        limit: Int
+    ) async throws -> MessagePage {
+        try await messages(
+            in: channelID,
+            anchoredAt: anchor,
+            limit: limit,
+            resolvesMissingHistoryMembers: false
+        )
+    }
+
+    private func messages(
+        in channelID: ChannelID,
+        anchoredAt anchor: MessageHistoryAnchor,
+        limit: Int,
+        resolvesMissingHistoryMembers: Bool
+    ) async throws -> MessagePage {
         var query: [URLQueryItem] = []
         switch anchor {
         case .newest:
@@ -1654,7 +1681,8 @@ extension DiscordRESTProvider {
         )
         let memberHydration = await hydrateHistoryMembers(
             &values,
-            channelID: channelID
+            channelID: channelID,
+            resolvesMissingMembers: resolvesMissingHistoryMembers
         )
         discordPerformanceSignposter.endInterval(
             "MessageHistoryMemberHydration",
@@ -1699,7 +1727,8 @@ extension DiscordRESTProvider {
 
     func hydrateHistoryMembers(
         _ values: inout [Message],
-        channelID: ChannelID
+        channelID: ChannelID,
+        resolvesMissingMembers: Bool = true
     ) async -> (members: [Member], isComplete: Bool) {
         if let guildID = cachedChannels.values.lazy.flatMap(\.self).first(where: {
             $0.id == channelID
@@ -1719,12 +1748,14 @@ extension DiscordRESTProvider {
                 cached: Set(membersByID.keys),
                 requested: requested
             )
-            var isComplete = requiredUserIDs.isDisjoint(with: resolving)
-            if !missing.isEmpty {
+            let hasPendingResolution = !requiredUserIDs.isDisjoint(with: resolving)
+            var isComplete = missing.isEmpty && !hasPendingResolution
+            if resolvesMissingMembers, !missing.isEmpty {
                 requestedHistoryMemberIDs[guildID, default: []].formUnion(missing)
                 resolvingHistoryMemberIDs[guildID, default: []].formUnion(missing)
                 do {
                     try await requestMembersByID(missing, guildID: guildID)
+                    isComplete = !hasPendingResolution
                     resolvingHistoryMemberIDs[guildID]?.subtract(missing)
                     if resolvingHistoryMemberIDs[guildID]?.isEmpty == true {
                         resolvingHistoryMemberIDs[guildID] = nil
