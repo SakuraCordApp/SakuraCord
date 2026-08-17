@@ -1788,6 +1788,7 @@ struct GuildMemberDTO: Decodable {
         currentStatus: PresenceStatus,
         presence overridePresence: GuildPresenceDTO? = nil,
         guildRoles: [GuildRoleDTO] = [],
+        guildRoleCatalog: GuildMemberRoleCatalog? = nil,
         guildID: GuildID? = nil
     ) throws -> Member {
         var domainUser = try user.domain()
@@ -1805,20 +1806,26 @@ struct GuildMemberDTO: Decodable {
                 : (overridePresence ?? presence)?.status.flatMap(PresenceStatus.init(rawValue:))
                 ?? .offline
         let memberRoleIDs = Set(roles ?? [])
-        let categoryRole =
-            guildRoles
-                .filter { $0.hoist && memberRoleIDs.contains($0.id) }
+        let catalogEntries = guildRoleCatalog?.entries(matching: memberRoleIDs)
+        let matchingRoles = catalogEntries?.map(\.dto)
+            ?? guildRoles.filter { memberRoleIDs.contains($0.id) }
+        let categoryRole = matchingRoles
+                .filter(\.hoist)
                 .max { lhs, rhs in
                     if lhs.position != rhs.position {
                         return lhs.position < rhs.position
                     }
                     return lhs.id < rhs.id
                 }
-        let domainRoles =
-            guildRoles
-                .filter { memberRoleIDs.contains($0.id) }
+        let domainRoles = if let catalogEntries {
+            catalogEntries
+                .sorted { $0.dto.position > $1.dto.position }
+                .compactMap(\.domain)
+        } else {
+            matchingRoles
                 .sorted { $0.position > $1.position }
                 .compactMap(\.domain)
+        }
         let activities = (overridePresence ?? presence)?.activities ?? []
         let customStatus = activities.first(where: { $0.type == 4 })?.displayText
         return Member(

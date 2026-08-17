@@ -750,6 +750,55 @@ private func appendETFBinary(_ value: String, to data: inout Data) {
     #expect(update.groups?.map(\.count) == [1, 2, 388])
 }
 
+@Test func `indexed role catalog preserves complete member projection semantics`() throws {
+    let roles = try JSONDecoder().decode(
+        [GuildRoleDTO].self,
+        from: Data(#"""
+        [
+            {"id":"100","name":"Everyone","position":0,"hoist":false,"permissions":"1024"},
+            {"id":"300","name":"Three","position":5,"hoist":true,"color":16711680},
+            {"id":"200","name":"Two","position":5,"hoist":true,"unicode_emoji":"🌸"},
+            {"id":"400","name":"Four","position":2,"hoist":false,"permissions":"2048"}
+        ]
+        """#.utf8)
+    )
+    let member = try JSONDecoder().decode(
+        GuildMemberDTO.self,
+        from: Data(#"""
+        {
+            "user":{"id":"42","username":"member","global_name":"Global"},
+            "nick":"Guild Nick",
+            "roles":["400","200","300","200"],
+            "presence":{"status":"idle","activities":[]},
+            "pending":false
+        }
+        """#.utf8)
+    )
+    let fallback = try member.domain(
+        currentUserID: nil,
+        currentStatus: .online,
+        guildRoles: roles,
+        guildID: GuildID(rawValue: 100)
+    )
+    let indexed = try member.domain(
+        currentUserID: nil,
+        currentStatus: .online,
+        guildRoles: roles,
+        guildRoleCatalog: GuildMemberRoleCatalog(roles),
+        guildID: GuildID(rawValue: 100)
+    )
+
+    #expect(indexed == fallback)
+    #expect(indexed.roleName == "Three")
+    #expect(indexed.roles.map(\.id) == [
+        RoleID(rawValue: 300), RoleID(rawValue: 200), RoleID(rawValue: 400),
+    ])
+    #expect(indexed.roleIDs == [
+        RoleID(rawValue: 400), RoleID(rawValue: 200),
+        RoleID(rawValue: 300), RoleID(rawValue: 200),
+    ])
+}
+
 @Test func `voice state update uses gateway opcode four and explicit null to leave`() throws {
     let join = DiscordGatewayPayloadFactory.voiceStateUpdate(
         guildID: GuildID(rawValue: 100),

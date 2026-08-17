@@ -880,11 +880,14 @@ extension DiscordRESTProvider {
                         )
                     }
                     if let guildID, !guild.members.isEmpty {
+                        let guildRoles = cachedGuildRoles[guildID] ?? []
+                        let guildRoleCatalog = GuildMemberRoleCatalog(guildRoles)
                         let members = guild.members.compactMap {
                             try? $0.domain(
                                 currentUserID: currentUser?.id,
                                 currentStatus: presenceStatus,
-                                guildRoles: cachedGuildRoles[guildID] ?? [],
+                                guildRoles: guildRoles,
+                                guildRoleCatalog: guildRoleCatalog,
                                 guildID: guildID
                             )
                         }
@@ -1063,11 +1066,14 @@ extension DiscordRESTProvider {
                         )
                     }
                     guard !guild.members.isEmpty else { continue }
+                    let guildRoles = cachedGuildRoles[guildID] ?? []
+                    let guildRoleCatalog = GuildMemberRoleCatalog(guildRoles)
                     let members = guild.members.compactMap {
                         try? $0.domain(
                             currentUserID: currentUser?.id,
                             currentStatus: presenceStatus,
-                            guildRoles: cachedGuildRoles[guildID] ?? [],
+                            guildRoles: guildRoles,
+                            guildRoleCatalog: guildRoleCatalog,
                             guildID: guildID
                         )
                     }
@@ -1161,11 +1167,14 @@ extension DiscordRESTProvider {
                     quickSwitcherGuildMemberUserIDsByGuildID[guildID, default: []]
                         .formUnion(catalogMembers.compactMap { UserID($0.user.id) })
                     cacheLiveSearchUsers(catalogMembers.map(\.user))
+                    let guildRoles = cachedGuildRoles[guildID] ?? []
+                    let guildRoleCatalog = GuildMemberRoleCatalog(guildRoles)
                     let members = catalogMembers.compactMap {
                         try? $0.domain(
                             currentUserID: currentUser?.id,
                             currentStatus: presenceStatus,
-                            guildRoles: cachedGuildRoles[guildID] ?? [],
+                            guildRoles: guildRoles,
+                            guildRoleCatalog: guildRoleCatalog,
                             guildID: guildID
                         )
                     }
@@ -1784,8 +1793,11 @@ extension DiscordRESTProvider {
                     GuildMemberListGroup(id: $0.id, count: $0.count)
                 }
             }
+            let changedUserIDs = Self.memberListChangedUserIDs(in: update.ops)
             let members = decodedMemberListMembers(
-                guildID: guildID, memberListID: update.id
+                guildID: guildID,
+                memberListID: update.id,
+                restrictingTo: changedUserIDs
             )
             cachedMembers[guildID] = DiscordMemberStoreOrdering.merging(
                 existing: cachedMembers[guildID] ?? [], updates: members
@@ -1807,11 +1819,14 @@ extension DiscordRESTProvider {
                 let chunk = try? JSONDecoder().decode(GatewayGuildMembersChunkDTO.self, from: data),
                 let guildID = GuildID(chunk.guildID)
             else { return }
+            let guildRoles = cachedGuildRoles[guildID] ?? []
+            let guildRoleCatalog = GuildMemberRoleCatalog(guildRoles)
             let decodedMembers = chunk.members.compactMap {
                 try? $0.domain(
                     currentUserID: currentUser?.id,
                     currentStatus: presenceStatus,
-                    guildRoles: cachedGuildRoles[guildID] ?? [],
+                    guildRoles: guildRoles,
+                    guildRoleCatalog: guildRoleCatalog,
                     guildID: guildID
                 )
             }

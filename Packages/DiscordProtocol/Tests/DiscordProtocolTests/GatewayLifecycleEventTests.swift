@@ -256,6 +256,53 @@ struct GatewayLifecycleEventTests {
         #expect(await provider.memberListGroupsForTesting(
             guildID: guildID, memberListID: "everyone"
         ).map(\.count) == [3])
+
+        await provider.receiveGatewayDispatchForTesting(
+            name: "GUILD_MEMBER_LIST_UPDATE",
+            data: .object([
+                "guild_id": .string("100"),
+                "id": .string("everyone"),
+                "ops": .array([
+                    .object([
+                        "op": .string("UPDATE"),
+                        "index": .number(1),
+                        "item": .object([
+                            "member": .object([
+                                "user": user(
+                                    id: "2",
+                                    username: "updated-member-2",
+                                    globalName: "Updated Member 2"
+                                ),
+                                "roles": .array([]),
+                            ])
+                        ]),
+                    ])
+                ]),
+            ])
+        )
+        #expect(await provider.orderedMemberListIDsForTesting(
+            guildID: guildID, memberListID: "everyone"
+        ) == [UserID(rawValue: 1), UserID(rawValue: 2), UserID(rawValue: 3)])
+        #expect(await provider.cachedMembersForTesting(guildID: guildID)
+            .first(where: { $0.id == UserID(rawValue: 2) })?.user.displayName
+            == "Updated Member 2")
+
+        await provider.receiveGatewayDispatchForTesting(
+            name: "GUILD_MEMBER_LIST_UPDATE",
+            data: .object([
+                "guild_id": .string("100"),
+                "id": .string("everyone"),
+                "ops": .array([
+                    .object(["op": .string("DELETE"), "index": .number(1)])
+                ]),
+            ])
+        )
+        #expect(await provider.orderedMemberListIDsForTesting(
+            guildID: guildID, memberListID: "everyone"
+        ) == [UserID(rawValue: 1), UserID(rawValue: 3)])
+        #expect(await provider.orderedMemberListIDsForTesting(
+            guildID: guildID, memberListID: "restricted"
+        ) == [UserID(rawValue: 1)])
     }
 
     @Test func `desktop ETF numeric permissions guild create adds a new guild`() async {

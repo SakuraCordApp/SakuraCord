@@ -46,15 +46,47 @@ extension DiscordRESTProvider {
         pending.continuation.resume(throwing: error)
     }
 
-    func decodedMemberListMembers(guildID: GuildID, memberListID: String) -> [Member] {
+    func decodedMemberListMembers(
+        guildID: GuildID,
+        memberListID: String,
+        restrictingTo changedUserIDs: Set<UserID>? = nil
+    ) -> [Member] {
+        if changedUserIDs?.isEmpty == true {
+            discordPerformanceSignposter.emitEvent(
+                "GatewayMemberListDomainDecodeSkipped"
+            )
+            return []
+        }
+        let roleCatalogBuild = discordPerformanceSignposter.beginInterval(
+            "GatewayMemberListRoleCatalogBuild",
+            id: discordPerformanceSignposter.makeSignpostID()
+        )
+        let guildRoles = cachedGuildRoles[guildID] ?? []
+        let guildRoleCatalog = GuildMemberRoleCatalog(guildRoles)
+        discordPerformanceSignposter.endInterval(
+            "GatewayMemberListRoleCatalogBuild", roleCatalogBuild
+        )
+
+        let domainDecode = discordPerformanceSignposter.beginInterval(
+            "GatewayMemberListDomainDecode",
+            id: discordPerformanceSignposter.makeSignpostID()
+        )
+        defer {
+            discordPerformanceSignposter.endInterval(
+                "GatewayMemberListDomainDecode", domainDecode
+            )
+        }
         var seen = Set<UserID>()
         return (cachedMemberListItems[guildID]?[memberListID] ?? []).enumerated().compactMap { index, item -> Member? in
             guard let memberDTO = item?.member,
+                  let userID = UserID(memberDTO.user.id),
+                  changedUserIDs?.contains(userID) != false,
                   var member = try? memberDTO.domain(
                       currentUserID: currentUser?.id,
                       currentStatus: presenceStatus,
                       presence: item?.presence,
-                      guildRoles: cachedGuildRoles[guildID] ?? [],
+                      guildRoles: guildRoles,
+                      guildRoleCatalog: guildRoleCatalog,
                       guildID: guildID
                   ),
                   seen.insert(member.id).inserted
@@ -64,21 +96,70 @@ extension DiscordRESTProvider {
         }
     }
 
-    func orderedMemberListMembers(guildID: GuildID, memberListID: String? = nil) -> [Member]? {
+    func orderedMemberListMembers(
+        guildID: GuildID,
+        memberListID: String? = nil
+    ) -> [Member]? {
         guard let memberListID = memberListID ?? selectedMemberListID[guildID],
-              cachedMemberListItems[guildID]?[memberListID] != nil
+              let memberListItems = cachedMemberListItems[guildID]?[memberListID]
         else { return nil }
-        let cachedByID = Dictionary(
+        let ordering = discordPerformanceSignposter.beginInterval(
+            "GatewayMemberListOrdering",
+            id: discordPerformanceSignposter.makeSignpostID()
+        )
+        defer {
+            discordPerformanceSignposter.endInterval(
+                "GatewayMemberListOrdering", ordering
+            )
+        }
+        var membersByID = Dictionary(
             (cachedMembers[guildID] ?? []).map { ($0.id, $0) },
             uniquingKeysWith: { _, newer in newer }
         )
-        return decodedMemberListMembers(guildID: guildID, memberListID: memberListID).map { indexedMember in
-            guard var cached = cachedByID[indexedMember.id] else {
-                return indexedMember
-            }
-            cached.memberListIndex = indexedMember.memberListIndex
-            return cached
+        var seen = Set<UserID>()
+        let orderedIDs = memberListItems.enumerated().compactMap { index, item -> (UserID, Int)? in
+            guard let rawUserID = item?.member?.user.id,
+                  let userID = UserID(rawUserID),
+                  seen.insert(userID).inserted
+            else { return nil }
+            return (userID, index)
         }
+        let missingUserIDs = Set(orderedIDs.lazy.map(\.0)).subtracting(
+            membersByID.keys
+        )
+        if !missingUserIDs.isEmpty {
+            for member in decodedMemberListMembers(
+                guildID: guildID,
+                memberListID: memberListID,
+                restrictingTo: missingUserIDs
+            ) {
+                membersByID[member.id] = member
+            }
+        }
+        return orderedIDs.compactMap { userID, index in
+            guard var member = membersByID[userID] else { return nil }
+            member.memberListIndex = index
+            return member
+        }
+    }
+
+    static func memberListChangedUserIDs(
+        in operations: [GuildMemberListUpdateDTO.Operation]
+    ) -> Set<UserID> {
+        var userIDs = Set<UserID>()
+        for operation in operations {
+            if let items = operation.items {
+                userIDs.formUnion(items.compactMap { item in
+                    item.member.flatMap { UserID($0.user.id) }
+                })
+            }
+            if let item = operation.item,
+               let userID = item.member.flatMap({ UserID($0.user.id) })
+            {
+                userIDs.insert(userID)
+            }
+        }
+        return userIDs
     }
 
     static var memberListOperationApplication:
