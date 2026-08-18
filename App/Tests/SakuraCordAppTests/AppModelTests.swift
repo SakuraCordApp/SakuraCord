@@ -1719,8 +1719,7 @@ import UserNotifications
 @Test func `saved account registry filters removed credentials and remembers the newest account`()
     async throws
 {
-    let suiteName = "dev.sakuracord.tests.saved-accounts.\(UUID().uuidString)"
-    let store = UserDefaultsSavedAccountStore(suiteName: suiteName)
+    let store = UserDefaultsSavedAccountStore(defaults: InMemoryPreferences())
     let older = SavedAccount(
         accountID: "100",
         username: "older",
@@ -1752,7 +1751,6 @@ import UserNotifications
         await store.accounts(matching: [CredentialHandle(accountID: "100")])
             == [older]
     )
-    await store.removePersistentDomain(named: suiteName)
 }
 
 @MainActor

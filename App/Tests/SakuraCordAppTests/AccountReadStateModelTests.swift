@@ -2205,7 +2205,7 @@ struct AccountReadStateModelTests {
     let provider = MockChatProvider()
     let service = RecordingNotificationService()
     let sounds = RecordingAppSoundPlayer()
-    let defaults = UserDefaults(suiteName: "NotificationTests.\(UUID().uuidString)")!
+    let defaults = InMemoryPreferences()
     let preferences = NotificationPreferences(defaults: defaults)
     let model = AppModel(
         launchMode: .offlineTesting,
@@ -2278,7 +2278,7 @@ struct AccountReadStateModelTests {
         ).title == "SakuraCord"
     )
 
-    let defaults = UserDefaults(suiteName: "QuietHoursTests.\(UUID().uuidString)")!
+    let defaults = InMemoryPreferences()
     let preferences = NotificationPreferences(defaults: defaults)
     preferences.quietHoursEnabled = true
     preferences.quietStartHour = 22

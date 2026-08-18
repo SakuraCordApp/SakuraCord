@@ -68,14 +68,10 @@ actor UserDefaultsSavedAccountStore: SavedAccountStoring {
     private nonisolated static let preferredAccountKey =
         "dev.sakuracord.preferred-account-id"
 
-    private let defaults: UserDefaults
+    private let defaults: any PreferenceStoring
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: any PreferenceStoring = UserDefaults.standard) {
         self.defaults = defaults
-    }
-
-    init(suiteName: String) {
-        defaults = UserDefaults(suiteName: suiteName) ?? .standard
     }
 
     func accounts(matching handles: [CredentialHandle]) -> [SavedAccount] {
@@ -115,10 +111,6 @@ actor UserDefaultsSavedAccountStore: SavedAccountStoring {
         } else {
             defaults.removeObject(forKey: Self.preferredAccountKey)
         }
-    }
-
-    func removePersistentDomain(named suiteName: String) {
-        defaults.removePersistentDomain(forName: suiteName)
     }
 
     private func storedAccounts() -> [SavedAccount] {
