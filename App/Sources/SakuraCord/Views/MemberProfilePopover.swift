@@ -363,15 +363,13 @@ private struct ProfileBanner: View {
                     endPoint: .bottomTrailing
                 )
                 if let url {
-                    AsyncImage(url: url) { image in
-                        image
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: width, height: ProfileBannerLayout.height)
-                            .clipped()
-                    } placeholder: {
-                        Color.clear
-                    }
+                    AnimatedRemoteImage(
+                        url: url,
+                        maximumPixelDimension: 600,
+                        contentMode: .fill
+                    )
+                    .frame(width: width, height: ProfileBannerLayout.height)
+                    .clipped()
                 }
             }
             .frame(width: width, height: ProfileBannerLayout.height)
