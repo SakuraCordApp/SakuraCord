@@ -1142,10 +1142,16 @@ extension AppModel {
         }
     }
 
-    func navigate(to guildID: GuildID?, linkedChannelID channelID: ChannelID) {
-        if snapshot?.channels.contains(where: { $0.id == channelID }) == true
-            || visibleChannels.contains(where: { $0.id == channelID })
-        {
+    func navigate(
+        to guildID: GuildID?,
+        linkedChannelID channelID: ChannelID,
+        messageID: MessageID? = nil,
+        initialMessages: [Message] = []
+    ) {
+        let isKnownRootChannel =
+            snapshot?.channels.contains(where: { $0.id == channelID }) == true
+                || visibleChannels.contains(where: { $0.id == channelID })
+        if messageID == nil, isKnownRootChannel {
             navigate(to: channelID)
             return
         }
@@ -1161,7 +1167,7 @@ extension AppModel {
                 await activateGuild(guildID, account: session)
             }
             guard !Task.isCancelled, isCurrentAccountSession(session) else { return }
-            if let channel =
+            if messageID == nil, let channel =
                 snapshot?.channels.first(where: { $0.id == channelID })
                     ?? visibleChannels.first(where: { $0.id == channelID })
             {
@@ -1211,8 +1217,74 @@ extension AppModel {
                 mergeForumCatalogue([post])
                 applyForumPresentation()
             }
-            open(post)
+            await openLinkedThread(
+                post,
+                initialMessages: initialMessages,
+                messageID: messageID,
+                session: session
+            )
         }
+    }
+
+    private func openLinkedThread(
+        _ post: ForumPost,
+        initialMessages: [Message],
+        messageID: MessageID?,
+        session: AppModelAccountSession
+    ) async {
+        if initialMessages.isEmpty {
+            open(post)
+        } else {
+            readState.merge(forumPost: post)
+            openThreadConversation(
+                post.thread,
+                starter: post.owner ?? post.firstMessage?.author,
+                startedAt: post.firstMessage?.timestamp ?? post.createdAt,
+                initialMessages: initialMessages
+            )
+        }
+        guard let messageID else { return }
+        await threadLoadTask?.value
+        guard !Task.isCancelled,
+              isCurrentAccountSession(session),
+              openThread?.id == post.id
+        else { return }
+        if !threadMessages.contains(where: { $0.id == messageID }) {
+            do {
+                let page = try await session.provider.messages(
+                    in: post.id,
+                    anchoredAt: .around(messageID),
+                    limit: 50
+                )
+                guard !Task.isCancelled,
+                      isCurrentAccountSession(session),
+                      openThread?.id == post.id
+                else { return }
+                threadMessages = Self.merging(
+                    current: threadMessages,
+                    fresh: page.messages
+                )
+                hasMoreThreadMessages = page.hasMoreBefore
+            } catch is CancellationError {
+                return
+            } catch {
+                guard isCurrentAccountSession(session),
+                      openThread?.id == post.id
+                else { return }
+                errorMessage = error.localizedDescription
+                return
+            }
+        }
+        guard threadMessages.contains(where: { $0.id == messageID }) else {
+            errorMessage = "That message could not be found in the linked thread."
+            return
+        }
+        messageNavigationRequestID &+= 1
+        messageNavigationRequest = MessageNavigationRequest(
+            requestID: messageNavigationRequestID,
+            channelID: post.id,
+            messageID: messageID
+        )
     }
 
     func navigate(to guildID: GuildID?, channelID: ChannelID, messageID: MessageID) {

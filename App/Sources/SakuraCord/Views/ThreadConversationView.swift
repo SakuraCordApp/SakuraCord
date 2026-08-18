@@ -262,6 +262,7 @@ private struct ThreadMessageTimelineView: View {
     @State private var hasEstablishedInitialPosition = false
     @State private var hasEarlierHistoryScrollIntent = false
     @State private var isEarlierHistoryScrollGestureActive = false
+    @State private var highlightedMessageID: MessageID?
     @State private var scrollRequest: MessageTimelineScrollRequest?
 
     var body: some View {
@@ -280,7 +281,7 @@ private struct ThreadMessageTimelineView: View {
                 ),
             bottomContentInset: bottomContentInset,
             unreadMessageID: exactUnreadBoundaryMessageID,
-            highlightedMessageID: nil,
+            highlightedMessageID: highlightedMessageID,
             selectedMessageID: model.threadReplyingTo?.id,
             initialScrollTarget: initialScrollTarget,
             scrollRequest: scrollRequest,
@@ -366,6 +367,17 @@ private struct ThreadMessageTimelineView: View {
             hasEstablishedInitialPosition = false
             hasEarlierHistoryScrollIntent = false
             isEarlierHistoryScrollGestureActive = false
+        }
+        .onChange(of: model.messageNavigationRequest, initial: true) { _, request in
+            guard let request,
+                  request.channelID == model.openThread?.id,
+                  model.threadMessages.contains(where: {
+                      $0.id == request.messageID
+                  })
+            else { return }
+            requestScroll(.message(request.messageID, anchor: .center))
+            highlight(request.messageID)
+            model.completeMessageNavigation(requestID: request.requestID)
         }
         .onChange(of: model.conversationNewestRequest) { _, request in
             guard let request,
@@ -571,6 +583,20 @@ private struct ThreadMessageTimelineView: View {
 
     private func requestScroll(_ target: MessageTimelineScrollRequest.Target) {
         scrollRequest = MessageTimelineScrollRequest(target: target)
+    }
+
+    private func highlight(_ messageID: MessageID) {
+        highlightedMessageID = messageID
+        Task {
+            try? await Task.sleep(
+                for: .seconds(
+                    NativeTimelineMessageJumpHighlightPolicy.totalDuration
+                )
+            )
+            if highlightedMessageID == messageID {
+                highlightedMessageID = nil
+            }
+        }
     }
 }
 

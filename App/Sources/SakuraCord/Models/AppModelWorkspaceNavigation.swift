@@ -15,6 +15,18 @@ nonisolated enum MessageSearchSurfacePolicy {
     }
 }
 
+nonisolated enum MessageSearchChannelMergePolicy {
+    static func canonicalPrivateChannels(in channels: [Channel]) -> [Channel] {
+        channels.filter { channel in
+            channel.guildID == nil
+                && (
+                    channel.kind == .directMessage
+                        || channel.kind == .groupDirectMessage
+                )
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class MessageSearchState {
@@ -339,7 +351,7 @@ extension AppModel {
                 guard self.isCurrentAccountSession(session) else {
                     throw CancellationError()
                 }
-                self.mergeMessageSearchChannels(page.channels)
+                self.mergeMessageSearchPrivateChannels(page.channels)
                 self.messageSearch.page = page
                 self.messageSearch.submittedQuery = query
                 self.messageSearch.rows = rows
@@ -650,33 +662,57 @@ extension AppModel {
         return channels
     }
 
-    private func mergeMessageSearchChannels(_ channels: [Channel]) {
-        guard !channels.isEmpty else { return }
+    private func mergeMessageSearchPrivateChannels(_ channels: [Channel]) {
+        let privateChannels = MessageSearchChannelMergePolicy
+            .canonicalPrivateChannels(in: channels)
+        guard !privateChannels.isEmpty else { return }
         var known = Set(snapshot?.channels.map(\.id) ?? [])
-        for channel in channels where known.insert(channel.id).inserted {
+        for channel in privateChannels where known.insert(channel.id).inserted {
             snapshot?.channels.append(channel)
         }
         forwardSearchSourceRevision &+= 1
     }
 
     func navigateToSearchResult(_ message: Message) {
-        let guildID = message.guildID
-            ?? snapshot?.channels.first(where: { $0.id == message.channelID })?.guildID
         messageSearch.selectedMessageID = message.id
-        navigate(
-            to: guildID,
-            channelID: message.channelID,
-            messageID: message.id
-        )
+        guard let result = messageSearch.page?.results.first(where: {
+            $0.hit.id == message.id
+        }) else { return }
+        navigateToMessageSearchResult(result, messageID: message.id)
     }
 
     func navigateToSearchReply(_ messageID: MessageID) {
-        guard let source = messageSearch.page?.results.lazy
-            .map(\.hit)
-            .first(where: { $0.replyTo == messageID })
+        guard let result = messageSearch.page?.results.first(where: {
+            $0.hit.replyTo == messageID
+        })
         else { return }
+        navigateToMessageSearchResult(result, messageID: messageID)
+    }
+
+    private func navigateToMessageSearchResult(
+        _ result: MessageSearchResult,
+        messageID: MessageID
+    ) {
+        let source = result.hit
         let guildID = source.guildID
             ?? snapshot?.channels.first(where: { $0.id == source.channelID })?.guildID
-        navigate(to: guildID, channelID: source.channelID, messageID: messageID)
+        let isGuildThreadResult = messageSearch.submittedQuery?.scope.guildID != nil
+            && messageSearch.page?.channels.contains(where: {
+                $0.id == source.channelID
+            }) == true
+        if isGuildThreadResult {
+            navigate(
+                to: guildID,
+                linkedChannelID: source.channelID,
+                messageID: messageID,
+                initialMessages: result.messages
+            )
+        } else {
+            navigate(
+                to: guildID,
+                channelID: source.channelID,
+                messageID: messageID
+            )
+        }
     }
 }

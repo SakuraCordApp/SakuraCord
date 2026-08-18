@@ -298,6 +298,38 @@ import UserNotifications
     ))
 }
 
+@Test func `message search keeps guild thread metadata out of canonical channels`() {
+    let guildID = GuildID(rawValue: 100)
+    let thread = Channel(
+        id: ChannelID(rawValue: 300),
+        guildID: guildID,
+        name: "Search result thread",
+        categoryID: ChannelID(rawValue: 200)
+    )
+    let directMessage = Channel(
+        id: ChannelID(rawValue: 400),
+        guildID: nil,
+        name: "Maya",
+        kind: .directMessage
+    )
+    let groupDirectMessage = Channel(
+        id: ChannelID(rawValue: 500),
+        guildID: nil,
+        name: "Release group",
+        kind: .groupDirectMessage
+    )
+
+    let canonicalChannels = MessageSearchChannelMergePolicy
+        .canonicalPrivateChannels(
+            in: [thread, directMessage, groupDirectMessage]
+        )
+
+    #expect(canonicalChannels.map(\.id) == [
+        directMessage.id,
+        groupDirectMessage.id,
+    ])
+}
+
 @MainActor
 @Test func `command f scopes message search to the current conversation`() async throws {
     let model = AppModel(launchMode: .offlineTesting)
