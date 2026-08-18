@@ -285,6 +285,14 @@ enum MessageActionVisibilityPolicy {
     }
 }
 
+enum MessageDeleteConfirmationPolicy {
+    static func isBypassed(
+        by modifierFlags: NSEvent.ModifierFlags
+    ) -> Bool {
+        modifierFlags.contains(.shift)
+    }
+}
+
 struct MessageActionCapsule: View {
     let model: AppModel
     let message: Message
@@ -351,7 +359,13 @@ struct MessageActionCapsule: View {
                     help: "Delete message",
                     role: .destructive
                 ) {
-                    isDeleteConfirmationPresented = true
+                    if MessageDeleteConfirmationPolicy.isBypassed(
+                        by: NSEvent.modifierFlags
+                    ) {
+                        delete()
+                    } else {
+                        isDeleteConfirmationPresented = true
+                    }
                 }
             }
         }

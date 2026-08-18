@@ -1000,7 +1000,7 @@ extension NativeTimelineCanvasView {
         case .copyAuthorID:
             { Self.copyText(row.message.author.id.description) }
         case .deleteMessage:
-            { [weak self] in self?.confirmDelete(row.message) }
+            { [weak self] in self?.requestDelete(row.message) }
         }
     }
 

@@ -1169,9 +1169,15 @@ extension NativeTimelineCanvasView {
         return item
     }
 
-    func confirmDelete(_ message: Message) {
+    func requestDelete(_ message: Message) {
         guard let window, let actions else { return }
         removeActionCapsule()
+        if MessageDeleteConfirmationPolicy.isBypassed(
+            by: NSEvent.modifierFlags
+        ) {
+            actions.delete(message)
+            return
+        }
         let alert = NSAlert()
         alert.messageText = "Delete this message?"
         alert.informativeText = "This action cannot be undone."
