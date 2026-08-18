@@ -106,6 +106,7 @@ struct SakuraCordApp: App {
                 }
                 .task {
                     await model.start()
+#if DEBUG
                     if runsAuthenticatedNavigationBenchmark {
                         await model.runAuthenticatedNavigationPerformanceBenchmark()
                     }
@@ -135,6 +136,7 @@ struct SakuraCordApp: App {
                     if preparesMemberListScrollBenchmark {
                         await model.prepareAuthenticatedMemberListScrollPerformanceBenchmark()
                     }
+#endif
                     if opensChatPerformanceFixture {
                         NSApp.activate(ignoringOtherApps: true)
                     }
