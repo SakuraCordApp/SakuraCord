@@ -383,6 +383,7 @@ final class AccountReadStateModel {
         var messageID: MessageID
         var predecessorMessageID: MessageID?
         var lastAcknowledgedMessageID: MessageID?
+        var latestUnreadMessageID: MessageID?
         var mentionCount: Int
         var unreadMessageCount: Int
     }
@@ -1414,6 +1415,7 @@ final class AccountReadStateModel {
                 messageID: messageID,
                 predecessorMessageID: entry.pendingAcknowledgementID,
                 lastAcknowledgedMessageID: entry.lastAcknowledgedMessageID,
+                latestUnreadMessageID: entry.latestUnreadMessageID,
                 mentionCount: entry.mentionCount,
                 unreadMessageCount: entry.unreadMessageCount
             )
@@ -1441,6 +1443,7 @@ final class AccountReadStateModel {
                         messageID: messageID,
                         predecessorMessageID: nil,
                         lastAcknowledgedMessageID: entry.lastAcknowledgedMessageID,
+                        latestUnreadMessageID: entry.latestUnreadMessageID,
                         mentionCount: entry.mentionCount,
                         unreadMessageCount: entry.unreadMessageCount
                     )
@@ -1449,6 +1452,7 @@ final class AccountReadStateModel {
         )
         entry.lastAcknowledgedMessageID = messageID
         entry.pendingAcknowledgementID = messageID
+        entry.latestUnreadMessageID = maximum(entry.latestUnreadMessageID, entry.latestKnownMessageID)
         entry.mentionCount = max(0, mentionCount)
         entry.unreadMessageCount = max(1, entry.unreadMessageCount)
         entries[channelID] = entry
@@ -1492,6 +1496,7 @@ final class AccountReadStateModel {
            let rollback = pendingRollbacks[channelID]?[messageID]
         {
             entry.lastAcknowledgedMessageID = rollback.lastAcknowledgedMessageID
+            entry.latestUnreadMessageID = rollback.latestUnreadMessageID
             entry.mentionCount = rollback.mentionCount
             entry.unreadMessageCount = rollback.unreadMessageCount
             entry.pendingAcknowledgementID = rollback.predecessorMessageID
@@ -1522,6 +1527,7 @@ final class AccountReadStateModel {
             child.predecessorMessageID = discarded.predecessorMessageID
             if !succeeded {
                 child.lastAcknowledgedMessageID = discarded.lastAcknowledgedMessageID
+                child.latestUnreadMessageID = discarded.latestUnreadMessageID
                 child.mentionCount += discarded.mentionCount
                 child.unreadMessageCount += discarded.unreadMessageCount
             }

@@ -913,6 +913,7 @@ final class AppModel {
     var selectedChannelID: ChannelID? {
         didSet {
             guard selectedChannelID != oldValue else { return }
+            timelineSpoilerRevealStore.reset()
             if let previousChannel = selectedChannel,
                let guildID = previousChannel.guildID
             {

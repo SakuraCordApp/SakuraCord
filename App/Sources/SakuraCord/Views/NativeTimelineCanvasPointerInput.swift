@@ -46,41 +46,7 @@ extension NativeTimelineCanvasView {
               displayedRowOrigin(at: index) < visibleRect.maxY
         {
             if layouts.indices.contains(index) {
-                for selectable in selectableTextRegions(
-                    for: items[index],
-                    layout: layouts[index]
-                ) {
-                    addCursorRect(
-                        textSelectionInteractionFrame(
-                            region: selectable.region,
-                            frame: selectable.interactionFrame,
-                            rowIndex: index
-                        ),
-                        cursor: .iBeam
-                    )
-                }
-                for mention in mentionPointerRegions(at: index) {
-                    addCursorRect(
-                        mention.frame,
-                        cursor: .pointingHand
-                    )
-                }
-                let rowOrigin = displayedRowOrigin(at: index)
-                for selectable in linkPointerTextRegions(
-                    for: items[index],
-                    layout: layouts[index]
-                ) {
-                    for frame in NativeTimelineTextHitTester.linkFrames(
-                        value: selectable.value,
-                        framesetter: selectable.framesetter,
-                        frame: selectable.frame
-                    ) {
-                        addCursorRect(
-                            frame.offsetBy(dx: 0, dy: rowOrigin),
-                            cursor: .pointingHand
-                        )
-                    }
-                }
+                installTextCursorRects(at: index)
                 for codeBlock in codeBlockPointerTargets(at: index) {
                     addCursorRect(
                         codeBlock.copyButtonFrame,
@@ -134,6 +100,53 @@ extension NativeTimelineCanvasView {
                 installForwardedSourceCursor(at: index, rowOrigin: rowOrigin)
             }
             index += 1
+        }
+    }
+
+    private func installTextCursorRects(at index: Int) {
+        let item = items[index]
+        let layout = layouts[index]
+        let rowOrigin = displayedRowOrigin(at: index)
+        for selectable in selectableTextRegions(for: item, layout: layout) {
+            addCursorRect(
+                textSelectionInteractionFrame(
+                    region: selectable.region,
+                    frame: selectable.interactionFrame,
+                    rowIndex: index
+                ),
+                cursor: .iBeam
+            )
+            for spoiler in NativeTimelineTextHitTester.spoilerRegions(
+                value: selectable.value,
+                framesetter: selectable.framesetter,
+                frame: selectable.frame
+            ) {
+                guard let key = textSpoilerRevealKey(
+                    itemIdentifier: item.identifier,
+                    region: selectable.region,
+                    rangeLocation: spoiler.range.location
+                ), !spoilerRevealStore.isTextRevealed(key)
+                else { continue }
+                addCursorRect(
+                    spoiler.frame.offsetBy(dx: 0, dy: rowOrigin),
+                    cursor: .pointingHand
+                )
+            }
+        }
+        for mention in mentionPointerRegions(at: index) {
+            addCursorRect(mention.frame, cursor: .pointingHand)
+        }
+        for selectable in linkPointerTextRegions(for: item, layout: layout) {
+            for frame in NativeTimelineTextHitTester.linkFrames(
+                value: selectable.value,
+                framesetter: selectable.framesetter,
+                frame: selectable.frame
+            ) {
+                addCursorRect(
+                    frame.offsetBy(dx: 0, dy: rowOrigin),
+                    cursor: .pointingHand
+                )
+            }
         }
     }
 

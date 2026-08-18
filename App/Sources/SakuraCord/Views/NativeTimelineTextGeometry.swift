@@ -34,6 +34,11 @@ private struct NativeTimelineTextLinkHitRegion {
     let frame: CGRect
 }
 
+struct NativeTimelineTextSpoilerHitRegion {
+    let range: NSRange
+    let frame: CGRect
+}
+
 enum NativeTimelineTextGeometry {
     static func messageContentDrawingFrame(_ frame: CGRect) -> CGRect {
         var drawingFrame = frame
@@ -397,6 +402,61 @@ nonisolated enum NativeTimelineCodeBlockGeometry {
 }
 
 enum NativeTimelineTextHitTester {
+    static func spoilerRegions(
+        value: NSAttributedString,
+        framesetter: CTFramesetter,
+        frame: CGRect
+    ) -> [NativeTimelineTextSpoilerHitRegion] {
+        guard value.length > 0,
+              frame.width > 0,
+              frame.height > 0
+        else { return [] }
+        let path = CGPath(
+            rect: CGRect(origin: .zero, size: frame.size),
+            transform: nil
+        )
+        let textFrame = CTFramesetterCreateFrame(
+            framesetter,
+            CFRange(location: 0, length: value.length),
+            path,
+            nil
+        )
+        return spoilerRegions(
+            value: value,
+            textFrame: textFrame,
+            frame: frame
+        )
+    }
+
+    private static func spoilerRegions(
+        value: NSAttributedString,
+        textFrame: CTFrame,
+        frame: CGRect
+    ) -> [NativeTimelineTextSpoilerHitRegion] {
+        var result: [NativeTimelineTextSpoilerHitRegion] = []
+        value.enumerateAttribute(
+            .discordMarkdownSpoiler,
+            in: NSRange(location: 0, length: value.length)
+        ) { rawValue, range, _ in
+            guard (rawValue as? NSNumber)?.boolValue == true else {
+                return
+            }
+            result.append(contentsOf:
+                NativeTimelineTextSelectionGeometry.rects(
+                    in: textFrame,
+                    outerFrame: frame,
+                    range: range
+                ).map {
+                    NativeTimelineTextSpoilerHitRegion(
+                        range: range,
+                        frame: $0.insetBy(dx: -2, dy: -1)
+                    )
+                }
+            )
+        }
+        return result
+    }
+
     static func linkFrames(
         value: NSAttributedString,
         framesetter: CTFramesetter,
@@ -829,6 +889,11 @@ enum NativeTimelineTextHitTester {
             CFRange(location: 0, length: lines.count),
             &origins
         )
+        let paintedSpoiler = spoilerRegions(
+            value: value,
+            textFrame: textFrame,
+            frame: frame
+        ).first(where: { $0.frame.contains(point) })
         // Inline mentions are taller than the surrounding text line. Check
         // their exact painted run rectangles first so the whole visible pill,
         // including its top and bottom padding, is clickable.
@@ -855,23 +920,27 @@ enum NativeTimelineTextHitTester {
                         effectiveRange: &spoilerRange
                     ) as? NSNumber
                 )?.boolValue == true
-                if isSpoiler, spoilerRange.length > 0 {
+                let mention = (
+                    value.attribute(
+                        .nativeTimelineMention,
+                        at: range.location,
+                        effectiveRange: nil
+                    ) as? NativeTimelineMentionBox
+                )?.presentation
+                let effectiveSpoilerRange =
+                    paintedSpoiler?.range
+                    ?? (isSpoiler && spoilerRange.length > 0
+                        ? spoilerRange
+                        : nil)
+                if let effectiveSpoilerRange {
                     return NativeTimelineTextHit(
                         characterIndex: range.location,
                         url: nil,
-                        mention: nil,
-                        spoilerRange: spoilerRange
+                        mention: mention,
+                        spoilerRange: effectiveSpoilerRange
                     )
                 }
-                guard
-                      let mention = (
-                          value.attribute(
-                              .nativeTimelineMention,
-                              at: range.location,
-                              effectiveRange: nil
-                          ) as? NativeTimelineMentionBox
-                      )?.presentation
-                else { continue }
+                guard let mention else { continue }
                 return NativeTimelineTextHit(
                     characterIndex: range.location,
                     url: nil,
@@ -960,6 +1029,14 @@ enum NativeTimelineTextHitTester {
                     isSpoiler && spoilerRange.length > 0
                         ? spoilerRange
                         : nil
+            )
+        }
+        if let paintedSpoiler {
+            return NativeTimelineTextHit(
+                characterIndex: paintedSpoiler.range.location,
+                url: nil,
+                mention: nil,
+                spoilerRange: paintedSpoiler.range
             )
         }
         return nil

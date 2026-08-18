@@ -575,12 +575,14 @@ extension NativeTimelineCanvasView {
         rowIdentifier: NativeMessageTimelineItem.Identifier,
         region: NativeTimelineTextRegion
     ) -> Bool {
-        if let spoilerRange = hit.spoilerRange {
-            revealTextSpoiler(
-                itemIdentifier: rowIdentifier,
-                region: region,
-                rangeLocation: spoilerRange.location
-            )
+        if let spoilerRange = hit.spoilerRange,
+           let key = textSpoilerRevealKey(
+               itemIdentifier: rowIdentifier,
+               region: region,
+               rangeLocation: spoilerRange.location
+           ), !spoilerRevealStore.isTextRevealed(key)
+        {
+            revealTextSpoiler(key)
             return true
         }
         if let mention = hit.mention {
@@ -617,6 +619,10 @@ extension NativeTimelineCanvasView {
         ),
               spoilerRevealStore.revealText(key)
         else { return }
+    }
+
+    func revealTextSpoiler(_ key: NativeTimelineTextSpoilerRevealKey) {
+        _ = spoilerRevealStore.revealText(key)
     }
 
     func activateMention(
@@ -758,6 +764,7 @@ extension NativeTimelineCanvasView {
         invalidateBitmap(identifier)
         requestMedia(for: items[rowIndex], at: rowIndex)
         setNeedsDisplay(rowFrame(at: rowIndex))
+        window?.invalidateCursorRects(for: self)
         reconcileAnimatedMedia()
         reconcileSpoilerOverlays()
         rebuildAccessibilityProxy(for: identifier)

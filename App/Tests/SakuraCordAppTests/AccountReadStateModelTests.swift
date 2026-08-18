@@ -1041,6 +1041,24 @@ struct AccountReadStateModelTests {
 
         #expect(model.entries[channelID]?.lastAcknowledgedMessageID == MessageID(rawValue: 10))
         #expect(model.mentions(channelID: channelID) == 1)
+
+        let omitted = makeModel(
+            latest: 12,
+            acknowledged: 12,
+            hasReadState: false
+        )
+        #expect(!omitted.unread(channelID: channelID))
+        omitted.markUnread(
+            channelID: channelID,
+            after: MessageID(rawValue: 10),
+            mentionCount: 0
+        )
+        #expect(omitted.unread(channelID: channelID))
+        omitted.failAcknowledgement(
+            channelID: channelID,
+            messageID: MessageID(rawValue: 10)
+        )
+        #expect(!omitted.unread(channelID: channelID))
     }
 
     @Test func `acknowledgement metadata uses Discord epoch days and channel thread flags`() {
@@ -2144,7 +2162,8 @@ struct AccountReadStateModelTests {
         latest: UInt64,
         acknowledged: UInt64,
         mentions: Int = 0,
-        settings: GuildNotificationSettings? = nil
+        settings: GuildNotificationSettings? = nil,
+        hasReadState: Bool = true
     ) -> AccountReadStateModel {
         let model = AccountReadStateModel()
         model.reset(accountID: "account")
@@ -2167,13 +2186,15 @@ struct AccountReadStateModelTests {
                     lastMessageID: MessageID(rawValue: latest)
                 )
             ],
-            readStates: [
-                ChannelReadState(
-                    channelID: channelID,
-                    lastAcknowledgedMessageID: MessageID(rawValue: acknowledged),
-                    mentionCount: mentions
-                )
-            ],
+            readStates: hasReadState
+                ? [
+                    ChannelReadState(
+                        channelID: channelID,
+                        lastAcknowledgedMessageID: MessageID(rawValue: acknowledged),
+                        mentionCount: mentions
+                    ),
+                ]
+                : [],
             notificationSettings: settings.map { [$0] } ?? []
         )
         return model
@@ -2697,8 +2718,11 @@ struct AccountReadStateModelTests {
     let channelID = ChannelID(rawValue: 210)
     model.selectedChannelID = channelID
     #expect(await eventually { !model.isLoadingMessages && !model.messages.isEmpty })
-    let selectedMessage = try #require(model.messages.dropFirst().first)
-    let currentUserID = try #require(model.snapshot?.currentUser.id)
+    let currentUser = try #require(model.snapshot?.currentUser)
+    let selectedIndex = try #require(model.messages.indices.dropFirst().first)
+    model.messages[selectedIndex].mentionedUsers = [currentUser]
+    let selectedMessage = model.messages[selectedIndex]
+    let currentUserID = currentUser.id
     let expectedMentions = model.readState.mentionCountForManualUnread(
         channelID: channelID,
         messages: model.messages,
@@ -2718,11 +2742,22 @@ struct AccountReadStateModelTests {
     #expect(request.messageID.rawValue == selectedMessage.id.rawValue - 1)
     #expect(request.manual)
     #expect(request.mentionCount == expectedMentions)
+    #expect((request.mentionCount ?? 0) > 0)
     #expect(request.flags == 1)
     #expect(request.lastViewed != nil)
     #expect(
         model.readState.entries[channelID]?.lastAcknowledgedMessageID
             == request.messageID
+    )
+    await model.waitForUnreadPresentationPreparation()
+    let guildID = try #require(model.selectedChannel?.guildID)
+    #expect(
+        model.visibleChannels.first(where: { $0.id == channelID })?
+            .mentionCount == expectedMentions
+    )
+    #expect(
+        model.serverRailGuildsByID[guildID]?.mentionCount
+            == expectedMentions
     )
 }
 

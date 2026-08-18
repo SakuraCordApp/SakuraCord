@@ -65,6 +65,17 @@ func `spoiler reveal state follows stable message and content identity`() {
         ).isEmpty
     )
     #expect(notifications == [messageID, messageID])
+
+    store.reset()
+    #expect(!store.isMediaRevealed(attachment))
+    #expect(
+        store.revealedTextLocations(
+            messageID: messageID,
+            contentID: "message-content",
+            contentHash: 91
+        ).isEmpty
+    )
+    #expect(notifications == [messageID, messageID, messageID])
 }
 
 @MainActor @Test
@@ -760,7 +771,7 @@ func `animated attachment and component spoilers start only after their own reve
 }
 
 @MainActor @Test
-func `shared timeline canvases synchronize spoiler reveal across channel switching`() throws {
+func `switching channels resets spoiler reveal across shared timeline canvases`() throws {
     let mediaURL = try #require(
         URL(string: "file:///tmp/sakuracord-shared-spoiler.png")
     )
@@ -804,6 +815,7 @@ func `shared timeline canvases synchronize spoiler reveal across channel switchi
     storage.rowOrigins = [0]
     storage.contentHeight = layout.height
     let model = AppModel(launchMode: .offlineTesting)
+    model.selectedChannelID = message.channelID
     let actions = NativeTimelineRowActions(
         loadEarlier: {},
         openReply: { _ in },
@@ -882,8 +894,12 @@ func `shared timeline canvases synchronize spoiler reveal across channel switchi
 
     #expect(firstCanvas.spoilerOverlayFramesForTesting.isEmpty)
     #expect(secondCanvas.spoilerOverlayFramesForTesting.isEmpty)
+    model.selectedChannelID = ChannelID(rawValue: 8_503)
+
+    #expect(firstCanvas.spoilerOverlayFramesForTesting[key] != nil)
+    #expect(secondCanvas.spoilerOverlayFramesForTesting[key] != nil)
     let returningCanvas = makeCanvas()
-    #expect(returningCanvas.spoilerOverlayFramesForTesting.isEmpty)
+    #expect(returningCanvas.spoilerOverlayFramesForTesting[key] != nil)
 }
 
 @Test
@@ -961,7 +977,7 @@ func `hidden text spoilers stay private to accessibility until revealed`() {
 
 @Test
 @MainActor
-func `inline rich tokens inherit their enclosing spoiler`() {
+func `inline rich tokens inherit their enclosing spoiler`() throws {
     let source = "before ||<@&10> and <:glow:123>|| after"
     let prepared = RichMessageAttributedText.prepare(source: source)
     let value = NativeTimelineCoreText.make(
@@ -988,6 +1004,23 @@ func `inline rich tokens inherit their enclosing spoiler`() {
             revealedLocations: []
         ) == "before Spoiler after"
     )
+    let frame = CGRect(x: 0, y: 0, width: 360, height: 40)
+    let framesetter = CTFramesetterCreateWithAttributedString(value)
+    let mention = try #require(
+        NativeTimelineTextHitTester.mentionRegions(
+            value: value,
+            framesetter: framesetter,
+            frame: frame
+        ).first
+    )
+    let hit = NativeTimelineTextHitTester.hit(
+        value: value,
+        framesetter: framesetter,
+        frame: frame,
+        point: CGPoint(x: mention.frame.midX, y: mention.frame.midY)
+    )
+    #expect(hit?.spoilerRange == spoilerRanges.first)
+    #expect(hit?.mention?.target == .role(RoleID(rawValue: 10)))
 }
 
 @Test func `native scrolling caches bounded rows and directly paints oversized rows`() {

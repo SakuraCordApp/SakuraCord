@@ -520,6 +520,17 @@ final class NativeTimelineSpoilerRevealStore {
         )
     }
 
+    func reset() {
+        let messageIDs = Set(revealedMedia.lazy.map(\.messageID))
+            .union(revealedText.lazy.map(\.messageID))
+        guard !messageIDs.isEmpty else { return }
+        revealedMedia.removeAll(keepingCapacity: true)
+        revealedText.removeAll(keepingCapacity: true)
+        for messageID in messageIDs {
+            notifyObservers(messageID: messageID)
+        }
+    }
+
     func observe(
         _ observer: @escaping (MessageID) -> Void
     ) -> UUID {
