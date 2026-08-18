@@ -1780,9 +1780,7 @@ final class NativeTimelineAnimatedMediaOverlay: NSView {
         imageClipView.frame = mediaFrame
         imageClipView.alphaValue = opacity
         imageClipView.layer?.cornerRadius = cornerRadius
-        if #available(macOS 13.0, *) {
-            imageClipView.layer?.cornerCurve = .continuous
-        }
+        imageClipView.layer?.cornerCurve = .continuous
         imageView.display(
             image,
             animates: true,

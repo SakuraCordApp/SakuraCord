@@ -268,13 +268,7 @@ private final class AudioCaptureBridge: NSObject, AVCaptureAudioDataOutputSample
         from connection: AVCaptureConnection
     ) {
         guard let description = CMSampleBufferGetFormatDescription(sampleBuffer) else { return }
-        let format: AVAudioFormat
-        if #available(macOS 27.0, *) {
-            guard let currentFormat = AVAudioFormat(formatDescription: description) else { return }
-            format = currentFormat
-        } else {
-            format = AVAudioFormat(cmAudioFormatDescription: description)
-        }
+        guard let format = AVAudioFormat(formatDescription: description) else { return }
         let frameCount = AVAudioFrameCount(CMSampleBufferGetNumSamples(sampleBuffer))
         guard frameCount > 0,
               let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else { return }
