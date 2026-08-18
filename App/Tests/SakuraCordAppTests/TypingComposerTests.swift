@@ -336,7 +336,7 @@ import Testing
 }
 
 @MainActor
-@Test func `composer stages at most ten attachments including repeated files and clears them on navigation`() async throws {
+@Test func `composer stages at most ten attachments and clears them on Escape and navigation`() async throws {
     let provider = TypingTestProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
@@ -356,6 +356,11 @@ import Testing
     model.removeComposerAttachment(firstID, from: .channel)
     #expect(model.channelComposerAttachments.filter { $0.url == urls[0] }.count == 1)
 
+    #expect(model.consumeEscapeForComposerAttachments(in: .channel))
+    #expect(model.channelComposerAttachments.isEmpty)
+    #expect(!model.consumeEscapeForComposerAttachments(in: .channel))
+
+    #expect(model.addComposerAttachments([urls[0]], to: .channel))
     model.selectedChannelID = ChannelID(rawValue: 12)
     #expect(model.channelComposerAttachments.isEmpty)
 }

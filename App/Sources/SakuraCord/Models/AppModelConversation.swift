@@ -1895,6 +1895,26 @@ extension AppModel {
         setComposerAttachments([], for: destination)
     }
 
+    @discardableResult
+    func consumeEscapeForComposerAttachments(
+        in destination: MessageComposerDestination
+    ) -> Bool {
+        guard !composerAttachments(for: destination).isEmpty else { return false }
+        clearComposerAttachments(for: destination)
+        return true
+    }
+
+    @discardableResult
+    func consumeEscapeForSupplementaryConversation() -> Bool {
+        if openThread != nil {
+            closeThread()
+            return true
+        }
+        guard isVoiceChatOpen else { return false }
+        closeVoiceChat()
+        return true
+    }
+
     func restoreComposerAttachments(
         _ restoredAttachments: [ForumPostAttachment],
         to destination: MessageComposerDestination

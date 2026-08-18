@@ -256,12 +256,15 @@ import UserNotifications
 }
 
 @MainActor
-@Test func `message search escape clears once then dismisses`() async {
+@Test func `message search Escape respects focused and unfocused behavior`() async {
     let model = AppModel(launchMode: .offlineTesting)
     await model.start()
     model.presentMessageSearch()
     model.messageSearch.queryText = "road"
     model.messageSearch.isPresented = true
+
+    #expect(!model.consumeEscapeForUnfocusedMessageSearch())
+    #expect(model.messageSearch.queryText == "road")
 
     model.handleMessageSearchEscape()
     #expect(model.messageSearch.queryText.isEmpty)
@@ -271,6 +274,17 @@ import UserNotifications
     model.handleMessageSearchEscape()
     #expect(!model.messageSearch.isPresented)
     #expect(!model.messageSearch.isInputFocused)
+
+    model.presentMessageSearch()
+    model.messageSearch.queryText = "priority"
+    model.messageSearch.isPresented = true
+    model.messageSearch.isInputFocused = false
+
+    #expect(model.consumeEscapeForUnfocusedMessageSearch())
+    #expect(model.messageSearch.queryText.isEmpty)
+    #expect(model.messageSearch.tokens.isEmpty)
+    #expect(!model.messageSearch.isPresented)
+    #expect(!model.consumeEscapeForUnfocusedMessageSearch())
 }
 
 @Test func `forum navigation keeps the toolbar search surface installed`() {
@@ -2913,6 +2927,25 @@ private actor FailingRemovalCredentialStore: CredentialStore {
     #expect(model.consumeEscapeForReply(in: .channel))
     #expect(model.replyingTo == nil)
     #expect(!model.consumeEscapeForReply(in: .channel))
+}
+
+@MainActor
+@Test func `supplementary Escape closes thread before voice chat`() {
+    let model = AppModel(launchMode: .offlineTesting)
+    model.openThread = MessageThreadSummary(
+        id: ChannelID(rawValue: 88_001),
+        parentID: ChannelID(rawValue: 88_000),
+        name: "Escape priority"
+    )
+    model.isVoiceChatOpen = true
+
+    #expect(model.consumeEscapeForSupplementaryConversation())
+    #expect(model.openThread == nil)
+    #expect(model.isVoiceChatOpen)
+
+    #expect(model.consumeEscapeForSupplementaryConversation())
+    #expect(!model.isVoiceChatOpen)
+    #expect(!model.consumeEscapeForSupplementaryConversation())
 }
 
 @MainActor

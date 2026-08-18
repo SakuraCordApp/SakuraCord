@@ -202,7 +202,10 @@ struct MessageTimelineView: View {
         }
         .onExitCommand {
             guard !model.consumeEscapeForMediaViewer() else { return }
+            guard !model.consumeEscapeForUnfocusedMessageSearch() else { return }
             guard !model.consumeEscapeForReply(in: .channel) else { return }
+            guard !model.consumeEscapeForComposerAttachments(in: .channel) else { return }
+            guard !model.consumeEscapeForSupplementaryConversation() else { return }
             if let conversationID {
                 model.completeConversationReadingAndAdvance(
                     channelID: conversationID

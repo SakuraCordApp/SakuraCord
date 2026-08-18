@@ -396,12 +396,17 @@ struct ComposerView: View {
 
     private func handleEscapeCommand() {
         guard !model.consumeEscapeForMediaViewer() else { return }
+        guard !model.consumeEscapeForUnfocusedMessageSearch() else { return }
         if model.consumeEscapeForReply(in: conversation) {
             return
         } else if showGIFPicker {
             showGIFPicker = false
         } else if showEmojiPicker {
             showEmojiPicker = false
+        } else if model.consumeEscapeForComposerAttachments(in: conversation) {
+            return
+        } else if model.consumeEscapeForSupplementaryConversation() {
+            return
         } else if let conversationID = activeConversationID {
             model.completeConversationReadingAndAdvance(
                 channelID: conversationID

@@ -182,12 +182,16 @@ extension AppModel {
         dismissMessageSearch()
     }
 
+    @discardableResult
+    func consumeEscapeForUnfocusedMessageSearch() -> Bool {
+        guard messageSearch.isPresented, !messageSearch.isInputFocused else { return false }
+        clearMessageSearchInput()
+        dismissMessageSearch()
+        return true
+    }
+
     func clearMessageSearchUsingBuiltInButton() {
-        messageSearch.queryText = ""
-        messageSearch.tokens = []
-        messageSearch.operatorFilters = .init()
-        messageSearch.parsedInputText = nil
-        messageSearch.parsedContent = ""
+        clearMessageSearchInput()
         dismissMessageSearch()
     }
 
@@ -202,11 +206,7 @@ extension AppModel {
             dismissMessageSearch()
             return
         }
-        messageSearch.queryText = ""
-        messageSearch.tokens = []
-        messageSearch.operatorFilters = .init()
-        messageSearch.parsedInputText = nil
-        messageSearch.parsedContent = ""
+        clearMessageSearchInput()
         messageSearch.requestInputFocus()
         Task { @MainActor [weak self] in
             await Task.yield()
@@ -216,6 +216,14 @@ extension AppModel {
             else { return }
             messageSearch.requestInputFocus()
         }
+    }
+
+    private func clearMessageSearchInput() {
+        messageSearch.queryText = ""
+        messageSearch.tokens = []
+        messageSearch.operatorFilters = .init()
+        messageSearch.parsedInputText = nil
+        messageSearch.parsedContent = ""
     }
 
     func dismissWorkspaceNavigationOverlay() {

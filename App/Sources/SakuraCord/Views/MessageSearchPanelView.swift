@@ -29,6 +29,9 @@ struct MessageSearchPanelView: View {
                 target: .message(firstID, anchor: .top)
             )
         }
+        .onExitCommand {
+            _ = model.consumeEscapeForUnfocusedMessageSearch()
+        }
     }
 }
 
