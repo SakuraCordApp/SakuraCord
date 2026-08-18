@@ -51,7 +51,10 @@ struct ServerRailView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(spacing: 10) {
+            // Expanded folders make rail rows variable-height. Lazy layout
+            // corrects its content estimate while reverse-scrolling, which
+            // disrupts AppKit's elastic rebound at the top boundary.
+            VStack(spacing: 10) {
                 HomeRailButton(
                     home: home,
                     action: selectHome

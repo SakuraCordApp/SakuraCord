@@ -3,11 +3,16 @@ import SwiftUI
 
 @MainActor
 private enum ToolbarSearchFieldLocator {
+    static func searchToolbarItem(in window: NSWindow) -> NSSearchToolbarItem? {
+        window.toolbar?.items.first { $0 is NSSearchToolbarItem }
+            as? NSSearchToolbarItem
+    }
+
     static func searchField(in window: NSWindow) -> NSSearchField? {
+        if let searchItem = searchToolbarItem(in: window) {
+            return searchItem.searchField
+        }
         for item in window.toolbar?.items ?? [] {
-            if let searchItem = item as? NSSearchToolbarItem {
-                return searchItem.searchField
-            }
             if let view = item.view,
                let searchField = firstSearchField(in: view)
             {
@@ -272,6 +277,7 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
     @Binding var searchText: String
     @Binding var searchTokens: [MessageSearchToken]
     @Binding var isSearchFocused: Bool
+    let isToolbarItemVisible: Bool
     let didUseBuiltInClear: @MainActor () -> Void
     let didEndEditing: @MainActor () -> Void
     let pasteCanonicalSyntax: @MainActor (String) -> MessageSearchTokenParser.Result
@@ -282,6 +288,7 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
             searchText: $searchText,
             searchTokens: $searchTokens,
             isSearchFocused: $isSearchFocused,
+            isToolbarItemVisible: isToolbarItemVisible,
             didUseBuiltInClear: didUseBuiltInClear,
             didEndEditing: didEndEditing,
             pasteCanonicalSyntax: pasteCanonicalSyntax,
@@ -301,10 +308,14 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
         context.coordinator.searchText = $searchText
         context.coordinator.searchTokens = $searchTokens
         context.coordinator.isSearchFocused = $isSearchFocused
+        context.coordinator.isToolbarItemVisible = isToolbarItemVisible
         context.coordinator.didUseBuiltInClear = didUseBuiltInClear
         context.coordinator.didEndEditing = didEndEditing
         context.coordinator.pasteCanonicalSyntax = pasteCanonicalSyntax
         context.coordinator.changed = changed
+        if let window = view.window {
+            context.coordinator.applyToolbarItemVisibility(in: window)
+        }
         Task { @MainActor in
             context.coordinator.update(window: view.window, changed: changed)
         }
@@ -325,12 +336,16 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
         var searchText: Binding<String>
         var searchTokens: Binding<[MessageSearchToken]>
         var isSearchFocused: Binding<Bool>
+        var isToolbarItemVisible: Bool
         var didUseBuiltInClear: @MainActor () -> Void
         var didEndEditing: @MainActor () -> Void
         var pasteCanonicalSyntax: @MainActor (String) -> MessageSearchTokenParser.Result
         var changed: @MainActor (ToolbarSearchFieldMetrics) -> Void
         private weak var window: NSWindow?
         private weak var searchField: NSSearchField?
+        private weak var searchToolbarItem: NSSearchToolbarItem?
+        private var originalSearchToolbarItemIsHidden: Bool?
+        private var appliedSearchToolbarItemIsHidden: Bool?
         private var observers: [NSObjectProtocol] = []
         private var searchFieldDelegateProxy: ToolbarSearchFieldDelegateProxy?
         private var retryTask: Task<Void, Never>?
@@ -349,6 +364,7 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
             searchText: Binding<String>,
             searchTokens: Binding<[MessageSearchToken]>,
             isSearchFocused: Binding<Bool>,
+            isToolbarItemVisible: Bool,
             didUseBuiltInClear: @escaping @MainActor () -> Void,
             didEndEditing: @escaping @MainActor () -> Void,
             pasteCanonicalSyntax: @escaping @MainActor (String) -> MessageSearchTokenParser.Result,
@@ -357,6 +373,7 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
             self.searchText = searchText
             self.searchTokens = searchTokens
             self.isSearchFocused = isSearchFocused
+            self.isToolbarItemVisible = isToolbarItemVisible
             self.didUseBuiltInClear = didUseBuiltInClear
             self.didEndEditing = didEndEditing
             self.pasteCanonicalSyntax = pasteCanonicalSyntax
@@ -375,6 +392,10 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
             scheduleMeasurement()
         }
 
+        func applyToolbarItemVisibility(in window: NSWindow) {
+            _ = updateSearchToolbarItemVisibility(in: window)
+        }
+
         func detach() {
             retryTask?.cancel()
             retryTask = nil
@@ -391,6 +412,7 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
             }
             observers.removeAll()
             restoreSearchFieldDelegate()
+            restoreSearchToolbarItemVisibility()
             restoreMenuPatches(&mainMenuPatches)
             restoreMenuPatches(&trackingMenuPatches)
             searchField = nil
@@ -476,6 +498,13 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
         @discardableResult
         private func measure() -> Bool {
             guard let window,
+                  updateSearchToolbarItemVisibility(in: window)
+            else { return false }
+            guard isToolbarItemVisible else {
+                updateMetrics(.zero)
+                return true
+            }
+            guard
                   let contentView = window.contentView,
                   let searchField = ToolbarSearchFieldLocator.searchField(in: window),
                   searchField.window === window
@@ -526,11 +555,46 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
                 trailingInset: max(0, contentRect.maxX - fieldRect.maxX)
             )
             guard metrics.isValid else { return false }
-            if metrics != lastMetrics {
-                lastMetrics = metrics
-                changed(metrics)
-            }
+            updateMetrics(metrics)
             return true
+        }
+
+        private func updateSearchToolbarItemVisibility(
+            in window: NSWindow
+        ) -> Bool {
+            guard let item = ToolbarSearchFieldLocator.searchToolbarItem(
+                in: window
+            ) else { return false }
+            if searchToolbarItem !== item {
+                restoreSearchToolbarItemVisibility()
+                searchToolbarItem = item
+                originalSearchToolbarItemIsHidden = item.isHidden
+            }
+            let isHidden = isToolbarItemVisible
+                ? (originalSearchToolbarItemIsHidden ?? false)
+                : true
+            item.isHidden = isHidden
+            appliedSearchToolbarItemIsHidden = isHidden
+            return true
+        }
+
+        private func restoreSearchToolbarItemVisibility() {
+            if let searchToolbarItem,
+               let originalSearchToolbarItemIsHidden,
+               let appliedSearchToolbarItemIsHidden,
+               searchToolbarItem.isHidden == appliedSearchToolbarItemIsHidden
+            {
+                searchToolbarItem.isHidden = originalSearchToolbarItemIsHidden
+            }
+            searchToolbarItem = nil
+            originalSearchToolbarItemIsHidden = nil
+            appliedSearchToolbarItemIsHidden = nil
+        }
+
+        private func updateMetrics(_ metrics: ToolbarSearchFieldMetrics) {
+            guard metrics != lastMetrics else { return }
+            lastMetrics = metrics
+            changed(metrics)
         }
 
         private func restoreSearchFieldDelegate() {

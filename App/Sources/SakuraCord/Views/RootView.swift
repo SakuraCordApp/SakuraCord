@@ -65,6 +65,7 @@ struct RootView: View {
             ZStack {
                 MessageSearchToolbarBridge(
                     model: model,
+                    isVisible: showsMessageSearchToolbar,
                     metrics: $toolbarSearchFieldMetrics
                 )
                 ToolbarSearchFieldLoadingStyler(isActive: showsSessionLoadingChrome)
@@ -877,7 +878,6 @@ private struct MessageSearchExperienceModifier: ViewModifier {
             .modifier(MessageSearchToolbarModifier(
                 model: model,
                 search: search,
-                isEnabled: isEnabled,
                 prompt: prompt
             ))
             .overlay(alignment: .topTrailing) {
@@ -918,6 +918,7 @@ private struct MessageSearchExperienceModifier: ViewModifier {
 
 private struct MessageSearchToolbarBridge: View {
     let model: AppModel
+    let isVisible: Bool
     @Binding var metrics: ToolbarSearchFieldMetrics
 
     var body: some View {
@@ -927,6 +928,7 @@ private struct MessageSearchToolbarBridge: View {
             searchText: $model.messageSearchInputText,
             searchTokens: $search.tokens,
             isSearchFocused: $search.isInputFocused,
+            isToolbarItemVisible: isVisible,
             didUseBuiltInClear: model.clearMessageSearchUsingBuiltInButton,
             didEndEditing: model.messageSearchEditingDidEnd,
             pasteCanonicalSyntax: { value in
@@ -944,30 +946,24 @@ private struct MessageSearchToolbarBridge: View {
 private struct MessageSearchToolbarModifier: ViewModifier {
     let model: AppModel
     let search: MessageSearchState
-    let isEnabled: Bool
     let prompt: Text
 
-    @ViewBuilder
     func body(content: Content) -> some View {
-        if isEnabled {
-            @Bindable var model = model
-            @Bindable var search = search
-            content
-                .searchable(
-                    text: $model.messageSearchInputText,
-                    tokens: $search.tokens,
-                    isPresented: $search.isInputFocused,
-                    placement: .toolbar,
-                    prompt: prompt
-                ) { token in
-                    Text(token.title)
-                }
-                .onSubmit(of: .search) {
-                    model.submitMessageSearchInput()
-                }
-        } else {
-            content
-        }
+        @Bindable var model = model
+        @Bindable var search = search
+        content
+            .searchable(
+                text: $model.messageSearchInputText,
+                tokens: $search.tokens,
+                isPresented: $search.isInputFocused,
+                placement: .toolbar,
+                prompt: prompt
+            ) { token in
+                Text(token.title)
+            }
+            .onSubmit(of: .search) {
+                model.submitMessageSearchInput()
+            }
     }
 }
 
