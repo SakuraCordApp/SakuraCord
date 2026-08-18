@@ -55,7 +55,7 @@ struct ServerFolderRailView: View {
             ServerRailSelectionIndicator(
                 isSelected: entry.containsSelectedGuild,
                 isHovering: isHovering,
-                hasNotification: entry.hasUnreadGuild
+                hasNotification: showsUnreadIndicators && entry.hasUnreadGuild
             )
             Button {
                 withAnimation(ServerRailAnimations.folderExpansion) {
@@ -76,7 +76,7 @@ struct ServerFolderRailView: View {
                 .background(folderColor.opacity(isExpanded ? 0.18 : 0.12))
                 .clipShape(ConcentricRectangle(cornerRadius: 14, style: .continuous))
                 .overlay(alignment: .bottomTrailing) {
-                    if entry.mentionCount > 0 {
+                    if showsUnreadIndicators, entry.mentionCount > 0 {
                         Text(entry.mentionCount, format: .number)
                             .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(.white)
@@ -91,8 +91,10 @@ struct ServerFolderRailView: View {
             .accessibilityLabel(displayName)
             .accessibilityValue(
                 "\(isExpanded ? "Expanded" : "Collapsed")"
-                    + (entry.mentionCount > 0 ? ", \(entry.mentionCount) unread mentions" : "")
-                    + (entry.mentionCount == 0 && entry.hasUnreadGuild ? ", Unread" : "")
+                    + (showsUnreadIndicators && entry.mentionCount > 0
+                        ? ", \(entry.mentionCount) unread mentions" : "")
+                    + (showsUnreadIndicators && entry.mentionCount == 0
+                        && entry.hasUnreadGuild ? ", Unread" : "")
             )
             .accessibilityHint("Toggles the server folder")
             .help(displayName)
@@ -139,6 +141,10 @@ struct ServerFolderRailView: View {
     private var displayName: String {
         guard let name = entry.folder.name, !name.isEmpty else { return "Server Folder" }
         return name
+    }
+
+    private var showsUnreadIndicators: Bool {
+        !isExpanded
     }
 
     private var folderColor: Color {
