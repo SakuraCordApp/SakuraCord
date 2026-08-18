@@ -409,11 +409,6 @@ enum NativeTimelineRowPainter {
         transform.concat()
 
         if let cardFrame = layout.searchCardFrame {
-            NSColor.controlBackgroundColor.withAlphaComponent(0.64).setFill()
-            NSBezierPath(
-                concentricRoundedRect: cardFrame,
-                cornerRadius: 9
-            ).fill()
             NSColor.separatorColor.withAlphaComponent(0.42).setStroke()
             let border = NSBezierPath(
                 concentricRoundedRect: cardFrame.insetBy(dx: 0.5, dy: 0.5),

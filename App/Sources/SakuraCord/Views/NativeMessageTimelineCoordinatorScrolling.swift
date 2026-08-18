@@ -1099,14 +1099,19 @@ extension NativeMessageTimelineCoordinator {
         }
 
         func contentOriginY(viewportHeight: CGFloat) -> CGFloat {
-            leadingHistoryReserve
-                + NativeMessageTimelineLayoutPolicy.shortContentTopInset(
+            let topInset = if parent.conversation == .search {
+                ChatDetailLayoutPolicy.timelineTopPadding
+            } else {
+                NativeMessageTimelineLayoutPolicy.shortContentTopInset(
                     viewportHeight: viewportHeight,
                     contentHeight: contentHeight,
                     bottomInset: bottomInset,
                     verticalPadding:
                         ChatDetailLayoutPolicy.timelineTopPadding
                 )
+            }
+            return leadingHistoryReserve
+                + topInset
         }
 
         var effectiveContentHeight: CGFloat {

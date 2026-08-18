@@ -86,23 +86,6 @@ extension NativeTimelineRowPainter {
                 )
             }
         }
-        if input.isHovered, let cardFrame = layout.searchCardFrame {
-            text(
-                "Jump",
-                in: CGRect(
-                    x: max(cardFrame.minX, cardFrame.maxX - 52),
-                    y: cardFrame.minY + 8,
-                    width: 40,
-                    height: 15
-                ),
-                font: .systemFont(
-                    ofSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize,
-                    weight: .semibold
-                ),
-                color: .controlAccentColor,
-                alignment: .right
-            )
-        }
         if let frame = layout.daySeparatorFrame {
             dateSeparator(date: message.timestamp, frame: frame)
         }
