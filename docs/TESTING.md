@@ -54,7 +54,8 @@ boundary. A small fix does not require a new regression test by default.
 
 Not adding a test does not mean skipping verification. Build and inspect the
 smallest relevant scope, run existing focused tests when they provide useful
-evidence, and follow the repository validation commands in the root README.
+evidence, and follow the repository validation commands in the
+[development guide](DEVELOPMENT.md#build-and-verification).
 For purely visual changes, verify the rendered result; when automated visual
 inspection cannot establish correctness, request user confirmation.
 
