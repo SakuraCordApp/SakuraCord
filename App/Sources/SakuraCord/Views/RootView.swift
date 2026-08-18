@@ -3,12 +3,6 @@ import Combine
 import SakuraCordModels
 import SwiftUI
 
-private enum MessageSearchFilterOverlayPresentation: Identifiable {
-    case filters
-
-    var id: Self { self }
-}
-
 struct RootView: View {
     let model: AppModel
     @State private var toolbarSearchFieldMetrics = ToolbarSearchFieldMetrics.zero
@@ -889,24 +883,6 @@ private struct MessageSearchExperienceModifier: ViewModifier {
                     .padding(.trailing, toolbarMetrics.trailingInset)
                     .zIndex(100_000)
                 }
-            }
-            .background {
-                WindowModalOverlay(
-                    presentation: search.isFilterSheetPresented
-                        ? MessageSearchFilterOverlayPresentation.filters : nil,
-                    zPosition: 100_110,
-                    dismiss: { search.isFilterSheetPresented = false },
-                    content: { _, animationState in
-                    MessageSearchFiltersOverlay(
-                        model: model,
-                        search: search,
-                        animationState: animationState,
-                        dismiss: {
-                            animationState.dismiss(committingPresentation: true)
-                        }
-                    )
-                })
-                .frame(width: 0, height: 0)
             }
             .onChange(of: isEnabled) { wasVisible, isVisible in
                 guard wasVisible, !isVisible else { return }

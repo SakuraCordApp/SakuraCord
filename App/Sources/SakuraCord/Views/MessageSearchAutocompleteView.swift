@@ -71,8 +71,6 @@ nonisolated enum MessageSearchAutocompleteSuggestion: Identifiable, Equatable {
     case authorType(MessageSearchAuthorType)
     case pinned(Bool)
     case date(MessageSearchAutocompleteOperator, String)
-    case addSearchFilters
-    case moreFilters
 
     var id: String {
         switch self {
@@ -88,8 +86,6 @@ nonisolated enum MessageSearchAutocompleteSuggestion: Identifiable, Equatable {
         case .authorType(let value): "author:\(value.rawValue)"
         case .pinned(let value): "pinned:\(value)"
         case .date(let op, let value): "date:\(op.id):\(value)"
-        case .addSearchFilters: "add-search-filters"
-        case .moreFilters: "more-filters"
         }
     }
 
@@ -112,8 +108,6 @@ nonisolated enum MessageSearchAutocompleteSuggestion: Identifiable, Equatable {
         case .authorType(let value): value.rawValue
         case .pinned(let value): value ? "true" : "false"
         case .date(_, let value): value
-        case .addSearchFilters: "Add search filters"
-        case .moreFilters: "More filters"
         }
     }
 
@@ -175,11 +169,6 @@ nonisolated enum MessageSearchAutocompleteSuggestion: Identifiable, Equatable {
             FilterOverviewPresentation(systemImage: "link", detail: "has: link, embed or file")
         case .filter(.mentions):
             FilterOverviewPresentation(systemImage: "at", detail: "mentions: user")
-        case .moreFilters:
-            FilterOverviewPresentation(
-                systemImage: "slider.horizontal.3",
-                detail: "dates, author type and more"
-            )
         default:
             nil
         }
@@ -207,9 +196,7 @@ nonisolated enum MessageSearchAutocompleteSuggestion: Identifiable, Equatable {
             return value ? "pin.fill" : "pin.slash.fill"
         case .date:
             return "calendar"
-        case .addSearchFilters:
-            return "slider.horizontal.3"
-        case .heading, .directMessageScope, .filter, .user, .moreFilters:
+        case .heading, .directMessageScope, .filter, .user:
             return nil
         }
     }
@@ -393,7 +380,7 @@ enum MessageSearchAutocompletePolicy {
             )
         }
         return Result(
-            suggestions: [.searchQuery(query), .addSearchFilters] + resultRows,
+            suggestions: [.searchQuery(query)] + resultRows,
             selectsFirst: false
         )
     }
@@ -405,7 +392,6 @@ enum MessageSearchAutocompletePolicy {
             .filter(.in),
             .filter(.has),
             .filter(.mentions),
-            .moreFilters,
         ]
     }
 
@@ -894,9 +880,6 @@ struct MessageSearchAutocompleteView: View {
                 channels: model.messageSearchChannels
             )
             if let token = parsed.tokens.first { complete(fragment: fragment, token: token) }
-        case .addSearchFilters, .moreFilters:
-            model.messageSearch.isInputFocused = false
-            model.messageSearch.isFilterSheetPresented = true
         }
     }
 

@@ -89,17 +89,9 @@ private struct MessageSearchResultsHeader: View {
                 .font(.headline.weight(.semibold))
                 .contentTransition(.numericText())
             Spacer(minLength: 8)
-            Button {
-                search.isFilterSheetPresented = true
-            } label: {
-                Label(
-                    search.effectiveFilters.isEmpty
-                        ? "Filters"
-                        : "Filters (\(search.effectiveFilters.count))",
-                    systemImage: "line.3.horizontal.decrease"
-                )
-            }
-            .buttonStyle(.borderless)
+            Label("Coming Soon", systemImage: "line.3.horizontal.decrease")
+                .foregroundStyle(.secondary)
+                .help("Search filters are being revamped")
 
             Menu {
                 ForEach(MessageSearchSort.allCases, id: \.self) { sort in
