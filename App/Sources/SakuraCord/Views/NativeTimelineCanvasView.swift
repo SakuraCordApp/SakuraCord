@@ -203,7 +203,9 @@ final class NativeTimelineCanvasView: NSView {
     var actionCapsuleMessageID: MessageID?
     var actionCapsuleSize: NSSize?
     let editing = NativeTimelineEditingSession()
-    var messageProfilePopover: NSPopover?
+    let messageProfilePopoverCoordinator =
+        StableAnchoredPopoverPresenter<AnyView>.Coordinator()
+    var activeMessageProfilePopoverAnchor: StablePopoverAnchor?
     var componentChoicePopover: NSPopover?
     let mentionPopoverCoordinator =
         StableAnchoredPopoverPresenter<AnyView>.Coordinator()

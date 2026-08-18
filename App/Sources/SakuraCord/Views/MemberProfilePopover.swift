@@ -31,6 +31,8 @@ struct MemberProfilePopover: View {
     let errorMessage: String?
     var layout: ProfilePresentationLayout = .popover
 
+    @Environment(\.stablePopoverPresentationContext)
+    private var popoverPresentationContext
     @State private var contentHeight: CGFloat = 320
 
     private let maximumHeight: CGFloat = 560
@@ -47,9 +49,7 @@ struct MemberProfilePopover: View {
                             maximumHeight
                         )
                     )
-                    .profilePresentationBackground(
-                        themeHexes: activeNitroThemeHexes
-                    )
+                    .background { popoverBackground }
             case .inspector:
                 profileContent
                     .frame(
@@ -68,7 +68,7 @@ struct MemberProfilePopover: View {
 
     private var profileContent: some View {
         ZStack(alignment: .top) {
-            if !activeNitroThemeHexes.isEmpty {
+            if !profileThemeHexes.isEmpty {
                 ConcentricRectangle(
                     cornerRadius: innerCornerRadius,
                     style: .continuous
@@ -82,10 +82,11 @@ struct MemberProfilePopover: View {
                     ProfileHeroSection(
                         member: member,
                         profile: profile,
-                        themeHexes: activeNitroThemeHexes,
-                        avatarCutoutColor: ProfilePalette.innerSurfaceColor(themeHexes: activeNitroThemeHexes),
+                        themeHexes: profileThemeHexes,
+                        avatarCutoutColor: ProfilePalette.innerSurfaceColor(themeHexes: profileThemeHexes),
                         topCornerRadius: layout == .popover ? 16 : 0,
-                        statusBubbleWidth: statusBubbleWidth
+                        statusBubbleWidth: statusBubbleWidth,
+                        animatesRemoteMedia: animatesRemoteMedia
                     )
                     .zIndex(10)
 
@@ -134,17 +135,33 @@ struct MemberProfilePopover: View {
             .padding(surfaceInset)
 
             if let effect = profile?.effect {
-                ProfileEffectOverlay(effect: effect)
+                ProfileEffectOverlay(
+                    effect: effect,
+                    animates: animatesRemoteMedia
+                )
                     .zIndex(100)
             }
         }
     }
 
     @ViewBuilder
-    private var inspectorBackground: some View {
-        if activeNitroThemeHexes.count >= 2 {
+    private var popoverBackground: some View {
+        if profileThemeHexes.count >= 2 {
             LinearGradient(
-                colors: activeNitroThemeHexes.prefix(2).map(Color.init(hex:)),
+                colors: profileThemeHexes.prefix(2).map(Color.init(hex:)),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        } else {
+            Color.clear
+        }
+    }
+
+    @ViewBuilder
+    private var inspectorBackground: some View {
+        if profileThemeHexes.count >= 2 {
+            LinearGradient(
+                colors: profileThemeHexes.prefix(2).map(Color.init(hex:)),
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
@@ -153,11 +170,12 @@ struct MemberProfilePopover: View {
         }
     }
 
-    private var activeNitroThemeHexes: [UInt32] {
-        guard let profile else { return [] }
-        let hasActiveNitro = profile.premiumSince != nil
-            || profile.badges.contains { $0.id.lowercased() == "premium" }
-        return hasActiveNitro ? profile.themeHexes : []
+    private var profileThemeHexes: [UInt32] {
+        profile?.themeHexes ?? []
+    }
+
+    private var animatesRemoteMedia: Bool {
+        popoverPresentationContext?.hasFinishedPresenting ?? true
     }
 
     private var surfaceInset: CGFloat {
@@ -194,23 +212,6 @@ private struct ProfileContentHeightKey: PreferenceKey {
     }
 }
 
-private extension View {
-    @ViewBuilder
-    func profilePresentationBackground(themeHexes: [UInt32]) -> some View {
-        if themeHexes.count >= 2 {
-            presentationBackground(
-                LinearGradient(
-                    colors: themeHexes.prefix(2).map(Color.init(hex:)),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-        } else {
-            self
-        }
-    }
-}
-
 private struct ProfileHeroSection: View {
     let member: Member
     let profile: UserProfile?
@@ -218,6 +219,7 @@ private struct ProfileHeroSection: View {
     let avatarCutoutColor: Color
     let topCornerRadius: CGFloat
     let statusBubbleWidth: CGFloat
+    let animatesRemoteMedia: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -225,7 +227,8 @@ private struct ProfileHeroSection: View {
                 url: profile?.bannerURL,
                 accentHex: profile?.accentHex,
                 themeHexes: themeHexes,
-                topCornerRadius: topCornerRadius
+                topCornerRadius: topCornerRadius,
+                animates: animatesRemoteMedia
             )
                 .overlay(alignment: .topLeading) {
                     Circle()
@@ -241,7 +244,8 @@ private struct ProfileHeroSection: View {
                     name: profile?.displayName ?? member.user.displayName,
                     avatarURL: profile?.avatarURL ?? member.guildAvatarURL ?? member.user.avatarURL,
                     decorationURL: profile?.user.avatarDecorationURL ?? member.user.avatarDecorationURL,
-                    size: 70
+                    size: 70,
+                    animatesDecoration: animatesRemoteMedia
                 )
                 .padding(3)
                 .overlay(alignment: .bottomTrailing) {
@@ -351,6 +355,7 @@ private struct ProfileBanner: View {
     let accentHex: UInt32?
     let themeHexes: [UInt32]
     let topCornerRadius: CGFloat
+    let animates: Bool
 
     var body: some View {
         GeometryReader { proxy in
@@ -365,6 +370,7 @@ private struct ProfileBanner: View {
                 if let url {
                     AnimatedRemoteImage(
                         url: url,
+                        animates: animates,
                         maximumPixelDimension: 600,
                         contentMode: .fill
                     )
@@ -1092,6 +1098,7 @@ nonisolated enum ProfileEffectLayout {
 
 private struct ProfileEffectOverlay: View {
     let effect: ProfileEffect
+    let animates: Bool
 
     var body: some View {
         GeometryReader { proxy in
@@ -1104,7 +1111,11 @@ private struct ProfileEffectOverlay: View {
                             designWidth: designWidth,
                             containerWidth: proxy.size.width
                         )
-                        AnimatedRemoteImage(url: animation.sourceURL, isLooping: animation.isLooping)
+                        AnimatedRemoteImage(
+                            url: animation.sourceURL,
+                            animates: animates,
+                            isLooping: animation.isLooping
+                        )
                             .frame(
                                 width: frame.width,
                                 height: frame.height
@@ -1119,7 +1130,7 @@ private struct ProfileEffectOverlay: View {
                 .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
                 .clipped()
             } else if let url = effect.reducedMotionURL {
-                AnimatedRemoteImage(url: url)
+                AnimatedRemoteImage(url: url, animates: animates)
                     .frame(width: proxy.size.width, height: proxy.size.height)
             } else if let url = effect.staticURL {
                 AsyncImage(url: url) { image in

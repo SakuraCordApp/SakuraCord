@@ -708,27 +708,33 @@ extension NativeTimelineCanvasView {
         closeMentionPopover()
         closeMessageProfilePopover()
         let requestID = model.showProfile(for: user)
-        let popover = NSPopover()
-        popover.behavior = .transient
-        popover.animates = true
-        popover.contentViewController = NSHostingController(
-            rootView: MessageProfilePopoverContent(
-                model: model,
-                userID: user.id,
-                requestID: requestID
-            )
+        let popoverAnchor = StablePopoverAnchor(
+            sourceView: self,
+            sourceRect: { anchor }
         )
-        messageProfilePopover = popover
-        popover.show(
-            relativeTo: anchor,
-            of: self,
-            preferredEdge: .maxX
+        activeMessageProfilePopoverAnchor = popoverAnchor
+        messageProfilePopoverCoordinator.update(
+            anchor: popoverAnchor,
+            anchorSnapshot: nil,
+            isPresented: true,
+            configuration: .contextualProfile,
+            onDismiss: { [weak self] in
+                self?.activeMessageProfilePopoverAnchor = nil
+            },
+            presentationIdentity: AnyHashable(user.id),
+            content: AnyView(
+                MessageProfilePopoverContent(
+                    model: model,
+                    userID: user.id,
+                    requestID: requestID
+                )
+            )
         )
     }
 
     func closeMessageProfilePopover() {
-        messageProfilePopover?.performClose(nil)
-        messageProfilePopover = nil
+        messageProfilePopoverCoordinator.close()
+        activeMessageProfilePopoverAnchor = nil
     }
 
     func showMentionProfile(
@@ -746,7 +752,8 @@ extension NativeTimelineCanvasView {
                     requestID: requestID
                 )
             ),
-            anchor: anchor
+            anchor: anchor,
+            configuration: .contextualProfile
         )
     }
 
@@ -770,14 +777,15 @@ extension NativeTimelineCanvasView {
 
     func showMentionPopover(
         _ content: AnyView,
-        anchor: StablePopoverAnchor
+        anchor: StablePopoverAnchor,
+        configuration: StablePopoverConfiguration = .interactive
     ) {
         activeMentionPopoverAnchor = anchor
         mentionPopoverCoordinator.update(
             anchor: anchor,
             anchorSnapshot: nil,
             isPresented: true,
-            configuration: .interactive,
+            configuration: configuration,
             onDismiss: { [weak self] in
                 self?.activeMentionPopoverAnchor = nil
             },

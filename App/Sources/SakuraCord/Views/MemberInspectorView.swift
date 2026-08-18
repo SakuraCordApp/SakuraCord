@@ -495,6 +495,7 @@ struct DecoratedAvatarView: View {
     let avatarURL: URL?
     let decorationURL: URL?
     let size: CGFloat
+    var animatesDecoration = true
 
     var body: some View {
         ZStack {
@@ -502,6 +503,7 @@ struct DecoratedAvatarView: View {
             if let decorationURL {
                 AnimatedRemoteImage(
                     url: decorationURL,
+                    animates: animatesDecoration,
                     maximumPixelDimension: decorationPixelDimension
                 )
                     .frame(width: size * 1.22, height: size * 1.22)
