@@ -213,9 +213,10 @@ enum NativeTimelineSystemSymbolCache {
             colorSpaceName: .deviceRGB,
             bytesPerRow: 0,
             bitsPerPixel: 0
-        ), let graphics = NSGraphicsContext(bitmapImageRep: representation)
-        else { return nil }
+        ) else { return nil }
         representation.size = size
+        guard let graphics = NSGraphicsContext(bitmapImageRep: representation)
+        else { return nil }
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = graphics
         appearance.performAsCurrentDrawingAppearance {
@@ -333,10 +334,11 @@ enum NativeTimelineSystemSymbolCache {
                     colorSpaceName: .deviceRGB,
                     bytesPerRow: 0,
                     bitsPerPixel: 0
-                ), let graphics = NSGraphicsContext(
-                    bitmapImageRep: representation
                 ) else { return }
                 representation.size = image.size
+                guard let graphics = NSGraphicsContext(
+                    bitmapImageRep: representation
+                ) else { return }
                 NSGraphicsContext.saveGraphicsState()
                 NSGraphicsContext.current = graphics
                 image.draw(in: CGRect(origin: .zero, size: image.size))
