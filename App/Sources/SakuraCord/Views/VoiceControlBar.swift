@@ -511,7 +511,7 @@ private struct VoiceInputControls: View {
                 systemImage: "mic",
                 devices: model.mediaDevices.audioInputs,
                 selectedUID: UserDefaults.standard.string(forKey: "voiceInputDeviceUID"),
-                select: { device in Task { await model.selectInputDevice(device) } }
+                select: { device in await model.selectInputDevice(device) }
             )
             VolumeControl(
                 title: "Input Volume",
@@ -521,9 +521,16 @@ private struct VoiceInputControls: View {
                     set: { value in Task { await model.updateInputVolume(Float(value)) } }
                 )
             )
+            if let status = model.voiceDeviceStatusMessage {
+                Text(status)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(16)
         .frame(width: 300)
+        .task { await model.refreshMediaDevices() }
     }
 }
 
@@ -538,7 +545,7 @@ private struct VoiceOutputControls: View {
                 systemImage: "speaker.wave.2",
                 devices: model.mediaDevices.audioOutputs,
                 selectedUID: UserDefaults.standard.string(forKey: "voiceOutputDeviceUID"),
-                select: { device in Task { await model.selectOutputDevice(device) } }
+                select: { device in await model.selectOutputDevice(device) }
             )
             VolumeControl(
                 title: "Output Volume",
@@ -548,9 +555,16 @@ private struct VoiceOutputControls: View {
                     set: { value in Task { await model.updateOutputVolume(Float(value)) } }
                 )
             )
+            if let status = model.voiceDeviceStatusMessage {
+                Text(status)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(16)
         .frame(width: 300)
+        .task { await model.refreshMediaDevices() }
     }
 }
 
@@ -596,7 +610,8 @@ private struct VoiceDevicePicker: View {
     let title: String
     let systemImage: String
     let devices: [AudioDeviceInfo]
-    let select: (AudioDeviceInfo?) -> Void
+    let selectedUID: String?
+    let select: (AudioDeviceInfo?) async -> Bool
     @State private var selectionUID: String
 
     init(
@@ -604,11 +619,12 @@ private struct VoiceDevicePicker: View {
         systemImage: String,
         devices: [AudioDeviceInfo],
         selectedUID: String?,
-        select: @escaping (AudioDeviceInfo?) -> Void
+        select: @escaping (AudioDeviceInfo?) async -> Bool
     ) {
         self.title = title
         self.systemImage = systemImage
         self.devices = devices
+        self.selectedUID = selectedUID
         self.select = select
         _selectionUID = State(initialValue: selectedUID ?? "")
     }
@@ -616,7 +632,7 @@ private struct VoiceDevicePicker: View {
     var body: some View {
         LabeledContent {
             Picker(title, selection: $selectionUID) {
-                Text("System Default").tag("")
+                Text(systemDefaultAudioDeviceLabel(devices)).tag("")
                 ForEach(devices) { device in
                     Text(device.name).tag(device.uid)
                 }
@@ -625,13 +641,27 @@ private struct VoiceDevicePicker: View {
             .pickerStyle(.menu)
             .frame(maxWidth: 170)
             .onChange(of: selectionUID) { _, uid in
-                select(devices.first(where: { $0.uid == uid }))
+                let previousUID = selectedUID ?? ""
+                Task {
+                    guard await select(devices.first(where: { $0.uid == uid })) else {
+                        selectionUID = previousUID
+                        return
+                    }
+                }
+            }
+            .onChange(of: selectedUID) { _, uid in
+                selectionUID = uid ?? ""
             }
         } label: {
             Label(title, systemImage: systemImage)
                 .font(.callout)
         }
     }
+}
+
+private func systemDefaultAudioDeviceLabel(_ devices: [AudioDeviceInfo]) -> String {
+    guard let device = devices.first(where: \.isDefault) else { return "System Default" }
+    return "System Default (\(device.name))"
 }
 
 private struct CameraDevicePicker: View {

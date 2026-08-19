@@ -8,13 +8,14 @@ struct SettingsView: View {
     @AppStorage("sendWithReturn") private var sendWithReturn = true
     @AppStorage("mediaCacheLimit") private var mediaCacheLimit = 2_147_483_648
     @AppStorage("reduceAnimatedMedia") private var reduceAnimatedMedia = false
-    @AppStorage("voiceInputDeviceUID") private var inputDeviceUID = ""
-    @AppStorage("voiceOutputDeviceUID") private var outputDeviceUID = ""
+    @State private var inputDeviceUID =
+        UserDefaults.standard.string(forKey: "voiceInputDeviceUID") ?? ""
+    @State private var outputDeviceUID =
+        UserDefaults.standard.string(forKey: "voiceOutputDeviceUID") ?? ""
     @AppStorage("voiceCameraUID") private var cameraUID = ""
     @AppStorage("voiceInputVolume") private var inputVolume = 1.0
     @AppStorage("voiceOutputVolume") private var outputVolume = 1.0
     @AppStorage("saveAPIDiagnosticsToDisk") private var savesAPIDiagnosticsToDisk = false
-    @State private var mediaDevices: MediaDeviceSnapshot = .empty
     @State private var notificationPermission = "Checking…"
     @State private var apiDiagnosticEntryCount = 0
     @State private var apiDiagnosticStatus: String?
@@ -140,20 +141,20 @@ struct SettingsView: View {
 
             Form {
                 Picker("Input device", selection: $inputDeviceUID) {
-                    Text("System Default").tag("")
-                    ForEach(mediaDevices.audioInputs) { device in
+                    Text(systemDefaultAudioDeviceLabel(model.mediaDevices.audioInputs)).tag("")
+                    ForEach(model.mediaDevices.audioInputs) { device in
                         Text(device.name).tag(device.uid)
                     }
                 }
                 Picker("Output device", selection: $outputDeviceUID) {
-                    Text("System Default").tag("")
-                    ForEach(mediaDevices.audioOutputs) { device in
+                    Text(systemDefaultAudioDeviceLabel(model.mediaDevices.audioOutputs)).tag("")
+                    ForEach(model.mediaDevices.audioOutputs) { device in
                         Text(device.name).tag(device.uid)
                     }
                 }
                 Picker("Camera", selection: $cameraUID) {
                     Text("System Default").tag("")
-                    ForEach(mediaDevices.cameras) { camera in
+                    ForEach(model.mediaDevices.cameras) { camera in
                         Text(camera.name).tag(camera.uniqueID)
                     }
                 }
@@ -169,24 +170,47 @@ struct SettingsView: View {
                         .monospacedDigit()
                         .frame(width: 46, alignment: .trailing)
                 }
+                if let status = model.voiceDeviceStatusMessage {
+                    Text(status)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             .formStyle(.grouped)
             .tabItem { Label("Voice & Video", systemImage: "waveform.and.mic") }
             .task {
-                mediaDevices = await Task.detached(priority: .userInitiated) {
-                    MediaDeviceCatalog.snapshot()
-                }.value
+                await model.refreshMediaDevices()
             }
             .onChange(of: inputDeviceUID) { _, uid in
-                let device = mediaDevices.audioInputs.first { $0.uid == uid }
-                Task { await model.selectInputDevice(device) }
+                guard uid != (UserDefaults.standard.string(
+                    forKey: "voiceInputDeviceUID"
+                ) ?? "") else { return }
+                let device = model.mediaDevices.audioInputs.first { $0.uid == uid }
+                Task {
+                    guard await model.selectInputDevice(device) else {
+                        inputDeviceUID = UserDefaults.standard.string(
+                            forKey: "voiceInputDeviceUID"
+                        ) ?? ""
+                        return
+                    }
+                }
             }
             .onChange(of: outputDeviceUID) { _, uid in
-                let device = mediaDevices.audioOutputs.first { $0.uid == uid }
-                Task { await model.selectOutputDevice(device) }
+                guard uid != (UserDefaults.standard.string(
+                    forKey: "voiceOutputDeviceUID"
+                ) ?? "") else { return }
+                let device = model.mediaDevices.audioOutputs.first { $0.uid == uid }
+                Task {
+                    guard await model.selectOutputDevice(device) else {
+                        outputDeviceUID = UserDefaults.standard.string(
+                            forKey: "voiceOutputDeviceUID"
+                        ) ?? ""
+                        return
+                    }
+                }
             }
             .onChange(of: cameraUID) { _, uid in
-                let camera = mediaDevices.cameras.first { $0.uniqueID == uid }
+                let camera = model.mediaDevices.cameras.first { $0.uniqueID == uid }
                 Task { await model.selectCamera(camera) }
             }
             .onChange(of: inputVolume) { _, value in
@@ -194,6 +218,14 @@ struct SettingsView: View {
             }
             .onChange(of: outputVolume) { _, value in
                 Task { await model.updateOutputVolume(Float(value)) }
+            }
+            .onChange(of: model.mediaDevices) {
+                inputDeviceUID = UserDefaults.standard.string(
+                    forKey: "voiceInputDeviceUID"
+                ) ?? ""
+                outputDeviceUID = UserDefaults.standard.string(
+                    forKey: "voiceOutputDeviceUID"
+                ) ?? ""
             }
 
             Form {
@@ -328,4 +360,9 @@ struct SettingsView: View {
         }
         refreshAPIDiagnosticCount()
     }
+}
+
+private func systemDefaultAudioDeviceLabel(_ devices: [AudioDeviceInfo]) -> String {
+    guard let device = devices.first(where: \.isDefault) else { return "System Default" }
+    return "System Default (\(device.name))"
 }

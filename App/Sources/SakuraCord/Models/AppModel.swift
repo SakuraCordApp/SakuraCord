@@ -425,6 +425,7 @@ final class AppModel {
     var voiceEncryptionVersion: UInt16?
     var voiceLatencyMilliseconds: Int?
     var voiceErrorMessage: String?
+    var voiceDeviceStatusMessage: String?
     var voiceStates: [UserID: VoiceParticipantState] = [:] {
         didSet {
             guard oldValue != voiceStates else { return }
@@ -1101,6 +1102,7 @@ final class AppModel {
     @ObservationIgnored var voiceEventTask: Task<Void, Never>?
     @ObservationIgnored var voiceMigrationTask: Task<Void, Never>?
     @ObservationIgnored var voiceSession: DiscordVoiceSession?
+    @ObservationIgnored var mediaDeviceMonitor: MediaDeviceMonitor?
     @ObservationIgnored var voiceMigrationGeneration = 0
     @ObservationIgnored var voiceActionGeneration: UInt64 = 0
     @ObservationIgnored var privateCallActionGeneration: UInt64 = 0
@@ -1266,5 +1268,10 @@ final class AppModel {
             launchMode == .offlineTesting ? "offline" : "signed-out"
         )
         readState.reset(accountID: launchMode == .offlineTesting ? "offline" : nil)
+        mediaDeviceMonitor = MediaDeviceMonitor { [weak self] snapshot in
+            Task { @MainActor [weak self] in
+                await self?.installMediaDeviceSnapshot(snapshot)
+            }
+        }
     }
 }

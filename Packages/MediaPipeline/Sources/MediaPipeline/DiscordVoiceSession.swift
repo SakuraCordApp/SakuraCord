@@ -294,13 +294,17 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
     }
 
     public func selectInputDevice(_ deviceID: AudioDeviceID?) async throws {
+        if let audioEngine {
+            try await audioEngine.selectInputDevice(deviceID)
+        }
         configuration.inputDeviceID = deviceID
-        try await audioEngine?.selectInputDevice(deviceID)
     }
 
     public func selectOutputDevice(_ deviceID: AudioDeviceID?) async throws {
+        if let audioEngine {
+            try await audioEngine.selectOutputDevice(deviceID)
+        }
         configuration.outputDeviceID = deviceID
-        try await audioEngine?.selectOutputDevice(deviceID)
     }
 
     public func setParticipantVolume(_ volume: Float, userID: String) async {

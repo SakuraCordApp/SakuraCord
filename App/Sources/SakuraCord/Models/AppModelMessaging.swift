@@ -1220,44 +1220,8 @@ extension AppModel {
         await voiceSession?.setOutputVolume(outputVolume)
     }
 
-    func selectInputDevice(_ device: AudioDeviceInfo?) async {
-        UserDefaults.standard.set(device?.uid, forKey: "voiceInputDeviceUID")
-        let account = accountSession()
-        let generation = voiceMigrationGeneration
-        let session = voiceSession
-        do { try await session?.selectInputDevice(device?.id) } catch {
-            guard isCurrentVoiceOperation(
-                account,
-                generation: generation,
-                voiceSession: session
-            ) else { return }
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    func selectOutputDevice(_ device: AudioDeviceInfo?) async {
-        UserDefaults.standard.set(device?.uid, forKey: "voiceOutputDeviceUID")
-        let account = accountSession()
-        let generation = voiceMigrationGeneration
-        let session = voiceSession
-        do { try await session?.selectOutputDevice(device?.id) } catch {
-            guard isCurrentVoiceOperation(
-                account,
-                generation: generation,
-                voiceSession: session
-            ) else { return }
-            errorMessage = error.localizedDescription
-        }
-    }
-
     func updateParticipantVolume(_ value: Float, userID: String) async {
         await voiceSession?.setParticipantVolume(value, userID: userID)
-    }
-
-    func refreshMediaDevices() async {
-        mediaDevices = await Task.detached(priority: .userInitiated) {
-            MediaDeviceCatalog.snapshot()
-        }.value
     }
 
     func publishVoiceState() async {
@@ -1289,47 +1253,6 @@ extension AppModel {
             else { return }
             voiceErrorMessage = error.localizedDescription
         }
-    }
-
-    func selectedAudioDeviceID(defaultsKey: String, devices: [AudioDeviceInfo])
-        -> AudioDeviceID?
-    {
-        guard let uid = UserDefaults.standard.string(forKey: defaultsKey) else { return nil }
-        return devices.first(where: { $0.uid == uid })?.id
-    }
-
-    func currentVoiceConfiguration() -> VoiceSessionConfiguration {
-        let outputDeviceID = selectedAudioDeviceID(
-            defaultsKey: "voiceOutputDeviceUID",
-            devices: mediaDevices.audioOutputs
-        )
-        return VoiceSessionConfiguration(
-            inputDeviceID: resolvedInputDeviceID(),
-            outputDeviceID: outputDeviceID,
-            inputVolume: inputVolume,
-            outputVolume: outputVolume,
-            isMuted: isVoiceMuted,
-            isDeafened: isVoiceDeafened,
-            cameraUniqueID: UserDefaults.standard.string(forKey: "voiceCameraUID")
-        )
-    }
-
-    func resolvedInputDeviceID() -> AudioDeviceID? {
-        if let storedUID = UserDefaults.standard.string(forKey: "voiceInputDeviceUID"),
-           !storedUID.isEmpty
-        {
-            return mediaDevices.audioInputs.first(where: { $0.uid == storedUID })?.id
-        }
-
-        let defaultInput = mediaDevices.audioInputs.first(where: \.isDefault)
-        // Automatic capture must not inherit a Bluetooth call route or a
-        // silent virtual/aggregate device. Explicit selections remain honored.
-        if defaultInput?.isBluetooth == true || defaultInput?.isVirtual == true,
-           let builtIn = mediaDevices.audioInputs.first(where: \.isBuiltIn)
-        {
-            return builtIn.id
-        }
-        return nil
     }
 
     func startVoiceSession(
