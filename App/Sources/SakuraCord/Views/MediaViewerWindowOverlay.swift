@@ -111,6 +111,8 @@ struct MediaViewerWindowOverlay: NSViewRepresentable {
             container.addSubview(overlay, positioned: .above, relativeTo: nil)
             overlayView = overlay
             overlay.resolveTransitionSourceFrame()
+            MediaViewerPresentationPerformanceProbe.shared
+                .reportOverlayAttached(to: overlay)
             installKeyMonitorIfNeeded(for: window)
             window.makeFirstResponder(overlay)
         }
@@ -288,11 +290,20 @@ private final class MediaViewerWindowAnimationState {
             reducesMotion
                 ? .easeOut(duration: 0.12)
                 : hasTransitionSource
-                    ? .snappy(duration: 0.22, extraBounce: 0.02)
-                    : .easeOut(duration: 0.22)
+                    ? .snappy(
+                        duration:
+                            MediaViewerTransitionTiming.presentationDuration,
+                        extraBounce: 0.02
+                    )
+                    : .easeOut(
+                        duration:
+                            MediaViewerTransitionTiming.presentationDuration
+                    )
         ) {
             isVisible = true
         }
+        MediaViewerPresentationPerformanceProbe.shared
+            .reportAnimationTransactionStarted()
     }
 
     func dismiss(committingPresentation: Bool) {

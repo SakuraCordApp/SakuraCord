@@ -11,9 +11,9 @@ source "$ROOT_DIR/script/release_metadata.sh"
 source "$ROOT_DIR/script/debug_credentials_config.sh"
 
 case "$MODE" in
-  package|package-release|run|--offline|--offline-long-server-list|--offline-forum-performance|--offline-chat-performance|--offline-chat-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-media-performance-autoscroll|--offline-incoming-private-call|--verify|--debug|--logs|--telemetry) ;;
+  package|package-release|run|--offline|--offline-long-server-list|--offline-forum-performance|--offline-chat-performance|--offline-chat-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-media-performance-autoscroll|--offline-incoming-private-call|--media-viewer-benchmark|--verify|--debug|--logs|--telemetry) ;;
   *)
-    echo "usage: $0 [package|package-release|run|--offline|--offline-long-server-list|--offline-forum-performance|--offline-chat-performance|--offline-chat-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-media-performance-autoscroll|--offline-incoming-private-call|--verify|--debug|--logs|--telemetry]" >&2
+    echo "usage: $0 [package|package-release|run|--offline|--offline-long-server-list|--offline-forum-performance|--offline-chat-performance|--offline-chat-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-media-performance-autoscroll|--offline-incoming-private-call|--media-viewer-benchmark|--verify|--debug|--logs|--telemetry]" >&2
     exit 2
     ;;
 esac
@@ -228,6 +228,12 @@ open_offline_chat_media_performance_autoscroll() {
 open_offline_incoming_private_call() {
   open_app --args --offline-incoming-private-call
 }
+open_media_viewer_benchmark() {
+  /usr/bin/open -n \
+    --env SAKURACORD_MEDIA_VIEWER_BENCHMARK=1 \
+    "$APP_BUNDLE"
+  sakuracord_wait_for_scoped_app
+}
 
 case "$MODE" in
   package|package-release) ;;
@@ -255,4 +261,5 @@ case "$MODE" in
   --offline-chat-performance-live-autoscroll) open_offline_chat_performance_live_autoscroll ;;
   --offline-chat-media-performance-autoscroll) open_offline_chat_media_performance_autoscroll ;;
   --offline-incoming-private-call) open_offline_incoming_private_call ;;
+  --media-viewer-benchmark) open_media_viewer_benchmark ;;
 esac

@@ -255,6 +255,26 @@ private struct MediaViewerTransitionImage: View {
     let sourceVisibleFrame: CGRect
     let destinationFrame: CGRect
     let isExpanded: Bool
+    @State private var presentsRemoteImage: Bool
+
+    init(
+        url: URL,
+        isAnimated: Bool,
+        source: MediaViewerTransitionSource,
+        sourceFrame: CGRect,
+        sourceVisibleFrame: CGRect,
+        destinationFrame: CGRect,
+        isExpanded: Bool
+    ) {
+        self.url = url
+        self.isAnimated = isAnimated
+        self.source = source
+        self.sourceFrame = sourceFrame
+        self.sourceVisibleFrame = sourceVisibleFrame
+        self.destinationFrame = destinationFrame
+        self.isExpanded = isExpanded
+        _presentsRemoteImage = State(initialValue: isExpanded)
+    }
 
     var body: some View {
         let clipFrame = isExpanded ? destinationFrame : sourceVisibleFrame
@@ -295,11 +315,14 @@ private struct MediaViewerTransitionImage: View {
                     .resizable()
                     .aspectRatio(contentMode: .fit)
 
-                AnimatedRemoteImage(
-                    url: url,
-                    isLooping: isAnimated,
-                    contentMode: .fit
-                )
+                if presentsRemoteImage {
+                    AnimatedRemoteImage(
+                        url: url,
+                        isLooping: isAnimated,
+                        contentMode: .fit
+                    )
+                    .transition(.opacity)
+                }
             }
             .frame(width: imageFrame.width, height: imageFrame.height)
             .position(
@@ -311,6 +334,23 @@ private struct MediaViewerTransitionImage: View {
         .clipShape(UnevenRoundedRectangle(cornerRadii: cornerRadii))
         .position(x: clipFrame.midX, y: clipFrame.midY)
         .allowsHitTesting(false)
+        .task(id: isExpanded) {
+            guard isExpanded, !presentsRemoteImage else { return }
+            try? await Task.sleep(
+                for: .seconds(
+                    MediaViewerTransitionTiming.presentationDuration
+                )
+            )
+            guard !Task.isCancelled else { return }
+            withAnimation(
+                .easeOut(
+                    duration:
+                        MediaViewerTransitionTiming.remoteImageFadeDuration
+                )
+            ) {
+                presentsRemoteImage = true
+            }
+        }
     }
 
     private func sharesEdge(

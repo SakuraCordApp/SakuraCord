@@ -10,11 +10,28 @@ extension NativeTimelineCanvasView {
         fillsFrame: Bool
     ) -> NativeTimelineMediaViewerPresentation {
         guard presentation.items.indices.contains(presentation.selection),
-              case .image = presentation.items[presentation.selection].kind,
-              let mediaKey,
+              case .image = presentation.items[presentation.selection].kind
+        else { return presentation }
+
+        let item = presentation.items[presentation.selection]
+        let performanceProbe =
+            MediaViewerPresentationPerformanceProbe.shared
+        performanceProbe.begin(
+            mediaWidth: item.width,
+            mediaHeight: item.height
+        )
+
+        guard let mediaKey,
               let image = NativeTimelineRowPainter.mediaImage(for: mediaKey),
               window != nil
-        else { return presentation }
+        else {
+            performanceProbe.reportSourcePrepared(
+                imageSize: nil,
+                visibleSourceRatio: 0,
+                hasTransitionSource: false
+            )
+            return presentation
+        }
 
         let frameInCanvas = sourceFrame.offsetBy(
             dx: 0,
@@ -24,9 +41,22 @@ extension NativeTimelineCanvasView {
         guard !visibleFrameInCanvas.isNull,
               visibleFrameInCanvas.width > 0,
               visibleFrameInCanvas.height > 0
-        else { return presentation }
+        else {
+            performanceProbe.reportSourcePrepared(
+                imageSize: image.size,
+                visibleSourceRatio: 0,
+                hasTransitionSource: false
+            )
+            return presentation
+        }
 
-        let item = presentation.items[presentation.selection]
+        performanceProbe.reportSourcePrepared(
+            imageSize: image.size,
+            visibleSourceRatio:
+                visibleFrameInCanvas.width * visibleFrameInCanvas.height
+                / (frameInCanvas.width * frameInCanvas.height),
+            hasTransitionSource: true
+        )
         return presentation.withTransitionSource(
             MediaViewerTransitionSource(
                 itemID: item.id,

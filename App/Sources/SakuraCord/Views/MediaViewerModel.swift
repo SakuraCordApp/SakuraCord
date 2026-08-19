@@ -1,6 +1,11 @@
 import Foundation
 import Observation
 
+nonisolated enum MediaViewerTransitionTiming {
+    static let presentationDuration: TimeInterval = 0.22
+    static let remoteImageFadeDuration: TimeInterval = 0.10
+}
+
 @MainActor
 @Observable
 final class MediaViewerInteractionModel {
