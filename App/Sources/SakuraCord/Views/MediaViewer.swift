@@ -45,6 +45,21 @@ struct MediaViewer: View {
         GlassEffectContainer(spacing: 12) {
             GeometryReader { proxy in
                 ZStack {
+                    if presentation.transitionSource != nil,
+                       let transitionSourceVisibleFrame
+                    {
+                        Color(nsColor: .windowBackgroundColor)
+                            .frame(
+                                width: transitionSourceVisibleFrame.width,
+                                height: transitionSourceVisibleFrame.height
+                            )
+                            .position(
+                                x: transitionSourceVisibleFrame.midX,
+                                y: transitionSourceVisibleFrame.midY
+                            )
+                            .allowsHitTesting(false)
+                    }
+
                     Color.black.opacity(
                         WindowModalVisualStyle.mediaViewerBackgroundDimmingOpacity
                     )
