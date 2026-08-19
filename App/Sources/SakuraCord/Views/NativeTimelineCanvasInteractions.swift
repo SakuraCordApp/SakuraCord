@@ -479,7 +479,11 @@ extension NativeTimelineCanvasView {
                 )
             }
         ) {
-            model?.mediaViewerPresentation = presentation
+            model?.mediaViewerPresentation = mediaViewerPresentation(
+                presentation,
+                componentID: id,
+                rowIndex: rowIndex
+            )
         } else {
             NSWorkspace.shared.open(openURL)
         }

@@ -110,6 +110,7 @@ struct MediaViewerWindowOverlay: NSViewRepresentable {
             overlay.layer?.zPosition = 100_000
             container.addSubview(overlay, positioned: .above, relativeTo: nil)
             overlayView = overlay
+            overlay.resolveTransitionSourceFrame()
             installKeyMonitorIfNeeded(for: window)
             window.makeFirstResponder(overlay)
         }
@@ -161,6 +162,8 @@ final class MediaViewerWindowAttachmentView: NSView {
 final class MediaViewerWindowHostingView: NSHostingView<AnyView> {
     let presentationID: UUID
     private let animationState: MediaViewerWindowAnimationState
+    private let transitionSourceFrameInWindow: CGRect?
+    private let transitionSourceVisibleFrameInWindow: CGRect?
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -171,7 +174,12 @@ final class MediaViewerWindowHostingView: NSHostingView<AnyView> {
         didFinishDismissal: @escaping () -> Void
     ) {
         self.presentationID = presentationID
+        transitionSourceFrameInWindow =
+            presentation.transitionSource?.frameInWindow
+        transitionSourceVisibleFrameInWindow =
+            presentation.transitionSource?.visibleFrameInWindow
         let animationState = MediaViewerWindowAnimationState(
+            hasTransitionSource: presentation.transitionSource != nil,
             dismiss: dismiss,
             didFinishDismissal: didFinishDismissal
         )
@@ -216,43 +224,97 @@ final class MediaViewerWindowHostingView: NSHostingView<AnyView> {
         return super.performKeyEquivalent(with: event)
     }
 
+    override func layout() {
+        super.layout()
+        resolveTransitionSourceFrame()
+    }
+
+    func resolveTransitionSourceFrame() {
+        animationState.setTransitionSourceFrames(
+            frame: transitionSourceFrameInWindow.map {
+                convert($0, from: nil)
+            },
+            visibleFrame: transitionSourceVisibleFrameInWindow.map {
+                convert($0, from: nil)
+            }
+        )
+    }
+
     func requestDismissal(committingPresentation: Bool = true) {
         animationState.dismiss(
             committingPresentation: committingPresentation
         )
     }
+
 }
 
 @MainActor
 @Observable
 private final class MediaViewerWindowAnimationState {
     private(set) var isVisible = false
+    private(set) var transitionSourceFrame: CGRect?
+    private(set) var transitionSourceVisibleFrame: CGRect?
     private var dismissalTask: Task<Void, Never>?
+    private var reducesMotion = false
+    private let hasTransitionSource: Bool
     private let dismissPresentation: () -> Void
     private let didFinishDismissal: () -> Void
 
     init(
+        hasTransitionSource: Bool,
         dismiss: @escaping () -> Void,
         didFinishDismissal: @escaping () -> Void
     ) {
+        self.hasTransitionSource = hasTransitionSource
         dismissPresentation = dismiss
         self.didFinishDismissal = didFinishDismissal
     }
 
-    func present() {
+    func setTransitionSourceFrames(
+        frame: CGRect?,
+        visibleFrame: CGRect?
+    ) {
+        guard transitionSourceFrame != frame
+                || transitionSourceVisibleFrame != visibleFrame
+        else { return }
+        transitionSourceFrame = frame
+        transitionSourceVisibleFrame = visibleFrame
+    }
+
+    func present(reducesMotion: Bool) {
         guard !isVisible, dismissalTask == nil else { return }
-        withAnimation(.easeOut(duration: 0.22)) {
+        self.reducesMotion = reducesMotion
+        withAnimation(
+            reducesMotion
+                ? .easeOut(duration: 0.12)
+                : hasTransitionSource
+                    ? .snappy(duration: 0.22, extraBounce: 0.02)
+                    : .easeOut(duration: 0.22)
+        ) {
             isVisible = true
         }
     }
 
     func dismiss(committingPresentation: Bool) {
         guard dismissalTask == nil else { return }
-        withAnimation(.easeIn(duration: 0.16)) {
+        let duration = if reducesMotion {
+            0.12
+        } else if hasTransitionSource {
+            0.18
+        } else {
+            0.16
+        }
+        withAnimation(
+            reducesMotion
+                ? .easeIn(duration: duration)
+                : hasTransitionSource
+                    ? .snappy(duration: duration)
+                    : .easeIn(duration: duration)
+        ) {
             isVisible = false
         }
         dismissalTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(170))
+            try? await Task.sleep(for: .seconds(duration + 0.01))
             guard !Task.isCancelled else { return }
             if committingPresentation {
                 dismissPresentation()
@@ -265,17 +327,24 @@ private final class MediaViewerWindowAnimationState {
 private struct MediaViewerWindowAnimatedContent: View {
     let presentation: NativeTimelineMediaViewerPresentation
     let animationState: MediaViewerWindowAnimationState
+    @Environment(\.accessibilityReduceMotion) private var reducesMotion
 
     var body: some View {
         MediaViewer(
             presentation: presentation,
             isVisible: animationState.isVisible,
+            transitionSourceFrame: reducesMotion
+                ? nil
+                : animationState.transitionSourceFrame,
+            transitionSourceVisibleFrame: reducesMotion
+                ? nil
+                : animationState.transitionSourceVisibleFrame,
             close: { animationState.dismiss(committingPresentation: true) }
         )
         .onAppear {
             Task { @MainActor in
                 await Task.yield()
-                animationState.present()
+                animationState.present(reducesMotion: reducesMotion)
             }
         }
     }

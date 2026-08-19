@@ -532,7 +532,20 @@ extension NativeTimelineCanvasView {
                         selectedReferenceID: region.reference.id
                     )
                 {
-                    self.model?.mediaViewerPresentation = presentation
+                    self.model?.mediaViewerPresentation =
+                        self.mediaViewerPresentation(
+                            presentation,
+                            sourceFrame: region.frame,
+                            rowIndex: rowIndex,
+                            mediaKey: .media(
+                                region.reference.displayURL,
+                                maximumPixelDimension:
+                                    region.reference.isEmoji ? 96 : 720
+                            ),
+                            cornerRadius: region.reference.isEmoji ? 7 : 10,
+                            fillsFrame: !region.reference.isEmoji
+                                && !region.reference.isSticker
+                        )
                 } else {
                     NSWorkspace.shared.open(region.reference.url)
                 }
@@ -882,7 +895,8 @@ extension NativeTimelineCanvasView {
                 ) { [weak self] in
                     self?.activateEmbedMedia(
                         id: region.embedID,
-                        in: message
+                        in: message,
+                        rowIndex: rowIndex
                     ) ?? false
                 })
             }
@@ -1158,7 +1172,12 @@ extension NativeTimelineCanvasView {
             if isHiddenSpoiler {
                 self.reveal(key, rowIndex: rowIndex)
             } else if let viewerPresentation {
-                self.model?.mediaViewerPresentation = viewerPresentation
+                self.model?.mediaViewerPresentation =
+                    self.mediaViewerPresentation(
+                        viewerPresentation,
+                        componentID: componentID,
+                        rowIndex: rowIndex
+                    )
             } else {
                 NSWorkspace.shared.open(openURL)
             }
@@ -1426,7 +1445,19 @@ extension NativeTimelineCanvasView {
                 }
             )
         {
-            model?.mediaViewerPresentation = presentation
+            let frame = layouts[rowIndex].attachmentRegions.first(where: {
+                $0.attachment.id == attachment.id
+            })?.frame
+            model?.mediaViewerPresentation = mediaViewerPresentation(
+                presentation,
+                sourceFrame: frame ?? .zero,
+                rowIndex: rowIndex,
+                mediaKey: NativeTimelineMediaKey.attachment(attachment),
+                cornerRadius: 8,
+                fillsFrame: MediaGalleryImagePresentation.fillsFrame(
+                    itemCount: layouts[rowIndex].attachmentRegions.count
+                )
+            )
         } else {
             NSWorkspace.shared.open(attachment.url)
         }
@@ -1435,13 +1466,26 @@ extension NativeTimelineCanvasView {
 
     func activateEmbedMedia(
         id: String,
-        in message: Message
+        in message: Message,
+        rowIndex: Int
     ) -> Bool {
         if let presentation = NativeTimelineMediaViewerPlan.embed(
             in: message,
             id: id
         ) {
-            model?.mediaViewerPresentation = presentation
+            let region = layouts[rowIndex].embedRegions.first(where: {
+                $0.embedID == id
+            })
+            model?.mediaViewerPresentation = mediaViewerPresentation(
+                presentation,
+                sourceFrame: region?.mediaFrame ?? .zero,
+                rowIndex: rowIndex,
+                mediaKey: region?.mediaURL.map {
+                    NativeTimelineMediaKey.media($0)
+                },
+                cornerRadius: 8,
+                fillsFrame: false
+            )
             return true
         }
         guard let region = layouts.lazy

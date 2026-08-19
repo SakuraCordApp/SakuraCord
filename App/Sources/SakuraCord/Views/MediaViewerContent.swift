@@ -4,6 +4,10 @@ import SwiftUI
 
 struct MediaViewerStage: View {
     let item: RichMediaItem
+    let isVisible: Bool
+    let transitionSource: MediaViewerTransitionSource?
+    let transitionSourceFrame: CGRect?
+    let transitionSourceVisibleFrame: CGRect?
     let scale: CGFloat
     let offset: CGSize
     let horizontalInset: CGFloat
@@ -24,6 +28,11 @@ struct MediaViewerStage: View {
                     isAnimated: animated,
                     mediaWidth: item.width,
                     mediaHeight: item.height,
+                    isVisible: isVisible,
+                    transitionSource: transitionSource,
+                    transitionSourceFrame: transitionSourceFrame,
+                    transitionSourceVisibleFrame:
+                        transitionSourceVisibleFrame,
                     scale: scale,
                     offset: offset,
                     horizontalInset: horizontalInset,
@@ -64,6 +73,10 @@ private struct MediaViewerZoomableImage: View {
     let isAnimated: Bool
     let mediaWidth: Int?
     let mediaHeight: Int?
+    let isVisible: Bool
+    let transitionSource: MediaViewerTransitionSource?
+    let transitionSourceFrame: CGRect?
+    let transitionSourceVisibleFrame: CGRect?
     let scale: CGFloat
     let offset: CGSize
     let horizontalInset: CGFloat
@@ -115,21 +128,36 @@ private struct MediaViewerZoomableImage: View {
             )
 
             ZStack {
-                AnimatedRemoteImage(
-                    url: url,
-                    isLooping: isAnimated,
-                    fallbackSystemImage: "photo",
-                    fallbackInset: 24
-                )
-                .frame(width: fittedSize.width, height: fittedSize.height)
-                .scaleEffect(effectiveScale)
-                .offset(
-                    x: restingFrame.midX - availableSize.width / 2
-                        + effectiveOffset.width,
-                    y: restingFrame.midY - availableSize.height / 2
-                        + effectiveOffset.height
-                )
-                .allowsHitTesting(false)
+                if let transitionSource,
+                   let transitionSourceFrame,
+                   let transitionSourceVisibleFrame
+                {
+                    MediaViewerTransitionImage(
+                        url: url,
+                        isAnimated: isAnimated,
+                        source: transitionSource,
+                        sourceFrame: transitionSourceFrame,
+                        sourceVisibleFrame: transitionSourceVisibleFrame,
+                        destinationFrame: transformedFrame,
+                        isExpanded: isVisible
+                    )
+                } else {
+                    AnimatedRemoteImage(
+                        url: url,
+                        isLooping: isAnimated,
+                        fallbackSystemImage: "photo",
+                        fallbackInset: 24
+                    )
+                    .frame(width: fittedSize.width, height: fittedSize.height)
+                    .scaleEffect(effectiveScale)
+                    .offset(
+                        x: restingFrame.midX - availableSize.width / 2
+                            + effectiveOffset.width,
+                        y: restingFrame.midY - availableSize.height / 2
+                            + effectiveOffset.height
+                    )
+                    .allowsHitTesting(false)
+                }
 
                 Color.clear
                     .frame(
@@ -216,6 +244,80 @@ private struct MediaViewerZoomableImage: View {
             }
             .frame(width: availableSize.width, height: availableSize.height)
         }
+    }
+}
+
+private struct MediaViewerTransitionImage: View {
+    let url: URL
+    let isAnimated: Bool
+    let source: MediaViewerTransitionSource
+    let sourceFrame: CGRect
+    let sourceVisibleFrame: CGRect
+    let destinationFrame: CGRect
+    let isExpanded: Bool
+
+    var body: some View {
+        let clipFrame = isExpanded ? destinationFrame : sourceVisibleFrame
+        let sourceImageFrame = MediaViewerLayoutPolicy.imageFrame(
+            imageSize: source.image.size,
+            in: sourceFrame,
+            fillsFrame: source.fillsFrame
+        )
+        let destinationImageFrame = MediaViewerLayoutPolicy.imageFrame(
+            imageSize: source.image.size,
+            in: destinationFrame,
+            fillsFrame: false
+        )
+        let imageFrame = isExpanded
+            ? destinationImageFrame
+            : sourceImageFrame
+        let sourceCornerRadii = RectangleCornerRadii(
+            topLeading: sharesEdge(\.minX) && sharesEdge(\.minY)
+                ? source.cornerRadius
+                : 0,
+            bottomLeading: sharesEdge(\.minX) && sharesEdge(\.maxY)
+                ? source.cornerRadius
+                : 0,
+            bottomTrailing: sharesEdge(\.maxX) && sharesEdge(\.maxY)
+                ? source.cornerRadius
+                : 0,
+            topTrailing: sharesEdge(\.maxX) && sharesEdge(\.minY)
+                ? source.cornerRadius
+                : 0
+        )
+        let cornerRadii = isExpanded
+            ? RectangleCornerRadii()
+            : sourceCornerRadii
+
+        ZStack {
+            ZStack {
+                Image(nsImage: source.image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+
+                AnimatedRemoteImage(
+                    url: url,
+                    isLooping: isAnimated,
+                    contentMode: .fit
+                )
+            }
+            .frame(width: imageFrame.width, height: imageFrame.height)
+            .position(
+                x: imageFrame.midX - clipFrame.minX,
+                y: imageFrame.midY - clipFrame.minY
+            )
+        }
+        .frame(width: clipFrame.width, height: clipFrame.height)
+        .clipShape(UnevenRoundedRectangle(cornerRadii: cornerRadii))
+        .position(x: clipFrame.midX, y: clipFrame.midY)
+        .allowsHitTesting(false)
+    }
+
+    private func sharesEdge(
+        _ edge: KeyPath<CGRect, CGFloat>
+    ) -> Bool {
+        abs(sourceFrame[keyPath: edge] - sourceVisibleFrame[keyPath: edge])
+            < 0.5
     }
 }
 

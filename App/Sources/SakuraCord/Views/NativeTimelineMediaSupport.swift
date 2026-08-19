@@ -1441,13 +1441,55 @@ struct NativeTimelineActionCapsuleOverlay: View {
     }
 }
 
+struct MediaViewerTransitionSource {
+    let itemID: String
+    let image: NSImage
+    let frameInWindow: CGRect
+    let visibleFrameInWindow: CGRect
+    let cornerRadius: CGFloat
+    let fillsFrame: Bool
+}
+
 struct NativeTimelineMediaViewerPresentation: Identifiable {
-    let id = UUID()
+    let id: UUID
     let items: [RichMediaItem]
     let selection: Int
     let authorName: String
     let authorAvatarURL: URL?
     let timestamp: Date
+    let transitionSource: MediaViewerTransitionSource?
+
+    init(
+        id: UUID = UUID(),
+        items: [RichMediaItem],
+        selection: Int,
+        authorName: String,
+        authorAvatarURL: URL?,
+        timestamp: Date,
+        transitionSource: MediaViewerTransitionSource? = nil
+    ) {
+        self.id = id
+        self.items = items
+        self.selection = selection
+        self.authorName = authorName
+        self.authorAvatarURL = authorAvatarURL
+        self.timestamp = timestamp
+        self.transitionSource = transitionSource
+    }
+
+    func withTransitionSource(
+        _ transitionSource: MediaViewerTransitionSource
+    ) -> Self {
+        Self(
+            id: id,
+            items: items,
+            selection: selection,
+            authorName: authorName,
+            authorAvatarURL: authorAvatarURL,
+            timestamp: timestamp,
+            transitionSource: transitionSource
+        )
+    }
 }
 
 enum NativeTimelineMediaViewerPlan {

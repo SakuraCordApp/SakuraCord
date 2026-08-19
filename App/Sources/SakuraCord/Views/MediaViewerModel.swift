@@ -115,6 +115,35 @@ nonisolated enum MediaViewerLayoutPolicy {
         )
     }
 
+    static func imageFrame(
+        imageSize: CGSize,
+        in frame: CGRect,
+        fillsFrame: Bool
+    ) -> CGRect {
+        guard imageSize.width > 0, imageSize.height > 0 else {
+            return frame
+        }
+        let scale = fillsFrame
+            ? max(
+                frame.width / imageSize.width,
+                frame.height / imageSize.height
+            )
+            : min(
+                frame.width / imageSize.width,
+                frame.height / imageSize.height
+            )
+        let size = CGSize(
+            width: imageSize.width * scale,
+            height: imageSize.height * scale
+        )
+        return CGRect(
+            x: frame.midX - size.width / 2,
+            y: frame.midY - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+    }
+
     static func clampedOffset(
         _ offset: CGSize,
         scale: CGFloat,

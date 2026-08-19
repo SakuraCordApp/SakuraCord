@@ -4,6 +4,8 @@ import SwiftUI
 struct MediaViewer: View {
     let presentation: NativeTimelineMediaViewerPresentation
     let isVisible: Bool
+    let transitionSourceFrame: CGRect?
+    let transitionSourceVisibleFrame: CGRect?
     let close: () -> Void
     @State private var interaction: MediaViewerInteractionModel
     @State private var feedbackTask: Task<Void, Never>?
@@ -12,10 +14,14 @@ struct MediaViewer: View {
     init(
         presentation: NativeTimelineMediaViewerPresentation,
         isVisible: Bool = true,
+        transitionSourceFrame: CGRect? = nil,
+        transitionSourceVisibleFrame: CGRect? = nil,
         close: @escaping () -> Void
     ) {
         self.presentation = presentation
         self.isVisible = isVisible
+        self.transitionSourceFrame = transitionSourceFrame
+        self.transitionSourceVisibleFrame = transitionSourceVisibleFrame
         self.close = close
         _interaction = State(
             initialValue: MediaViewerInteractionModel(
@@ -27,6 +33,14 @@ struct MediaViewer: View {
 
     var body: some View {
         let item = presentation.items[interaction.selection]
+        let transitionSource = presentation.transitionSource.flatMap { source in
+            source.itemID == item.id
+                && transitionSourceFrame != nil
+                && transitionSourceVisibleFrame != nil
+                ? source
+                : nil
+        }
+        let usesSourceTransition = transitionSource != nil
 
         GlassEffectContainer(spacing: 12) {
             GeometryReader { proxy in
@@ -40,6 +54,11 @@ struct MediaViewer: View {
 
                     MediaViewerStage(
                         item: item,
+                        isVisible: isVisible,
+                        transitionSource: transitionSource,
+                        transitionSourceFrame: transitionSourceFrame,
+                        transitionSourceVisibleFrame:
+                            transitionSourceVisibleFrame,
                         scale: interaction.scale,
                         offset: interaction.offset,
                         horizontalInset: 66,
@@ -61,8 +80,10 @@ struct MediaViewer: View {
                         )
                     )
                     .id(item.id)
-                    .scaleEffect(isVisible ? 1 : 0.965)
-                    .opacity(isVisible ? 1 : 0)
+                    .scaleEffect(
+                        usesSourceTransition || isVisible ? 1 : 0.965
+                    )
+                    .opacity(usesSourceTransition || isVisible ? 1 : 0)
 
                     MediaViewerHeader(
                         authorName: presentation.authorName,
@@ -133,7 +154,6 @@ struct MediaViewer: View {
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
                 }
-                .animation(.easeOut(duration: 0.22), value: isVisible)
             }
         }
         .ignoresSafeArea()
