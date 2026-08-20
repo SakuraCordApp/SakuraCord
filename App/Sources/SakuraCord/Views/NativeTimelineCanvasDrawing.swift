@@ -424,18 +424,31 @@ extension NativeTimelineCanvasView {
         synchronizeHoverWithCurrentPointer()
     }
 
-    func setOverlayInteractionBlocked(_ isBlocked: Bool) {
-        guard overlayBlocksInteractions != isBlocked else { return }
+    func setOverlayInteractionBlocked(
+        _ isBlocked: Bool,
+        mediaViewerHighlightedMessageID: MessageID?
+    ) {
+        let highlightChanged = self.mediaViewerHighlightedMessageID
+            != mediaViewerHighlightedMessageID
+        guard overlayBlocksInteractions != isBlocked || highlightChanged else {
+            return
+        }
         overlayBlocksInteractions = isBlocked
+        self.mediaViewerHighlightedMessageID =
+            mediaViewerHighlightedMessageID
         if isBlocked {
             pointer.clearHoverAndPressTargets()
             reactionHoverCoordinator.close()
             closeMessageProfilePopover()
             closeMentionPopover()
             closeComponentChoicePopover()
-            removeActionCapsule()
-            needsDisplay = true
         }
+        if isBlocked, mediaViewerHighlightedMessageID == nil {
+            removeActionCapsule()
+        } else {
+            reconcileActionCapsule()
+        }
+        needsDisplay = true
         updateTrackingAreas()
         window?.invalidateCursorRects(for: self)
     }
@@ -786,7 +799,10 @@ extension NativeTimelineCanvasView {
                 let countTransitions = reactionCountTransitions(
                     inMessageAt: index
                 )
+                let presentsMediaViewerHighlight =
+                    mediaViewerHighlightedMessageID == item.messageID
                 if hoveredRow == index
+                    || presentsMediaViewerHighlight
                     || hoveredCompactTimestampRow == index
                     || hoveredMention?.itemIdentifier
                         == item.identifier
@@ -810,7 +826,9 @@ extension NativeTimelineCanvasView {
                         layout: layouts[index],
                         in: rowFrame,
                         model: model,
-                        isHovered: hoveredRow == index,
+                        isHovered:
+                            hoveredRow == index
+                                || presentsMediaViewerHighlight,
                         showsCompactTimestamp:
                             hoveredCompactTimestampRow == index,
                         hoveredMention:

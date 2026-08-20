@@ -242,9 +242,13 @@ final class MediaViewerWindowHostingView: NSHostingView<AnyView> {
         )
     }
 
-    func requestDismissal(committingPresentation: Bool = true) {
+    func requestDismissal(
+        committingPresentation: Bool = true,
+        interactively: Bool = false
+    ) {
         animationState.dismiss(
-            committingPresentation: committingPresentation
+            committingPresentation: committingPresentation,
+            interactively: interactively
         )
     }
 
@@ -306,21 +310,32 @@ private final class MediaViewerWindowAnimationState {
             .reportAnimationTransactionStarted()
     }
 
-    func dismiss(committingPresentation: Bool) {
+    func dismiss(
+        committingPresentation: Bool,
+        interactively: Bool = false
+    ) {
         guard dismissalTask == nil else { return }
         let duration = if reducesMotion {
             0.12
         } else if hasTransitionSource {
-            0.18
+            interactively
+                ? MediaViewerTransitionTiming.interactiveDismissalDuration
+                : 0.18
         } else {
-            0.16
+            interactively
+                ? MediaViewerTransitionTiming.interactiveDismissalDuration
+                : 0.16
         }
         withAnimation(
             reducesMotion
                 ? .easeIn(duration: duration)
                 : hasTransitionSource
-                    ? .snappy(duration: duration)
-                    : .easeIn(duration: duration)
+                    ? interactively
+                        ? .snappy(duration: duration, extraBounce: 0.01)
+                        : .snappy(duration: duration)
+                    : interactively
+                        ? .easeInOut(duration: duration)
+                        : .easeIn(duration: duration)
         ) {
             isVisible = false
         }
@@ -350,7 +365,15 @@ private struct MediaViewerWindowAnimatedContent: View {
             transitionSourceVisibleFrame: reducesMotion
                 ? nil
                 : animationState.transitionSourceVisibleFrame,
-            close: { animationState.dismiss(committingPresentation: true) }
+            close: {
+                animationState.dismiss(committingPresentation: true)
+            },
+            closeInteractively: {
+                animationState.dismiss(
+                    committingPresentation: true,
+                    interactively: true
+                )
+            }
         )
         .onAppear {
             Task { @MainActor in

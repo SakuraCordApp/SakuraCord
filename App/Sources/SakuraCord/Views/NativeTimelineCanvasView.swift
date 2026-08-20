@@ -187,6 +187,7 @@ final class NativeTimelineCanvasView: NSView {
     var model: AppModel?
     var presentedConversationID: ChannelID?
     var mediaReadyConversationID: ChannelID?
+    var mediaViewerHighlightedMessageID: MessageID?
     var messageInteractionContext: NativeTimelineMessageInteractionContext = .conversation
     var actions: NativeTimelineRowActions?
     var onWidthChange: ((CGFloat) -> Void)?

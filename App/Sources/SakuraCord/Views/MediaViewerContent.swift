@@ -12,7 +12,7 @@ struct MediaViewerStage: View {
     let topInset: CGFloat
     let bottomInset: CGFloat
     let interaction: MediaViewerInteractionModel
-    let finishPinchDismissal: (CGFloat, CGFloat) -> Bool
+    let finishPinchDismissal: (CGFloat) -> Bool
     let open: () -> Void
     let imageContextMenuActions: MediaImageContextMenuActions?
 
@@ -75,7 +75,7 @@ private struct MediaViewerZoomableImage: View {
     let topInset: CGFloat
     let bottomInset: CGFloat
     let interaction: MediaViewerInteractionModel
-    let finishPinchDismissal: (CGFloat, CGFloat) -> Bool
+    let finishPinchDismissal: (CGFloat) -> Bool
     let contextMenuActions: MediaImageContextMenuActions?
     @GestureState private var liveMagnification: CGFloat = 1
     @GestureState private var liveTranslation = CGSize.zero
@@ -177,12 +177,10 @@ private struct MediaViewerZoomableImage: View {
                                     .isAtMinimumScale(scale),
                                     value.magnification < 1
                                 else {
-                                    interaction.updatePinchDismissal(
-                                        magnification: 1
-                                    )
+                                    updatePinchDismissal(magnification: 1)
                                     return
                                 }
-                                interaction.updatePinchDismissal(
+                                updatePinchDismissal(
                                     magnification: value.magnification
                                 )
                             }
@@ -192,8 +190,7 @@ private struct MediaViewerZoomableImage: View {
                                     value.magnification < 1
                                 {
                                     let committed = finishPinchDismissal(
-                                        value.magnification,
-                                        value.velocity
+                                        value.magnification
                                     )
                                     if committed {
                                         return
@@ -274,9 +271,29 @@ private struct MediaViewerZoomableImage: View {
             .frame(width: availableSize.width, height: availableSize.height)
         }
     }
+
+    private func updatePinchDismissal(magnification: CGFloat) {
+        guard let thresholdChange = interaction.updatePinchDismissal(
+            magnification: magnification
+        ) else { return }
+        let pattern: NSHapticFeedbackManager.FeedbackPattern =
+            switch thresholdChange {
+            case .willCommit:
+                .alignment
+            case .willCancel:
+                .levelChange
+            }
+        NSHapticFeedbackManager.defaultPerformer.perform(
+            pattern,
+            performanceTime: .drawCompleted
+        )
+    }
 }
 
 private struct MediaViewerTransitionImage: View {
+    private static let remoteImageHandoffStartProgress: CGFloat = 0.86
+    private static let remoteImageHandoffEndProgress: CGFloat = 0.58
+
     let url: URL
     let isAnimated: Bool
     let source: MediaViewerTransitionSource
@@ -311,6 +328,7 @@ private struct MediaViewerTransitionImage: View {
     var body: some View {
         let progress = min(1, max(0, presentationProgress))
         let sourceProgress = 1 - progress
+        let remoteImageOpacity = remoteImageOpacity(for: progress)
         let clipFrame = interpolatedFrame(
             from: sourceVisibleFrame,
             to: destinationFrame,
@@ -358,6 +376,7 @@ private struct MediaViewerTransitionImage: View {
                         isLooping: isAnimated,
                         contentMode: .fit
                     )
+                    .opacity(remoteImageOpacity)
                     .transition(.opacity)
                 }
             }
@@ -432,6 +451,22 @@ private struct MediaViewerTransitionImage: View {
         progress: CGFloat
     ) -> CGFloat {
         source + (destination - source) * progress
+    }
+
+    private func remoteImageOpacity(for progress: CGFloat) -> CGFloat {
+        let normalizedProgress = min(
+            1,
+            max(
+                0,
+                (progress - Self.remoteImageHandoffEndProgress)
+                    / (
+                        Self.remoteImageHandoffStartProgress
+                            - Self.remoteImageHandoffEndProgress
+                    )
+            )
+        )
+        return normalizedProgress * normalizedProgress
+            * (3 - 2 * normalizedProgress)
     }
 }
 

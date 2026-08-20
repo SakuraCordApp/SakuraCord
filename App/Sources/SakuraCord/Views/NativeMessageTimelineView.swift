@@ -765,7 +765,9 @@ extension NativeMessageTimelineCoordinator {
             canvas?.setOverlayInteractionBlocked(
                 parent.model.mediaViewerPresentation != nil
                     || parent.model.forwardingMessage != nil
-                    || parent.model.workspaceNavigationOverlay != nil
+                    || parent.model.workspaceNavigationOverlay != nil,
+                mediaViewerHighlightedMessageID:
+                    parent.model.mediaViewerPresentation?.messageID
             )
             timelineUpdateOperation(parent, scrollView)
         }

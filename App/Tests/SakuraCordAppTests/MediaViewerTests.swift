@@ -99,26 +99,25 @@ struct MediaViewerTests {
         model.updatePinchDismissal(magnification: 0.7)
         #expect(model.pinchDismissalProgress == 0)
         #expect(
-            !model.shouldCommitPinchDismissal(
-                magnification: 0.7,
-                velocity: -2
-            )
+            !model.shouldCommitPinchDismissal(magnification: 0.7)
         )
 
         model.commitScale(1)
-        model.updatePinchDismissal(magnification: 0.72)
-        #expect(model.pinchDismissalProgress == 1)
         #expect(
-            model.shouldCommitPinchDismissal(
-                magnification: 0.8,
-                velocity: 0
-            )
+            model.updatePinchDismissal(magnification: 0.65)
+                == .willCommit
+        )
+        #expect(abs(model.pinchDismissalProgress - 0.405) < 0.001)
+        #expect(
+            model.shouldCommitPinchDismissal(magnification: 0.68)
+        )
+        #expect(model.updatePinchDismissal(magnification: 0.68) == nil)
+        #expect(
+            model.updatePinchDismissal(magnification: 0.71)
+                == .willCancel
         )
         #expect(
-            !model.shouldCommitPinchDismissal(
-                magnification: 0.9,
-                velocity: 0
-            )
+            !model.shouldCommitPinchDismissal(magnification: 0.71)
         )
     }
 

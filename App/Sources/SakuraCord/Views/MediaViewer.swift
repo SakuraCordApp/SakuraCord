@@ -7,6 +7,7 @@ struct MediaViewer: View {
     let transitionSourceFrame: CGRect?
     let transitionSourceVisibleFrame: CGRect?
     let close: () -> Void
+    let closeInteractively: () -> Void
     @State private var interaction: MediaViewerInteractionModel
     @State private var feedbackTask: Task<Void, Never>?
     @FocusState private var keyboardNavigationIsFocused: Bool
@@ -16,13 +17,15 @@ struct MediaViewer: View {
         isVisible: Bool = true,
         transitionSourceFrame: CGRect? = nil,
         transitionSourceVisibleFrame: CGRect? = nil,
-        close: @escaping () -> Void
+        close: @escaping () -> Void,
+        closeInteractively: @escaping () -> Void
     ) {
         self.presentation = presentation
         self.isVisible = isVisible
         self.transitionSourceFrame = transitionSourceFrame
         self.transitionSourceVisibleFrame = transitionSourceVisibleFrame
         self.close = close
+        self.closeInteractively = closeInteractively
         _interaction = State(
             initialValue: MediaViewerInteractionModel(
                 itemCount: presentation.items.count,
@@ -259,18 +262,21 @@ struct MediaViewer: View {
         )
     }
 
-    private func finishPinchDismissal(
-        magnification: CGFloat,
-        velocity: CGFloat
-    ) -> Bool {
+    private func finishPinchDismissal(magnification: CGFloat) -> Bool {
         let committed = interaction.shouldCommitPinchDismissal(
-            magnification: magnification,
-            velocity: velocity
+            magnification: magnification
         )
         if committed {
-            close()
+            closeInteractively()
         } else {
-            withAnimation(.snappy(duration: 0.2)) {
+            withAnimation(
+                .snappy(
+                    duration:
+                        MediaViewerTransitionTiming
+                            .interactiveCancellationDuration,
+                    extraBounce: 0.04
+                )
+            ) {
                 interaction.cancelPinchDismissal()
             }
         }

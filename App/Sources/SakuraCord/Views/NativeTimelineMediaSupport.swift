@@ -1452,6 +1452,7 @@ struct MediaViewerTransitionSource {
 
 struct NativeTimelineMediaViewerPresentation: Identifiable {
     let id: UUID
+    let messageID: MessageID?
     let items: [RichMediaItem]
     let selection: Int
     let authorName: String
@@ -1461,6 +1462,7 @@ struct NativeTimelineMediaViewerPresentation: Identifiable {
 
     init(
         id: UUID = UUID(),
+        messageID: MessageID? = nil,
         items: [RichMediaItem],
         selection: Int,
         authorName: String,
@@ -1469,6 +1471,7 @@ struct NativeTimelineMediaViewerPresentation: Identifiable {
         transitionSource: MediaViewerTransitionSource? = nil
     ) {
         self.id = id
+        self.messageID = messageID
         self.items = items
         self.selection = selection
         self.authorName = authorName
@@ -1482,6 +1485,7 @@ struct NativeTimelineMediaViewerPresentation: Identifiable {
     ) -> Self {
         Self(
             id: id,
+            messageID: messageID,
             items: items,
             selection: selection,
             authorName: authorName,
@@ -1627,6 +1631,7 @@ enum NativeTimelineMediaViewerPlan {
             $0.id == selectedID
         }) else { return nil }
         return NativeTimelineMediaViewerPresentation(
+            messageID: message.id,
             items: items,
             selection: selection,
             authorName: message.guildMember?.nickname

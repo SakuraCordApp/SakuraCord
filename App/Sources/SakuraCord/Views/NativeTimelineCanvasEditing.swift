@@ -194,7 +194,12 @@ extension NativeTimelineCanvasView {
             return
         }
         guard editingMessageID == nil,
-              let index = hoveredRow,
+              let index = hoveredRow
+                ?? mediaViewerHighlightedMessageID.flatMap({ messageID in
+                    items.firstIndex(where: {
+                        $0.messageID == messageID
+                    })
+                }),
               items.indices.contains(index),
               case let .message(row, _, _) = items[index],
               let model,
