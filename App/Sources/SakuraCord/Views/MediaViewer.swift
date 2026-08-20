@@ -60,12 +60,11 @@ struct MediaViewer: View {
                             .allowsHitTesting(false)
                     }
 
-                    Color.black.opacity(
-                        WindowModalVisualStyle.mediaViewerBackgroundDimmingOpacity
+                    MediaViewerBackdrop(
+                        isVisible: isVisible,
+                        interaction: interaction,
+                        close: close
                     )
-                        .opacity(isVisible ? 1 : 0)
-                        .contentShape(Rectangle())
-                        .onTapGesture(perform: close)
 
                     MediaViewerStage(
                         item: item,
@@ -74,14 +73,11 @@ struct MediaViewer: View {
                         transitionSourceFrame: transitionSourceFrame,
                         transitionSourceVisibleFrame:
                             transitionSourceVisibleFrame,
-                        scale: interaction.scale,
-                        offset: interaction.offset,
                         horizontalInset: 66,
                         topInset: MediaViewerTopChromeMetrics.mediaTopInset,
                         bottomInset: presentation.items.count > 1 ? 82 : 14,
-                        commitScale: interaction.commitScale,
-                        commitOffset: interaction.commitOffset,
-                        toggleZoom: interaction.toggleZoom,
+                        interaction: interaction,
+                        finishPinchDismissal: finishPinchDismissal,
                         open: {
                             MediaViewerActionService.openInBrowser(item.url)
                         },
@@ -95,10 +91,13 @@ struct MediaViewer: View {
                         )
                     )
                     .id(item.id)
-                    .scaleEffect(
-                        usesSourceTransition || isVisible ? 1 : 0.965
+                    .modifier(
+                        MediaViewerStagePresentationEffect(
+                            isVisible: isVisible,
+                            usesSourceTransition: usesSourceTransition,
+                            interaction: interaction
+                        )
                     )
-                    .opacity(usesSourceTransition || isVisible ? 1 : 0)
 
                     MediaViewerHeader(
                         authorName: presentation.authorName,
@@ -113,8 +112,13 @@ struct MediaViewer: View {
                         .top,
                         MediaViewerTopChromeMetrics.outerPadding
                     )
-                    .offset(y: isVisible ? 0 : -10)
-                    .opacity(isVisible ? 1 : 0)
+                    .modifier(
+                        MediaViewerChromePresentationEffect(
+                            isVisible: isVisible,
+                            hiddenOffsetY: -10,
+                            interaction: interaction
+                        )
+                    )
 
                     MediaViewerTopControls(
                         item: item,
@@ -134,8 +138,13 @@ struct MediaViewer: View {
                         .top,
                         MediaViewerTopChromeMetrics.outerPadding
                     )
-                    .offset(y: isVisible ? 0 : -10)
-                    .opacity(isVisible ? 1 : 0)
+                    .modifier(
+                        MediaViewerChromePresentationEffect(
+                            isVisible: isVisible,
+                            hiddenOffsetY: -10,
+                            interaction: interaction
+                        )
+                    )
 
                     if presentation.items.count > 1 {
                         MediaViewerNavigationButtons(
@@ -145,7 +154,13 @@ struct MediaViewer: View {
                             moveForward: { move(1) }
                         )
                         .padding(.horizontal, 18)
-                        .opacity(isVisible ? 1 : 0)
+                        .modifier(
+                            MediaViewerChromePresentationEffect(
+                                isVisible: isVisible,
+                                hiddenOffsetY: 0,
+                                interaction: interaction
+                            )
+                        )
 
                         MediaViewerThumbnailStrip(
                             items: presentation.items,
@@ -158,8 +173,13 @@ struct MediaViewer: View {
                         )
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                         .padding(.bottom, 14)
-                        .offset(y: isVisible ? 0 : 14)
-                        .opacity(isVisible ? 1 : 0)
+                        .modifier(
+                            MediaViewerChromePresentationEffect(
+                                isVisible: isVisible,
+                                hiddenOffsetY: 14,
+                                interaction: interaction
+                            )
+                        )
                     }
 
                     if let feedback = interaction.feedback {
@@ -239,6 +259,24 @@ struct MediaViewer: View {
         )
     }
 
+    private func finishPinchDismissal(
+        magnification: CGFloat,
+        velocity: CGFloat
+    ) -> Bool {
+        let committed = interaction.shouldCommitPinchDismissal(
+            magnification: magnification,
+            velocity: velocity
+        )
+        if committed {
+            close()
+        } else {
+            withAnimation(.snappy(duration: 0.2)) {
+                interaction.cancelPinchDismissal()
+            }
+        }
+        return committed
+    }
+
     private func copyImage(_ item: RichMediaItem) {
         Task {
             do {
@@ -287,5 +325,59 @@ struct MediaViewer: View {
                 interaction.feedback = nil
             }
         }
+    }
+}
+
+private struct MediaViewerBackdrop: View {
+    let isVisible: Bool
+    let interaction: MediaViewerInteractionModel
+    let close: () -> Void
+
+    var body: some View {
+        let presentationProgress = isVisible
+            ? 1 - interaction.pinchDismissalProgress
+            : 0
+
+        Color.black.opacity(
+            WindowModalVisualStyle.mediaViewerBackgroundDimmingOpacity
+                * presentationProgress
+        )
+        .contentShape(Rectangle())
+        .onTapGesture(perform: close)
+    }
+}
+
+private struct MediaViewerStagePresentationEffect: ViewModifier {
+    let isVisible: Bool
+    let usesSourceTransition: Bool
+    let interaction: MediaViewerInteractionModel
+
+    func body(content: Content) -> some View {
+        let presentationProgress = isVisible
+            ? 1 - interaction.pinchDismissalProgress
+            : 0
+        content
+            .scaleEffect(
+                usesSourceTransition
+                    ? 1
+                    : 0.965 + presentationProgress * 0.035
+            )
+            .opacity(usesSourceTransition ? 1 : presentationProgress)
+    }
+}
+
+private struct MediaViewerChromePresentationEffect: ViewModifier {
+    let isVisible: Bool
+    let hiddenOffsetY: CGFloat
+    let interaction: MediaViewerInteractionModel
+
+    func body(content: Content) -> some View {
+        let presentationProgress = isVisible
+            ? 1 - interaction.pinchDismissalProgress
+            : 0
+        content
+            .offset(y: hiddenOffsetY * (1 - presentationProgress))
+            .opacity(presentationProgress)
+            .scaleEffect(0.975 + presentationProgress * 0.025)
     }
 }
