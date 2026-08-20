@@ -776,6 +776,12 @@ private struct ChannelRow: View {
                 .foregroundStyle(channelNameForegroundStyle)
                 .lineLimit(1)
             Spacer()
+            if hasActiveScreenShare {
+                Image(systemName: "display")
+                    .font(.caption)
+                    .foregroundStyle(Color(hex: 0x23A55A))
+                    .accessibilityLabel("Active screen share")
+            }
             if isVoiceConnected {
                 Image(systemName: "waveform")
                     .font(.caption)
@@ -838,6 +844,15 @@ private struct ChannelRow: View {
                 }
             )
         }
+    }
+
+    private var hasActiveScreenShare: Bool {
+        guard channel.kind == .voice else { return false }
+        return model.applicationStreams.keys.contains { $0.channelID == channel.id }
+            || model.localApplicationStreamKey?.channelID == channel.id
+            || model.voiceStates.values.contains {
+                $0.channelID == channel.id && $0.isStreaming
+            }
     }
 
     private var systemImage: String {

@@ -75,6 +75,17 @@ struct VoiceControlBar<SettingsControl: View>: View {
 
     private var controlRow: some View {
         HStack(spacing: 7) {
+            VoiceSquareButton(
+                systemImage: model.localApplicationStreamKey == nil
+                    ? "rectangle.on.rectangle" : "rectangle.on.rectangle.slash",
+                isAlert: model.localApplicationStreamKey != nil,
+                isDisabled: model.voiceSessionState != .connected,
+                help: model.localApplicationStreamKey == nil
+                    ? "Share Screen" : "Screen Share Options"
+            ) {
+                Task { await model.presentScreenSharePreview() }
+            }
+
             VoiceSplitButton(
                 systemImage: model.isCameraEnabled ? "video.fill" : "video.slash.fill",
                 isAlert: !model.isCameraEnabled,
@@ -250,14 +261,39 @@ struct VoiceCallControlDock: View {
     @State private var showInputControls = false
     @State private var showOutputControls = false
     @State private var showCameraControls = false
+    @State private var showScreenShareControls = false
 
     var body: some View {
         GlassEffectContainer(spacing: 8) {
             HStack(spacing: 8) {
+                if model.localApplicationStreamKey == nil {
+                    CallDockButton(
+                        title: "Share Screen",
+                        systemImage: "rectangle.on.rectangle"
+                    ) {
+                        Task { await model.presentScreenSharePreview() }
+                    }
+                    .disabled(model.voiceSessionState != .connected)
+                } else {
+                    CallDockSplitButton(
+                        title: "Stop Sharing",
+                        systemImage: "rectangle.on.rectangle.slash",
+                        isAlert: false,
+                        tintColor: Color(hex: 0x5865F2),
+                        isDisabled: model.voiceSessionState != .connected,
+                        primaryAction: { Task { await model.stopScreenSharing() } },
+                        secondaryAction: { showScreenShareControls.toggle() }
+                    )
+                    .popover(isPresented: $showScreenShareControls, arrowEdge: .bottom) {
+                        ScreenShareControlsPopover(model: model)
+                    }
+                }
+
                 CallDockSplitButton(
                     title: model.isCameraEnabled ? "Stop Video" : "Start Video",
                     systemImage: model.isCameraEnabled ? "video.slash.fill" : "video.fill",
                     isAlert: false,
+                    tintColor: model.isCameraEnabled ? Color(hex: 0x23A55A) : nil,
                     isDisabled: model.voiceSessionState != .connected,
                     primaryAction: { Task { await model.toggleCamera() } },
                     secondaryAction: { showCameraControls.toggle() }
@@ -271,6 +307,7 @@ struct VoiceCallControlDock: View {
                     title: model.isVoiceMuted ? "Unmute" : "Mute",
                     systemImage: model.isVoiceMuted ? "mic.slash.fill" : "mic.fill",
                     isAlert: model.isVoiceMuted,
+                    tintColor: nil,
                     primaryAction: { Task { await model.toggleVoiceMute() } },
                     secondaryAction: { showInputControls.toggle() }
                 )
@@ -282,6 +319,7 @@ struct VoiceCallControlDock: View {
                     title: model.isVoiceDeafened ? "Undeafen" : "Deafen",
                     systemImage: model.isVoiceDeafened ? "headphones.slash" : "headphones",
                     isAlert: model.isVoiceDeafened,
+                    tintColor: nil,
                     primaryAction: { Task { await model.toggleVoiceDeafen() } },
                     secondaryAction: { showOutputControls.toggle() }
                 )
@@ -330,6 +368,179 @@ struct VoiceCallControlDock: View {
     }
 }
 
+private struct ScreenShareControlsPopover: View {
+    let model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var showFrameRateControls = false
+    @State private var showQualityControls = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            actionRow(
+                title: "Stop Sharing",
+                systemImage: "rectangle.on.rectangle.slash",
+                color: Color(hex: 0xF23F43)
+            ) {
+                dismiss()
+                Task { await model.stopScreenSharing() }
+            }
+
+            actionRow(
+                title: "Change Stream",
+                systemImage: "rectangle.on.rectangle.angled"
+            ) {
+                dismiss()
+                Task { await model.presentScreenSharePreview() }
+            }
+
+            Button { showFrameRateControls.toggle() } label: {
+                HStack(spacing: 10) {
+                    Label("Frame Rate", systemImage: "gauge.with.dots.needle.67percent")
+                    Spacer(minLength: 24)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 8)
+                .frame(maxWidth: .infinity)
+                .frame(height: 34)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .screenSharePopoverHoverEffect()
+            .popover(isPresented: $showFrameRateControls, arrowEdge: .trailing) {
+                ScreenShareFrameRatePopover(model: model)
+            }
+
+            Button { showQualityControls.toggle() } label: {
+                HStack(spacing: 10) {
+                    Label("Stream Quality", systemImage: "sparkles.tv")
+                    Spacer(minLength: 24)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 8)
+                .frame(maxWidth: .infinity)
+                .frame(height: 34)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .screenSharePopoverHoverEffect()
+            .popover(isPresented: $showQualityControls, arrowEdge: .trailing) {
+                ScreenShareQualityPopover(model: model)
+            }
+
+            Button {
+                Task {
+                    var settings = model.screenShareSettings
+                    settings.includesAudio.toggle()
+                    await model.updateScreenShareSettings(settings)
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    Label("Share Audio", systemImage: model.screenShareSettings.includesAudio
+                        ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                    Spacer(minLength: 24)
+                    Image(systemName: model.screenShareSettings.includesAudio
+                        ? "checkmark.square.fill" : "square")
+                        .foregroundStyle(model.screenShareSettings.includesAudio
+                            ? Color.accentColor : Color.secondary)
+                }
+                .padding(.horizontal, 8)
+                .frame(maxWidth: .infinity)
+                .frame(height: 34)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .screenSharePopoverHoverEffect()
+        }
+        .font(.callout)
+        .padding(12)
+        .frame(width: 255)
+    }
+
+    private func actionRow(
+        title: String,
+        systemImage: String,
+        color: Color = .primary,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .foregroundStyle(color)
+                .padding(.horizontal, 8)
+                .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .screenSharePopoverHoverEffect()
+    }
+}
+
+struct ScreenShareQualityPopover: View {
+    let model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Stream Quality")
+                .font(.headline)
+                .padding(.horizontal, 4)
+                .padding(.bottom, 4)
+            ForEach(ScreenShareQuality.allCases, id: \.self) { quality in
+                Button {
+                    Task {
+                        var settings = model.screenShareSettings
+                        settings.quality = quality
+                        await model.updateScreenShareSettings(settings)
+                    }
+                } label: {
+                    HStack {
+                        Text(quality.title)
+                        Spacer()
+                        if model.screenShareSettings.quality == quality {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(Color.accentColor)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 30)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .screenSharePopoverHoverEffect()
+            }
+        }
+        .font(.callout)
+        .padding(12)
+        .frame(width: 190)
+    }
+}
+
+private struct ScreenSharePopoverHoverEffect: ViewModifier {
+    @State private var isHovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                isHovered ? Color.primary.opacity(0.09) : Color.clear,
+                in: ConcentricRectangle(cornerRadius: 7, style: .continuous)
+            )
+            .onHover { hovering in
+                withAnimation(.snappy(duration: 0.14)) {
+                    isHovered = hovering
+                }
+            }
+    }
+}
+
+extension View {
+    func screenSharePopoverHoverEffect() -> some View {
+        modifier(ScreenSharePopoverHoverEffect())
+    }
+}
+
 private struct CallDockButton: View {
     let title: String
     let systemImage: String
@@ -353,6 +564,7 @@ private struct CallDockSplitButton: View {
     let title: String
     let systemImage: String
     let isAlert: Bool
+    var tintColor: Color?
     var isDisabled = false
     let primaryAction: () -> Void
     let secondaryAction: () -> Void
@@ -381,13 +593,18 @@ private struct CallDockSplitButton: View {
             }
             .buttonStyle(.plain)
         }
-        .foregroundStyle(isAlert ? Color(hex: 0xF23F43) : Color.primary)
+        .foregroundStyle(effectiveTint ?? Color.primary)
         .glassEffect(
-            isAlert ? .regular.tint(Color(hex: 0xF23F43).opacity(0.18)).interactive() : .regular.interactive(),
+            effectiveTint.map { .regular.tint($0.opacity(0.18)).interactive() }
+                ?? .regular.interactive(),
             in: Capsule()
         )
         .disabled(isDisabled)
         .opacity(isDisabled ? 0.42 : 1)
+    }
+
+    private var effectiveTint: Color? {
+        tintColor ?? (isAlert ? Color(hex: 0xF23F43) : nil)
     }
 }
 

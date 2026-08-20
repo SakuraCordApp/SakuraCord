@@ -86,6 +86,37 @@ proportion to its risk:
 | `./script/code_quality.sh check` | Run the pinned SwiftFormat and SwiftLint policy |
 | `./script/ci.sh` | Run the local CI entry point |
 
+### Persistent local code-signing identity
+
+The build script uses an installed Apple Development identity, or the SakuraCord
+local development identity, automatically so macOS sees rebuilt development
+apps as the same signed application. If more than one identity is installed,
+select one explicitly by its name or SHA-1 hash:
+
+```sh
+SAKURACORD_CODE_SIGN_IDENTITY='Apple Development: Developer Name (TEAMID)' \
+  ./script/build_and_run.sh run
+```
+
+List the available identities with
+`security find-identity -v -p codesigning`. If none are available, either create
+an Apple Development certificate from Xcode's Accounts settings or install the
+repository's machine-local development identity:
+
+```sh
+./script/setup_local_signing_identity.sh
+```
+
+The local identity is stored only in the login keychain, is trusted only for
+code signing, and is not suitable for distributing the app. The build script
+falls back to ad-hoc signing when no identity is installed.
+
+Go Live uses ScreenCaptureKit's system content picker. A source selected there
+is authorized for that capture session and does not require a separate global
+Screen Recording grant. Do not reset TCC or direct users to System Settings when
+the picker opens successfully; a permission warning in that case indicates an
+incorrect non-picker capture path.
+
 See the [testing guide](TESTING.md) before adding or materially changing
 committed tests. Before proposing a broad change, the complete local check is:
 

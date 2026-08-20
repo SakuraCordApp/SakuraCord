@@ -359,6 +359,7 @@ extension AppModel {
 
     func consumePresenceAndCommandEvent(_ event: ClientEvent) {
         if consumeForwardSearchPeopleEvent(event) { return }
+        if consumeApplicationStreamEvent(event) { return }
         switch event {
         case .currentUserRolesChanged, .currentUserRolesSnapshot:
             consumeCurrentUserRoleEvent(event)
@@ -454,6 +455,7 @@ extension AppModel {
     func consumeConnectionChange(_ state: ConnectionState) {
         let previousState = connectionState
         connectionState = state
+        handleApplicationStreamsForGatewayState(state)
         if state != .ready {
             if previousState == .ready {
                 // A resumed session can reconcile missed messages through the

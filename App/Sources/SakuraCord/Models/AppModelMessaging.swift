@@ -1051,6 +1051,7 @@ extension AppModel {
         voiceMigrationTask = nil
         voiceEventTask?.cancel()
         voiceEventTask = nil
+        await teardownApplicationStreams(account: account, notifyDiscord: true)
         await departingSession?.disconnect()
         guard isCurrentAccountSession(account),
               voiceMigrationGeneration == voiceGeneration,
@@ -1798,6 +1799,7 @@ extension AppModel {
 
     func reportMainWindowActive(_ isActive: Bool) {
         mainWindowIsActive = isActive
+        updateApplicationStreamWindowActivity(isActive)
         let session = accountSession()
         let precedingUpdate = clientAppStateUpdateTask
         clientAppStateUpdateTask = Task {

@@ -17,6 +17,20 @@ enum ServerRailNavigationDestination: Equatable {
     case guild(GuildID)
 }
 
+enum ApplicationStreamPlaybackState: Equatable {
+    case available
+    case connecting
+    case watching
+    case broadcasting
+    case reconnecting
+    case failed(String)
+}
+
+struct ApplicationStreamDemandIntent: Equatable {
+    var isEnabled: Bool
+    var pixelCount: Int?
+}
+
 nonisolated struct ConversationPermissionBasis: Sendable {
     let guild: Guild
     let resolvedBasePermissions: UInt64?
@@ -25,22 +39,22 @@ nonisolated struct ConversationPermissionBasis: Sendable {
     let currentUserIsPending: Bool
 }
 
+struct CommandMemberQuery: Hashable {
+    var guildID: GuildID
+    var query: String
+}
+
+struct MentionMemberSearchCacheEntry {
+    var members: [Member]
+    var storedAt: Date
+}
+
 @Observable
 final class AppModel {
     enum ThreadErrorScope {
         case initialPage
         case earlierPage
         case action
-    }
-
-    struct CommandMemberQuery: Hashable {
-        var guildID: GuildID
-        var query: String
-    }
-
-    struct MentionMemberSearchCacheEntry {
-        var members: [Member]
-        var storedAt: Date
     }
 
     struct MemberListViewportRequest: Equatable {
@@ -425,6 +439,20 @@ final class AppModel {
     var voiceEncryptionVersion: UInt16?
     var voiceLatencyMilliseconds: Int?
     var voiceErrorMessage: String?
+    var applicationStreams: [ApplicationStreamKey: ApplicationStream] = [:]
+    var applicationStreamStates:
+        [ApplicationStreamKey: ApplicationStreamPlaybackState] = [:]
+    var applicationStreamFrames: [ApplicationStreamKey: VoiceVideoFrame] = [:]
+    var localApplicationStreamKey: ApplicationStreamKey?
+    var isScreenSharePreviewPresented = false
+    var screenShareSettings = ScreenShareSettings()
+    var screenSharePreviewFrame: VoiceVideoFrame?
+    var screenShareCaptureState: ScreenShareCaptureState = .idle
+    var screenShareSourceName = "Choose a source"
+    var screenShareErrorMessage: String?
+    var isStartingScreenShare = false
+    var isScreenShareCaptureAvailable = false
+    var isLocalScreenSharePreviewPaused = false
     var voiceDeviceStatusMessage: String?
     var voiceStates: [UserID: VoiceParticipantState] = [:] {
         didSet {
@@ -1102,6 +1130,19 @@ final class AppModel {
     @ObservationIgnored var voiceEventTask: Task<Void, Never>?
     @ObservationIgnored var voiceMigrationTask: Task<Void, Never>?
     @ObservationIgnored var voiceSession: DiscordVoiceSession?
+    @ObservationIgnored var applicationStreamSessions:
+        [ApplicationStreamKey: DiscordVoiceSession] = [:]
+    @ObservationIgnored var applicationStreamEventTasks:
+        [ApplicationStreamKey: Task<Void, Never>] = [:]
+    @ObservationIgnored var applicationStreamOperationGenerations:
+        [ApplicationStreamKey: UInt64] = [:]
+    @ObservationIgnored var applicationStreamDemandGenerations:
+        [ApplicationStreamKey: UInt64] = [:]
+    @ObservationIgnored var applicationStreamDemandIntents:
+        [ApplicationStreamKey: ApplicationStreamDemandIntent] = [:]
+    @ObservationIgnored var screenShareCaptureEngine: ScreenShareCaptureEngine?
+    @ObservationIgnored var screenSharePreviewTask: Task<Void, Never>?
+    @ObservationIgnored var screenShareCaptureEventTask: Task<Void, Never>?
     @ObservationIgnored var mediaDeviceMonitor: MediaDeviceMonitor?
     @ObservationIgnored var voiceMigrationGeneration = 0
     @ObservationIgnored var voiceActionGeneration: UInt64 = 0

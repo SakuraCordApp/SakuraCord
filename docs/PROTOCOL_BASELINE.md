@@ -78,6 +78,33 @@ cover timed-out GET, read-only DM-search POST, generation coalescing, and
 non-replayed mutation behavior. No new Discord route, header, body, or account
 action was introduced for this recovery audit.
 
+Go Live was re-audited on 20 August 2026 against a clean, authenticated,
+renamed official Discord desktop `0.0.408` (Electron `42.7.1`, Chromium
+`148.0.7778.280`) using an isolated profile and CDP. The current main asset was
+`web.e7ec05b4366c76c6.js`, SHA-256
+`90bc5211ada76376a0a0131668e57f2889e5cfc7be9f52c8fd4a63d031ed35e0`.
+The inspection retained no credential, cookie, authorization value, personal
+identifier, media frame, or unsanitized payload. DiscordKit commit
+`32b2e3130f5da93f4c95646e7fbbe1abe5045960` independently corroborated the
+main-Gateway opcodes, event fields, stream-key grammar, and preview route, but
+contains no capture or RTC media implementation. Pinned Paicord contains the
+opcode constants and voice-state flag but leaves stream dispatch incomplete;
+pinned Swiftcord v1 contains no matching Go Live implementation. Those sources
+were cross-checks, not media code to copy.
+
+Three controlled entire-screen broadcasts were also started and stopped in
+that authenticated client in the `Testing Server 2` voice channel while the
+main page and worker targets were monitored through CDP. Each observed start
+sent opcode 18 with `type:guild`, guild/channel IDs, and
+`preferred_region:"warsaw"`, followed by opcode 22 with the allocated key and
+`paused:false`; each stop sent opcode 19 with only that key. No `/streams/`
+HTTP request was made during any observed start or stop. The REST preview route
+below is therefore a separately verified on-demand read, not part of broadcast
+allocation or teardown.
+Authenticated interoperability in the same server additionally confirmed that
+SakuraCord can decode/watch an official-client broadcast and that an official
+client can watch SakuraCord's broadcast.
+
 Server search uses `GET /guilds/{guild}/messages/search`; it does not use the
 older selected-channel route. The ordered query contains optional repeated
 `author_id`, `channel_id`, `mentions`, `has`, and `author_type` items, optional
@@ -761,7 +788,12 @@ is not the whole network surface. The remaining production connections are:
   `VOICE_SERVER_UPDATE`, normalized to `wss://{endpoint}?v=8`, followed by UDP
   discovery and encrypted RTP to the server-supplied IP and port. This path is
   reached only by an explicit voice/call action and uses the existing
-  DAVE-capable voice state machine; and
+  DAVE-capable voice state machine;
+- for each explicitly started or watched Go Live stream, a separate Voice v8
+  Gateway/DAVE/UDP connection at the endpoint supplied by
+  `STREAM_SERVER_UPDATE`. It identifies with the main voice session ID, the
+  stream RTC server/channel IDs, and one `screen` video stream. It neither
+  opens another microphone nor plays the voice channel's audio; and
 - unauthenticated HTTPS media GETs to `cdn.discordapp.com` and
   `media.discordapp.net` for server-returned or locally derived Discord asset
   paths. These loads use an isolated ephemeral URLSession with memory-cache
@@ -1409,6 +1441,68 @@ account action or traffic capture was performed.
   omits a nonce and permits a manual retry after failure, so SakuraCord follows
   the current first-party shape plus the stricter nonce, deduplication, and
   one-attempt safety rules above.
+
+### Go Live screen sharing
+
+The dated 20 August evidence above establishes two distinct control planes:
+the main Gateway owns stream discovery and viewer intent, while a separate
+Voice v8 connection owns each selected screen media session.
+
+- Stream keys are `guild:{guild_id}:{channel_id}:{owner_id}` or
+  `call:{channel_id}:{owner_id}`. Starting sends opcode 18 `STREAM_CREATE` with
+  `type`, nullable `guild_id`, `channel_id`, and nullable `preferred_region`.
+  Watching one stream sends opcode 20 `STREAM_WATCH`; leaving that stream or
+  ending a local broadcast sends opcode 19 `STREAM_DELETE`. Opcode 21
+  `STREAM_PING` retains an interrupted allocation during reconnect, and opcode
+  22 `STREAM_SET_PAUSED` carries `stream_key` plus `paused`. These explicit
+  watch/leave operations never leave the surrounding voice channel.
+- `STREAM_CREATE` carries the stable key plus optional region, viewer IDs, RTC
+  server/channel IDs, and pause state. `STREAM_UPDATE` changes region, viewers,
+  or pause state without replacing absent fields. `STREAM_SERVER_UPDATE`
+  supplies the key, nullable endpoint, and token; a null endpoint means wait for
+  replacement allocation rather than deleting the stream. `STREAM_DELETE`
+  carries the key plus optional unavailable/reason state and tears down only
+  that stream's media and decode resources. When `unavailable` is true, the
+  stream remains reconnecting: SakuraCord retains the local capture or explicit
+  viewer intent, sends `STREAM_PING`, and attaches the replacement stream RTC
+  allocation instead of treating the event as a terminal stop.
+- The stream Voice Identify uses the current user's main voice `session_id`,
+  `server_id = rtc_server_id`, `channel_id = rtc_channel_id` (the current client
+  also tolerates Discord's numeric `rtc_server_id - 1` fallback), DAVE maximum,
+  `video:true`, and a `screen` RID. A broadcaster advertises screen H.264 with
+  Voice opcode 12. A viewer requests the chosen SSRC at quality 100 with Voice
+  opcode 15, includes the rendered tile's `pixelCounts` hint, and sends zero
+  demand when the share is hidden or unwatched. Incoming sink-wants payloads
+  may include that nested `pixelCounts` map; the broadcaster ignores it for
+  aggregate on/off demand without rejecting the opcode.
+- Optional stream audio uses the stream Voice connection's negotiated audio
+  SSRC and normal DAVE-protected Opus RTP. Before sending it, the broadcaster
+  announces Voice opcode 5 with the Soundshare flag (`1 << 1`), which carries
+  contextual video audio without a microphone speaking indicator. It sends
+  five Opus silence frames before becoming inactive. A viewer decrypts this
+  audio in the stream session and routes it into the existing call playback
+  engine rather than opening a second microphone or output graph.
+- `GET /streams/{stream_key}/preview?version={milliseconds}` returns a nullable
+  CDN URL used only as lightweight pre-join presentation. It is a retry-safe
+  read under the shared scheduler. A first-party broadcaster may additionally
+  post a bounded JPEG data-URL thumbnail to the same preview family; SakuraCord
+  does not need that mutation for media delivery and does not invent or retry
+  it.
+- Main-Gateway opcode 4 now carries guild/channel, mute/deafen, and
+  `self_video`; the current first-party client does not send the older fixed
+  `self_stream:false` field. Remote/local active-share presence is instead
+  projected from pushed voice-state `self_stream` and the stream event store.
+
+Screen source selection is an Apple framework boundary, not a Discord
+protocol. SakuraCord prepares `SCContentSharingPicker` when the preview opens
+but creates no capture stream until the user explicitly chooses a source. A
+picker cancellation returns to the source-less preview; dismissing the preview
+releases the picker observer. Once selected, SakuraCord owns one `SCStream`,
+updates its content filter/configuration in place for source or quality changes,
+accepts only complete IOSurface-backed screen frames, and optionally captures
+48 kHz stereo source audio while excluding SakuraCord's own process audio. It
+releases picker, stream, preview, audio/video encoders, decoder, and transport
+resources on popup dismissal, stop, failure, source removal, or disconnect.
 
 ### Private calls
 

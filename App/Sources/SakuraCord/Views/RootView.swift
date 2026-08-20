@@ -245,7 +245,7 @@ private struct ChatRootView: View {
             .frame(width: 0, height: 0)
         }
         .background {
-            ForwardMessageWindowOverlay(model: model)
+            CommunicationWindowOverlays(model: model)
                 .frame(width: 0, height: 0)
         }
         .background {

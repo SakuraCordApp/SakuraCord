@@ -812,7 +812,7 @@ private func appendETFBinary(_ value: String, to data: inout Data) {
     #expect(joinData["channel_id"] as? String == "230")
     #expect(joinData["self_mute"] as? Bool == true)
     #expect(joinData["self_video"] as? Bool == false)
-    #expect(joinData["self_stream"] as? Bool == false)
+    #expect(joinData["self_stream"] == nil)
 
     let camera = DiscordGatewayPayloadFactory.voiceStateUpdate(
         guildID: GuildID(rawValue: 100),
@@ -832,6 +832,132 @@ private func appendETFBinary(_ value: String, to data: inout Data) {
     )
     let leaveData = try #require(leave["d"] as? [String: Any])
     #expect(leaveData["channel_id"] is NSNull)
+}
+
+@Test func `application stream keys payloads and dispatches match current gateway`() throws {
+    let key = try #require(
+        ApplicationStreamKey(rawValue: "guild:100:230:300")
+    )
+    #expect(key.type == .guild)
+    #expect(key.guildID == GuildID(rawValue: 100))
+    #expect(key.channelID == ChannelID(rawValue: 230))
+    #expect(key.ownerID == UserID(rawValue: 300))
+    #expect(key.rawValue == "guild:100:230:300")
+    #expect(ApplicationStreamKey(rawValue: "guild:100:230") == nil)
+    #expect(ApplicationStreamKey(rawValue: "call::300") == nil)
+
+    let encodedKey = try JSONEncoder().encode(key)
+    #expect(String(bytes: encodedKey, encoding: .utf8) == #""guild:100:230:300""#)
+    #expect(try JSONDecoder().decode(ApplicationStreamKey.self, from: encodedKey) == key)
+
+    let create = DiscordGatewayPayloadFactory.applicationStreamCreate(
+        channelID: ChannelID(rawValue: 230),
+        guildID: GuildID(rawValue: 100),
+        preferredRegion: nil
+    )
+    #expect(create["op"] as? Int == 18)
+    let createData = try #require(create["d"] as? [String: Any])
+    #expect(createData["type"] as? String == "guild")
+    #expect(createData["guild_id"] as? String == "100")
+    #expect(createData["channel_id"] as? String == "230")
+    #expect(createData["preferred_region"] is NSNull)
+
+    let delete = DiscordGatewayPayloadFactory.applicationStreamDelete(key)
+    #expect(delete["op"] as? Int == 19)
+    #expect((delete["d"] as? [String: Any])?["stream_key"] as? String == key.rawValue)
+    let watch = DiscordGatewayPayloadFactory.applicationStreamWatch(key)
+    #expect(watch["op"] as? Int == 20)
+    let ping = DiscordGatewayPayloadFactory.applicationStreamPing(key)
+    #expect(ping["op"] as? Int == 21)
+    let pause = DiscordGatewayPayloadFactory.applicationStreamSetPaused(
+        key,
+        isPaused: true
+    )
+    #expect(pause["op"] as? Int == 22)
+    #expect((pause["d"] as? [String: Any])?["paused"] as? Bool == true)
+
+    let createDTO = try JSONDecoder().decode(
+        ApplicationStreamDTO.self,
+        from: Data(#"""
+        {
+          "stream_key":"guild:100:230:300",
+          "region":"us-west",
+          "viewer_ids":["400"],
+          "rtc_server_id":"500",
+          "rtc_channel_id":"499",
+          "paused":false
+        }
+        """#.utf8)
+    )
+    let stream = try #require(createDTO.merging())
+    #expect(stream.key == key)
+    #expect(stream.viewerIDs == [UserID(rawValue: 400)])
+    #expect(stream.rtcServerID == "500")
+    #expect(stream.rtcChannelID == ChannelID(rawValue: 499))
+
+    let updateDTO = try JSONDecoder().decode(
+        ApplicationStreamDTO.self,
+        from: Data(#"""
+        {
+          "stream_key":"guild:100:230:300",
+          "paused":true
+        }
+        """#.utf8)
+    )
+    let changed = try #require(updateDTO.merging(stream))
+    #expect(changed.region == "us-west")
+    #expect(changed.viewerIDs == [UserID(rawValue: 400)])
+    #expect(changed.isPaused)
+
+    let server = try JSONDecoder().decode(
+        ApplicationStreamServerUpdateDTO.self,
+        from: Data(#"""
+        {
+          "stream_key":"guild:100:230:300",
+          "endpoint":"stream.example.com.",
+          "token":"stream-token"
+        }
+        """#.utf8)
+    )
+    #expect(server.resolvedEndpoint == "stream.example.com")
+}
+
+@Test func `temporarily unavailable stream retains allocation metadata for reconnect`() async throws {
+    let provider = DiscordRESTProvider(
+        credentials: TestCredentialStore(),
+        handle: CredentialHandle(accountID: "300"),
+        session: URLSession(configuration: .ephemeral),
+        installationID: "server-issued-installation"
+    )
+    let key = try #require(ApplicationStreamKey(rawValue: "guild:100:230:300"))
+    let stream = ApplicationStream(
+        key: key,
+        region: "us-west",
+        rtcServerID: "500",
+        rtcChannelID: ChannelID(rawValue: 499)
+    )
+    await provider.reconcileApplicationStream(stream)
+
+    await provider.handleGatewayDispatch(
+        name: "STREAM_DELETE",
+        body: .object([
+            "stream_key": .string(key.rawValue),
+            "unavailable": .bool(true),
+            "reason": .string("server_unavailable"),
+        ])
+    )
+
+    #expect(await provider.applicationStreams[key] == stream)
+
+    await provider.handleGatewayDispatch(
+        name: "STREAM_DELETE",
+        body: .object([
+            "stream_key": .string(key.rawValue),
+            "unavailable": .bool(false),
+        ])
+    )
+
+    #expect(await provider.applicationStreams[key] == nil)
 }
 
 @Test func `voice server migration waits for allocation then reconnects`() throws {

@@ -74,6 +74,26 @@ if [[ "$APP_ICON_SOURCE" = /* ]]; then
 else
   APP_ICON="$ROOT_DIR/App/Packaging/$APP_ICON_SOURCE"
 fi
+CODE_SIGN_IDENTITY="${SAKURACORD_CODE_SIGN_IDENTITY:-}"
+if [[ -z "$CODE_SIGN_IDENTITY" ]]; then
+  CODE_SIGN_IDENTITY="$(
+    security find-identity -v -p codesigning 2>/dev/null \
+      | awk '/"Apple Development: / { print $2; exit }'
+  )"
+fi
+if [[ -z "$CODE_SIGN_IDENTITY" ]]; then
+  CODE_SIGN_IDENTITY="$(
+    security find-identity -v -p codesigning 2>/dev/null \
+      | awk '/"SakuraCord Local Development"/ { print $2; exit }'
+  )"
+fi
+CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY:--}"
+if [[ "$CODE_SIGN_IDENTITY" != "-" ]] \
+  && ! security find-identity -v -p codesigning 2>/dev/null \
+    | grep -Fq -- "$CODE_SIGN_IDENTITY"; then
+  echo "SAKURACORD_CODE_SIGN_IDENTITY is not a valid code-signing identity." >&2
+  exit 2
+fi
 
 sakuracord_acquire_operation_lock
 ICON_STAGING_DIR=""
@@ -94,6 +114,11 @@ if [[ "$INSECURE_DEBUG_CREDENTIALS" == "1" ]]; then
   echo "Debug credentials: enabled ($INSECURE_DEBUG_CREDENTIALS_SOURCE)"
 else
   echo "Debug credentials: disabled ($INSECURE_DEBUG_CREDENTIALS_SOURCE)"
+fi
+if [[ "$CODE_SIGN_IDENTITY" == "-" ]]; then
+  echo "Code signing: ad-hoc (Screen Recording permission will not persist across builds)"
+else
+  echo "Code signing: $CODE_SIGN_IDENTITY"
 fi
 
 if [[ "$MODE" != "package" && "$MODE" != "package-release" ]]; then
@@ -126,7 +151,7 @@ for framework in "$BIN_DIR"/*.framework; do
   [[ -d "$framework" ]] || continue
   framework_name="$(basename "$framework")"
   ditto "$framework" "$FRAMEWORKS/$framework_name"
-  codesign --force --sign - "$FRAMEWORKS/$framework_name" >/dev/null
+  codesign --force --sign "$CODE_SIGN_IDENTITY" "$FRAMEWORKS/$framework_name" >/dev/null
 done
 cp "$ROOT_DIR/docs/THIRD_PARTY_NOTICES.md" "$RESOURCES/THIRD_PARTY_NOTICES.md"
 if ! grep -Fq "## Zstandard" "$RESOURCES/THIRD_PARTY_NOTICES.md" \
@@ -172,6 +197,7 @@ cat >"$CONTENTS/Info.plist" <<PLIST
   <key>NSHighResolutionCapable</key><true/>
   <key>NSMicrophoneUsageDescription</key><string>SakuraCord uses your microphone when you join a voice call.</string>
   <key>NSCameraUsageDescription</key><string>SakuraCord uses your camera when you enable video in a call.</string>
+  <key>NSScreenCaptureUsageDescription</key><string>SakuraCord uses screen capture only when you choose a source to share in a voice call.</string>
 </dict>
 </plist>
 PLIST
@@ -206,7 +232,8 @@ if [[ "$UPDATES_ENABLED" != "1" ]]; then
     "$ENTITLEMENTS_STAGING"
 fi
 plutil -lint "$ENTITLEMENTS_STAGING" >/dev/null
-codesign --force --sign - --entitlements "$ENTITLEMENTS_STAGING" "$APP_BUNDLE" >/dev/null
+codesign --force --sign "$CODE_SIGN_IDENTITY" \
+  --entitlements "$ENTITLEMENTS_STAGING" "$APP_BUNDLE" >/dev/null
 
 open_app() {
   /usr/bin/open -n "$APP_BUNDLE" "$@"

@@ -159,13 +159,13 @@ public enum VoiceGatewayCodec {
         case 13:
             event = try .clientDisconnected(decodePayload(ClientPayload.self, from: data).userID)
         case 15:
-            let wants = try decodePayload([String: Int].self, from: data)
+            let wants = try decodePayload(VideoSinkWantsPayload.self, from: data)
             event = .videoSinkWants(
-                Dictionary(uniqueKeysWithValues: wants.compactMap { key, value in
+                Dictionary(uniqueKeysWithValues: wants.streams.compactMap { key, value in
                     guard let ssrc = UInt32(key) else { return nil }
                     return (ssrc, value)
                 }),
-                any: wants["any"]
+                any: wants.any
             )
         case 21:
             let value = try decodePayload(TransitionPayload.self, from: data)
@@ -220,7 +220,8 @@ public enum VoiceGatewayCodec {
         token: String,
         maxDaveProtocolVersion: UInt16,
         channelID: String? = nil,
-        video: Bool = true
+        video: Bool = true,
+        videoStreamType: String = "video"
     ) throws -> String {
         var payload: [String: Any] = [
             "server_id": serverID,
@@ -229,7 +230,7 @@ public enum VoiceGatewayCodec {
             "token": token,
             "max_dave_protocol_version": Int(maxDaveProtocolVersion),
             "video": video,
-            "streams": video ? [["type": "video", "rid": "100", "quality": 100]] : []
+            "streams": video ? [["type": videoStreamType, "rid": "100", "quality": 100]] : []
         ]
         if let channelID {
             payload["channel_id"] = channelID
@@ -259,16 +260,18 @@ public enum VoiceGatewayCodec {
         width: Int,
         height: Int,
         framerate: Int,
-        enabled: Bool
+        enabled: Bool,
+        streamType: String = "video",
+        maximumBitrate: Int = 4_000_000
     ) throws -> String {
         let streams: [[String: Any]] = enabled ? [[
-            "type": "video",
+            "type": streamType,
             "rid": "100",
             "ssrc": Int(videoSSRC),
             "active": true,
             "quality": 100,
             "rtx_ssrc": Int(rtxSSRC),
-            "max_bitrate": 4_000_000,
+            "max_bitrate": maximumBitrate,
             "max_framerate": framerate,
             "max_resolution": ["type": "fixed", "width": width, "height": height]
         ]] : []
@@ -280,9 +283,20 @@ public enum VoiceGatewayCodec {
         ])
     }
 
-    public static func videoSinkWants(_ wants: [UInt32: Int], any: Int = 100) throws -> String {
-        var payload = Dictionary(uniqueKeysWithValues: wants.map { (String($0.key), $0.value) })
+    public static func videoSinkWants(
+        _ wants: [UInt32: Int],
+        any: Int = 100,
+        pixelCounts: [UInt32: Int] = [:]
+    ) throws -> String {
+        var payload: [String: Any] = Dictionary(
+            uniqueKeysWithValues: wants.map { (String($0.key), $0.value as Any) }
+        )
         payload["any"] = any
+        if !pixelCounts.isEmpty {
+            payload["pixelCounts"] = Dictionary(
+                uniqueKeysWithValues: pixelCounts.map { (String($0.key), $0.value) }
+            )
+        }
         return try json(opcode: 15, payload: payload)
     }
 
@@ -325,6 +339,42 @@ public enum VoiceGatewayCodec {
 
     private static func decodePayload<Value: Decodable>(_ type: Value.Type, from data: Data) throws -> Value {
         try JSONDecoder().decode(Envelope<Value>.self, from: data).data
+    }
+}
+
+private struct VideoSinkWantsPayload: Decodable {
+    var streams: [String: Int]
+    var any: Int?
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: DynamicCodingKey.self)
+        var streams: [String: Int] = [:]
+        var any: Int?
+        for key in container.allKeys {
+            if key.stringValue == "any" {
+                any = try container.decodeIfPresent(Int.self, forKey: key)
+            } else if UInt32(key.stringValue) != nil,
+                      let value = try container.decodeIfPresent(Int.self, forKey: key)
+            {
+                streams[key.stringValue] = value
+            }
+        }
+        self.streams = streams
+        self.any = any
+    }
+}
+
+private struct DynamicCodingKey: CodingKey {
+    var stringValue: String
+    var intValue: Int?
+
+    init?(stringValue: String) {
+        self.stringValue = stringValue
+    }
+
+    init?(intValue: Int) {
+        stringValue = String(intValue)
+        self.intValue = intValue
     }
 }
 

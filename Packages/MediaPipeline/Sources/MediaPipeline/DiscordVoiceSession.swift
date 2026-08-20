@@ -44,6 +44,25 @@ public enum VoiceSessionState: String, Equatable, Sendable {
     case failed
 }
 
+public enum VoiceSessionKind: Equatable, Sendable {
+    case voice
+    case applicationStream(isBroadcaster: Bool)
+
+    var videoStreamType: String {
+        switch self {
+        case .voice: "video"
+        case .applicationStream: "screen"
+        }
+    }
+
+    var carriesVoiceAudio: Bool {
+        switch self {
+        case .voice: true
+        case .applicationStream: false
+        }
+    }
+}
+
 public struct VoiceRemoteParticipant: Equatable, Sendable {
     public var userID: String
     public var audioSSRC: UInt32?
@@ -85,14 +104,19 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
     public nonisolated let events: AsyncStream<VoiceSessionEvent>
 
     private let info: VoiceConnectionInfo
+    private let kind: VoiceSessionKind
     private let eventContinuation: AsyncStream<VoiceSessionEvent>.Continuation
     private let gateway: VoiceGatewayConnection
+    private let remoteAudioHandler: (@Sendable (Data, String) async throws -> Void)?
     private var configuration: VoiceSessionConfiguration
     private var state: VoiceSessionState = .idle
     private var udp: VoiceUDPConnection?
     private var cipher: VoiceTransportCipher?
     private var audioEngine: VoiceAudioEngine?
     private var videoEngine: VoiceVideoEngine?
+    private var screenCaptureEngine: ScreenShareCaptureEngine?
+    private var encodedScreenTask: Task<Void, Never>?
+    private var encodedScreenAudioTask: Task<Void, Never>?
     private var capturedAudioContinuation: AsyncStream<CapturedOpusFrame>.Continuation?
     private var capturedAudioTask: Task<Void, Never>?
     private var encodedVideoContinuation: AsyncStream<EncodedVideoFrame>.Continuation?
@@ -119,16 +143,23 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
     private var videoDepacketizers: [UInt32: H264RTPDepacketizer] = [:]
     private var videoDecoders: [UInt32: H264VideoDecoder] = [:]
     private var reorderBuffers: [UInt32: RTPReorderBuffer] = [:]
+    private var videoGapRecoveryTasks: [UInt32: Task<Void, Never>] = [:]
     private var videoAwaitingKeyframe = Set<UInt32>()
     private var lastVideoKeyframeRequest: [UInt32: ContinuousClock.Instant] = [:]
     private var participants: [String: VoiceRemoteParticipant] = [:]
     private var lastRemoteAudioActivity: [String: ContinuousClock.Instant] = [:]
     private var speakingExpiryTask: Task<Void, Never>?
     private var locallySpeaking = false
+    private var isSendingSoundshareAudio = false
     private var localVoiceActivity = false
     private var trailingSilenceFrames = 0
+    private var soundshareTrailingSilenceFrames = 0
     private var reconnectAttempts = 0
     private var videoSendQuality = 100
+    private var remoteVideoDemandEnabled: Bool
+    private var remoteVideoPixelCount: Int?
+    private var activeRemoteVideoSSRCs = Set<UInt32>()
+    private var selectedRemoteVideoSSRC: UInt32?
     private var audioSenderTracker = RTCPSenderTracker()
     private var videoSenderTracker = RTCPSenderTracker()
     private var videoRetransmissionCache = RTPRetransmissionCache()
@@ -159,13 +190,19 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
 
     public init(
         info: VoiceConnectionInfo,
+        kind: VoiceSessionKind = .voice,
         configuration: VoiceSessionConfiguration = .init(),
+        remoteAudioHandler: (@Sendable (Data, String) async throws -> Void)? = nil,
         gatewayDiagnostics: VoiceGatewayDiagnostics = .disabled
     ) {
         self.info = info
+        self.kind = kind
         self.configuration = configuration
+        self.remoteAudioHandler = remoteAudioHandler
+        remoteVideoDemandEnabled = kind == .voice
         gateway = VoiceGatewayConnection(
             info: info,
+            videoStreamType: kind.videoStreamType,
             diagnostics: gatewayDiagnostics
         )
         let stream = AsyncStream<VoiceSessionEvent>.makeStream(bufferingPolicy: .bufferingNewest(1000))
@@ -200,7 +237,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         }
     }
 
-    public func disconnect() async {
+    public func disconnect(preservingScreenCapture: Bool = false) async {
         guard state != .disconnected else { return }
         transition(to: .disconnecting)
         gatewayEventTask?.cancel()
@@ -213,6 +250,8 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         capturedAudioContinuation = nil
         capturedAudioTask?.cancel()
         capturedAudioTask = nil
+        encodedScreenAudioTask?.cancel()
+        encodedScreenAudioTask = nil
         speakingExpiryTask?.cancel()
         speakingExpiryTask = nil
         connectTimeoutTask?.cancel()
@@ -221,6 +260,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         if locallySpeaking, let audioSSRC {
             try? await gateway.sendSpeaking(flags: 0, ssrc: audioSSRC)
         }
+        await finishSoundshareAudio()
         updateLocalVoiceActivity(false)
         if let audioSSRC, let videoSSRC, let rtxSSRC {
             try? await gateway.sendVideo(
@@ -230,7 +270,8 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
                 width: VoiceVideoEngine.width,
                 height: VoiceVideoEngine.height,
                 framerate: VoiceVideoEngine.framerate,
-                enabled: false
+                enabled: false,
+                streamType: kind.videoStreamType
             )
         }
         await gateway.close()
@@ -240,6 +281,16 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         }
         cameraGeneration &+= 1
         stopCameraPipeline()
+        encodedScreenTask?.cancel()
+        encodedScreenTask = nil
+        if let screenCaptureEngine {
+            if preservingScreenCapture {
+                await screenCaptureEngine.endEncoding()
+            } else {
+                await screenCaptureEngine.stop()
+            }
+        }
+        screenCaptureEngine = nil
         udp = nil
         audioEngine = nil
         cipher = nil
@@ -250,6 +301,8 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         videoDepacketizers.removeAll()
         videoDecoders.removeAll()
         reorderBuffers.removeAll()
+        videoGapRecoveryTasks.values.forEach { $0.cancel() }
+        videoGapRecoveryTasks.removeAll()
         videoAwaitingKeyframe.removeAll()
         lastVideoKeyframeRequest.removeAll()
         videoRetransmissionCache.removeAll()
@@ -319,6 +372,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
     }
 
     public func setCameraEnabled(_ enabled: Bool) async throws {
+        guard kind == .voice else { throw VoiceSessionError.unsupportedMediaOperation }
         guard state == .connected,
               let audioSSRC,
               let videoSSRC,
@@ -332,7 +386,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
                 }
                 guard generation == cameraGeneration else { return }
                 let encodedFrames = AsyncStream<EncodedVideoFrame>.makeStream(
-                    bufferingPolicy: .unbounded
+                    bufferingPolicy: .bufferingNewest(2)
                 )
                 let previewFrames = AsyncStream<VoiceVideoFrame>.makeStream(
                     bufferingPolicy: .bufferingNewest(1)
@@ -383,7 +437,8 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
             width: VoiceVideoEngine.width,
             height: VoiceVideoEngine.height,
             framerate: VoiceVideoEngine.framerate,
-            enabled: enabled
+            enabled: enabled,
+            streamType: kind.videoStreamType
         )
         voiceMediaLogger.info("Local video state advertised; enabled=\(enabled)")
     }
@@ -394,6 +449,141 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         cameraGeneration &+= 1
         stopCameraPipeline()
         try await setCameraEnabled(true)
+    }
+
+    public func startScreenShareCapture(_ capture: ScreenShareCaptureEngine) async throws {
+        guard case .applicationStream(isBroadcaster: true) = kind,
+              state == .connected,
+              let audioSSRC,
+              let videoSSRC,
+              let rtxSSRC
+        else { throw VoiceSessionError.unsupportedMediaOperation }
+        encodedScreenTask?.cancel()
+        if let existing = screenCaptureEngine, existing !== capture {
+            await existing.stop()
+        }
+        let format = try await capture.beginEncoding()
+        screenCaptureEngine = capture
+        encodedScreenTask = Task { [weak self, capture] in
+            for await frame in capture.encodedFrames {
+                guard !Task.isCancelled else { return }
+                await self?.handleCapturedScreenFrame(frame)
+            }
+        }
+        encodedScreenAudioTask?.cancel()
+        encodedScreenAudioTask = Task { [weak self, capture] in
+            for await frame in capture.encodedAudioFrames {
+                guard !Task.isCancelled else { return }
+                await self?.handleCapturedSoundshareFrame(frame)
+            }
+        }
+        try await gateway.sendVideo(
+            audioSSRC: audioSSRC,
+            videoSSRC: videoSSRC,
+            rtxSSRC: rtxSSRC,
+            width: format.width,
+            height: format.height,
+            framerate: format.frameRate,
+            enabled: true,
+            streamType: kind.videoStreamType,
+            maximumBitrate: format.bitrate
+        )
+        voiceMediaLogger.info(
+            "Local screen share advertised; width=\(format.width), height=\(format.height), fps=\(format.frameRate)"
+        )
+    }
+
+    public func stopScreenShareCapture() async {
+        guard case .applicationStream(isBroadcaster: true) = kind else { return }
+        encodedScreenTask?.cancel()
+        encodedScreenTask = nil
+        encodedScreenAudioTask?.cancel()
+        encodedScreenAudioTask = nil
+        await finishSoundshareAudio()
+        if let audioSSRC, let videoSSRC, let rtxSSRC {
+            try? await gateway.sendVideo(
+                audioSSRC: audioSSRC,
+                videoSSRC: videoSSRC,
+                rtxSSRC: rtxSSRC,
+                width: 2,
+                height: 2,
+                framerate: 1,
+                enabled: false,
+                streamType: kind.videoStreamType
+            )
+        }
+        if let screenCaptureEngine {
+            await screenCaptureEngine.stop()
+        }
+        screenCaptureEngine = nil
+    }
+
+    public func updateScreenShareFormat() async throws {
+        guard case .applicationStream(isBroadcaster: true) = kind,
+              let format = screenCaptureEngine?.currentVideoFormat,
+              let audioSSRC,
+              let videoSSRC,
+              let rtxSSRC
+        else { throw VoiceSessionError.unsupportedMediaOperation }
+        try await gateway.sendVideo(
+            audioSSRC: audioSSRC,
+            videoSSRC: videoSSRC,
+            rtxSSRC: rtxSSRC,
+            width: format.width,
+            height: format.height,
+            framerate: format.frameRate,
+            enabled: true,
+            streamType: kind.videoStreamType,
+            maximumBitrate: format.bitrate
+        )
+        if screenCaptureEngine?.includesAudio != true {
+            await finishSoundshareAudio()
+        }
+    }
+
+    public func setRemoteVideoDemand(
+        _ enabled: Bool,
+        pixelCount: Int? = nil
+    ) async {
+        guard case .applicationStream(isBroadcaster: false) = kind,
+              remoteVideoDemandEnabled != enabled
+                || remoteVideoPixelCount != pixelCount
+        else { return }
+        let wasEnabled = remoteVideoDemandEnabled
+        remoteVideoDemandEnabled = enabled
+        remoteVideoPixelCount = enabled ? pixelCount : nil
+        let wants = Dictionary(uniqueKeysWithValues: activeRemoteVideoSSRCs.map {
+            ($0, enabled && $0 == selectedRemoteVideoSSRC ? 100 : 0)
+        })
+        let pixelCounts: [UInt32: Int] = if enabled,
+                                             let selectedRemoteVideoSSRC,
+                                             let pixelCount
+        {
+            [selectedRemoteVideoSSRC: max(1, pixelCount)]
+        } else {
+            [:]
+        }
+        try? await gateway.sendVideoSinkWants(
+            wants,
+            any: kind.carriesVoiceAudio ? 100 : 0,
+            pixelCounts: pixelCounts
+        )
+        if enabled {
+            if !wasEnabled, let selectedRemoteVideoSSRC {
+                await requestVideoKeyframe(
+                    mediaSSRC: selectedRemoteVideoSSRC,
+                    reason: "screen-share tile became visible"
+                )
+            }
+        } else {
+            for ssrc in activeRemoteVideoSSRCs {
+                videoGapRecoveryTasks.removeValue(forKey: ssrc)?.cancel()
+                videoDecoders[ssrc] = nil
+                videoDepacketizers[ssrc] = nil
+                reorderBuffers[ssrc] = nil
+                videoAwaitingKeyframe.insert(ssrc)
+            }
+        }
     }
 
     private func handleGatewayEvent(_ event: VoiceGatewayServerEvent) async {
@@ -467,6 +657,13 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
                 voiceMediaLogger.info(
                     "Video sink demand updated; quality=\(self.videoSendQuality), exact=\(wants[videoSSRC] != nil)"
                 )
+                if case .applicationStream(isBroadcaster: true) = kind {
+                    let hasDemand = videoSendQuality > 0
+                    try? screenCaptureEngine?.setNetworkDemand(hasDemand)
+                    if !hasDemand {
+                        await finishSoundshareAudio()
+                    }
+                }
             }
         default:
             break
@@ -529,7 +726,10 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         self.udp = udp
         audioSSRC = ready.ssrc
         await dave.assignAudioSSRC(ready.ssrc)
-        let stream = ready.streams.first(where: { $0.quality == 100 }) ?? ready.streams.first
+        let matchingStreams = ready.streams.filter { $0.type == kind.videoStreamType }
+        let stream = matchingStreams.first(where: { $0.quality == 100 })
+            ?? matchingStreams.first
+            ?? ready.streams.first
         let videoSSRC = stream?.ssrc ?? ready.ssrc &+ 1
         let rtxSSRC = stream?.rtxSSRC ?? ready.ssrc &+ 2
         self.videoSSRC = videoSSRC
@@ -603,6 +803,14 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         )
         await dave.selectProtocol(protocolVersion: description.daveProtocolVersion)
         eventContinuation.yield(.encryptionReady(protocolVersion: description.daveProtocolVersion))
+        guard kind.carriesVoiceAudio else {
+            connectTimeoutTask?.cancel()
+            connectContinuation?.resume()
+            connectContinuation = nil
+            transition(to: .connected)
+            voiceMediaLogger.info("Screen-share media session connected without a duplicate microphone engine")
+            return
+        }
         let permission = await VoiceAudioEngine.requestMicrophonePermission()
         guard permission else { throw VoiceSessionError.microphonePermissionDenied }
         let audio = try await VoiceAudioEngine()
@@ -708,6 +916,19 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
             }
             return
         }
+        do {
+            try await sendVideoFrame(frame)
+        } catch {
+            report(error)
+        }
+    }
+
+    private func handleCapturedScreenFrame(_ frame: EncodedVideoFrame) async {
+        guard case .applicationStream(isBroadcaster: true) = kind,
+              screenCaptureEngine != nil,
+              state == .connected,
+              videoSendQuality > 0
+        else { return }
         do {
             try await sendVideoFrame(frame)
         } catch {
@@ -857,13 +1078,24 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         let newlyMissing = buffer.takeNewMissingSequences()
         let skippedGap = buffer.takeSkippedGap()
         reorderBuffers[header.ssrc] = buffer
-        if header.payloadType == 101 || header.payloadType == 105, !newlyMissing.isEmpty {
+        let isVideo = header.payloadType == 101 || header.payloadType == 105
+        if isVideo, !newlyMissing.isEmpty {
             try? await sendGenericNACK(mediaSSRC: header.ssrc, lostSequences: newlyMissing)
         }
-        if header.payloadType == 101 || header.payloadType == 105, skippedGap {
+        if isVideo, buffer.hasPendingGap {
+            scheduleVideoGapRecovery(for: header.ssrc)
+        } else {
+            videoGapRecoveryTasks.removeValue(forKey: header.ssrc)?.cancel()
+        }
+        if isVideo, skippedGap {
+            videoAwaitingKeyframe.insert(header.ssrc)
             await requestVideoKeyframe(mediaSSRC: header.ssrc, reason: "unrecovered RTP gap")
         }
-        for packet in ordered {
+        try await processOrderedPackets(ordered)
+    }
+
+    private func processOrderedPackets(_ packets: [RTPBufferedPacket]) async throws {
+        for packet in packets {
             switch packet.header.payloadType {
             case 120:
                 try await handleAudioPacket(header: packet.header, payload: packet.payload)
@@ -872,6 +1104,33 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
             default:
                 break
             }
+        }
+    }
+
+    private func scheduleVideoGapRecovery(for ssrc: UInt32) {
+        guard videoGapRecoveryTasks[ssrc] == nil else { return }
+        videoGapRecoveryTasks[ssrc] = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(300))
+            } catch {
+                return
+            }
+            await self?.recoverVideoGap(for: ssrc)
+        }
+    }
+
+    private func recoverVideoGap(for ssrc: UInt32) async {
+        videoGapRecoveryTasks[ssrc] = nil
+        guard remoteVideoDemandEnabled, var buffer = reorderBuffers[ssrc] else { return }
+        let ordered = buffer.skipPendingGap()
+        reorderBuffers[ssrc] = buffer
+        guard !ordered.isEmpty else { return }
+        videoAwaitingKeyframe.insert(ssrc)
+        await requestVideoKeyframe(mediaSSRC: ssrc, reason: "RTP gap recovery deadline expired")
+        do {
+            try await processOrderedPackets(ordered)
+        } catch {
+            report(error)
         }
     }
 
@@ -1002,7 +1261,11 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
             return
         }
         noteRemoteAudioActivity(userID: userID)
-        try await audioEngine?.play(opusPacket: opus, from: userID)
+        if let remoteAudioHandler {
+            try await remoteAudioHandler(opus, userID)
+        } else {
+            try await audioEngine?.play(opusPacket: opus, from: userID)
+        }
         scheduledAudioPacketCount += 1
         if scheduledAudioPacketCount.isMultiple(of: 250) {
             voiceMediaLogger.info(
@@ -1015,7 +1278,13 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         }
     }
 
+    public func playRemoteAudio(_ opus: Data, from trackID: String) async throws {
+        guard kind == .voice, state == .connected else { return }
+        try await audioEngine?.play(opusPacket: opus, from: trackID)
+    }
+
     private func handleVideoPacket(header: RTPHeader, payload: Data) async throws {
+        guard remoteVideoDemandEnabled else { return }
         guard let userID = ssrcToUserID[header.ssrc] else { return }
         var depacketizer = videoDepacketizers[header.ssrc] ?? H264RTPDepacketizer()
         let completed = try depacketizer.append(header: header, payload: payload)
@@ -1063,12 +1332,18 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         }
     }
 
+}
+
+extension DiscordVoiceSession {
     private func handleVideoState(_ state: VoiceVideoState) async {
         guard state.userID != info.userID.description else { return }
         ssrcToUserID[state.audioSSRC] = state.userID
-        var activeStreams = state.streams.filter { $0.active && $0.ssrc > 0 }
+        var activeStreams = state.streams.filter {
+            $0.active && $0.ssrc > 0 && $0.type == kind.videoStreamType
+        }
         if activeStreams.isEmpty, state.videoSSRC > 0 {
             activeStreams = [VoiceVideoStream(
+                type: kind.videoStreamType,
                 ssrc: state.videoSSRC,
                 rtxSSRC: state.rtxSSRC,
                 active: true
@@ -1087,6 +1362,8 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
             }
             return (lhs.maxBitrate ?? 0) < (rhs.maxBitrate ?? 0)
         }
+        activeRemoteVideoSSRCs = Set(activeStreams.map(\.ssrc))
+        selectedRemoteVideoSSRC = selectedStream?.ssrc
         var participant = participants[state.userID] ?? VoiceRemoteParticipant(userID: state.userID)
         let previousVideoSSRC = participant.videoSSRC
         participant.audioSSRC = state.audioSSRC
@@ -1099,6 +1376,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
                 ssrcToUserID[previousVideoSSRC] = nil
                 videoDepacketizers[previousVideoSSRC] = nil
                 reorderBuffers[previousVideoSSRC] = nil
+                videoGapRecoveryTasks.removeValue(forKey: previousVideoSSRC)?.cancel()
                 let rtxSSRCs = rtxToVideoSSRC.compactMap { key, value in
                     value == previousVideoSSRC ? key : nil
                 }
@@ -1106,21 +1384,36 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
                     ssrcToUserID[rtxSSRC] = nil
                     rtxToVideoSSRC[rtxSSRC] = nil
                     reorderBuffers[rtxSSRC] = nil
+                    videoGapRecoveryTasks.removeValue(forKey: rtxSSRC)?.cancel()
                 }
             }
             for (ssrc, userID) in ssrcToUserID where userID == state.userID && ssrc != state.audioSSRC {
                 videoDecoders[ssrc] = nil
             }
             eventContinuation.yield(.videoStopped(userID: state.userID))
-        } else if previousVideoSSRC != selectedStream?.ssrc, let mediaSSRC = selectedStream?.ssrc {
+        } else if remoteVideoDemandEnabled,
+                  previousVideoSSRC != selectedStream?.ssrc,
+                  let mediaSSRC = selectedStream?.ssrc
+        {
             if let previousVideoSSRC {
                 videoDecoders[previousVideoSSRC] = nil
             }
             await requestVideoKeyframe(mediaSSRC: mediaSSRC, reason: "remote video stream started")
         }
         let wants = Dictionary(uniqueKeysWithValues: activeStreams.map { stream in
-            (stream.ssrc, stream.ssrc == selectedStream?.ssrc ? 100 : 0)
+            (
+                stream.ssrc,
+                remoteVideoDemandEnabled && stream.ssrc == selectedStream?.ssrc ? 100 : 0
+            )
         })
+        let pixelCounts: [UInt32: Int] = if remoteVideoDemandEnabled,
+                                             let selectedRemoteVideoSSRC,
+                                             let remoteVideoPixelCount
+        {
+            [selectedRemoteVideoSSRC: max(1, remoteVideoPixelCount)]
+        } else {
+            [:]
+        }
         try? await gateway.sendVideoSinkWants(
             wants,
             // `any` covers every unspecified media SSRC, including Opus audio.
@@ -1128,7 +1421,8 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
             // to stop forwarding that participant's audio and remains sticky
             // after camera-off. Disable unwanted video layers explicitly above,
             // but leave all other media subscribed.
-            any: 100
+            any: kind.carriesVoiceAudio ? 100 : 0,
+            pixelCounts: pixelCounts
         )
         voiceMediaLogger.info(
             """
@@ -1289,6 +1583,51 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
     }
 }
 
+private extension DiscordVoiceSession {
+    func handleCapturedSoundshareFrame(_ frame: CapturedOpusFrame) async {
+        guard case .applicationStream(isBroadcaster: true) = kind,
+              screenCaptureEngine?.includesAudio == true,
+              state == .connected,
+              videoSendQuality > 0,
+              audioSSRC != nil
+        else { return }
+        timestamp &+= UInt32(OpusCodec.frameSamples)
+        if frame.containsVoice {
+            soundshareTrailingSilenceFrames = 0
+            if !isSendingSoundshareAudio, let audioSSRC {
+                try? await gateway.sendSpeaking(flags: 2, ssrc: audioSSRC)
+                isSendingSoundshareAudio = true
+            }
+            try? await sendAudioPayload(frame.data)
+        } else if isSendingSoundshareAudio {
+            if soundshareTrailingSilenceFrames < 5 {
+                soundshareTrailingSilenceFrames += 1
+                try? await sendAudioPayload(Self.opusSilence)
+            } else {
+                await finishSoundshareAudio(sendTrailingSilence: false)
+            }
+        }
+    }
+
+    func finishSoundshareAudio(sendTrailingSilence: Bool = true) async {
+        guard isSendingSoundshareAudio else {
+            soundshareTrailingSilenceFrames = 0
+            return
+        }
+        if sendTrailingSilence {
+            for _ in soundshareTrailingSilenceFrames ..< 5 {
+                timestamp &+= UInt32(OpusCodec.frameSamples)
+                try? await sendAudioPayload(Self.opusSilence)
+            }
+        }
+        if let audioSSRC {
+            try? await gateway.sendSpeaking(flags: 0, ssrc: audioSSRC)
+        }
+        isSendingSoundshareAudio = false
+        soundshareTrailingSilenceFrames = 0
+    }
+}
+
 public enum VoiceSessionError: Error, Equatable {
     case unsupportedTransportEncryption
     case microphonePermissionDenied
@@ -1296,6 +1635,7 @@ public enum VoiceSessionError: Error, Equatable {
     case videoTransportUnavailable
     case transportUnavailable
     case connectionTimedOut
+    case unsupportedMediaOperation
 }
 
 private extension VoiceAudioEngine {

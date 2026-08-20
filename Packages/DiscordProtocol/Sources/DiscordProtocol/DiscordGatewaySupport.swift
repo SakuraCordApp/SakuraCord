@@ -92,7 +92,6 @@ enum DiscordGatewayPayloadFactory {
                 "self_mute": selfMute,
                 "self_deaf": selfDeaf,
                 "self_video": selfVideo,
-                "self_stream": false,
             ] as [String: Any],
         ]
     }
@@ -102,6 +101,47 @@ enum DiscordGatewayPayloadFactory {
             "op": 13,
             "d": [
                 "channel_id": channelID.description
+            ] as [String: Any],
+        ]
+    }
+
+    static func applicationStreamCreate(
+        channelID: ChannelID,
+        guildID: GuildID?,
+        preferredRegion: String?
+    ) -> [String: Any] {
+        [
+            "op": 18,
+            "d": [
+                "type": guildID == nil ? "call" : "guild",
+                "guild_id": guildID?.description ?? NSNull(),
+                "channel_id": channelID.description,
+                "preferred_region": preferredRegion ?? NSNull(),
+            ] as [String: Any],
+        ]
+    }
+
+    static func applicationStreamDelete(_ key: ApplicationStreamKey) -> [String: Any] {
+        ["op": 19, "d": ["stream_key": key.rawValue]]
+    }
+
+    static func applicationStreamWatch(_ key: ApplicationStreamKey) -> [String: Any] {
+        ["op": 20, "d": ["stream_key": key.rawValue]]
+    }
+
+    static func applicationStreamPing(_ key: ApplicationStreamKey) -> [String: Any] {
+        ["op": 21, "d": ["stream_key": key.rawValue]]
+    }
+
+    static func applicationStreamSetPaused(
+        _ key: ApplicationStreamKey,
+        isPaused: Bool
+    ) -> [String: Any] {
+        [
+            "op": 22,
+            "d": [
+                "stream_key": key.rawValue,
+                "paused": isPaused,
             ] as [String: Any],
         ]
     }
@@ -481,6 +521,75 @@ struct PendingVoiceNegotiation {
     var token: String?
     var endpoint: String?
     var continuation: CheckedContinuation<VoiceConnectionInfo, any Error>
+}
+
+struct PendingApplicationStreamNegotiation {
+    var id: UUID
+    var key: ApplicationStreamKey
+    var stream: ApplicationStream?
+    var token: String?
+    var endpoint: String?
+    var continuation: CheckedContinuation<ApplicationStreamConnectionInfo, any Error>
+}
+
+struct ApplicationStreamDTO: Decodable {
+    var streamKey: String
+    var region: String?
+    var viewerIDs: [String]?
+    var rtcServerID: String?
+    var rtcChannelID: String?
+    var paused: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case streamKey = "stream_key"
+        case region
+        case viewerIDs = "viewer_ids"
+        case rtcServerID = "rtc_server_id"
+        case rtcChannelID = "rtc_channel_id"
+        case paused
+    }
+
+    func merging(_ existing: ApplicationStream? = nil) -> ApplicationStream? {
+        guard let key = ApplicationStreamKey(rawValue: streamKey) else { return nil }
+        return ApplicationStream(
+            key: key,
+            region: region ?? existing?.region,
+            viewerIDs: viewerIDs?.compactMap(UserID.init) ?? existing?.viewerIDs ?? [],
+            rtcServerID: rtcServerID ?? existing?.rtcServerID,
+            rtcChannelID: rtcChannelID.flatMap(ChannelID.init) ?? existing?.rtcChannelID,
+            isPaused: paused ?? existing?.isPaused ?? false
+        )
+    }
+}
+
+struct ApplicationStreamServerUpdateDTO: Decodable {
+    var streamKey: String
+    var endpoint: String?
+    var token: String?
+
+    enum CodingKeys: String, CodingKey {
+        case streamKey = "stream_key"
+        case endpoint, token
+    }
+
+    var resolvedEndpoint: String? {
+        endpoint?.trimmingCharacters(in: CharacterSet(charactersIn: "."))
+    }
+}
+
+struct ApplicationStreamDeleteDTO: Decodable {
+    var streamKey: String
+    var unavailable: Bool?
+    var reason: String?
+
+    enum CodingKeys: String, CodingKey {
+        case streamKey = "stream_key"
+        case unavailable, reason
+    }
+}
+
+struct ApplicationStreamPreviewDTO: Decodable {
+    var url: URL?
 }
 
 struct VoiceStateUpdateDTO: Decodable {

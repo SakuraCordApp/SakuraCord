@@ -183,6 +183,21 @@ public protocol ChatProvider: Sendable {
         selfDeaf: Bool,
         selfVideo: Bool
     ) async throws
+    func startApplicationStream(
+        channelID: ChannelID,
+        guildID: GuildID?,
+        preferredRegion: String?
+    ) async throws -> ApplicationStreamConnectionInfo
+    func watchApplicationStream(
+        _ key: ApplicationStreamKey
+    ) async throws -> ApplicationStreamConnectionInfo
+    func stopApplicationStream(_ key: ApplicationStreamKey) async throws
+    func pingApplicationStream(_ key: ApplicationStreamKey) async throws
+    func setApplicationStreamPaused(
+        _ key: ApplicationStreamKey,
+        isPaused: Bool
+    ) async throws
+    func applicationStreamPreview(for key: ApplicationStreamKey) async throws -> URL?
     func subscribeToPrivateCall(channelID: ChannelID) async throws
     func privateCallIsRingable(channelID: ChannelID) async throws -> Bool
     func ringPrivateCall(channelID: ChannelID, recipients: [UserID]?) async throws
@@ -204,6 +219,31 @@ public extension ChatProvider {
     func prepareAuthentication() async throws {}
 
     func updateClientAppState(isFocused: Bool) async {}
+
+    func startApplicationStream(
+        channelID _: ChannelID,
+        guildID _: GuildID?,
+        preferredRegion _: String?
+    ) async throws -> ApplicationStreamConnectionInfo {
+        throw ChatProviderError.invalidRequest("This provider does not support screen sharing.")
+    }
+
+    func watchApplicationStream(
+        _ key: ApplicationStreamKey
+    ) async throws -> ApplicationStreamConnectionInfo {
+        throw ChatProviderError.invalidRequest("This provider does not support watching screen shares.")
+    }
+
+    func stopApplicationStream(_: ApplicationStreamKey) async throws {}
+
+    func pingApplicationStream(_: ApplicationStreamKey) async throws {}
+
+    func setApplicationStreamPaused(
+        _: ApplicationStreamKey,
+        isPaused _: Bool
+    ) async throws {}
+
+    func applicationStreamPreview(for _: ApplicationStreamKey) async throws -> URL? { nil }
 
     func messages(
         in channelID: ChannelID,

@@ -17,6 +17,11 @@ struct RTPReorderBuffer: Sendable {
         self.maximumHold = max(1, maximumHold)
     }
 
+    var hasPendingGap: Bool {
+        guard let expectedSequence, !packets.isEmpty else { return false }
+        return packets[expectedSequence] == nil
+    }
+
     mutating func insert(_ packet: RTPBufferedPacket) -> [RTPBufferedPacket] {
         if expectedSequence == nil {
             expectedSequence = packet.header.sequence
@@ -60,6 +65,24 @@ struct RTPReorderBuffer: Sendable {
     mutating func takeSkippedGap() -> Bool {
         defer { skippedGap = false }
         return skippedGap
+    }
+
+    /// Releases packets held behind a missing sequence after the caller's
+    /// recovery deadline expires. Video packet rates can be extremely low for
+    /// a static screen, so a packet-count-only threshold can otherwise freeze
+    /// playback for many seconds while waiting for enough later packets.
+    mutating func skipPendingGap() -> [RTPBufferedPacket] {
+        guard hasPendingGap, let expected = expectedSequence else { return [] }
+        let next = packets.keys.min { ($0 &- expected) < ($1 &- expected) }
+        guard let next else { return [] }
+        expectedSequence = next
+        missingSequences = Set(missingSequences.filter { sequence in
+            (sequence &- next) <= UInt16.max / 2
+        })
+        newlyMissingSequences.removeAll { sequence in
+            (sequence &- next) > UInt16.max / 2
+        }
+        return drainContiguous()
     }
 
     private mutating func drainContiguous() -> [RTPBufferedPacket] {

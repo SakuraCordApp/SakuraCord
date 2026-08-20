@@ -209,6 +209,13 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var pendingVoiceNegotiation: PendingVoiceNegotiation?
     var activeVoiceConnection: VoiceConnectionInfo?
     var voiceNegotiationTimeoutTask: Task<Void, Never>?
+    var applicationStreams: [ApplicationStreamKey: ApplicationStream] = [:]
+    var applicationStreamConnections:
+        [ApplicationStreamKey: ApplicationStreamConnectionInfo] = [:]
+    var pendingApplicationStreamNegotiations:
+        [ApplicationStreamKey: PendingApplicationStreamNegotiation] = [:]
+    var applicationStreamNegotiationTimeoutTasks:
+        [ApplicationStreamKey: Task<Void, Never>] = [:]
     var privateCallsByChannel: [ChannelID: PrivateCall] = [:]
     var subscribedPrivateCallChannelIDs: Set<ChannelID> = []
     #if DEBUG

@@ -74,6 +74,38 @@ import Testing
     #expect(resumeData["seq_ack"] as? Int == 71)
 }
 
+@Test func `application stream voice identify advertises a screen stream`() throws {
+    let identify = try VoiceGatewayCodec.identify(
+        serverID: "10",
+        userID: "20",
+        sessionID: "session",
+        token: "token",
+        maxDaveProtocolVersion: 1,
+        channelID: "30",
+        videoStreamType: "screen"
+    )
+    let object = try #require(JSONSerialization.jsonObject(with: Data(identify.utf8)) as? [String: Any])
+    let data = try #require(object["d"] as? [String: Any])
+    let stream = try #require((data["streams"] as? [[String: Any]])?.first)
+
+    #expect(data["channel_id"] as? String == "30")
+    #expect(stream["type"] as? String == "screen")
+    #expect(stream["rid"] as? String == "100")
+    #expect(stream["quality"] as? Int == 100)
+}
+
+@Test func `soundshare audio advertises the context audio speaking flag`() throws {
+    let speaking = try VoiceGatewayCodec.speaking(flags: 2, ssrc: 42)
+    let object = try #require(
+        JSONSerialization.jsonObject(with: Data(speaking.utf8)) as? [String: Any]
+    )
+    let data = try #require(object["d"] as? [String: Any])
+
+    #expect(object["op"] as? Int == 5)
+    #expect(data["speaking"] as? Int == 2)
+    #expect(data["ssrc"] as? Int == 42)
+}
+
 @Test func `voice gateway video codec supports streams and sink wants`() throws {
     let protocolSelection = try VoiceGatewayCodec.selectProtocol(
         address: "127.0.0.1",
@@ -103,12 +135,30 @@ import Testing
     #expect(state.userID == "55")
     #expect(state.streams.first?.width == 1280)
 
-    let wants = try VoiceGatewayCodec.videoSinkWants([12: 100, 22: 0], any: 50)
+    let wants = try VoiceGatewayCodec.videoSinkWants(
+        [12: 100, 22: 0],
+        any: 50,
+        pixelCounts: [12: 2_073_600]
+    )
     let object = try #require(JSONSerialization.jsonObject(with: Data(wants.utf8)) as? [String: Any])
-    let data = try #require(object["d"] as? [String: Int])
-    #expect(data["12"] == 100)
-    #expect(data["22"] == 0)
-    #expect(data["any"] == 50)
+    let data = try #require(object["d"] as? [String: Any])
+    #expect(data["12"] as? Int == 100)
+    #expect(data["22"] as? Int == 0)
+    #expect(data["any"] as? Int == 50)
+    let pixelCounts = try #require(data["pixelCounts"] as? [String: Int])
+    #expect(pixelCounts["12"] == 2_073_600)
+}
+
+@Test func `voice gateway sink wants tolerate current pixel count metadata`() throws {
+    let event = try VoiceGatewayCodec.decodeJSON(Data(#"""
+    {
+      "op":15,
+      "d":{"12":100,"22":0,"any":0,"pixelCounts":{"12":2073600}},
+      "seq":10
+    }
+    """#.utf8))
+
+    #expect(event.event == .videoSinkWants([12: 100, 22: 0], any: 0))
 }
 
 @Test func `voice gateway video state allows discord to omit legacy RTX fields`() throws {

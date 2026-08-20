@@ -37,6 +37,7 @@ public actor VoiceGatewayConnection {
     private let info: VoiceConnectionInfo
     private let session: URLSession
     private let diagnostics: VoiceGatewayDiagnostics
+    private let videoStreamType: String
     private let continuation: AsyncStream<SequencedVoiceGatewayEvent>.Continuation
     private var socket: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
@@ -46,10 +47,12 @@ public actor VoiceGatewayConnection {
 
     public init(
         info: VoiceConnectionInfo,
+        videoStreamType: String = "video",
         session: URLSession = .shared,
         diagnostics: VoiceGatewayDiagnostics = .disabled
     ) {
         self.info = info
+        self.videoStreamType = videoStreamType
         self.session = session
         self.diagnostics = diagnostics
         let stream = AsyncStream<SequencedVoiceGatewayEvent>.makeStream(bufferingPolicy: .bufferingNewest(1000))
@@ -83,7 +86,8 @@ public actor VoiceGatewayConnection {
                 token: info.token,
                 maxDaveProtocolVersion: DaveSessionManager.maxSupportedProtocolVersion(),
                 channelID: String(info.channelID.rawValue),
-                video: true
+                video: true,
+                videoStreamType: videoStreamType
             ))
         }
 
@@ -107,7 +111,9 @@ public actor VoiceGatewayConnection {
         width: Int,
         height: Int,
         framerate: Int,
-        enabled: Bool
+        enabled: Bool,
+        streamType: String = "video",
+        maximumBitrate: Int = 4_000_000
     ) async throws {
         try await sendText(VoiceGatewayCodec.video(
             audioSSRC: audioSSRC,
@@ -116,12 +122,24 @@ public actor VoiceGatewayConnection {
             width: width,
             height: height,
             framerate: framerate,
-            enabled: enabled
+            enabled: enabled,
+            streamType: streamType,
+            maximumBitrate: maximumBitrate
         ))
     }
 
-    public func sendVideoSinkWants(_ wants: [UInt32: Int], any: Int = 100) async throws {
-        try await sendText(VoiceGatewayCodec.videoSinkWants(wants, any: any))
+    public func sendVideoSinkWants(
+        _ wants: [UInt32: Int],
+        any: Int = 100,
+        pixelCounts: [UInt32: Int] = [:]
+    ) async throws {
+        try await sendText(
+            VoiceGatewayCodec.videoSinkWants(
+                wants,
+                any: any,
+                pixelCounts: pixelCounts
+            )
+        )
     }
 
     public func sendDaveTransitionReady(_ transitionID: UInt16) async throws {

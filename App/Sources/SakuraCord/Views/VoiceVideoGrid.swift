@@ -2,11 +2,39 @@ import MediaPipeline
 import SakuraCordModels
 import SwiftUI
 
+private enum VoiceCardID: Hashable {
+    case participant(String)
+    case stream(ApplicationStreamKey)
+}
+
+private struct VoiceCard: Identifiable {
+    enum Kind {
+        case participant(VoiceTileParticipant)
+        case stream(
+            owner: VoiceTileParticipant,
+            key: ApplicationStreamKey,
+            state: ApplicationStreamPlaybackState,
+            isPaused: Bool
+        )
+    }
+
+    let id: VoiceCardID
+    let kind: Kind
+}
+
+private struct VoiceStreamDemand: Equatable {
+    var isEnabled: Bool
+    var pixelCount: Int?
+}
+
 struct VoiceVideoGrid: View {
     let model: AppModel
     var channel: Channel?
     var isCompact = false
     var ringingUserIDs: Set<UserID> = []
+    @State private var focusedCardID: VoiceCardID?
+    @State private var showsSecondaryCards = true
+    @Namespace private var cardNamespace
 
     private var participants: [VoiceTileParticipant] {
         guard let activeChannel = channel ?? model.activeVoiceChannel else { return [] }
@@ -16,17 +44,20 @@ struct VoiceVideoGrid: View {
             displayedChannelID: activeChannel.id,
             activeVoiceChannelID: model.activeVoiceChannel?.id
         )
-        let localParticipants = usesLocalVoiceSession
-            ? model.voiceParticipants : []
-        let speakingByID = Dictionary(uniqueKeysWithValues: localParticipants.map { ($0.userID, $0.isSpeaking) })
-        let volumeByID = Dictionary(uniqueKeysWithValues: localParticipants.map { ($0.userID, $0.volume) })
-        let cameraByID = Dictionary(uniqueKeysWithValues: localParticipants.map { ($0.userID, $0.isCameraEnabled) })
+        let localParticipants = usesLocalVoiceSession ? model.voiceParticipants : []
+        let speakingByID = Dictionary(
+            uniqueKeysWithValues: localParticipants.map { ($0.userID, $0.isSpeaking) }
+        )
+        let volumeByID = Dictionary(
+            uniqueKeysWithValues: localParticipants.map { ($0.userID, $0.volume) }
+        )
+        let cameraByID = Dictionary(
+            uniqueKeysWithValues: localParticipants.map { ($0.userID, $0.isCameraEnabled) }
+        )
         var knownUsers = Dictionary(
             uniqueKeysWithValues: activeChannel.recipients.map { ($0.id, $0) }
         )
-        if let currentUser {
-            knownUsers[currentUser.id] = currentUser
-        }
+        if let currentUser { knownUsers[currentUser.id] = currentUser }
         var values: [String: VoiceTileParticipant] = [:]
         var statesByUserID = Dictionary(
             uniqueKeysWithValues: model.voiceStates.values
@@ -54,8 +85,8 @@ struct VoiceVideoGrid: View {
                 isDeafened: state.isDeafened || state.isSelfDeafened,
                 isSpeaking: usesLocalVoiceSession
                     && (userID == currentUserID
-                        ? model.isLocallySpeaking
-                        : (speakingByID[userID] ?? false)),
+                        ? model.isLocallySpeaking : (speakingByID[userID] ?? false)),
+                isStreaming: state.isStreaming,
                 volume: volumeByID[userID] ?? 1,
                 isRinging: ringingUserIDs.contains(state.userID)
             )
@@ -70,11 +101,14 @@ struct VoiceVideoGrid: View {
                 id: participant.userID,
                 name: user?.displayName ?? "User \(participant.userID)",
                 avatarURL: user?.avatarURL,
-                frame: participant.isCameraEnabled ? model.voiceVideoFrames[participant.userID] : nil,
+                frame: participant.isCameraEnabled
+                    ? model.voiceVideoFrames[participant.userID] : nil,
                 isLocal: participant.userID == currentUserID,
                 isMuted: false,
                 isDeafened: false,
-                isSpeaking: participant.userID == currentUserID ? model.isLocallySpeaking : participant.isSpeaking,
+                isSpeaking: participant.userID == currentUserID
+                    ? model.isLocallySpeaking : participant.isSpeaking,
+                isStreaming: numericID.flatMap { model.voiceStates[$0] }?.isStreaming ?? false,
                 volume: participant.volume,
                 isRinging: numericID.map(ringingUserIDs.contains) ?? false
             )
@@ -94,6 +128,7 @@ struct VoiceVideoGrid: View {
                 isMuted: model.isVoiceMuted,
                 isDeafened: model.isVoiceDeafened,
                 isSpeaking: model.isLocallySpeaking,
+                isStreaming: model.localApplicationStreamKey != nil,
                 volume: 1,
                 isRinging: ringingUserIDs.contains(currentUser.id)
             )
@@ -112,17 +147,69 @@ struct VoiceVideoGrid: View {
                 isMuted: false,
                 isDeafened: false,
                 isSpeaking: false,
+                isStreaming: false,
                 volume: 1,
                 isRinging: true
             )
         }
 
         return values.values.sorted {
-            if $0.isLocal != $1.isLocal {
-                return $0.isLocal
-            }
+            if $0.isLocal != $1.isLocal { return $0.isLocal }
             return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }
+    }
+
+    private var cards: [VoiceCard] {
+        guard let activeChannel = channel ?? model.activeVoiceChannel else { return [] }
+        let participants = participants
+        let participantByID = Dictionary(
+            uniqueKeysWithValues: participants.map { ($0.id, $0) }
+        )
+        let participantCards = participants.map {
+            VoiceCard(id: .participant($0.id), kind: .participant($0))
+        }
+        var streamKeys = Set<ApplicationStreamKey>()
+        for state in model.voiceStates.values
+        where state.channelID == activeChannel.id && state.isStreaming {
+            streamKeys.insert(ApplicationStreamKey(
+                type: activeChannel.guildID == nil ? .call : .guild,
+                guildID: activeChannel.guildID,
+                channelID: activeChannel.id,
+                ownerID: state.userID
+            ))
+        }
+        streamKeys.formUnion(
+            model.applicationStreams.keys.filter { $0.channelID == activeChannel.id }
+        )
+        if let local = model.localApplicationStreamKey,
+           local.channelID == activeChannel.id
+        {
+            streamKeys.insert(local)
+        }
+        let streams = streamKeys.compactMap { key -> VoiceCard? in
+            let ownerID = String(key.ownerID.rawValue)
+            guard let owner = participantByID[ownerID] else { return nil }
+            let state = model.applicationStreamStates[key]
+                ?? (key == model.localApplicationStreamKey ? .broadcasting : .available)
+            return VoiceCard(
+                id: .stream(key),
+                kind: .stream(
+                    owner: owner,
+                    key: key,
+                    state: state,
+                    isPaused: key == model.localApplicationStreamKey
+                        ? model.isLocalScreenSharePreviewPaused
+                        : (model.applicationStreams[key]?.isPaused ?? false)
+                )
+            )
+        }
+        .sorted { lhs, rhs in
+            guard case .stream(_, let lhsKey, _, _) = lhs.kind,
+                  case .stream(_, let rhsKey, _, _) = rhs.kind
+            else { return false }
+            return lhsKey.rawValue < rhsKey.rawValue
+        }
+        return participantCards + streams
     }
 
     static func usesLocalVoiceSession(
@@ -133,27 +220,126 @@ struct VoiceVideoGrid: View {
     }
 
     var body: some View {
-        let participants = participants
-        if isCompact {
-            AdaptiveVoiceGrid(participants: participants) { participant, volume in
-                Task {
-                    await model.updateParticipantVolume(
-                        volume,
-                        userID: participant.id
-                    )
-                }
-            }
-        } else {
-            ScrollableVoiceGrid(participants: participants) { participant, volume in
-                Task {
-                    await model.updateParticipantVolume(
-                        volume,
-                        userID: participant.id
-                    )
+        let cards = cards
+        Group {
+            if let focusedCardID,
+               let focused = cards.first(where: { $0.id == focusedCardID })
+            {
+                focusedLayout(focused: focused, cards: cards)
+            } else {
+                AdaptiveVoiceGrid(cards: cards, cardNamespace: cardNamespace) { card in
+                    cardView(card, isCompact: isCompact, isDemanded: true)
+                        .onTapGesture { toggleFocus(card.id) }
                 }
             }
         }
+        .animation(.snappy(duration: 0.32), value: focusedCardID)
+        .animation(.snappy(duration: 0.24), value: showsSecondaryCards)
+        .onChange(of: cards.map(\.id)) { _, ids in
+            if let focusedCardID, !ids.contains(focusedCardID) {
+                self.focusedCardID = nil
+            }
+        }
+        .onDisappear {
+            for (key, state) in model.applicationStreamStates
+            where state == .connecting || state == .watching || state == .reconnecting
+            {
+                Task { await model.setApplicationStreamDemand(false, key: key) }
+            }
+        }
     }
+
+    private func focusedLayout(focused: VoiceCard, cards: [VoiceCard]) -> some View {
+        let secondary = cards.filter { $0.id != focused.id }
+        return VStack(spacing: 10) {
+            cardView(focused, isCompact: false, isDemanded: true)
+                .matchedGeometryEffect(id: focused.id, in: cardNamespace)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .onTapGesture { toggleFocus(focused.id) }
+
+            if showsSecondaryCards, !secondary.isEmpty {
+                GeometryReader { geometry in
+                    ScrollView(.horizontal) {
+                        LazyHStack(spacing: 10) {
+                            ForEach(secondary) { card in
+                                cardView(card, isCompact: true, isDemanded: true)
+                                    .matchedGeometryEffect(id: card.id, in: cardNamespace)
+                                    .frame(width: 240, height: 135)
+                                    .onTapGesture { toggleFocus(card.id) }
+                            }
+                        }
+                        .frame(minWidth: geometry.size.width, alignment: .center)
+                        .padding(.horizontal, 2)
+                    }
+                    .scrollIndicators(.hidden)
+                }
+                .frame(height: 137)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else {
+                ForEach(secondary) { card in
+                    if case .stream(_, let key, _, _) = card.kind {
+                        Color.clear
+                            .frame(width: 0, height: 0)
+                            .task(id: key) {
+                                await model.setApplicationStreamDemand(false, key: key)
+                            }
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .overlay(alignment: .bottomTrailing) {
+            if !secondary.isEmpty {
+                Button { showsSecondaryCards.toggle() } label: {
+                    Label(
+                        showsSecondaryCards ? "Hide Others" : "Show Others",
+                        systemImage: showsSecondaryCards
+                            ? "rectangle.compress.vertical" : "rectangle.expand.vertical"
+                    )
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 12)
+                    .frame(height: 34)
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .glassEffect(.regular.interactive(), in: Capsule())
+                .padding(18)
+            }
+        }
+    }
+
+    @ViewBuilder private func cardView(
+        _ card: VoiceCard,
+        isCompact: Bool,
+        isDemanded: Bool
+    ) -> some View {
+        switch card.kind {
+        case .participant(let participant):
+            VoiceParticipantTile(
+                participant: participant,
+                isCompact: isCompact,
+                tileSize: nil
+            ) { volume in
+                Task { await model.updateParticipantVolume(volume, userID: participant.id) }
+            }
+        case .stream(let owner, let key, let state, let isPaused):
+            VoiceStreamTile(
+                owner: owner,
+                key: key,
+                state: state,
+                isPaused: isPaused,
+                isCompact: isCompact,
+                model: model,
+                isDemanded: isDemanded
+            )
+        }
+    }
+
+    private func toggleFocus(_ id: VoiceCardID) {
+        focusedCardID = focusedCardID == id ? nil : id
+        if focusedCardID != nil { showsSecondaryCards = true }
+    }
+
 }
 
 private struct VoiceTileParticipant: Identifiable {
@@ -165,6 +351,7 @@ private struct VoiceTileParticipant: Identifiable {
     let isMuted: Bool
     let isDeafened: Bool
     let isSpeaking: Bool
+    let isStreaming: Bool
     let volume: Float
     let isRinging: Bool
 }
@@ -181,14 +368,8 @@ struct VoiceGridLayout: Equatable {
 
     static func fitted(in size: CGSize, participantCount: Int) -> VoiceGridLayout {
         guard participantCount > 0 else {
-            return VoiceGridLayout(
-                columns: 1,
-                rows: 0,
-                tileSize: .zero,
-                gridSize: .zero
-            )
+            return VoiceGridLayout(columns: 1, rows: 0, tileSize: .zero, gridSize: .zero)
         }
-
         let innerWidth = max(1, size.width - padding * 2)
         let innerHeight = max(1, size.height - padding * 2)
         var best = candidate(
@@ -205,10 +386,7 @@ struct VoiceGridLayout: Equatable {
                     participantCount: participantCount,
                     columns: columns
                 )
-                // Fixed-aspect tiles are largest when their width is largest.
-                if option.tileSize.width > best.tileSize.width {
-                    best = option
-                }
+                if option.tileSize.width > best.tileSize.width { best = option }
             }
         }
         return best
@@ -221,79 +399,64 @@ struct VoiceGridLayout: Equatable {
         columns: Int
     ) -> VoiceGridLayout {
         let rows = Int(ceil(Double(participantCount) / Double(columns)))
-        let availableWidth = max(
-            1,
-            innerWidth - CGFloat(columns - 1) * spacing
-        )
-        let availableHeight = max(
-            1,
-            innerHeight - CGFloat(rows - 1) * spacing
-        )
+        let availableWidth = max(1, innerWidth - CGFloat(columns - 1) * spacing)
+        let availableHeight = max(1, innerHeight - CGFloat(rows - 1) * spacing)
         let cellWidth = availableWidth / CGFloat(columns)
         let cellHeight = availableHeight / CGFloat(rows)
         let tileHeight = min(cellHeight, cellWidth / targetAspectRatio)
         let tileWidth = min(cellWidth, tileHeight * targetAspectRatio)
-
         return VoiceGridLayout(
             columns: columns,
             rows: rows,
             tileSize: CGSize(width: tileWidth, height: tileHeight),
             gridSize: CGSize(
-                width: tileWidth * CGFloat(columns)
-                    + spacing * CGFloat(columns - 1),
-                height: tileHeight * CGFloat(rows)
-                    + spacing * CGFloat(rows - 1)
+                width: tileWidth * CGFloat(columns) + spacing * CGFloat(columns - 1),
+                height: tileHeight * CGFloat(rows) + spacing * CGFloat(rows - 1)
             )
         )
     }
+
+    func horizontalOrigin(in containerWidth: CGFloat, itemCount: Int) -> CGFloat {
+        guard itemCount > 0 else { return containerWidth / 2 }
+        let visibleItems = min(columns, itemCount)
+        let rowWidth = tileSize.width * CGFloat(visibleItems)
+            + Self.spacing * CGFloat(visibleItems - 1)
+        return (containerWidth - rowWidth) / 2
+    }
 }
 
-private struct AdaptiveVoiceGrid: View {
-    let participants: [VoiceTileParticipant]
-    let updateVolume: (VoiceTileParticipant, Float) -> Void
+private struct AdaptiveVoiceGrid<CardContent: View>: View {
+    let cards: [VoiceCard]
+    let cardNamespace: Namespace.ID
+    @ViewBuilder let cardContent: (VoiceCard) -> CardContent
 
     var body: some View {
         GeometryReader { geometry in
             let layout = VoiceGridLayout.fitted(
                 in: geometry.size,
-                participantCount: participants.count
+                participantCount: cards.count
             )
             let verticalOrigin = (geometry.size.height - layout.gridSize.height) / 2
-
             ZStack(alignment: .topLeading) {
-                ForEach(Array(participants.enumerated()), id: \.element.id) { index, participant in
+                ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
                     let row = index / layout.columns
                     let column = index % layout.columns
-                    let itemsInRow = min(
-                        layout.columns,
-                        participants.count - row * layout.columns
+                    let itemsInRow = min(layout.columns, cards.count - row * layout.columns)
+                    let horizontalOrigin = layout.horizontalOrigin(
+                        in: geometry.size.width,
+                        itemCount: itemsInRow
                     )
-                    let rowWidth = layout.tileSize.width * CGFloat(itemsInRow)
-                        + VoiceGridLayout.spacing * CGFloat(itemsInRow - 1)
-                    let horizontalOrigin = (geometry.size.width - rowWidth) / 2
-
-                    VoiceParticipantTile(
-                        participant: participant,
-                        isCompact: true,
-                        tileSize: layout.tileSize
-                    ) { volume in
-                        updateVolume(participant, volume)
-                    }
-                    .frame(
-                        width: layout.tileSize.width,
-                        height: layout.tileSize.height
-                    )
-                    .position(
-                        x: horizontalOrigin
-                            + CGFloat(column)
-                                * (layout.tileSize.width + VoiceGridLayout.spacing)
-                            + layout.tileSize.width / 2,
-                        y: verticalOrigin
-                            + CGFloat(row)
-                                * (layout.tileSize.height + VoiceGridLayout.spacing)
-                            + layout.tileSize.height / 2
-                    )
-                    .animation(nil, value: layout.tileSize)
+                    cardContent(card)
+                        .matchedGeometryEffect(id: card.id, in: cardNamespace)
+                        .frame(width: layout.tileSize.width, height: layout.tileSize.height)
+                        .position(
+                            x: horizontalOrigin
+                                + CGFloat(column) * (layout.tileSize.width + VoiceGridLayout.spacing)
+                                + layout.tileSize.width / 2,
+                            y: verticalOrigin
+                                + CGFloat(row) * (layout.tileSize.height + VoiceGridLayout.spacing)
+                                + layout.tileSize.height / 2
+                        )
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
@@ -303,58 +466,226 @@ private struct AdaptiveVoiceGrid: View {
     }
 }
 
-private struct ScrollableVoiceGrid: View {
-    let participants: [VoiceTileParticipant]
-    let updateVolume: (VoiceTileParticipant, Float) -> Void
+private struct VoiceStreamTile: View {
+    let owner: VoiceTileParticipant
+    let key: ApplicationStreamKey
+    let state: ApplicationStreamPlaybackState
+    let isPaused: Bool
+    let isCompact: Bool
+    let model: AppModel
+    let isDemanded: Bool
+    @Environment(\.displayScale) private var displayScale
+    @State private var isHovering = false
+    @State private var renderedSize = CGSize.zero
 
-    private var columns: [GridItem] {
-        let columnCount = switch participants.count {
-        case 0 ... 1: 1
-        case 2 ... 4: 2
-        default: 3
-        }
-        return Array(
-            repeating: GridItem(
-                .flexible(minimum: 260, maximum: 620),
-                spacing: 12
-            ),
-            count: columnCount
-        )
-    }
-
-    private var gridMaximumWidth: CGFloat {
-        switch participants.count {
-        case 0 ... 1: 900
-        case 2 ... 4: 1180
-        default: 1420
-        }
+    private var frame: VoiceVideoFrame? {
+        key == model.localApplicationStreamKey
+            ? model.screenSharePreviewFrame : model.applicationStreamFrames[key]
     }
 
     var body: some View {
-        GeometryReader { geometry in
-            ScrollView {
-                LazyVGrid(columns: columns, alignment: .center, spacing: 12) {
-                    ForEach(participants) { participant in
-                        VoiceParticipantTile(
-                            participant: participant,
-                            isCompact: false,
-                            tileSize: nil
-                        ) { volume in
-                            updateVolume(participant, volume)
+        ZStack {
+            if usesVideoSurface {
+                Color.black.opacity(0.86)
+            } else {
+                Color.primary.opacity(0.055)
+            }
+            if let frame {
+                Image(decorative: frame.image, scale: 1)
+                    .resizable()
+                    .scaledToFit()
+            } else if showsCenteredWatchAction {
+                VStack(spacing: isCompact ? 10 : 16) {
+                    ZStack(alignment: .bottomTrailing) {
+                        Image(systemName: "tv")
+                            .font(.system(size: isCompact ? 38 : 52, weight: .light))
+                            .foregroundStyle(.secondary)
+                        AvatarView(
+                            name: owner.name,
+                            url: owner.avatarURL,
+                            size: isCompact ? 22 : 30,
+                            maximumPixelDimension: isCompact ? 52 : 72
+                        )
+                        .overlay {
+                            Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 2)
                         }
+                        .offset(x: isCompact ? 5 : 7, y: isCompact ? 4 : 6)
+                    }
+                    .padding(.bottom, isCompact ? 2 : 4)
+                    Text("\(owner.name)'s Screen")
+                        .font(isCompact ? .caption.weight(.semibold) : .callout.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    if case .failed(let message) = state {
+                        Text(message)
+                            .font(.caption)
+                            .foregroundStyle(Color(hex: 0xF23F43))
+                            .lineLimit(2)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 16)
+                    }
+                    streamAction(isCentered: true)
+                }
+            } else {
+                VStack(spacing: isCompact ? 8 : 13) {
+                    AvatarView(
+                        name: owner.name,
+                        url: owner.avatarURL,
+                        size: isCompact ? 52 : 76,
+                        maximumPixelDimension: isCompact ? 120 : 176
+                    )
+                    if state == .connecting || state == .reconnecting {
+                        ProgressView().controlSize(isCompact ? .small : .regular)
+                    } else {
+                        Image(systemName: "rectangle.on.rectangle")
+                            .font(.title2)
+                            .foregroundStyle(.secondary)
+                    }
+                    if case .failed(let message) = state {
+                        Text(message)
+                            .font(.caption)
+                            .foregroundStyle(Color(hex: 0xF23F43))
+                            .lineLimit(2)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 16)
                     }
                 }
-                .frame(maxWidth: gridMaximumWidth)
-                .frame(
-                    maxWidth: .infinity,
-                    minHeight: max(0, geometry.size.height - 28),
-                    alignment: .center
-                )
-                .padding(14)
             }
-            .scrollIndicators(.hidden)
+
+            if isPaused, !showsCenteredWatchAction {
+                Label("Screen share paused", systemImage: "pause.fill")
+                    .font(.callout.weight(.semibold))
+                    .padding(.horizontal, 14)
+                    .frame(height: 38)
+                    .glassEffect(.regular, in: Capsule())
+            }
+        }
+        .overlay(alignment: .bottomLeading) {
+            Label("\(owner.name)'s Screen", systemImage: "display")
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 10)
+                .frame(height: 28)
+                .glassEffect(.regular, in: Capsule())
+                .padding(isCompact ? 7 : 10)
+        }
+        .overlay(alignment: .topTrailing) {
+            if key == model.localApplicationStreamKey {
+                liveBadge
+                    .padding(isCompact ? 7 : 10)
+            } else if !showsCenteredWatchAction, isHovering || frame == nil {
+                streamAction(isCentered: false)
+                    .padding(isCompact ? 7 : 10)
+                    .transition(.opacity.combined(with: .scale(scale: 0.92)))
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .aspectRatio(16 / 9, contentMode: .fit)
+        .clipShape(ConcentricRectangle(cornerRadius: isCompact ? 12 : 16, style: .continuous))
+        .overlay {
+            ConcentricRectangle(cornerRadius: isCompact ? 12 : 16, style: .continuous)
+                .stroke(
+                    isActiveStreamSurface
+                        ? Color.accentColor.opacity(0.7) : Color.primary.opacity(0.1),
+                    lineWidth: isActiveStreamSurface ? 2 : 1
+                )
+        }
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            withAnimation(.snappy(duration: 0.14)) { isHovering = hovering }
+        }
+        .onGeometryChange(for: CGSize.self) { proxy in
+            proxy.size
+        } action: { size in
+            renderedSize = size
+        }
+        .task(id: demand) {
+            await model.setApplicationStreamDemand(
+                demand.isEnabled,
+                key: key,
+                pixelCount: demand.pixelCount
+            )
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(owner.name)'s screen share")
+    }
+
+    private var demand: VoiceStreamDemand {
+        guard isDemanded,
+              state == .connecting || state == .watching || state == .reconnecting
+        else {
+            return VoiceStreamDemand(isEnabled: false, pixelCount: nil)
+        }
+        let width = max(1, Int((renderedSize.width * displayScale).rounded(.up)))
+        let height = max(1, Int((renderedSize.height * displayScale).rounded(.up)))
+        let pixelCount = width.multipliedReportingOverflow(by: height)
+        return VoiceStreamDemand(
+            isEnabled: true,
+            pixelCount: pixelCount.overflow ? .max : pixelCount.partialValue
+        )
+    }
+
+    private var usesVideoSurface: Bool {
+        frame != nil || state == .watching || state == .broadcasting || state == .reconnecting
+    }
+
+    private var isActiveStreamSurface: Bool {
+        state == .watching || state == .broadcasting
+    }
+
+    private var showsCenteredWatchAction: Bool {
+        key != model.localApplicationStreamKey
+            && state != .watching
+            && state != .connecting
+            && state != .reconnecting
+    }
+
+    @ViewBuilder private func streamAction(isCentered: Bool) -> some View {
+        if state == .watching || state == .reconnecting {
+            Button {
+                Task { await model.stopWatchingApplicationStream(key) }
+            } label: {
+                Label("Stop Watching", systemImage: "rectangle.slash")
+                    .font(.caption.weight(.semibold))
+                    .frame(minWidth: 132, minHeight: 34)
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .contentShape(Capsule())
+            .glassEffect(.regular.interactive(), in: Capsule())
+        } else {
+            Button {
+                Task { await model.watchApplicationStream(key) }
+            } label: {
+                Label(
+                    state.isFailed ? "Retry" : "Watch",
+                    systemImage: "rectangle.on.rectangle.angled"
+                )
+                    .font((isCentered ? Font.callout : .caption).weight(.semibold))
+                    .frame(
+                        minWidth: isCentered ? 132 : 88,
+                        minHeight: isCentered ? 42 : 34
+                    )
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .contentShape(Capsule())
+            .glassEffect(.regular.tint(Color.accentColor).interactive(), in: Capsule())
+            .disabled(state == .connecting)
+        }
+    }
+
+    private var liveBadge: some View {
+        Label("Live", systemImage: "dot.radiowaves.left.and.right")
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 12)
+            .frame(height: 32)
+            .glassEffect(.regular.tint(Color.red.opacity(0.2)), in: Capsule())
+    }
+}
+
+private extension ApplicationStreamPlaybackState {
+    var isFailed: Bool {
+        if case .failed = self { true } else { false }
     }
 }
 
@@ -377,7 +708,6 @@ private struct VoiceParticipantTile: View {
                 )
             } else {
                 Color.primary.opacity(0.055)
-
                 if let frame = participant.frame {
                     Image(decorative: frame.image, scale: 1)
                         .resizable()
@@ -403,15 +733,24 @@ private struct VoiceParticipantTile: View {
                 .padding(isCompact ? 7 : 10)
             }
         }
+        .overlay(alignment: .topLeading) {
+            if participant.isStreaming {
+                Image(systemName: "display")
+                    .font(.caption.weight(.semibold))
+                    .frame(width: 30, height: 30)
+                    .glassEffect(.regular, in: Circle())
+                    .padding(isCompact ? 7 : 10)
+                    .accessibilityLabel("Sharing screen")
+            }
+        }
         .overlay(alignment: .topTrailing) {
             if !participant.isLocal,
                !participant.isRinging,
                isHovering || showVolume
             {
-                Button {
-                    showVolume.toggle()
-                } label: {
-                    Image(systemName: participant.volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                Button { showVolume.toggle() } label: {
+                    Image(systemName: participant.volume == 0
+                        ? "speaker.slash.fill" : "speaker.wave.2.fill")
                         .font(.callout.weight(.semibold))
                         .frame(width: 34, height: 34)
                         .contentShape(Circle())
@@ -427,27 +766,22 @@ private struct VoiceParticipantTile: View {
                         updateVolume: updateVolume
                     )
                 }
-                .transition(.opacity.combined(with: .scale(scale: 0.9)))
             }
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .aspectRatio(16 / 9, contentMode: .fit)
-        .clipShape(
-            ConcentricRectangle(cornerRadius: isCompact ? 12 : 16, style: .continuous)
-        )
+        .clipShape(ConcentricRectangle(cornerRadius: isCompact ? 12 : 16, style: .continuous))
         .overlay {
             if !participant.isRinging {
-                ConcentricRectangle(
-                    cornerRadius: isCompact ? 12 : 16,
-                    style: .continuous
-                )
-                .stroke(
-                    participant.isSpeaking
-                        ? Color(hex: 0x23A55A) : Color.primary.opacity(0.08),
-                    lineWidth: participant.isSpeaking ? 3 : 1
-                )
+                ConcentricRectangle(cornerRadius: isCompact ? 12 : 16, style: .continuous)
+                    .stroke(
+                        participant.isSpeaking
+                            ? Color(hex: 0x23A55A) : Color.primary.opacity(0.08),
+                        lineWidth: participant.isSpeaking ? 3 : 1
+                    )
             }
         }
+        .contentShape(Rectangle())
         .onHover { hovering in
             withAnimation(.snappy(duration: 0.14)) { isHovering = hovering }
         }
@@ -463,7 +797,8 @@ private struct VoiceParticipantTile: View {
 
     private var accessibilityValue: String {
         let camera = participant.frame == nil ? "Camera off" : "Camera on"
-        return participant.isRinging ? "Ringing, \(camera)" : camera
+        let stream = participant.isStreaming ? ", sharing screen" : ""
+        return participant.isRinging ? "Ringing, \(camera)\(stream)" : "\(camera)\(stream)"
     }
 }
 
@@ -482,7 +817,6 @@ private struct RingingParticipantAvatar: View {
                 .frame(width: size * 1.18, height: size * 1.18)
                 .scaleEffect(isPulsing ? 1.12 : 0.92)
                 .opacity(isPulsing ? 0.12 : 0.68)
-
             AvatarView(
                 name: name,
                 url: avatarURL,
@@ -496,12 +830,8 @@ private struct RingingParticipantAvatar: View {
             color: Color(hex: 0x23A55A).opacity(isPulsing ? 0.34 : 0.12),
             radius: isPulsing ? 9 : 3
         )
-        .onAppear {
-            updateAnimation(reduceMotion: reduceMotion)
-        }
-        .onChange(of: reduceMotion) { _, value in
-            updateAnimation(reduceMotion: value)
-        }
+        .onAppear { updateAnimation(reduceMotion: reduceMotion) }
+        .onChange(of: reduceMotion) { _, value in updateAnimation(reduceMotion: value) }
         .accessibilityHidden(true)
     }
 
@@ -510,10 +840,7 @@ private struct RingingParticipantAvatar: View {
             isPulsing = false
         } else {
             isPulsing = false
-            withAnimation(
-                .easeInOut(duration: 0.82)
-                    .repeatForever(autoreverses: true)
-            ) {
+            withAnimation(.easeInOut(duration: 0.82).repeatForever(autoreverses: true)) {
                 isPulsing = true
             }
         }
@@ -529,16 +856,12 @@ struct VoiceParticipantNameCapsule: View {
     var body: some View {
         HStack(spacing: 7) {
             if isMuted {
-                Image(systemName: "mic.slash.fill")
-                    .accessibilityLabel("Muted")
+                Image(systemName: "mic.slash.fill").accessibilityLabel("Muted")
             }
             if isDeafened {
-                Image(systemName: "headphones.slash")
-                    .accessibilityLabel("Deafened")
+                Image(systemName: "headphones.slash").accessibilityLabel("Deafened")
             }
-
-            Text(isLocal ? "\(name) (You)" : name)
-                .lineLimit(1)
+            Text(isLocal ? "\(name) (You)" : name).lineLimit(1)
         }
         .font(.caption.weight(.semibold))
         .foregroundStyle(.primary)
@@ -562,15 +885,12 @@ private struct ParticipantVolumeControl: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(name)
-                .font(.headline)
-                .lineLimit(1)
+            Text(name).font(.headline).lineLimit(1)
             HStack(spacing: 10) {
                 Image(systemName: volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
                     .foregroundStyle(.secondary)
                     .frame(width: 18)
-                Slider(value: $volume, in: 0 ... 2)
-                    .frame(width: 180)
+                Slider(value: $volume, in: 0 ... 2).frame(width: 180)
                 Text("\(Int(volume * 100))%")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)

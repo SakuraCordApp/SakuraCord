@@ -22,7 +22,7 @@ public final class VoiceAudioEngine {
     public private(set) var inputDeviceID: AudioDeviceID?
     public private(set) var outputDeviceID: AudioDeviceID?
     public var inputVolume: Float = 1 {
-        didSet { captureBridge.inputVolume = min(max(inputVolume, 0), 2) }
+        didSet { captureEncoder.inputVolume = min(max(inputVolume, 0), 2) }
     }
 
     public var outputVolume: Float = 1 {
@@ -30,7 +30,7 @@ public final class VoiceAudioEngine {
     }
 
     public var isMuted = false {
-        didSet { captureBridge.isMuted = isMuted }
+        didSet { captureEncoder.isMuted = isMuted }
     }
 
     public var isDeafened = false {
@@ -46,7 +46,7 @@ public final class VoiceAudioEngine {
     private var captureOutput: AVCaptureAudioDataOutput?
     private let playbackEngine = AVAudioEngine()
     private let codec: OpusCodec
-    private let captureBridge: AudioCaptureBridge
+    private let captureEncoder: OpusSampleBufferEncoder
     private var players: [String: AVAudioPlayerNode] = [:]
     private var participantVolumes: [String: Float] = [:]
     private var captureSessionObservers: [NSObjectProtocol] = []
@@ -61,7 +61,7 @@ public final class VoiceAudioEngine {
     public init(bitRate: Int = 64000) throws {
         let codec = try OpusCodec(bitRate: bitRate)
         self.codec = codec
-        captureBridge = AudioCaptureBridge(codec: codec)
+        captureEncoder = OpusSampleBufferEncoder(codec: codec)
         playbackConfigurationObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange,
             object: playbackEngine,
@@ -115,7 +115,7 @@ public final class VoiceAudioEngine {
         stop()
         self.inputDeviceID = inputDeviceID
         self.outputDeviceID = outputDeviceID
-        captureBridge.handler = onCapturedFrame
+        captureEncoder.handler = onCapturedFrame
         do {
             try startPlaybackGraph()
             try startCaptureGraph()
@@ -140,7 +140,7 @@ public final class VoiceAudioEngine {
         playbackRecoveryTask = nil
         tearDownCaptureGraph()
         tearDownPlaybackGraph()
-        captureBridge.handler = nil
+        captureEncoder.handler = nil
     }
 
     private func startCaptureGraph() throws {
@@ -149,7 +149,7 @@ public final class VoiceAudioEngine {
             allowsDefaultFallback: true
         )
         let output = AVCaptureAudioDataOutput()
-        output.setSampleBufferDelegate(captureBridge, queue: captureQueue)
+        output.setSampleBufferDelegate(captureEncoder, queue: captureQueue)
         do {
             try captureQueue.sync { [captureSession] in
                 captureSession.beginConfiguration()
@@ -567,7 +567,10 @@ public final class VoiceAudioEngine {
     }
 }
 
-private final class AudioCaptureBridge: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, @unchecked Sendable {
+final class OpusSampleBufferEncoder: NSObject,
+    AVCaptureAudioDataOutputSampleBufferDelegate,
+    @unchecked Sendable
+{
     var handler: (@Sendable (CapturedOpusFrame) -> Void)? {
         get { lock.withLock { _handler } }
         set { lock.withLock { _handler = newValue } }
@@ -584,6 +587,7 @@ private final class AudioCaptureBridge: NSObject, AVCaptureAudioDataOutputSample
     }
 
     private let codec: OpusCodec
+    private let activityThreshold: Float
     private let lock = NSLock()
     private var converter: AVAudioConverter?
     private var left: [Float] = []
@@ -593,9 +597,17 @@ private final class AudioCaptureBridge: NSObject, AVCaptureAudioDataOutputSample
     private var _inputVolume: Float = 1
     private var _isMuted = false
 
-    init(codec: OpusCodec) {
+    init(codec: OpusCodec, activityThreshold: Float = 0.003) {
         self.codec = codec
+        self.activityThreshold = activityThreshold
         super.init()
+    }
+
+    convenience init(bitRate: Int = 64_000, activityThreshold: Float = 0.003) throws {
+        try self.init(
+            codec: OpusCodec(bitRate: bitRate),
+            activityThreshold: activityThreshold
+        )
     }
 
     func captureOutput(
@@ -603,6 +615,10 @@ private final class AudioCaptureBridge: NSObject, AVCaptureAudioDataOutputSample
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
+        process(sampleBuffer)
+    }
+
+    func process(_ sampleBuffer: CMSampleBuffer) {
         guard let description = CMSampleBufferGetFormatDescription(sampleBuffer) else { return }
         guard let format = AVAudioFormat(formatDescription: description) else { return }
         let frameCount = AVAudioFrameCount(CMSampleBufferGetNumSamples(sampleBuffer))
@@ -628,6 +644,14 @@ private final class AudioCaptureBridge: NSObject, AVCaptureAudioDataOutputSample
                 throw VoiceAudioEngineError.converterUnavailable
             }
             self.converter = converter
+            left.removeAll(keepingCapacity: true)
+            right.removeAll(keepingCapacity: true)
+            bufferedSampleOffset = 0
+        }
+    }
+
+    func reset() {
+        lock.withLock {
             left.removeAll(keepingCapacity: true)
             right.removeAll(keepingCapacity: true)
             bufferedSampleOffset = 0
@@ -677,7 +701,10 @@ private final class AudioCaptureBridge: NSObject, AVCaptureAudioDataOutputSample
                 bufferedSampleOffset += frameCount
                 if let packet = try? codec.encode(pcm) {
                     let rms = sqrt(energy / Float(frameCount * 2))
-                    output.append(CapturedOpusFrame(data: packet, containsVoice: !_isMuted && rms > 0.003))
+                    output.append(CapturedOpusFrame(
+                        data: packet,
+                        containsVoice: !_isMuted && rms > activityThreshold
+                    ))
                 }
             }
             compactBufferedSamples(frameCount: frameCount)
