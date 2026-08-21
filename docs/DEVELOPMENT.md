@@ -37,6 +37,10 @@ may observe existing state and allow normal connection or session-maintenance
 traffic, but agent-run verification must not deliberately mutate remote account
 state or content without an explicit request for that specific action.
 
+Use `./script/build_and_run.sh run-release` to build the optimized release
+configuration, apply the release credential restrictions, and launch the
+staged app bundle.
+
 ## Local credential mode
 
 For repeated ad-hoc debug builds that cannot conveniently use Keychain, a
@@ -80,6 +84,7 @@ proportion to its risk:
 | --- | --- |
 | `./script/build_and_run.sh --verify` | Build, launch offline, and verify the scoped app process |
 | `./script/build_and_run.sh package` | Stage an ad-hoc signed debug app without launching it |
+| `./script/build_and_run.sh run-release` | Build, stage, and launch an optimized release app |
 | `./script/test.sh protocol` | Run protocol package tests |
 | `./script/test.sh app` | Run application package tests |
 | `./script/test.sh all` | Run the configured first-party test matrix |

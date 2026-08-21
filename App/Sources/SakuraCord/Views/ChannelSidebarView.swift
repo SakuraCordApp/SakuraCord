@@ -101,9 +101,10 @@ struct ChannelSidebarView: View {
     @Environment(\.displayScale) private var displayScale
     @State private var selectionCommitter =
         ChannelSidebarSelectionCommitter()
+    @State private var accountControlHeight: CGFloat = 0
 
     var body: some View {
-        VStack(spacing: 0) {
+        ZStack(alignment: .bottom) {
             if guild == nil {
                 DirectMessageInboxView(
                     model: voiceModel,
@@ -113,7 +114,8 @@ struct ChannelSidebarView: View {
                         !$0.value.isUnavailable
                     },
                     animatesAvatars: true,
-                    selection: directMessageSelection
+                    selection: directMessageSelection,
+                    bottomContentInset: accountControlHeight
                 )
             } else {
                 GuildChannelList(
@@ -125,7 +127,8 @@ struct ChannelSidebarView: View {
                         hiddenChannelIDs: hiddenChannelIDs,
                         checkingChannelIDs: checkingChannelIDs,
                         unreadCategoryIDs: unreadCategoryIDs,
-                        selectedChannelID: selection
+                        selectedChannelID: selection,
+                        bottomContentInset: accountControlHeight
                     ),
                     model: voiceModel,
                     selection: deferredGuildSelection
@@ -148,6 +151,14 @@ struct ChannelSidebarView: View {
                 connectAccount: connectAccount,
                 updateStatus: updateStatus
             )
+            .frame(maxWidth: .infinity)
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.height
+            } action: { height in
+                guard height.isFinite, height >= 0 else { return }
+                accountControlHeight = height
+            }
+            .zIndex(1)
         }
         .overlay {
             SidebarChromeSeparator(
@@ -232,6 +243,7 @@ nonisolated private struct GuildChannelListInput: Equatable, Sendable {
     let checkingChannelIDs: Set<ChannelID>
     let unreadCategoryIDs: Set<ChannelID>
     let selectedChannelID: ChannelID?
+    let bottomContentInset: CGFloat
 }
 
 private struct GuildChannelList: View, Equatable {
@@ -252,8 +264,10 @@ private struct GuildChannelList: View, Equatable {
                 ChannelGroupRows(
                     model: model,
                     group: group,
-                    addsTopSpacing:
-                        group.id == input.channelGroups.first?.id,
+                    bottomContentInset:
+                        group.id == input.channelGroups.last?.id
+                            ? input.bottomContentInset
+                            : 0,
                     rulesChannelID: input.rulesChannelID,
                     activeVoiceChannelID: input.activeVoiceChannelID,
                     hiddenChannelIDs: input.hiddenChannelIDs,
@@ -266,12 +280,28 @@ private struct GuildChannelList: View, Equatable {
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
+        .scrollClipDisabled()
+        .padding(.top, ChatChromeMetrics.channelListTopPadding)
         .clipped()
         .background {
             ScrollInputPerformanceProbeAttachment(surface: .channelList)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
         }
+    }
+}
+
+struct SidebarBottomScrollSpacer: View {
+    let height: CGFloat
+
+    var body: some View {
+        Color.clear
+            .frame(height: height)
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
@@ -358,7 +388,7 @@ struct SidebarChromeSeparator: Shape {
 private struct ChannelGroupRows: View {
     let model: AppModel
     let group: ChannelGroup
-    let addsTopSpacing: Bool
+    let bottomContentInset: CGFloat
     let rulesChannelID: ChannelID?
     let activeVoiceChannelID: ChannelID?
     let hiddenChannelIDs: Set<ChannelID>
@@ -371,7 +401,7 @@ private struct ChannelGroupRows: View {
     init(
         model: AppModel,
         group: ChannelGroup,
-        addsTopSpacing: Bool,
+        bottomContentInset: CGFloat,
         rulesChannelID: ChannelID?,
         activeVoiceChannelID: ChannelID?,
         hiddenChannelIDs: Set<ChannelID>,
@@ -380,7 +410,7 @@ private struct ChannelGroupRows: View {
     ) {
         self.model = model
         self.group = group
-        self.addsTopSpacing = addsTopSpacing
+        self.bottomContentInset = bottomContentInset
         self.rulesChannelID = rulesChannelID
         self.activeVoiceChannelID = activeVoiceChannelID
         self.hiddenChannelIDs = hiddenChannelIDs
@@ -440,14 +470,12 @@ private struct ChannelGroupRows: View {
                     }
                 }
             }
+
+            if bottomContentInset > 0 {
+                SidebarBottomScrollSpacer(height: bottomContentInset)
+            }
         } header: {
             VStack(spacing: 0) {
-                if addsTopSpacing {
-                    Color.clear
-                        .frame(height: ChatChromeMetrics.channelListTopPadding)
-                        .accessibilityHidden(true)
-                }
-
                 if let name = group.name,
                    let categoryID = group.categoryID,
                    let guildID = group.guildID
@@ -645,7 +673,6 @@ private struct AccountControlView: View {
             )
         }
         .padding(.horizontal, 8)
-        .padding(.top, 8)
         .padding(.bottom, 12)
     }
 

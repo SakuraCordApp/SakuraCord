@@ -11,9 +11,9 @@ source "$ROOT_DIR/script/release_metadata.sh"
 source "$ROOT_DIR/script/debug_credentials_config.sh"
 
 case "$MODE" in
-  package|package-release|run|--offline|--offline-long-server-list|--offline-forum-performance|--offline-chat-performance|--offline-chat-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-media-performance-autoscroll|--offline-incoming-private-call|--media-viewer-benchmark|--verify|--debug|--logs|--telemetry) ;;
+  package|package-release|run|run-release|--offline|--offline-long-server-list|--offline-forum-performance|--offline-chat-performance|--offline-chat-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-media-performance-autoscroll|--offline-incoming-private-call|--media-viewer-benchmark|--verify|--debug|--logs|--telemetry) ;;
   *)
-    echo "usage: $0 [package|package-release|run|--offline|--offline-long-server-list|--offline-forum-performance|--offline-chat-performance|--offline-chat-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-media-performance-autoscroll|--offline-incoming-private-call|--media-viewer-benchmark|--verify|--debug|--logs|--telemetry]" >&2
+    echo "usage: $0 [package|package-release|run|run-release|--offline|--offline-long-server-list|--offline-forum-performance|--offline-chat-performance|--offline-chat-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-media-performance-autoscroll|--offline-incoming-private-call|--media-viewer-benchmark|--verify|--debug|--logs|--telemetry]" >&2
     exit 2
     ;;
 esac
@@ -64,7 +64,7 @@ if [[ "$UPDATES_ENABLED" == "1" ]]; then
   fi
 fi
 BUILD_FLAGS=()
-if [[ "$MODE" == "package-release" ]]; then
+if [[ "$MODE" == "package-release" || "$MODE" == "run-release" ]]; then
   BUILD_FLAGS=(-c release --disable-index-store)
 fi
 APP_ICON_NAME="$SAKURACORD_PRODUCT_NAME"
@@ -265,6 +265,7 @@ open_media_viewer_benchmark() {
 case "$MODE" in
   package|package-release) ;;
   run) open_app ;;
+  run-release) open_app ;;
   --debug) lldb -- "$MACOS/$APP_NAME" ;;
   --logs)
     open_app

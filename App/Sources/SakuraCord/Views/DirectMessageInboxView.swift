@@ -8,6 +8,7 @@ struct DirectMessageInboxView: View {
     let privateCallsByChannel: [ChannelID: PrivateCall]
     let animatesAvatars: Bool
     @Binding var selection: ChannelID?
+    let bottomContentInset: CGFloat
 
     var body: some View {
         List(selection: $selection) {
@@ -25,13 +26,16 @@ struct DirectMessageInboxView: View {
                     )
                         .tag(channel.id)
                 }
+
+                SidebarBottomScrollSpacer(height: bottomContentInset)
             } header: {
                 Text("Direct Messages")
-                    .padding(.top, ChatChromeMetrics.channelListTopPadding)
             }
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
+        .scrollClipDisabled()
+        .padding(.top, ChatChromeMetrics.channelListTopPadding)
         .clipped()
         .overlay {
             if directMessages.isEmpty {

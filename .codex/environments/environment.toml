@@ -6,36 +6,21 @@ name = "SakuraCord"
 script = "./script/setup.sh"
 
 [[actions]]
-name = "Run Offline"
+name = "Build & Run"
+icon = "run"
+command = "./script/build_and_run.sh"
+
+[[actions]]
+name = "Build & Run Offline"
 icon = "run"
 command = "./script/build_and_run.sh --offline"
 
 [[actions]]
-name = "Run Long Server Fixture"
+name = "Build & Run Release"
 icon = "run"
-command = "./script/build_and_run.sh --offline-long-server-list"
-
-[[actions]]
-name = "Package App"
-icon = "tool"
-command = "./script/build_and_run.sh package"
-
-[[actions]]
-name = "Show App Path"
-icon = "tool"
-command = "./script/runtime.sh"
+command = "./script/build_and_run.sh run-release"
 
 [[actions]]
 name = "Test App"
 icon = "test"
 command = "./script/test.sh app"
-
-[[actions]]
-name = "Test Protocol"
-icon = "test"
-command = "./script/test.sh protocol"
-
-[[actions]]
-name = "Test All"
-icon = "test"
-command = "./script/test.sh all"

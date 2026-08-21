@@ -44,17 +44,22 @@ fi
 
 unset SAKURACORD_INSECURE_DEBUG_CREDENTIALS
 assert_resolution 1 "repository config"
-sakuracord_apply_secure_release_credential_policy package-release 0
-[[ "$SAKURACORD_RESOLVED_INSECURE_DEBUG_CREDENTIALS" == "0" ]] \
-  || fail "release build retained repository debug preference"
-[[ "$SAKURACORD_INSECURE_DEBUG_CREDENTIALS_SOURCE" == "release safety override" ]] \
-  || fail "release safety override source was not reported"
+for release_mode in package-release run-release; do
+  unset SAKURACORD_INSECURE_DEBUG_CREDENTIALS
+  assert_resolution 1 "repository config"
+  sakuracord_apply_secure_release_credential_policy "$release_mode" 0
+  [[ "$SAKURACORD_RESOLVED_INSECURE_DEBUG_CREDENTIALS" == "0" ]] \
+    || fail "$release_mode retained repository debug preference"
+  [[ "$SAKURACORD_INSECURE_DEBUG_CREDENTIALS_SOURCE" == "release safety override" ]] \
+    || fail "$release_mode safety override source was not reported"
 
-SAKURACORD_INSECURE_DEBUG_CREDENTIALS=1
-sakuracord_resolve_insecure_debug_credentials "$TEMP_ROOT"
-if (sakuracord_apply_secure_release_credential_policy package-release 0) >/dev/null 2>&1; then
-  fail "release build accepted explicit insecure environment override"
-fi
+  SAKURACORD_INSECURE_DEBUG_CREDENTIALS=1
+  sakuracord_resolve_insecure_debug_credentials "$TEMP_ROOT"
+  if (sakuracord_apply_secure_release_credential_policy "$release_mode" 0) \
+    >/dev/null 2>&1; then
+    fail "$release_mode accepted explicit insecure environment override"
+  fi
+done
 
 unset SAKURACORD_INSECURE_DEBUG_CREDENTIALS
 SAKURACORD_ROOT_DIR="$TEMP_ROOT" "$ROOT_DIR/script/debug_credentials.sh" disable >/dev/null

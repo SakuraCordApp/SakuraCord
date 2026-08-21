@@ -71,7 +71,8 @@ sakuracord_apply_secure_release_credential_policy() {
   local mode="$1"
   local updates_enabled="$2"
 
-  if [[ "$mode" != "package-release" && "$updates_enabled" != "1" ]]; then
+  if [[ "$mode" != "package-release" && "$mode" != "run-release" \
+    && "$updates_enabled" != "1" ]]; then
     return 0
   fi
 

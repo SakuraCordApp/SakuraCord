@@ -196,7 +196,7 @@ work, not an implemented architecture claim.
 
 ## Packaging
 
-`script/build_and_run.sh` builds the SwiftPM product, assembles the `.app`,
+`script/build_and_run.sh` builds the debug or release SwiftPM product, assembles the `.app`,
 compiles the selected Icon Composer source with `actool`, embeds frameworks and
 resource bundles, copies the complete third-party notices into the app's
 otherwise hidden `Contents/Resources/THIRD_PARTY_NOTICES.md`, and ad-hoc signs
