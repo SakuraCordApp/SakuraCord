@@ -27,13 +27,30 @@ private struct VoiceStreamDemand: Equatable {
     var pixelCount: Int?
 }
 
+private struct VoiceCardMetrics {
+    let scale: CGFloat
+
+    init(size: CGSize, isCompactFallback: Bool) {
+        guard size.width > 0, size.height > 0 else {
+            scale = isCompactFallback ? 0.62 : 1
+            return
+        }
+        scale = min(size.width / 640, size.height / 360)
+    }
+
+    func value(_ value: CGFloat) -> CGFloat { value * scale }
+
+    func font(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        .system(size: value(size), weight: weight)
+    }
+}
+
 struct VoiceVideoGrid: View {
     let model: AppModel
     var channel: Channel?
     var isCompact = false
     var ringingUserIDs: Set<UserID> = []
     @State private var focusedCardID: VoiceCardID?
-    @State private var showsSecondaryCards = true
     @Namespace private var cardNamespace
 
     private var participants: [VoiceTileParticipant] {
@@ -168,24 +185,7 @@ struct VoiceVideoGrid: View {
         let participantCards = participants.map {
             VoiceCard(id: .participant($0.id), kind: .participant($0))
         }
-        var streamKeys = Set<ApplicationStreamKey>()
-        for state in model.voiceStates.values
-        where state.channelID == activeChannel.id && state.isStreaming {
-            streamKeys.insert(ApplicationStreamKey(
-                type: activeChannel.guildID == nil ? .call : .guild,
-                guildID: activeChannel.guildID,
-                channelID: activeChannel.id,
-                ownerID: state.userID
-            ))
-        }
-        streamKeys.formUnion(
-            model.applicationStreams.keys.filter { $0.channelID == activeChannel.id }
-        )
-        if let local = model.localApplicationStreamKey,
-           local.channelID == activeChannel.id
-        {
-            streamKeys.insert(local)
-        }
+        let streamKeys = model.applicationStreamKeys(in: activeChannel)
         let streams = streamKeys.compactMap { key -> VoiceCard? in
             let ownerID = String(key.ownerID.rawValue)
             guard let owner = participantByID[ownerID] else { return nil }
@@ -234,7 +234,6 @@ struct VoiceVideoGrid: View {
             }
         }
         .animation(.snappy(duration: 0.32), value: focusedCardID)
-        .animation(.snappy(duration: 0.24), value: showsSecondaryCards)
         .onChange(of: cards.map(\.id)) { _, ids in
             if let focusedCardID, !ids.contains(focusedCardID) {
                 self.focusedCardID = nil
@@ -251,61 +250,23 @@ struct VoiceVideoGrid: View {
 
     private func focusedLayout(focused: VoiceCard, cards: [VoiceCard]) -> some View {
         let secondary = cards.filter { $0.id != focused.id }
-        return VStack(spacing: 10) {
+        return ZStack {
             cardView(focused, isCompact: false, isDemanded: true)
                 .matchedGeometryEffect(id: focused.id, in: cardNamespace)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .onTapGesture { toggleFocus(focused.id) }
 
-            if showsSecondaryCards, !secondary.isEmpty {
-                GeometryReader { geometry in
-                    ScrollView(.horizontal) {
-                        LazyHStack(spacing: 10) {
-                            ForEach(secondary) { card in
-                                cardView(card, isCompact: true, isDemanded: true)
-                                    .matchedGeometryEffect(id: card.id, in: cardNamespace)
-                                    .frame(width: 240, height: 135)
-                                    .onTapGesture { toggleFocus(card.id) }
-                            }
+            ForEach(secondary) { card in
+                if case .stream(_, let key, _, _) = card.kind {
+                    Color.clear
+                        .frame(width: 0, height: 0)
+                        .task(id: key) {
+                            await model.setApplicationStreamDemand(false, key: key)
                         }
-                        .frame(minWidth: geometry.size.width, alignment: .center)
-                        .padding(.horizontal, 2)
-                    }
-                    .scrollIndicators(.hidden)
-                }
-                .frame(height: 137)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            } else {
-                ForEach(secondary) { card in
-                    if case .stream(_, let key, _, _) = card.kind {
-                        Color.clear
-                            .frame(width: 0, height: 0)
-                            .task(id: key) {
-                                await model.setApplicationStreamDemand(false, key: key)
-                            }
-                    }
                 }
             }
         }
-        .padding(12)
-        .overlay(alignment: .bottomTrailing) {
-            if !secondary.isEmpty {
-                Button { showsSecondaryCards.toggle() } label: {
-                    Label(
-                        showsSecondaryCards ? "Hide Others" : "Show Others",
-                        systemImage: showsSecondaryCards
-                            ? "rectangle.compress.vertical" : "rectangle.expand.vertical"
-                    )
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 12)
-                    .frame(height: 34)
-                    .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .glassEffect(.regular.interactive(), in: Capsule())
-                .padding(18)
-            }
-        }
+        .padding(VoiceGridLayout.padding)
     }
 
     @ViewBuilder private func cardView(
@@ -337,7 +298,6 @@ struct VoiceVideoGrid: View {
 
     private func toggleFocus(_ id: VoiceCardID) {
         focusedCardID = focusedCardID == id ? nil : id
-        if focusedCardID != nil { showsSecondaryCards = true }
     }
 
 }
@@ -483,6 +443,10 @@ private struct VoiceStreamTile: View {
             ? model.screenSharePreviewFrame : model.applicationStreamFrames[key]
     }
 
+    private var metrics: VoiceCardMetrics {
+        VoiceCardMetrics(size: renderedSize, isCompactFallback: isCompact)
+    }
+
     var body: some View {
         ZStack {
             if usesVideoSurface {
@@ -495,98 +459,101 @@ private struct VoiceStreamTile: View {
                     .resizable()
                     .scaledToFit()
             } else if showsCenteredWatchAction {
-                VStack(spacing: isCompact ? 10 : 16) {
+                VStack(spacing: metrics.value(16)) {
                     ZStack(alignment: .bottomTrailing) {
                         Image(systemName: "tv")
-                            .font(.system(size: isCompact ? 38 : 52, weight: .light))
+                            .font(metrics.font(52, weight: .light))
                             .foregroundStyle(.secondary)
                         AvatarView(
                             name: owner.name,
                             url: owner.avatarURL,
-                            size: isCompact ? 22 : 30,
-                            maximumPixelDimension: isCompact ? 52 : 72
+                            size: metrics.value(30),
+                            maximumPixelDimension: Int(metrics.value(72).rounded(.up))
                         )
                         .overlay {
-                            Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 2)
+                            Circle().stroke(
+                                Color(nsColor: .windowBackgroundColor),
+                                lineWidth: metrics.value(2)
+                            )
                         }
-                        .offset(x: isCompact ? 5 : 7, y: isCompact ? 4 : 6)
+                        .offset(x: metrics.value(7), y: metrics.value(6))
                     }
-                    .padding(.bottom, isCompact ? 2 : 4)
+                    .padding(.bottom, metrics.value(4))
                     Text("\(owner.name)'s Screen")
-                        .font(isCompact ? .caption.weight(.semibold) : .callout.weight(.semibold))
+                        .font(metrics.font(14, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                     if case .failed(let message) = state {
                         Text(message)
-                            .font(.caption)
+                            .font(metrics.font(12))
                             .foregroundStyle(Color(hex: 0xF23F43))
                             .lineLimit(2)
                             .multilineTextAlignment(.center)
-                            .padding(.horizontal, 16)
+                            .padding(.horizontal, metrics.value(16))
                     }
                     streamAction(isCentered: true)
                 }
             } else {
-                VStack(spacing: isCompact ? 8 : 13) {
+                VStack(spacing: metrics.value(13)) {
                     AvatarView(
                         name: owner.name,
                         url: owner.avatarURL,
-                        size: isCompact ? 52 : 76,
-                        maximumPixelDimension: isCompact ? 120 : 176
+                        size: metrics.value(76),
+                        maximumPixelDimension: Int(metrics.value(176).rounded(.up))
                     )
                     if state == .connecting || state == .reconnecting {
-                        ProgressView().controlSize(isCompact ? .small : .regular)
+                        ProgressView().scaleEffect(metrics.scale)
                     } else {
                         Image(systemName: "rectangle.on.rectangle")
-                            .font(.title2)
+                            .font(metrics.font(22))
                             .foregroundStyle(.secondary)
                     }
                     if case .failed(let message) = state {
                         Text(message)
-                            .font(.caption)
+                            .font(metrics.font(12))
                             .foregroundStyle(Color(hex: 0xF23F43))
                             .lineLimit(2)
                             .multilineTextAlignment(.center)
-                            .padding(.horizontal, 16)
+                            .padding(.horizontal, metrics.value(16))
                     }
                 }
             }
 
             if isPaused, !showsCenteredWatchAction {
                 Label("Screen share paused", systemImage: "pause.fill")
-                    .font(.callout.weight(.semibold))
-                    .padding(.horizontal, 14)
-                    .frame(height: 38)
+                    .font(metrics.font(14, weight: .semibold))
+                    .padding(.horizontal, metrics.value(14))
+                    .frame(height: metrics.value(38))
                     .glassEffect(.regular, in: Capsule())
             }
         }
         .overlay(alignment: .bottomLeading) {
             Label("\(owner.name)'s Screen", systemImage: "display")
-                .font(.caption.weight(.semibold))
-                .padding(.horizontal, 10)
-                .frame(height: 28)
+                .font(metrics.font(12, weight: .semibold))
+                .padding(.horizontal, metrics.value(10))
+                .frame(height: metrics.value(28))
                 .glassEffect(.regular, in: Capsule())
-                .padding(isCompact ? 7 : 10)
+                .padding(metrics.value(10))
         }
         .overlay(alignment: .topTrailing) {
             if key == model.localApplicationStreamKey {
                 liveBadge
-                    .padding(isCompact ? 7 : 10)
+                    .padding(metrics.value(10))
             } else if !showsCenteredWatchAction, isHovering || frame == nil {
                 streamAction(isCentered: false)
-                    .padding(isCompact ? 7 : 10)
+                    .padding(metrics.value(10))
                     .transition(.opacity.combined(with: .scale(scale: 0.92)))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .aspectRatio(16 / 9, contentMode: .fit)
-        .clipShape(ConcentricRectangle(cornerRadius: isCompact ? 12 : 16, style: .continuous))
+        .clipShape(ConcentricRectangle(cornerRadius: metrics.value(16), style: .continuous))
         .overlay {
-            ConcentricRectangle(cornerRadius: isCompact ? 12 : 16, style: .continuous)
+            ConcentricRectangle(cornerRadius: metrics.value(16), style: .continuous)
                 .stroke(
                     isActiveStreamSurface
                         ? Color.accentColor.opacity(0.7) : Color.primary.opacity(0.1),
-                    lineWidth: isActiveStreamSurface ? 2 : 1
+                    lineWidth: metrics.value(isActiveStreamSurface ? 2 : 1)
                 )
         }
         .contentShape(Rectangle())
@@ -645,8 +612,8 @@ private struct VoiceStreamTile: View {
                 Task { await model.stopWatchingApplicationStream(key) }
             } label: {
                 Label("Stop Watching", systemImage: "rectangle.slash")
-                    .font(.caption.weight(.semibold))
-                    .frame(minWidth: 132, minHeight: 34)
+                    .font(metrics.font(12, weight: .semibold))
+                    .frame(minWidth: metrics.value(132), minHeight: metrics.value(34))
                     .contentShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -660,10 +627,10 @@ private struct VoiceStreamTile: View {
                     state.isFailed ? "Retry" : "Watch",
                     systemImage: "rectangle.on.rectangle.angled"
                 )
-                    .font((isCentered ? Font.callout : .caption).weight(.semibold))
+                    .font(metrics.font(12, weight: .semibold))
                     .frame(
-                        minWidth: isCentered ? 132 : 88,
-                        minHeight: isCentered ? 42 : 34
+                        minWidth: metrics.value(isCentered ? 132 : 88),
+                        minHeight: metrics.value(isCentered ? 42 : 34)
                     )
                     .contentShape(Capsule())
             }
@@ -676,9 +643,9 @@ private struct VoiceStreamTile: View {
 
     private var liveBadge: some View {
         Label("Live", systemImage: "dot.radiowaves.left.and.right")
-            .font(.caption.weight(.semibold))
-            .padding(.horizontal, 12)
-            .frame(height: 32)
+            .font(metrics.font(12, weight: .semibold))
+            .padding(.horizontal, metrics.value(12))
+            .frame(height: metrics.value(32))
             .glassEffect(.regular.tint(Color.red.opacity(0.2)), in: Capsule())
     }
 }
@@ -696,6 +663,11 @@ private struct VoiceParticipantTile: View {
     let updateVolume: (Float) -> Void
     @State private var isHovering = false
     @State private var showVolume = false
+    @State private var renderedSize = CGSize.zero
+
+    private var metrics: VoiceCardMetrics {
+        VoiceCardMetrics(size: renderedSize, isCompactFallback: isCompact)
+    }
 
     var body: some View {
         ZStack {
@@ -704,7 +676,7 @@ private struct VoiceParticipantTile: View {
                     name: participant.name,
                     avatarURL: participant.avatarURL,
                     size: avatarSize,
-                    maximumPixelDimension: isCompact ? 144 : 176
+                    maximumPixelDimension: Int(metrics.value(176).rounded(.up))
                 )
             } else {
                 Color.primary.opacity(0.055)
@@ -728,18 +700,19 @@ private struct VoiceParticipantTile: View {
                     name: participant.name,
                     isLocal: participant.isLocal,
                     isMuted: participant.isMuted,
-                    isDeafened: participant.isDeafened
+                    isDeafened: participant.isDeafened,
+                    scale: metrics.scale
                 )
-                .padding(isCompact ? 7 : 10)
+                .padding(metrics.value(10))
             }
         }
         .overlay(alignment: .topLeading) {
             if participant.isStreaming {
                 Image(systemName: "display")
-                    .font(.caption.weight(.semibold))
-                    .frame(width: 30, height: 30)
+                    .font(metrics.font(12, weight: .semibold))
+                    .frame(width: metrics.value(30), height: metrics.value(30))
                     .glassEffect(.regular, in: Circle())
-                    .padding(isCompact ? 7 : 10)
+                    .padding(metrics.value(10))
                     .accessibilityLabel("Sharing screen")
             }
         }
@@ -751,14 +724,14 @@ private struct VoiceParticipantTile: View {
                 Button { showVolume.toggle() } label: {
                     Image(systemName: participant.volume == 0
                         ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                        .font(.callout.weight(.semibold))
-                        .frame(width: 34, height: 34)
+                        .font(metrics.font(14, weight: .semibold))
+                        .frame(width: metrics.value(34), height: metrics.value(34))
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .glassEffect(.regular.interactive(), in: Circle())
                 .help("User Volume")
-                .padding(isCompact ? 7 : 10)
+                .padding(metrics.value(10))
                 .popover(isPresented: $showVolume, arrowEdge: .top) {
                     ParticipantVolumeControl(
                         name: participant.name,
@@ -770,14 +743,14 @@ private struct VoiceParticipantTile: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .aspectRatio(16 / 9, contentMode: .fit)
-        .clipShape(ConcentricRectangle(cornerRadius: isCompact ? 12 : 16, style: .continuous))
+        .clipShape(ConcentricRectangle(cornerRadius: metrics.value(16), style: .continuous))
         .overlay {
             if !participant.isRinging {
-                ConcentricRectangle(cornerRadius: isCompact ? 12 : 16, style: .continuous)
+                ConcentricRectangle(cornerRadius: metrics.value(16), style: .continuous)
                     .stroke(
                         participant.isSpeaking
                             ? Color(hex: 0x23A55A) : Color.primary.opacity(0.08),
-                        lineWidth: participant.isSpeaking ? 3 : 1
+                        lineWidth: metrics.value(participant.isSpeaking ? 3 : 1)
                     )
             }
         }
@@ -785,14 +758,18 @@ private struct VoiceParticipantTile: View {
         .onHover { hovering in
             withAnimation(.snappy(duration: 0.14)) { isHovering = hovering }
         }
+        .onGeometryChange(for: CGSize.self) { proxy in
+            proxy.size
+        } action: { size in
+            renderedSize = size
+        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(participant.isLocal ? "\(participant.name), you" : participant.name)
         .accessibilityValue(accessibilityValue)
     }
 
     private var avatarSize: CGFloat {
-        guard let tileSize else { return isCompact ? 54 : 88 }
-        return min(72, max(30, tileSize.height * 0.46))
+        metrics.value(88)
     }
 
     private var accessibilityValue: String {
@@ -852,9 +829,10 @@ struct VoiceParticipantNameCapsule: View {
     let isLocal: Bool
     let isMuted: Bool
     let isDeafened: Bool
+    var scale: CGFloat = 1
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 7 * scale) {
             if isMuted {
                 Image(systemName: "mic.slash.fill").accessibilityLabel("Muted")
             }
@@ -863,10 +841,10 @@ struct VoiceParticipantNameCapsule: View {
             }
             Text(isLocal ? "\(name) (You)" : name).lineLimit(1)
         }
-        .font(.caption.weight(.semibold))
+        .font(.system(size: 12 * scale, weight: .semibold))
         .foregroundStyle(.primary)
-        .padding(.horizontal, 10)
-        .frame(height: 28)
+        .padding(.horizontal, 10 * scale)
+        .frame(height: 28 * scale)
         .fixedSize(horizontal: true, vertical: false)
         .glassEffect(.regular, in: Capsule())
     }

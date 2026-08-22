@@ -88,6 +88,28 @@ public actor VoiceUDPConnection {
         }
     }
 
+    /// Submits one encoded video frame as a Network.framework batch. This
+    /// preserves datagram boundaries while avoiding one continuation and actor
+    /// round-trip per RTP fragment. Completion of the final datagram provides
+    /// the frame-level backpressure needed by the encoder consumer.
+    public func sendDatagrams(_ datagrams: [Data]) async throws {
+        guard let final = datagrams.last else { return }
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+            connection.batch {
+                for datagram in datagrams.dropLast() {
+                    connection.send(content: datagram, completion: .idempotent)
+                }
+                connection.send(content: final, completion: .contentProcessed { error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                    } else {
+                        continuation.resume()
+                    }
+                })
+            }
+        }
+    }
+
     public func close() {
         keepaliveTask?.cancel()
         connection.cancel()

@@ -760,6 +760,8 @@ extension AppModel {
             currentUserID: snapshot?.currentUser.id
         )
         voiceStates[state.userID] = state.channelID == nil ? nil : state
+        reconcileApplicationStreamWatchSuppression(for: state)
+        watchAvailableDirectMessageStreamsAutomatically()
         if !state.isVideoEnabled {
             voiceVideoFrames[String(state.userID.rawValue)] = nil
         }

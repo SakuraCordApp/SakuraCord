@@ -440,8 +440,7 @@ final class AppModel {
     var voiceLatencyMilliseconds: Int?
     var voiceErrorMessage: String?
     var applicationStreams: [ApplicationStreamKey: ApplicationStream] = [:]
-    var applicationStreamStates:
-        [ApplicationStreamKey: ApplicationStreamPlaybackState] = [:]
+    var applicationStreamStates: [ApplicationStreamKey: ApplicationStreamPlaybackState] = [:]
     var applicationStreamFrames: [ApplicationStreamKey: VoiceVideoFrame] = [:]
     var localApplicationStreamKey: ApplicationStreamKey?
     var isScreenSharePreviewPresented = false
@@ -1138,6 +1137,8 @@ final class AppModel {
         [ApplicationStreamKey: UInt64] = [:]
     @ObservationIgnored var applicationStreamDemandGenerations:
         [ApplicationStreamKey: UInt64] = [:]
+    @ObservationIgnored var applicationStreamDemandUpdateTasks = [ApplicationStreamKey: Task<Void, Never>]()
+    @ObservationIgnored var manuallyStoppedApplicationStreamKeys = Set<ApplicationStreamKey>()
     @ObservationIgnored var applicationStreamDemandIntents:
         [ApplicationStreamKey: ApplicationStreamDemandIntent] = [:]
     @ObservationIgnored var screenShareCaptureEngine: ScreenShareCaptureEngine?

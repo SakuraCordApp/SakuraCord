@@ -3,6 +3,78 @@ import SakuraCordModels
 import Testing
 
 @MainActor
+@Test func `only remote streams in connected one-to-one calls are automatically watched`() {
+    let model = AppModel(launchMode: .offlineTesting)
+    let currentUser = User(
+        id: UserID(rawValue: 10),
+        username: "current",
+        displayName: "Current User"
+    )
+    let recipient = User(
+        id: UserID(rawValue: 20),
+        username: "recipient",
+        displayName: "Recipient"
+    )
+    let directMessage = Channel(
+        id: ChannelID(rawValue: 30),
+        guildID: nil,
+        name: "Recipient",
+        kind: .directMessage,
+        recipients: [recipient]
+    )
+    let remoteKey = ApplicationStreamKey(
+        type: .call,
+        guildID: nil,
+        channelID: directMessage.id,
+        ownerID: recipient.id
+    )
+    let localKey = ApplicationStreamKey(
+        type: .call,
+        guildID: nil,
+        channelID: directMessage.id,
+        ownerID: currentUser.id
+    )
+
+    model.snapshot = BootstrapSnapshot(
+        currentUser: currentUser,
+        guilds: [],
+        channels: [directMessage],
+        members: []
+    )
+    model.activeVoiceChannel = directMessage
+    model.voiceSessionState = .connected
+    model.voiceStates[recipient.id] = VoiceParticipantState(
+        userID: recipient.id,
+        channelID: directMessage.id,
+        guildID: nil,
+        sessionID: "recipient-session",
+        isStreaming: true
+    )
+
+    #expect(model.shouldAutomaticallyWatchApplicationStream(remoteKey))
+    #expect(!model.shouldAutomaticallyWatchApplicationStream(localKey))
+    #expect(model.applicationStreamKeys(in: directMessage) == [remoteKey])
+
+    model.manuallyStoppedApplicationStreamKeys.insert(remoteKey)
+    #expect(!model.shouldAutomaticallyWatchApplicationStream(remoteKey))
+
+    model.reconcileApplicationStreamWatchSuppression(for: VoiceParticipantState(
+        userID: recipient.id,
+        channelID: directMessage.id,
+        guildID: nil,
+        sessionID: "recipient-session",
+        isStreaming: false
+    ))
+    #expect(model.shouldAutomaticallyWatchApplicationStream(remoteKey))
+
+    var groupMessage = directMessage
+    groupMessage.kind = .groupDirectMessage
+    model.activeVoiceChannel = groupMessage
+
+    #expect(!model.shouldAutomaticallyWatchApplicationStream(remoteKey))
+}
+
+@MainActor
 @Test func `application stream lifecycle remains independent from the voice channel`() {
     let model = AppModel(launchMode: .offlineTesting)
     let key = ApplicationStreamKey(

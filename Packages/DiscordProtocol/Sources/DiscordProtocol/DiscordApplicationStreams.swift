@@ -1,6 +1,16 @@
 import Foundation
 import SakuraCordModels
 
+private enum ApplicationStreamNegotiationRequest: Sendable {
+    case create(
+        key: ApplicationStreamKey,
+        channelID: ChannelID,
+        guildID: GuildID?,
+        preferredRegion: String?
+    )
+    case watch(ApplicationStreamKey)
+}
+
 public extension DiscordRESTProvider {
     func startApplicationStream(
         channelID: ChannelID,
@@ -18,13 +28,15 @@ public extension DiscordRESTProvider {
             channelID: channelID,
             ownerID: userID
         )
-        return try await negotiateApplicationStream(key: key) {
-            DiscordGatewayPayloadFactory.applicationStreamCreate(
+        return try await negotiateApplicationStream(
+            key: key,
+            request: .create(
+                key: key,
                 channelID: channelID,
                 guildID: guildID,
                 preferredRegion: preferredRegion
             )
-        }
+        )
     }
 
     func watchApplicationStream(
@@ -35,9 +47,7 @@ public extension DiscordRESTProvider {
                 "Discord Gateway is not ready to watch this screen share."
             )
         }
-        return try await negotiateApplicationStream(key: key) {
-            DiscordGatewayPayloadFactory.applicationStreamWatch(key)
-        }
+        return try await negotiateApplicationStream(key: key, request: .watch(key))
     }
 
     func stopApplicationStream(_ key: ApplicationStreamKey) async throws {
@@ -77,7 +87,7 @@ public extension DiscordRESTProvider {
 
     private func negotiateApplicationStream(
         key: ApplicationStreamKey,
-        payload: @escaping @Sendable () -> [String: Any]
+        request: ApplicationStreamNegotiationRequest
     ) async throws -> ApplicationStreamConnectionInfo {
         let negotiationID = UUID()
         return try await withTaskCancellationHandler {
@@ -108,7 +118,7 @@ public extension DiscordRESTProvider {
                 }
                 Task { [weak self] in
                     do {
-                        try await self?.sendGateway(payload())
+                        try await self?.sendApplicationStreamNegotiationRequest(request)
                     } catch {
                         await self?.failApplicationStreamNegotiation(
                             key: key,
@@ -126,6 +136,31 @@ public extension DiscordRESTProvider {
                     error: CancellationError()
                 )
             }
+        }
+    }
+
+    private func sendApplicationStreamNegotiationRequest(
+        _ request: ApplicationStreamNegotiationRequest
+    ) async throws {
+        switch request {
+        case let .create(key, channelID, guildID, preferredRegion):
+            try await sendGateway(
+                DiscordGatewayPayloadFactory.applicationStreamCreate(
+                    channelID: channelID,
+                    guildID: guildID,
+                    preferredRegion: preferredRegion
+                )
+            )
+            try await sendGateway(
+                DiscordGatewayPayloadFactory.applicationStreamSetPaused(
+                    key,
+                    isPaused: false
+                )
+            )
+        case .watch(let key):
+            try await sendGateway(
+                DiscordGatewayPayloadFactory.applicationStreamWatch(key)
+            )
         }
     }
 

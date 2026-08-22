@@ -660,6 +660,7 @@ extension AppModel {
                 generation: voiceGeneration,
                 channelID: channel.id
             ) else { return }
+            watchAvailableDirectMessageStreamsAutomatically()
             soundPlayer.play(.userJoin)
         } catch {
             guard isCurrentVoiceOperation(
@@ -1404,6 +1405,9 @@ extension AppModel {
         switch event {
         case .stateChanged(let state):
             voiceSessionState = state
+            if state == .connected {
+                watchAvailableDirectMessageStreamsAutomatically()
+            }
         case .latencyUpdated(let milliseconds):
             voiceLatencyMilliseconds = milliseconds
         case .participantChanged(let participant):

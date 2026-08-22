@@ -150,6 +150,7 @@ public final class ScreenShareCaptureEngine: NSObject, @unchecked Sendable {
     private var isPickerObserverInstalled = false
     private var lastPreviewTime = CFAbsoluteTimeGetCurrent()
     private var isStopped = false
+    private var encodedFrameDropCount = 0
 
     public init(settings: ScreenShareSettings = .init()) {
         self.settings = settings
@@ -317,6 +318,7 @@ public final class ScreenShareCaptureEngine: NSObject, @unchecked Sendable {
         if !lock.withLock({ isStopped }) {
             eventContinuation.yield(.stateChanged(.previewing))
         }
+        logEncodedFrameDrops()
     }
 
     public func setPreviewEnabled(_ enabled: Bool) {
@@ -375,6 +377,7 @@ public final class ScreenShareCaptureEngine: NSObject, @unchecked Sendable {
             picker.isActive = false
         }
         lock.withLock { isPickerObserverInstalled = false }
+        logEncodedFrameDrops()
         previewContinuation.finish()
         encodedContinuation.finish()
         encodedAudioContinuation.finish()
@@ -470,8 +473,8 @@ public final class ScreenShareCaptureEngine: NSObject, @unchecked Sendable {
                 height: format.height,
                 framerate: format.frameRate,
                 bitrate: format.bitrate
-            ) { [encodedContinuation] frame in
-                encodedContinuation.yield(frame)
+            ) { [weak self] frame in
+                self?.yieldEncodedFrame(frame)
             }
             lock.withLock {
                 self.encoder?.completeFrames()
@@ -480,6 +483,22 @@ public final class ScreenShareCaptureEngine: NSObject, @unchecked Sendable {
         } catch {
             throw ScreenShareCaptureError.encoderUnavailable(error.localizedDescription)
         }
+    }
+
+    private func yieldEncodedFrame(_ frame: EncodedVideoFrame) {
+        if case .dropped = encodedContinuation.yield(frame) {
+            lock.withLock { encodedFrameDropCount += 1 }
+        }
+    }
+
+    private func logEncodedFrameDrops() {
+        let dropped = lock.withLock { () -> Int in
+            defer { encodedFrameDropCount = 0 }
+            return encodedFrameDropCount
+        }
+        screenCaptureLogger.info(
+            "Screen-share encoder queue stopped; droppedFrames=\(dropped)"
+        )
     }
 
     private func prepareAudioEncoderIfNeeded() throws {
@@ -542,7 +561,11 @@ public final class ScreenShareCaptureEngine: NSObject, @unchecked Sendable {
 
     private static func bitrate(width: Int, height: Int, frameRate: Int) -> Int {
         let pixelsPerSecond = Double(width * height * frameRate)
-        return min(24_000_000, max(2_500_000, Int(pixelsPerSecond * 0.12)))
+        // Authenticated desktop captures advertise 9 Mbps for a 2560x1440
+        // 60 FPS source. Going above the SFU's announced ceiling only creates
+        // motion-time queue growth and loss; it does not improve delivered
+        // quality.
+        return min(9_000_000, max(2_500_000, Int(pixelsPerSecond * 0.12)))
     }
 }
 

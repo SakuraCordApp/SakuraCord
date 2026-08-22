@@ -183,8 +183,16 @@ final class H264VideoEncoder: @unchecked Sendable {
         // constrained profile and zero frame delay still enforce no reordering.
         try? set(kVTCompressionPropertyKey_ReferenceBufferCount, value: 1 as CFNumber)
         try set(kVTCompressionPropertyKey_AverageBitRate, value: bitrate as CFNumber)
+        // AverageBitRate alone permits large motion bursts. Discord's media
+        // transport advertises a hard maximum, so bound VideoToolbox to the
+        // same one-second byte window instead of overflowing the RTP sender.
+        try? set(
+            kVTCompressionPropertyKey_DataRateLimits,
+            value: [max(1, bitrate / 8), 1] as CFArray
+        )
         try set(kVTCompressionPropertyKey_ExpectedFrameRate, value: framerate as CFNumber)
         try set(kVTCompressionPropertyKey_MaxKeyFrameInterval, value: (framerate * 2) as CFNumber)
+        try? set(kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration, value: 2 as CFNumber)
         let prepareStatus = VTCompressionSessionPrepareToEncodeFrames(created)
         guard prepareStatus == noErr else { throw VoiceVideoError.encoderConfigurationFailed(prepareStatus) }
     }

@@ -100,6 +100,34 @@ public enum VoiceSessionEvent: Equatable, Sendable {
     case error(String)
 }
 
+private struct VideoTransportMetrics {
+    var sentFrames = 0
+    var sentDatagrams = 0
+    var maximumFrameSendDuration: Duration = .zero
+    var receivedNACKs = 0
+    var receivedPLIs = 0
+    var requestedRetransmissions = 0
+    var sentRetransmissions = 0
+    var sentNACKs = 0
+    var reportedMissingPackets = 0
+    var sentPLIs = 0
+
+    func log() {
+        let components = maximumFrameSendDuration.components
+        let maximumMilliseconds = Double(components.seconds) * 1_000
+            + Double(components.attoseconds) / 1e15
+        voiceMediaLogger.info(
+            "Video sender stopped; frames=\(sentFrames), datagrams=\(sentDatagrams), maxFrameSendMs=\(maximumMilliseconds, format: .fixed(precision: 3))"
+        )
+        voiceMediaLogger.info(
+            "Video sender feedback stopped; receivedNACKs=\(receivedNACKs), receivedPLIs=\(receivedPLIs), requestedRTX=\(requestedRetransmissions), sentRTX=\(sentRetransmissions)"
+        )
+        voiceMediaLogger.info(
+            "Video receiver feedback stopped; sentNACKs=\(sentNACKs), missingPackets=\(reportedMissingPackets), sentPLIs=\(sentPLIs)"
+        )
+    }
+}
+
 public actor DiscordVoiceSession: DaveSessionDelegate {
     public nonisolated let events: AsyncStream<VoiceSessionEvent>
 
@@ -179,6 +207,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
     private var inboundAudioPacketCount = 0
     private var inboundVideoPacketCount = 0
     private var scheduledAudioPacketCount = 0
+    private var videoTransportMetrics = VideoTransportMetrics()
 
     private lazy var dave = DaveSessionManager(
         selfUserId: info.userID.description,
@@ -306,6 +335,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         videoAwaitingKeyframe.removeAll()
         lastVideoKeyframeRequest.removeAll()
         videoRetransmissionCache.removeAll()
+        videoTransportMetrics.log()
         transition(to: .disconnected)
         eventContinuation.finish()
     }
@@ -462,7 +492,24 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         if let existing = screenCaptureEngine, existing !== capture {
             await existing.stop()
         }
-        let format = try await capture.beginEncoding()
+        guard let format = capture.currentVideoFormat else {
+            throw VoiceSessionError.unsupportedMediaOperation
+        }
+        // Advertise the stream before enabling VideoToolbox. The official
+        // client sends Voice op 12 before its first media frame; starting the
+        // encoder first allowed high-motion frames to race the SFU state.
+        try await gateway.sendVideo(
+            audioSSRC: audioSSRC,
+            videoSSRC: videoSSRC,
+            rtxSSRC: rtxSSRC,
+            width: format.width,
+            height: format.height,
+            framerate: format.frameRate,
+            enabled: true,
+            streamType: kind.videoStreamType,
+            maximumBitrate: format.bitrate
+        )
+        _ = try await capture.beginEncoding()
         screenCaptureEngine = capture
         encodedScreenTask = Task { [weak self, capture] in
             for await frame in capture.encodedFrames {
@@ -477,17 +524,6 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
                 await self?.handleCapturedSoundshareFrame(frame)
             }
         }
-        try await gateway.sendVideo(
-            audioSSRC: audioSSRC,
-            videoSSRC: videoSSRC,
-            rtxSSRC: rtxSSRC,
-            width: format.width,
-            height: format.height,
-            framerate: format.frameRate,
-            enabled: true,
-            streamType: kind.videoStreamType,
-            maximumBitrate: format.bitrate
-        )
         voiceMediaLogger.info(
             "Local screen share advertised; width=\(format.width), height=\(format.height), fps=\(format.frameRate)"
         )
@@ -938,6 +974,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
 
     private func sendVideoFrame(_ frame: EncodedVideoFrame) async throws {
         guard let udp, let videoSSRC, cipher != nil else { return }
+        let started = ContinuousClock.now
         let protectedFrame = try await dave.encrypt(
             ssrc: videoSSRC,
             data: frame.data,
@@ -948,6 +985,8 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
             voiceMediaLogger.info("First protected H264 NAL types: \(nalTypes.description, privacy: .public)")
         }
         let fragments = try H264RTPPacketizer.packetize(protectedFrame)
+        var datagrams: [Data] = []
+        datagrams.reserveCapacity(fragments.count)
         for fragment in fragments {
             let originalSequence = videoSequence
             let extensionData = makeVideoHeaderExtension(repaired: false)
@@ -971,11 +1010,15 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
                 payload: fragment.payload
             ))
             videoSequence &+= 1
-            try await udp.send(packet)
-            if !fragment.marker {
-                try? await Task.sleep(for: .microseconds(375))
-            }
+            datagrams.append(packet)
         }
+        try await udp.sendDatagrams(datagrams)
+        videoTransportMetrics.sentFrames += 1
+        videoTransportMetrics.sentDatagrams += datagrams.count
+        videoTransportMetrics.maximumFrameSendDuration = max(
+            videoTransportMetrics.maximumFrameSendDuration,
+            started.duration(to: .now)
+        )
         if !didLogSentVideo {
             didLogSentVideo = true
             voiceMediaLogger.info(
@@ -1080,6 +1123,8 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         reorderBuffers[header.ssrc] = buffer
         let isVideo = header.payloadType == 101 || header.payloadType == 105
         if isVideo, !newlyMissing.isEmpty {
+            videoTransportMetrics.sentNACKs += 1
+            videoTransportMetrics.reportedMissingPackets += newlyMissing.count
             try? await sendGenericNACK(mediaSSRC: header.ssrc, lostSequences: newlyMissing)
         }
         if isVideo, buffer.hasPendingGap {
@@ -1138,12 +1183,15 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         if let nack = RTCPGenericNACK.parse(header: header, payload: payload),
            nack.mediaSSRC == videoSSRC
         {
+            videoTransportMetrics.receivedNACKs += 1
+            videoTransportMetrics.requestedRetransmissions += nack.lostSequences.count
             try await retransmitVideoPackets(nack.lostSequences)
             return
         }
         if let pli = RTCPPictureLossIndication.parse(header: header, payload: payload),
            pli.mediaSSRC == videoSSRC
         {
+            videoTransportMetrics.receivedPLIs += 1
             videoEngine?.requestKeyframe()
             voiceMediaLogger.info("Remote receiver requested a local video keyframe")
         }
@@ -1165,6 +1213,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         let pli = RTCPPictureLossIndication(senderSSRC: audioSSRC, mediaSSRC: mediaSSRC)
         let packet = try sealTransport(header: pli.header, plaintext: pli.payload)
         try await udp.send(packet)
+        videoTransportMetrics.sentPLIs += 1
     }
 
     private func retransmitVideoPackets(_ sequences: [UInt16]) async throws {
@@ -1190,6 +1239,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
             )
             rtxSequence &+= 1
             try await udp.send(packet)
+            videoTransportMetrics.sentRetransmissions += 1
         }
     }
 

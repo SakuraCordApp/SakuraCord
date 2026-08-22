@@ -21,7 +21,7 @@ extension AppModel {
         isScreenShareCaptureAvailable = false
         screenShareCaptureState = .idle
         screenSharePreviewTask?.cancel()
-        screenSharePreviewTask = Task { [weak self, capture] in
+        screenSharePreviewTask = Task { @MainActor [weak self, capture] in
             for await frame in capture.previewFrames {
                 guard let self,
                       !Task.isCancelled,
@@ -31,7 +31,7 @@ extension AppModel {
             }
         }
         screenShareCaptureEventTask?.cancel()
-        screenShareCaptureEventTask = Task { [weak self, capture] in
+        screenShareCaptureEventTask = Task { @MainActor [weak self, capture] in
             for await event in capture.events {
                 guard let self,
                       !Task.isCancelled,
@@ -119,7 +119,7 @@ extension AppModel {
             let connection = try await account.provider.startApplicationStream(
                 channelID: channel.id,
                 guildID: channel.guildID,
-                preferredRegion: nil
+                preferredRegion: privateCall(in: channel.id)?.region
             )
             guard isCurrentAccountSession(account),
                   activeVoiceChannel?.id == channel.id,
@@ -205,12 +205,19 @@ extension AppModel {
         await releaseScreenShareCapture()
     }
 
-    func watchApplicationStream(_ key: ApplicationStreamKey) async {
+    func watchApplicationStream(
+        _ key: ApplicationStreamKey,
+        automatically: Bool = false
+    ) async {
         guard key != localApplicationStreamKey,
               activeVoiceChannel?.id == key.channelID,
+              !automatically || !manuallyStoppedApplicationStreamKeys.contains(key),
               applicationStreamStates[key] != .connecting,
               applicationStreamStates[key] != .watching
         else { return }
+        if !automatically {
+            manuallyStoppedApplicationStreamKeys.remove(key)
+        }
         let account = accountSession()
         let generation = bumpApplicationStreamGeneration(for: key)
         if applicationStreamDemandIntents[key] == nil {
@@ -259,8 +266,63 @@ extension AppModel {
         }
     }
 
+    func shouldAutomaticallyWatchApplicationStream(_ key: ApplicationStreamKey) -> Bool {
+        guard let channel = activeVoiceChannel,
+              channel.kind == .directMessage,
+              voiceSessionState == .connected,
+              key.type == .call,
+              key.channelID == channel.id,
+              let currentUserID = snapshot?.currentUser.id
+        else { return false }
+        return key.ownerID != currentUserID
+            && !manuallyStoppedApplicationStreamKeys.contains(key)
+    }
+
+    func applicationStreamKeys(in channel: Channel) -> Set<ApplicationStreamKey> {
+        var keys = Set(
+            applicationStreams.keys.filter { $0.channelID == channel.id }
+        )
+        for state in voiceStates.values
+        where state.channelID == channel.id && state.isStreaming {
+            keys.insert(ApplicationStreamKey(
+                type: channel.guildID == nil ? .call : .guild,
+                guildID: channel.guildID,
+                channelID: channel.id,
+                ownerID: state.userID
+            ))
+        }
+        if let localApplicationStreamKey,
+           localApplicationStreamKey.channelID == channel.id
+        {
+            keys.insert(localApplicationStreamKey)
+        }
+        return keys
+    }
+
+    func watchAvailableDirectMessageStreamsAutomatically() {
+        guard let channel = activeVoiceChannel else { return }
+        let keys = applicationStreamKeys(in: channel)
+        for key in keys
+        where (applicationStreamStates[key] == nil
+            || applicationStreamStates[key] == .available)
+            && shouldAutomaticallyWatchApplicationStream(key) {
+            Task { @MainActor [weak self] in
+                await self?.watchApplicationStream(key, automatically: true)
+            }
+        }
+    }
+
+    func reconcileApplicationStreamWatchSuppression(for state: VoiceParticipantState) {
+        guard !state.isStreaming else { return }
+        manuallyStoppedApplicationStreamKeys = manuallyStoppedApplicationStreamKeys.filter {
+            $0.ownerID != state.userID
+                || (state.channelID != nil && $0.channelID != state.channelID)
+        }
+    }
+
     func stopWatchingApplicationStream(_ key: ApplicationStreamKey) async {
         guard key != localApplicationStreamKey else { return }
+        manuallyStoppedApplicationStreamKeys.insert(key)
         let account = accountSession()
         bumpApplicationStreamGeneration(for: key)
         try? await account.provider.stopApplicationStream(key)
@@ -282,16 +344,30 @@ extension AppModel {
         )
         let generation = (applicationStreamDemandGenerations[key] ?? 0) &+ 1
         applicationStreamDemandGenerations[key] = generation
+        applicationStreamDemandUpdateTasks.removeValue(forKey: key)?.cancel()
         if enabled {
-            await applyApplicationStreamDemand(key)
+            applicationStreamDemandUpdateTasks[key] = Task { @MainActor [weak self] in
+                do {
+                    try await Task.sleep(for: .milliseconds(120))
+                } catch {
+                    return
+                }
+                guard let self,
+                      self.applicationStreamDemandGenerations[key] == generation,
+                      self.applicationStreamDemandIntents[key]?.isEnabled == true
+                else { return }
+                self.applicationStreamDemandUpdateTasks[key] = nil
+                await self.applyApplicationStreamDemand(key)
+            }
             return
         }
-        Task { [weak self] in
+        applicationStreamDemandUpdateTasks[key] = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(250))
             guard let self,
                   self.applicationStreamDemandGenerations[key] == generation,
                   self.applicationStreamDemandIntents[key]?.isEnabled == false
             else { return }
+            self.applicationStreamDemandUpdateTasks[key] = nil
             await self.applicationStreamSessions[key]?.setRemoteVideoDemand(false)
             self.applicationStreamFrames[key] = nil
         }
@@ -302,6 +378,7 @@ extension AppModel {
         if applicationStreamStates[stream.key] == nil {
             applicationStreamStates[stream.key] = .available
         }
+        watchAvailableDirectMessageStreamsAutomatically()
     }
 
     func consumeApplicationStreamDeleted(
@@ -324,6 +401,9 @@ extension AppModel {
         if !unavailable {
             applicationStreams[key] = nil
             applicationStreamDemandIntents[key] = nil
+            if reason != "user_requested" {
+                manuallyStoppedApplicationStreamKeys.remove(key)
+            }
         }
         applicationStreamFrames[key] = nil
         if shouldReconnect {
@@ -416,7 +496,10 @@ extension AppModel {
         applicationStreamFrames = [:]
         applicationStreamOperationGenerations = [:]
         applicationStreamDemandGenerations = [:]
+        for task in applicationStreamDemandUpdateTasks.values { task.cancel() }
+        applicationStreamDemandUpdateTasks = [:]
         applicationStreamDemandIntents = [:]
+        manuallyStoppedApplicationStreamKeys = []
         localApplicationStreamKey = nil
         isScreenSharePreviewPresented = false
         await releaseScreenShareCapture()
@@ -651,6 +734,7 @@ extension AppModel {
         preservingCapture: Bool
     ) async {
         applicationStreamDemandGenerations[key] = nil
+        applicationStreamDemandUpdateTasks.removeValue(forKey: key)?.cancel()
         applicationStreamEventTasks.removeValue(forKey: key)?.cancel()
         let session = applicationStreamSessions.removeValue(forKey: key)
         await session?.disconnect(preservingScreenCapture: preservingCapture)
