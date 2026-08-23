@@ -1,6 +1,7 @@
 import CoreAudio
 import DaveKit
 import Foundation
+@preconcurrency import Network
 import OSLog
 import SakuraCordModels
 
@@ -183,6 +184,10 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
     private var trailingSilenceFrames = 0
     private var soundshareTrailingSilenceFrames = 0
     private var reconnectAttempts = 0
+    private var reconnectGeneration: UInt64 = 0
+    private var reconnectRequiresFreshSession = false
+    private var reconnectTask: Task<Void, Never>?
+    private var reconnectTimeoutTask: Task<Void, Never>?
     private var videoSendQuality = 100
     private var remoteVideoDemandEnabled: Bool
     private var remoteVideoPixelCount: Int?
@@ -269,6 +274,11 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
     public func disconnect(preservingScreenCapture: Bool = false) async {
         guard state != .disconnected else { return }
         transition(to: .disconnecting)
+        reconnectGeneration &+= 1
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        reconnectTimeoutTask?.cancel()
+        reconnectTimeoutTask = nil
         gatewayEventTask?.cancel()
         udpTask?.cancel()
         inboundVideoContinuation?.finish()
@@ -281,11 +291,31 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         capturedAudioTask = nil
         encodedScreenAudioTask?.cancel()
         encodedScreenAudioTask = nil
+        encodedScreenTask?.cancel()
+        encodedScreenTask = nil
         speakingExpiryTask?.cancel()
         speakingExpiryTask = nil
         connectTimeoutTask?.cancel()
         connectContinuation?.resume(throwing: CancellationError())
         connectContinuation = nil
+        // Stop local producers before best-effort network signaling. A saturated
+        // screen-share path must never keep capture, mute, or leave work queued
+        // behind more video frames.
+        let departingScreenCapture = screenCaptureEngine
+        screenCaptureEngine = nil
+        if let departingScreenCapture {
+            if preservingScreenCapture {
+                await departingScreenCapture.endEncoding()
+            } else {
+                await departingScreenCapture.stop()
+            }
+        }
+        cameraGeneration &+= 1
+        stopCameraPipeline()
+        if let audioEngine {
+            await audioEngine.stop()
+        }
+
         if locallySpeaking, let audioSSRC {
             try? await gateway.sendSpeaking(flags: 0, ssrc: audioSSRC)
         }
@@ -305,21 +335,6 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         }
         await gateway.close()
         await udp?.close()
-        if let audioEngine {
-            await audioEngine.stop()
-        }
-        cameraGeneration &+= 1
-        stopCameraPipeline()
-        encodedScreenTask?.cancel()
-        encodedScreenTask = nil
-        if let screenCaptureEngine {
-            if preservingScreenCapture {
-                await screenCaptureEngine.endEncoding()
-            } else {
-                await screenCaptureEngine.stop()
-            }
-        }
-        screenCaptureEngine = nil
         udp = nil
         audioEngine = nil
         cipher = nil
@@ -401,78 +416,6 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         }
     }
 
-    public func setCameraEnabled(_ enabled: Bool) async throws {
-        guard kind == .voice else { throw VoiceSessionError.unsupportedMediaOperation }
-        guard state == .connected,
-              let audioSSRC,
-              let videoSSRC,
-              let rtxSSRC else { throw VoiceSessionError.videoTransportUnavailable }
-        if enabled {
-            if videoEngine == nil {
-                cameraGeneration &+= 1
-                let generation = cameraGeneration
-                guard await VoiceVideoEngine.requestCameraPermission() else {
-                    throw VoiceSessionError.cameraPermissionDenied
-                }
-                guard generation == cameraGeneration else { return }
-                let encodedFrames = AsyncStream<EncodedVideoFrame>.makeStream(
-                    bufferingPolicy: .bufferingNewest(2)
-                )
-                let previewFrames = AsyncStream<VoiceVideoFrame>.makeStream(
-                    bufferingPolicy: .bufferingNewest(1)
-                )
-                encodedVideoContinuation = encodedFrames.continuation
-                previewVideoContinuation = previewFrames.continuation
-                encodedVideoTask = Task { [weak self] in
-                    for await frame in encodedFrames.stream {
-                        guard !Task.isCancelled else { return }
-                        await self?.handleCapturedVideoFrame(frame, generation: generation)
-                    }
-                }
-                previewVideoTask = Task { [weak self] in
-                    for await frame in previewFrames.stream {
-                        guard !Task.isCancelled else { return }
-                        await self?.emitLocalVideoFrame(frame, generation: generation)
-                    }
-                }
-                let engine = try VoiceVideoEngine(
-                    encodedFrameHandler: { [continuation = encodedFrames.continuation] frame in
-                        continuation.yield(frame)
-                    },
-                    previewFrameHandler: { [continuation = previewFrames.continuation] frame in
-                        continuation.yield(frame)
-                    }
-                )
-                do {
-                    try engine.start(cameraUniqueID: configuration.cameraUniqueID)
-                } catch {
-                    stopCameraPipeline()
-                    throw error
-                }
-                videoEngine = engine
-                didLogCapturedVideo = false
-                didLogSentVideo = false
-                didLogSuppressedVideo = false
-                voiceMediaLogger.info("Local camera capture started")
-            }
-        } else {
-            cameraGeneration &+= 1
-            stopCameraPipeline()
-            voiceMediaLogger.info("Local camera capture stopped")
-        }
-        try await gateway.sendVideo(
-            audioSSRC: audioSSRC,
-            videoSSRC: videoSSRC,
-            rtxSSRC: rtxSSRC,
-            width: VoiceVideoEngine.width,
-            height: VoiceVideoEngine.height,
-            framerate: VoiceVideoEngine.framerate,
-            enabled: enabled,
-            streamType: kind.videoStreamType
-        )
-        voiceMediaLogger.info("Local video state advertised; enabled=\(enabled)")
-    }
-
     public func selectCamera(uniqueID: String?) async throws {
         configuration.cameraUniqueID = uniqueID
         guard videoEngine != nil else { return }
@@ -535,6 +478,9 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         encodedScreenTask = nil
         encodedScreenAudioTask?.cancel()
         encodedScreenAudioTask = nil
+        let capture = screenCaptureEngine
+        screenCaptureEngine = nil
+        await capture?.stop()
         await finishSoundshareAudio()
         if let audioSSRC, let videoSSRC, let rtxSSRC {
             try? await gateway.sendVideo(
@@ -548,10 +494,6 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
                 streamType: kind.videoStreamType
             )
         }
-        if let screenCaptureEngine {
-            await screenCaptureEngine.stop()
-        }
-        screenCaptureEngine = nil
     }
 
     public func updateScreenShareFormat() async throws {
@@ -736,10 +678,9 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
     private func handleLifecycleEvent(_ event: VoiceGatewayServerEvent) async {
         switch event {
         case .resumed:
-            reconnectAttempts = 0
-            transition(to: .connected)
+            completeReconnect()
         case .connectionClosed:
-            await reconnectGateway()
+            scheduleGatewayReconnect(resuming: true)
         case let .heartbeatAcknowledged(nonce):
             let now = UInt64(max(0, Date.now.timeIntervalSince1970 * 1000))
             let latency = Int(clamping: now >= nonce ? now - nonce : 0)
@@ -759,6 +700,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         let udp = VoiceUDPConnection(host: ready.ip, port: ready.port)
         try await udp.start()
         let discovered = try await udp.discoverExternalAddress(ssrc: ready.ssrc)
+        await self.udp?.close()
         self.udp = udp
         audioSSRC = ready.ssrc
         await dave.assignAudioSSRC(ready.ssrc)
@@ -818,7 +760,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
                     await self?.handleUDPPacket(packet)
                 }
             } catch {
-                await self?.report(error)
+                await self?.handleMediaTransportFailure(error)
             }
         }
     }
@@ -843,8 +785,13 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
             connectTimeoutTask?.cancel()
             connectContinuation?.resume()
             connectContinuation = nil
-            transition(to: .connected)
+            completeReconnect()
             voiceMediaLogger.info("Screen-share media session connected without a duplicate microphone engine")
+            return
+        }
+        if audioEngine != nil {
+            completeReconnect()
+            voiceMediaLogger.info("Voice media transport re-established")
             return
         }
         let permission = await VoiceAudioEngine.requestMicrophonePermission()
@@ -881,7 +828,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         connectTimeoutTask?.cancel()
         connectContinuation?.resume()
         connectContinuation = nil
-        transition(to: .connected)
+        completeReconnect()
     }
 
     private func handleCapturedFrame(_ frame: CapturedOpusFrame) async {
@@ -955,7 +902,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         do {
             try await sendVideoFrame(frame)
         } catch {
-            report(error)
+            handleMediaTransportFailure(error)
         }
     }
 
@@ -968,7 +915,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         do {
             try await sendVideoFrame(frame)
         } catch {
-            report(error)
+            handleMediaTransportFailure(error)
         }
     }
 
@@ -1574,23 +1521,6 @@ extension DiscordVoiceSession {
         engine?.stop()
     }
 
-    private func reconnectGateway() async {
-        guard state == .connected || state == .reconnecting else { return }
-        guard reconnectAttempts < 3 else {
-            transition(to: .failed)
-            eventContinuation.yield(.error("The Discord voice gateway could not be resumed."))
-            return
-        }
-        reconnectAttempts += 1
-        transition(to: .reconnecting)
-        try? await Task.sleep(for: .seconds(pow(2, Double(reconnectAttempts - 1))))
-        do {
-            try await gateway.connect(resuming: true)
-        } catch {
-            await reconnectGateway()
-        }
-    }
-
     private func transition(to state: VoiceSessionState) {
         guard self.state != state else { return }
         self.state = state
@@ -1633,7 +1563,173 @@ extension DiscordVoiceSession {
     }
 }
 
+public extension DiscordVoiceSession {
+    func setCameraEnabled(_ enabled: Bool) async throws {
+        guard kind == .voice else { throw VoiceSessionError.unsupportedMediaOperation }
+        if !enabled {
+            cameraGeneration &+= 1
+            stopCameraPipeline()
+            voiceMediaLogger.info("Local camera capture stopped")
+            guard state == .connected,
+                  let audioSSRC,
+                  let videoSSRC,
+                  let rtxSSRC else { return }
+            try await gateway.sendVideo(
+                audioSSRC: audioSSRC,
+                videoSSRC: videoSSRC,
+                rtxSSRC: rtxSSRC,
+                width: VoiceVideoEngine.width,
+                height: VoiceVideoEngine.height,
+                framerate: VoiceVideoEngine.framerate,
+                enabled: false,
+                streamType: kind.videoStreamType
+            )
+            voiceMediaLogger.info("Local video state advertised; enabled=false")
+            return
+        }
+        guard state == .connected,
+              let audioSSRC,
+              let videoSSRC,
+              let rtxSSRC else { throw VoiceSessionError.videoTransportUnavailable }
+        if videoEngine == nil {
+            cameraGeneration &+= 1
+            let generation = cameraGeneration
+            guard await VoiceVideoEngine.requestCameraPermission() else {
+                throw VoiceSessionError.cameraPermissionDenied
+            }
+            guard generation == cameraGeneration else { return }
+            let encodedFrames = AsyncStream<EncodedVideoFrame>.makeStream(
+                bufferingPolicy: .bufferingNewest(2)
+            )
+            let previewFrames = AsyncStream<VoiceVideoFrame>.makeStream(
+                bufferingPolicy: .bufferingNewest(1)
+            )
+            encodedVideoContinuation = encodedFrames.continuation
+            previewVideoContinuation = previewFrames.continuation
+            encodedVideoTask = Task { [weak self] in
+                for await frame in encodedFrames.stream {
+                    guard !Task.isCancelled else { return }
+                    await self?.handleCapturedVideoFrame(frame, generation: generation)
+                }
+            }
+            previewVideoTask = Task { [weak self] in
+                for await frame in previewFrames.stream {
+                    guard !Task.isCancelled else { return }
+                    await self?.emitLocalVideoFrame(frame, generation: generation)
+                }
+            }
+            let engine = try VoiceVideoEngine(
+                encodedFrameHandler: { [continuation = encodedFrames.continuation] frame in
+                    continuation.yield(frame)
+                },
+                previewFrameHandler: { [continuation = previewFrames.continuation] frame in
+                    continuation.yield(frame)
+                }
+            )
+            do {
+                try engine.start(cameraUniqueID: configuration.cameraUniqueID)
+            } catch {
+                stopCameraPipeline()
+                throw error
+            }
+            videoEngine = engine
+            didLogCapturedVideo = false
+            didLogSentVideo = false
+            didLogSuppressedVideo = false
+            voiceMediaLogger.info("Local camera capture started")
+        }
+        try await gateway.sendVideo(
+            audioSSRC: audioSSRC,
+            videoSSRC: videoSSRC,
+            rtxSSRC: rtxSSRC,
+            width: VoiceVideoEngine.width,
+            height: VoiceVideoEngine.height,
+            framerate: VoiceVideoEngine.framerate,
+            enabled: true,
+            streamType: kind.videoStreamType
+        )
+        voiceMediaLogger.info("Local video state advertised; enabled=true")
+    }
+}
+
 private extension DiscordVoiceSession {
+    func scheduleGatewayReconnect(resuming: Bool) {
+        guard state == .connected || state == .reconnecting else { return }
+        if !resuming {
+            reconnectRequiresFreshSession = true
+        }
+        transition(to: .reconnecting)
+        reconnectTimeoutTask?.cancel()
+        reconnectTimeoutTask = nil
+        guard reconnectTask == nil else { return }
+
+        reconnectAttempts &+= 1
+        reconnectGeneration &+= 1
+        let generation = reconnectGeneration
+        let exponent = min(reconnectAttempts - 1, 5)
+        let delay = Duration.seconds(pow(2, Double(exponent)))
+        reconnectTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: delay)
+            } catch {
+                return
+            }
+            await self?.attemptGatewayReconnect(generation: generation)
+        }
+    }
+
+    func attemptGatewayReconnect(generation: UInt64) async {
+        guard generation == reconnectGeneration,
+              state == .reconnecting
+        else { return }
+        reconnectTask = nil
+        let resuming = !reconnectRequiresFreshSession
+        reconnectRequiresFreshSession = false
+        do {
+            try await gateway.connect(resuming: resuming)
+        } catch {
+            scheduleGatewayReconnect(resuming: resuming)
+            return
+        }
+        guard generation == reconnectGeneration,
+              state == .reconnecting
+        else { return }
+        reconnectTimeoutTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(15))
+            } catch {
+                return
+            }
+            await self?.retryTimedOutGatewayReconnect(generation: generation)
+        }
+    }
+
+    func retryTimedOutGatewayReconnect(generation: UInt64) {
+        guard generation == reconnectGeneration,
+              state == .reconnecting
+        else { return }
+        reconnectTimeoutTask = nil
+        scheduleGatewayReconnect(resuming: true)
+    }
+
+    func completeReconnect() {
+        reconnectGeneration &+= 1
+        reconnectAttempts = 0
+        reconnectRequiresFreshSession = false
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        reconnectTimeoutTask?.cancel()
+        reconnectTimeoutTask = nil
+        transition(to: .connected)
+    }
+
+    func handleMediaTransportFailure(_ error: any Error) {
+        report(error)
+        if error is NWError || error is URLError {
+            scheduleGatewayReconnect(resuming: false)
+        }
+    }
+
     func handleCapturedSoundshareFrame(_ frame: CapturedOpusFrame) async {
         guard case .applicationStream(isBroadcaster: true) = kind,
               screenCaptureEngine?.includesAudio == true,

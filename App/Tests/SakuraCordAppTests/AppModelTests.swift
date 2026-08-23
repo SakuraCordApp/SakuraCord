@@ -3411,6 +3411,32 @@ private actor FailingRemovalCredentialStore: CredentialStore {
 }
 
 @MainActor
+@Test func `gateway recovery republishes an active voice state once`() async {
+    let provider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    model.activeVoiceChannel = Channel(
+        id: provider.channelID,
+        guildID: nil,
+        name: "Recovered call",
+        kind: .directMessage
+    )
+    model.voiceSessionState = .reconnecting
+    model.connectionState = .resuming
+
+    model.consumeConnectionChange(.ready)
+    for task in Array(model.accountChildTasks.values) {
+        await task.value
+    }
+    #expect(await provider.voiceStateUpdateRequestCount == 1)
+
+    model.consumeConnectionChange(.ready)
+    for task in Array(model.accountChildTasks.values) {
+        await task.value
+    }
+    #expect(await provider.voiceStateUpdateRequestCount == 1)
+}
+
+@MainActor
 @Test func `unchanged unread projection does not republish the account snapshot`() async throws {
     let snapshot = try await MockChatProvider().bootstrap()
     #expect(

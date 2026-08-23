@@ -690,7 +690,8 @@ Durable requirements:
 - in-memory session ID, resume URL, and sequence for same-process Resume;
 - Resume before a fresh Identify when state is valid;
 - explicit invalid-session and close-code handling;
-- bounded, jittered reconnect backoff;
+- capped, jittered reconnect backoff that persists until recovery or an explicit
+  stop;
 - a connection generation that prevents stale tasks from affecting a new
   socket; and
 - explicit stop/logout with no reconnect.
@@ -698,8 +699,11 @@ Durable requirements:
 The complete outgoing main-Gateway opcode surface is 2 Identify, 3 presence, 4
 voice state, 6 Resume, 8 bounded guild-member request/search, 13 private-call
 subscription, 37 bulk guild subscription, 40 QoS heartbeat, and 41 time-spent
-session update. After Ready, the desktop lifecycle order is 4 (null voice
-state), 3 (current presence), 41, then 40. QoS payloads use version 29 and only
+session update. After an initial idle Ready, the desktop lifecycle order is 4
+(null voice state), 3 (current presence), 41, then 40. When a Voice connection
+survives a Gateway gap, SakuraCord preserves that active state instead of
+publishing the idle reset, then republishes the current channel and local
+mute/deafen/video flags after Ready. QoS payloads use version 29 and only
 the locally known `foregrounded` reason; heartbeat sessions rotate after 30
 minutes inactive and the REST super-properties update with the same session.
 Paicord supplies current JSON/zstd and 40/41 cross-checks. Swiftcord v1 supplies
@@ -1552,6 +1556,8 @@ releases the picker observer. Once selected, SakuraCord owns one `SCStream`,
 updates its content filter/configuration in place for source or quality changes,
 accepts only complete IOSurface-backed screen frames, and optionally captures
 48 kHz stereo source audio while excluding SakuraCord's own process audio. It
+keeps preview delivery enabled while the preview overlay is presented, including
+while the system picker temporarily owns key-window focus. It
 releases picker, stream, preview, audio/video encoders, decoder, and transport
 resources on popup dismissal, stop, failure, source removal, or disconnect.
 

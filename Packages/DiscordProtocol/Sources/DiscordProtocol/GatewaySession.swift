@@ -141,7 +141,7 @@ actor GatewaySession {
             clientLaunchID: String? = nil,
             qosActive: Bool = false,
             qosVersion: Int = 29,
-            maximumReconnectAttempts: Int = 8,
+            maximumReconnectAttempts: Int = .max,
             maximumMessageSize: Int = 16 * 1024 * 1024,
             maximumCompressedBufferSize: Int = 8 * 1024 * 1024,
             maximumDecompressedPayloadSize: Int = 16 * 1024 * 1024,

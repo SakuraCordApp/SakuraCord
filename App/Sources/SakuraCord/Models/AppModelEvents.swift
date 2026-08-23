@@ -468,6 +468,16 @@ extension AppModel {
             stopLocalTyping(clearThrottle: true)
             typingState.clearAll()
         } else {
+            if previousState != .ready, activeVoiceChannel != nil {
+                let account = accountSession()
+                let generation = voiceMigrationGeneration
+                startAccountChildTask(account: account) { model, account in
+                    await model.publishVoiceState(
+                        account: account,
+                        generation: generation
+                    )
+                }
+            }
             if previousState != .ready,
                selectedChannelID != nil,
                hasCompletedInitialMessageLoad

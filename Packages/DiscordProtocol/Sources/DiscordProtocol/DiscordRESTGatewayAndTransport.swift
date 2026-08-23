@@ -295,15 +295,22 @@ extension DiscordRESTProvider {
                 gatewayLogger.info("Gateway session ready")
                 if usesDesktopHeartbeat {
                     do {
-                        try await sendGateway(
-                            DiscordGatewayPayloadFactory.voiceStateUpdate(
-                                guildID: nil,
-                                channelID: nil,
-                                selfMute: false,
-                                selfDeaf: false,
-                                selfVideo: false
+                        // The desktop lifecycle starts a new idle session with a
+                        // null voice state. Repeating that reset while an existing
+                        // Voice connection survives a Gateway gap would make
+                        // Discord remove the user from the call before AppModel can
+                        // republish the active state.
+                        if activeVoiceConnection == nil {
+                            try await sendGateway(
+                                DiscordGatewayPayloadFactory.voiceStateUpdate(
+                                    guildID: nil,
+                                    channelID: nil,
+                                    selfMute: false,
+                                    selfDeaf: false,
+                                    selfVideo: false
+                                )
                             )
-                        )
+                        }
                         try await sendGateway([
                             "op": 3,
                             "d": [

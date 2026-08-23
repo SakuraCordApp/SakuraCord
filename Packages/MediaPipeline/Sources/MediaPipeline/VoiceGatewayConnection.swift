@@ -44,6 +44,8 @@ public actor VoiceGatewayConnection {
     private var heartbeatTask: Task<Void, Never>?
     private var lastSequence = -1
     private var lastHeartbeatAcknowledged = true
+    private var connectionGeneration = 0
+    private var reportedClosedGeneration: Int?
 
     public init(
         info: VoiceConnectionInfo,
@@ -61,6 +63,10 @@ public actor VoiceGatewayConnection {
     }
 
     public func connect(resuming: Bool = false) async throws {
+        connectionGeneration &+= 1
+        let generation = connectionGeneration
+        reportedClosedGeneration = nil
+        lastHeartbeatAcknowledged = true
         closeSocketOnly()
         guard let url = Self.endpointURL(info.endpoint) else {
             throw VoiceGatewayCodecError.malformedPayload
@@ -92,7 +98,7 @@ public actor VoiceGatewayConnection {
         }
 
         receiveTask = Task { [weak self] in
-            await self?.receiveMessages()
+            await self?.receiveMessages(socket: socket, generation: generation)
         }
     }
 
@@ -159,14 +165,18 @@ public actor VoiceGatewayConnection {
     }
 
     public func close() {
+        connectionGeneration &+= 1
         heartbeatTask?.cancel()
         receiveTask?.cancel()
         closeSocketOnly()
         continuation.finish()
     }
 
-    private func receiveMessages() async {
-        while !Task.isCancelled, let socket {
+    private func receiveMessages(
+        socket: URLSessionWebSocketTask,
+        generation: Int
+    ) async {
+        while !Task.isCancelled {
             let message: URLSessionWebSocketTask.Message
             do {
                 message = try await socket.receive()
@@ -176,15 +186,15 @@ public actor VoiceGatewayConnection {
                 voiceGatewayLogger.error(
                     "Voice gateway socket receive failed; error=\(String(reflecting: error), privacy: .public), closeCode=\(socket.closeCode.rawValue)"
                 )
-                continuation.yield(SequencedVoiceGatewayEvent(
-                    sequence: nil,
-                    event: .connectionClosed(closeCode: socket.closeCode.rawValue)
-                ))
+                reportConnectionClosed(
+                    generation: generation,
+                    closeCode: socket.closeCode.rawValue
+                )
                 return
             }
 
             do {
-                try handle(message)
+                try handle(message, generation: generation)
             } catch {
                 if let sequence = Self.sequence(in: message) {
                     lastSequence = Int(sequence)
@@ -196,7 +206,10 @@ public actor VoiceGatewayConnection {
         }
     }
 
-    private func handle(_ message: URLSessionWebSocketTask.Message) throws {
+    private func handle(
+        _ message: URLSessionWebSocketTask.Message,
+        generation: Int
+    ) throws {
         let sequenced: SequencedVoiceGatewayEvent
         switch message {
         case let .data(data):
@@ -219,7 +232,10 @@ public actor VoiceGatewayConnection {
         }
         switch sequenced.event {
         case let .hello(interval):
-            startHeartbeat(intervalMilliseconds: interval)
+            startHeartbeat(
+                intervalMilliseconds: interval,
+                generation: generation
+            )
         case .heartbeatAcknowledged:
             lastHeartbeatAcknowledged = true
         default:
@@ -241,15 +257,19 @@ public actor VoiceGatewayConnection {
         }
     }
 
-    private func startHeartbeat(intervalMilliseconds: UInt64) {
+    private func startHeartbeat(
+        intervalMilliseconds: UInt64,
+        generation: Int
+    ) {
         heartbeatTask?.cancel()
         let interval = Duration.milliseconds(max(1, Int64(clamping: intervalMilliseconds)))
         heartbeatTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
+                guard await connectionGeneration == generation else { return }
                 let acknowledged = await lastHeartbeatAcknowledged
                 guard acknowledged else {
-                    await closeSocketOnly()
+                    await reportConnectionClosed(generation: generation, closeCode: 4000)
                     return
                 }
                 await markHeartbeatPending()
@@ -260,7 +280,7 @@ public actor VoiceGatewayConnection {
                         sequence: lastSequence
                     ))
                 } catch {
-                    await closeSocketOnly()
+                    await reportConnectionClosed(generation: generation, closeCode: 4000)
                     return
                 }
                 try? await Task.sleep(for: interval)
@@ -287,6 +307,20 @@ public actor VoiceGatewayConnection {
     private func closeSocketOnly() {
         socket?.cancel(with: .goingAway, reason: nil)
         socket = nil
+    }
+
+    private func reportConnectionClosed(generation: Int, closeCode: Int) {
+        guard generation == connectionGeneration,
+              reportedClosedGeneration != generation
+        else { return }
+        reportedClosedGeneration = generation
+        heartbeatTask?.cancel()
+        socket?.cancel(with: .goingAway, reason: nil)
+        socket = nil
+        continuation.yield(SequencedVoiceGatewayEvent(
+            sequence: nil,
+            event: .connectionClosed(closeCode: closeCode)
+        ))
     }
 
     static func endpointURL(_ endpoint: String) -> URL? {

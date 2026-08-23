@@ -27,6 +27,28 @@ struct VoiceChannelView: View {
                 .padding(18)
                 .glassEffect(.regular, in: ConcentricRectangle(cornerRadius: 16, style: .continuous))
             }
+        } else if model.voiceSessionState == .failed
+            || model.voiceSessionState == .disconnected
+        {
+            ZStack {
+                VoiceVideoGrid(model: model)
+                    .opacity(0.45)
+                VStack(spacing: 10) {
+                    Image(systemName: "wifi.exclamationmark")
+                        .font(.system(size: 28, weight: .medium))
+                        .foregroundStyle(Color(hex: 0xDA373C))
+                    Text("Voice disconnected")
+                        .font(.headline)
+                    Text("SakuraCord is no longer receiving call audio.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(20)
+                .glassEffect(
+                    .regular.tint(Color(hex: 0xDA373C).opacity(0.16)),
+                    in: ConcentricRectangle(cornerRadius: 16, style: .continuous)
+                )
+            }
         } else {
             VoiceVideoGrid(model: model)
         }

@@ -191,10 +191,10 @@ extension AppModel {
         }
         let account = accountSession()
         bumpApplicationStreamGeneration(for: key)
-        try? await account.provider.stopApplicationStream(key)
         if let session = applicationStreamSessions[key] {
             await session.stopScreenShareCapture()
         }
+        try? await account.provider.stopApplicationStream(key)
         await removeApplicationStreamSession(key, preservingCapture: false)
         applicationStreams[key] = nil
         applicationStreamStates[key] = nil
@@ -486,10 +486,10 @@ extension AppModel {
             .union(localApplicationStreamKey.map { [$0] } ?? [])
         for key in keys {
             bumpApplicationStreamGeneration(for: key)
+            await removeApplicationStreamSession(key, preservingCapture: false)
             if notifyDiscord {
                 try? await account.provider.stopApplicationStream(key)
             }
-            await removeApplicationStreamSession(key, preservingCapture: false)
         }
         applicationStreams = [:]
         applicationStreamStates = [:]
@@ -745,7 +745,7 @@ extension AppModel {
             isLocalScreenSharePreviewPaused = !isActive
         }
         screenShareCaptureEngine?.setPreviewEnabled(
-            isActive && (
+            (isActive || isScreenSharePreviewPresented) && (
                 isScreenSharePreviewPresented || localApplicationStreamKey != nil
             )
         )

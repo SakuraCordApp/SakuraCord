@@ -79,7 +79,8 @@ struct VoiceControlBar<SettingsControl: View>: View {
                 systemImage: model.localApplicationStreamKey == nil
                     ? "rectangle.on.rectangle" : "rectangle.on.rectangle.slash",
                 isAlert: model.localApplicationStreamKey != nil,
-                isDisabled: model.voiceSessionState != .connected,
+                isDisabled: model.voiceSessionState != .connected
+                    && model.localApplicationStreamKey == nil,
                 help: model.localApplicationStreamKey == nil
                     ? "Share Screen" : "Screen Share Options"
             ) {
@@ -89,7 +90,8 @@ struct VoiceControlBar<SettingsControl: View>: View {
             VoiceSplitButton(
                 systemImage: model.isCameraEnabled ? "video.fill" : "video.slash.fill",
                 isAlert: !model.isCameraEnabled,
-                isDisabled: model.voiceSessionState != .connected,
+                isDisabled: model.voiceSessionState != .connected
+                    && !model.isCameraEnabled,
                 primaryHelp: model.isCameraEnabled ? "Turn Off Camera" : "Turn On Camera",
                 secondaryHelp: "Camera Device",
                 primaryAction: { Task { await model.toggleCamera() } },
@@ -196,7 +198,7 @@ struct VoiceSidebarStatus: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "wave.3.right.circle.fill")
+            Image(systemName: statusSymbol)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(statusColor)
 
@@ -226,6 +228,7 @@ struct VoiceSidebarStatus: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 48)
+        .background(statusColor.opacity(statusBackgroundOpacity))
     }
 
     private var connectionSubtitle: String {
@@ -243,6 +246,7 @@ struct VoiceSidebarStatus: View {
         case .connecting: "Connecting…"
         case .reconnecting: "Reconnecting…"
         case .failed: "Connection Failed"
+        case .disconnected: "Disconnected"
         default: "Voice Connected"
         }
     }
@@ -250,8 +254,23 @@ struct VoiceSidebarStatus: View {
     private var statusColor: Color {
         switch model.voiceSessionState {
         case .connecting, .reconnecting: Color(hex: 0xF0B232)
-        case .failed: Color(hex: 0xDA373C)
+        case .failed, .disconnected: Color(hex: 0xDA373C)
         default: Color(hex: 0x23A55A)
+        }
+    }
+
+    private var statusSymbol: String {
+        switch model.voiceSessionState {
+        case .connecting, .reconnecting: "arrow.triangle.2.circlepath.circle.fill"
+        case .failed, .disconnected: "wifi.exclamationmark"
+        default: "wave.3.right.circle.fill"
+        }
+    }
+
+    private var statusBackgroundOpacity: Double {
+        switch model.voiceSessionState {
+        case .connecting, .reconnecting, .failed, .disconnected: 0.1
+        default: 0
         }
     }
 }
@@ -280,7 +299,7 @@ struct VoiceCallControlDock: View {
                         systemImage: "rectangle.on.rectangle.slash",
                         isAlert: false,
                         tintColor: Color(hex: 0x5865F2),
-                        isDisabled: model.voiceSessionState != .connected,
+                        isDisabled: false,
                         primaryAction: { Task { await model.stopScreenSharing() } },
                         secondaryAction: { showScreenShareControls.toggle() }
                     )
@@ -294,7 +313,8 @@ struct VoiceCallControlDock: View {
                     systemImage: model.isCameraEnabled ? "video.slash.fill" : "video.fill",
                     isAlert: false,
                     tintColor: model.isCameraEnabled ? Color(hex: 0x23A55A) : nil,
-                    isDisabled: model.voiceSessionState != .connected,
+                    isDisabled: model.voiceSessionState != .connected
+                        && !model.isCameraEnabled,
                     primaryAction: { Task { await model.toggleCamera() } },
                     secondaryAction: { showCameraControls.toggle() }
                 )
