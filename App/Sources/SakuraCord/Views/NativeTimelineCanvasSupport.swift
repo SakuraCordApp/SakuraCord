@@ -235,7 +235,7 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
         result.append(.action(
             .addReaction,
             title: "Add Reaction",
-            systemImage: "face.smiling.inverse"
+            systemImage: SakuraCordSystemSymbol.emojiFaceGrinning
         ))
         if canReply {
             result.append(.action(

@@ -19,8 +19,8 @@ enum ContextMenuItemSupport {
                 )
             )
             : baseConfiguration
-        if let image = NSImage(
-            systemSymbolName: systemImage,
+        if let image = SakuraCordSystemSymbol.image(
+            named: systemImage,
             accessibilityDescription: title
         )?.withSymbolConfiguration(configuration) {
             image.isTemplate = !isDestructive

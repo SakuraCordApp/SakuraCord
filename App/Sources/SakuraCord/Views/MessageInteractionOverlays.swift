@@ -415,7 +415,7 @@ private struct ReactionActionMenu: View {
             Button {
                 presentPicker()
             } label: {
-                Image(systemName: "face.smiling.inverse")
+                SakuraCordSystemSymbol.emojiFaceGrinningImage
                     .symbolVariant(.none)
                     .font(.callout.weight(.medium))
                     .foregroundStyle(.primary)

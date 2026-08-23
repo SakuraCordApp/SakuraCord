@@ -206,8 +206,13 @@ struct AnimatedRemoteImage: View {
                 Image(nsImage: previewImage)
                     .resizable()
                     .aspectRatio(contentMode: contentMode)
-            } else if didFail, let fallbackSystemImage {
-                Image(systemName: fallbackSystemImage)
+            } else if didFail,
+                      let fallbackSystemImage,
+                      let fallbackImage = SakuraCordSystemSymbol.image(
+                          named: fallbackSystemImage
+                      )
+            {
+                Image(nsImage: fallbackImage)
                     .resizable()
                     .scaledToFit()
                     .padding(fallbackInset)

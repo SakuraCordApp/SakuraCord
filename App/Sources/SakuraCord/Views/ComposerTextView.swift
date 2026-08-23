@@ -228,8 +228,8 @@ enum ComposerEmojiAttributedText {
     }
 
     private static func placeholderImage(name: String, size: CGFloat) -> NSImage {
-        let image = NSImage(
-            systemSymbolName: "face.smiling",
+        let image = SakuraCordSystemSymbol.image(
+            named: SakuraCordSystemSymbol.emojiFaceGrinning,
             accessibilityDescription: name
         )?.withSymbolConfiguration(
             NSImage.SymbolConfiguration(pointSize: size, weight: .regular)

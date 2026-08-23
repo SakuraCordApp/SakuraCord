@@ -1603,7 +1603,7 @@ private struct ForumPostComposer: View {
                 selectionBeforeEmojiPicker = contentSelection
                 showsEmojiPicker.toggle()
             } label: {
-                Image(systemName: "face.smiling.inverse")
+                SakuraCordSystemSymbol.emojiFaceGrinningImage
                     .environment(\.symbolVariants, .none)
                     .symbolRenderingMode(.monochrome)
                     .font(.system(size: 18, weight: .regular))

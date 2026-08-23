@@ -439,7 +439,10 @@ nonisolated enum RichMessageAttributedText {
     ) -> NSAttributedString {
         let attachment = NSTextAttachment()
         let image = ComposerEmojiImageStore.shared.cachedImage(for: emoji.rawToken)
-            ?? NSImage(systemSymbolName: "face.smiling", accessibilityDescription: emoji.name)
+            ?? SakuraCordSystemSymbol.image(
+                named: SakuraCordSystemSymbol.emojiFaceGrinning,
+                accessibilityDescription: emoji.name
+            )
         attachment.image = image
         attachment.bounds = CGRect(
             x: 0,

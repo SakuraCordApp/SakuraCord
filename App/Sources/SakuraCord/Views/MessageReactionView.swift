@@ -348,13 +348,13 @@ private struct MessageReactionEmoji: View {
                 ZStack {
                     ConcentricRectangle(cornerRadius: 5, style: .continuous)
                         .fill(Color.secondary.opacity(0.12))
-                    Image(systemName: "face.smiling")
+                    SakuraCordSystemSymbol.emojiFaceGrinningImage
                         .font(.system(size: size * 0.58, weight: .medium))
                         .foregroundStyle(.secondary)
                     if let url {
                         AnimatedRemoteImage(
                             url: url,
-                            fallbackSystemImage: "face.smiling",
+                            fallbackSystemImage: SakuraCordSystemSymbol.emojiFaceGrinning,
                             fallbackInset: 3
                         )
                     }

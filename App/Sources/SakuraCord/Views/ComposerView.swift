@@ -144,7 +144,7 @@ struct ComposerView: View {
                                     }
                                 }
                                 ComposerActionButton(
-                                    icon: Image(systemName: "face.smiling.inverse"),
+                                    icon: SakuraCordSystemSymbol.emojiFaceGrinningImage,
                                     help: "Choose emoji",
                                     iconSize: 19,
                                     iconWeight: .medium

@@ -47,10 +47,7 @@ enum NativeTimelineSystemSymbolCache {
                 interval
             )
         }
-        guard let image = NSImage(
-            systemSymbolName: name,
-            accessibilityDescription: nil
-        ) else { return nil }
+        guard let image = SakuraCordSystemSymbol.image(named: name) else { return nil }
         images[name] = image
         return image
     }
@@ -272,7 +269,7 @@ enum NativeTimelineSystemSymbolCache {
                 },
                 {
                     prewarmConfiguredImage(
-                        named: "face.smiling",
+                        named: SakuraCordSystemSymbol.emojiFaceGrinning,
                         pointSize: 10,
                         weight: .medium,
                         color: .secondaryLabelColor,
@@ -281,7 +278,7 @@ enum NativeTimelineSystemSymbolCache {
                 },
                 {
                     prewarmConfiguredImage(
-                        named: "face.smiling.inverse",
+                        named: SakuraCordSystemSymbol.emojiFaceGrinning,
                         pointSize: 16,
                         weight: .medium,
                         color: .labelColor,
@@ -788,7 +785,7 @@ extension NativeTimelineRowPainter {
                 cornerRadius: 5
             ).fill()
             systemSymbol(
-                "face.smiling",
+                SakuraCordSystemSymbol.emojiFaceGrinning,
                 in: region.emojiFrame,
                 color: .secondaryLabelColor,
                 inset: 4,
@@ -888,7 +885,7 @@ extension NativeTimelineRowPainter {
             shape.stroke()
         }
         systemSymbol(
-            "face.smiling.inverse",
+            SakuraCordSystemSymbol.emojiFaceGrinning,
             in: NativeTimelineReactionAddControlGeometry.iconFrame(in: frame),
             color: .labelColor,
             inset: 0,

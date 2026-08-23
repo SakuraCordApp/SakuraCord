@@ -98,7 +98,7 @@ struct EmojiNativeJumpButton: View {
 
     var body: some View {
         Button(action: jump) {
-            Image(systemName: "face.smiling.inverse")
+            SakuraCordSystemSymbol.emojiFaceGrinningImage
                 .symbolVariant(.none)
                 .font(.system(size: 17))
                 .foregroundStyle(isSelected ? Color.primary : Color.secondary)
