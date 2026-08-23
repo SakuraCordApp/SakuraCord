@@ -10,7 +10,8 @@ copy as the shorter Discord announcement.
 Before drafting any copy:
 
 1. Resolve the exact stable `vMAJOR.MINOR.PATCH` or nightly
-   `vMAJOR.MINOR.PATCH-nightly.NUMBER` tag requested by the maintainer. Do not
+   `vMAJOR.MINOR.PATCH-beta.NUMBER` tag requested by the maintainer. Beta tags
+   are displayed as `vMAJOR.MINOR.PATCH Beta NUMBER`. Do not
    infer the version or release track merely because a newer commit exists.
 2. Inspect the current GitHub Release, if one exists, to distinguish a new
    release from a release whose notes need to be backfilled or repaired.

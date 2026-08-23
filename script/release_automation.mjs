@@ -12,7 +12,12 @@ const REGULAR_RELEASE_COLOR = 0xce6096;
 const NIGHTLY_RELEASE_COLOR = 0x5865f2;
 
 export function isNightlyReleaseTag(tagName) {
-  return /^v\d+\.\d+\.\d+-nightly\.\d+$/.test(tagName);
+  return /^v\d+\.\d+\.\d+-beta\.\d+$/.test(tagName);
+}
+
+export function releaseDisplayName(tagName) {
+  const match = /^v(\d+\.\d+\.\d+)-beta\.(\d+)$/.exec(tagName);
+  return match ? `v${match[1]} Beta ${match[2]}` : tagName;
 }
 
 export function validateReleaseCopy(value, expectedTag) {
@@ -31,9 +36,9 @@ export function validateReleaseCopy(value, expectedTag) {
   }
   if (value.schemaVersion !== 1) throw new Error("Release copy schemaVersion must be 1.");
   const tagName = requiredString(value.tagName, "tagName");
-  if (!/^v\d+\.\d+\.\d+(?:-nightly\.\d+)?$/.test(tagName)) {
+  if (!/^v\d+\.\d+\.\d+(?:-beta\.\d+)?$/.test(tagName)) {
     throw new Error(
-      "tagName must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-nightly.NUMBER.",
+      "tagName must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-beta.NUMBER.",
     );
   }
   if (expectedTag && tagName !== expectedTag) {
@@ -78,7 +83,7 @@ export function createDiscordPayload(copy, repository, releaseId, releaseUrl, ro
     content: `<@&${roleId}>`,
     embeds: [
       {
-        title: `SakuraCord ${validated.tagName}${isNightly ? " 🌙" : ""}`,
+        title: `SakuraCord ${releaseDisplayName(validated.tagName)}${isNightly ? " 🌙" : ""}`,
         description: validated.discordAnnouncement,
         color: isNightly ? NIGHTLY_RELEASE_COLOR : REGULAR_RELEASE_COLOR,
       },

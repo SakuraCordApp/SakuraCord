@@ -11,7 +11,8 @@ The release action generates these elements; do not author them in the release
 copy:
 
 - the updates-role mention;
-- the embed title, derived from `tagName` (nightly titles also end in `🌙`); and
+- the embed title, derived from `tagName` (for example,
+  `v0.1.5-beta.1` becomes `SakuraCord v0.1.5 Beta 1 🌙`); and
 - the **View release** button and its GitHub Release URL.
 
 Only the embed description belongs in `discordAnnouncement`.

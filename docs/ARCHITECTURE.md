@@ -221,7 +221,7 @@ signature, builds the DMG, verifies the image, and writes its SHA-256 digest.
 Developer ID signing and notarization are not currently part of the release
 workflow.
 
-Stable and `vX.Y.Z-nightly.N` tag releases enable the canonical Sparkle
+Stable and `vX.Y.Z-beta.N` tag releases enable the canonical Sparkle
 configuration, generate a signed `appcast.xml` from the same tag-specific DMG,
 and validate the feed signature,
 archive signature, bundle metadata, and nested code signatures before staging
@@ -235,8 +235,11 @@ for the GitHub Release and signed appcast, derives the Discord embed title from
 the tag, posts the pre-made embed description with a generated role mention
 and release button, and stores public copy/delivery checkpoint assets for
 idempotent repair runs.
-Nightly tags use the same validation and packaging job, publish as GitHub
-prereleases, and select their dedicated Discord channel and role. Only after a
+Nightly beta tags must point to commits on the `nightly` source branch, use
+human-facing `vX.Y.Z Beta N` release and Discord titles, and use tag-specific
+`SakuraCord-vX.Y.Z-Beta-N.dmg` assets. They run the same validation and
+packaging job, publish as GitHub prereleases, and select their dedicated
+Discord channel and role. Only after a
 nightly prerelease's assets are publicly re-downloaded and compared does the
 workflow atomically update the signed appcast on the generated `nightly-feed`
 branch. The application reads that feed from

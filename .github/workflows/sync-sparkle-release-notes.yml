@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Published stable or vMAJOR.MINOR.PATCH-nightly.NUMBER release to resync
+        description: Published stable or vMAJOR.MINOR.PATCH-beta.NUMBER release to resync
         required: true
         type: string
 
@@ -26,17 +26,19 @@ jobs:
     steps:
       - name: Resolve release tag
         run: |
-          if [[ ! "$SAKURACORD_RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-nightly\.[0-9]+)?$ ]]; then
-            echo "Release tags must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-nightly.NUMBER." >&2
+          if [[ ! "$SAKURACORD_RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]]; then
+            echo "Release tags must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-beta.NUMBER." >&2
             exit 1
           fi
           asset_version="${SAKURACORD_RELEASE_TAG#v}"
-          version="${asset_version%%-nightly.*}"
+          version="${asset_version%%-beta.*}"
           release_track=regular
           expected_prerelease=false
-          if [[ "$SAKURACORD_RELEASE_TAG" == *-nightly.* ]]; then
+          if [[ "$SAKURACORD_RELEASE_TAG" == *-beta.* ]]; then
             release_track=nightly
             expected_prerelease=true
+            beta_number="${SAKURACORD_RELEASE_TAG##*.}"
+            asset_version="$version-Beta-$beta_number"
           fi
           is_prerelease="$(gh release view "$SAKURACORD_RELEASE_TAG" --json isPrerelease --jq .isPrerelease)"
           if [[ "$is_prerelease" != "$expected_prerelease" ]]; then
@@ -45,7 +47,12 @@ jobs:
           fi
           echo "SAKURACORD_VERSION=$version" >> "$GITHUB_ENV"
           echo "SAKURACORD_RELEASE_TRACK=$release_track" >> "$GITHUB_ENV"
-          echo "SAKURACORD_DMG_NAME=SakuraCord.v$asset_version.dmg" >> "$GITHUB_ENV"
+          if [[ "$release_track" == "nightly" ]]; then
+            dmg_name="SakuraCord-v$asset_version.dmg"
+          else
+            dmg_name="SakuraCord.v$asset_version.dmg"
+          fi
+          echo "SAKURACORD_DMG_NAME=$dmg_name" >> "$GITHUB_ENV"
       - uses: actions/checkout@v6
         with:
           ref: ${{ env.SAKURACORD_RELEASE_TAG }}

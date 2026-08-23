@@ -26,12 +26,12 @@ sakuracord_release_version() {
 
 sakuracord_is_release_tag() {
   local tag="$1"
-  [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-nightly\.[0-9]+)?$ ]]
+  [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]]
 }
 
 sakuracord_is_nightly_release_tag() {
   local tag="$1"
-  [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-nightly\.[0-9]+$ ]]
+  [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]
 }
 
 sakuracord_release_version_from_tag() {
@@ -39,19 +39,19 @@ sakuracord_release_version_from_tag() {
   local version
 
   if ! sakuracord_is_release_tag "$tag"; then
-    echo "Release tags must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-nightly.NUMBER." >&2
+    echo "Release tags must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-beta.NUMBER." >&2
     return 2
   fi
 
   version="${tag#v}"
-  printf '%s\n' "${version%%-nightly.*}"
+  printf '%s\n' "${version%%-beta.*}"
 }
 
 sakuracord_release_track_from_tag() {
   local tag="$1"
 
   if ! sakuracord_is_release_tag "$tag"; then
-    echo "Release tags must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-nightly.NUMBER." >&2
+    echo "Release tags must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-beta.NUMBER." >&2
     return 2
   fi
   if sakuracord_is_nightly_release_tag "$tag"; then
@@ -63,12 +63,38 @@ sakuracord_release_track_from_tag() {
 
 sakuracord_release_asset_version_from_tag() {
   local tag="$1"
+  local beta_number
+  local version
 
   if ! sakuracord_is_release_tag "$tag"; then
-    echo "Release tags must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-nightly.NUMBER." >&2
+    echo "Release tags must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-beta.NUMBER." >&2
     return 2
   fi
-  printf '%s\n' "${tag#v}"
+  if sakuracord_is_nightly_release_tag "$tag"; then
+    version="$(sakuracord_release_version_from_tag "$tag")"
+    beta_number="${tag##*.}"
+    printf '%s-Beta-%s\n' "$version" "$beta_number"
+  else
+    printf '%s\n' "${tag#v}"
+  fi
+}
+
+sakuracord_release_display_name_from_tag() {
+  local tag="$1"
+  local beta_number
+  local version
+
+  if ! sakuracord_is_release_tag "$tag"; then
+    echo "Release tags must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-beta.NUMBER." >&2
+    return 2
+  fi
+  if sakuracord_is_nightly_release_tag "$tag"; then
+    version="$(sakuracord_release_version_from_tag "$tag")"
+    beta_number="${tag##*.}"
+    printf 'v%s Beta %s\n' "$version" "$beta_number"
+  else
+    printf '%s\n' "$tag"
+  fi
 }
 
 sakuracord_release_dmg_name() {
@@ -92,5 +118,9 @@ sakuracord_release_dmg_name_from_tag() {
   local asset_version
 
   asset_version="$(sakuracord_release_asset_version_from_tag "$tag")"
-  printf 'SakuraCord.v%s.dmg\n' "$asset_version"
+  if sakuracord_is_nightly_release_tag "$tag"; then
+    printf 'SakuraCord-v%s.dmg\n' "$asset_version"
+  else
+    printf 'SakuraCord.v%s.dmg\n' "$asset_version"
+  fi
 }

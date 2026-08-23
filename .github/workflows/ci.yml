@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing stable or vMAJOR.MINOR.PATCH-nightly.NUMBER tag to publish or repair
+        description: Existing stable or vMAJOR.MINOR.PATCH-beta.NUMBER tag to publish or repair
         required: true
         type: string
 
@@ -78,12 +78,22 @@ jobs:
           fi
           source "$release_control_root/script/release_metadata.sh"
           if ! sakuracord_is_release_tag "$release_tag"; then
-            echo "Release tags must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-nightly.NUMBER." >&2
+            echo "Release tags must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-beta.NUMBER." >&2
             exit 1
           fi
           version="$(sakuracord_release_version_from_tag "$release_tag")"
           release_track="$(sakuracord_release_track_from_tag "$release_tag")"
+          release_display_name="$(sakuracord_release_display_name_from_tag "$release_tag")"
           dmg_name="$(sakuracord_release_dmg_name_from_tag "$release_tag")"
+          if [[ "$release_track" == "nightly" ]]; then
+            git fetch --no-tags origin \
+              +refs/heads/nightly:refs/remotes/origin/nightly
+            if ! git merge-base --is-ancestor \
+              "refs/tags/$release_tag^{commit}" refs/remotes/origin/nightly; then
+              echo "Nightly beta tags must point to a commit on the nightly branch." >&2
+              exit 1
+            fi
+          fi
           release_copy="$release_control_root/Releases/$release_tag.json"
           if [[ ! -f "$release_copy" ]]; then
             echo "Releases/$release_tag.json must be written, reviewed, and committed before publishing." >&2
@@ -95,6 +105,7 @@ jobs:
           echo "SAKURACORD_BUILD_NUMBER=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
           echo "SAKURACORD_RELEASE_TAG=$release_tag" >> "$GITHUB_ENV"
           echo "SAKURACORD_RELEASE_TRACK=$release_track" >> "$GITHUB_ENV"
+          echo "SAKURACORD_RELEASE_DISPLAY_NAME=$release_display_name" >> "$GITHUB_ENV"
           echo "SAKURACORD_RELEASE_CONTROL_ROOT=$release_control_root" >> "$GITHUB_ENV"
           echo "SAKURACORD_RELEASE_COPY=$release_copy" >> "$GITHUB_ENV"
           echo "SAKURACORD_DMG_PATH=dist/$dmg_name" >> "$GITHUB_ENV"
@@ -183,10 +194,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if [[ "${{ steps.existing_release.outputs.published }}" == "true" ]]; then
-            gh release edit "$SAKURACORD_RELEASE_TAG" --notes-file dist/release-notes.md
+            gh release edit "$SAKURACORD_RELEASE_TAG" \
+              --title "SakuraCord $SAKURACORD_RELEASE_DISPLAY_NAME" \
+              --notes-file dist/release-notes.md
             gh release upload "$SAKURACORD_RELEASE_TAG" dist/release-copy.json --clobber
           elif gh release view "$SAKURACORD_RELEASE_TAG" >/dev/null 2>&1; then
-            gh release edit "$SAKURACORD_RELEASE_TAG" --notes-file dist/release-notes.md
+            gh release edit "$SAKURACORD_RELEASE_TAG" \
+              --title "SakuraCord $SAKURACORD_RELEASE_DISPLAY_NAME" \
+              --notes-file dist/release-notes.md
             gh release upload "$SAKURACORD_RELEASE_TAG" \
               "$SAKURACORD_DMG_PATH" dist/appcast.xml dist/release-copy.json --clobber
             gh release edit "$SAKURACORD_RELEASE_TAG" --draft=false
@@ -198,7 +213,7 @@ jobs:
             gh release create "$SAKURACORD_RELEASE_TAG" \
               "$SAKURACORD_DMG_PATH" dist/appcast.xml dist/release-copy.json \
               --draft \
-              --title "SakuraCord $SAKURACORD_RELEASE_TAG" \
+              --title "SakuraCord $SAKURACORD_RELEASE_DISPLAY_NAME" \
               --verify-tag \
               --notes-file dist/release-notes.md \
               "${release_flags[@]}"
@@ -231,7 +246,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          release_json="$(gh release view "$SAKURACORD_RELEASE_TAG" --json databaseId,isDraft,isPrerelease,url)"
+          release_json="$(gh release view "$SAKURACORD_RELEASE_TAG" --json databaseId,isDraft,isPrerelease,name,url)"
           if [[ "$(jq -r .isDraft <<< "$release_json")" != "false" ]]; then
             echo "The GitHub Release is still a draft." >&2
             exit 1
@@ -242,6 +257,11 @@ jobs:
           fi
           if [[ "$(jq -r .isPrerelease <<< "$release_json")" != "$expected_prerelease" ]]; then
             echo "The published release has the wrong prerelease state." >&2
+            exit 1
+          fi
+          if [[ "$(jq -r .name <<< "$release_json")" != \
+            "SakuraCord $SAKURACORD_RELEASE_DISPLAY_NAME" ]]; then
+            echo "The published release has the wrong display name." >&2
             exit 1
           fi
           echo "id=$(jq -r .databaseId <<< "$release_json")" >> "$GITHUB_OUTPUT"

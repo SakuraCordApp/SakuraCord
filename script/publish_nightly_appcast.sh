@@ -11,7 +11,7 @@ REPOSITORY="${GITHUB_REPOSITORY:-}"
 BRANCH="nightly-feed"
 
 if ! sakuracord_is_nightly_release_tag "$RELEASE_TAG"; then
-  echo "Only vMAJOR.MINOR.PATCH-nightly.NUMBER releases may publish the nightly feed." >&2
+  echo "Only vMAJOR.MINOR.PATCH-beta.NUMBER releases may publish the nightly feed." >&2
   exit 2
 fi
 if [[ -z "$REPOSITORY" || -z "${GH_TOKEN:-}" ]]; then

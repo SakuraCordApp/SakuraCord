@@ -4,6 +4,7 @@ import {
   RELEASE_ACTION_MARKER,
   createDiscordPayload,
   prepareReleaseCopy,
+  releaseDisplayName,
   validateReleaseCopy,
 } from "./release_automation.mjs";
 
@@ -53,11 +54,11 @@ test("validates a pre-made release file against its tag", () => {
 
 test("requires nightly tags and announcements to use their moon framing", () => {
   const nightly = releaseCopy({
-    tagName: "v0.2.0-nightly.3",
+    tagName: "v0.2.0-beta.3",
     discordAnnouncement:
       "**Message forwarding and GIFs 🌙**\n\n**Highlights**\n- Good things",
   });
-  assert.equal(validateReleaseCopy(nightly).tagName, "v0.2.0-nightly.3");
+  assert.equal(validateReleaseCopy(nightly).tagName, "v0.2.0-beta.3");
   assert.throws(
     () =>
       validateReleaseCopy({
@@ -68,9 +69,14 @@ test("requires nightly tags and announcements to use their moon framing", () => 
     /ending in 🌙/,
   );
   assert.throws(
-    () => validateReleaseCopy({ ...nightly, tagName: "v0.2.0-nightly.beta" }),
-    /vMAJOR\.MINOR\.PATCH-nightly\.NUMBER/,
+    () => validateReleaseCopy({ ...nightly, tagName: "v0.2.0-beta.beta" }),
+    /vMAJOR\.MINOR\.PATCH-beta\.NUMBER/,
   );
+});
+
+test("formats beta tags for human-facing release names", () => {
+  assert.equal(releaseDisplayName("v0.1.5-beta.1"), "v0.1.5 Beta 1");
+  assert.equal(releaseDisplayName("v0.1.5"), "v0.1.5");
 });
 
 test("preserves hand-written notes and appends only the ownership marker", () => {
@@ -105,17 +111,17 @@ test("sanitizes pre-made Discord mentions and constrains allowed mentions", () =
 test("gives nightly announcements distinct visual framing", () => {
   const payload = createDiscordPayload(
     releaseCopy({
-      tagName: "v0.2.0-nightly.3",
+      tagName: "v0.2.0-beta.3",
       discordAnnouncement:
         "**A specific nightly headline 🌙**\n\n**Highlights**\n- Good things",
     }),
     "SakuraCordApp/SakuraCord",
     124,
-    "https://github.com/SakuraCordApp/SakuraCord/releases/tag/v0.2.0-nightly.3",
+    "https://github.com/SakuraCordApp/SakuraCord/releases/tag/v0.2.0-beta.3",
     "1541194051196289157",
   );
 
-  assert.equal(payload.embeds[0].title, "SakuraCord v0.2.0-nightly.3 🌙");
+  assert.equal(payload.embeds[0].title, "SakuraCord v0.2.0 Beta 3 🌙");
   assert.equal(payload.embeds[0].color, 0x5865f2);
   assert.deepEqual(payload.allowed_mentions.roles, ["1541194051196289157"]);
 });
