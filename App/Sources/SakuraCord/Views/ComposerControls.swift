@@ -87,7 +87,7 @@ struct UploadProgressView: View {
 }
 
 struct ComposerActionButton: View {
-    let systemImage: String
+    let icon: Image
     let help: String
     var iconSize: CGFloat = 18
     var iconWeight: Font.Weight = .medium
@@ -98,7 +98,7 @@ struct ComposerActionButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: systemImage)
+            icon
                 .symbolVariant(.none)
                 .font(.system(size: iconSize, weight: iconWeight))
                 .foregroundStyle(.primary)

@@ -61,7 +61,7 @@ struct ComposerView: View {
                 HStack(alignment: .bottom, spacing: 9) {
                         if !hasActiveCommand {
                             ComposerActionButton(
-                                systemImage: "plus",
+                                icon: Image(systemName: "plus"),
                                 help: "Add attachments",
                                 iconSize: 19,
                                 iconWeight: .regular
@@ -124,9 +124,9 @@ struct ComposerView: View {
                             if !hasActiveCommand {
                                 if model.supportedCapabilities.contains(.gifs) {
                                     ComposerActionButton(
-                                        systemImage: "rectangle.stack",
+                                        icon: Image("gif.square", bundle: .module),
                                         help: "Choose GIF",
-                                        iconSize: 18,
+                                        iconSize: 20,
                                         iconWeight: .medium
                                     ) {
                                         toggleGIFPicker()
@@ -144,7 +144,7 @@ struct ComposerView: View {
                                     }
                                 }
                                 ComposerActionButton(
-                                    systemImage: "face.smiling.inverse",
+                                    icon: Image(systemName: "face.smiling.inverse"),
                                     help: "Choose emoji",
                                     iconSize: 19,
                                     iconWeight: .medium
