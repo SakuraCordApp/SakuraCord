@@ -40,6 +40,13 @@ remain the property of Discord and are included only to reproduce familiar
 client interaction cues. Their inclusion does not imply Discord affiliation or
 endorsement.
 
+## GIF composer icon
+
+The custom GIF composer symbol at
+`App/Sources/SakuraCord/Resources/Assets.xcassets/gif.square.symbolset/gif.square.svg`
+was created for SakuraCord by **roxleton** on Discord and contributed through
+the SakuraCord Discord community.
+
 ## Sparkle
 
 SakuraCord uses the official Sparkle 2 software update framework, pinned to

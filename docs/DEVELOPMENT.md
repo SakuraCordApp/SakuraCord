@@ -116,11 +116,11 @@ The local identity is stored only in the login keychain, is trusted only for
 code signing, and is not suitable for distributing the app. The build script
 falls back to ad-hoc signing when no identity is installed.
 
-Go Live uses ScreenCaptureKit's system content picker. A source selected there
-is authorized for that capture session and does not require a separate global
-Screen Recording grant. Do not reset TCC or direct users to System Settings when
-the picker opens successfully; a permission warning in that case indicates an
-incorrect non-picker capture path.
+Screen sharing uses ScreenCaptureKit's system content picker. A source selected
+there is authorized for that capture session and does not require a separate
+global Screen Recording grant. Do not reset TCC or direct users to System
+Settings when the picker opens successfully; a permission warning in that case
+indicates an incorrect non-picker capture path.
 
 See the [testing guide](TESTING.md) before adding or materially changing
 committed tests. Before proposing a broad change, the complete local check is:

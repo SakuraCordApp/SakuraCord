@@ -5,7 +5,7 @@ public enum ApplicationStreamType: String, Codable, Equatable, Sendable {
     case call
 }
 
-/// Discord's stable identity for a Go Live stream.
+/// Discord's stable identity for a screen-sharing stream.
 ///
 /// Guild streams use `guild:<guild id>:<channel id>:<owner id>` while
 /// private-call streams use `call:<channel id>:<owner id>`.

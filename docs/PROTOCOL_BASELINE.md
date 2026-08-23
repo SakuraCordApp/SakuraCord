@@ -78,7 +78,7 @@ cover timed-out GET, read-only DM-search POST, generation coalescing, and
 non-replayed mutation behavior. No new Discord route, header, body, or account
 action was introduced for this recovery audit.
 
-Go Live was re-audited on 20 August 2026 against a clean, authenticated,
+Screen sharing was re-audited on 20 August 2026 against a clean, authenticated,
 renamed official Discord desktop `0.0.408` (Electron `42.7.1`, Chromium
 `148.0.7778.280`) using an isolated profile and CDP. The current main asset was
 `web.e7ec05b4366c76c6.js`, SHA-256
@@ -89,7 +89,7 @@ identifier, media frame, or unsanitized payload. DiscordKit commit
 main-Gateway opcodes, event fields, stream-key grammar, and preview route, but
 contains no capture or RTC media implementation. Pinned Paicord contains the
 opcode constants and voice-state flag but leaves stream dispatch incomplete;
-pinned Swiftcord v1 contains no matching Go Live implementation. Those sources
+pinned Swiftcord v1 contains no matching screen-sharing implementation. Those sources
 were cross-checks, not media code to copy.
 
 Three controlled entire-screen broadcasts were also started and stopped in
@@ -807,7 +807,7 @@ is not the whole network surface. The remaining production connections are:
   discovery and encrypted RTP to the server-supplied IP and port. This path is
   reached only by an explicit voice/call action and uses the existing
   DAVE-capable voice state machine;
-- for each explicitly started or watched Go Live stream, a separate Voice v8
+- for each explicitly started or watched screen-sharing stream, a separate Voice v8
   Gateway/DAVE/UDP connection at the endpoint supplied by
   `STREAM_SERVER_UPDATE`. It identifies with the main voice session ID, the
   stream RTC server/channel IDs, and one `screen` video stream. It neither
@@ -1460,7 +1460,7 @@ account action or traffic capture was performed.
   the current first-party shape plus the stricter nonce, deduplication, and
   one-attempt safety rules above.
 
-### Go Live screen sharing
+### Screen sharing
 
 The dated 20 and 22 August evidence above establishes two distinct control planes:
 the main Gateway owns stream discovery and viewer intent, while a separate
