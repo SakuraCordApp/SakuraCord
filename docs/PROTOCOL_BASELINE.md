@@ -1499,6 +1499,24 @@ session. A 2560×1440 60 FPS screen was advertised by Voice opcode 12 with
 `max_bitrate:9000000`. Viewer demand used opcode 15 quality 100 with a
 `pixelCounts` hint; hidden/unwatched content used zero demand.
 
+SakuraCord applies that advertised maximum to VideoToolbox's one-second
+data-rate window. The RTP sender derives its wire pacing rate from the encoded
+payload plus the actual RTP/encryption overhead and ten percent drain headroom;
+the headroom empties transport work between frames without increasing encoder
+output or the sustained media rate. It paces each encoded frame in approximately
+five-millisecond UDP batches rather than enqueueing a complete high-motion frame
+at once, with at most 100 milliseconds of accumulated pacing credit so a scene
+change or keyframe is not unnecessarily stretched across the receiver's frame
+assembly deadline. Screen capture admits at most two frames between VideoToolbox
+and completed UDP delivery. When transport is slower than capture, it skips new
+capture input before encoding instead of discarding encoded H.264 reference
+frames; an unexpected encoder/stream loss forces the next frame to be a keyframe,
+as does a receiver PLI. Call audio and stream video use Network.framework's
+interactive-voice and interactive-video service classes respectively. Captured
+Opus queues retain at most the newest three 20-millisecond frames and preserve
+the source sample offset in the RTP clock when an older frame is discarded, so
+transport backpressure cannot grow into delayed microphone or sound-share audio.
+
 - Stream keys are `guild:{guild_id}:{channel_id}:{owner_id}` or
   `call:{channel_id}:{owner_id}`. Starting sends opcode 18 `STREAM_CREATE` with
   `type`, nullable `guild_id`, `channel_id`, and nullable `preferred_region`.

@@ -27,7 +27,7 @@ import Testing
         encodedStream.continuation.finish()
     }
     encoder.encode(pixelBuffer: buffer, presentationTime: .zero)
-    encoder.completeFrames()
+    encoder.finish()
     let encoded = try #require(await firstValue(from: encodedStream.stream))
     #expect(encoded.isKeyframe)
     #expect(!AnnexB.split(frame: encoded.data).isEmpty)

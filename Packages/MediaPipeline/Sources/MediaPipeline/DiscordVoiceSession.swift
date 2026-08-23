@@ -212,6 +212,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
     private var inboundAudioPacketCount = 0
     private var inboundVideoPacketCount = 0
     private var scheduledAudioPacketCount = 0
+    private var lastCapturedAudioSampleOffset: UInt64?
     private var videoTransportMetrics = VideoTransportMetrics()
 
     private lazy var dave = DaveSessionManager(
@@ -455,9 +456,15 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         _ = try await capture.beginEncoding()
         screenCaptureEngine = capture
         encodedScreenTask = Task { [weak self, capture] in
-            for await frame in capture.encodedFrames {
+            for await capturedFrame in capture.encodedFrames {
                 guard !Task.isCancelled else { return }
-                await self?.handleCapturedScreenFrame(frame)
+                guard let self else {
+                    capture.didFinishSendingVideoFrame(
+                        generation: capturedFrame.encoderGeneration
+                    )
+                    return
+                }
+                await self.handleCapturedScreenFrame(capturedFrame, capture: capture)
             }
         }
         encodedScreenAudioTask?.cancel()
@@ -697,7 +704,11 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         voiceMediaLogger.info(
             "Voice UDP setup; mode=\(mode.rawValue, privacy: .public), videoStreams=\(ready.streams.count)"
         )
-        let udp = VoiceUDPConnection(host: ready.ip, port: ready.port)
+        let udp = VoiceUDPConnection(
+            host: ready.ip,
+            port: ready.port,
+            serviceClass: kind.carriesVoiceAudio ? .interactiveVoice : .interactiveVideo
+        )
         try await udp.start()
         let discovered = try await udp.discoverExternalAddress(ssrc: ready.ssrc)
         await self.udp?.close()
@@ -801,7 +812,12 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         await audio.setOutputVolume(configuration.outputVolume)
         await audio.setMuted(configuration.isMuted)
         await audio.setDeafened(configuration.isDeafened)
-        let capturedFrames = AsyncStream<CapturedOpusFrame>.makeStream(bufferingPolicy: .unbounded)
+        // Never turn a transient UDP stall into seconds of stale microphone
+        // audio. The capture offset preserves the RTP clock when older frames
+        // are discarded, while the newest three frames bound latency to 60 ms.
+        let capturedFrames = AsyncStream<CapturedOpusFrame>.makeStream(
+            bufferingPolicy: .bufferingNewest(3)
+        )
         capturedAudioContinuation = capturedFrames.continuation
         capturedAudioTask = Task { [weak self] in
             for await frame in capturedFrames.stream {
@@ -840,7 +856,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
                 "First microphone frame captured; bytes=\(frame.data.count), containsVoice=\(frame.containsVoice)"
             )
         }
-        timestamp &+= UInt32(OpusCodec.frameSamples)
+        advanceAudioTimestamp(for: frame)
         if frame.containsVoice, !configuration.isMuted {
             trailingSilenceFrames = 0
             if !locallySpeaking, let audioSSRC {
@@ -900,26 +916,41 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
             return
         }
         do {
-            try await sendVideoFrame(frame)
+            try await sendVideoFrame(frame, bitsPerSecond: VoiceVideoEngine.bitrate)
         } catch {
             handleMediaTransportFailure(error)
         }
     }
 
-    private func handleCapturedScreenFrame(_ frame: EncodedVideoFrame) async {
+    private func handleCapturedScreenFrame(
+        _ capturedFrame: ScreenShareEncodedVideoFrame,
+        capture: ScreenShareCaptureEngine
+    ) async {
+        defer {
+            capture.didFinishSendingVideoFrame(
+                generation: capturedFrame.encoderGeneration
+            )
+        }
         guard case .applicationStream(isBroadcaster: true) = kind,
-              screenCaptureEngine != nil,
+              screenCaptureEngine === capture,
+              capture.isCurrentVideoFrame(
+                  generation: capturedFrame.encoderGeneration
+              ),
               state == .connected,
               videoSendQuality > 0
         else { return }
         do {
-            try await sendVideoFrame(frame)
+            let bitrate = screenCaptureEngine?.currentVideoFormat?.bitrate ?? 2_500_000
+            try await sendVideoFrame(capturedFrame.frame, bitsPerSecond: bitrate)
         } catch {
             handleMediaTransportFailure(error)
         }
     }
 
-    private func sendVideoFrame(_ frame: EncodedVideoFrame) async throws {
+    private func sendVideoFrame(
+        _ frame: EncodedVideoFrame,
+        bitsPerSecond: Int
+    ) async throws {
         guard let udp, let videoSSRC, cipher != nil else { return }
         let started = ContinuousClock.now
         let protectedFrame = try await dave.encrypt(
@@ -959,7 +990,11 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
             videoSequence &+= 1
             datagrams.append(packet)
         }
-        try await udp.sendDatagrams(datagrams)
+        try await udp.sendDatagrams(
+            datagrams,
+            mediaByteCount: frame.data.count,
+            pacedAtBitsPerSecond: bitsPerSecond
+        )
         videoTransportMetrics.sentFrames += 1
         videoTransportMetrics.sentDatagrams += datagrams.count
         videoTransportMetrics.maximumFrameSendDuration = max(
@@ -1140,6 +1175,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         {
             videoTransportMetrics.receivedPLIs += 1
             videoEngine?.requestKeyframe()
+            screenCaptureEngine?.requestKeyframe()
             voiceMediaLogger.info("Remote receiver requested a local video keyframe")
         }
     }
@@ -1737,7 +1773,7 @@ private extension DiscordVoiceSession {
               videoSendQuality > 0,
               audioSSRC != nil
         else { return }
-        timestamp &+= UInt32(OpusCodec.frameSamples)
+        advanceAudioTimestamp(for: frame)
         if frame.containsVoice {
             soundshareTrailingSilenceFrames = 0
             if !isSendingSoundshareAudio, let audioSSRC {
@@ -1771,6 +1807,20 @@ private extension DiscordVoiceSession {
         }
         isSendingSoundshareAudio = false
         soundshareTrailingSilenceFrames = 0
+    }
+
+    func advanceAudioTimestamp(for frame: CapturedOpusFrame) {
+        let frameSamples = UInt64(OpusCodec.frameSamples)
+        let elapsedSamples: UInt64
+        if let previous = lastCapturedAudioSampleOffset,
+           frame.sampleOffset > previous
+        {
+            elapsedSamples = frame.sampleOffset - previous
+        } else {
+            elapsedSamples = frameSamples
+        }
+        lastCapturedAudioSampleOffset = frame.sampleOffset
+        timestamp &+= UInt32(truncatingIfNeeded: elapsedSamples)
     }
 }
 

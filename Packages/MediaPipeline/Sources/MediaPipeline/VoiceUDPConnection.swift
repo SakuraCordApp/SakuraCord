@@ -28,22 +28,89 @@ public enum VoiceIPDiscovery {
     }
 }
 
+struct RTPDatagramPacingPlan: Equatable, Sendable {
+    private static let burstsPerSecond = 200
+    private static let drainHeadroomDivisor = 10
+
+    var ranges: [Range<Int>]
+
+    static func make(datagramSizes: [Int], bitsPerSecond: Int) -> Self {
+        guard !datagramSizes.isEmpty else { return Self(ranges: []) }
+        let bytesPerSecond = max(1, bitsPerSecond / 8)
+        let largestDatagram = datagramSizes.max() ?? 1
+        // Keep each Network.framework submission near five milliseconds of
+        // media while avoiding a continuation for every individual packet at
+        // lower bitrates.
+        let burstByteLimit = max(largestDatagram * 2, bytesPerSecond / burstsPerSecond)
+        var ranges: [Range<Int>] = []
+        var start = 0
+        var byteCount = 0
+
+        for (index, size) in datagramSizes.enumerated() {
+            if index > start, byteCount + size > burstByteLimit {
+                ranges.append(start ..< index)
+                start = index
+                byteCount = 0
+            }
+            byteCount += size
+        }
+        ranges.append(start ..< datagramSizes.count)
+        return Self(ranges: ranges)
+    }
+
+    /// Converts the encoder's media-payload rate into a wire-rate pacing
+    /// target. RTP extensions, AEAD tags, and packet headers are not part of
+    /// VideoToolbox's bitrate, so charging them to the same rate accumulates
+    /// permanent sender debt during sustained motion. A further ten percent
+    /// drain margin absorbs normal short-term encoder variation without
+    /// increasing the amount of media the encoder produces.
+    static func wireBitsPerSecond(
+        mediaBitsPerSecond: Int,
+        mediaByteCount: Int,
+        datagramSizes: [Int]
+    ) -> Int {
+        let mediaRate = max(1, mediaBitsPerSecond)
+        let mediaBytes = max(1, mediaByteCount)
+        let transportBytes = max(mediaBytes, datagramSizes.reduce(0, +))
+        let overheadAdjustedRate = Int64(mediaRate) * Int64(transportBytes)
+            / Int64(mediaBytes)
+        let drainHeadroom = max(1, overheadAdjustedRate / Int64(drainHeadroomDivisor))
+        return Int(clamping: overheadAdjustedRate + drainHeadroom)
+    }
+}
+
 public actor VoiceUDPConnection {
+    /// Allows a scene-change or keyframe to consume a small amount of future
+    /// pacing budget. This keeps one RTP frame from being stretched across the
+    /// receiver's assembly deadline without restoring unbounded UDP bursts.
+    private static let maximumVideoBurstCreditOffset: Duration = .milliseconds(-100)
+
     public let packets: AsyncThrowingStream<Data, any Error>
 
     private let connection: NWConnection
-    private let queue = DispatchQueue(label: "dev.sakuracord.voice.udp", qos: .userInteractive)
+    private let queue: DispatchQueue
     private let continuation: AsyncThrowingStream<Data, any Error>.Continuation
     private var readyContinuation: CheckedContinuation<Void, any Error>?
     private var keepaliveTask: Task<Void, Never>?
     private var keepaliveCounter: UInt32 = 0
     private var receiving = false
+    private var nextVideoSendTime: ContinuousClock.Instant?
 
-    public init(host: String, port: UInt16) {
+    public init(
+        host: String,
+        port: UInt16,
+        serviceClass: NWParameters.ServiceClass = .interactiveVoice
+    ) {
+        let parameters = NWParameters.udp
+        parameters.serviceClass = serviceClass
         connection = NWConnection(
             host: NWEndpoint.Host(host),
             port: NWEndpoint.Port(rawValue: port)!,
-            using: .udp
+            using: parameters
+        )
+        queue = DispatchQueue(
+            label: "dev.sakuracord.voice.udp",
+            qos: serviceClass == .interactiveVoice ? .userInteractive : .userInitiated
         )
         let stream = AsyncThrowingStream<Data, any Error>.makeStream(bufferingPolicy: .bufferingNewest(2000))
         packets = stream.stream
@@ -88,11 +155,47 @@ public actor VoiceUDPConnection {
         }
     }
 
-    /// Submits one encoded video frame as a Network.framework batch. This
-    /// preserves datagram boundaries while avoiding one continuation and actor
-    /// round-trip per RTP fragment. Completion of the final datagram provides
-    /// the frame-level backpressure needed by the encoder consumer.
-    public func sendDatagrams(_ datagrams: [Data]) async throws {
+    /// Paces encoded video into small Network.framework batches. VideoToolbox
+    /// limits the average bitrate over a one-second window, but an immediate
+    /// whole-frame batch can still enqueue that window as one large UDP burst.
+    /// Keeping only a few milliseconds of media in each submission prevents
+    /// screen video from building latency in voice and signaling traffic.
+    public func sendDatagrams(
+        _ datagrams: [Data],
+        mediaByteCount: Int,
+        pacedAtBitsPerSecond mediaBitsPerSecond: Int
+    ) async throws {
+        let datagramSizes = datagrams.map(\.count)
+        let wireBitsPerSecond = RTPDatagramPacingPlan.wireBitsPerSecond(
+            mediaBitsPerSecond: mediaBitsPerSecond,
+            mediaByteCount: mediaByteCount,
+            datagramSizes: datagramSizes
+        )
+        let plan = RTPDatagramPacingPlan.make(
+            datagramSizes: datagramSizes,
+            bitsPerSecond: wireBitsPerSecond
+        )
+        let clock = ContinuousClock()
+        for range in plan.ranges {
+            try Task.checkCancellation()
+            let now = clock.now
+            let creditFloor = now.advanced(by: Self.maximumVideoBurstCreditOffset)
+            let scheduledStart = max(nextVideoSendTime ?? creditFloor, creditFloor)
+            if scheduledStart > now {
+                try await clock.sleep(until: scheduledStart)
+            }
+            try await sendBatch(datagrams[range])
+            let byteCount = datagrams[range].reduce(0) { $0 + $1.count }
+            nextVideoSendTime = scheduledStart.advanced(
+                by: Self.transmissionDuration(
+                    byteCount: byteCount,
+                    bitsPerSecond: wireBitsPerSecond
+                )
+            )
+        }
+    }
+
+    private func sendBatch(_ datagrams: ArraySlice<Data>) async throws {
         guard let final = datagrams.last else { return }
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
             connection.batch {
@@ -108,6 +211,16 @@ public actor VoiceUDPConnection {
                 })
             }
         }
+    }
+
+    private static func transmissionDuration(
+        byteCount: Int,
+        bitsPerSecond: Int
+    ) -> Duration {
+        let bitCount = UInt64(clamping: byteCount) * 8
+        let rate = UInt64(clamping: max(1, bitsPerSecond))
+        let nanoseconds = bitCount * 1_000_000_000 / rate
+        return .nanoseconds(Int64(clamping: nanoseconds))
     }
 
     public func close() {

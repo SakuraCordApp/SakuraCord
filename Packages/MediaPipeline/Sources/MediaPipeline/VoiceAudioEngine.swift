@@ -9,10 +9,12 @@ private let voiceAudioLogger = Logger(subsystem: "dev.sakuracord.SakuraCord", ca
 public struct CapturedOpusFrame: Sendable {
     public var data: Data
     public var containsVoice: Bool
+    public var sampleOffset: UInt64
 
-    public init(data: Data, containsVoice: Bool) {
+    public init(data: Data, containsVoice: Bool, sampleOffset: UInt64 = 0) {
         self.data = data
         self.containsVoice = containsVoice
+        self.sampleOffset = sampleOffset
     }
 }
 
@@ -593,6 +595,7 @@ final class OpusSampleBufferEncoder: NSObject,
     private var left: [Float] = []
     private var right: [Float] = []
     private var bufferedSampleOffset = 0
+    private var encodedSampleOffset: UInt64 = 0
     private var _handler: (@Sendable (CapturedOpusFrame) -> Void)?
     private var _inputVolume: Float = 1
     private var _isMuted = false
@@ -700,10 +703,12 @@ final class OpusSampleBufferEncoder: NSObject,
                 }
                 bufferedSampleOffset += frameCount
                 if let packet = try? codec.encode(pcm) {
+                    encodedSampleOffset &+= UInt64(frameCount)
                     let rms = sqrt(energy / Float(frameCount * 2))
                     output.append(CapturedOpusFrame(
                         data: packet,
-                        containsVoice: !_isMuted && rms > activityThreshold
+                        containsVoice: !_isMuted && rms > activityThreshold,
+                        sampleOffset: encodedSampleOffset
                     ))
                 }
             }

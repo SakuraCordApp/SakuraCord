@@ -24,6 +24,7 @@ private struct ScreenShareEncodingContext {
 
 private struct ScreenShareDemandTransition {
     var shouldStartEncoder: Bool
+    var shouldStopEncoder: Bool = false
     var format: ScreenShareVideoFormat?
     var audioEncoderToReset: OpusSampleBufferEncoder?
 }
@@ -84,6 +85,11 @@ public struct ScreenShareVideoFormat: Equatable, Sendable {
     public var bitrate: Int
 }
 
+struct ScreenShareEncodedVideoFrame: Sendable {
+    var frame: EncodedVideoFrame
+    var encoderGeneration: UInt64
+}
+
 public enum ScreenShareCaptureState: Equatable, Sendable {
     case idle
     case starting
@@ -124,12 +130,12 @@ public enum ScreenShareCaptureError: LocalizedError, Equatable, Sendable {
 public final class ScreenShareCaptureEngine: NSObject, @unchecked Sendable {
     public nonisolated let events: AsyncStream<ScreenShareCaptureEvent>
     public nonisolated let previewFrames: AsyncStream<VoiceVideoFrame>
-    public nonisolated let encodedFrames: AsyncStream<EncodedVideoFrame>
+    nonisolated let encodedFrames: AsyncStream<ScreenShareEncodedVideoFrame>
     public nonisolated let encodedAudioFrames: AsyncStream<CapturedOpusFrame>
 
     private let eventContinuation: AsyncStream<ScreenShareCaptureEvent>.Continuation
     private let previewContinuation: AsyncStream<VoiceVideoFrame>.Continuation
-    private let encodedContinuation: AsyncStream<EncodedVideoFrame>.Continuation
+    private let encodedContinuation: AsyncStream<ScreenShareEncodedVideoFrame>.Continuation
     private let encodedAudioContinuation: AsyncStream<CapturedOpusFrame>.Continuation
     private let captureQueue = DispatchQueue(
         label: "dev.sakuracord.screen-share.capture",
@@ -150,6 +156,12 @@ public final class ScreenShareCaptureEngine: NSObject, @unchecked Sendable {
     private var isPickerObserverInstalled = false
     private var lastPreviewTime = CFAbsoluteTimeGetCurrent()
     private var isStopped = false
+    // VideoToolbox state is confined to captureQueue. At most two encoded
+    // reference frames may exist between capture and completed UDP delivery.
+    private static let maximumOutstandingVideoFrames = 2
+    private var encoderGeneration: UInt64 = 0
+    private var outstandingVideoFrameCount = 0
+    private var capturePressureDropCount = 0
     private var encodedFrameDropCount = 0
 
     public init(settings: ScreenShareSettings = .init()) {
@@ -164,13 +176,13 @@ public final class ScreenShareCaptureEngine: NSObject, @unchecked Sendable {
         )
         previewFrames = preview.stream
         previewContinuation = preview.continuation
-        let encoded = AsyncStream<EncodedVideoFrame>.makeStream(
-            bufferingPolicy: .bufferingNewest(2)
+        let encoded = AsyncStream<ScreenShareEncodedVideoFrame>.makeStream(
+            bufferingPolicy: .bufferingNewest(Self.maximumOutstandingVideoFrames)
         )
         encodedFrames = encoded.stream
         encodedContinuation = encoded.continuation
         let encodedAudio = AsyncStream<CapturedOpusFrame>.makeStream(
-            bufferingPolicy: .bufferingNewest(8)
+            bufferingPolicy: .bufferingNewest(3)
         )
         encodedAudioFrames = encodedAudio.stream
         encodedAudioContinuation = encodedAudio.continuation
@@ -275,11 +287,8 @@ public final class ScreenShareCaptureEngine: NSObject, @unchecked Sendable {
         do {
             try await current.stream.updateConfiguration(configuration)
         } catch {
-            lock.withLock {
-                isEncoding = false
-                encoder?.completeFrames()
-                encoder = nil
-            }
+            lock.withLock { isEncoding = false }
+            finishEncoder()
             throw error
         }
         lock.withLock {
@@ -302,11 +311,10 @@ public final class ScreenShareCaptureEngine: NSObject, @unchecked Sendable {
         let current = lock.withLock { () -> (SCContentFilter, SCStream)? in
             isEncoding = false
             hasNetworkDemand = false
-            encoder?.completeFrames()
-            encoder = nil
             guard let filter, let stream else { return nil }
             return (filter, stream)
         }
+        finishEncoder()
         if let (filter, stream) = current {
             let (configuration, format) = makeConfiguration(filter: filter)
             try? await stream.updateConfiguration(configuration)
@@ -334,10 +342,9 @@ public final class ScreenShareCaptureEngine: NSObject, @unchecked Sendable {
             }
             hasNetworkDemand = demanded
             if !demanded {
-                encoder?.completeFrames()
-                encoder = nil
                 return ScreenShareDemandTransition(
                     shouldStartEncoder: false,
+                    shouldStopEncoder: true,
                     audioEncoderToReset: audioEncoder
                 )
             }
@@ -347,6 +354,9 @@ public final class ScreenShareCaptureEngine: NSObject, @unchecked Sendable {
             )
         }
         action.audioEncoderToReset?.reset()
+        if action.shouldStopEncoder {
+            finishEncoder()
+        }
         if action.shouldStartEncoder, let format = action.format {
             try replaceEncoder(format: format)
         }
@@ -357,8 +367,6 @@ public final class ScreenShareCaptureEngine: NSObject, @unchecked Sendable {
             guard !isStopped else { return nil }
             isStopped = true
             isEncoding = false
-            encoder?.completeFrames()
-            encoder = nil
             audioEncoder?.handler = nil
             audioEncoder = nil
             let current = self.stream
@@ -368,6 +376,7 @@ public final class ScreenShareCaptureEngine: NSObject, @unchecked Sendable {
             format = nil
             return current
         }
+        finishEncoder()
         if let stream {
             try? await stream.stopCapture()
         }
@@ -468,36 +477,105 @@ public final class ScreenShareCaptureEngine: NSObject, @unchecked Sendable {
 
     private func replaceEncoder(format: ScreenShareVideoFormat) throws {
         do {
-            let encoder = try H264VideoEncoder(
-                width: format.width,
-                height: format.height,
-                framerate: format.frameRate,
-                bitrate: format.bitrate
-            ) { [weak self] frame in
-                self?.yieldEncodedFrame(frame)
-            }
-            lock.withLock {
-                self.encoder?.completeFrames()
-                self.encoder = encoder
+            try captureQueue.sync {
+                encoderGeneration &+= 1
+                outstandingVideoFrameCount = 0
+                encoder?.finish()
+                encoder = nil
+                let generation = encoderGeneration
+                encoder = try H264VideoEncoder(
+                    width: format.width,
+                    height: format.height,
+                    framerate: format.frameRate,
+                    bitrate: format.bitrate,
+                    didDropFrame: { [weak self] in
+                        self?.encoderDidDropFrame(generation: generation)
+                    },
+                    output: { [weak self] frame in
+                        self?.yieldEncodedFrame(frame, generation: generation)
+                    }
+                )
             }
         } catch {
             throw ScreenShareCaptureError.encoderUnavailable(error.localizedDescription)
         }
     }
 
-    private func yieldEncodedFrame(_ frame: EncodedVideoFrame) {
-        if case .dropped = encodedContinuation.yield(frame) {
-            lock.withLock { encodedFrameDropCount += 1 }
+    private func finishEncoder() {
+        captureQueue.sync {
+            encoderGeneration &+= 1
+            outstandingVideoFrameCount = 0
+            encoder?.finish()
+            encoder = nil
+        }
+    }
+
+    func requestKeyframe() {
+        captureQueue.async { [weak self] in
+            self?.encoder?.requestKeyframe()
+        }
+    }
+
+    /// Called only after the voice-session actor has either sent or abandoned
+    /// an admitted frame. Capture-side shedding therefore happens before H.264
+    /// encoding and cannot break the encoder's reference chain.
+    func isCurrentVideoFrame(generation: UInt64) -> Bool {
+        captureQueue.sync { generation == encoderGeneration }
+    }
+
+    func didFinishSendingVideoFrame(generation: UInt64) {
+        captureQueue.async { [weak self] in
+            guard let self, generation == encoderGeneration else { return }
+            outstandingVideoFrameCount = max(0, outstandingVideoFrameCount - 1)
+        }
+    }
+
+    private func yieldEncodedFrame(_ frame: EncodedVideoFrame, generation: UInt64) {
+        captureQueue.async { [weak self] in
+            guard let self, generation == encoderGeneration else { return }
+            let captured = ScreenShareEncodedVideoFrame(
+                frame: frame,
+                encoderGeneration: generation
+            )
+            switch encodedContinuation.yield(captured) {
+            case .enqueued:
+                break
+            case let .dropped(droppedFrame):
+                // This should be unreachable under the outstanding-frame
+                // bound for one encoder generation. Stale frames can still be
+                // evicted after a source change or transport reconnect.
+                if droppedFrame.encoderGeneration == generation {
+                    outstandingVideoFrameCount = max(0, outstandingVideoFrameCount - 1)
+                    encodedFrameDropCount += 1
+                    encoder?.requestKeyframe()
+                }
+            case .terminated:
+                outstandingVideoFrameCount = max(0, outstandingVideoFrameCount - 1)
+            @unknown default:
+                break
+            }
+        }
+    }
+
+    private func encoderDidDropFrame(generation: UInt64) {
+        captureQueue.async { [weak self] in
+            guard let self, generation == encoderGeneration else { return }
+            outstandingVideoFrameCount = max(0, outstandingVideoFrameCount - 1)
+            encodedFrameDropCount += 1
+            encoder?.requestKeyframe()
         }
     }
 
     private func logEncodedFrameDrops() {
-        let dropped = lock.withLock { () -> Int in
-            defer { encodedFrameDropCount = 0 }
-            return encodedFrameDropCount
+        let drops = captureQueue.sync { () -> (capture: Int, encoded: Int) in
+            defer {
+                capturePressureDropCount = 0
+                encodedFrameDropCount = 0
+            }
+            return (capturePressureDropCount, encodedFrameDropCount)
         }
         screenCaptureLogger.info(
-            "Screen-share encoder queue stopped; droppedFrames=\(dropped)"
+            "Screen-share encoder queue stopped; preEncodeDrops=\(drops.capture), encodedDrops=\(drops.encoded)"
         )
     }
 
@@ -594,13 +672,20 @@ extension ScreenShareCaptureEngine: SCStreamOutput {
               let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer)
         else { return }
 
-        let encoder = lock.withLock {
-            isEncoding && hasNetworkDemand ? self.encoder : nil
+        let shouldEncode = lock.withLock { isEncoding && hasNetworkDemand }
+        if shouldEncode, let encoder {
+            if outstandingVideoFrameCount < Self.maximumOutstandingVideoFrames {
+                outstandingVideoFrameCount += 1
+                encoder.encode(
+                    pixelBuffer: pixelBuffer,
+                    presentationTime: CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+                )
+            } else {
+                // Skip capture input before it enters VideoToolbox. Dropping an
+                // already encoded P-frame would corrupt every dependent frame.
+                capturePressureDropCount += 1
+            }
         }
-        encoder?.encode(
-            pixelBuffer: pixelBuffer,
-            presentationTime: CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-        )
 
         guard lock.withLock({ isPreviewEnabled }) else { return }
         let now = CFAbsoluteTimeGetCurrent()
