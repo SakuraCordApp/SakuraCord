@@ -1458,6 +1458,7 @@ struct NativeTimelineMediaViewerPresentation: Identifiable {
     let authorName: String
     let authorAvatarURL: URL?
     let timestamp: Date
+    let timelinePreviewImages: [String: NSImage]
     let transitionSource: MediaViewerTransitionSource?
 
     init(
@@ -1468,6 +1469,7 @@ struct NativeTimelineMediaViewerPresentation: Identifiable {
         authorName: String,
         authorAvatarURL: URL?,
         timestamp: Date,
+        timelinePreviewImages: [String: NSImage] = [:],
         transitionSource: MediaViewerTransitionSource? = nil
     ) {
         self.id = id
@@ -1477,7 +1479,24 @@ struct NativeTimelineMediaViewerPresentation: Identifiable {
         self.authorName = authorName
         self.authorAvatarURL = authorAvatarURL
         self.timestamp = timestamp
+        self.timelinePreviewImages = timelinePreviewImages
         self.transitionSource = transitionSource
+    }
+
+    func withTimelinePreviewImages(
+        _ timelinePreviewImages: [String: NSImage]
+    ) -> Self {
+        Self(
+            id: id,
+            messageID: messageID,
+            items: items,
+            selection: selection,
+            authorName: authorName,
+            authorAvatarURL: authorAvatarURL,
+            timestamp: timestamp,
+            timelinePreviewImages: timelinePreviewImages,
+            transitionSource: transitionSource
+        )
     }
 
     func withTransitionSource(
@@ -1491,6 +1510,7 @@ struct NativeTimelineMediaViewerPresentation: Identifiable {
             authorName: authorName,
             authorAvatarURL: authorAvatarURL,
             timestamp: timestamp,
+            timelinePreviewImages: timelinePreviewImages,
             transitionSource: transitionSource
         )
     }

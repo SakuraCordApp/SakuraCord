@@ -147,6 +147,7 @@ struct AnimatedRemoteImage: View {
     let url: URL
     var animates = true
     var isLooping = true
+    var previewImage: NSImage?
     var fallbackSystemImage: String?
     var fallbackInset: CGFloat = 2
     var maximumPixelDimension: Int?
@@ -163,6 +164,7 @@ struct AnimatedRemoteImage: View {
         url: URL,
         animates: Bool = true,
         isLooping: Bool = true,
+        previewImage: NSImage? = nil,
         fallbackSystemImage: String? = nil,
         fallbackInset: CGFloat = 2,
         maximumPixelDimension: Int? = nil,
@@ -172,6 +174,7 @@ struct AnimatedRemoteImage: View {
         self.url = url
         self.animates = animates
         self.isLooping = isLooping
+        self.previewImage = previewImage
         self.fallbackSystemImage = fallbackSystemImage
         self.fallbackInset = fallbackInset
         self.maximumPixelDimension = maximumPixelDimension
@@ -199,6 +202,10 @@ struct AnimatedRemoteImage: View {
                     isLooping: isLooping,
                     contentMode: contentMode
                 )
+            } else if let previewImage {
+                Image(nsImage: previewImage)
+                    .resizable()
+                    .aspectRatio(contentMode: contentMode)
             } else if didFail, let fallbackSystemImage {
                 Image(systemName: fallbackSystemImage)
                     .resizable()

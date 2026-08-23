@@ -4,6 +4,7 @@ import SwiftUI
 
 struct MediaViewerStage: View {
     let item: RichMediaItem
+    let previewImage: NSImage?
     let isVisible: Bool
     let transitionSource: MediaViewerTransitionSource?
     let transitionSourceFrame: CGRect?
@@ -23,6 +24,7 @@ struct MediaViewerStage: View {
                 MediaViewerZoomableImage(
                     url: item.url,
                     isAnimated: animated,
+                    previewImage: previewImage,
                     mediaWidth: item.width,
                     mediaHeight: item.height,
                     isVisible: isVisible,
@@ -65,6 +67,7 @@ struct MediaViewerStage: View {
 private struct MediaViewerZoomableImage: View {
     let url: URL
     let isAnimated: Bool
+    let previewImage: NSImage?
     let mediaWidth: Int?
     let mediaHeight: Int?
     let isVisible: Bool
@@ -125,6 +128,23 @@ private struct MediaViewerZoomableImage: View {
             )
 
             ZStack {
+                AnimatedRemoteImage(
+                    url: url,
+                    isLooping: isAnimated,
+                    previewImage: previewImage
+                )
+                .id(url)
+                .frame(width: fittedSize.width, height: fittedSize.height)
+                .scaleEffect(effectiveScale)
+                .offset(
+                    x: restingFrame.midX - availableSize.width / 2
+                        + effectiveOffset.width,
+                    y: restingFrame.midY - availableSize.height / 2
+                        + effectiveOffset.height
+                )
+                .opacity(transitionSource == nil ? 1 : 0)
+                .allowsHitTesting(false)
+
                 if let transitionSource,
                    let transitionSourceFrame,
                    let transitionSourceVisibleFrame
@@ -139,22 +159,6 @@ private struct MediaViewerZoomableImage: View {
                         presentationProgress: presentationProgress,
                         isPresented: isVisible
                     )
-                } else {
-                    AnimatedRemoteImage(
-                        url: url,
-                        isLooping: isAnimated,
-                        fallbackSystemImage: "photo",
-                        fallbackInset: 24
-                    )
-                    .frame(width: fittedSize.width, height: fittedSize.height)
-                    .scaleEffect(effectiveScale)
-                    .offset(
-                        x: restingFrame.midX - availableSize.width / 2
-                            + effectiveOffset.width,
-                        y: restingFrame.midY - availableSize.height / 2
-                            + effectiveOffset.height
-                    )
-                    .allowsHitTesting(false)
                 }
 
                 Color.clear

@@ -71,6 +71,8 @@ struct MediaViewer: View {
 
                     MediaViewerStage(
                         item: item,
+                        previewImage:
+                            presentation.timelinePreviewImages[item.id],
                         isVisible: isVisible,
                         transitionSource: transitionSource,
                         transitionSourceFrame: transitionSourceFrame,
@@ -93,7 +95,6 @@ struct MediaViewer: View {
                             }
                         )
                     )
-                    .id(item.id)
                     .modifier(
                         MediaViewerStagePresentationEffect(
                             isVisible: isVisible,
