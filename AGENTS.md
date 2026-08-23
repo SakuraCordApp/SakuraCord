@@ -27,6 +27,7 @@ manifests.
 | build, run, test, package, or verify the app | [README.md — Build from source](README.md#build-from-source) |
 | add, change, or remove automated tests | [docs/TESTING.md](docs/TESTING.md) |
 | commit or push from a fresh clone | [docs/README.md — Developer and agent bootstrap](docs/README.md#developer-and-agent-bootstrap) |
+| push `main`, create a release tag, or change release automation | [docs/RELEASING.md](docs/RELEASING.md) |
 | use Computer Use against SakuraCord | run `./script/runtime.sh` and use the complete path from its `App:` line |
 | work on planned scope, priority, acceptance criteria, or progress | [Roadmap Management](plugin://roadmap-management@personal) |
 | draft release notes or a Discord release announcement | [RELEASE_NOTES_STYLE.md](docs/RELEASE_NOTES_STYLE.md) and [DISCORD_RELEASE_ANNOUNCEMENTS_STYLE.md](docs/DISCORD_RELEASE_ANNOUNCEMENTS_STYLE.md) |
@@ -45,6 +46,11 @@ manifests.
   and commits are evidence to assess, not proof that an item is complete.
 - Keep documentation canonical. Update an existing source of truth instead of
   duplicating architecture, protocol, workflow, or planning information.
+- Preserve the release-branch invariant: `main` must always be an ancestor of
+  `nightly`. Before pushing `main`, incorporate the same commit into `nightly`
+  without rewriting either branch and push both refs atomically when possible.
+  Never push a regular or beta release tag until its commit is present on the
+  remote `nightly` branch. Follow `docs/RELEASING.md` for the exact sequence.
 
 ## Tests
 

@@ -235,6 +235,15 @@ for the GitHub Release and signed appcast, derives the Discord embed title from
 the tag, posts the pre-made embed description with a generated role mention
 and release button, and stores public copy/delivery checkpoint assets for
 idempotent repair runs.
+The source branches maintain `main` as an ancestor of `nightly`. A dedicated
+main-push workflow fast-forwards nightly when it has no independent commits.
+When the branches have diverged, it creates a normal merge, runs the complete
+CI suite against that merged tree, and pushes only after validation. Conflicts
+or rejected non-fast-forward pushes stop without rewriting either branch.
+Workflow-authenticated pushes do not recursively trigger another CI run; an
+exact fast-forward is already covered by the triggering main run, while a new
+merge commit is explicitly validated before publication. Release validation
+also requires every stable or beta tag commit to be reachable from nightly.
 Nightly beta tags must point to commits on the `nightly` source branch, use
 human-facing `vX.Y.Z Beta N` release and Discord titles, and use tag-specific
 `SakuraCord-vX.Y.Z-Beta-N.dmg` assets. They run the same validation and

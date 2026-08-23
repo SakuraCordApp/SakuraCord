@@ -85,14 +85,16 @@ jobs:
           release_track="$(sakuracord_release_track_from_tag "$release_tag")"
           release_display_name="$(sakuracord_release_display_name_from_tag "$release_tag")"
           dmg_name="$(sakuracord_release_dmg_name_from_tag "$release_tag")"
-          if [[ "$release_track" == "nightly" ]]; then
-            git fetch --no-tags origin \
-              +refs/heads/nightly:refs/remotes/origin/nightly
-            if ! git merge-base --is-ancestor \
-              "refs/tags/$release_tag^{commit}" refs/remotes/origin/nightly; then
+          git fetch --no-tags origin \
+            +refs/heads/nightly:refs/remotes/origin/nightly
+          if ! git merge-base --is-ancestor \
+            "refs/tags/$release_tag^{commit}" refs/remotes/origin/nightly; then
+            if [[ "$release_track" == "nightly" ]]; then
               echo "Nightly beta tags must point to a commit on the nightly branch." >&2
-              exit 1
+            else
+              echo "Regular release tags must point to a commit already present on nightly." >&2
             fi
+            exit 1
           fi
           release_copy="$release_control_root/Releases/$release_tag.json"
           if [[ ! -f "$release_copy" ]]; then
