@@ -1613,8 +1613,11 @@ only the historical guild-optional voice-state path.
   and otherwise uses the same single ring mutation. A false one-to-one
   `ringable` value still permits a non-ringing joined call.
 - Joining an existing or incoming DM/group-DM call sends no readiness read and
-  no ring mutation. It subscribes with opcode 13 and joins with opcode 4.
-  Accepting an incoming call is the same join path. Declining sends exactly one
+  no ring mutation. A complete call snapshot with neither participants nor
+  ongoing rings is not considered an existing call and therefore follows the
+  start path instead of silently joining. The join path subscribes with opcode
+  13 and joins with opcode 4. Accepting an incoming call is the same join path.
+  Declining sends exactly one
   `POST /channels/{channel_id}/call/stop-ringing` with the current user in the
   `recipients` array and does not join.
 - Both private-call POSTs use the shared authenticated scheduler and have one

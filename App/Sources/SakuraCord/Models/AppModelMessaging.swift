@@ -18,6 +18,18 @@ struct ConversationRefreshJournal {
 }
 
 extension AppModel {
+    func joinablePrivateCall(in channelID: ChannelID) -> PrivateCall? {
+        guard let call = privateCall(in: channelID) else { return nil }
+        if !call.ongoingRings.isEmpty {
+            return call
+        }
+        guard let voiceStates = call.voiceStates else {
+            // A partial CALL_UPDATE cannot prove that the call is empty.
+            return call
+        }
+        return voiceStates.isEmpty ? nil : call
+    }
+
     func beginConversationRefresh(in channelID: ChannelID) -> UInt64 {
         conversationRefreshJournalRevision &+= 1
         let revision = conversationRefreshJournalRevision
@@ -720,7 +732,7 @@ extension AppModel {
         generation: UInt64
     ) async {
         let session = accountSession()
-        if privateCall(in: channel.id) != nil {
+        if joinablePrivateCall(in: channel.id) != nil {
             await joinPrivateCall(
                 in: channel,
                 withVideo: withVideo,

@@ -538,7 +538,7 @@ private struct ChatRootView: View {
                 ToolbarItemGroup {
                     Button {
                         Task {
-                            if model.privateCall(in: channel.id) != nil {
+                            if model.joinablePrivateCall(in: channel.id) != nil {
                                 await model.joinPrivateCall(in: channel)
                             } else {
                                 await model.startPrivateCall(in: channel)
@@ -546,7 +546,7 @@ private struct ChatRootView: View {
                         }
                     } label: {
                         Label(
-                            model.privateCall(in: channel.id) == nil
+                            model.joinablePrivateCall(in: channel.id) == nil
                                 ? "Start Voice Call" : "Join Voice Call",
                             systemImage: "phone.fill"
                         )
@@ -556,13 +556,13 @@ private struct ChatRootView: View {
                             || model.isPrivateCallActionInFlight(in: channel.id)
                     )
                     .help(
-                        model.privateCall(in: channel.id) == nil
+                        model.joinablePrivateCall(in: channel.id) == nil
                             ? "Start Voice Call" : "Join Ongoing Call"
                     )
 
                     Button {
                         Task {
-                            if model.privateCall(in: channel.id) != nil {
+                            if model.joinablePrivateCall(in: channel.id) != nil {
                                 await model.joinPrivateCall(in: channel, withVideo: true)
                             } else {
                                 await model.startPrivateCall(in: channel, withVideo: true)
@@ -576,7 +576,7 @@ private struct ChatRootView: View {
                             || model.isPrivateCallActionInFlight(in: channel.id)
                     )
                     .help(
-                        model.privateCall(in: channel.id) == nil
+                        model.joinablePrivateCall(in: channel.id) == nil
                             ? "Start Video Call" : "Join Ongoing Call with Video"
                     )
                 }
