@@ -7,8 +7,8 @@ wording belongs in the [GitHub release notes](RELEASE_NOTES_STYLE.md) and
 ## Release model
 
 A tag matching `vMAJOR.MINOR.PATCH` publishes a regular release. A tag matching
-`vMAJOR.MINOR.PATCH-beta.NUMBER` publishes a GitHub prerelease to the nightly
-track. Git refs cannot contain spaces, so `v0.1.5-beta.1` is displayed as
+`vMAJOR.MINOR.PATCH-Beta-NUMBER` publishes a GitHub prerelease to the nightly
+track. Git refs cannot contain spaces, so `v0.1.5-Beta-1` is displayed as
 `v0.1.5 Beta 1` in the GitHub Release and Discord announcement and is packaged
 as `SakuraCord-v0.1.5-Beta-1.dmg`. Both tracks build and sign the app, generate
 and verify the Sparkle appcast, publish reviewed release notes, and post the
@@ -39,7 +39,7 @@ headline instead of the regular sakura headline:
 ```json
 {
   "schemaVersion": 1,
-  "tagName": "v0.2.0-beta.1",
+  "tagName": "v0.2.0-Beta-1",
   "githubDescription": "SakuraCord v0.2.0 Beta 1 adds ...",
   "discordAnnouncement": "**Specific nightly headline 🌙**\n\n**Highlights**\n- A user-facing feature"
 }
@@ -61,8 +61,8 @@ For a nightly beta, push the source branch and then its tag instead:
 ```sh
 git switch nightly
 git push origin nightly
-git tag v0.1.5-beta.1
-git push origin v0.1.5-beta.1
+git tag v0.1.5-Beta-1
+git push origin v0.1.5-Beta-1
 ```
 
 The pre-push hook and release job both reject a missing, malformed, or

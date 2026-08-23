@@ -26,12 +26,12 @@ sakuracord_release_version() {
 
 sakuracord_is_release_tag() {
   local tag="$1"
-  [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]]
+  [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-Beta-[0-9]+)?$ ]]
 }
 
 sakuracord_is_nightly_release_tag() {
   local tag="$1"
-  [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]
+  [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-Beta-[0-9]+$ ]]
 }
 
 sakuracord_release_version_from_tag() {
@@ -39,19 +39,19 @@ sakuracord_release_version_from_tag() {
   local version
 
   if ! sakuracord_is_release_tag "$tag"; then
-    echo "Release tags must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-beta.NUMBER." >&2
+    echo "Release tags must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-Beta-NUMBER." >&2
     return 2
   fi
 
   version="${tag#v}"
-  printf '%s\n' "${version%%-beta.*}"
+  printf '%s\n' "${version%%-Beta-*}"
 }
 
 sakuracord_release_track_from_tag() {
   local tag="$1"
 
   if ! sakuracord_is_release_tag "$tag"; then
-    echo "Release tags must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-beta.NUMBER." >&2
+    echo "Release tags must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-Beta-NUMBER." >&2
     return 2
   fi
   if sakuracord_is_nightly_release_tag "$tag"; then
@@ -67,12 +67,12 @@ sakuracord_release_asset_version_from_tag() {
   local version
 
   if ! sakuracord_is_release_tag "$tag"; then
-    echo "Release tags must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-beta.NUMBER." >&2
+    echo "Release tags must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-Beta-NUMBER." >&2
     return 2
   fi
   if sakuracord_is_nightly_release_tag "$tag"; then
     version="$(sakuracord_release_version_from_tag "$tag")"
-    beta_number="${tag##*.}"
+    beta_number="${tag##*-}"
     printf '%s-Beta-%s\n' "$version" "$beta_number"
   else
     printf '%s\n' "${tag#v}"
@@ -85,12 +85,12 @@ sakuracord_release_display_name_from_tag() {
   local version
 
   if ! sakuracord_is_release_tag "$tag"; then
-    echo "Release tags must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-beta.NUMBER." >&2
+    echo "Release tags must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-Beta-NUMBER." >&2
     return 2
   fi
   if sakuracord_is_nightly_release_tag "$tag"; then
     version="$(sakuracord_release_version_from_tag "$tag")"
-    beta_number="${tag##*.}"
+    beta_number="${tag##*-}"
     printf 'v%s Beta %s\n' "$version" "$beta_number"
   else
     printf '%s\n' "$tag"

@@ -12,7 +12,7 @@ copy:
 
 - the updates-role mention;
 - the embed title, derived from `tagName` (for example,
-  `v0.1.5-beta.1` becomes `SakuraCord v0.1.5 Beta 1 🌙`); and
+  `v0.1.5-Beta-1` becomes `SakuraCord v0.1.5 Beta 1 🌙`); and
 - the **View release** button and its GitHub Release URL.
 
 Only the embed description belongs in `discordAnnouncement`.

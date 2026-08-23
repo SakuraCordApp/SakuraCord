@@ -9,7 +9,7 @@ source "$ROOT_DIR/script/release_metadata.sh"
 
 RELEASE_TAG="${SAKURACORD_RELEASE_TAG:-${GITHUB_REF_NAME:-}}"
 if ! sakuracord_is_release_tag "$RELEASE_TAG"; then
-  echo "SAKURACORD_RELEASE_TAG or GITHUB_REF_NAME must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-beta.NUMBER." >&2
+  echo "SAKURACORD_RELEASE_TAG or GITHUB_REF_NAME must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-Beta-NUMBER." >&2
   exit 2
 fi
 if [[ -z "${SPARKLE_ED_PRIVATE_KEY:-}" ]]; then

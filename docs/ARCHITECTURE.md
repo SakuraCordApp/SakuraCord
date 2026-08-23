@@ -221,7 +221,7 @@ signature, builds the DMG, verifies the image, and writes its SHA-256 digest.
 Developer ID signing and notarization are not currently part of the release
 workflow.
 
-Stable and `vX.Y.Z-beta.N` tag releases enable the canonical Sparkle
+Stable and `vX.Y.Z-Beta-N` tag releases enable the canonical Sparkle
 configuration, generate a signed `appcast.xml` from the same tag-specific DMG,
 and validate the feed signature,
 archive signature, bundle metadata, and nested code signatures before staging

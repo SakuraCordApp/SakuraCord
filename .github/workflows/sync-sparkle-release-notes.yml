@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Published stable or vMAJOR.MINOR.PATCH-beta.NUMBER release to resync
+        description: Published stable or vMAJOR.MINOR.PATCH-Beta-NUMBER release to resync
         required: true
         type: string
 
@@ -26,18 +26,18 @@ jobs:
     steps:
       - name: Resolve release tag
         run: |
-          if [[ ! "$SAKURACORD_RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]]; then
-            echo "Release tags must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-beta.NUMBER." >&2
+          if [[ ! "$SAKURACORD_RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-Beta-[0-9]+)?$ ]]; then
+            echo "Release tags must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-Beta-NUMBER." >&2
             exit 1
           fi
           asset_version="${SAKURACORD_RELEASE_TAG#v}"
-          version="${asset_version%%-beta.*}"
+          version="${asset_version%%-Beta-*}"
           release_track=regular
           expected_prerelease=false
-          if [[ "$SAKURACORD_RELEASE_TAG" == *-beta.* ]]; then
+          if [[ "$SAKURACORD_RELEASE_TAG" == *-Beta-* ]]; then
             release_track=nightly
             expected_prerelease=true
-            beta_number="${SAKURACORD_RELEASE_TAG##*.}"
+            beta_number="${SAKURACORD_RELEASE_TAG##*-}"
             asset_version="$version-Beta-$beta_number"
           fi
           is_prerelease="$(gh release view "$SAKURACORD_RELEASE_TAG" --json isPrerelease --jq .isPrerelease)"

@@ -19,7 +19,7 @@ printf '%s\n' \
   '<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">' \
   '  <channel><item>' \
   '    <sparkle:version>42</sparkle:version>' \
-  '    <enclosure url="https://github.com/SakuraCordApp/SakuraCord/releases/download/v0.2.0-beta.3/SakuraCord-v0.2.0-Beta-3.dmg" />' \
+  '    <enclosure url="https://github.com/SakuraCordApp/SakuraCord/releases/download/v0.2.0-Beta-3/SakuraCord-v0.2.0-Beta-3.dmg" />' \
   '  </item></channel>' \
   '</rss>' > "$APPCAST"
 
@@ -52,7 +52,7 @@ PATH="$FAKE_BIN:$PATH" \
 GH_TOKEN=test-token \
 GITHUB_REPOSITORY=SakuraCordApp/SakuraCord \
 GITHUB_RUN_ID=123 \
-SAKURACORD_RELEASE_TAG=v0.2.0-beta.3 \
+SAKURACORD_RELEASE_TAG=v0.2.0-Beta-3 \
 SAKURACORD_TEST_APPCAST="$APPCAST" \
 SAKURACORD_TEST_GH_LOG="$GH_LOG" \
   "$ROOT_DIR/script/publish_nightly_appcast.sh" "$APPCAST" >/dev/null
