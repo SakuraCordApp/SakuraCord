@@ -83,6 +83,7 @@ public struct ScreenShareVideoFormat: Equatable, Sendable {
     public var height: Int
     public var frameRate: Int
     public var bitrate: Int
+    public var quality: ScreenShareQuality
 }
 
 struct ScreenShareEncodedVideoFrame: Sendable {
@@ -470,7 +471,8 @@ public final class ScreenShareCaptureEngine: NSObject, @unchecked Sendable {
                 width: outputSize.width,
                 height: outputSize.height,
                 frameRate: settings.frameRate.rawValue
-            )
+            ),
+            quality: settings.quality
         )
         return (configuration, format)
     }

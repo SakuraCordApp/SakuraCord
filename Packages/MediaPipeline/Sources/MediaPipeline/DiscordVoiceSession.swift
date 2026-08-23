@@ -49,7 +49,7 @@ public enum VoiceSessionKind: Equatable, Sendable {
     case voice
     case applicationStream(isBroadcaster: Bool)
 
-    var videoStreamType: String {
+    var identifyVideoStreamType: String {
         switch self {
         case .voice: "video"
         case .applicationStream: "screen"
@@ -237,7 +237,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         remoteVideoDemandEnabled = kind == .voice
         gateway = VoiceGatewayConnection(
             info: info,
-            videoStreamType: kind.videoStreamType,
+            identifyVideoStreamType: kind.identifyVideoStreamType,
             diagnostics: gatewayDiagnostics
         )
         let stream = AsyncStream<VoiceSessionEvent>.makeStream(bufferingPolicy: .bufferingNewest(1000))
@@ -330,8 +330,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
                 width: VoiceVideoEngine.width,
                 height: VoiceVideoEngine.height,
                 framerate: VoiceVideoEngine.framerate,
-                enabled: false,
-                streamType: kind.videoStreamType
+                enabled: false
             )
         }
         await gateway.close()
@@ -450,8 +449,8 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
             height: format.height,
             framerate: format.frameRate,
             enabled: true,
-            streamType: kind.videoStreamType,
-            maximumBitrate: format.bitrate
+            maximumBitrate: format.bitrate,
+            resolutionType: format.quality == .source ? .source : .fixed
         )
         _ = try await capture.beginEncoding()
         screenCaptureEngine = capture
@@ -497,8 +496,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
                 width: 2,
                 height: 2,
                 framerate: 1,
-                enabled: false,
-                streamType: kind.videoStreamType
+                enabled: false
             )
         }
     }
@@ -518,8 +516,8 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
             height: format.height,
             framerate: format.frameRate,
             enabled: true,
-            streamType: kind.videoStreamType,
-            maximumBitrate: format.bitrate
+            maximumBitrate: format.bitrate,
+            resolutionType: format.quality == .source ? .source : .fixed
         )
         if screenCaptureEngine?.includesAudio != true {
             await finishSoundshareAudio()
@@ -715,7 +713,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         self.udp = udp
         audioSSRC = ready.ssrc
         await dave.assignAudioSSRC(ready.ssrc)
-        let matchingStreams = ready.streams.filter { $0.type == kind.videoStreamType }
+        let matchingStreams = ready.streams.filter { $0.type == kind.identifyVideoStreamType }
         let stream = matchingStreams.first(where: { $0.quality == 100 })
             ?? matchingStreams.first
             ?? ready.streams.first
@@ -1372,11 +1370,11 @@ extension DiscordVoiceSession {
         guard state.userID != info.userID.description else { return }
         ssrcToUserID[state.audioSSRC] = state.userID
         var activeStreams = state.streams.filter {
-            $0.active && $0.ssrc > 0 && $0.type == kind.videoStreamType
+            $0.active && $0.ssrc > 0 && $0.type == "video"
         }
         if activeStreams.isEmpty, state.videoSSRC > 0 {
             activeStreams = [VoiceVideoStream(
-                type: kind.videoStreamType,
+                type: "video",
                 ssrc: state.videoSSRC,
                 rtxSSRC: state.rtxSSRC,
                 active: true
@@ -1617,8 +1615,7 @@ public extension DiscordVoiceSession {
                 width: VoiceVideoEngine.width,
                 height: VoiceVideoEngine.height,
                 framerate: VoiceVideoEngine.framerate,
-                enabled: false,
-                streamType: kind.videoStreamType
+                enabled: false
             )
             voiceMediaLogger.info("Local video state advertised; enabled=false")
             return
@@ -1681,8 +1678,7 @@ public extension DiscordVoiceSession {
             width: VoiceVideoEngine.width,
             height: VoiceVideoEngine.height,
             framerate: VoiceVideoEngine.framerate,
-            enabled: true,
-            streamType: kind.videoStreamType
+            enabled: true
         )
         voiceMediaLogger.info("Local video state advertised; enabled=true")
     }

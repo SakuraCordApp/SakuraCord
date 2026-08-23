@@ -121,6 +121,53 @@ import Testing
     #expect(h264["payload_type"] as? Int == 105)
     #expect(h264["rtx_payload_type"] as? Int == 106)
 
+    let sourceAdvertisement = try VoiceGatewayCodec.video(
+        audioSSRC: 11,
+        videoSSRC: 12,
+        rtxSSRC: 13,
+        width: 2_560,
+        height: 1_440,
+        framerate: 60,
+        enabled: true,
+        maximumBitrate: 9_000_000,
+        resolutionType: .source
+    )
+    let advertisementObject = try #require(
+        JSONSerialization.jsonObject(with: Data(sourceAdvertisement.utf8)) as? [String: Any]
+    )
+    let advertisementData = try #require(advertisementObject["d"] as? [String: Any])
+    let advertisedStream = try #require(
+        (advertisementData["streams"] as? [[String: Any]])?.first
+    )
+    let advertisedResolution = try #require(
+        advertisedStream["max_resolution"] as? [String: Any]
+    )
+    #expect(advertisedStream["type"] as? String == "video")
+    #expect(advertisedStream["max_bitrate"] as? Int == 9_000_000)
+    #expect(advertisedStream["max_framerate"] as? Int == 60)
+    #expect(advertisedResolution["type"] as? String == "source")
+    #expect(advertisedResolution["width"] as? Int == 0)
+    #expect(advertisedResolution["height"] as? Int == 0)
+
+    let fixedAdvertisement = try VoiceGatewayCodec.video(
+        audioSSRC: 11,
+        videoSSRC: 12,
+        rtxSSRC: 13,
+        width: 1_280,
+        height: 720,
+        framerate: 30,
+        enabled: true
+    )
+    let fixedObject = try #require(
+        JSONSerialization.jsonObject(with: Data(fixedAdvertisement.utf8)) as? [String: Any]
+    )
+    let fixedData = try #require(fixedObject["d"] as? [String: Any])
+    let fixedStream = try #require((fixedData["streams"] as? [[String: Any]])?.first)
+    let fixedResolution = try #require(fixedStream["max_resolution"] as? [String: Any])
+    #expect(fixedResolution["type"] as? String == "fixed")
+    #expect(fixedResolution["width"] as? Int == 1_280)
+    #expect(fixedResolution["height"] as? Int == 720)
+
     let video = try VoiceGatewayCodec.decodeJSON(Data(
         #"""
         {"op":12,"d":{"user_id":"55","audio_ssrc":11,"video_ssrc":12,"rtx_ssrc":13,

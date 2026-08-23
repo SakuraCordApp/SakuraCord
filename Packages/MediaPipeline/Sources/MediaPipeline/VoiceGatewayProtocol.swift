@@ -67,6 +67,11 @@ public struct VoiceVideoState: Equatable, Sendable {
     public var streams: [VoiceVideoStream]
 }
 
+public enum VoiceVideoResolutionType: String, Equatable, Sendable {
+    case fixed
+    case source
+}
+
 public struct VoiceGatewaySessionDescription: Equatable, Sendable {
     public var mode: String
     public var secretKey: [UInt8]
@@ -261,11 +266,17 @@ public enum VoiceGatewayCodec {
         height: Int,
         framerate: Int,
         enabled: Bool,
-        streamType: String = "video",
-        maximumBitrate: Int = 4_000_000
+        maximumBitrate: Int = 4_000_000,
+        resolutionType: VoiceVideoResolutionType = .fixed
     ) throws -> String {
+        let maxResolution: [String: Any] = switch resolutionType {
+        case .fixed:
+            ["type": resolutionType.rawValue, "width": width, "height": height]
+        case .source:
+            ["type": resolutionType.rawValue, "width": 0, "height": 0]
+        }
         let streams: [[String: Any]] = enabled ? [[
-            "type": streamType,
+            "type": "video",
             "rid": "100",
             "ssrc": Int(videoSSRC),
             "active": true,
@@ -273,7 +284,7 @@ public enum VoiceGatewayCodec {
             "rtx_ssrc": Int(rtxSSRC),
             "max_bitrate": maximumBitrate,
             "max_framerate": framerate,
-            "max_resolution": ["type": "fixed", "width": width, "height": height]
+            "max_resolution": maxResolution
         ]] : []
         return try json(opcode: 12, payload: [
             "audio_ssrc": Int(audioSSRC),

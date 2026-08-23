@@ -1,7 +1,7 @@
 # Discord production protocol baseline
 
-Last repository audit: 22 August 2026, in a working tree based on SakuraCord
-commit `924e52e2`.
+Last repository audit: 23 August 2026, in a working tree based on SakuraCord
+commit `0f2c7fdb`.
 
 This document describes SakuraCord's durable network contract and the dated
 evidence behind it. It is not a claim that Discord's undocumented
@@ -1499,6 +1499,15 @@ session. A 2560×1440 60 FPS screen was advertised by Voice opcode 12 with
 `max_bitrate:9000000`. Viewer demand used opcode 15 quality 100 with a
 `pixelCounts` hint; hidden/unwatched content used zero demand.
 
+A sanitized authenticated 23 August source-quality follow-up confirmed that
+the stream Voice Identify keeps `streams[0].type:"screen"`, while its later
+opcode-12 media advertisement uses `streams[0].type:"video"`. Source quality
+advertises `max_resolution` as `type:"source"`, `width:0`, and `height:0`, while
+retaining the captured pixel dimensions in the encoder itself. Explicit
+resolution qualities use `type:"fixed"` with their actual encoded width and
+height. The observed Source/60 advertisement also retained RID and quality 100,
+`max_framerate:60`, and `max_bitrate:9000000`.
+
 SakuraCord applies that advertised maximum to VideoToolbox's one-second
 data-rate window. The RTP sender derives its wire pacing rate from the encoded
 payload plus the actual RTP/encryption overhead and ten percent drain headroom;
@@ -1542,8 +1551,10 @@ transport backpressure cannot grow into delayed microphone or sound-share audio.
 - The stream Voice Identify uses the current user's main voice `session_id`,
   `server_id = rtc_server_id`, `channel_id = rtc_channel_id` (the current client
   also tolerates Discord's numeric `rtc_server_id - 1` fallback), DAVE maximum,
-  `video:true`, and a `screen` RID. A broadcaster advertises screen H.264 with
-  Voice opcode 12. A viewer requests the chosen SSRC at quality 100 with Voice
+  `video:true`, and a `screen` RID. A broadcaster advertises the media stream as
+  `video` with Voice opcode 12; Source quality uses the semantic zero-dimension
+  `source` resolution above rather than exposing its captured height as a fixed
+  quality label. A viewer requests the chosen SSRC at quality 100 with Voice
   opcode 15, includes the rendered tile's `pixelCounts` hint, and sends zero
   demand when the share is hidden or unwatched. Incoming sink-wants payloads
   may include that nested `pixelCounts` map; the broadcaster ignores it for

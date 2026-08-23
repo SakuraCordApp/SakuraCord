@@ -37,7 +37,7 @@ public actor VoiceGatewayConnection {
     private let info: VoiceConnectionInfo
     private let session: URLSession
     private let diagnostics: VoiceGatewayDiagnostics
-    private let videoStreamType: String
+    private let identifyVideoStreamType: String
     private let continuation: AsyncStream<SequencedVoiceGatewayEvent>.Continuation
     private var socket: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
@@ -49,12 +49,12 @@ public actor VoiceGatewayConnection {
 
     public init(
         info: VoiceConnectionInfo,
-        videoStreamType: String = "video",
+        identifyVideoStreamType: String = "video",
         session: URLSession = .shared,
         diagnostics: VoiceGatewayDiagnostics = .disabled
     ) {
         self.info = info
-        self.videoStreamType = videoStreamType
+        self.identifyVideoStreamType = identifyVideoStreamType
         self.session = session
         self.diagnostics = diagnostics
         let stream = AsyncStream<SequencedVoiceGatewayEvent>.makeStream(bufferingPolicy: .bufferingNewest(1000))
@@ -93,7 +93,7 @@ public actor VoiceGatewayConnection {
                 maxDaveProtocolVersion: DaveSessionManager.maxSupportedProtocolVersion(),
                 channelID: String(info.channelID.rawValue),
                 video: true,
-                videoStreamType: videoStreamType
+                videoStreamType: identifyVideoStreamType
             ))
         }
 
@@ -118,8 +118,8 @@ public actor VoiceGatewayConnection {
         height: Int,
         framerate: Int,
         enabled: Bool,
-        streamType: String = "video",
-        maximumBitrate: Int = 4_000_000
+        maximumBitrate: Int = 4_000_000,
+        resolutionType: VoiceVideoResolutionType = .fixed
     ) async throws {
         try await sendText(VoiceGatewayCodec.video(
             audioSSRC: audioSSRC,
@@ -129,8 +129,8 @@ public actor VoiceGatewayConnection {
             height: height,
             framerate: framerate,
             enabled: enabled,
-            streamType: streamType,
-            maximumBitrate: maximumBitrate
+            maximumBitrate: maximumBitrate,
+            resolutionType: resolutionType
         ))
     }
 
