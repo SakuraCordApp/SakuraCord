@@ -158,3 +158,77 @@ import Testing
         pixelCount: 921_600
     ))
 }
+
+@MainActor
+@Test func `screen share sound policy prioritizes stream lifecycle`() {
+    let channelID = ChannelID(rawValue: 20)
+    let remoteUserID = UserID(rawValue: 30)
+    let currentUserID = UserID(rawValue: 40)
+    let connected = VoiceParticipantState(
+        userID: remoteUserID,
+        channelID: channelID,
+        guildID: GuildID(rawValue: 10),
+        sessionID: "remote-session"
+    )
+    var streaming = connected
+    streaming.isStreaming = true
+
+    #expect(VoiceStateSoundPolicy.effects(
+        previous: connected,
+        current: streaming,
+        activeChannelID: channelID,
+        currentUserID: currentUserID
+    ) == [.streamStarted])
+    #expect(VoiceStateSoundPolicy.effects(
+        previous: streaming,
+        current: connected,
+        activeChannelID: channelID,
+        currentUserID: currentUserID
+    ) == [.streamEnded])
+
+    var departed = streaming
+    departed.channelID = nil
+    #expect(VoiceStateSoundPolicy.effects(
+        previous: streaming,
+        current: departed,
+        activeChannelID: channelID,
+        currentUserID: currentUserID
+    ) == [.streamEnded])
+    #expect(VoiceStateSoundPolicy.effects(
+        previous: connected,
+        current: streaming,
+        activeChannelID: channelID,
+        currentUserID: remoteUserID
+    ).isEmpty)
+}
+
+@MainActor
+@Test func `single active screen share announces viewer count changes`() {
+    let sounds = RecordingAppSoundPlayer()
+    let model = AppModel(launchMode: .offlineTesting, soundPlayer: sounds)
+    let channel = Channel(
+        id: ChannelID(rawValue: 20),
+        guildID: GuildID(rawValue: 10),
+        name: "Voice",
+        kind: .voice
+    )
+    let key = ApplicationStreamKey(
+        type: .guild,
+        guildID: channel.guildID,
+        channelID: channel.id,
+        ownerID: UserID(rawValue: 30)
+    )
+    model.activeVoiceChannel = channel
+
+    model.consumeApplicationStreamChanged(ApplicationStream(key: key))
+    #expect(sounds.played.isEmpty)
+
+    model.consumeApplicationStreamChanged(ApplicationStream(
+        key: key,
+        viewerIDs: [UserID(rawValue: 40)]
+    ))
+    #expect(sounds.played == [.streamUserJoined])
+
+    model.consumeApplicationStreamChanged(ApplicationStream(key: key))
+    #expect(sounds.played == [.streamUserJoined, .streamUserLeft])
+}

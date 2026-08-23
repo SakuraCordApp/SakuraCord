@@ -152,6 +152,7 @@ extension AppModel {
                 throw CancellationError()
             }
             applicationStreamStates[key] = .broadcasting
+            announceLocalApplicationStreamStarted(key)
             isScreenSharePreviewPresented = false
             isLocalScreenSharePreviewPaused = !mainWindowIsActive
             capture.setPreviewEnabled(mainWindowIsActive)
@@ -190,6 +191,7 @@ extension AppModel {
             return
         }
         let account = accountSession()
+        announceLocalApplicationStreamEnded(key)
         bumpApplicationStreamGeneration(for: key)
         if let session = applicationStreamSessions[key] {
             await session.stopScreenShareCapture()
@@ -374,10 +376,12 @@ extension AppModel {
     }
 
     func consumeApplicationStreamChanged(_ stream: ApplicationStream) {
+        let previous = applicationStreams[stream.key]
         applicationStreams[stream.key] = stream
         if applicationStreamStates[stream.key] == nil {
             applicationStreamStates[stream.key] = .available
         }
+        playApplicationStreamViewerSound(previous: previous, current: stream)
         watchAvailableDirectMessageStreamsAutomatically()
     }
 
@@ -414,6 +418,7 @@ extension AppModel {
                 : nil
         }
         if wasLocal, !unavailable {
+            announceLocalApplicationStreamEnded(key)
             localApplicationStreamKey = nil
         }
         Task { [weak self] in
@@ -780,6 +785,38 @@ extension AppModel {
         screenShareSourceName = "Choose a source"
         if localApplicationStreamKey == nil {
             screenShareCaptureState = .idle
+        }
+    }
+
+    private func announceLocalApplicationStreamStarted(_ key: ApplicationStreamKey) {
+        guard applicationStreamStates[key] == .broadcasting else { return }
+        soundPlayer.play(.streamStarted)
+    }
+
+    private func announceLocalApplicationStreamEnded(_ key: ApplicationStreamKey) {
+        switch applicationStreamStates[key] {
+        case .broadcasting, .reconnecting, .failed:
+            applicationStreamStates[key] = nil
+        case .available, .connecting, .watching, nil:
+            return
+        }
+        soundPlayer.play(.streamEnded)
+    }
+
+    private func playApplicationStreamViewerSound(
+        previous: ApplicationStream?,
+        current: ApplicationStream
+    ) {
+        guard let previous,
+              previous.viewerIDs.count <= 25,
+              let channel = activeVoiceChannel,
+              channel.id == current.key.channelID,
+              applicationStreamKeys(in: channel) == [current.key]
+        else { return }
+        if current.viewerIDs.count > previous.viewerIDs.count {
+            soundPlayer.play(.streamUserJoined)
+        } else if current.viewerIDs.count < previous.viewerIDs.count {
+            soundPlayer.play(.streamUserLeft)
         }
     }
 
