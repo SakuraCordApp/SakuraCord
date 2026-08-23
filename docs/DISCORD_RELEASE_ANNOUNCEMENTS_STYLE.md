@@ -11,7 +11,7 @@ The release action generates these elements; do not author them in the release
 copy:
 
 - the updates-role mention;
-- the embed title, `SakuraCord vX.Y.Z`, derived from `tagName`; and
+- the embed title, derived from `tagName` (nightly titles also end in `🌙`); and
 - the **View release** button and its GitHub Release URL.
 
 Only the embed description belongs in `discordAnnouncement`.
@@ -20,7 +20,8 @@ Only the embed description belongs in `discordAnnouncement`.
 
 Use this consistent order:
 
-1. A short, feature-specific headline in bold, ending with `🌸`.
+1. A short, feature-specific headline in bold, ending with `🌸` for regular
+   releases or `🌙` for nightly releases.
 2. The bold heading `**Highlights**`.
 3. Four to six concise bullets focused on user-facing features and recognizable
    improvements.
@@ -40,6 +41,19 @@ optional Markdown styling.
 - [Visible improvement or recognizable fix]
 ```
 
+For a nightly tag, replace only that headline emoji with the moon:
+
+```markdown
+**[Feature-specific nightly headline] 🌙**
+
+**Highlights**
+- [User-facing feature or outcome]
+```
+
+The action also gives nightly embeds a distinct indigo color and routes them to
+the nightly channel with the nightly updates-role mention. Keep the authored
+copy free of role, user, `@here`, and `@everyone` mentions for both tracks.
+
 ## Headline guidance
 
 Name the features or theme that make this particular release recognizable.
@@ -47,6 +61,7 @@ Good headlines are concrete, for example:
 
 - `**Message forwarding, GIFs, and a new media viewer 🌸**`
 - `**Discord forum channels have arrived! 🌸**`
+- `**Message forwarding and GIF fixes are ready to test 🌙**` (nightly only)
 
 Do not use generic promotional phrases that could describe any release, such
 as `More ways to connect, share, and explore`, `Something for everyone`,

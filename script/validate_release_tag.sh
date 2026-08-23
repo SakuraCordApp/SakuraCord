@@ -9,8 +9,11 @@ fi
 SNAPSHOT_ROOT="$1"
 TAG="$2"
 
-if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "Pre-release validation: $TAG is not a vMAJOR.MINOR.PATCH tag." >&2
+# shellcheck source=release_metadata.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/release_metadata.sh"
+
+if ! sakuracord_is_release_tag "$TAG"; then
+  echo "Pre-release validation: $TAG is not a stable or nightly release tag." >&2
   exit 1
 fi
 

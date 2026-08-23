@@ -9,7 +9,12 @@ source "$ROOT_DIR/script/release_metadata.sh"
 
 DMGBUILD="${DMGBUILD:-dmgbuild}"
 RELEASE_VERSION="$(sakuracord_release_version "$ROOT_DIR")"
-DMG_NAME="$(sakuracord_release_dmg_name "$RELEASE_VERSION")"
+RELEASE_TAG="${SAKURACORD_RELEASE_TAG:-}"
+if [[ -n "$RELEASE_TAG" ]]; then
+  DMG_NAME="$(sakuracord_release_dmg_name_from_tag "$RELEASE_TAG")"
+else
+  DMG_NAME="$(sakuracord_release_dmg_name "$RELEASE_VERSION")"
+fi
 OUTPUT_PATH="${1:-$ROOT_DIR/dist/$DMG_NAME}"
 SETTINGS="$ROOT_DIR/App/Packaging/DMG/settings.py"
 

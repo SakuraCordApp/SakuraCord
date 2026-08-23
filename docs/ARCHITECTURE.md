@@ -51,6 +51,15 @@ after launch when a check is overdue, and presents Sparkle's standard update
 alert when a release is available. Sparkle persists the user's automatic-check
 and automatic-download preferences. Installation remains manual by default.
 Sparkle's standard user driver reports no-update and update-cycle failures.
+The General settings pane also persists a regular/nightly release-track choice.
+`AppUpdateController` supplies the selected signed feed through Sparkle's
+dynamic-feed delegate. Changing tracks immediately requests a silent Sparkle
+information check, or queues one until the current update cycle ends. When that
+probe finds an update, the controller asks Sparkle to present its normal update
+alert; an up-to-date result remains silent. Returning to
+the regular track selects the stable feed immediately; Sparkle offers the next
+regular release whose shared workflow build number is newer than the installed
+nightly build rather than performing an unsupported downgrade.
 
 ## Discord boundary
 
@@ -212,8 +221,9 @@ signature, builds the DMG, verifies the image, and writes its SHA-256 digest.
 Developer ID signing and notarization are not currently part of the release
 workflow.
 
-Tag releases enable the canonical Sparkle configuration, generate a signed
-`appcast.xml` from the same `SakuraCord.vX.Y.Z.dmg`, and validate the feed signature,
+Stable and `vX.Y.Z-nightly.N` tag releases enable the canonical Sparkle
+configuration, generate a signed `appcast.xml` from the same tag-specific DMG,
+and validate the feed signature,
 archive signature, bundle metadata, and nested code signatures before staging
 both files on a draft GitHub Release and publishing them together. The workflow
 refuses to replace assets on an already published tag. Sparkle signing keys
@@ -225,6 +235,12 @@ for the GitHub Release and signed appcast, derives the Discord embed title from
 the tag, posts the pre-made embed description with a generated role mention
 and release button, and stores public copy/delivery checkpoint assets for
 idempotent repair runs.
+Nightly tags use the same validation and packaging job, publish as GitHub
+prereleases, and select their dedicated Discord channel and role. Only after a
+nightly prerelease's assets are publicly re-downloaded and compared does the
+workflow atomically update the signed appcast on the generated `nightly-feed`
+branch. The application reads that feed from
+`https://raw.githubusercontent.com/SakuraCordApp/SakuraCord/nightly-feed/appcast.xml`.
 If a maintainer edits the GitHub Release body after publication, a
 release-edit workflow downloads the unchanged DMG,
 preserves its build number, regenerates and verifies the signed appcast with the

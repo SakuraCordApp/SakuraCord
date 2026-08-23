@@ -5,7 +5,12 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 # shellcheck source=release_metadata.sh
 source "$ROOT_DIR/script/release_metadata.sh"
 RELEASE_VERSION="$(sakuracord_release_version "$ROOT_DIR")"
-DMG_NAME="$(sakuracord_release_dmg_name "$RELEASE_VERSION")"
+EXPECTED_TAG="${SAKURACORD_RELEASE_TAG:-${GITHUB_REF_NAME:-}}"
+if [[ -n "$EXPECTED_TAG" ]]; then
+  DMG_NAME="$(sakuracord_release_dmg_name_from_tag "$EXPECTED_TAG")"
+else
+  DMG_NAME="$(sakuracord_release_dmg_name "$RELEASE_VERSION")"
+fi
 APPCAST_PATH="${1:-$ROOT_DIR/dist/appcast.xml}"
 DMG_PATH="${2:-$ROOT_DIR/dist/$DMG_NAME}"
 
@@ -87,14 +92,15 @@ if [[ -z "$ENCLOSURE_SIGNATURE" ]]; then
   echo "The appcast enclosure is missing its Sparkle EdDSA signature." >&2
   exit 1
 fi
-EXPECTED_TAG="${SAKURACORD_RELEASE_TAG:-${GITHUB_REF_NAME:-}}"
 if [[ -z "$EXPECTED_TAG" || -z "${SAKURACORD_BUILD_NUMBER:-}" || -z "${SAKURACORD_VERSION:-}" ]]; then
   echo "Release tag, build number, and version are required for appcast validation." >&2
   exit 2
 fi
-EXPECTED_DMG_URL_NAME="$(
-  sakuracord_release_dmg_url_name "$SAKURACORD_VERSION"
-)"
+EXPECTED_DMG_URL_NAME="$(sakuracord_release_dmg_name_from_tag "$EXPECTED_TAG")"
+if [[ "$(basename "$DMG_PATH")" != "$EXPECTED_DMG_URL_NAME" ]]; then
+  echo "Unexpected release archive name: $(basename "$DMG_PATH")" >&2
+  exit 1
+fi
 EXPECTED_URL="https://github.com/SakuraCordApp/SakuraCord/releases/download/$EXPECTED_TAG/$EXPECTED_DMG_URL_NAME"
 if [[ "$ENCLOSURE_URL" != "$EXPECTED_URL" ]]; then
   echo "Unexpected appcast enclosure URL: $ENCLOSURE_URL" >&2
@@ -164,6 +170,8 @@ assert_plist_value "CFBundleShortVersionString" "$SAKURACORD_VERSION"
 assert_plist_value "SakuraCordUpdatesEnabled" "true"
 assert_plist_value "SUFeedURL" \
   "https://github.com/SakuraCordApp/SakuraCord/releases/latest/download/appcast.xml"
+assert_plist_value "SakuraCordNightlyFeedURL" \
+  "https://raw.githubusercontent.com/SakuraCordApp/SakuraCord/nightly-feed/appcast.xml"
 assert_plist_value "SUPublicEDKey" "$SPARKLE_ED_PUBLIC_KEY"
 assert_plist_value "SUEnableAutomaticChecks" "true"
 assert_plist_value "SUScheduledCheckInterval" "21600"

@@ -32,6 +32,23 @@ struct SettingsView: View {
                 }
 
                 Section("Software updates") {
+                    Picker(
+                        "Release track",
+                        selection: Binding(
+                            get: { updateController.releaseTrack },
+                            set: { updateController.setReleaseTrack($0) }
+                        )
+                    ) {
+                        ForEach(AppUpdateReleaseTrack.allCases) { track in
+                            Text(track.title).tag(track)
+                        }
+                    }
+                    .disabled(!updateController.isEnabled)
+
+                    Text(updateController.releaseTrack.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
                     Toggle(
                         "Automatically check for updates",
                         isOn: Binding(

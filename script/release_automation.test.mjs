@@ -51,6 +51,28 @@ test("validates a pre-made release file against its tag", () => {
   );
 });
 
+test("requires nightly tags and announcements to use their moon framing", () => {
+  const nightly = releaseCopy({
+    tagName: "v0.2.0-nightly.3",
+    discordAnnouncement:
+      "**Message forwarding and GIFs 🌙**\n\n**Highlights**\n- Good things",
+  });
+  assert.equal(validateReleaseCopy(nightly).tagName, "v0.2.0-nightly.3");
+  assert.throws(
+    () =>
+      validateReleaseCopy({
+        ...nightly,
+        discordAnnouncement:
+          "**Message forwarding and GIFs 🌸**\n\n**Highlights**\n- Good things",
+      }),
+    /ending in 🌙/,
+  );
+  assert.throws(
+    () => validateReleaseCopy({ ...nightly, tagName: "v0.2.0-nightly.beta" }),
+    /vMAJOR\.MINOR\.PATCH-nightly\.NUMBER/,
+  );
+});
+
 test("preserves hand-written notes and appends only the ownership marker", () => {
   const prepared = prepareReleaseCopy(releaseCopy(), "v0.1.2");
   assert.match(prepared.githubDescription, /Full Changelog:\*\* hand-written/);
@@ -78,4 +100,22 @@ test("sanitizes pre-made Discord mentions and constrains allowed mentions", () =
   assert.doesNotMatch(payload.embeds[0].description, /<@|@here/);
   assert.equal(payload.nonce.length, 25);
   assert.equal(payload.enforce_nonce, true);
+});
+
+test("gives nightly announcements distinct visual framing", () => {
+  const payload = createDiscordPayload(
+    releaseCopy({
+      tagName: "v0.2.0-nightly.3",
+      discordAnnouncement:
+        "**A specific nightly headline 🌙**\n\n**Highlights**\n- Good things",
+    }),
+    "SakuraCordApp/SakuraCord",
+    124,
+    "https://github.com/SakuraCordApp/SakuraCord/releases/tag/v0.2.0-nightly.3",
+    "1541194051196289157",
+  );
+
+  assert.equal(payload.embeds[0].title, "SakuraCord v0.2.0-nightly.3 🌙");
+  assert.equal(payload.embeds[0].color, 0x5865f2);
+  assert.deepEqual(payload.allowed_mentions.roles, ["1541194051196289157"]);
 });

@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing vMAJOR.MINOR.PATCH tag to publish or repair
+        description: Existing stable or vMAJOR.MINOR.PATCH-nightly.NUMBER tag to publish or repair
         required: true
         type: string
 
@@ -72,15 +72,18 @@ jobs:
             echo "Release tag $release_tag does not exist." >&2
             exit 1
           fi
-          if [[ ! "$release_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Release tags must use vMAJOR.MINOR.PATCH (for example, v0.1.0)." >&2
-            exit 1
-          fi
-          version="${release_tag#v}"
           release_control_root="$GITHUB_WORKSPACE"
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             release_control_root="$GITHUB_WORKSPACE/release-control"
           fi
+          source "$release_control_root/script/release_metadata.sh"
+          if ! sakuracord_is_release_tag "$release_tag"; then
+            echo "Release tags must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-nightly.NUMBER." >&2
+            exit 1
+          fi
+          version="$(sakuracord_release_version_from_tag "$release_tag")"
+          release_track="$(sakuracord_release_track_from_tag "$release_tag")"
+          dmg_name="$(sakuracord_release_dmg_name_from_tag "$release_tag")"
           release_copy="$release_control_root/Releases/$release_tag.json"
           if [[ ! -f "$release_copy" ]]; then
             echo "Releases/$release_tag.json must be written, reviewed, and committed before publishing." >&2
@@ -91,9 +94,10 @@ jobs:
           echo "SAKURACORD_VERSION=$version" >> "$GITHUB_ENV"
           echo "SAKURACORD_BUILD_NUMBER=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
           echo "SAKURACORD_RELEASE_TAG=$release_tag" >> "$GITHUB_ENV"
+          echo "SAKURACORD_RELEASE_TRACK=$release_track" >> "$GITHUB_ENV"
           echo "SAKURACORD_RELEASE_CONTROL_ROOT=$release_control_root" >> "$GITHUB_ENV"
           echo "SAKURACORD_RELEASE_COPY=$release_copy" >> "$GITHUB_ENV"
-          echo "SAKURACORD_DMG_PATH=dist/SakuraCord.v$version.dmg" >> "$GITHUB_ENV"
+          echo "SAKURACORD_DMG_PATH=dist/$dmg_name" >> "$GITHUB_ENV"
       - name: Prepare exact release notes and Discord copy
         run: |
           mkdir -p dist
@@ -110,7 +114,17 @@ jobs:
           published=false
           announced=false
           if gh release view "$SAKURACORD_RELEASE_TAG" >/dev/null 2>&1; then
-            is_draft="$(gh release view "$SAKURACORD_RELEASE_TAG" --json isDraft --jq .isDraft)"
+            release_state="$(gh release view "$SAKURACORD_RELEASE_TAG" --json isDraft,isPrerelease)"
+            is_draft="$(jq -r .isDraft <<< "$release_state")"
+            is_prerelease="$(jq -r .isPrerelease <<< "$release_state")"
+            expected_prerelease=false
+            if [[ "$SAKURACORD_RELEASE_TRACK" == "nightly" ]]; then
+              expected_prerelease=true
+            fi
+            if [[ "$is_prerelease" != "$expected_prerelease" ]]; then
+              echo "Existing release prerelease state does not match $SAKURACORD_RELEASE_TRACK track." >&2
+              exit 1
+            fi
             if [[ "$is_draft" == "false" ]]; then
               published=true
             fi
@@ -177,12 +191,17 @@ jobs:
               "$SAKURACORD_DMG_PATH" dist/appcast.xml dist/release-copy.json --clobber
             gh release edit "$SAKURACORD_RELEASE_TAG" --draft=false
           else
+            release_flags=()
+            if [[ "$SAKURACORD_RELEASE_TRACK" == "nightly" ]]; then
+              release_flags+=(--prerelease --latest=false)
+            fi
             gh release create "$SAKURACORD_RELEASE_TAG" \
               "$SAKURACORD_DMG_PATH" dist/appcast.xml dist/release-copy.json \
               --draft \
               --title "SakuraCord $SAKURACORD_RELEASE_TAG" \
               --verify-tag \
-              --notes-file dist/release-notes.md
+              --notes-file dist/release-notes.md \
+              "${release_flags[@]}"
             gh release edit "$SAKURACORD_RELEASE_TAG" --draft=false
           fi
       - name: Verify published release assets
@@ -202,14 +221,27 @@ jobs:
           curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 \
             --output "$published_dmg" "$enclosure_url"
           cmp "$SAKURACORD_DMG_PATH" "$published_dmg"
+      - name: Publish the signed nightly feed
+        if: steps.existing_release.outputs.published != 'true' && env.SAKURACORD_RELEASE_TRACK == 'nightly'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./script/publish_nightly_appcast.sh dist/appcast.xml
       - name: Resolve the published release
         id: published_release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          release_json="$(gh release view "$SAKURACORD_RELEASE_TAG" --json databaseId,isDraft,url)"
+          release_json="$(gh release view "$SAKURACORD_RELEASE_TAG" --json databaseId,isDraft,isPrerelease,url)"
           if [[ "$(jq -r .isDraft <<< "$release_json")" != "false" ]]; then
             echo "The GitHub Release is still a draft." >&2
+            exit 1
+          fi
+          expected_prerelease=false
+          if [[ "$SAKURACORD_RELEASE_TRACK" == "nightly" ]]; then
+            expected_prerelease=true
+          fi
+          if [[ "$(jq -r .isPrerelease <<< "$release_json")" != "$expected_prerelease" ]]; then
+            echo "The published release has the wrong prerelease state." >&2
             exit 1
           fi
           echo "id=$(jq -r .databaseId <<< "$release_json")" >> "$GITHUB_OUTPUT"
@@ -220,8 +252,14 @@ jobs:
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
           DISCORD_RELEASE_CHANNEL_ID: ${{ secrets.DISCORD_RELEASE_CHANNEL_ID }}
           DISCORD_UPDATES_ROLE_ID: ${{ secrets.DISCORD_UPDATES_ROLE_ID }}
+          DISCORD_NIGHTLY_RELEASE_CHANNEL_ID: ${{ secrets.DISCORD_NIGHTLY_RELEASE_CHANNEL_ID }}
+          DISCORD_NIGHTLY_UPDATES_ROLE_ID: ${{ secrets.DISCORD_NIGHTLY_UPDATES_ROLE_ID }}
           GH_TOKEN: ${{ github.token }}
         run: |
+          if [[ "$SAKURACORD_RELEASE_TRACK" == "nightly" ]]; then
+            export DISCORD_RELEASE_CHANNEL_ID="$DISCORD_NIGHTLY_RELEASE_CHANNEL_ID"
+            export DISCORD_UPDATES_ROLE_ID="$DISCORD_NIGHTLY_UPDATES_ROLE_ID"
+          fi
           message_id="$(node "$SAKURACORD_RELEASE_CONTROL_ROOT/script/release_automation.mjs" announce-discord \
             --input dist/release-copy.json \
             --repo "$GITHUB_REPOSITORY" \

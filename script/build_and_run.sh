@@ -207,6 +207,9 @@ if [[ "$UPDATES_ENABLED" == "1" ]]; then
   /usr/libexec/PlistBuddy -c \
     "Add :SUFeedURL string https://github.com/SakuraCordApp/SakuraCord/releases/latest/download/appcast.xml" \
     "$CONTENTS/Info.plist"
+  /usr/libexec/PlistBuddy -c \
+    "Add :SakuraCordNightlyFeedURL string https://raw.githubusercontent.com/SakuraCordApp/SakuraCord/nightly-feed/appcast.xml" \
+    "$CONTENTS/Info.plist"
   /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $SPARKLE_ED_PUBLIC_KEY" "$CONTENTS/Info.plist"
   /usr/libexec/PlistBuddy -c "Add :SUEnableAutomaticChecks bool true" "$CONTENTS/Info.plist"
   /usr/libexec/PlistBuddy -c "Add :SUScheduledCheckInterval integer 21600" "$CONTENTS/Info.plist"

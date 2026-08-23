@@ -26,4 +26,26 @@ if sakuracord_release_dmg_name "0.1" >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! sakuracord_is_release_tag "v0.1.0" \
+  || ! sakuracord_is_release_tag "v0.2.0-nightly.7" \
+  || sakuracord_is_release_tag "v0.2-nightly.7" \
+  || sakuracord_is_release_tag "v0.2.0-beta.1"; then
+  echo "Release tag classification is incorrect." >&2
+  exit 1
+fi
+if [[ "$(sakuracord_release_track_from_tag "v0.2.0")" != "regular" ]] \
+  || [[ "$(sakuracord_release_track_from_tag "v0.2.0-nightly.7")" != "nightly" ]]; then
+  echo "Release track classification is incorrect." >&2
+  exit 1
+fi
+if [[ "$(sakuracord_release_version_from_tag "v0.2.0-nightly.7")" != "0.2.0" ]]; then
+  echo "Nightly tags must preserve the base bundle version." >&2
+  exit 1
+fi
+if [[ "$(sakuracord_release_dmg_name_from_tag "v0.2.0-nightly.7")" \
+  != "SakuraCord.v0.2.0-nightly.7.dmg" ]]; then
+  echo "Nightly release DMG names must remain tag-specific." >&2
+  exit 1
+fi
+
 printf 'Release metadata tests passed.\n'

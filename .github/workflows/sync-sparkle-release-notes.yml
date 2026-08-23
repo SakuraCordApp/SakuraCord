@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Published vMAJOR.MINOR.PATCH release to resync
+        description: Published stable or vMAJOR.MINOR.PATCH-nightly.NUMBER release to resync
         required: true
         type: string
 
@@ -26,13 +26,26 @@ jobs:
     steps:
       - name: Resolve release tag
         run: |
-          if [[ ! "$SAKURACORD_RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Release tags must use vMAJOR.MINOR.PATCH (for example, v0.1.1)." >&2
+          if [[ ! "$SAKURACORD_RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-nightly\.[0-9]+)?$ ]]; then
+            echo "Release tags must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-nightly.NUMBER." >&2
             exit 1
           fi
-          version="${SAKURACORD_RELEASE_TAG#v}"
+          asset_version="${SAKURACORD_RELEASE_TAG#v}"
+          version="${asset_version%%-nightly.*}"
+          release_track=regular
+          expected_prerelease=false
+          if [[ "$SAKURACORD_RELEASE_TAG" == *-nightly.* ]]; then
+            release_track=nightly
+            expected_prerelease=true
+          fi
+          is_prerelease="$(gh release view "$SAKURACORD_RELEASE_TAG" --json isPrerelease --jq .isPrerelease)"
+          if [[ "$is_prerelease" != "$expected_prerelease" ]]; then
+            echo "The GitHub Release prerelease state does not match its tag." >&2
+            exit 1
+          fi
           echo "SAKURACORD_VERSION=$version" >> "$GITHUB_ENV"
-          echo "SAKURACORD_DMG_NAME=SakuraCord.v$version.dmg" >> "$GITHUB_ENV"
+          echo "SAKURACORD_RELEASE_TRACK=$release_track" >> "$GITHUB_ENV"
+          echo "SAKURACORD_DMG_NAME=SakuraCord.v$asset_version.dmg" >> "$GITHUB_ENV"
       - uses: actions/checkout@v6
         with:
           ref: ${{ env.SAKURACORD_RELEASE_TAG }}
@@ -106,3 +119,6 @@ jobs:
             --output "$published_appcast" \
             "$release_prefix/appcast.xml?run=$GITHUB_RUN_ID"
           cmp dist/appcast.xml "$published_appcast"
+      - name: Refresh the signed nightly feed
+        if: env.SAKURACORD_RELEASE_TRACK == 'nightly'
+        run: ./script/publish_nightly_appcast.sh dist/appcast.xml
