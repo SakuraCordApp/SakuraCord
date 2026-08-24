@@ -747,7 +747,7 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
         ),
         SettingsPreferenceRegistration(
             id: .updateReleaseTrack,
-            page: .general,
+            page: .softwareUpdates,
             storage: .appWide(key: AppUpdateReleaseTrack.preferenceKey),
             defaultValue: .string(AppUpdateReleaseTrack.regular.rawValue),
             resets: false

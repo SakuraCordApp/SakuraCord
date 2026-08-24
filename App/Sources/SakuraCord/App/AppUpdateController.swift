@@ -2,6 +2,23 @@ import Combine
 import Foundation
 import Sparkle
 
+nonisolated enum AppUpdateUnavailabilityReason: Equatable, Sendable {
+    case disabledForBuild
+    case noncanonicalBundle
+    case incompleteConfiguration
+
+    var description: String {
+        switch self {
+        case .disabledForBuild:
+            "This source, debug, offline, or ad-hoc build does not enable update checking."
+        case .noncanonicalBundle:
+            "This noncanonical build cannot use SakuraCord’s production update feeds."
+        case .incompleteConfiguration:
+            "Required signed-feed or updater metadata is incomplete or invalid."
+        }
+    }
+}
+
 nonisolated struct AppUpdateConfiguration: Equatable, Sendable {
     static let canonicalBundleIdentifier = "dev.sakuracord.SakuraCord"
     static let enabledInfoKey = "SakuraCordUpdatesEnabled"
@@ -18,6 +35,7 @@ nonisolated struct AppUpdateConfiguration: Equatable, Sendable {
     let feedURL: URL?
     let nightlyFeedURL: URL?
     let publicEdKey: String?
+    let unavailabilityReason: AppUpdateUnavailabilityReason?
 
     init(
         infoDictionary: [String: Any],
@@ -43,13 +61,20 @@ nonisolated struct AppUpdateConfiguration: Equatable, Sendable {
         self.feedURL = feedURL
         self.nightlyFeedURL = nightlyFeedURL
         self.publicEdKey = publicEdKey
-        isEnabled =
-            enabled
-            && bundleIdentifier == Self.canonicalBundleIdentifier
-            && feedURL == Self.expectedFeedURL
-            && nightlyFeedURL == Self.expectedNightlyFeedURL
-            && publicKeyData?.count == 32
-            && hasSafeDefaults
+        if !enabled {
+            unavailabilityReason = .disabledForBuild
+        } else if bundleIdentifier != Self.canonicalBundleIdentifier {
+            unavailabilityReason = .noncanonicalBundle
+        } else if feedURL != Self.expectedFeedURL
+            || nightlyFeedURL != Self.expectedNightlyFeedURL
+            || publicKeyData?.count != 32
+            || !hasSafeDefaults
+        {
+            unavailabilityReason = .incompleteConfiguration
+        } else {
+            unavailabilityReason = nil
+        }
+        isEnabled = unavailabilityReason == nil
     }
 
     init(bundle: Bundle = .main) {
@@ -98,17 +123,22 @@ nonisolated enum AppUpdateReleaseTrack: String, CaseIterable, Identifiable, Send
 
 @MainActor
 final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate {
+    static let lastSuccessfulCheckPreferenceKey =
+        "updates.lastSuccessfulSignedFeedCheck"
+
     @Published private(set) var canCheckForUpdates = false
     @Published private(set) var automaticallyChecksForUpdates = false
     @Published private(set) var automaticallyDownloadsUpdates = false
     @Published private(set) var allowsAutomaticUpdates = false
     @Published private(set) var releaseTrack: AppUpdateReleaseTrack
+    @Published private(set) var lastSuccessfulCheckDate: Date?
 
     let isEnabled: Bool
 
     var availabilityDescription: String {
         if !isEnabled {
-            return "Updates are unavailable in development and offline builds."
+            return configuration.unavailabilityReason?.description
+                ?? "Update checking is unavailable in this build."
         }
         if canCheckForUpdates {
             return "SakuraCord is ready to check the signed \(releaseTrack.title.lowercased()) feed."
@@ -139,6 +169,9 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
         releaseTrack = AppUpdateReleaseTrack(
             storedValue: defaults.string(forKey: AppUpdateReleaseTrack.preferenceKey)
         )
+        lastSuccessfulCheckDate = defaults.object(
+            forKey: Self.lastSuccessfulCheckPreferenceKey
+        ) as? Date
         isEnabled = configuration.isEnabled
         super.init()
 
@@ -201,6 +234,10 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
         releaseTrackProbeFoundUpdate = true
     }
 
+    func updater(_: SPUUpdater, didFinishLoading _: SUAppcast) {
+        recordSuccessfulFeedCheck(at: Date())
+    }
+
     func updater(
         _: SPUUpdater,
         didFinishUpdateCycleFor _: SPUUpdateCheck,
@@ -235,5 +272,10 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
             pendingReleaseTrackUpdatePresentation = false
             updater.checkForUpdates()
         }
+    }
+
+    func recordSuccessfulFeedCheck(at date: Date) {
+        lastSuccessfulCheckDate = date
+        defaults.set(date, forKey: Self.lastSuccessfulCheckPreferenceKey)
     }
 }

@@ -15,6 +15,7 @@ func productionUpdateMetadataEnablesCanonicalBundle() {
     #expect(configuration.feedURL == AppUpdateConfiguration.expectedFeedURL)
     #expect(configuration.nightlyFeedURL == AppUpdateConfiguration.expectedNightlyFeedURL)
     #expect(configuration.publicEdKey == validPublicKey)
+    #expect(configuration.unavailabilityReason == nil)
     #expect(AppUpdateConfiguration.scheduledCheckInterval == 21_600)
 }
 
@@ -26,6 +27,7 @@ func noncanonicalBundlesCannotEnableUpdates() {
     )
 
     #expect(!configuration.isEnabled)
+    #expect(configuration.unavailabilityReason == .noncanonicalBundle)
 }
 
 @Test(
@@ -54,6 +56,11 @@ func incompleteUpdateMetadataIsDisabled(missingKey: String) {
     )
 
     #expect(!configuration.isEnabled)
+    if missingKey == AppUpdateConfiguration.enabledInfoKey {
+        #expect(configuration.unavailabilityReason == .disabledForBuild)
+    } else {
+        #expect(configuration.unavailabilityReason == .incompleteConfiguration)
+    }
 }
 
 @Test("update configuration rejects invalid trust or automatic-check metadata")
@@ -143,11 +150,13 @@ func releaseTrackChangesPersist() {
 @MainActor
 @Test("disabled updater lifecycle stays inert")
 func disabledUpdaterLifecycleStaysInert() {
+    let defaults = InMemoryPreferences()
     let controller = AppUpdateController(
         configuration: AppUpdateConfiguration(
             infoDictionary: [:],
             bundleIdentifier: AppUpdateConfiguration.canonicalBundleIdentifier
-        )
+        ),
+        defaults: defaults
     )
 
     controller.start()
@@ -159,6 +168,37 @@ func disabledUpdaterLifecycleStaysInert() {
     #expect(!controller.canCheckForUpdates)
     #expect(!controller.automaticallyChecksForUpdates)
     #expect(!controller.automaticallyDownloadsUpdates)
+    #expect(controller.lastSuccessfulCheckDate == nil)
+    #expect(
+        controller.availabilityDescription
+            == AppUpdateUnavailabilityReason.disabledForBuild.description
+    )
+    #expect(
+        defaults.object(forKey: AppUpdateController.lastSuccessfulCheckPreferenceKey)
+            == nil
+    )
+}
+
+@MainActor
+@Test("successful appcast loads persist separately from attempted checks")
+func successfulAppcastLoadsPersist() {
+    let defaults = InMemoryPreferences()
+    let date = Date(timeIntervalSince1970: 1_784_764_800)
+    let configuration = AppUpdateConfiguration(
+        infoDictionary: productionUpdateInfo(),
+        bundleIdentifier: AppUpdateConfiguration.canonicalBundleIdentifier
+    )
+    let controller = AppUpdateController(configuration: configuration, defaults: defaults)
+
+    #expect(controller.lastSuccessfulCheckDate == nil)
+    controller.checkForUpdates()
+    #expect(controller.lastSuccessfulCheckDate == nil)
+
+    controller.recordSuccessfulFeedCheck(at: date)
+    #expect(controller.lastSuccessfulCheckDate == date)
+
+    let restored = AppUpdateController(configuration: configuration, defaults: defaults)
+    #expect(restored.lastSuccessfulCheckDate == date)
 }
 
 private func productionUpdateInfo() -> [String: Any] {

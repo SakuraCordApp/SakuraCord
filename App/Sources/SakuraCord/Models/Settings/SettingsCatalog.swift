@@ -280,6 +280,7 @@ nonisolated extension SettingsControlID {
     static let updateAutomaticChecks = Self(rawValue: "software-updates.automatic-checks")
     static let updateAutomaticDownloads = Self(rawValue: "software-updates.automatic-downloads")
     static let updateStatus = Self(rawValue: "software-updates.status")
+    static let updateLastSuccessfulCheck = Self(rawValue: "software-updates.last-successful-check")
     static let checkForUpdates = Self(rawValue: "software-updates.check-now")
     static let mediaCacheLimit = Self(rawValue: "storage.media-cache-limit")
     static let mediaCacheUsage = Self(rawValue: "storage.media-cache-usage")
@@ -950,7 +951,7 @@ private nonisolated extension SettingsCatalog {
         ),
         control(
             .updateReleaseTrack,
-            page: .general,
+            page: .softwareUpdates,
             section: .softwareUpdates,
             label: "Release track",
             help: "Choose the signed Regular or Nightly update feed.",
@@ -960,7 +961,7 @@ private nonisolated extension SettingsCatalog {
         ),
         control(
             .updateAutomaticChecks,
-            page: .general,
+            page: .softwareUpdates,
             section: .softwareUpdates,
             label: "Automatically check for updates",
             help: "Let SakuraCord periodically check its configured signed feed.",
@@ -972,7 +973,7 @@ private nonisolated extension SettingsCatalog {
         ),
         control(
             .updateAutomaticDownloads,
-            page: .general,
+            page: .softwareUpdates,
             section: .softwareUpdates,
             label: "Automatically download updates",
             help: "Download verified updates when Sparkle allows automatic updates.",
@@ -984,7 +985,7 @@ private nonisolated extension SettingsCatalog {
         ),
         control(
             .updateStatus,
-            page: .general,
+            page: .softwareUpdates,
             section: .softwareUpdates,
             label: "Update status",
             help: "Show whether update checking is available in this build.",
@@ -995,8 +996,20 @@ private nonisolated extension SettingsCatalog {
             reset: .notApplicable
         ),
         control(
+            .updateLastSuccessfulCheck,
+            page: .softwareUpdates,
+            section: .softwareUpdates,
+            label: "Last successful signed-feed check",
+            help: "Show when Sparkle most recently downloaded the configured signed appcast.",
+            keywords: ["last checked", "successful", "appcast", "feed"],
+            owner: .applicationPreferences,
+            scope: .appWideLocal,
+            persistence: .appPreferences,
+            reset: .notApplicable
+        ),
+        control(
             .checkForUpdates,
-            page: .general,
+            page: .softwareUpdates,
             section: .softwareUpdates,
             label: "Check for Updates",
             help: "Ask the existing updater to check now.",

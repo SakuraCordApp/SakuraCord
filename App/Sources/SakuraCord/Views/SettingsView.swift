@@ -92,8 +92,7 @@ private struct SettingsDetailRouter: View {
         case .general:
             GeneralSettingsPage(
                 model: model,
-                state: state,
-                updateController: updateController
+                state: state
             )
         case .interface:
             InterfaceSettingsPage(model: model, state: state)
@@ -118,7 +117,10 @@ private struct SettingsDetailRouter: View {
                 state: state
             )
         case .softwareUpdates:
-            SoftwareUpdatesSettingsPage(state: state)
+            SoftwareUpdatesSettingsPage(
+                updateController: updateController,
+                state: state
+            )
         case .extensions:
             ExtensionsSettingsPage(state: state)
         case .about:
