@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct SettingsView: View {
@@ -35,6 +36,8 @@ struct SettingsView: View {
                 comment: "Prompt for the Settings sidebar search field."
             )
         )
+        .toolbar(removing: .title)
+        .background(SettingsWindowToolbarConfigurator())
         .onKeyPress(.return) {
             state.activateFirstSearchResult() ? .handled : .ignored
         }
@@ -72,6 +75,33 @@ struct SettingsView: View {
                 ? 1.12
                 : 1
         )
+    }
+}
+
+/// Reapplies compact chrome after the Settings scene installs its preference toolbar.
+private struct SettingsWindowToolbarConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> ConfiguringView {
+        ConfiguringView()
+    }
+
+    func updateNSView(_ view: ConfiguringView, context: Context) {
+        view.applyToolbarStyle()
+    }
+
+    final class ConfiguringView: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            applyToolbarStyle()
+            // The Settings host can finish toolbar setup later in this update cycle.
+            DispatchQueue.main.async { [weak self] in
+                self?.applyToolbarStyle()
+            }
+        }
+
+        func applyToolbarStyle() {
+            guard window?.toolbarStyle != .unifiedCompact else { return }
+            window?.toolbarStyle = .unifiedCompact
+        }
     }
 }
 
