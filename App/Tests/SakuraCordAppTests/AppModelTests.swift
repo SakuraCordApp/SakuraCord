@@ -2873,13 +2873,17 @@ private actor FailingRemovalCredentialStore: CredentialStore {
 @MainActor
 @Test func `account transition cancels and drains stale native notification delivery`() async {
     let notifications = SuspendedAccountNotificationService()
+    let notificationPreferences = NotificationPreferences(defaults: InMemoryPreferences())
+    notificationPreferences.suppressesCurrentConversation = false
     let oldProvider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
     let newProvider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
     let model = AppModel(
         launchMode: .offlineTesting,
         provider: oldProvider,
-        notificationService: notifications
+        notificationService: notifications,
+        notificationPreferences: notificationPreferences
     )
+    await model.start()
     let author = oldProvider.editTarget.author
     let message = Message(
         id: MessageID(rawValue: 96_050),
