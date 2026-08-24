@@ -466,7 +466,7 @@ private nonisolated extension SettingsCatalog {
         page(
             .extensions, group: .sakuraCord, title: "Extensions", image: "puzzlepiece.extension",
             help: "Learn about SakuraCord's future sandboxed extension system.",
-            keywords: ["plugins", "permissions", "sandbox", "SDK", "host"]
+            keywords: ["plugins", "permissions", "sandbox", "sandboxing", "SDK", "host"]
         ),
         page(
             .about, group: .sakuraCord, title: "About", image: "info.circle",

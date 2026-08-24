@@ -1,13 +1,5 @@
 import SwiftUI
 
-struct ExtensionsSettingsPage: View {
-    let state: SettingsViewState
-
-    var body: some View {
-        SettingsPendingPage(page: .extensions, phase: 13, state: state)
-    }
-}
-
 struct AboutSettingsPage: View {
     let state: SettingsViewState
 

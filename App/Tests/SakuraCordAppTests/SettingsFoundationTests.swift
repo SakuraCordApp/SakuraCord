@@ -60,6 +60,16 @@ import Testing
 
     state.searchText = "hotkeys"
     #expect(state.searchResults.first?.destination.page == .keyboardShortcuts)
+
+    for query in ["Extensions", "plugins", "permissions", "sandboxing"] {
+        state.searchText = query
+        #expect(
+            state.searchResults.contains {
+                $0.id == .overview(.extensions)
+                    && $0.destination.page == .extensions
+            }
+        )
+    }
 }
 
 @MainActor
