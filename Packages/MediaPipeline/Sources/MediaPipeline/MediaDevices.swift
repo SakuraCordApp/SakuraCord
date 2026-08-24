@@ -46,10 +46,12 @@ public struct CameraDeviceInfo: Identifiable, Equatable, Sendable {
 
     public var uniqueID: String
     public var name: String
+    public var isDefault: Bool
 
-    public init(uniqueID: String, name: String) {
+    public init(uniqueID: String, name: String, isDefault: Bool = false) {
         self.uniqueID = uniqueID
         self.name = name
+        self.isDefault = isDefault
     }
 }
 
@@ -57,6 +59,16 @@ public struct MediaDeviceSnapshot: Equatable, Sendable {
     public var audioInputs: [AudioDeviceInfo]
     public var audioOutputs: [AudioDeviceInfo]
     public var cameras: [CameraDeviceInfo]
+
+    public init(
+        audioInputs: [AudioDeviceInfo],
+        audioOutputs: [AudioDeviceInfo],
+        cameras: [CameraDeviceInfo]
+    ) {
+        self.audioInputs = audioInputs
+        self.audioOutputs = audioOutputs
+        self.cameras = cameras
+    }
 
     public static let empty = MediaDeviceSnapshot(
         audioInputs: [],
@@ -84,11 +96,18 @@ public enum MediaDeviceCatalog {
             .external,
             .continuityCamera
         ]
+        let defaultCameraID = AVCaptureDevice.default(for: .video)?.uniqueID
         let cameras = AVCaptureDevice.DiscoverySession(
             deviceTypes: cameraTypes,
             mediaType: .video,
             position: .unspecified
-        ).devices.map { CameraDeviceInfo(uniqueID: $0.uniqueID, name: $0.localizedName) }
+        ).devices.map {
+            CameraDeviceInfo(
+                uniqueID: $0.uniqueID,
+                name: $0.localizedName,
+                isDefault: $0.uniqueID == defaultCameraID
+            )
+        }
         return MediaDeviceSnapshot(
             audioInputs: inputs.sorted(by: deviceOrder),
             audioOutputs: outputs.sorted(by: deviceOrder),
@@ -126,6 +145,10 @@ public enum MediaDeviceCatalog {
 
     public static func defaultOutputDeviceID() -> AudioDeviceID? {
         try? AudioHardwareSystem.shared.defaultOutputDevice?.id
+    }
+
+    public static func defaultInputDeviceID() -> AudioDeviceID? {
+        try? AudioHardwareSystem.shared.defaultInputDevice?.id
     }
 
     private static func select(_ deviceID: AudioDeviceID, on audioUnit: AudioUnit?) throws(MediaDeviceError) {

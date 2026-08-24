@@ -16,6 +16,7 @@ extension AppModel {
             return
         }
 
+        screenShareSettings = voiceVideoPreferences.screenShareDefaults
         let capture = ScreenShareCaptureEngine(settings: screenShareSettings)
         screenShareCaptureEngine = capture
         isScreenShareCaptureAvailable = false
@@ -789,7 +790,9 @@ extension AppModel {
     }
 
     private func announceLocalApplicationStreamStarted(_ key: ApplicationStreamKey) {
-        guard applicationStreamStates[key] == .broadcasting else { return }
+        guard applicationStreamStates[key] == .broadcasting,
+              voiceVideoPreferences.playsFeedbackSounds
+        else { return }
         soundPlayer.play(.streamStarted)
     }
 
@@ -800,14 +803,17 @@ extension AppModel {
         case .available, .connecting, .watching, nil:
             return
         }
-        soundPlayer.play(.streamEnded)
+        if voiceVideoPreferences.playsFeedbackSounds {
+            soundPlayer.play(.streamEnded)
+        }
     }
 
     private func playApplicationStreamViewerSound(
         previous: ApplicationStream?,
         current: ApplicationStream
     ) {
-        guard let previous,
+        guard voiceVideoPreferences.playsFeedbackSounds,
+              let previous,
               previous.viewerIDs.count <= 25,
               let channel = activeVoiceChannel,
               channel.id == current.key.channelID,

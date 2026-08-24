@@ -279,7 +279,8 @@ struct VoiceVideoGrid: View {
             VoiceParticipantTile(
                 participant: participant,
                 isCompact: isCompact,
-                tileSize: nil
+                tileSize: nil,
+                mirrorsLocalPreview: model.voiceVideoPreferences.mirrorsLocalPreview
             ) { volume in
                 Task { await model.updateParticipantVolume(volume, userID: participant.id) }
             }
@@ -660,6 +661,7 @@ private struct VoiceParticipantTile: View {
     let participant: VoiceTileParticipant
     let isCompact: Bool
     let tileSize: CGSize?
+    let mirrorsLocalPreview: Bool
     let updateVolume: (Float) -> Void
     @State private var isHovering = false
     @State private var showVolume = false
@@ -684,6 +686,10 @@ private struct VoiceParticipantTile: View {
                     Image(decorative: frame.image, scale: 1)
                         .resizable()
                         .scaledToFill()
+                        .scaleEffect(
+                            x: participant.isLocal && mirrorsLocalPreview ? -1 : 1,
+                            y: 1
+                        )
                 } else {
                     AvatarView(
                         name: participant.name,

@@ -136,13 +136,13 @@ struct VoiceControlBar<SettingsControl: View>: View {
     }
 
     @ViewBuilder private var cameraMenu: some View {
-        Button("System Default") { Task { await model.selectCamera(nil) } }
+        Button("System Default") { Task { _ = await model.selectCamera(nil) } }
         Divider()
         ForEach(model.mediaDevices.cameras) { camera in
             Button {
-                Task { await model.selectCamera(camera) }
+                Task { _ = await model.selectCamera(camera) }
             } label: {
-                if camera.uniqueID == UserDefaults.standard.string(forKey: "voiceCameraUID") {
+                if camera.uniqueID == model.selectedCameraUID {
                     Label(camera.name, systemImage: "checkmark")
                 } else {
                     Text(camera.name)
@@ -377,13 +377,13 @@ struct VoiceCallControlDock: View {
     }
 
     @ViewBuilder private var cameraMenu: some View {
-        Button("System Default") { Task { await model.selectCamera(nil) } }
+        Button("System Default") { Task { _ = await model.selectCamera(nil) } }
         Divider()
         ForEach(model.mediaDevices.cameras) { camera in
             Button {
-                Task { await model.selectCamera(camera) }
+                Task { _ = await model.selectCamera(camera) }
             } label: {
-                if camera.uniqueID == UserDefaults.standard.string(forKey: "voiceCameraUID") {
+                if camera.uniqueID == model.selectedCameraUID {
                     Label(camera.name, systemImage: "checkmark")
                 } else {
                     Text(camera.name)
@@ -759,7 +759,7 @@ private struct VoiceInputControls: View {
                 title: "Input Device",
                 systemImage: "mic",
                 devices: model.mediaDevices.audioInputs,
-                selectedUID: UserDefaults.standard.string(forKey: "voiceInputDeviceUID"),
+                selectedUID: model.voiceVideoPreferences.inputDeviceUID,
                 select: { device in await model.selectInputDevice(device) }
             )
             VolumeControl(
@@ -793,7 +793,7 @@ private struct VoiceOutputControls: View {
                 title: "Output Device",
                 systemImage: "speaker.wave.2",
                 devices: model.mediaDevices.audioOutputs,
-                selectedUID: UserDefaults.standard.string(forKey: "voiceOutputDeviceUID"),
+                selectedUID: model.voiceVideoPreferences.outputDeviceUID,
                 select: { device in await model.selectOutputDevice(device) }
             )
             VolumeControl(
@@ -825,8 +825,8 @@ private struct VoiceCameraControls: View {
             Text("Camera").font(.headline)
             CameraDevicePicker(
                 devices: model.mediaDevices.cameras,
-                selectedUID: UserDefaults.standard.string(forKey: "voiceCameraUID"),
-                select: { camera in Task { await model.selectCamera(camera) } }
+                selectedUID: model.selectedCameraUID,
+                select: { camera in Task { _ = await model.selectCamera(camera) } }
             )
         }
         .padding(16)

@@ -15,6 +15,26 @@ public actor MockChatProvider: ChatProvider {
     private var continuation: AsyncStream<ClientEvent>.Continuation?
     private var nextMessageID: UInt64
     public private(set) var typingRequests: [ChannelID] = []
+    public struct VoiceJoinRequest: Equatable, Sendable {
+        public var channelID: ChannelID
+        public var guildID: GuildID?
+        public var selfMute: Bool
+        public var selfDeaf: Bool
+
+        public init(
+            channelID: ChannelID,
+            guildID: GuildID?,
+            selfMute: Bool,
+            selfDeaf: Bool
+        ) {
+            self.channelID = channelID
+            self.guildID = guildID
+            self.selfMute = selfMute
+            self.selfDeaf = selfDeaf
+        }
+    }
+
+    public private(set) var voiceJoinRequests: [VoiceJoinRequest] = []
     public struct AcknowledgementRequest: Equatable, Sendable {
         public var channelID: ChannelID
         public var messageID: MessageID
@@ -1604,6 +1624,12 @@ public extension MockChatProvider {
         }) else {
             throw ChatProviderError.invalidRequest("That demo voice channel is unavailable.")
         }
+        voiceJoinRequests.append(VoiceJoinRequest(
+            channelID: channelID,
+            guildID: guildID,
+            selfMute: selfMute,
+            selfDeaf: selfDeaf
+        ))
         let state = VoiceParticipantState(
             userID: currentUser.id,
             channelID: channelID,

@@ -66,15 +66,18 @@ public struct ScreenShareSettings: Codable, Equatable, Sendable {
     public var frameRate: ScreenShareFrameRate
     public var quality: ScreenShareQuality
     public var includesAudio: Bool
+    public var showsCursor: Bool
 
     public init(
         frameRate: ScreenShareFrameRate = .fps30,
         quality: ScreenShareQuality = .p1080,
-        includesAudio: Bool = true
+        includesAudio: Bool = true,
+        showsCursor: Bool = true
     ) {
         self.frameRate = frameRate
         self.quality = quality
         self.includesAudio = includesAudio
+        self.showsCursor = showsCursor
     }
 }
 
@@ -456,7 +459,7 @@ public final class ScreenShareCaptureEngine: NSObject, @unchecked Sendable {
         )
         configuration.queueDepth = 3
         configuration.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
-        configuration.showsCursor = true
+        configuration.showsCursor = settings.showsCursor
         configuration.capturesAudio = settings.includesAudio && isEncoding
         configuration.sampleRate = Int(OpusCodec.sampleRate)
         configuration.channelCount = Int(OpusCodec.channels)

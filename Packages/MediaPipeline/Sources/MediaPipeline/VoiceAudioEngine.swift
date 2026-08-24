@@ -23,6 +23,10 @@ public final class VoiceAudioEngine {
     public private(set) var isRunning = false
     public private(set) var inputDeviceID: AudioDeviceID?
     public private(set) var outputDeviceID: AudioDeviceID?
+    public private(set) var isVoiceProcessingEnabled = false
+    public var inputLevelHandler: (@Sendable (Float) -> Void)? {
+        didSet { captureEncoder.levelHandler = inputLevelHandler }
+    }
     public var inputVolume: Float = 1 {
         didSet { captureEncoder.inputVolume = min(max(inputVolume, 0), 2) }
     }
@@ -32,7 +36,12 @@ public final class VoiceAudioEngine {
     }
 
     public var isMuted = false {
-        didSet { captureEncoder.isMuted = isMuted }
+        didSet {
+            captureEncoder.isMuted = isMuted
+            if isVoiceProcessingEnabled {
+                playbackEngine.inputNode.isVoiceProcessingInputMuted = isMuted
+            }
+        }
     }
 
     public var isDeafened = false {
@@ -59,6 +68,7 @@ public final class VoiceAudioEngine {
     private var outputRouteGeneration: UInt64 = 0
     private var isChangingCaptureRoute = false
     private var isChangingPlaybackRoute = false
+    private var hasVoiceProcessingTap = false
 
     public init(bitRate: Int = 64000) throws {
         let codec = try OpusCodec(bitRate: bitRate)
@@ -112,15 +122,21 @@ public final class VoiceAudioEngine {
     public func start(
         inputDeviceID: AudioDeviceID? = nil,
         outputDeviceID: AudioDeviceID? = nil,
+        voiceProcessingEnabled: Bool = false,
         onCapturedFrame: @escaping @Sendable (CapturedOpusFrame) -> Void
     ) throws {
         stop()
         self.inputDeviceID = inputDeviceID
         self.outputDeviceID = outputDeviceID
+        isVoiceProcessingEnabled = voiceProcessingEnabled
         captureEncoder.handler = onCapturedFrame
         do {
-            try startPlaybackGraph()
-            try startCaptureGraph()
+            if isVoiceProcessingEnabled {
+                try startVoiceProcessingGraph()
+            } else {
+                try startPlaybackGraph()
+                try startCaptureGraph()
+            }
             isRunning = true
         } catch {
             tearDownAudioGraph()
@@ -141,7 +157,9 @@ public final class VoiceAudioEngine {
         playbackRecoveryTask?.cancel()
         playbackRecoveryTask = nil
         tearDownCaptureGraph()
+        tearDownVoiceProcessingCapture()
         tearDownPlaybackGraph()
+        isVoiceProcessingEnabled = false
         captureEncoder.handler = nil
     }
 
@@ -179,6 +197,80 @@ public final class VoiceAudioEngine {
             if !captureSession.isRunning {
                 captureSession.startRunning()
             }
+        }
+    }
+
+    private func startVoiceProcessingGraph(
+        allowsInputDefaultFallback: Bool = true,
+        allowsOutputDefaultFallback: Bool = true
+    ) throws {
+        let inputNode = playbackEngine.inputNode
+        do {
+            let resolvedInputID = inputDeviceID
+                ?? MediaDeviceCatalog.defaultInputDeviceID()
+            guard let resolvedInputID else {
+                throw VoiceAudioEngineError.inputUnavailable
+            }
+            do {
+                try MediaDeviceCatalog.selectInput(resolvedInputID, on: playbackEngine)
+            } catch {
+                guard inputDeviceID != nil, allowsInputDefaultFallback,
+                      let defaultInputID = MediaDeviceCatalog.defaultInputDeviceID()
+                else { throw VoiceAudioEngineError.inputUnavailable }
+                self.inputDeviceID = nil
+                try MediaDeviceCatalog.selectInput(defaultInputID, on: playbackEngine)
+                voiceAudioLogger.warning(
+                    "Selected voice-processing input failed; using the system default"
+                )
+            }
+            let resolvedOutputID = outputDeviceID
+                ?? MediaDeviceCatalog.defaultOutputDeviceID()
+            guard let resolvedOutputID else {
+                throw VoiceAudioEngineError.outputUnavailable
+            }
+            do {
+                try MediaDeviceCatalog.selectOutput(resolvedOutputID, on: playbackEngine)
+            } catch {
+                guard outputDeviceID != nil, allowsOutputDefaultFallback,
+                      let defaultOutputID = MediaDeviceCatalog.defaultOutputDeviceID()
+                else { throw VoiceAudioEngineError.outputUnavailable }
+                self.outputDeviceID = nil
+                try MediaDeviceCatalog.selectOutput(defaultOutputID, on: playbackEngine)
+                voiceAudioLogger.warning(
+                    "Selected voice-processing output failed; using the system default"
+                )
+            }
+            try inputNode.setVoiceProcessingEnabled(true)
+            inputNode.isVoiceProcessingInputMuted = isMuted
+            try inputNode.__installTap(
+                onBus: 0,
+                bufferSize: OpusCodec.frameSamples,
+                format: nil,
+                error: (),
+                block: { [captureEncoder] buffer, _ in
+                    captureEncoder.process(buffer)
+                }
+            )
+            hasVoiceProcessingTap = true
+            playbackEngine.mainMixerNode.outputVolume = isDeafened
+                ? 0
+                : min(max(outputVolume, 0), 2)
+            playbackEngine.prepare()
+            try playbackEngine.start()
+            voiceAudioLogger.info(
+                "Voice capture started with Apple's voice-processing I/O path"
+            )
+        } catch {
+            if hasVoiceProcessingTap {
+                inputNode.removeTap(onBus: 0)
+                hasVoiceProcessingTap = false
+            }
+            playbackEngine.stop()
+            try? inputNode.setVoiceProcessingEnabled(false)
+            if error is VoiceAudioEngineError {
+                throw error
+            }
+            throw VoiceAudioEngineError.voiceProcessingUnavailable
         }
     }
 
@@ -346,6 +438,15 @@ public final class VoiceAudioEngine {
         }
         isChangingPlaybackRoute = true
         defer { isChangingPlaybackRoute = false }
+        if isVoiceProcessingEnabled {
+            tearDownVoiceProcessingCapture()
+            tearDownPlaybackGraph()
+            try startVoiceProcessingGraph()
+            voiceAudioLogger.info(
+                "Voice-processing capture and playback recovered after a hardware change"
+            )
+            return
+        }
         do {
             try await stabilizePlaybackEngine(generation: generation)
         } catch {
@@ -407,6 +508,20 @@ public final class VoiceAudioEngine {
             }
             captureSession.commitConfiguration()
         }
+        captureEncoder.reset()
+    }
+
+    private func tearDownVoiceProcessingCapture() {
+        guard hasVoiceProcessingTap || playbackEngine.inputNode.isVoiceProcessingEnabled else {
+            return
+        }
+        playbackEngine.stop()
+        if hasVoiceProcessingTap {
+            playbackEngine.inputNode.removeTap(onBus: 0)
+            hasVoiceProcessingTap = false
+        }
+        try? playbackEngine.inputNode.setVoiceProcessingEnabled(false)
+        captureEncoder.reset()
     }
 
     private func tearDownPlaybackGraph() {
@@ -423,6 +538,13 @@ public final class VoiceAudioEngine {
     public func selectInputDevice(_ deviceID: AudioDeviceID?) async throws {
         guard isRunning else {
             inputDeviceID = deviceID
+            return
+        }
+        if isVoiceProcessingEnabled {
+            try restartVoiceProcessingGraph(
+                inputDeviceID: deviceID,
+                outputDeviceID: outputDeviceID
+            )
             return
         }
         inputRouteGeneration &+= 1
@@ -483,6 +605,13 @@ public final class VoiceAudioEngine {
             outputDeviceID = deviceID
             return
         }
+        if isVoiceProcessingEnabled {
+            try restartVoiceProcessingGraph(
+                inputDeviceID: inputDeviceID,
+                outputDeviceID: deviceID
+            )
+            return
+        }
         outputRouteGeneration &+= 1
         let generation = outputRouteGeneration
         playbackRecoveryTask?.cancel()
@@ -523,6 +652,101 @@ public final class VoiceAudioEngine {
                         "System-default output route could not be started: \(String(reflecting: error), privacy: .public)"
                     )
                 }
+            }
+            throw selectionError
+        }
+    }
+
+    public func setVoiceProcessingEnabled(_ enabled: Bool) throws {
+        guard enabled != isVoiceProcessingEnabled else { return }
+        guard isRunning else {
+            isVoiceProcessingEnabled = enabled
+            return
+        }
+        inputRouteGeneration &+= 1
+        outputRouteGeneration &+= 1
+        captureRecoveryTask?.cancel()
+        captureRecoveryTask = nil
+        playbackRecoveryTask?.cancel()
+        playbackRecoveryTask = nil
+        let previousValue = isVoiceProcessingEnabled
+        tearDownCaptureGraph()
+        tearDownVoiceProcessingCapture()
+        tearDownPlaybackGraph()
+        isVoiceProcessingEnabled = enabled
+        do {
+            if enabled {
+                try startVoiceProcessingGraph(
+                    allowsInputDefaultFallback: false,
+                    allowsOutputDefaultFallback: false
+                )
+            } else {
+                try startPlaybackGraph(allowsDefaultFallback: false)
+                try startCaptureGraph()
+            }
+        } catch {
+            let transitionError = error
+            tearDownCaptureGraph()
+            tearDownVoiceProcessingCapture()
+            tearDownPlaybackGraph()
+            isVoiceProcessingEnabled = previousValue
+            do {
+                if previousValue {
+                    try startVoiceProcessingGraph()
+                } else {
+                    try startPlaybackGraph()
+                    try startCaptureGraph()
+                }
+            } catch {
+                isRunning = false
+                voiceAudioLogger.error(
+                    "The previous voice capture graph could not be restored"
+                )
+            }
+            throw transitionError
+        }
+    }
+
+    private func restartVoiceProcessingGraph(
+        inputDeviceID: AudioDeviceID?,
+        outputDeviceID: AudioDeviceID?
+    ) throws {
+        inputRouteGeneration &+= 1
+        outputRouteGeneration &+= 1
+        captureRecoveryTask?.cancel()
+        captureRecoveryTask = nil
+        playbackRecoveryTask?.cancel()
+        playbackRecoveryTask = nil
+        isChangingCaptureRoute = true
+        isChangingPlaybackRoute = true
+        defer {
+            isChangingCaptureRoute = false
+            isChangingPlaybackRoute = false
+        }
+        let previousInputDeviceID = self.inputDeviceID
+        let previousOutputDeviceID = self.outputDeviceID
+        tearDownVoiceProcessingCapture()
+        tearDownPlaybackGraph()
+        self.inputDeviceID = inputDeviceID
+        self.outputDeviceID = outputDeviceID
+        do {
+            try startVoiceProcessingGraph(
+                allowsInputDefaultFallback: false,
+                allowsOutputDefaultFallback: false
+            )
+        } catch {
+            let selectionError = error
+            tearDownVoiceProcessingCapture()
+            tearDownPlaybackGraph()
+            self.inputDeviceID = previousInputDeviceID
+            self.outputDeviceID = previousOutputDeviceID
+            do {
+                try startVoiceProcessingGraph()
+            } catch {
+                isRunning = false
+                voiceAudioLogger.error(
+                    "The previous voice-processing routes could not be restored"
+                )
             }
             throw selectionError
         }
@@ -588,6 +812,11 @@ final class OpusSampleBufferEncoder: NSObject,
         set { lock.withLock { _isMuted = newValue } }
     }
 
+    var levelHandler: (@Sendable (Float) -> Void)? {
+        get { lock.withLock { _levelHandler } }
+        set { lock.withLock { _levelHandler = newValue } }
+    }
+
     private let codec: OpusCodec
     private let activityThreshold: Float
     private let lock = NSLock()
@@ -597,6 +826,7 @@ final class OpusSampleBufferEncoder: NSObject,
     private var bufferedSampleOffset = 0
     private var encodedSampleOffset: UInt64 = 0
     private var _handler: (@Sendable (CapturedOpusFrame) -> Void)?
+    private var _levelHandler: (@Sendable (Float) -> Void)?
     private var _inputVolume: Float = 1
     private var _isMuted = false
 
@@ -634,7 +864,6 @@ final class OpusSampleBufferEncoder: NSObject,
             frameCount: Int32(frameCount),
             into: buffer.mutableAudioBufferList
         ) == noErr else { return }
-        do { try configure(inputFormat: format) } catch { return }
         process(buffer)
     }
 
@@ -661,12 +890,16 @@ final class OpusSampleBufferEncoder: NSObject,
         }
     }
 
-    private func process(_ input: AVAudioPCMBuffer) {
-        let frames: [CapturedOpusFrame] = lock.withLock {
-            guard let converter else { return [] }
+    func process(_ input: AVAudioPCMBuffer) {
+        do { try configure(inputFormat: input.format) } catch { return }
+        let result: (frames: [CapturedOpusFrame], level: Float) = lock.withLock {
+            guard let converter else { return ([], 0) }
             let ratio = OpusCodec.sampleRate / input.format.sampleRate
             let capacity = AVAudioFrameCount(ceil(Double(input.frameLength) * ratio)) + 32
-            guard let converted = AVAudioPCMBuffer(pcmFormat: OpusCodec.pcmFormat, frameCapacity: capacity) else { return [] }
+            guard let converted = AVAudioPCMBuffer(
+                pcmFormat: OpusCodec.pcmFormat,
+                frameCapacity: capacity
+            ) else { return ([], 0) }
             var supplied = false
             var error: NSError?
             _ = converter.convert(to: converted, error: &error) { _, status in
@@ -680,11 +913,12 @@ final class OpusSampleBufferEncoder: NSObject,
             }
             guard error == nil,
                   let channels = converted.floatChannelData,
-                  converted.frameLength > 0 else { return [] }
+                  converted.frameLength > 0 else { return ([], 0) }
             left.append(contentsOf: UnsafeBufferPointer(start: channels[0], count: Int(converted.frameLength)))
             right.append(contentsOf: UnsafeBufferPointer(start: channels[1], count: Int(converted.frameLength)))
 
             var output: [CapturedOpusFrame] = []
+            var maximumLevel: Float = 0
             let frameCount = Int(OpusCodec.frameSamples)
             while left.count - bufferedSampleOffset >= frameCount,
                   right.count - bufferedSampleOffset >= frameCount
@@ -705,6 +939,7 @@ final class OpusSampleBufferEncoder: NSObject,
                 if let packet = try? codec.encode(pcm) {
                     encodedSampleOffset &+= UInt64(frameCount)
                     let rms = sqrt(energy / Float(frameCount * 2))
+                    maximumLevel = max(maximumLevel, Self.normalizedLevel(rms: rms))
                     output.append(CapturedOpusFrame(
                         data: packet,
                         containsVoice: !_isMuted && rms > activityThreshold,
@@ -713,12 +948,19 @@ final class OpusSampleBufferEncoder: NSObject,
                 }
             }
             compactBufferedSamples(frameCount: frameCount)
-            return output
+            return (output, maximumLevel)
         }
         let handler = handler
-        for frame in frames {
+        for frame in result.frames {
             handler?(frame)
         }
+        levelHandler?(result.level)
+    }
+
+    private static func normalizedLevel(rms: Float) -> Float {
+        guard rms > 0 else { return 0 }
+        let decibels = 20 * log10(rms)
+        return min(max((decibels + 60) / 60, 0), 1)
     }
 
     private func compactBufferedSamples(frameCount: Int) {
@@ -739,6 +981,7 @@ public enum VoiceAudioEngineError: Error, Equatable {
     case inputUnavailable
     case outputUnavailable
     case converterUnavailable
+    case voiceProcessingUnavailable
 }
 
 extension VoiceAudioEngineError: LocalizedError {
@@ -750,6 +993,8 @@ extension VoiceAudioEngineError: LocalizedError {
             "The selected speaker is not available."
         case .converterUnavailable:
             "The selected microphone uses an unsupported audio format."
+        case .voiceProcessingUnavailable:
+            "Apple voice processing is unavailable for the selected audio routes."
         }
     }
 }

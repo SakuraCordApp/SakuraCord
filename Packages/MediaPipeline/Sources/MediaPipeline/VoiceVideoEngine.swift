@@ -34,6 +34,25 @@ public enum VoiceVideoError: Error, Equatable {
     case decodingFailed(OSStatus)
 }
 
+extension VoiceVideoError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .cameraPermissionDenied:
+            "Camera access is denied."
+        case .cameraUnavailable:
+            "The selected camera is unavailable."
+        case .cameraInputUnavailable:
+            "The selected camera could not be opened."
+        case .encoderCreationFailed, .encoderConfigurationFailed, .encodingFailed:
+            "The camera video encoder is unavailable."
+        case .malformedEncodedFrame:
+            "The camera produced an invalid video frame."
+        case .decoderCreationFailed, .decodingFailed:
+            "A camera video frame could not be decoded."
+        }
+    }
+}
+
 public final class VoiceVideoEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
     public static let width = 1280
     public static let height = 720

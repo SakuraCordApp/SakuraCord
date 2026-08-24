@@ -302,6 +302,7 @@ final class AppModel {
     let commandComposer = ApplicationCommandComposerModel()
     let readState = AccountReadStateModel()
     let notificationPreferences: NotificationPreferences
+    let voiceVideoPreferences: VoiceVideoPreferences
     @ObservationIgnored let notificationService: any NativeNotificationService
     @ObservationIgnored let soundPlayer: any AppSoundPlaying
     var isLoading = false
@@ -456,6 +457,7 @@ final class AppModel {
     var isScreenShareCaptureAvailable = false
     var isLocalScreenSharePreviewPaused = false
     var voiceDeviceStatusMessage: String?
+    var selectedCameraUID: String?
     var voiceStates: [UserID: VoiceParticipantState] = [:] {
         didSet {
             guard oldValue != voiceStates else { return }
@@ -495,13 +497,13 @@ final class AppModel {
     @ObservationIgnored var orderedCustomEmojiUpdateTask: Task<Void, Never>?
     @ObservationIgnored var orderedCustomEmojiUpdateGeneration: UInt64 = 0
 
-    var isVoiceMuted = UserDefaults.standard.bool(forKey: "voiceMuted") {
+    var isVoiceMuted = false {
         didSet {
             guard oldValue != isVoiceMuted else { return }
             refreshVoiceSidebarPresentation()
         }
     }
-    var isVoiceDeafened = UserDefaults.standard.bool(forKey: "voiceDeafened") {
+    var isVoiceDeafened = false {
         didSet {
             guard oldValue != isVoiceDeafened else { return }
             refreshVoiceSidebarPresentation()
@@ -513,11 +515,6 @@ final class AppModel {
             refreshVoiceSidebarPresentation()
         }
     }
-    var inputVolume = Float(
-        UserDefaults.standard.object(forKey: "voiceInputVolume") as? Double ?? 1)
-    var outputVolume = Float(
-        UserDefaults.standard.object(forKey: "voiceOutputVolume") as? Double ?? 1
-    )
     var selectedGuildID: GuildID? {
         didSet {
             serverRailPresentation.updateSelection(selectedGuildID)
@@ -1206,6 +1203,7 @@ final class AppModel {
         notificationService: (any NativeNotificationService)? = nil,
         soundPlayer: (any AppSoundPlaying)? = nil,
         notificationPreferences: NotificationPreferences? = nil,
+        voiceVideoPreferences: VoiceVideoPreferences? = nil,
         typingExpiry: Duration = .seconds(10),
         localTypingTiming: LocalTypingTiming = LocalTypingTiming(),
         reactionMutationTiming: ReactionMutationTiming = ReactionMutationTiming(),
@@ -1220,6 +1218,10 @@ final class AppModel {
             notificationService ?? NoopNativeNotificationService()
         self.soundPlayer = soundPlayer ?? NoopAppSoundPlayer()
         self.notificationPreferences = notificationPreferences ?? NotificationPreferences()
+        let resolvedVoicePreferences = voiceVideoPreferences ?? VoiceVideoPreferences()
+        self.voiceVideoPreferences = resolvedVoicePreferences
+        selectedCameraUID = resolvedVoicePreferences.remembersCamera && !resolvedVoicePreferences.cameraUID.isEmpty ? resolvedVoicePreferences.cameraUID : nil
+        screenShareSettings = resolvedVoicePreferences.screenShareDefaults
         self.provider =
             provider
                 ?? (launchMode == .offlineTesting ? MockChatProvider() : SignedOutChatProvider())

@@ -9,13 +9,23 @@ nonisolated struct AudioDeviceRouteResolution: Equatable, Sendable {
 }
 
 extension AppModel {
+    var inputVolume: Float {
+        get { Float(voiceVideoPreferences.inputVolume) }
+        set { voiceVideoPreferences.inputVolume = Double(newValue) }
+    }
+
+    var outputVolume: Float {
+        get { Float(voiceVideoPreferences.outputVolume) }
+        set { voiceVideoPreferences.outputVolume = Double(newValue) }
+    }
+
     func selectInputDevice(_ device: AudioDeviceInfo?) async -> Bool {
         let account = accountSession()
         let generation = voiceMigrationGeneration
         let session = voiceSession
         do {
             try await session?.selectInputDevice(device?.id)
-            UserDefaults.standard.set(device?.uid, forKey: "voiceInputDeviceUID")
+            voiceVideoPreferences.inputDeviceUID = device?.uid ?? ""
             voiceDeviceStatusMessage = device.map {
                 "Using “\($0.name)” as the microphone."
             } ?? "Using the system-default microphone."
@@ -26,6 +36,7 @@ extension AppModel {
                 generation: generation,
                 voiceSession: session
             ) else { return false }
+            voiceDeviceStatusMessage = "The microphone could not be changed."
             voiceErrorMessage = error.localizedDescription
             errorMessage = error.localizedDescription
             return false
@@ -38,7 +49,7 @@ extension AppModel {
         let session = voiceSession
         do {
             try await session?.selectOutputDevice(device?.id)
-            UserDefaults.standard.set(device?.uid, forKey: "voiceOutputDeviceUID")
+            voiceVideoPreferences.outputDeviceUID = device?.uid ?? ""
             voiceDeviceStatusMessage = device.map {
                 "Using “\($0.name)” as the speaker."
             } ?? "Using the system-default speaker."
@@ -49,6 +60,7 @@ extension AppModel {
                 generation: generation,
                 voiceSession: session
             ) else { return false }
+            voiceDeviceStatusMessage = "The speaker could not be changed."
             voiceErrorMessage = error.localizedDescription
             errorMessage = error.localizedDescription
             return false
@@ -62,12 +74,52 @@ extension AppModel {
         await installMediaDeviceSnapshot(snapshot)
     }
 
+    func updateNoiseSuppression(_ enabled: Bool) async -> Bool {
+        let account = accountSession()
+        let generation = voiceMigrationGeneration
+        let session = voiceSession
+        do {
+            try await session?.setNoiseSuppressionEnabled(enabled)
+            guard isCurrentVoiceOperation(
+                account,
+                generation: generation,
+                voiceSession: session
+            ) else { return false }
+            voiceVideoPreferences.noiseSuppressionEnabled = enabled
+            voiceDeviceStatusMessage = enabled
+                ? "Apple voice processing is active for microphone capture."
+                : "Microphone capture is using the selected device without voice processing."
+            return true
+        } catch {
+            guard isCurrentVoiceOperation(
+                account,
+                generation: generation,
+                voiceSession: session
+            ) else { return false }
+            voiceDeviceStatusMessage = "Noise suppression could not be changed."
+            voiceErrorMessage = error.localizedDescription
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    func updateCameraPersistence(_ remembersCamera: Bool) {
+        voiceVideoPreferences.remembersCamera = remembersCamera
+        if remembersCamera {
+            voiceVideoPreferences.cameraUID = selectedCameraUID ?? ""
+        } else {
+            voiceVideoPreferences.forgetSavedCamera()
+        }
+    }
+
     func installMediaDeviceSnapshot(_ snapshot: MediaDeviceSnapshot) async {
         guard snapshot != mediaDevices else { return }
         let previousSnapshot = mediaDevices
-        let defaults = UserDefaults.standard
-        let inputUID = defaults.string(forKey: "voiceInputDeviceUID")
-        let outputUID = defaults.string(forKey: "voiceOutputDeviceUID")
+        let inputUID = voiceVideoPreferences.inputDeviceUID
+        let outputUID = voiceVideoPreferences.outputDeviceUID
+        let unavailableCameraUID = selectedCameraUID.flatMap { uid in
+            snapshot.cameras.contains(where: { $0.uniqueID == uid }) ? nil : uid
+        }
         let inputResolution = Self.audioDeviceRouteResolution(
             selectedUID: inputUID,
             previousDevices: previousSnapshot.audioInputs,
@@ -82,16 +134,26 @@ extension AppModel {
 
         var recoveryMessages: [String] = []
         if inputResolution.clearsStoredUID {
-            defaults.removeObject(forKey: "voiceInputDeviceUID")
+            voiceVideoPreferences.inputDeviceUID = ""
             recoveryMessages.append("The saved microphone is unavailable; using the system default.")
         }
         if outputResolution.clearsStoredUID {
-            defaults.removeObject(forKey: "voiceOutputDeviceUID")
+            voiceVideoPreferences.outputDeviceUID = ""
             recoveryMessages.append("The saved speaker is unavailable; using the system default.")
+        }
+        if unavailableCameraUID != nil {
+            recoveryMessages.append("The saved camera is unavailable; using the system default.")
         }
 
         guard let session = voiceSession else {
-            voiceDeviceStatusMessage = recoveryMessages.last
+            if unavailableCameraUID != nil {
+                selectedCameraUID = nil
+                if voiceVideoPreferences.remembersCamera {
+                    voiceVideoPreferences.cameraUID = ""
+                }
+            }
+            voiceDeviceStatusMessage = recoveryMessages.isEmpty
+                ? nil : recoveryMessages.joined(separator: " ")
             return
         }
         do {
@@ -101,7 +163,15 @@ extension AppModel {
             if outputResolution.requiresSwitch {
                 try await session.selectOutputDevice(outputResolution.requestedDeviceID)
             }
-            voiceDeviceStatusMessage = recoveryMessages.last
+            if unavailableCameraUID != nil {
+                try await session.selectCamera(uniqueID: nil)
+                selectedCameraUID = nil
+                if voiceVideoPreferences.remembersCamera {
+                    voiceVideoPreferences.cameraUID = ""
+                }
+            }
+            voiceDeviceStatusMessage = recoveryMessages.isEmpty
+                ? nil : recoveryMessages.joined(separator: " ")
         } catch {
             voiceDeviceStatusMessage = "An audio device changed, but its route could not be restored."
             voiceErrorMessage = error.localizedDescription
@@ -141,28 +211,29 @@ extension AppModel {
     func currentVoiceConfiguration() -> VoiceSessionConfiguration {
         VoiceSessionConfiguration(
             inputDeviceID: selectedAudioDeviceID(
-                defaultsKey: "voiceInputDeviceUID",
+                selectedUID: voiceVideoPreferences.inputDeviceUID,
                 devices: mediaDevices.audioInputs
             ),
             outputDeviceID: selectedAudioDeviceID(
-                defaultsKey: "voiceOutputDeviceUID",
+                selectedUID: voiceVideoPreferences.outputDeviceUID,
                 devices: mediaDevices.audioOutputs
             ),
             inputVolume: inputVolume,
             outputVolume: outputVolume,
             isMuted: isVoiceMuted,
             isDeafened: isVoiceDeafened,
-            cameraUniqueID: UserDefaults.standard.string(forKey: "voiceCameraUID")
+            cameraUniqueID: selectedCameraUID,
+            isNoiseSuppressionEnabled: voiceVideoPreferences.noiseSuppressionEnabled
         )
     }
 
     private func selectedAudioDeviceID(
-        defaultsKey: String,
+        selectedUID: String,
         devices: [AudioDeviceInfo]
     ) -> AudioDeviceID? {
-        guard let uid = UserDefaults.standard.string(forKey: defaultsKey) else {
+        guard !selectedUID.isEmpty else {
             return nil
         }
-        return devices.first(where: { $0.uid == uid })?.id
+        return devices.first(where: { $0.uid == selectedUID })?.id
     }
 }

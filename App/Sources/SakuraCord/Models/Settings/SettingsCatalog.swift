@@ -189,6 +189,12 @@ nonisolated extension SettingsSectionID {
     static let notificationLocalData = Self(rawValue: "notification-local-data")
     static let voiceDevices = Self(rawValue: "voice-devices")
     static let voiceLevels = Self(rawValue: "voice-levels")
+    static let voiceCallDefaults = Self(rawValue: "voice-call-defaults")
+    static let voiceCamera = Self(rawValue: "voice-camera")
+    static let voiceProcessing = Self(rawValue: "voice-processing")
+    static let voiceScreenShare = Self(rawValue: "voice-screen-share")
+    static let voicePermissions = Self(rawValue: "voice-permissions")
+    static let voiceLocalData = Self(rawValue: "voice-local-data")
     static let mediaCache = Self(rawValue: "media-cache")
     static let apiDiagnostics = Self(rawValue: "api-diagnostics")
 }
@@ -294,6 +300,26 @@ nonisolated extension SettingsControlID {
     static let voiceCamera = Self(rawValue: "voice-video.camera")
     static let voiceInputVolume = Self(rawValue: "voice-video.input-volume")
     static let voiceOutputVolume = Self(rawValue: "voice-video.output-volume")
+    static let voiceRefreshDevices = Self(rawValue: "voice-video.refresh-devices")
+    static let voiceMicrophoneTest = Self(rawValue: "voice-video.microphone-test")
+    static let voiceSpeakerTest = Self(rawValue: "voice-video.speaker-test")
+    static let voiceJoinMuted = Self(rawValue: "voice-video.join-muted")
+    static let voiceJoinDeafened = Self(rawValue: "voice-video.join-deafened")
+    static let voiceFeedbackSounds = Self(rawValue: "voice-video.feedback-sounds")
+    static let voiceCameraPreview = Self(rawValue: "voice-video.camera-preview")
+    static let voiceMirrorPreview = Self(rawValue: "voice-video.mirror-preview")
+    static let voiceRememberCamera = Self(rawValue: "voice-video.remember-camera")
+    static let voiceJoinCameraOff = Self(rawValue: "voice-video.join-camera-off")
+    static let voiceNoiseSuppression = Self(rawValue: "voice-video.noise-suppression")
+    static let voiceScreenShareQuality = Self(rawValue: "voice-video.share-quality")
+    static let voiceScreenShareFrameRate = Self(rawValue: "voice-video.share-frame-rate")
+    static let voiceScreenShareAudio = Self(rawValue: "voice-video.share-audio")
+    static let voiceScreenSharePointer = Self(rawValue: "voice-video.share-pointer")
+    static let voiceMicrophonePermission = Self(rawValue: "voice-video.microphone-permission")
+    static let voiceCameraPermission = Self(rawValue: "voice-video.camera-permission")
+    static let voiceScreenPermission = Self(rawValue: "voice-video.screen-permission")
+    static let voiceExport = Self(rawValue: "voice-video.export")
+    static let voiceReset = Self(rawValue: "voice-video.reset")
     static let diagnosticDetailedPayloads = Self(rawValue: "diagnostics.detailed-payloads")
     static let diagnosticDiskCapture = Self(rawValue: "diagnostics.disk-capture")
     static let diagnosticRetainedEntries = Self(rawValue: "diagnostics.retained-entries")
@@ -1165,6 +1191,143 @@ private nonisolated extension SettingsCatalog {
             keywords: ["speaker", "playback"],
             scope: .appWideLocal,
             reset: .categoryAction
+        ),
+        control(
+            .voiceRefreshDevices, page: .voiceVideo, section: .voiceDevices,
+            label: "Refresh devices",
+            help: "Rescan microphones, speakers, and cameras and recover unavailable saved routes.",
+            keywords: ["rescan", "missing device", "fallback"],
+            owner: .appModel, scope: .appWideLocal,
+            persistence: .notApplicable, reset: .notApplicable
+        ),
+        control(
+            .voiceMicrophoneTest, page: .voiceVideo, section: .voiceLevels,
+            label: "Test microphone",
+            help: "Show the selected microphone’s live level without recording or retaining samples.",
+            keywords: ["mic check", "meter", "input test"],
+            owner: .appModel, scope: .appWideLocal,
+            persistence: .sessionOnly, reset: .notApplicable
+        ),
+        control(
+            .voiceSpeakerTest, page: .voiceVideo, section: .voiceLevels,
+            label: "Test speaker",
+            help: "Play a temporary test tone through the selected output until stopped.",
+            keywords: ["headphones", "output test", "tone"],
+            owner: .appModel, scope: .appWideLocal,
+            persistence: .sessionOnly, reset: .notApplicable
+        ),
+        control(
+            .voiceJoinMuted, page: .voiceVideo, section: .voiceCallDefaults,
+            label: "Join calls muted",
+            help: "Start the next call with microphone transmission muted without changing the current call.",
+            keywords: ["mute on join", "microphone default"], scope: .appWideLocal
+        ),
+        control(
+            .voiceJoinDeafened, page: .voiceVideo, section: .voiceCallDefaults,
+            label: "Join calls deafened",
+            help: "Start the next call with call playback deafened without changing the current call.",
+            keywords: ["deafen on join", "speaker default"], scope: .appWideLocal
+        ),
+        control(
+            .voiceFeedbackSounds, page: .voiceVideo, section: .voiceCallDefaults,
+            label: "Play call feedback sounds",
+            help: "Play local sounds for joins, leaves, mute, deafen, video, and sharing events.",
+            keywords: ["join sound", "leave sound", "mute sound"], scope: .appWideLocal
+        ),
+        control(
+            .voiceCameraPreview, page: .voiceVideo, section: .voiceCamera,
+            label: "Camera preview",
+            help: "Preview the selected camera locally until the preview is explicitly stopped.",
+            keywords: ["webcam test", "video preview"],
+            owner: .appModel, scope: .appWideLocal,
+            persistence: .sessionOnly, reset: .notApplicable
+        ),
+        control(
+            .voiceMirrorPreview, page: .voiceVideo, section: .voiceCamera,
+            label: "Mirror my local preview",
+            help: "Mirror only the local self-view; transmitted video remains unchanged.",
+            keywords: ["flip camera", "self view"], scope: .appWideLocal
+        ),
+        control(
+            .voiceRememberCamera, page: .voiceVideo, section: .voiceCamera,
+            label: "Remember selected camera",
+            help: "Restore the selected camera on the next launch; disabling this removes the saved camera identifier.",
+            keywords: ["save camera", "forget webcam"], scope: .appWideLocal
+        ),
+        control(
+            .voiceJoinCameraOff, page: .voiceVideo, section: .voiceCamera,
+            label: "Join calls with camera off",
+            help: "Keep video off when entering the next call without changing the current camera state.",
+            keywords: ["video off", "camera on join"], scope: .appWideLocal
+        ),
+        control(
+            .voiceNoiseSuppression, page: .voiceVideo, section: .voiceProcessing,
+            label: "Noise suppression",
+            help: "Use Apple’s built-in voice-processing input and output path for noise and echo reduction.",
+            keywords: ["background noise", "echo cancellation", "voice processing"],
+            scope: .appWideLocal
+        ),
+        control(
+            .voiceScreenShareQuality, page: .voiceVideo, section: .voiceScreenShare,
+            label: "Screen share quality",
+            help: "Choose the initial resolution target for the next screen share.",
+            keywords: ["720p", "1080p", "1440p", "source"], scope: .appWideLocal
+        ),
+        control(
+            .voiceScreenShareFrameRate, page: .voiceVideo, section: .voiceScreenShare,
+            label: "Screen share frame rate",
+            help: "Choose the initial frame rate for the next screen share.",
+            keywords: ["FPS", "15", "30", "60"], scope: .appWideLocal
+        ),
+        control(
+            .voiceScreenShareAudio, page: .voiceVideo, section: .voiceScreenShare,
+            label: "Include system audio",
+            help: "Include system audio by default when preparing the next share.",
+            keywords: ["share sound", "capture audio"], scope: .appWideLocal
+        ),
+        control(
+            .voiceScreenSharePointer, page: .voiceVideo, section: .voiceScreenShare,
+            label: "Show pointer",
+            help: "Include the pointer by default in the next screen-share capture.",
+            keywords: ["cursor", "mouse"], scope: .appWideLocal
+        ),
+        control(
+            .voiceMicrophonePermission, page: .voiceVideo, section: .voicePermissions,
+            label: "Microphone permission",
+            help: "Report the microphone authorization currently managed by macOS.",
+            keywords: ["privacy", "permission", "denied"],
+            owner: .macOS, scope: .appWideLocal,
+            persistence: .systemManaged, reset: .notApplicable
+        ),
+        control(
+            .voiceCameraPermission, page: .voiceVideo, section: .voicePermissions,
+            label: "Camera permission",
+            help: "Report the camera authorization currently managed by macOS.",
+            keywords: ["privacy", "webcam permission", "denied"],
+            owner: .macOS, scope: .appWideLocal,
+            persistence: .systemManaged, reset: .notApplicable
+        ),
+        control(
+            .voiceScreenPermission, page: .voiceVideo, section: .voicePermissions,
+            label: "Screen recording permission",
+            help: "Report whether macOS currently permits screen and system-audio capture.",
+            keywords: ["privacy", "screen recording", "system audio"],
+            owner: .macOS, scope: .appWideLocal,
+            persistence: .systemManaged, reset: .notApplicable
+        ),
+        control(
+            .voiceExport, page: .voiceVideo, section: .voiceLocalData,
+            label: "Export Voice & Video Settings",
+            help: "Export registered app-wide Voice & Video preferences as versioned JSON.",
+            keywords: ["backup", "JSON", "save preferences"], scope: .appWideLocal,
+            persistence: .notApplicable, reset: .notApplicable
+        ),
+        control(
+            .voiceReset, page: .voiceVideo, section: .voiceLocalData,
+            label: "Reset Voice & Video Settings",
+            help: "Restore local call and share defaults without changing macOS permissions or live call controls.",
+            keywords: ["defaults", "restore", "clear preferences"], scope: .appWideLocal,
+            persistence: .appPreferences, reset: .categoryAction
         ),
         control(
             .diagnosticDetailedPayloads,

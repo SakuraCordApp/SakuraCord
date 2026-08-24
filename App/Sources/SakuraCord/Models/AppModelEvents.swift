@@ -733,8 +733,10 @@ extension AppModel {
         if state.guildID == nil {
             reconcilePrivateCallVoiceState(state)
         }
-        for effect in effects {
-            soundPlayer.play(effect)
+        if voiceVideoPreferences.playsFeedbackSounds {
+            for effect in effects {
+                soundPlayer.play(effect)
+            }
         }
     }
 

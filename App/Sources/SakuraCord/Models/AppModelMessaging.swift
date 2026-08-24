@@ -650,6 +650,8 @@ extension AppModel {
         reconcilePrivateCallSounds()
         voiceSessionState = .connecting
         voiceErrorMessage = nil
+        isVoiceMuted = voiceVideoPreferences.joinsMuted
+        isVoiceDeafened = voiceVideoPreferences.joinsDeafened
         do {
             let info = try await account.provider.joinVoice(
                 channelID: channel.id,
@@ -673,7 +675,12 @@ extension AppModel {
                 channelID: channel.id
             ) else { return }
             watchAvailableDirectMessageStreamsAutomatically()
-            soundPlayer.play(.userJoin)
+            if voiceVideoPreferences.playsFeedbackSounds {
+                soundPlayer.play(.userJoin)
+            }
+            if !voiceVideoPreferences.joinsWithCameraOff, !isCameraEnabled {
+                await toggleCamera()
+            }
         } catch {
             guard isCurrentVoiceOperation(
                 account,
@@ -1099,7 +1106,7 @@ extension AppModel {
         voiceSessionState = .idle
         isCameraEnabled = false
         reconcilePrivateCallSounds()
-        if hadActiveVoice {
+        if hadActiveVoice, voiceVideoPreferences.playsFeedbackSounds {
             soundPlayer.play(.disconnect)
         }
     }
@@ -1110,7 +1117,6 @@ extension AppModel {
         let session = voiceSession
         isVoiceMuted.toggle()
         let muted = isVoiceMuted
-        UserDefaults.standard.set(isVoiceMuted, forKey: "voiceMuted")
         await session?.setMuted(muted)
         guard isCurrentVoiceOperation(
             account,
@@ -1123,7 +1129,7 @@ extension AppModel {
             generation: generation,
             voiceSession: session
         ) else { return }
-        if activeVoiceChannel != nil {
+        if activeVoiceChannel != nil, voiceVideoPreferences.playsFeedbackSounds {
             soundPlayer.play(muted ? .mute : .unmute)
         }
     }
@@ -1134,7 +1140,6 @@ extension AppModel {
         let session = voiceSession
         isVoiceDeafened.toggle()
         let deafened = isVoiceDeafened
-        UserDefaults.standard.set(isVoiceDeafened, forKey: "voiceDeafened")
         await session?.setDeafened(deafened)
         guard isCurrentVoiceOperation(
             account,
@@ -1147,7 +1152,7 @@ extension AppModel {
             generation: generation,
             voiceSession: session
         ) else { return }
-        if activeVoiceChannel != nil {
+        if activeVoiceChannel != nil, voiceVideoPreferences.playsFeedbackSounds {
             soundPlayer.play(deafened ? .deafen : .undeafen)
         }
     }
@@ -1165,7 +1170,7 @@ extension AppModel {
                 generation: generation,
                 voiceSession: session
             ) else { return }
-            if activeVoiceChannel != nil {
+            if activeVoiceChannel != nil, voiceVideoPreferences.playsFeedbackSounds {
                 soundPlayer.play(enabled ? .cameraOn : .cameraOff)
             }
             return
@@ -1194,7 +1199,9 @@ extension AppModel {
                 generation: generation,
                 voiceSession: session
             ), activeVoiceChannel?.id == channel?.id else { return }
-            soundPlayer.play(enabled ? .cameraOn : .cameraOff)
+            if voiceVideoPreferences.playsFeedbackSounds {
+                soundPlayer.play(enabled ? .cameraOn : .cameraOff)
+            }
         } catch {
             guard isCurrentVoiceOperation(
                 account,
@@ -1206,31 +1213,41 @@ extension AppModel {
         }
     }
 
-    func selectCamera(_ camera: CameraDeviceInfo?) async {
-        UserDefaults.standard.set(camera?.uniqueID, forKey: "voiceCameraUID")
+    @discardableResult
+    func selectCamera(_ camera: CameraDeviceInfo?) async -> Bool {
         let account = accountSession()
         let generation = voiceMigrationGeneration
         let session = voiceSession
-        do { try await session?.selectCamera(uniqueID: camera?.uniqueID) } catch {
+        do {
+            try await session?.selectCamera(uniqueID: camera?.uniqueID)
+            selectedCameraUID = camera?.uniqueID
+            if voiceVideoPreferences.remembersCamera {
+                voiceVideoPreferences.cameraUID = camera?.uniqueID ?? ""
+            }
+            voiceDeviceStatusMessage = camera.map {
+                "Using “\($0.name)” as the camera."
+            } ?? "Using the system-default camera."
+            return true
+        } catch {
             guard isCurrentVoiceOperation(
                 account,
                 generation: generation,
                 voiceSession: session
-            ) else { return }
+            ) else { return false }
+            voiceDeviceStatusMessage = "The camera could not be changed."
             voiceErrorMessage = error.localizedDescription
             errorMessage = error.localizedDescription
+            return false
         }
     }
 
     func updateInputVolume(_ value: Float) async {
         inputVolume = min(max(value, 0), 2)
-        UserDefaults.standard.set(Double(inputVolume), forKey: "voiceInputVolume")
         await voiceSession?.setInputVolume(inputVolume)
     }
 
     func updateOutputVolume(_ value: Float) async {
         outputVolume = min(max(value, 0), 2)
-        UserDefaults.standard.set(Double(outputVolume), forKey: "voiceOutputVolume")
         await voiceSession?.setOutputVolume(outputVolume)
     }
 

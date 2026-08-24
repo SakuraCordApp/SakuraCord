@@ -1,5 +1,6 @@
 import CoreTransferable
 import Foundation
+import MediaPipeline
 import UniformTypeIdentifiers
 
 nonisolated enum SettingsPreferenceValue: Codable, Equatable, Sendable {
@@ -507,36 +508,97 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             id: .voiceInputDevice,
             page: .voiceVideo,
             storage: .appWide(key: "voiceInputDeviceUID"),
-            defaultValue: .string(""),
-            resets: false
+            defaultValue: .string("")
         ),
         SettingsPreferenceRegistration(
             id: .voiceOutputDevice,
             page: .voiceVideo,
             storage: .appWide(key: "voiceOutputDeviceUID"),
-            defaultValue: .string(""),
-            resets: false
+            defaultValue: .string("")
         ),
         SettingsPreferenceRegistration(
             id: .voiceCamera,
             page: .voiceVideo,
             storage: .appWide(key: "voiceCameraUID"),
-            defaultValue: .string(""),
-            resets: false
+            defaultValue: .string("")
         ),
         SettingsPreferenceRegistration(
             id: .voiceInputVolume,
             page: .voiceVideo,
             storage: .appWide(key: "voiceInputVolume"),
-            defaultValue: .double(1),
-            resets: false
+            defaultValue: .double(1)
         ),
         SettingsPreferenceRegistration(
             id: .voiceOutputVolume,
             page: .voiceVideo,
             storage: .appWide(key: "voiceOutputVolume"),
-            defaultValue: .double(1),
-            resets: false
+            defaultValue: .double(1)
+        ),
+        SettingsPreferenceRegistration(
+            id: .voiceJoinMuted,
+            page: .voiceVideo,
+            storage: .appWide(key: "voice.joinMuted"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .voiceJoinDeafened,
+            page: .voiceVideo,
+            storage: .appWide(key: "voice.joinDeafened"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .voiceFeedbackSounds,
+            page: .voiceVideo,
+            storage: .appWide(key: "voice.feedbackSounds"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .voiceRememberCamera,
+            page: .voiceVideo,
+            storage: .appWide(key: "voice.remembersCamera"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .voiceMirrorPreview,
+            page: .voiceVideo,
+            storage: .appWide(key: "voice.mirrorsLocalPreview"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .voiceJoinCameraOff,
+            page: .voiceVideo,
+            storage: .appWide(key: "voice.joinsWithCameraOff"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .voiceNoiseSuppression,
+            page: .voiceVideo,
+            storage: .appWide(key: "voice.noiseSuppression"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .voiceScreenShareQuality,
+            page: .voiceVideo,
+            storage: .appWide(key: "voice.screenShare.quality"),
+            defaultValue: .string(ScreenShareQuality.p1080.rawValue)
+        ),
+        SettingsPreferenceRegistration(
+            id: .voiceScreenShareFrameRate,
+            page: .voiceVideo,
+            storage: .appWide(key: "voice.screenShare.frameRate"),
+            defaultValue: .integer(ScreenShareFrameRate.fps30.rawValue)
+        ),
+        SettingsPreferenceRegistration(
+            id: .voiceScreenShareAudio,
+            page: .voiceVideo,
+            storage: .appWide(key: "voice.screenShare.includesAudio"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .voiceScreenSharePointer,
+            page: .voiceVideo,
+            storage: .appWide(key: "voice.screenShare.showsPointer"),
+            defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .diagnosticDiskCapture,
