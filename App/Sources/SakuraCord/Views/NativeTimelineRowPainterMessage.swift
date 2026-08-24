@@ -128,6 +128,8 @@ extension NativeTimelineRowPainter {
                 ),
                 color: presentedAuthor.isBot
                     ? .controlAccentColor
+                    : model?.interfaceSettings.showsRoleColors == false
+                    ? .labelColor
                     : roleColor(author?.roleColorHex) ?? .labelColor
             )
         }
@@ -150,7 +152,10 @@ extension NativeTimelineRowPainter {
         }
         if let frame = layout.timestampFrame {
             text(
-                NativeTimelineTimestamp.text(for: message.timestamp),
+                NativeTimelineTimestamp.text(
+                    for: message.timestamp,
+                    settings: model?.interfaceSettings ?? .defaults
+                ),
                 in: frame,
                 font: .preferredFont(forTextStyle: .caption1),
                 color: .secondaryLabelColor
@@ -160,7 +165,11 @@ extension NativeTimelineRowPainter {
            let frame = layout.compactTimestampFrame
         {
             text(
-                NativeTimelineTimestamp.text(for: message.timestamp),
+                NativeTimelineTimestamp.text(
+                    for: message.timestamp,
+                    settings: model?.interfaceSettings ?? .defaults,
+                    includesSeconds: false
+                ),
                 in: frame,
                 font: NativeTimelineCompactTimestampMetrics.font,
                 color: .tertiaryLabelColor,

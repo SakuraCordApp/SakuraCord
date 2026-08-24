@@ -99,6 +99,7 @@ struct SakuraCordApp: App {
             appModel.showInspector = GeneralWindowRestorationStore.shared
                 .memberListIsVisible
         }
+        appModel.interfaceSettings.showsMemberList = appModel.showInspector
         SakuraCordRuntimeModelHolder.shared.model = appModel
         _model = State(initialValue: appModel)
     }

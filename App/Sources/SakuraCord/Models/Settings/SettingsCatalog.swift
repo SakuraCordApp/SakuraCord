@@ -171,6 +171,12 @@ nonisolated extension SettingsSectionID {
     static let accountLocalData = Self(rawValue: "account-local-data")
     static let startupRestoration = Self(rawValue: "startup-restoration")
     static let confirmations = Self(rawValue: "confirmations")
+    static let interfaceDensity = Self(rawValue: "interface-density")
+    static let interfaceTypography = Self(rawValue: "interface-typography")
+    static let interfaceTime = Self(rawValue: "interface-time")
+    static let interfaceVisibility = Self(rawValue: "interface-visibility")
+    static let interfacePreview = Self(rawValue: "interface-preview")
+    static let interfaceLocalData = Self(rawValue: "interface-local-data")
     static let messagesAndMedia = Self(rawValue: "messages-and-media")
     static let softwareUpdates = Self(rawValue: "software-updates")
     static let notificationDelivery = Self(rawValue: "notification-delivery")
@@ -200,6 +206,23 @@ nonisolated extension SettingsControlID {
     static let rememberMemberListVisibility = Self(rawValue: "general.remember-member-list")
     static let confirmQuitActiveWork = Self(rawValue: "general.confirm-quit-active-work")
     static let confirmDiscardComposer = Self(rawValue: "general.confirm-discard-composer")
+    static let messageDensity = Self(rawValue: "interface.message-density")
+    static let sidebarDensity = Self(rawValue: "interface.sidebar-density")
+    static let messageTextSize = Self(rawValue: "interface.message-text-size")
+    static let interfaceTextSize = Self(rawValue: "interface.interface-text-size")
+    static let resetInterfaceTextSizes = Self(rawValue: "interface.reset-text-sizes")
+    static let timestampFormat = Self(rawValue: "interface.timestamp-format")
+    static let timestampSeconds = Self(rawValue: "interface.timestamp-seconds")
+    static let groupingInterval = Self(rawValue: "interface.grouping-interval")
+    static let underlineLinks = Self(rawValue: "interface.underline-links")
+    static let showMemberList = Self(rawValue: "interface.show-member-list")
+    static let showChannelHeader = Self(rawValue: "interface.show-channel-header")
+    static let showActivityDetails = Self(rawValue: "interface.show-activity-details")
+    static let messageActionVisibility = Self(rawValue: "interface.message-actions")
+    static let showRoleColors = Self(rawValue: "interface.show-role-colors")
+    static let interfacePreview = Self(rawValue: "interface.preview")
+    static let exportInterfaceSettings = Self(rawValue: "interface.export")
+    static let resetInterfaceSettings = Self(rawValue: "interface.reset")
     static let sendWithReturn = Self(rawValue: "chat.send-with-return")
     static let reduceAnimatedMedia = Self(rawValue: "accessibility.reduce-animated-media")
     static let updateReleaseTrack = Self(rawValue: "software-updates.release-track")
@@ -449,6 +472,168 @@ private nonisolated extension SettingsCatalog {
             help: "Ask before discarding meaningful unsent attachments, command input, or edited message text.",
             keywords: ["draft", "unsent", "edit", "discard warning", "attachments"],
             scope: .appWideLocal
+        ),
+        control(
+            .messageDensity,
+            page: .interface,
+            section: .interfaceDensity,
+            label: "Message density",
+            help: "Choose Comfortable, Balanced, or Compact message spacing.",
+            keywords: ["compact", "comfortable", "balanced", "spacing", "cozy"],
+            scope: .appWideLocal
+        ),
+        control(
+            .sidebarDensity,
+            page: .interface,
+            section: .interfaceDensity,
+            label: "Sidebar density",
+            help: "Choose Comfortable or Compact channel-list spacing.",
+            keywords: ["compact", "channel list", "sidebar rows", "spacing"],
+            scope: .appWideLocal
+        ),
+        control(
+            .messageTextSize,
+            page: .interface,
+            section: .interfaceTypography,
+            label: "Message text size",
+            help: "Adjust message text from 12 to 22 points.",
+            keywords: ["font", "chat size", "larger text", "readability"],
+            scope: .appWideLocal
+        ),
+        control(
+            .interfaceTextSize,
+            page: .interface,
+            section: .interfaceTypography,
+            label: "Interface text size",
+            help: "Adjust sidebar, header, and member-list text from 11 to 18 points.",
+            keywords: ["font", "UI size", "sidebar text", "member list"],
+            scope: .appWideLocal
+        ),
+        control(
+            .resetInterfaceTextSizes,
+            page: .interface,
+            section: .interfaceTypography,
+            label: "Reset Text Sizes",
+            help: "Restore message and interface text to their readable defaults.",
+            keywords: ["default font", "restore size"],
+            scope: .appWideLocal,
+            persistence: .notApplicable,
+            reset: .categoryAction
+        ),
+        control(
+            .timestampFormat,
+            page: .interface,
+            section: .interfaceTime,
+            label: "Timestamp format",
+            help: "Use the locale-aware system clock or an explicit 12- or 24-hour clock.",
+            keywords: ["clock", "time", "12 hour", "24 hour", "timestamp"],
+            scope: .appWideLocal
+        ),
+        control(
+            .timestampSeconds,
+            page: .interface,
+            section: .interfaceTime,
+            label: "Show seconds in full timestamps",
+            help: "Include seconds in expanded message timestamps and their accessibility value.",
+            keywords: ["clock seconds", "precise time", "expanded timestamp"],
+            scope: .appWideLocal
+        ),
+        control(
+            .groupingInterval,
+            page: .interface,
+            section: .interfaceTime,
+            label: "Consecutive-message grouping",
+            help: "Choose how many minutes consecutive messages from one author remain grouped.",
+            keywords: ["group interval", "continuation", "author", "minutes"],
+            scope: .appWideLocal
+        ),
+        control(
+            .underlineLinks,
+            page: .interface,
+            section: .interfaceVisibility,
+            label: "Underline links",
+            help: "Underline links in message content in addition to using the system link color.",
+            keywords: ["URL", "hyperlink", "decoration", "readability"],
+            scope: .appWideLocal
+        ),
+        control(
+            .showMemberList,
+            page: .interface,
+            section: .interfaceVisibility,
+            label: "Show member list",
+            help: "Show the member inspector for ordinary conversations.",
+            keywords: ["members", "people", "inspector", "right sidebar"],
+            scope: .appWideLocal
+        ),
+        control(
+            .showChannelHeader,
+            page: .interface,
+            section: .interfaceVisibility,
+            label: "Show channel topic in header",
+            help: "Show the selected channel topic beneath its name when Discord provides one.",
+            keywords: ["topic", "header", "toolbar", "channel description"],
+            scope: .appWideLocal
+        ),
+        control(
+            .showActivityDetails,
+            page: .interface,
+            section: .interfaceVisibility,
+            label: "Show activity and presence details",
+            help: "Show member activity text and presence indicators in the member list.",
+            keywords: ["presence", "status", "activity", "game", "member details"],
+            scope: .appWideLocal
+        ),
+        control(
+            .messageActionVisibility,
+            page: .interface,
+            section: .interfaceVisibility,
+            label: "Message actions",
+            help: "Reveal message actions on hover or keep an action affordance visible.",
+            keywords: ["hover", "always visible", "reply", "reaction", "toolbar"],
+            scope: .appWideLocal
+        ),
+        control(
+            .showRoleColors,
+            page: .interface,
+            section: .interfaceVisibility,
+            label: "Show Discord role colors",
+            help: "Use role colors for member and message author names when Discord provides them.",
+            keywords: ["roles", "author color", "member color", "Discord color"],
+            scope: .appWideLocal
+        ),
+        control(
+            .interfacePreview,
+            page: .interface,
+            section: .interfacePreview,
+            label: "Interface preview",
+            help: "Preview sidebar and message presentation without using Discord data.",
+            keywords: ["sample", "live preview", "appearance"],
+            owner: .appModel,
+            scope: .appWideLocal,
+            persistence: .notApplicable,
+            reset: .notApplicable
+        ),
+        control(
+            .exportInterfaceSettings,
+            page: .interface,
+            section: .interfaceLocalData,
+            label: "Export Interface Settings",
+            help: "Export registered Interface preferences as versioned JSON.",
+            keywords: ["backup", "JSON", "save preferences"],
+            scope: .appWideLocal,
+            persistence: .notApplicable,
+            reset: .notApplicable
+        ),
+        control(
+            .resetInterfaceSettings,
+            page: .interface,
+            section: .interfaceLocalData,
+            label: "Reset Interface Settings",
+            help: "Restore registered Interface preferences without changing credentials or Discord state.",
+            keywords: ["defaults", "restore", "clear interface preferences"],
+            scope: .appWideLocal,
+            persistence: .appPreferences,
+            reset: .categoryAction
         ),
         control(
             .sendWithReturn,

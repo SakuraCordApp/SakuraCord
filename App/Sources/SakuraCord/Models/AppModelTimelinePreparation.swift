@@ -2,22 +2,54 @@ import Foundation
 import SakuraCordModels
 
 extension AppModel {
+    func restoreSelectedMessages(
+        _ restoredMessages: [Message],
+        preparedRows: [MessageRowPresentation]?
+    ) {
+        let oldMessages = messages
+        messages = restoredMessages
+        rebuildSelectedMessageIndexes()
+        if let preparedRows,
+           Self.rows(preparedRows, match: restoredMessages)
+        {
+            messageRows = preparedRows
+        } else {
+            messageRows = MessageGrouping.updating(
+                existing: messageRows,
+                oldMessages: oldMessages,
+                newMessages: restoredMessages,
+                continuationInterval: interfaceSettings.groupingInterval
+            )
+        }
+        publishMessageRowsUpdate(invalidatesAllRows: true)
+        messageRowsNonAppendRevision &+= 1
+    }
+
     func prepareTimelineRows(
         for messages: [Message],
         priority: TaskPriority
     ) async -> [MessageRowPresentation] {
+        let groupingInterval = interfaceSettings.groupingInterval
         let rows = await AppPerformanceSignposts.measure(
             "TimelineRowGrouping"
         ) {
             await Task.detached(priority: priority) {
-                await MessageGrouping.rowsCooperatively(for: messages)
+                await MessageGrouping.rowsCooperatively(
+                    for: messages,
+                    continuationInterval: groupingInterval
+                )
             }.value
         }
         let preparations = rows.compactMap { row in
             NativeTimelineTextPresentation.preparation(
                 message: row.message,
                 plan: row.textPlan,
-                model: self
+                model: self,
+                baseFontSize: row.message.type.hasGeneratedContent
+                    ? row.textPlan.baseFontSize
+                    : CGFloat(interfaceSettings.messageTextSize),
+                underlinesLinks: !row.message.type.hasGeneratedContent
+                    && interfaceSettings.underlinesLinks
             )
         }
         guard !preparations.isEmpty else { return rows }

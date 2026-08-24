@@ -981,12 +981,15 @@ private enum NodeBuilder {
                 resolver?.presentation(mention)
                 ?? MentionPresentation.fallback(for: mention)
         }
+        let interfaceSettings = model?.interfaceSettings ?? .defaults
+        let baseFontSize = CGFloat(interfaceSettings.messageTextSize)
         let key = NativeTimelineResolvedTextCache.Key(
             messageID: message.id,
             scope: "component:\(componentID)",
             prepared: prepared,
             emojiSize: emojiSize,
-            baseFontSize: 15,
+            baseFontSize: baseFontSize,
+            underlinesLinks: interfaceSettings.underlinesLinks,
             mentions: mentions.values.sorted {
                 $0.rawToken < $1.rawToken
             }
@@ -996,6 +999,8 @@ private enum NodeBuilder {
                 NativeTimelineCoreText.make(
                     prepared: prepared,
                     emojiSize: emojiSize,
+                    baseFontSize: baseFontSize,
+                    underlinesLinks: interfaceSettings.underlinesLinks,
                     mentionPresentations: mentions
                 ),
                 layoutHeightAdjustment: 1

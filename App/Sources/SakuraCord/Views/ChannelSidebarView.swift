@@ -128,7 +128,9 @@ struct ChannelSidebarView: View {
                         checkingChannelIDs: checkingChannelIDs,
                         unreadCategoryIDs: unreadCategoryIDs,
                         selectedChannelID: selection,
-                        bottomContentInset: accountControlHeight
+                        bottomContentInset: accountControlHeight,
+                        density: voiceModel.interfaceSettings.sidebarDensity,
+                        interfaceTextSize: voiceModel.interfaceSettings.interfaceTextSize
                     ),
                     model: voiceModel,
                     selection: deferredGuildSelection
@@ -160,6 +162,11 @@ struct ChannelSidebarView: View {
             }
             .zIndex(1)
         }
+        .font(.system(size: voiceModel.interfaceSettings.interfaceTextSize))
+        .environment(
+            \.defaultMinListRowHeight,
+            voiceModel.interfaceSettings.sidebarDensity.minimumRowHeight
+        )
         .overlay {
             SidebarChromeSeparator(
                 cornerRadius: ChatChromeMetrics.sidebarContentCornerRadius,
@@ -244,6 +251,8 @@ nonisolated private struct GuildChannelListInput: Equatable, Sendable {
     let unreadCategoryIDs: Set<ChannelID>
     let selectedChannelID: ChannelID?
     let bottomContentInset: CGFloat
+    let density: InterfaceSidebarDensity
+    let interfaceTextSize: Double
 }
 
 private struct GuildChannelList: View, Equatable {
@@ -279,6 +288,8 @@ private struct GuildChannelList: View, Equatable {
             }
         }
         .listStyle(.sidebar)
+        .font(.system(size: input.interfaceTextSize))
+        .environment(\.defaultMinListRowHeight, input.density.minimumRowHeight)
         .scrollContentBackground(.hidden)
         .scrollClipDisabled()
         .padding(.top, ChatChromeMetrics.channelListTopPadding)
@@ -640,8 +651,21 @@ private struct AccountControlView: View {
                 HStack(spacing: 9) {
                     AccountAvatar(name: displayName, avatarURL: user?.avatarURL, status: currentStatus)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(displayName).font(.callout.weight(.semibold)).lineLimit(1)
-                        Text(accountSubtitle).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                        Text(displayName)
+                            .font(.system(
+                                size: voiceModel.interfaceSettings.interfaceTextSize,
+                                weight: .semibold
+                            ))
+                            .lineLimit(1)
+                        Text(accountSubtitle)
+                            .font(.system(
+                                size: max(
+                                    10,
+                                    voiceModel.interfaceSettings.interfaceTextSize - 2
+                                )
+                            ))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
                     Spacer(minLength: 4)
                     AccountMenu(

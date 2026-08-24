@@ -199,7 +199,8 @@ extension NativeTimelineCanvasView {
                     items.firstIndex(where: {
                         $0.messageID == messageID
                     })
-                }),
+                })
+                ?? persistentActionCapsuleRow(),
               items.indices.contains(index),
               case let .message(row, _, _) = items[index],
               let model,
@@ -223,6 +224,24 @@ extension NativeTimelineCanvasView {
             model: model,
             actions: actions
         )
+    }
+
+    private func persistentActionCapsuleRow() -> Int? {
+        guard model?.interfaceSettings.messageActionVisibility == .always,
+              !items.isEmpty
+        else { return nil }
+        let viewport = enclosingScrollView?.documentVisibleRect ?? visibleRect
+        guard var index = rowIndex(at: max(0, viewport.maxY - 1)) else {
+            return nil
+        }
+        while items.indices.contains(index) {
+            if case .message = items[index] {
+                return index
+            }
+            guard index > items.startIndex else { break }
+            index -= 1
+        }
+        return nil
     }
 
     private func installActionCapsule(

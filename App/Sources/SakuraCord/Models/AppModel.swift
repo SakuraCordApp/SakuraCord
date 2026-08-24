@@ -186,6 +186,7 @@ final class AppModel {
     @ObservationIgnored var messageRows: [MessageRowPresentation] = []
     @ObservationIgnored var messageRowsRevision: UInt64 = 0
     var timelinePresentationRevision: UInt64 = 0
+    var interfaceSettings: InterfaceSettingsSnapshot
     @ObservationIgnored var messageRowsUpdateHint:
         MessageRowsUpdateHint?
     @ObservationIgnored let messageRowsUpdateJournal =
@@ -356,7 +357,8 @@ final class AppModel {
             let newRows = MessageGrouping.updating(
                 existing: threadMessageRows,
                 oldMessages: oldValue,
-                newMessages: threadMessages
+                newMessages: threadMessages,
+                continuationInterval: interfaceSettings.groupingInterval
             )
             let nextRevision = threadMessageRowsRevision &+ 1
             let record = MessageRowsUpdateRecordBuilder.make(
@@ -518,27 +520,6 @@ final class AppModel {
         didSet {
             serverRailPresentation.updateSelection(selectedGuildID)
         }
-    }
-    var incomingPrivateCalls: [PrivateCall] {
-        guard let currentUserID = snapshot?.currentUser.id else { return [] }
-        return privateCallsByChannel.values
-            .filter {
-                !$0.isUnavailable
-                    && $0.isRinging(currentUserID)
-                    && activeVoiceChannel?.id != $0.channelID
-            }
-            .sorted { $0.channelID.rawValue < $1.channelID.rawValue }
-    }
-
-    func privateCall(in channelID: ChannelID) -> PrivateCall? {
-        guard let call = privateCallsByChannel[channelID], !call.isUnavailable else {
-            return nil
-        }
-        return call
-    }
-
-    func isPrivateCallActionInFlight(in channelID: ChannelID) -> Bool {
-        privateCallActionChannelIDs.contains(channelID)
     }
     var selectedConversationAccess: ConversationAccess {
         guard let channel = selectedChannel else { return .checking }
@@ -1231,6 +1212,7 @@ final class AppModel {
         externalAttachmentUploader: (any ExternalAttachmentUploading)? = nil
     ) {
         self.launchMode = launchMode
+        interfaceSettings = InterfaceSettingsStore.shared.load()
         self.notificationService =
             notificationService ?? NoopNativeNotificationService()
         self.soundPlayer = soundPlayer ?? NoopAppSoundPlayer()
@@ -1315,5 +1297,29 @@ final class AppModel {
                 await self?.installMediaDeviceSnapshot(snapshot)
             }
         }
+    }
+}
+
+extension AppModel {
+    var incomingPrivateCalls: [PrivateCall] {
+        guard let currentUserID = snapshot?.currentUser.id else { return [] }
+        return privateCallsByChannel.values
+            .filter {
+                !$0.isUnavailable
+                    && $0.isRinging(currentUserID)
+                    && activeVoiceChannel?.id != $0.channelID
+            }
+            .sorted { $0.channelID.rawValue < $1.channelID.rawValue }
+    }
+
+    func privateCall(in channelID: ChannelID) -> PrivateCall? {
+        guard let call = privateCallsByChannel[channelID], !call.isUnavailable else {
+            return nil
+        }
+        return call
+    }
+
+    func isPrivateCallActionInFlight(in channelID: ChannelID) -> Bool {
+        privateCallActionChannelIDs.contains(channelID)
     }
 }

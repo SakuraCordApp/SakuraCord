@@ -11,6 +11,7 @@ enum NativeTimelineTextPresentation {
         let prepared: RichMessageAttributedText.Prepared
         let emojiSize: CGFloat
         let baseFontSize: CGFloat
+        let underlinesLinks: Bool
         let mentions: [String: MentionPresentation]
     }
 
@@ -45,7 +46,16 @@ enum NativeTimelineTextPresentation {
             )
         }
 
-        if let preparedBox = plan.attributedText {
+        let settings = model?.interfaceSettings ?? .defaults
+        let resolvedBaseFontSize = message.type.hasGeneratedContent
+            ? plan.baseFontSize
+            : CGFloat(settings.messageTextSize)
+        let underlinesLinks = !message.type.hasGeneratedContent
+            && settings.underlinesLinks
+        if let preparedBox = plan.attributedText,
+           resolvedBaseFontSize == plan.baseFontSize,
+           !underlinesLinks
+        {
             return Value(
                 attributedContent: preparedBox.value,
                 framesetter: preparedBox.framesetter,
@@ -56,7 +66,9 @@ enum NativeTimelineTextPresentation {
         guard let preparation = preparation(
             message: message,
             plan: plan,
-            model: model
+            model: model,
+            baseFontSize: resolvedBaseFontSize,
+            underlinesLinks: underlinesLinks
         ) else {
             return Value(
                 attributedContent: nil,
@@ -77,11 +89,18 @@ enum NativeTimelineTextPresentation {
     static func preparation(
         message: Message,
         plan: NativeTimelineTextPlan,
-        model: AppModel?
+        model: AppModel?,
+        baseFontSize: CGFloat? = nil,
+        underlinesLinks: Bool = false
     ) -> Preparation? {
-        guard plan.attributedText == nil,
-              let prepared = plan.preparedText
-        else { return nil }
+        let resolvedBaseFontSize = baseFontSize ?? plan.baseFontSize
+        if plan.attributedText != nil,
+           resolvedBaseFontSize == plan.baseFontSize,
+           !underlinesLinks
+        {
+            return nil
+        }
+        guard let prepared = plan.preparedText else { return nil }
         let resolver = model.map { MessageMentionResolver(model: $0, message: message) }
         let mentions = prepared.tokens.reduce(into: [String: MentionPresentation]()) { values, token in
             guard case let .mention(mention) = token else { return }
@@ -95,7 +114,8 @@ enum NativeTimelineTextPresentation {
             scope: "message",
             prepared: prepared,
             emojiSize: emojiSize,
-            baseFontSize: plan.baseFontSize,
+            baseFontSize: resolvedBaseFontSize,
+            underlinesLinks: underlinesLinks,
             mentions: mentions.values.sorted {
                 $0.rawToken < $1.rawToken
             }
@@ -104,7 +124,8 @@ enum NativeTimelineTextPresentation {
             key: cacheKey,
             prepared: prepared,
             emojiSize: emojiSize,
-            baseFontSize: plan.baseFontSize,
+            baseFontSize: resolvedBaseFontSize,
+            underlinesLinks: underlinesLinks,
             mentions: mentions
         )
     }
@@ -127,6 +148,7 @@ enum NativeTimelineTextPresentation {
                     prepared: preparation.prepared,
                     emojiSize: preparation.emojiSize,
                     baseFontSize: preparation.baseFontSize,
+                    underlinesLinks: preparation.underlinesLinks,
                     mentionPresentations: preparation.mentions
                 )
             )
@@ -141,6 +163,7 @@ nonisolated final class NativeTimelineResolvedTextCache: Sendable {
         let prepared: RichMessageAttributedText.Prepared
         let emojiSize: CGFloat
         let baseFontSize: CGFloat
+        let underlinesLinks: Bool
         let mentions: [MentionPresentation]
     }
 
@@ -203,6 +226,7 @@ nonisolated enum NativeTimelineCoreText {
         prepared: RichMessageAttributedText.Prepared,
         emojiSize: CGFloat,
         baseFontSize: CGFloat? = nil,
+        underlinesLinks: Bool = false,
         mentionPresentations: [String: MentionPresentation]
     ) -> NSAttributedString {
         let resolvedBaseFontSize =
@@ -267,7 +291,9 @@ nonisolated enum NativeTimelineCoreText {
             output.addAttributes(
                 [
                     .foregroundColor: NSColor.linkColor,
-                    .underlineStyle: 0,
+                    .underlineStyle: underlinesLinks
+                        ? NSUnderlineStyle.single.rawValue
+                        : 0,
                 ],
                 range: range
             )
@@ -919,12 +945,15 @@ enum NativeTimelineEmbedLayout {
                 resolver?.presentation(mention)
                 ?? MentionPresentation.fallback(for: mention)
         }
+        let interfaceSettings = model?.interfaceSettings ?? .defaults
+        let baseFontSize = CGFloat(interfaceSettings.messageTextSize)
         let key = NativeTimelineResolvedTextCache.Key(
             messageID: message.id,
             scope: "embed:\(embed.id):\(scope)",
             prepared: prepared,
             emojiSize: emojiSize,
-            baseFontSize: 15,
+            baseFontSize: baseFontSize,
+            underlinesLinks: interfaceSettings.underlinesLinks,
             mentions: mentions.values.sorted {
                 $0.rawToken < $1.rawToken
             }
@@ -934,6 +963,8 @@ enum NativeTimelineEmbedLayout {
                 NativeTimelineCoreText.make(
                     prepared: prepared,
                     emojiSize: emojiSize,
+                    baseFontSize: baseFontSize,
+                    underlinesLinks: interfaceSettings.underlinesLinks,
                     mentionPresentations: mentions
                 ),
                 layoutHeightAdjustment: 1

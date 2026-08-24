@@ -168,6 +168,84 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
+            id: .messageDensity,
+            page: .interface,
+            storage: .appWide(key: "settings.interface.messageDensity"),
+            defaultValue: .string(InterfaceMessageDensity.comfortable.rawValue)
+        ),
+        SettingsPreferenceRegistration(
+            id: .sidebarDensity,
+            page: .interface,
+            storage: .appWide(key: "settings.interface.sidebarDensity"),
+            defaultValue: .string(InterfaceSidebarDensity.comfortable.rawValue)
+        ),
+        SettingsPreferenceRegistration(
+            id: .messageTextSize,
+            page: .interface,
+            storage: .appWide(key: "settings.interface.messageTextSize"),
+            defaultValue: .double(15)
+        ),
+        SettingsPreferenceRegistration(
+            id: .interfaceTextSize,
+            page: .interface,
+            storage: .appWide(key: "settings.interface.interfaceTextSize"),
+            defaultValue: .double(13)
+        ),
+        SettingsPreferenceRegistration(
+            id: .timestampFormat,
+            page: .interface,
+            storage: .appWide(key: "settings.interface.timestampFormat"),
+            defaultValue: .string(InterfaceTimestampFormat.system.rawValue)
+        ),
+        SettingsPreferenceRegistration(
+            id: .timestampSeconds,
+            page: .interface,
+            storage: .appWide(key: "settings.interface.timestampSeconds"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .groupingInterval,
+            page: .interface,
+            storage: .appWide(key: "settings.interface.groupingIntervalMinutes"),
+            defaultValue: .integer(7)
+        ),
+        SettingsPreferenceRegistration(
+            id: .underlineLinks,
+            page: .interface,
+            storage: .appWide(key: "settings.interface.underlineLinks"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .showMemberList,
+            page: .interface,
+            storage: .appWide(key: "settings.memberListVisible"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .showChannelHeader,
+            page: .interface,
+            storage: .appWide(key: "settings.interface.showChannelHeader"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .showActivityDetails,
+            page: .interface,
+            storage: .appWide(key: "settings.interface.showActivityDetails"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .messageActionVisibility,
+            page: .interface,
+            storage: .appWide(key: "settings.interface.messageActionVisibility"),
+            defaultValue: .string(InterfaceMessageActionVisibility.onHover.rawValue)
+        ),
+        SettingsPreferenceRegistration(
+            id: .showRoleColors,
+            page: .interface,
+            storage: .appWide(key: "settings.interface.showRoleColors"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
             id: .sendWithReturn,
             page: .general,
             storage: .appWide(key: "sendWithReturn"),

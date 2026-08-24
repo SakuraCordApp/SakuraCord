@@ -46,8 +46,17 @@ nonisolated enum NativeTimelineMarkdownChromeMetrics {
 }
 
 enum NativeTimelineTimestamp {
-    static func text(for date: Date) -> String {
-        date.formatted(.dateTime.hour().minute())
+    static func text(
+        for date: Date,
+        settings: InterfaceSettingsSnapshot = .defaults,
+        includesSeconds: Bool? = nil
+    ) -> String {
+        InterfaceTimestampFormatter.text(
+            for: date,
+            format: settings.timestampFormat,
+            includesSeconds: includesSeconds
+                ?? settings.includesTimestampSeconds
+        )
     }
 }
 
@@ -599,16 +608,22 @@ struct NativeTimelineRowLayout {
         var layout: NativeTimelineRowLayout {
         let message = row.message
         let searchContext = row.searchContext
-        let horizontalInset: CGFloat = searchContext == nil ? 14 : 22
-        let avatarWidth: CGFloat = 38
-        let columnGap: CGFloat = 12
+        let interfaceSettings = model?.interfaceSettings ?? .defaults
+        let density = interfaceSettings.messageDensity
+        let horizontalInset: CGFloat = searchContext == nil
+            ? density.horizontalInset
+            : 22
+        let avatarWidth = density.avatarDiameter
+        let columnGap = density.columnGap
         let ordinaryContentX = horizontalInset + avatarWidth + columnGap
         let ordinaryContentWidth = max(
             80,
             width - ordinaryContentX - horizontalInset
         )
         let isGenerated = message.type.hasGeneratedContent
-        let contentX: CGFloat = isGenerated ? horizontalInset + 58 : ordinaryContentX
+        let contentX: CGFloat = isGenerated
+            ? horizontalInset + avatarWidth + 20
+            : ordinaryContentX
         let contentWidth = max(80, width - contentX - horizontalInset)
         var prefixHeight: CGFloat = 0
 
@@ -673,12 +688,14 @@ struct NativeTimelineRowLayout {
 
         let highlightInsets = MessageRowLayoutMetrics.highlightInsets(
             hasReplyPreview: row.replyMessageID != nil,
-            isEditing: false
+            isEditing: false,
+            density: density
         )
         let externalTopSeparation = MessageRowLayoutMetrics.separation(
             startsGroup: row.startsGroup,
             followsTimelineSeparator: row.startsDay || isUnreadBoundary,
-            highlightTopInset: highlightInsets.top
+            highlightTopInset: highlightInsets.top,
+            density: density
         )
         let highlightMinY = prefixHeight
             + (searchContext == nil ? externalTopSeparation : 4)
@@ -768,7 +785,10 @@ struct NativeTimelineRowLayout {
             }
             headerX += 7
             let timestampFont = NSFont.preferredFont(forTextStyle: .caption1)
-            let timestamp = NativeTimelineTimestamp.text(for: message.timestamp)
+            let timestamp = NativeTimelineTimestamp.text(
+                for: message.timestamp,
+                settings: model?.interfaceSettings ?? .defaults
+            )
             let timestampWidth = NativeTimelineRowLayout.measuredTextWidth(
                 timestamp,
                 font: timestampFont
@@ -811,14 +831,15 @@ struct NativeTimelineRowLayout {
             }
             verticalOffset += MessageRowLayoutMetrics.authorLineHeight
                 + MessageRowLayoutMetrics.authorToContentSpacing(
-                    isCommandResponse: message.type == .chatInputCommand
+                    isCommandResponse: message.type == .chatInputCommand,
+                    density: density
                 )
         } else if !isGenerated {
             compactTimestampFrame = CGRect(
                 x: horizontalInset,
                 y: verticalOffset,
                 width: avatarWidth,
-                height: MessageRowLayoutMetrics.compactContentHeight
+                height: density.compactContentHeight
             )
         }
 
@@ -828,7 +849,7 @@ struct NativeTimelineRowLayout {
                 x: horizontalInset + 36,
                 y: verticalOffset,
                 width: 16,
-                height: MessageRowLayoutMetrics.compactContentHeight
+                height: density.compactContentHeight
             )
         }
 
@@ -1158,8 +1179,8 @@ struct NativeTimelineRowLayout {
                 highlightMinY
                     + highlightInsets.top
                     + (row.startsGroup && !isGenerated
-                        ? MessageRowLayoutMetrics.avatarDiameter
-                        : MessageRowLayoutMetrics.compactContentHeight)
+                        ? density.avatarDiameter
+                        : density.compactContentHeight)
                     + highlightInsets.bottom
             ) + searchBottomInset
         )

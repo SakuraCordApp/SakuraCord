@@ -311,7 +311,8 @@ extension NativeTimelineCanvasView {
             model?.authorPresentation(for: message).user
             ?? message.author
         let timestamp = NativeTimelineTimestamp.text(
-            for: message.timestamp
+            for: message.timestamp,
+            settings: model?.interfaceSettings ?? .defaults
         )
         let generatedLabel = SystemMessagePresentation.label(
             for: message,

@@ -134,6 +134,9 @@ final class SettingsViewState {
                 }) else { return nil }
 
                 let normalizedTitle = Self.normalized(title)
+                let priorityKeywords = entry.priorityKeywords.map {
+                    Self.normalized(localized($0))
+                }
                 let rank: Int
                 if normalizedTitle == normalizedQuery {
                     rank = 0
@@ -141,8 +144,14 @@ final class SettingsViewState {
                     rank = 1
                 } else if normalizedTitle.contains(normalizedQuery) {
                     rank = 2
-                } else {
+                } else if priorityKeywords.contains(normalizedQuery) {
                     rank = 3
+                } else if priorityKeywords.contains(where: {
+                    $0.contains(normalizedQuery)
+                }) {
+                    rank = 4
+                } else {
+                    rank = 5
                 }
                 return RankedResult(result: entry.result, rank: rank, order: entry.order)
             }
@@ -184,6 +193,7 @@ final class SettingsViewState {
                     ),
                     help: page.help,
                     keywords: page.keywords,
+                    priorityKeywords: page.keywords,
                     order: index
                 )
             )
@@ -203,6 +213,7 @@ final class SettingsViewState {
                     ),
                     help: control.help,
                     keywords: control.keywords + page.keywords + [page.title],
+                    priorityKeywords: control.keywords,
                     order: catalog.pages.count + index
                 )
             )
@@ -216,6 +227,7 @@ private extension SettingsViewState {
         let result: SettingsSearchResult
         let help: LocalizedStringResource
         let keywords: [LocalizedStringResource]
+        let priorityKeywords: [LocalizedStringResource]
         let order: Int
     }
 

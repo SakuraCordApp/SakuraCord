@@ -22,13 +22,14 @@ enum MessageRowLayoutMetrics {
 
     nonisolated static func highlightInsets(
         hasReplyPreview: Bool,
-        isEditing: Bool
+        isEditing: Bool,
+        density: InterfaceMessageDensity = .comfortable
     ) -> MessageRowHighlightInsets {
         let intrinsicTopInset = hasReplyPreview ? replyPreviewIntrinsicTopInset : 0
         let intrinsicBottomInset = isEditing ? editFooterIntrinsicBottomInset : 0
         return MessageRowHighlightInsets(
-            top: max(0, visibleHighlightInset - intrinsicTopInset),
-            bottom: max(0, visibleHighlightInset - intrinsicBottomInset),
+            top: max(0, density.highlightInset - intrinsicTopInset),
+            bottom: max(0, density.highlightInset - intrinsicBottomInset),
             intrinsicTop: intrinsicTopInset,
             intrinsicBottom: intrinsicBottomInset
         )
@@ -37,22 +38,24 @@ enum MessageRowLayoutMetrics {
     nonisolated static func separation(
         startsGroup: Bool,
         followsTimelineSeparator: Bool = false,
-        highlightTopInset: CGFloat
+        highlightTopInset: CGFloat,
+        density: InterfaceMessageDensity = .comfortable
     ) -> CGFloat {
         // Date and unread separators already provide the complete visual gap
         // between adjacent messages. Applying the ordinary author-group
         // separation after either one makes the lower half visibly larger
         // than the upper half.
         guard startsGroup, !followsTimelineSeparator else { return 0 }
-        return firstMessageContentOffset - highlightTopInset
+        return density.groupSeparation - highlightTopInset
     }
 
     nonisolated static func authorToContentSpacing(
-        isCommandResponse: Bool
+        isCommandResponse: Bool,
+        density: InterfaceMessageDensity = .comfortable
     ) -> CGFloat {
         isCommandResponse
             ? commandAuthorContentSpacing
-            : authorContentSpacing
+            : density.authorToContentSpacing
     }
 
     nonisolated static func geometry(

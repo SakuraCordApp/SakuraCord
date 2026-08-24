@@ -73,6 +73,9 @@ struct RootView: View {
             }
         }
         .onChange(of: model.showInspector) { _, isVisible in
+            if model.interfaceSettings.showsMemberList != isVisible {
+                model.interfaceSettings.showsMemberList = isVisible
+            }
             guard SettingsPreferenceStore.shared.value(
                 for: .rememberMemberListVisibility
             ) == .bool(true) else { return }
@@ -212,7 +215,10 @@ private struct ChatRootView: View {
                         )
                     } else {
                         Text(sidebarDisplayName)
-                            .font(.title3.weight(.semibold))
+                            .font(.system(
+                                size: model.interfaceSettings.interfaceTextSize + 2,
+                                weight: .semibold
+                            ))
                             .lineLimit(1)
                             .truncationMode(.tail)
                             .frame(width: 150, height: 28, alignment: .leading)
@@ -507,7 +513,8 @@ private struct ChatRootView: View {
                     systemImage: channelToolbarSymbol(channel),
                     subtitle: isDirectMessageSelected
                         ? directMessageToolbarSubtitle(for: channel)
-                        : nil
+                        : channelTopic(for: channel),
+                    textSize: model.interfaceSettings.interfaceTextSize
                 )
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
@@ -522,7 +529,8 @@ private struct ChatRootView: View {
                         ConversationToolbarLabel(
                             title: presentation.title,
                             systemImage: presentation.systemImage,
-                            subtitle: presentation.subtitle
+                            subtitle: presentation.subtitle,
+                            textSize: model.interfaceSettings.interfaceTextSize
                         )
                         Spacer(minLength: 0)
                     }
@@ -758,6 +766,14 @@ private struct ChatRootView: View {
         default:
             return nil
         }
+    }
+
+    private func channelTopic(for channel: Channel) -> String? {
+        guard model.interfaceSettings.showsChannelHeader,
+              let topic = channel.topic?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !topic.isEmpty
+        else { return nil }
+        return topic
     }
 
     private var hasOpenSupplementaryConversation: Bool {
@@ -1094,17 +1110,21 @@ private struct ConversationToolbarLabel: View {
     let title: String
     let systemImage: String
     var subtitle: String?
+    let textSize: Double
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: systemImage)
             VStack(alignment: .leading, spacing: 0) {
                 Text(title)
-                    .font(subtitle == nil ? .body : .headline)
+                    .font(.system(
+                        size: textSize,
+                        weight: subtitle == nil ? .regular : .semibold
+                    ))
                     .lineLimit(1)
                 if let subtitle {
                     Text(subtitle)
-                        .font(.caption2)
+                        .font(.system(size: max(10, textSize - 2)))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }

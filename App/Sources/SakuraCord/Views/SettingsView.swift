@@ -89,7 +89,7 @@ private struct SettingsDetailRouter: View {
                 updateController: updateController
             )
         case .interface:
-            InterfaceSettingsPage(state: state)
+            InterfaceSettingsPage(model: model, state: state)
         case .chat:
             ChatSettingsPage(state: state)
         case .notifications:

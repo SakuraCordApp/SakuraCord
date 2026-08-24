@@ -68,6 +68,7 @@ struct MemberInspectorView: View {
     let dismissProfile: () -> Void
     let viewportIdentity: ChannelID?
     let updateViewport: (ClosedRange<Int>) -> Void
+    var presentation = NativeMemberListPresentation()
 
     init(
         sections: [MemberSection],
@@ -78,6 +79,7 @@ struct MemberInspectorView: View {
         selectMember: @escaping (Member) -> Void,
         dismissProfile: @escaping () -> Void,
         viewportIdentity: ChannelID? = nil,
+        presentation: NativeMemberListPresentation = .init(),
         updateViewport: @escaping (ClosedRange<Int>) -> Void = { _ in }
     ) {
         self.sections = sections
@@ -88,6 +90,7 @@ struct MemberInspectorView: View {
         self.selectMember = selectMember
         self.dismissProfile = dismissProfile
         self.viewportIdentity = viewportIdentity
+        self.presentation = presentation
         self.updateViewport = updateViewport
     }
 
@@ -102,6 +105,7 @@ struct MemberInspectorView: View {
             dismissProfile: dismissProfile,
             runsPerformanceAutoScroll: runsPerformanceAutoScroll,
             viewportIdentity: viewportIdentity,
+            presentation: presentation,
             onViewportRange: updateViewport
         )
     }

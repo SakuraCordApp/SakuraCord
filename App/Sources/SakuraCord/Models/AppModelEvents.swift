@@ -1104,7 +1104,8 @@ extension AppModel {
             messageIndex: selectedMessageIndex(for:),
             replyingMessageIDs:
                 selectedReplyMessageIDsByTarget[resolved.id] ?? [],
-            replacementTextPlan: preparedTextPlan
+            replacementTextPlan: preparedTextPlan,
+            continuationInterval: interfaceSettings.groupingInterval
         )
         publishMessageRowsUpdate(
             change: .replace(changedIndexes),
@@ -1147,7 +1148,8 @@ extension AppModel {
             neighborIndex: index,
             messageIndex: selectedMessageIndex(for:),
             replyingMessageIDs:
-                selectedReplyMessageIDsByTarget[id] ?? []
+                selectedReplyMessageIDsByTarget[id] ?? [],
+            continuationInterval: interfaceSettings.groupingInterval
         )
         publishMessageRowsUpdate(
             change: .remove(
@@ -1444,7 +1446,8 @@ extension AppModel {
             messageRows = MessageGrouping.updating(
                 existing: messageRows,
                 oldMessages: oldMessages,
-                newMessages: newMessages
+                newMessages: newMessages,
+                continuationInterval: interfaceSettings.groupingInterval
             )
         }
         AppPerformanceSignposts.signposter.endInterval(
@@ -1464,7 +1467,8 @@ extension AppModel {
         messageRows = MessageGrouping.updating(
             existing: messageRows,
             oldMessages: oldMessages,
-            newMessages: messages
+            newMessages: messages,
+            continuationInterval: interfaceSettings.groupingInterval
         )
         publishMessageRowsUpdate(invalidatesAllRows: true)
         messageRowsNonAppendRevision &+= 1
@@ -1530,7 +1534,8 @@ extension AppModel {
             preparedInsertedRows: preparedInsertedRows,
             existingMessageIndex: selectedMessageIndex(for:),
             replyingMessageIDsByTarget:
-                selectedReplyMessageIDsByTarget
+                selectedReplyMessageIDsByTarget,
+            continuationInterval: interfaceSettings.groupingInterval
         )
         let changedMessageIDs = Set(
             potentiallyChangedMessageIDs.filter { id in
@@ -1613,7 +1618,8 @@ extension AppModel {
             preparedInsertedRows: preparedRows,
             existingMessage: { [self] id in
                 selectedMessageIndex(for: id).map { messages[$0] }
-            }
+            },
+            continuationInterval: interfaceSettings.groupingInterval
         )
         if preparedRows == nil, !preparedTextPlans.isEmpty {
             for index in insertionStart ..< messageRows.count {
@@ -1960,28 +1966,6 @@ extension AppModel {
             && zip(rows, messages).allSatisfy {
                 $0.message == $1
             }
-    }
-
-    func restoreSelectedMessages(
-        _ restoredMessages: [Message],
-        preparedRows: [MessageRowPresentation]?
-    ) {
-        let oldMessages = messages
-        messages = restoredMessages
-        rebuildSelectedMessageIndexes()
-        if let preparedRows,
-           Self.rows(preparedRows, match: restoredMessages)
-        {
-            messageRows = preparedRows
-        } else {
-            messageRows = MessageGrouping.updating(
-                existing: messageRows,
-                oldMessages: oldMessages,
-                newMessages: restoredMessages
-            )
-        }
-        publishMessageRowsUpdate(invalidatesAllRows: true)
-        messageRowsNonAppendRevision &+= 1
     }
 
     func reconcileCachedMessageUpdate(_ message: Message) {
