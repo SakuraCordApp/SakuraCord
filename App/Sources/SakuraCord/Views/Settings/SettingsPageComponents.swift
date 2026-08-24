@@ -41,45 +41,6 @@ private struct SettingsPageIntroductionSection: View {
     }
 }
 
-struct SettingsPendingPage: View {
-    let page: SettingsPageID
-    let phase: Int
-    let state: SettingsViewState
-
-    var body: some View {
-        let metadata = state.catalog.page(page)
-        SettingsPageForm(page: page, state: state) {
-            PendingSettingsSection(metadata: metadata, phase: phase)
-        }
-    }
-}
-
-private struct PendingSettingsSection: View {
-    let metadata: SettingsPageMetadata
-    let phase: Int
-
-    var body: some View {
-        Section {
-            ContentUnavailableView {
-                Label(metadata.title, systemImage: metadata.systemImage)
-            } description: {
-                Text(metadata.help)
-            } actions: {
-                Text(
-                    LocalizedStringResource(
-                        "This category is introduced in phase \(phase).",
-                        bundle: #bundle,
-                        comment: "Foundation placeholder explaining which numbered Settings phase implements a category."
-                    )
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, minHeight: 300)
-        }
-    }
-}
-
 struct SettingsScopeFooter: View {
     let scope: SettingsValueScope
 

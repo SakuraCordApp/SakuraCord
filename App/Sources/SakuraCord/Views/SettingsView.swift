@@ -124,7 +124,10 @@ private struct SettingsDetailRouter: View {
         case .extensions:
             ExtensionsSettingsPage(state: state)
         case .about:
-            AboutSettingsPage(state: state)
+            AboutSettingsPage(
+                updateController: updateController,
+                state: state
+            )
         }
     }
 }

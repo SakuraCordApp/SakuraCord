@@ -1,0 +1,94 @@
+import Foundation
+
+nonisolated extension SettingsCatalog {
+    static let aboutControls: [SettingsControlMetadata] = [
+        aboutControl(
+            .aboutVersionInformation, section: .aboutVersion,
+            label: "Version Information",
+            help: "Show the bundle semantic version, build number, and active release track.",
+            keywords: ["app version", "build number", "regular", "nightly"],
+            owner: .appModel
+        ),
+        aboutControl(
+            .aboutCopyVersionInformation, section: .aboutVersion,
+            label: "Copy Version Information",
+            help: "Copy a stable sanitized version summary for issue reports.",
+            keywords: ["clipboard", "support", "issue report"], owner: .macOS
+        ),
+        aboutControl(
+            .aboutCheckForUpdates, section: .aboutVersion,
+            label: "Check for Updates",
+            help: "Invoke the existing Sparkle update action when this build supports it.",
+            keywords: ["update now", "software update", "new version"], owner: .sparkle
+        ),
+        aboutControl(
+            .aboutWebsite, section: .aboutLinks,
+            label: "Project Website", help: "Open SakuraCord’s canonical website.",
+            keywords: ["home", "sakuracord.app"], owner: .macOS
+        ),
+        aboutControl(
+            .aboutDocumentation, section: .aboutLinks,
+            label: "Documentation", help: "Open SakuraCord’s canonical documentation set.",
+            keywords: ["docs", "guides", "architecture"], owner: .macOS
+        ),
+        aboutControl(
+            .aboutRoadmap, section: .aboutLinks,
+            label: "Roadmap", help: "Open SakuraCord’s deployed canonical roadmap.",
+            keywords: ["planned", "progress", "roadmap service"], owner: .macOS
+        ),
+        aboutControl(
+            .aboutSource, section: .aboutLinks,
+            label: "Source Repository", help: "Open SakuraCord’s public source repository.",
+            keywords: ["GitHub", "code", "GPL"], owner: .macOS
+        ),
+        aboutControl(
+            .aboutSupport, section: .aboutLinks,
+            label: "Support Community",
+            help: "Open SakuraCord’s Discord support community invite.",
+            keywords: ["help", "community", "Discord server"], owner: .macOS
+        ),
+        aboutControl(
+            .aboutLatestRelease, section: .aboutLinks,
+            label: "Latest Release",
+            help: "Open SakuraCord’s latest published GitHub release.",
+            keywords: ["download", "DMG", "release notes"], owner: .macOS
+        ),
+        aboutControl(
+            .aboutAcknowledgements, section: .aboutAcknowledgements,
+            label: "Third-Party Acknowledgements",
+            help: "Open the third-party notices included in assembled SakuraCord app packages.",
+            keywords: ["licenses", "notices", "attribution"], owner: .macOS,
+            persistence: .systemManaged
+        ),
+        aboutControl(
+            .aboutDisclaimer, section: .aboutLegal,
+            label: "Independence Disclaimer",
+            help: "Explain SakuraCord’s independence from Discord and unsupported client compatibility risk.",
+            keywords: ["not affiliated", "third party", "compatibility"],
+            owner: .appModel
+        ),
+    ]
+
+    private static func aboutControl(
+        _ id: SettingsControlID,
+        section: SettingsSectionID,
+        label: String.LocalizationValue,
+        help: String.LocalizationValue,
+        keywords: [String.LocalizationValue],
+        owner: SettingsValueOwner,
+        persistence: SettingsPersistence = .notApplicable
+    ) -> SettingsControlMetadata {
+        SettingsControlMetadata(
+            id: id,
+            destination: SettingsDestination(page: .about, section: section),
+            label: LocalizedStringResource(label, bundle: #bundle),
+            help: LocalizedStringResource(help, bundle: #bundle),
+            keywords: keywords.map { LocalizedStringResource($0, bundle: #bundle) },
+            owner: owner,
+            scope: .appWideLocal,
+            persistence: persistence,
+            resetCapability: .notApplicable,
+            availability: .available
+        )
+    }
+}

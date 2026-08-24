@@ -213,6 +213,10 @@ nonisolated extension SettingsSectionID {
     static let diagnosticsStatus = Self(rawValue: "diagnostics-status")
     static let diagnosticsSupport = Self(rawValue: "diagnostics-support")
     static let apiDiagnostics = Self(rawValue: "api-diagnostics")
+    static let aboutVersion = Self(rawValue: "about-version")
+    static let aboutLinks = Self(rawValue: "about-links")
+    static let aboutAcknowledgements = Self(rawValue: "about-acknowledgements")
+    static let aboutLegal = Self(rawValue: "about-legal")
 }
 
 nonisolated extension SettingsControlID {
@@ -282,6 +286,17 @@ nonisolated extension SettingsControlID {
     static let updateStatus = Self(rawValue: "software-updates.status")
     static let updateLastSuccessfulCheck = Self(rawValue: "software-updates.last-successful-check")
     static let checkForUpdates = Self(rawValue: "software-updates.check-now")
+    static let aboutVersionInformation = Self(rawValue: "about.version-information")
+    static let aboutCopyVersionInformation = Self(rawValue: "about.copy-version-information")
+    static let aboutCheckForUpdates = Self(rawValue: "about.check-for-updates")
+    static let aboutWebsite = Self(rawValue: "about.website")
+    static let aboutDocumentation = Self(rawValue: "about.documentation")
+    static let aboutRoadmap = Self(rawValue: "about.roadmap")
+    static let aboutSource = Self(rawValue: "about.source")
+    static let aboutSupport = Self(rawValue: "about.support")
+    static let aboutLatestRelease = Self(rawValue: "about.latest-release")
+    static let aboutAcknowledgements = Self(rawValue: "about.acknowledgements")
+    static let aboutDisclaimer = Self(rawValue: "about.disclaimer")
     static let mediaCacheLimit = Self(rawValue: "storage.media-cache-limit")
     static let mediaCacheUsage = Self(rawValue: "storage.media-cache-usage")
     static let mediaCacheClear = Self(rawValue: "storage.media-cache-clear")
@@ -1769,7 +1784,7 @@ private nonisolated extension SettingsCatalog {
             persistence: .notApplicable,
             reset: .categoryAction
         ),
-    ] + KeyboardShortcutAction.allCases.map { action in
+    ] + aboutControls + KeyboardShortcutAction.allCases.map { action in
         SettingsControlMetadata(
             id: action.controlID,
             destination: SettingsDestination(
