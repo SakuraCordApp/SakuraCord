@@ -1,0 +1,73 @@
+import SwiftUI
+
+struct MyAccountSettingsPage: View {
+    let state: SettingsViewState
+
+    var body: some View {
+        SettingsPendingPage(page: .myAccount, phase: 1, state: state)
+    }
+}
+
+struct InterfaceSettingsPage: View {
+    let state: SettingsViewState
+
+    var body: some View {
+        SettingsPendingPage(page: .interface, phase: 3, state: state)
+    }
+}
+
+struct ChatSettingsPage: View {
+    let state: SettingsViewState
+
+    var body: some View {
+        SettingsPendingPage(page: .chat, phase: 4, state: state)
+    }
+}
+
+struct AccessibilitySettingsPage: View {
+    let state: SettingsViewState
+
+    var body: some View {
+        SettingsPendingPage(page: .accessibility, phase: 7, state: state)
+    }
+}
+
+struct KeyboardShortcutsSettingsPage: View {
+    let state: SettingsViewState
+
+    var body: some View {
+        SettingsPendingPage(page: .keyboardShortcuts, phase: 8, state: state)
+    }
+}
+
+struct PrivacySafetySettingsPage: View {
+    let state: SettingsViewState
+
+    var body: some View {
+        SettingsPendingPage(page: .privacySafety, phase: 9, state: state)
+    }
+}
+
+struct SoftwareUpdatesSettingsPage: View {
+    let state: SettingsViewState
+
+    var body: some View {
+        SettingsPendingPage(page: .softwareUpdates, phase: 12, state: state)
+    }
+}
+
+struct ExtensionsSettingsPage: View {
+    let state: SettingsViewState
+
+    var body: some View {
+        SettingsPendingPage(page: .extensions, phase: 13, state: state)
+    }
+}
+
+struct AboutSettingsPage: View {
+    let state: SettingsViewState
+
+    var body: some View {
+        SettingsPendingPage(page: .about, phase: 14, state: state)
+    }
+}
