@@ -7,6 +7,7 @@ struct SettingsView: View {
     @Environment(\.locale) private var locale
     @SceneStorage("settings.selected-page") private var storedSelectedPage =
         SettingsPageID.myAccount.rawValue
+    @SceneStorage("settings.selected-account") private var storedSelectedAccount = ""
     @State private var state = SettingsViewState()
     private let navigationRouter = SettingsNavigationRouter.shared
 
@@ -18,7 +19,8 @@ struct SettingsView: View {
             SettingsDetailRouter(
                 model: model,
                 updateController: updateController,
-                state: state
+                state: state,
+                selectedAccountID: $storedSelectedAccount
             )
         }
         .searchable(
@@ -64,11 +66,16 @@ private struct SettingsDetailRouter: View {
     let model: AppModel
     @ObservedObject var updateController: AppUpdateController
     let state: SettingsViewState
+    @Binding var selectedAccountID: String
 
     var body: some View {
         switch state.selectedPage {
         case .myAccount:
-            MyAccountSettingsPage(state: state)
+            MyAccountSettingsPage(
+                model: model,
+                state: state,
+                selectedAccountID: $selectedAccountID
+            )
         case .general:
             GeneralSettingsPage(state: state, updateController: updateController)
         case .interface:

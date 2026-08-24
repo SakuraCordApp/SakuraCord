@@ -638,15 +638,34 @@ extension AppModel {
                     : nil
             let preferredStoredAccountID = await savedAccountStore
                 .preferredAccountID()
-            if let handles,
-               let handle = RestoredCredentialSelectionPolicy.handle(
-                   from: handles,
-                   preferredAccountID:
-                       preferredPerformanceAccountID
-                       ?? preferredStoredAccountID
-               )
+            let reopensLastActiveAccount = SettingsPreferenceStore.shared.value(
+                for: .reopenLastAccount
+            ) == .bool(true)
+            let preferredLaunchAccountID: String? = if case let .string(value) =
+                SettingsPreferenceStore.shared.value(for: .preferredLaunchAccount),
+                !value.isEmpty
             {
-                _ = await connectAuthenticatedAccount(handle)
+                value
+            } else {
+                nil
+            }
+            let restoredHandle = handles.flatMap { handles in
+                if let preferredPerformanceAccountID {
+                    RestoredCredentialSelectionPolicy.handle(
+                        from: handles,
+                        preferredAccountID: preferredPerformanceAccountID
+                    )
+                } else {
+                    SettingsAccountLaunchPolicy.handle(
+                        from: handles,
+                        reopensLastActiveAccount: reopensLastActiveAccount,
+                        lastActiveAccountID: preferredStoredAccountID,
+                        preferredLaunchAccountID: preferredLaunchAccountID
+                    )
+                }
+            }
+            if let restoredHandle {
+                _ = await connectAuthenticatedAccount(restoredHandle)
                 return false
             }
         }

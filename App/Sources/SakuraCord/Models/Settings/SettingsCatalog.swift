@@ -166,6 +166,9 @@ nonisolated struct SettingsCatalog: Sendable {
 }
 
 nonisolated extension SettingsSectionID {
+    static let accountIdentity = Self(rawValue: "account-identity")
+    static let accountLaunch = Self(rawValue: "account-launch")
+    static let accountLocalData = Self(rawValue: "account-local-data")
     static let messagesAndMedia = Self(rawValue: "messages-and-media")
     static let softwareUpdates = Self(rawValue: "software-updates")
     static let notificationDelivery = Self(rawValue: "notification-delivery")
@@ -181,6 +184,14 @@ nonisolated extension SettingsControlID {
         Self(rawValue: "\(page.rawValue).overview")
     }
 
+    static let selectedAccount = Self(rawValue: "my-account.selected-account")
+    static let switchAccount = Self(rawValue: "my-account.switch-account")
+    static let addAccount = Self(rawValue: "my-account.add-account")
+    static let reopenLastAccount = Self(rawValue: "my-account.reopen-last-account")
+    static let preferredLaunchAccount = Self(rawValue: "my-account.preferred-launch-account")
+    static let removeSavedSession = Self(rawValue: "my-account.remove-saved-session")
+    static let exportAccountPreferences = Self(rawValue: "my-account.export-preferences")
+    static let resetAccountPreferences = Self(rawValue: "my-account.reset-preferences")
     static let sendWithReturn = Self(rawValue: "chat.send-with-return")
     static let reduceAnimatedMedia = Self(rawValue: "accessibility.reduce-animated-media")
     static let updateReleaseTrack = Self(rawValue: "software-updates.release-track")
@@ -284,6 +295,96 @@ private nonisolated extension SettingsCatalog {
     ]
 
     static let foundationControls: [SettingsControlMetadata] = [
+        control(
+            .selectedAccount,
+            page: .myAccount,
+            section: .accountIdentity,
+            label: "Account to inspect",
+            help: "Choose which saved account's local settings this page displays without changing the active Discord session.",
+            keywords: ["selected account", "inspect", "profile", "saved account"],
+            owner: .accountPreferences,
+            scope: .accountLocal,
+            persistence: .sessionOnly,
+            reset: .notApplicable
+        ),
+        control(
+            .switchAccount,
+            page: .myAccount,
+            section: .accountIdentity,
+            label: "Switch to Account",
+            help: "Replace the active workspace with the selected saved Discord session.",
+            keywords: ["activate", "change account", "connect"],
+            owner: .appModel,
+            scope: .discordSynchronized,
+            persistence: .notApplicable,
+            reset: .notApplicable
+        ),
+        control(
+            .addAccount,
+            page: .myAccount,
+            section: .accountIdentity,
+            label: "Add Account",
+            help: "Open SakuraCord's existing Discord authentication flow.",
+            keywords: ["login", "sign in", "QR", "another account"],
+            owner: .appModel,
+            scope: .discordSynchronized,
+            persistence: .notApplicable,
+            reset: .notApplicable
+        ),
+        control(
+            .reopenLastAccount,
+            page: .myAccount,
+            section: .accountLaunch,
+            label: "Reopen the last active account",
+            help: "Reconnect the account that was active most recently when SakuraCord launches.",
+            keywords: ["startup", "launch", "restore", "last used"],
+            scope: .appWideLocal
+        ),
+        control(
+            .preferredLaunchAccount,
+            page: .myAccount,
+            section: .accountLaunch,
+            label: "Preferred launch account",
+            help: "Choose a fixed saved account to reconnect when SakuraCord launches.",
+            keywords: ["startup account", "default account", "preferred account"],
+            scope: .appWideLocal
+        ),
+        control(
+            .removeSavedSession,
+            page: .myAccount,
+            section: .accountIdentity,
+            label: "Log Out or Remove Saved Account",
+            help: "Remove the selected account's saved session from macOS Keychain; an active account is disconnected first.",
+            keywords: ["sign out", "disconnect", "forget account", "delete login", "Keychain"],
+            owner: .appModel,
+            scope: .mixed,
+            persistence: .notApplicable,
+            reset: .notApplicable
+        ),
+        control(
+            .exportAccountPreferences,
+            page: .myAccount,
+            section: .accountLocalData,
+            label: "Export Local Preferences",
+            help: "Export registered local preferences for only the selected account as versioned JSON.",
+            keywords: ["backup", "JSON", "save settings", "account data"],
+            owner: .accountPreferences,
+            scope: .accountLocal,
+            persistence: .notApplicable,
+            reset: .notApplicable
+        ),
+        control(
+            .resetAccountPreferences,
+            page: .myAccount,
+            section: .accountLocalData,
+            label: "Reset Local Preferences",
+            help: "Reset only registered local preferences belonging to the selected account.",
+            keywords: ["defaults", "clear settings", "restore"],
+            owner: .accountPreferences,
+            scope: .accountLocal,
+            persistence: .accountPreferences,
+            reset: .categoryAction
+        ),
         control(
             .sendWithReturn,
             page: .general,

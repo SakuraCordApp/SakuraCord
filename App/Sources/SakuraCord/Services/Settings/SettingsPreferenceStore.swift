@@ -126,6 +126,18 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
 
     static let foundation = SettingsPreferenceRegistry(registrations: [
         SettingsPreferenceRegistration(
+            id: .reopenLastAccount,
+            page: .myAccount,
+            storage: .appWide(key: "settings.reopenLastActiveAccount"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .preferredLaunchAccount,
+            page: .myAccount,
+            storage: .appWide(key: "settings.preferredLaunchAccountID"),
+            defaultValue: .string("")
+        ),
+        SettingsPreferenceRegistration(
             id: .sendWithReturn,
             page: .general,
             storage: .appWide(key: "sendWithReturn"),
@@ -315,6 +327,8 @@ nonisolated struct SettingsPreferenceExportFile: Transferable, Sendable {
 }
 
 final class SettingsPreferenceStore {
+    static let shared = SettingsPreferenceStore()
+
     private static let accountValuesKey = "dev.sakuracord.account-local-preferences-v1"
 
     let registry: SettingsPreferenceRegistry
