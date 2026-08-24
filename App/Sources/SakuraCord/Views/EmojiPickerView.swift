@@ -249,7 +249,10 @@ enum EmojiPickerItem: Identifiable {
         case let .custom(emoji):
             if let url = emoji.imageURL {
                 if emoji.isAnimated {
-                    AnimatedRemoteImage(url: url)
+                    AnimatedRemoteImage(
+                        url: url,
+                        accessibilityCategory: .emoji
+                    )
                         .frame(width: dimension - 2, height: dimension - 2)
                 } else {
                     StaticEmojiImage(url: url)

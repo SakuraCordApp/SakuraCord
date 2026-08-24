@@ -1111,7 +1111,10 @@ struct CommandApplicationIcon: View {
     var body: some View {
         Group {
             if let url = application?.iconURL ?? application?.bot?.avatarURL {
-                AnimatedRemoteImage(url: url)
+                AnimatedRemoteImage(
+                    url: url,
+                    accessibilityCategory: .avatar
+                )
             } else {
                 ZStack {
                     Circle().fill(Color.secondary.opacity(0.18))

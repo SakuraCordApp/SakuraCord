@@ -1736,6 +1736,9 @@ extension NativeTimelineCanvasView {
         }
         let reduceMotion =
             NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            || (model?.accessibilitySettings.reducesAllOptionalMotion(
+                systemReduceMotion: false
+            ) ?? false)
             || (model?.chatSettings.reducesAnimatedMedia
                 ?? UserDefaults.standard.bool(forKey: "reduceAnimatedMedia"))
             || !permitsAnimatedMediaPlayback
@@ -1812,6 +1815,10 @@ extension NativeTimelineCanvasView {
             )
             reconcileLottieStickerOverlays(
                 reduceMotion: reduceMotion
+                    || (model?.accessibilitySettings.reducesAnimation(
+                        .sticker,
+                        systemReduceMotion: false
+                    ) ?? false)
                     || !(model?.chatSettings.autoplaysAnimatedStickers ?? true)
             )
         }

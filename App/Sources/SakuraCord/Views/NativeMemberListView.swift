@@ -2103,7 +2103,13 @@ final class NativeMemberListCanvasView: NSView {
         context.setStrokeColor(NSColor.controlBackgroundColor.cgColor)
         context.setLineWidth(2)
         context.strokeEllipse(in: rect.insetBy(dx: 1, dy: 1))
-        if status == .dnd {
+        if status == .online {
+            context.setFillColor(NSColor.white.cgColor)
+            context.fillEllipse(in: rect.insetBy(
+                dx: rect.width * 0.34,
+                dy: rect.height * 0.34
+            ))
+        } else if status == .dnd {
             let bar = CGRect(
                 x: rect.midX - rect.width * 0.275,
                 y: rect.midY - 1,
@@ -2124,6 +2130,12 @@ final class NativeMemberListCanvasView: NSView {
                 y: rect.midY - size / 2 - rect.height * 0.18,
                 width: size,
                 height: size
+            ))
+        } else {
+            context.setFillColor(NSColor.controlBackgroundColor.cgColor)
+            context.fillEllipse(in: rect.insetBy(
+                dx: rect.width * 0.27,
+                dy: rect.height * 0.27
             ))
         }
     }
@@ -2502,7 +2514,8 @@ final class NativeMemberListCanvasView: NSView {
                 host.rootView = AnyView(
                     AnimatedRemoteImage(
                         url: configuration.url,
-                        maximumPixelDimension: 64
+                        maximumPixelDimension: 64,
+                        accessibilityCategory: .emoji
                     )
                     .opacity(configuration.opacity)
                     .allowsHitTesting(false)

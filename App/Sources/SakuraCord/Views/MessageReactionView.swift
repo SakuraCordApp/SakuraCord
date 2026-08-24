@@ -355,7 +355,8 @@ private struct MessageReactionEmoji: View {
                         AnimatedRemoteImage(
                             url: url,
                             fallbackSystemImage: SakuraCordSystemSymbol.emojiFaceGrinning,
-                            fallbackInset: 3
+                            fallbackInset: 3,
+                            accessibilityCategory: .emoji
                         )
                     }
                 }

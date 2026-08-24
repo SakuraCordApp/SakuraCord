@@ -728,11 +728,11 @@ private struct AccountAvatar: View {
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             AvatarView(name: name, url: avatarURL, size: 34)
-            Circle()
-                .fill(status.color)
-                .frame(width: 9, height: 9)
+            PresenceIndicator(status: status, size: 9)
                 .overlay(Circle().stroke(.background, lineWidth: 2))
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(name), \(status.label)")
     }
 }
 

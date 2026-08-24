@@ -5,6 +5,7 @@ import SwiftUI
 
 struct RootView: View {
     let model: AppModel
+    @Environment(\.colorSchemeContrast) private var systemColorSchemeContrast
     @State private var toolbarSearchFieldMetrics = ToolbarSearchFieldMetrics.zero
 
     var body: some View {
@@ -93,6 +94,12 @@ struct RootView: View {
                 channelID: selectedChannel.id.description
             )
         }
+        .contrast(
+            model.accessibilitySettings.increasesContrast
+                && systemColorSchemeContrast == .standard
+                ? 1.12
+                : 1
+        )
     }
 
     private var showsMessageSearchToolbar: Bool {

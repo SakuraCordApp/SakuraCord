@@ -39,7 +39,8 @@ struct AvatarView: View {
                     AnimatedRemoteImage(
                         url: url,
                         maximumPixelDimension: requestedPixelDimension,
-                        contentMode: .fill
+                        contentMode: .fill,
+                        accessibilityCategory: .avatar
                     )
                 } else {
                     StaticRemoteImage(

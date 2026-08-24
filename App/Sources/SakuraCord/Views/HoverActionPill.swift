@@ -2,17 +2,23 @@ import SwiftUI
 
 nonisolated enum HoverActionPillMetrics {
     static let controlDiameter: CGFloat = 28
+    static let enlargedControlDiameter: CGFloat = 36
     static let spacing: CGFloat = 1
     static let padding: CGFloat = 4
 
-    static func size(controlCount: Int) -> CGSize {
+    static func diameter(enlarged: Bool) -> CGFloat {
+        enlarged ? enlargedControlDiameter : controlDiameter
+    }
+
+    static func size(controlCount: Int, enlarged: Bool = false) -> CGSize {
         let count = max(1, controlCount)
+        let diameter = diameter(enlarged: enlarged)
         return CGSize(
             width:
                 padding * 2
-                + controlDiameter * CGFloat(count)
+                + diameter * CGFloat(count)
                 + spacing * CGFloat(count - 1),
-            height: padding * 2 + controlDiameter
+            height: padding * 2 + diameter
         )
     }
 }
@@ -66,9 +72,11 @@ struct HoverActionButton: View {
     let help: String
     var role: ButtonRole?
     var isSelected: Bool?
-    var diameter: CGFloat = HoverActionPillMetrics.controlDiameter
+    var diameter: CGFloat?
     var iconFont: Font = .callout.weight(.medium)
     let action: () -> Void
+    @AppStorage("settings.accessibility.largerTargets")
+    private var usesLargerTargets = false
 
     var body: some View {
         let button = Button(role: role, action: action) {
@@ -76,6 +84,9 @@ struct HoverActionButton: View {
                 role: role,
                 isSelected: isSelected,
                 diameter: diameter
+                    ?? HoverActionPillMetrics.diameter(
+                        enlarged: usesLargerTargets
+                    )
             ) {
                 Image(systemName: systemImage)
                     .symbolVariant(.none)

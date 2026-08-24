@@ -13,7 +13,10 @@ struct EmojiAutocompleteRow: View {
         Button(action: select) {
             HStack(spacing: 9) {
                 if let url = suggestion.imageURL {
-                    AnimatedRemoteImage(url: url)
+                    AnimatedRemoteImage(
+                        url: url,
+                        accessibilityCategory: .emoji
+                    )
                         .frame(width: 28, height: 28)
                 } else {
                     Text(suggestion.value)

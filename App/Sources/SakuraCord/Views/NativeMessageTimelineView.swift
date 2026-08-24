@@ -658,6 +658,15 @@ extension NativeMessageTimelineCoordinator {
                     parent.conversation.messageInteractionContext
                 canvas.actions = actions
             }
+            if canvas.accessibilitySettingsSnapshot
+                != parent.model.accessibilitySettings
+            {
+                canvas.accessibilitySettingsSnapshot =
+                    parent.model.accessibilitySettings
+                canvas.removeAccessibilityProxies()
+                canvas.reconcileAccessibilityProxiesIfActive()
+                canvas.reconcileAnimatedMedia(allowsScrolling: true)
+            }
             if parent.hasMoreMessages,
                leadingHistoryReserve == 0,
                conversationChanged || !oldParent.hasMoreMessages

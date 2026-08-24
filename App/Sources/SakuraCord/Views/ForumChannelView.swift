@@ -655,7 +655,8 @@ private struct ForumTagEmoji: View {
             AnimatedRemoteImage(
                 url: url,
                 fallbackSystemImage: "tag",
-                maximumPixelDimension: max(1, Int(((size + 4) * 2).rounded(.up)))
+                maximumPixelDimension: max(1, Int(((size + 4) * 2).rounded(.up))),
+                accessibilityCategory: .emoji
             )
             .frame(width: size, height: size)
             .frame(width: size + 4, height: size + 4)

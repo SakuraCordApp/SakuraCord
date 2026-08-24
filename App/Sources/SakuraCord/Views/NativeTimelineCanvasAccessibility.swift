@@ -318,9 +318,17 @@ extension NativeTimelineCanvasView {
             for: message,
             currentUserID: model?.snapshot?.currentUser.id
         )
-        let rowLabel = message.type.hasGeneratedContent
+        let accessibilitySettings =
+            model?.accessibilitySettings ?? .defaults
+        let metadata = AccessibilityMessageMetadataPolicy.summary(
+            for: message,
+            timestamp: timestamp,
+            settings: accessibilitySettings
+        )
+        let baseRowLabel = message.type.hasGeneratedContent
             ? "System message, \(generatedLabel)"
-            : "Message from \(author.displayName), \(timestamp)"
+            : "Message from \(author.displayName)"
+        let rowLabel = ([baseRowLabel] + metadata).joined(separator: ", ")
         let rowPress: (@MainActor @Sendable () -> Bool)? =
             if actions?.openMessage != nil {
                 { [weak self] in
@@ -457,7 +465,9 @@ extension NativeTimelineCanvasView {
                     return true
                 })
             }
-            if let frame = layout.timestampFrame {
+            if accessibilitySettings.announcesTimestamps,
+               let frame = layout.timestampFrame
+            {
                 children.append(accessibilityElement(
                     role: .staticText,
                     label: timestamp,

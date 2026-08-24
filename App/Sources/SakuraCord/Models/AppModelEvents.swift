@@ -205,6 +205,7 @@ extension AppModel {
     }
 
     func resetPendingCreatedMessages() {
+        accessibilityMessageAnnouncer.cancel()
         createdMessageFlushTask?.cancel()
         createdMessageFlushTask = nil
         pendingCreatedMessages.removeAll(keepingCapacity: false)
@@ -474,6 +475,11 @@ extension AppModel {
         guard let currentUserID = snapshot?.currentUser.id else { return }
         let disposition = readState.receive(message, currentUserID: currentUserID)
         guard disposition.accepted else { return }
+        if message.author.id != currentUserID,
+           accessibilitySettings.announcesNewMessages
+        {
+            accessibilityMessageAnnouncer.enqueue()
+        }
         if message.channelID == selectedChannelID || message.channelID == openThread?.id {
             preserveUnreadDividerIfNeeded(channelID: message.channelID)
         }

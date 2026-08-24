@@ -304,6 +304,7 @@ final class WindowModalHostingView: NSHostingView<AnyView> {
     let presentationID: AnyHashable
     let animationState: WindowModalAnimationState
     private let behavior: WindowModalBehavior
+    private let reducesMotion: Bool
     private var isModalPresented = false
     var isPresented: Bool { isModalPresented }
 
@@ -317,10 +318,17 @@ final class WindowModalHostingView: NSHostingView<AnyView> {
         content: (WindowModalAnimationState) -> AnyView
     ) {
         self.presentationID = presentationID
+        let reducesMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            || AccessibilitySettingsStore.shared.load().reducesAnimation(
+                .transition,
+                systemReduceMotion: false
+            )
+        self.reducesMotion = reducesMotion
         let animationState = WindowModalAnimationState(
             dismiss: dismiss,
             didFinishDismissal: didFinishDismissal,
-            animates: behavior.animates
+            animates: behavior.animates,
+            reducesMotion: reducesMotion
         )
         self.animationState = animationState
         self.behavior = behavior
@@ -330,8 +338,7 @@ final class WindowModalHostingView: NSHostingView<AnyView> {
         animationState.requestDismissal = { [weak self] commitsPresentation in
             self?.requestDismissal(committingPresentation: commitsPresentation)
         }
-        alphaValue = behavior.animates
-            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 1
+        alphaValue = behavior.animates && !reducesMotion ? 0 : 1
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityModal(true)
@@ -395,7 +402,7 @@ final class WindowModalHostingView: NSHostingView<AnyView> {
         isHidden = false
         setAccessibilityHidden(false)
         guard behavior.animates,
-              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+              !reducesMotion
         else {
             animationState.present()
             alphaValue = 1
@@ -435,7 +442,7 @@ final class WindowModalHostingView: NSHostingView<AnyView> {
 
     func requestDismissal(committingPresentation: Bool = true) {
         guard animationState.canBeginDismissal else { return }
-        if !behavior.animates || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+        if !behavior.animates || reducesMotion {
             alphaValue = 0
         } else {
             NSAnimationContext.runAnimationGroup { context in
@@ -461,15 +468,18 @@ final class WindowModalAnimationState {
     private var dismissPresentation: () -> Void
     private let didFinishDismissal: () -> Void
     private let animates: Bool
+    private let reducesMotion: Bool
 
     init(
         dismiss: @escaping () -> Void,
         didFinishDismissal: @escaping () -> Void,
-        animates: Bool = true
+        animates: Bool = true,
+        reducesMotion: Bool = false
     ) {
         dismissPresentation = dismiss
         self.didFinishDismissal = didFinishDismissal
         self.animates = animates
+        self.reducesMotion = reducesMotion
     }
 
     func updateDismissCallback(_ dismiss: @escaping () -> Void) {
@@ -482,7 +492,7 @@ final class WindowModalAnimationState {
 
     fileprivate func present() {
         guard !isVisible, dismissalTask == nil else { return }
-        if !animates || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+        if !animates || reducesMotion {
             isVisible = true
         } else {
             withAnimation(.easeOut(duration: WindowModalAnimationTiming.openingSeconds)) {
@@ -493,7 +503,7 @@ final class WindowModalAnimationState {
 
     fileprivate func beginDismissal(committingPresentation: Bool) {
         guard dismissalTask == nil else { return }
-        let reduceMotion = !animates || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let reduceMotion = !animates || self.reducesMotion
         if reduceMotion {
             isVisible = false
         } else {

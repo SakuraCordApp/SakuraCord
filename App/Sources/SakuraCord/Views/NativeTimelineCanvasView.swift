@@ -79,6 +79,23 @@ final class NativeTimelineCanvasView: NSView {
         case componentButton(Int, String)
         case sticker(String)
         case reaction(String)
+
+        nonisolated var accessibilityCategory: AccessibilityAnimationCategory {
+            switch self {
+            case .authorAvatar, .replyAvatar, .invocationAvatar, .reactionAvatar:
+                .avatar
+            case .authorAvatarDecoration:
+                .decoration
+            case .messageEmoji, .embedEmoji, .componentEmoji,
+                 .componentButton, .reaction:
+                .emoji
+            case .sticker:
+                .sticker
+            case .linkedImage, .attachment, .embedImage, .embedMedia,
+                 .componentImage, .componentMedia:
+                .gif
+            }
+        }
     }
 
     struct AnimatedMediaOverlayKey: Hashable {
@@ -197,6 +214,7 @@ final class NativeTimelineCanvasView: NSView {
     }
 
     var model: AppModel?
+    var accessibilitySettingsSnapshot = AccessibilitySettingsSnapshot.defaults
     var presentedConversationID: ChannelID?
     var mediaReadyConversationID: ChannelID?
     var mediaViewerHighlightedMessageID: MessageID?
@@ -323,6 +341,12 @@ final class NativeTimelineCanvasView: NSView {
             name: NSApplication.didBecomeActiveNotification,
             object: nil
         )
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(mediaPlaybackVisibilityDidChange(_:)),
+            name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
+            object: nil
+        )
         notificationCenter.addObserver(
             self,
             selector: #selector(mediaPlaybackVisibilityDidChange(_:)),
@@ -350,6 +374,7 @@ final class NativeTimelineCanvasView: NSView {
     deinit {
         MainActor.assumeIsolated {
             NotificationCenter.default.removeObserver(self)
+            NSWorkspace.shared.notificationCenter.removeObserver(self)
             mediaInvalidationTask?.cancel()
             visibleMediaRequestTask?.cancel()
             historySkeletonShimmerTask?.cancel()

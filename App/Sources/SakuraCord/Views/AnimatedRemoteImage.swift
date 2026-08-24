@@ -153,9 +153,24 @@ struct AnimatedRemoteImage: View {
     var maximumPixelDimension: Int?
     var contentMode: ContentMode = .fit
     var onFailure: (() -> Void)?
+    var accessibilityCategory: AccessibilityAnimationCategory = .gif
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityPlayAnimatedImages) private var playsAnimatedImages
     @AppStorage("reduceAnimatedMedia") private var reduceAnimatedMedia = false
+    @AppStorage("settings.accessibility.motionOverride") private var motionOverride =
+        AccessibilityMotionOverride.followMacOS.rawValue
+    @AppStorage("settings.accessibility.reduceAnimatedContent")
+    private var reducesAnimatedContent = false
+    @AppStorage("settings.accessibility.reduceAnimatedEmoji")
+    private var reducesAnimatedEmoji = false
+    @AppStorage("settings.accessibility.reduceAnimatedStickers")
+    private var reducesAnimatedStickers = false
+    @AppStorage("settings.accessibility.reduceGIFs") private var reducesGIFs = false
+    @AppStorage("settings.accessibility.reduceAnimatedAvatars")
+    private var reducesAnimatedAvatars = false
+    @AppStorage("settings.accessibility.reduceDecorations")
+    private var reducesDecorations = false
     @State private var decodedImage: DecodedAnimatedImage?
     @State private var displayedLoadID: AnimatedRemoteImageRequestIdentity?
     @State private var didFail = false
@@ -169,6 +184,7 @@ struct AnimatedRemoteImage: View {
         fallbackInset: CGFloat = 2,
         maximumPixelDimension: Int? = nil,
         contentMode: ContentMode = .fit,
+        accessibilityCategory: AccessibilityAnimationCategory = .gif,
         onFailure: (() -> Void)? = nil
     ) {
         self.url = url
@@ -179,6 +195,7 @@ struct AnimatedRemoteImage: View {
         self.fallbackInset = fallbackInset
         self.maximumPixelDimension = maximumPixelDimension
         self.contentMode = contentMode
+        self.accessibilityCategory = accessibilityCategory
         self.onFailure = onFailure
 
         let loadID = AnimatedRemoteImageRequestIdentity(
@@ -198,7 +215,7 @@ struct AnimatedRemoteImage: View {
             if let decodedImage {
                 AnimatedImageRepresentable(
                     decodedImage: decodedImage,
-                    animates: animates && !reduceMotion && !reduceAnimatedMedia,
+                    animates: animates && !accessibilityReducesAnimation,
                     isLooping: isLooping,
                     contentMode: contentMode
                 )
@@ -263,6 +280,23 @@ struct AnimatedRemoteImage: View {
                 didFail = true
                 onFailure?()
             }
+        }
+    }
+
+    private var accessibilityReducesAnimation: Bool {
+        if reduceMotion || !playsAnimatedImages || reduceAnimatedMedia
+            || motionOverride == AccessibilityMotionOverride.alwaysReduce.rawValue
+            || reducesAnimatedContent
+        {
+            return true
+        }
+        return switch accessibilityCategory {
+        case .emoji: reducesAnimatedEmoji
+        case .sticker: reducesAnimatedStickers
+        case .gif: reducesGIFs
+        case .avatar: reducesAnimatedAvatars
+        case .decoration: reducesDecorations
+        case .transition: false
         }
     }
 }

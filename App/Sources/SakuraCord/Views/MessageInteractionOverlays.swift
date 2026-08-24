@@ -429,13 +429,20 @@ private struct ReactionActionMenu: View {
     var presentation: ReactionActionMenuPresentation = .toolbar
     let react: (String) -> Void
     @State private var isHovering = false
+    @AppStorage("settings.accessibility.largerTargets")
+    private var usesLargerTargets = false
 
     var body: some View {
+        let width = presentation.width(enlarged: usesLargerTargets)
+        let height = presentation.height(enlarged: usesLargerTargets)
+        let cornerRadius = presentation.cornerRadius(
+            enlarged: usesLargerTargets
+        )
         ZStack {
-            ConcentricRectangle(cornerRadius: presentation.cornerRadius, style: .continuous)
+            ConcentricRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(backgroundColor)
                 .overlay {
-                    ConcentricRectangle(cornerRadius: presentation.cornerRadius, style: .continuous)
+                    ConcentricRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .stroke(borderColor, lineWidth: 1)
                         .padding(0.5)
                 }
@@ -447,16 +454,16 @@ private struct ReactionActionMenu: View {
                     .symbolVariant(.none)
                     .font(.callout.weight(.medium))
                     .foregroundStyle(.primary)
-                    .frame(width: presentation.width, height: presentation.height)
+                    .frame(width: width, height: height)
                     .contentShape(
-                        ConcentricRectangle(cornerRadius: presentation.cornerRadius, style: .continuous)
+                        ConcentricRectangle(cornerRadius: cornerRadius, style: .continuous)
                     )
             }
             .buttonStyle(.plain)
         }
-        .frame(width: presentation.width, height: presentation.height)
+        .frame(width: width, height: height)
         .contentShape(
-            ConcentricRectangle(cornerRadius: presentation.cornerRadius, style: .continuous)
+            ConcentricRectangle(cornerRadius: cornerRadius, style: .continuous)
         )
         .onHover { isHovering = $0 }
         .help("Add reaction")
@@ -480,7 +487,10 @@ private struct ReactionActionMenu: View {
                     }
                 }
             }
-            .frame(width: presentation.width, height: presentation.height)
+            .frame(
+                width: width,
+                height: height
+            )
         }
     }
 
@@ -509,15 +519,21 @@ enum ReactionActionMenuPresentation {
     case toolbar
     case inline
 
-    var width: CGFloat {
-        self == .toolbar ? HoverActionPillMetrics.controlDiameter : 30
-    }
-    var height: CGFloat {
+    func width(enlarged: Bool) -> CGFloat {
         self == .toolbar
-            ? HoverActionPillMetrics.controlDiameter
+            ? HoverActionPillMetrics.diameter(enlarged: enlarged)
+            : 30
+    }
+    func height(enlarged: Bool) -> CGFloat {
+        self == .toolbar
+            ? HoverActionPillMetrics.diameter(enlarged: enlarged)
             : MessageReactionMetrics.pillHeight
     }
-    var cornerRadius: CGFloat { self == .toolbar ? 14 : 9 }
+    func cornerRadius(enlarged: Bool) -> CGFloat {
+        self == .toolbar
+            ? HoverActionPillMetrics.diameter(enlarged: enlarged) / 2
+            : 9
+    }
     var popoverEdge: NSRectEdge {
         StableReactionPickerAnchorPolicy.preferredEdge(isInline: self == .inline)
     }

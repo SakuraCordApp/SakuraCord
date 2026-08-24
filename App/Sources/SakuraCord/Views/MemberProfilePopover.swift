@@ -372,7 +372,8 @@ private struct ProfileBanner: View {
                         url: url,
                         animates: animates,
                         maximumPixelDimension: 600,
-                        contentMode: .fill
+                        contentMode: .fill,
+                        accessibilityCategory: .decoration
                     )
                     .frame(width: width, height: ProfileBannerLayout.height)
                     .clipped()
@@ -1114,7 +1115,8 @@ private struct ProfileEffectOverlay: View {
                         AnimatedRemoteImage(
                             url: animation.sourceURL,
                             animates: animates,
-                            isLooping: animation.isLooping
+                            isLooping: animation.isLooping,
+                            accessibilityCategory: .decoration
                         )
                             .frame(
                                 width: frame.width,
@@ -1130,7 +1132,11 @@ private struct ProfileEffectOverlay: View {
                 .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
                 .clipped()
             } else if let url = effect.reducedMotionURL {
-                AnimatedRemoteImage(url: url, animates: animates)
+                AnimatedRemoteImage(
+                    url: url,
+                    animates: animates,
+                    accessibilityCategory: .decoration
+                )
                     .frame(width: proxy.size.width, height: proxy.size.height)
             } else if let url = effect.staticURL {
                 AsyncImage(url: url) { image in

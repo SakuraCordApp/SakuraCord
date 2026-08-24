@@ -601,6 +601,96 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
+            id: .accessibilityMotionOverride,
+            page: .accessibility,
+            storage: .appWide(key: "settings.accessibility.motionOverride"),
+            defaultValue: .string(AccessibilityMotionOverride.followMacOS.rawValue)
+        ),
+        SettingsPreferenceRegistration(
+            id: .accessibilityReduceAnimatedContent,
+            page: .accessibility,
+            storage: .appWide(key: "settings.accessibility.reduceAnimatedContent"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .accessibilityReduceAnimatedEmoji,
+            page: .accessibility,
+            storage: .appWide(key: "settings.accessibility.reduceAnimatedEmoji"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .accessibilityReduceAnimatedStickers,
+            page: .accessibility,
+            storage: .appWide(key: "settings.accessibility.reduceAnimatedStickers"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .accessibilityReduceGIFs,
+            page: .accessibility,
+            storage: .appWide(key: "settings.accessibility.reduceGIFs"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .accessibilityReduceAnimatedAvatars,
+            page: .accessibility,
+            storage: .appWide(key: "settings.accessibility.reduceAnimatedAvatars"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .accessibilityReduceDecorations,
+            page: .accessibility,
+            storage: .appWide(key: "settings.accessibility.reduceDecorations"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .accessibilityReduceTransitions,
+            page: .accessibility,
+            storage: .appWide(key: "settings.accessibility.reduceTransitions"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .accessibilityIncreaseContrast,
+            page: .accessibility,
+            storage: .appWide(key: "settings.accessibility.increaseContrast"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .accessibilityLargerTargets,
+            page: .accessibility,
+            storage: .appWide(key: "settings.accessibility.largerTargets"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .accessibilityAnnounceTimestamp,
+            page: .accessibility,
+            storage: .appWide(key: "settings.accessibility.announceTimestamp"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .accessibilityAnnounceEdited,
+            page: .accessibility,
+            storage: .appWide(key: "settings.accessibility.announceEdited"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .accessibilityAnnounceReactions,
+            page: .accessibility,
+            storage: .appWide(key: "settings.accessibility.announceReactions"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .accessibilityAnnounceAttachmentTypes,
+            page: .accessibility,
+            storage: .appWide(key: "settings.accessibility.announceAttachmentTypes"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .accessibilityAnnounceNewMessages,
+            page: .accessibility,
+            storage: .appWide(key: "settings.accessibility.announceNewMessages"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
             id: .diagnosticDiskCapture,
             page: .diagnostics,
             storage: .appWide(key: "saveAPIDiagnosticsToDisk"),

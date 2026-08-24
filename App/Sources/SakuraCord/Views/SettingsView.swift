@@ -5,6 +5,7 @@ struct SettingsView: View {
     @ObservedObject var updateController: AppUpdateController
 
     @Environment(\.locale) private var locale
+    @Environment(\.colorSchemeContrast) private var systemColorSchemeContrast
     @SceneStorage("settings.selected-page") private var storedSelectedPage =
         SettingsPageID.myAccount.rawValue
     @SceneStorage("settings.selected-account") private var storedSelectedAccount = ""
@@ -65,6 +66,12 @@ struct SettingsView: View {
             minHeight: 520,
             idealHeight: 640
         )
+        .contrast(
+            model.accessibilitySettings.increasesContrast
+                && systemColorSchemeContrast == .standard
+                ? 1.12
+                : 1
+        )
     }
 }
 
@@ -97,7 +104,7 @@ private struct SettingsDetailRouter: View {
         case .voiceVideo:
             VoiceVideoSettingsPage(model: model, state: state)
         case .accessibility:
-            AccessibilitySettingsPage(state: state)
+            AccessibilitySettingsPage(model: model, state: state)
         case .keyboardShortcuts:
             KeyboardShortcutsSettingsPage(state: state)
         case .privacySafety:

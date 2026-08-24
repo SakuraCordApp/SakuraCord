@@ -508,7 +508,8 @@ struct DecoratedAvatarView: View {
                 AnimatedRemoteImage(
                     url: decorationURL,
                     animates: animatesDecoration,
-                    maximumPixelDimension: decorationPixelDimension
+                    maximumPixelDimension: decorationPixelDimension,
+                    accessibilityCategory: .decoration
                 )
                     .frame(width: size * 1.22, height: size * 1.22)
                     .allowsHitTesting(false)
@@ -531,15 +532,25 @@ struct PresenceIndicator: View {
             .fill(color)
             .frame(width: size, height: size)
             .overlay {
-                if status == .dnd {
+                if status == .online {
+                    Circle().fill(.white).frame(
+                        width: size * 0.32,
+                        height: size * 0.32
+                    )
+                } else if status == .dnd {
                     Capsule().fill(.white).frame(width: size * 0.55, height: 2)
                 } else if status == .idle {
                     Circle()
                         .fill(Color(nsColor: .controlBackgroundColor))
                         .frame(width: size * 0.62, height: size * 0.62)
                         .offset(x: -size * 0.18, y: -size * 0.18)
+                } else {
+                    Circle()
+                        .fill(Color(nsColor: .controlBackgroundColor))
+                        .frame(width: size * 0.46, height: size * 0.46)
                 }
             }
+            .accessibilityHidden(true)
     }
 
     private var color: Color {
@@ -593,7 +604,8 @@ private struct NameplateBackground: View {
                 AnimatedRemoteImage(
                     url: url,
                     maximumPixelDimension: 512,
-                    contentMode: .fill
+                    contentMode: .fill,
+                    accessibilityCategory: .decoration
                 )
             }
         }

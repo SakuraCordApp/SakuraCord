@@ -188,10 +188,9 @@ final class AppModel {
     var timelinePresentationRevision: UInt64 = 0
     var interfaceSettings: InterfaceSettingsSnapshot
     var chatSettings: ChatSettingsSnapshot
-    @ObservationIgnored var messageRowsUpdateHint:
-        MessageRowsUpdateHint?
-    @ObservationIgnored let messageRowsUpdateJournal =
-        MessageRowsUpdateJournal()
+    var accessibilitySettings: AccessibilitySettingsSnapshot
+    @ObservationIgnored var messageRowsUpdateHint: MessageRowsUpdateHint?
+    @ObservationIgnored let messageRowsUpdateJournal = MessageRowsUpdateJournal()
     @ObservationIgnored let timelineSpoilerRevealStore =
         NativeTimelineSpoilerRevealStore()
     @ObservationIgnored var latestMessageRowsRevision: UInt64 = 0
@@ -303,6 +302,7 @@ final class AppModel {
     let readState = AccountReadStateModel()
     let notificationPreferences: NotificationPreferences
     let voiceVideoPreferences: VoiceVideoPreferences
+    @ObservationIgnored let accessibilityMessageAnnouncer: AccessibilityMessageAnnouncer
     @ObservationIgnored let notificationService: any NativeNotificationService
     @ObservationIgnored let soundPlayer: any AppSoundPlaying
     var isLoading = false
@@ -1204,6 +1204,7 @@ final class AppModel {
         soundPlayer: (any AppSoundPlaying)? = nil,
         notificationPreferences: NotificationPreferences? = nil,
         voiceVideoPreferences: VoiceVideoPreferences? = nil,
+        accessibilityMessageAnnouncer: AccessibilityMessageAnnouncer? = nil,
         typingExpiry: Duration = .seconds(10),
         localTypingTiming: LocalTypingTiming = LocalTypingTiming(),
         reactionMutationTiming: ReactionMutationTiming = ReactionMutationTiming(),
@@ -1214,12 +1215,14 @@ final class AppModel {
         self.launchMode = launchMode
         interfaceSettings = InterfaceSettingsStore.shared.load()
         chatSettings = ChatSettingsStore.shared.load()
+        accessibilitySettings = AccessibilitySettingsStore.shared.load()
         self.notificationService =
             notificationService ?? NoopNativeNotificationService()
         self.soundPlayer = soundPlayer ?? NoopAppSoundPlayer()
         self.notificationPreferences = notificationPreferences ?? NotificationPreferences()
         let resolvedVoicePreferences = voiceVideoPreferences ?? VoiceVideoPreferences()
         self.voiceVideoPreferences = resolvedVoicePreferences
+        self.accessibilityMessageAnnouncer = accessibilityMessageAnnouncer ?? AccessibilityMessageAnnouncer()
         selectedCameraUID = resolvedVoicePreferences.remembersCamera && !resolvedVoicePreferences.cameraUID.isEmpty ? resolvedVoicePreferences.cameraUID : nil
         screenShareSettings = resolvedVoicePreferences.screenShareDefaults
         self.provider =

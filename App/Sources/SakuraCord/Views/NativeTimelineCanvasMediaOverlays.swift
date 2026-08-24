@@ -29,6 +29,9 @@ extension NativeTimelineCanvasView {
         reconcileAnimatedMedia(allowsScrolling: true)
         let reduceMotion =
             NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            || (model?.accessibilitySettings.reducesAllOptionalMotion(
+                systemReduceMotion: false
+            ) ?? false)
             || (model?.chatSettings.reducesAnimatedMedia
                 ?? UserDefaults.standard.bool(forKey: "reduceAnimatedMedia"))
             || !permitsAnimatedMediaPlayback
@@ -38,6 +41,10 @@ extension NativeTimelineCanvasView {
         )
         reconcileLottieStickerOverlays(
             reduceMotion: reduceMotion
+                || (model?.accessibilitySettings.reducesAnimation(
+                    .sticker,
+                    systemReduceMotion: false
+                ) ?? false)
                 || !(model?.chatSettings.autoplaysAnimatedStickers ?? true)
         )
     }
@@ -78,6 +85,9 @@ extension NativeTimelineCanvasView {
         guard !suppressesHoverPresentation else { return }
         let reduceMotion =
             NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            || (model?.accessibilitySettings.reducesAllOptionalMotion(
+                systemReduceMotion: false
+            ) ?? false)
             || (model?.chatSettings.reducesAnimatedMedia
                 ?? UserDefaults.standard.bool(forKey: "reduceAnimatedMedia"))
             || !permitsAnimatedMediaPlayback
@@ -162,6 +172,7 @@ extension NativeTimelineCanvasView {
             allowsStaticImage: Bool = false
         ) {
             let settings = model?.chatSettings ?? .defaults
+            let accessibility = model?.accessibilitySettings ?? .defaults
             let categoryAllowsPlayback: Bool = switch role {
             case .attachment, .linkedImage, .embedImage, .embedMedia,
                  .componentImage, .componentMedia:
@@ -171,7 +182,12 @@ extension NativeTimelineCanvasView {
             default:
                 true
             }
-            guard categoryAllowsPlayback else { return }
+            guard categoryAllowsPlayback,
+                  !accessibility.reducesAnimation(
+                      role.accessibilityCategory,
+                      systemReduceMotion: false
+                  )
+            else { return }
             let image = allowsStaticImage
                 ? NativeTimelineMediaStore.shared.decodedImage(for: media)
                 : NativeTimelineMediaStore.shared
@@ -712,6 +728,9 @@ extension NativeTimelineCanvasView {
         guard !animatedMediaOverlays.isEmpty else { return }
         let reduceMotion =
             NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            || (model?.accessibilitySettings.reducesAllOptionalMotion(
+                systemReduceMotion: false
+            ) ?? false)
             || (model?.chatSettings.reducesAnimatedMedia
                 ?? UserDefaults.standard.bool(forKey: "reduceAnimatedMedia"))
         reconcileAnimatedMediaOverlays(reduceMotion: reduceMotion)

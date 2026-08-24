@@ -1132,7 +1132,9 @@ struct NativeTimelineRowLayout {
             }
             let sizes = presentedReactions.map(reactionSize)
                 + [CGSize(
-                    width: ReactionActionMenuPresentation.inline.width,
+                    width: ReactionActionMenuPresentation.inline.width(
+                        enlarged: false
+                    ),
                     height: MessageReactionMetrics.pillHeight
                 )]
             let wrapping = InlineWrappingLayoutPlan.frames(

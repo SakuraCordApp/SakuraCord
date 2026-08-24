@@ -1,13 +1,5 @@
 import SwiftUI
 
-struct AccessibilitySettingsPage: View {
-    let state: SettingsViewState
-
-    var body: some View {
-        SettingsPendingPage(page: .accessibility, phase: 7, state: state)
-    }
-}
-
 struct KeyboardShortcutsSettingsPage: View {
     let state: SettingsViewState
 

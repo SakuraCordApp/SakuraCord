@@ -13,6 +13,8 @@ struct ChatSettingsPage: View {
     let model: AppModel
     let state: SettingsViewState
 
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+
     @State private var value = ChatSettingsSnapshot.defaults
     @State private var confirmation: Confirmation?
     @State private var exportedPreferences: SettingsPreferenceExportFile?
@@ -169,13 +171,16 @@ struct ChatSettingsPage: View {
     private var mediaSection: some View {
         Section {
             Toggle("Autoplay GIFs", isOn: $value.autoplaysGIFs)
+                .disabled(reducesGIFPlaybackForAccessibility)
                 .settingsControlAnchor(.chatAutoplayGIFs, state: state)
             Toggle(
                 "Autoplay animated stickers",
                 isOn: $value.autoplaysAnimatedStickers
             )
+            .disabled(reducesStickerPlaybackForAccessibility)
             .settingsControlAnchor(.chatAutoplayStickers, state: state)
             Toggle("Autoplay inline videos", isOn: $value.autoplaysInlineVideos)
+                .disabled(reducesAllOptionalMotionForAccessibility)
                 .settingsControlAnchor(.chatAutoplayVideos, state: state)
             Toggle(
                 "Show automatic link previews",
@@ -196,9 +201,35 @@ struct ChatSettingsPage: View {
         } footer: {
             VStack(alignment: .leading, spacing: 4) {
                 Text("macOS Reduce Motion—and the broader SakuraCord Accessibility reduction when enabled—takes precedence over autoplay choices.")
+                if reducesGIFPlaybackForAccessibility
+                    || reducesStickerPlaybackForAccessibility
+                    || reducesAllOptionalMotionForAccessibility
+                {
+                    Text("One or more autoplay choices are unavailable while the stronger Accessibility motion reduction is active.")
+                }
                 SettingsScopeFooter(scope: .appWideLocal)
             }
         }
+    }
+
+    private var reducesGIFPlaybackForAccessibility: Bool {
+        model.accessibilitySettings.reducesAnimation(
+            .gif,
+            systemReduceMotion: systemReduceMotion
+        )
+    }
+
+    private var reducesStickerPlaybackForAccessibility: Bool {
+        model.accessibilitySettings.reducesAnimation(
+            .sticker,
+            systemReduceMotion: systemReduceMotion
+        )
+    }
+
+    private var reducesAllOptionalMotionForAccessibility: Bool {
+        model.accessibilitySettings.reducesAllOptionalMotion(
+            systemReduceMotion: systemReduceMotion
+        )
     }
 
     private var emojiSection: some View {
