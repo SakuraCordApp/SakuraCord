@@ -47,7 +47,7 @@ struct DiagnosticsSettingsPage: View {
         DiagnosticsStatusBuilder.make(
             model: model,
             updateController: updateController,
-            notificationAuthorization: notificationAuthorization,
+            notificationPermissionStatus: notificationAuthorization,
             mediaPermissions: mediaPermissions,
             mediaDevices: mediaDevices,
             mediaCacheCheck: mediaCacheCheck,

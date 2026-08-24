@@ -381,10 +381,14 @@ import Testing
     let uploader = AttachmentUploadTestUploader(
         result: URL(string: "https://files.catbox.moe/test.bin")!
     )
+    let privacySafetySettingsStore = PrivacySafetySettingsStore(
+        preferences: SettingsPreferenceStore(defaults: InMemoryPreferences())
+    )
     let model = AppModel(
         launchMode: .offlineTesting,
         provider: TypingTestProvider(),
-        externalAttachmentUploader: uploader
+        externalAttachmentUploader: uploader,
+        privacySafetySettingsStore: privacySafetySettingsStore
     )
     await model.start()
     model.snapshot?.currentUser.premiumType = 0

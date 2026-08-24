@@ -6,23 +6,27 @@ struct SettingsSidebar: View {
     var body: some View {
         @Bindable var state = state
         List(selection: $state.selectedPage) {
-            ForEach(SettingsSidebarGroupID.allCases) { group in
-                Section(
-                    isExpanded: Binding(
-                        get: { state.expandedGroups.contains(group) },
-                        set: { state.setGroup(group, expanded: $0) }
-                    )
-                ) {
-                    ForEach(state.catalog.pages(in: group)) { page in
-                        SettingsSidebarRow(
-                            title: page.title,
-                            systemImage: page.systemImage
+            if state.searchText.isEmpty {
+                ForEach(SettingsSidebarGroupID.allCases) { group in
+                    Section(
+                        isExpanded: Binding(
+                            get: { state.expandedGroups.contains(group) },
+                            set: { state.setGroup(group, expanded: $0) }
                         )
-                        .tag(page.id)
+                    ) {
+                        ForEach(state.catalog.pages(in: group)) { page in
+                            SettingsSidebarRow(
+                                title: page.title,
+                                systemImage: page.systemImage
+                            )
+                            .tag(page.id)
+                        }
+                    } header: {
+                        Text(group.title)
                     }
-                } header: {
-                    Text(group.title)
                 }
+            } else {
+                SettingsSearchResults(state: state)
             }
         }
         .listStyle(.sidebar)
@@ -47,11 +51,17 @@ private struct SettingsSidebarRow: View {
     }
 }
 
-struct SettingsSearchSuggestions: View {
+private struct SettingsSearchResults: View {
     let state: SettingsViewState
 
     var body: some View {
-        if !state.searchText.isEmpty {
+        Section(
+            LocalizedStringResource(
+                "Search Results",
+                bundle: #bundle,
+                comment: "Sidebar section containing matching Settings controls."
+            )
+        ) {
             if state.searchResults.isEmpty {
                 Text(
                     LocalizedStringResource(

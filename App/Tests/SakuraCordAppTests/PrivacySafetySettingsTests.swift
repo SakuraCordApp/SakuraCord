@@ -104,10 +104,17 @@ import Testing
     try handle.truncate(atOffset: UInt64(DiscordAttachmentUploadPolicy.baseLimit + 1))
     try handle.close()
 
-    let model = AppModel(launchMode: .offlineTesting)
+    let preferences = SettingsPreferenceStore(defaults: InMemoryPreferences())
+    let privacySafetySettingsStore = PrivacySafetySettingsStore(preferences: preferences)
+    var privacySettings = privacySafetySettingsStore.load()
+    privacySettings.externalUploaderOfferPolicy = .never
+    privacySafetySettingsStore.save(privacySettings)
+    let model = AppModel(
+        launchMode: .offlineTesting,
+        privacySafetySettingsStore: privacySafetySettingsStore
+    )
     await model.start()
     model.snapshot?.currentUser.premiumType = 0
-    model.privacySafetySettings.externalUploaderOfferPolicy = .never
 
     #expect(model.addComposerAttachments([oversized], to: .channel))
     #expect(model.channelComposerAttachments.isEmpty)

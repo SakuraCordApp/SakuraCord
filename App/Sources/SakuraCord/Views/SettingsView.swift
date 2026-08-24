@@ -35,9 +35,6 @@ struct SettingsView: View {
                 comment: "Prompt for the Settings sidebar search field."
             )
         )
-        .searchSuggestions {
-            SettingsSearchSuggestions(state: state)
-        }
         .task {
             state.restoreSelection(from: storedSelectedPage)
             state.restoreExpandedGroups(from: storedExpandedGroups)

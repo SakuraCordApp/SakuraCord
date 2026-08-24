@@ -1151,8 +1151,7 @@ final class AppModel {
     @ObservationIgnored let persistsEmojiPreferences: Bool
     @ObservationIgnored var didAttemptSessionRestore = false
     @ObservationIgnored var credentialHandle: CredentialHandle?
-    @ObservationIgnored var credentialHandlesByAccountID:
-        [String: CredentialHandle] = [:]
+    @ObservationIgnored var credentialHandlesByAccountID: [String: CredentialHandle] = [:]
     @ObservationIgnored var didAttemptDiscordEmojiSettings = false
     @ObservationIgnored var acknowledgementTasks: [ChannelID: Task<Void, Never>] = [:]
     @ObservationIgnored var queuedAcknowledgements: [ChannelID: ReadStateMutation] = [:]
@@ -1163,12 +1162,9 @@ final class AppModel {
         [GuildID: Task<Void, Never>] = [:]
     @ObservationIgnored var categoryAcknowledgementTasks:
         [ChannelID: Task<Void, Never>] = [:]
-    @ObservationIgnored var guildNotificationMutationTasks:
-        [GuildID: Task<Void, Never>] = [:]
-    @ObservationIgnored var channelNotificationMutationTasks:
-        [ChannelID: Task<Void, Never>] = [:]
-    @ObservationIgnored var categoryCollapseMutationTasks:
-        [ChannelID: Task<Void, Never>] = [:]
+    @ObservationIgnored var guildNotificationMutationTasks: [GuildID: Task<Void, Never>] = [:]
+    @ObservationIgnored var channelNotificationMutationTasks: [ChannelID: Task<Void, Never>] = [:]
+    @ObservationIgnored var categoryCollapseMutationTasks: [ChannelID: Task<Void, Never>] = [:]
     @ObservationIgnored var categoryCollapseMutationStates:
         [ChannelID: CategoryCollapseMutationState] = [:]
     var optimisticCategoryCollapsedByID: [ChannelID: Bool] = [:]
@@ -1181,6 +1177,7 @@ final class AppModel {
     @ObservationIgnored var currentUserRoleIDsByGuild: [GuildID: Set<RoleID>] = [:]
     @ObservationIgnored let readAcknowledgementTiming: ReadAcknowledgementTiming
     @ObservationIgnored let externalAttachmentUploader: any ExternalAttachmentUploading
+    @ObservationIgnored let privacySafetySettingsStore: PrivacySafetySettingsStore
     @ObservationIgnored var queuedOversizedAttachmentPrompts: [OversizedAttachmentPrompt] = []
     @ObservationIgnored var externalAttachmentUploadTask: Task<Void, Never>?
     @ObservationIgnored var externalAttachmentUploadGeneration: UInt64 = 0
@@ -1210,7 +1207,8 @@ final class AppModel {
         reactionMutationTiming: ReactionMutationTiming = ReactionMutationTiming(),
         readAcknowledgementTiming: ReadAcknowledgementTiming = ReadAcknowledgementTiming(),
         runsChatPerformanceBenchmarkOverride: Bool? = nil,
-        externalAttachmentUploader: (any ExternalAttachmentUploading)? = nil
+        externalAttachmentUploader: (any ExternalAttachmentUploading)? = nil,
+        privacySafetySettingsStore: PrivacySafetySettingsStore? = nil
     ) {
         self.launchMode = launchMode
         interfaceSettings = InterfaceSettingsStore.shared.load()
@@ -1234,6 +1232,7 @@ final class AppModel {
         self.reactionMutationTiming = reactionMutationTiming
         self.readAcknowledgementTiming = readAcknowledgementTiming
         self.externalAttachmentUploader = externalAttachmentUploader ?? CatboxAttachmentUploader()
+        self.privacySafetySettingsStore = privacySafetySettingsStore ?? .shared
         runsChatPerformanceBenchmark =
             runsChatPerformanceBenchmarkOverride
                 ?? AppLaunchConfiguration(

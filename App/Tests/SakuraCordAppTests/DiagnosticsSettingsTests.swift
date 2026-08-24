@@ -33,7 +33,7 @@ import UserNotifications
     let active = DiagnosticsStatusBuilder.make(
         model: model,
         updateController: updateController,
-        notificationAuthorization: .authorized,
+        notificationPermissionStatus: .authorized,
         mediaPermissions: permissions,
         mediaDevices: .empty,
         mediaCacheCheck: .available(.init(
@@ -53,7 +53,7 @@ import UserNotifications
     let reset = DiagnosticsStatusBuilder.make(
         model: model,
         updateController: updateController,
-        notificationAuthorization: .authorized,
+        notificationPermissionStatus: .authorized,
         mediaPermissions: permissions,
         mediaDevices: .empty,
         mediaCacheCheck: .unavailable
@@ -116,7 +116,7 @@ import UserNotifications
     let statuses = DiagnosticsStatusBuilder.make(
         model: model,
         updateController: updateController,
-        notificationAuthorization: .denied,
+        notificationPermissionStatus: .denied,
         mediaPermissions: .init(
             microphone: .denied,
             camera: .restricted,

@@ -85,7 +85,7 @@ enum DiagnosticsStatusBuilder {
     static func make(
         model: AppModel,
         updateController: AppUpdateController,
-        notificationAuthorization: UNAuthorizationStatus?,
+        notificationPermissionStatus: UNAuthorizationStatus?,
         mediaPermissions: VoiceMediaPermissionSnapshot,
         mediaDevices: MediaDeviceSnapshot,
         mediaCacheCheck: DiagnosticsMediaCacheCheck,
@@ -114,7 +114,7 @@ enum DiagnosticsStatusBuilder {
                 isChecking: systemChecksAreRunning
             ),
             notificationStatus(
-                notificationAuthorization,
+                notificationPermissionStatus,
                 preferences: model.notificationPreferences
             ),
             cacheStatus(mediaCacheCheck),

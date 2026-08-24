@@ -207,8 +207,8 @@ final class ExternalLinkConfirmationPresenter {
 @MainActor
 extension AppModel {
     var privacySafetySettings: PrivacySafetySettingsSnapshot {
-        get { PrivacySafetySettingsStore.shared.load() }
-        set { PrivacySafetySettingsStore.shared.save(newValue) }
+        get { privacySafetySettingsStore.load() }
+        set { privacySafetySettingsStore.save(newValue) }
     }
 
     func applyPrivacySafetySettings(_ value: PrivacySafetySettingsSnapshot) {
