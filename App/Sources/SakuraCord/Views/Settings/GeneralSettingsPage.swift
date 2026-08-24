@@ -3,15 +3,45 @@ import SwiftUI
 struct GeneralSettingsPage: View {
     let model: AppModel
     let state: SettingsViewState
+    let launchAtLogin: LaunchAtLoginController
 
     @Environment(\.scenePhase) private var scenePhase
-    @State private var launchAtLogin = LaunchAtLoginController()
-    @State private var launchDestination = SettingsLaunchDestination
-        .preferredAccountLastLocation
-    @State private var showsMainWindowAtLaunch = true
-    @State private var remembersMemberListVisibility = true
-    @State private var confirmsQuitActiveWork = true
-    @State private var confirmsDiscardComposer = true
+    @State private var launchDestination: SettingsLaunchDestination
+    @State private var showsMainWindowAtLaunch: Bool
+    @State private var remembersMemberListVisibility: Bool
+    @State private var confirmsQuitActiveWork: Bool
+    @State private var confirmsDiscardComposer: Bool
+
+    init(
+        model: AppModel,
+        state: SettingsViewState,
+        launchAtLogin: LaunchAtLoginController
+    ) {
+        self.model = model
+        self.state = state
+        self.launchAtLogin = launchAtLogin
+        let preferences = SettingsPreferenceStore.shared
+        let launchDestination = if case let .string(value) = preferences.value(
+            for: .launchDestination
+        ) {
+            SettingsLaunchDestination(rawValue: value) ?? .preferredAccountLastLocation
+        } else {
+            SettingsLaunchDestination.preferredAccountLastLocation
+        }
+        _launchDestination = State(initialValue: launchDestination)
+        _showsMainWindowAtLaunch = State(
+            initialValue: preferences.value(for: .showMainWindowAtLaunch) != .bool(false)
+        )
+        _remembersMemberListVisibility = State(
+            initialValue: preferences.value(for: .rememberMemberListVisibility) != .bool(false)
+        )
+        _confirmsQuitActiveWork = State(
+            initialValue: preferences.value(for: .confirmQuitActiveWork) != .bool(false)
+        )
+        _confirmsDiscardComposer = State(
+            initialValue: preferences.value(for: .confirmDiscardComposer) != .bool(false)
+        )
+    }
 
     var body: some View {
         SettingsPageForm(page: .general, state: state) {
@@ -37,13 +67,10 @@ struct GeneralSettingsPage: View {
                 state: state
             )
         }
-        .task {
-            loadPreferences()
-            launchAtLogin.refresh()
-        }
+        .task { await launchAtLogin.refreshIfNeeded() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
-                launchAtLogin.refresh()
+                Task { await launchAtLogin.refresh() }
             }
         }
     }
@@ -91,24 +118,6 @@ struct GeneralSettingsPage: View {
         )
     }
 
-    private func loadPreferences() {
-        if case let .string(value) = SettingsPreferenceStore.shared.value(
-            for: .launchDestination
-        ) {
-            launchDestination = SettingsLaunchDestination(rawValue: value)
-                ?? .preferredAccountLastLocation
-        }
-        showsMainWindowAtLaunch = boolPreference(.showMainWindowAtLaunch)
-        remembersMemberListVisibility = boolPreference(
-            .rememberMemberListVisibility
-        )
-        confirmsQuitActiveWork = boolPreference(.confirmQuitActiveWork)
-        confirmsDiscardComposer = boolPreference(.confirmDiscardComposer)
-    }
-
-    private func boolPreference(_ id: SettingsControlID) -> Bool {
-        SettingsPreferenceStore.shared.value(for: id) != .bool(false)
-    }
 }
 
 private struct GeneralStartupRestorationSection: View {
@@ -125,17 +134,13 @@ private struct GeneralStartupRestorationSection: View {
                 "Launch at Login",
                 isOn: Binding(
                     get: { launchAtLogin.isEnabled },
-                    set: { launchAtLogin.setEnabled($0) }
+                    set: { enabled in
+                        Task { await launchAtLogin.setEnabled(enabled) }
+                    }
                 )
             )
             .disabled(launchAtLogin.isChanging || !launchAtLogin.isAvailable)
             .settingsControlAnchor(.launchAtLogin, state: state)
-
-            LabeledContent("Login item status") {
-                Text(launchAtLogin.statusDescription)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.trailing)
-            }
 
             if launchAtLogin.requiresApproval {
                 Button("Open Login Items Settings…") {

@@ -20,20 +20,14 @@ struct SettingsSidebar: View {
                 ForEach(SettingsSidebarGroupID.allCases) { group in
                     Section(group.title) {
                         ForEach(state.catalog.pages(in: group)) { page in
-                            HStack(spacing: 8) {
-                                Image(systemName: page.systemImage)
-                                    .environment(\.symbolVariants, .none)
-                                    .foregroundStyle(
-                                        state.selectedPage == page.id
-                                            ? Color.white
-                                            : Color.accentColor
+                            Label(page.title, systemImage: page.systemImage)
+                                .lineLimit(1)
+                                .labelStyle(
+                                    SettingsSidebarLabelStyle(
+                                        isSelected: state.selectedPage == page.id
                                     )
-                                    .frame(width: 16)
-                                Text(page.title)
-                                    .lineLimit(1)
-                                Spacer(minLength: 0)
-                            }
-                            .tag(page.id)
+                                )
+                                .tag(page.id)
                         }
                     }
                     .collapsible(false)
@@ -51,6 +45,20 @@ struct SettingsSidebar: View {
                 comment: "Accessibility label for the Settings source-list sidebar."
             )
         )
+    }
+}
+
+private struct SettingsSidebarLabelStyle: LabelStyle {
+    let isSelected: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 8) {
+            configuration.icon
+                .environment(\.symbolVariants, .none)
+                .foregroundStyle(isSelected ? Color.white : Color.accentColor)
+                .frame(width: 16)
+            configuration.title
+        }
     }
 }
 

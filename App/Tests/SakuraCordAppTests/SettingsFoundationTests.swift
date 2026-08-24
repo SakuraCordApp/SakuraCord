@@ -36,14 +36,8 @@ import Testing
 }
 
 @MainActor
-@Test func `settings search routes synonyms to stable controls and restores safely`() {
+@Test func `settings search routes synonyms to stable controls`() {
     let state = SettingsViewState()
-
-    state.restoreSelection(from: "removed-destination")
-    #expect(state.selectedPage == .myAccount)
-
-    state.restoreSelection(from: SettingsPageID.diagnostics.rawValue)
-    #expect(state.selectedPage == .diagnostics)
 
     state.searchText = "microphone gain"
     let inputVolume = state.searchResults.first { $0.id == .voiceInputVolume }

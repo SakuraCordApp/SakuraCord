@@ -184,7 +184,7 @@ final class GeneralWindowRestorationStore {
 
 @MainActor
 protocol LaunchAtLoginServicing: AnyObject {
-    var status: SMAppService.Status { get }
+    func currentStatus() async -> SMAppService.Status
     func register() throws
     func unregister() throws
     func openSystemSettings()
@@ -194,7 +194,11 @@ protocol LaunchAtLoginServicing: AnyObject {
 final class SystemLaunchAtLoginService: LaunchAtLoginServicing {
     private let service = SMAppService.mainApp
 
-    var status: SMAppService.Status { service.status }
+    func currentStatus() async -> SMAppService.Status {
+        await Task.detached(priority: .userInitiated) {
+            SMAppService.mainApp.status
+        }.value
+    }
 
     func register() throws {
         try service.register()
@@ -213,40 +217,33 @@ final class SystemLaunchAtLoginService: LaunchAtLoginServicing {
 @Observable
 final class LaunchAtLoginController {
     private let service: any LaunchAtLoginServicing
-    private(set) var status: SMAppService.Status
+    private(set) var status: SMAppService.Status?
+    private var isRefreshing = false
     private(set) var isChanging = false
     private(set) var errorMessage: String?
 
     init(service: (any LaunchAtLoginServicing)? = nil) {
-        let service = service ?? SystemLaunchAtLoginService()
-        self.service = service
-        status = service.status
+        self.service = service ?? SystemLaunchAtLoginService()
+        status = nil
     }
 
     var isEnabled: Bool { status == .enabled }
     var requiresApproval: Bool { status == .requiresApproval }
-    var isAvailable: Bool { status != .notFound }
+    var isAvailable: Bool { status != nil && status != .notFound }
 
-    var statusDescription: LocalizedStringResource {
-        switch status {
-        case .notRegistered:
-            LocalizedStringResource("Not registered", bundle: #bundle)
-        case .enabled:
-            LocalizedStringResource("Registered and enabled by macOS", bundle: #bundle)
-        case .requiresApproval:
-            LocalizedStringResource("Approval required in System Settings", bundle: #bundle)
-        case .notFound:
-            LocalizedStringResource("The main-app login service is unavailable in this build", bundle: #bundle)
-        @unknown default:
-            LocalizedStringResource("Unknown macOS login-item status", bundle: #bundle)
-        }
+    func refresh() async {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
+        status = await service.currentStatus()
     }
 
-    func refresh() {
-        status = service.status
+    func refreshIfNeeded() async {
+        guard status == nil else { return }
+        await refresh()
     }
 
-    func setEnabled(_ enabled: Bool) {
+    func setEnabled(_ enabled: Bool) async {
         guard !isChanging, isAvailable else { return }
         errorMessage = nil
         if enabled, requiresApproval {
@@ -254,10 +251,7 @@ final class LaunchAtLoginController {
             return
         }
         isChanging = true
-        defer {
-            status = service.status
-            isChanging = false
-        }
+        defer { isChanging = false }
         do {
             if enabled {
                 try service.register()
@@ -267,6 +261,7 @@ final class LaunchAtLoginController {
         } catch {
             errorMessage = error.localizedDescription
         }
+        status = await service.currentStatus()
     }
 
     func openSystemSettings() {

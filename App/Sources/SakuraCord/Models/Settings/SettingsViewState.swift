@@ -54,10 +54,6 @@ final class SettingsViewState {
         highlightTask?.cancel()
     }
 
-    func restoreSelection(from rawValue: String) {
-        selectedPage = SettingsPageID(rawValue: rawValue) ?? .myAccount
-    }
-
     func updateLocale(_ locale: Locale) {
         guard self.locale != locale else { return }
         self.locale = locale

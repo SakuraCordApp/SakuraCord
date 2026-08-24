@@ -7,10 +7,9 @@ struct SettingsView: View {
 
     @Environment(\.locale) private var locale
     @Environment(\.colorSchemeContrast) private var systemColorSchemeContrast
-    @SceneStorage("settings.selected-page") private var storedSelectedPage =
-        SettingsPageID.myAccount.rawValue
     @SceneStorage("settings.selected-account") private var storedSelectedAccount = ""
     @State private var state = SettingsViewState()
+    @State private var launchAtLogin = LaunchAtLoginController()
     private let navigationRouter = SettingsNavigationRouter.shared
 
     var body: some View {
@@ -22,6 +21,7 @@ struct SettingsView: View {
                 model: model,
                 updateController: updateController,
                 state: state,
+                launchAtLogin: launchAtLogin,
                 selectedAccountID: $storedSelectedAccount
             )
             .modifier(
@@ -45,7 +45,6 @@ struct SettingsView: View {
             state.activateFirstSearchResult() ? .handled : .ignored
         }
         .task {
-            state.restoreSelection(from: storedSelectedPage)
             state.updateLocale(locale)
         }
         .task(id: navigationRouter.request?.id) {
@@ -55,9 +54,6 @@ struct SettingsView: View {
                 controlID: request.controlID
             )
             navigationRouter.consume(request.id)
-        }
-        .onChange(of: state.selectedPage) { _, page in
-            storedSelectedPage = page.rawValue
         }
         .onChange(of: locale) { _, locale in
             state.updateLocale(locale)
@@ -99,7 +95,6 @@ private struct SettingsWindowBehaviorBridge: NSViewRepresentable {
                 width: CGFloat.greatestFiniteMagnitude,
                 height: CGFloat.greatestFiniteMagnitude
             )
-            window.collectionBehavior.insert([.auxiliary, .moveToActiveSpace])
         }
 
         private func centerWindow() {
@@ -138,6 +133,7 @@ private struct SettingsDetailRouter: View {
     let model: AppModel
     @ObservedObject var updateController: AppUpdateController
     let state: SettingsViewState
+    let launchAtLogin: LaunchAtLoginController
     @Binding var selectedAccountID: String
 
     var body: some View {
@@ -151,7 +147,8 @@ private struct SettingsDetailRouter: View {
         case .general:
             GeneralSettingsPage(
                 model: model,
-                state: state
+                state: state,
+                launchAtLogin: launchAtLogin
             )
         case .interface:
             InterfaceSettingsPage(model: model, state: state)

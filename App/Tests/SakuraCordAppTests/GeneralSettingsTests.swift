@@ -5,23 +5,26 @@ import ServiceManagement
 import Testing
 
 @MainActor
-@Test func `Launch at Login mirrors Service Management status and reverts errors`() {
+@Test func `Launch at Login mirrors Service Management status and reverts errors`() async {
     let service = LaunchAtLoginServiceSpy(status: .notRegistered)
     let controller = LaunchAtLoginController(service: service)
+    await controller.refresh()
+    await controller.refreshIfNeeded()
 
     #expect(!controller.isEnabled)
-    controller.setEnabled(true)
+    #expect(service.statusReadCount == 1)
+    await controller.setEnabled(true)
     #expect(controller.isEnabled)
     #expect(service.registerCount == 1)
 
     service.nextError = GeneralSettingsTestError.denied
-    controller.setEnabled(false)
+    await controller.setEnabled(false)
     #expect(controller.isEnabled)
     #expect(controller.errorMessage == GeneralSettingsTestError.denied.localizedDescription)
 
     service.status = .requiresApproval
-    controller.refresh()
-    controller.setEnabled(true)
+    await controller.refresh()
+    await controller.setEnabled(true)
     #expect(!controller.isEnabled)
     #expect(controller.requiresApproval)
     #expect(service.registerCount == 1)
@@ -30,7 +33,7 @@ import Testing
     #expect(service.openSettingsCount == 1)
 
     service.status = .notFound
-    controller.refresh()
+    await controller.refresh()
     #expect(!controller.isAvailable)
 }
 
@@ -219,9 +222,15 @@ private final class LaunchAtLoginServiceSpy: LaunchAtLoginServicing {
     private(set) var registerCount = 0
     private(set) var unregisterCount = 0
     private(set) var openSettingsCount = 0
+    private(set) var statusReadCount = 0
 
     init(status: SMAppService.Status) {
         self.status = status
+    }
+
+    func currentStatus() async -> SMAppService.Status {
+        statusReadCount += 1
+        return status
     }
 
     func register() throws {

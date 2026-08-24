@@ -5,24 +5,32 @@ struct SettingsPageForm<Content: View>: View {
     let state: SettingsViewState
     @ViewBuilder let content: Content
 
+    @ViewBuilder
     var body: some View {
-        let metadata = state.catalog.page(page)
-        ScrollViewReader { proxy in
-            Form {
-                content
+        if let request = state.revealRequest,
+           request.destination.page == page
+        {
+            ScrollViewReader { proxy in
+                pageForm
+                    .task(id: request.id) {
+                        await Task.yield()
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            proxy.scrollTo(request.controlID, anchor: .center)
+                        }
+                    }
             }
-            .formStyle(.grouped)
-            .navigationTitle(metadata.title)
-            .task(id: state.revealRequest?.id) {
-                guard let request = state.revealRequest,
-                      request.destination.page == page
-                else { return }
-                await Task.yield()
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    proxy.scrollTo(request.controlID, anchor: .center)
-                }
-            }
+        } else {
+            pageForm
         }
+    }
+
+    private var pageForm: some View {
+        let metadata = state.catalog.page(page)
+        return Form {
+            content
+        }
+        .formStyle(.grouped)
+        .navigationTitle(metadata.title)
     }
 }
 
@@ -63,6 +71,5 @@ private struct SettingsControlAnchorModifier: ViewModifier {
                         .accessibilityHidden(true)
                 }
             }
-            .animation(.easeInOut(duration: 0.2), value: state.highlightedControlID == id)
     }
 }
