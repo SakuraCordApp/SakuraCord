@@ -14,7 +14,7 @@ nonisolated struct SharedMediaDownloadedFile: Sendable {
 
 actor SharedMediaDataLoader {
     static let shared = SharedMediaDataLoader()
-    private static let remoteDiskCostLimit: Int64 = 512 * 1024 * 1024
+    private static let defaultRemoteDiskCostLimit: Int64 = 2 * 1024 * 1024 * 1024
     nonisolated private static let remoteSession = URLSession(
         configuration: remoteSessionConfiguration()
     )
@@ -95,8 +95,11 @@ actor SharedMediaDataLoader {
     private var activeRemoteLoads: [URL: ActiveRemoteLoad] = [:]
 
     init() {
+        let configuredLimit = (UserDefaults.standard.object(
+            forKey: "mediaCacheLimit"
+        ) as? NSNumber)?.int64Value ?? Self.defaultRemoteDiskCostLimit
         remoteDiskCache = try? MediaCache(
-            maximumBytes: Self.remoteDiskCostLimit
+            maximumBytes: configuredLimit
         )
         remoteFetch = Self.download
         remoteDownload = Self.downloadToTemporaryFile
@@ -222,6 +225,18 @@ actor SharedMediaDataLoader {
             activeRemoteLoads[url] = active
         }
         startEligibleRemoteLoads()
+    }
+
+    func diskCacheStatus() async throws -> MediaCache.Status? {
+        try await remoteDiskCache?.status()
+    }
+
+    func setDiskCacheLimit(_ maximumBytes: Int64) async throws {
+        try await remoteDiskCache?.setMaximumBytes(maximumBytes)
+    }
+
+    func clearDiskCache() async throws {
+        try await remoteDiskCache?.removeAll()
     }
 
 #if DEBUG
@@ -437,9 +452,7 @@ actor SharedMediaDataLoader {
         if invalidResponse {
             throw URLError(.badServerResponse)
         }
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("SakuraCord", isDirectory: true)
-            .appendingPathComponent("Media Downloads", isDirectory: true)
+        let directory = incompleteDownloadRootDirectory()
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         do {
             try FileManager.default.createDirectory(
@@ -456,6 +469,14 @@ actor SharedMediaDataLoader {
             try? FileManager.default.removeItem(at: directory)
             throw error
         }
+    }
+
+    nonisolated static func incompleteDownloadRootDirectory(
+        temporaryDirectory: URL = FileManager.default.temporaryDirectory
+    ) -> URL {
+        temporaryDirectory
+            .appendingPathComponent("SakuraCord", isDirectory: true)
+            .appendingPathComponent("Media Downloads", isDirectory: true)
     }
 
     private func finishRemoteLoad(

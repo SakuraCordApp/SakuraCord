@@ -49,6 +49,49 @@ func `media cache enforces its byte budget and can be cleared`() async throws {
 }
 
 @Test
+func `lowering the media cache limit evicts least recently used bytes`() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let cache = try MediaCache(maximumBytes: 24, directory: root)
+    let firstURL = try #require(URL(string: "https://cdn.example/first"))
+    let secondURL = try #require(URL(string: "https://cdn.example/second"))
+
+    try await cache.insert(Data(repeating: 1, count: 8), for: firstURL)
+    try await Task.sleep(for: .milliseconds(10))
+    try await cache.insert(Data(repeating: 2, count: 8), for: secondURL)
+    _ = try await cache.data(for: secondURL)
+
+    try await cache.setMaximumBytes(8)
+
+    let status = try await cache.status()
+    #expect(status.maximumBytes == 8)
+    #expect(status.currentBytes == 8)
+    #expect(status.evictionStatus == .withinLimit)
+    #expect(try await cache.data(for: firstURL) == nil)
+    #expect(try await cache.data(for: secondURL) != nil)
+}
+
+@Test
+func `media cache status enforces a smaller persisted launch limit`() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let firstURL = try #require(URL(string: "https://cdn.example/first"))
+    let secondURL = try #require(URL(string: "https://cdn.example/second"))
+    let seed = try MediaCache(maximumBytes: 24, directory: root)
+    try await seed.insert(Data(repeating: 1, count: 8), for: firstURL)
+    try await seed.insert(Data(repeating: 2, count: 8), for: secondURL)
+
+    let relaunched = try MediaCache(maximumBytes: 8, directory: root)
+    let status = try await relaunched.status()
+
+    #expect(status.maximumBytes == 8)
+    #expect(status.currentBytes == 8)
+    #expect(status.evictionStatus == .withinLimit)
+}
+
+@Test
 func `media cache reads do not wait for index maintenance`() async throws {
     let root = FileManager.default.temporaryDirectory
         .appending(path: UUID().uuidString, directoryHint: .isDirectory)
@@ -156,11 +199,16 @@ func `media cache tracks failed evictions and retries them`() async throws {
 
     #expect(try await cache.currentByteCount() == 16)
     #expect(removal.attemptCount == 1)
+    #expect(
+        try await cache.status().evictionStatus
+            == .incomplete(failedFileCount: 1)
+    )
 
     try await cache.insert(Data(repeating: 3, count: 8), for: thirdURL)
 
     #expect(try await cache.currentByteCount() == 8)
     #expect(removal.attemptCount == 3)
+    #expect(try await cache.status().evictionStatus == .withinLimit)
 }
 
 private final class SuspendedMediaCacheIndexLoad: @unchecked Sendable {

@@ -6,7 +6,6 @@ struct PrivacySafetySettingsPage: View {
         case messageSearch
         case destinations
         case emoji
-        case drafts
         case reset
 
         var id: String { rawValue }
@@ -19,7 +18,6 @@ struct PrivacySafetySettingsPage: View {
     @State private var confirmation: Confirmation?
     @State private var exportedPreferences: SettingsPreferenceExportFile?
     @State private var isExporting = false
-    @State private var isClearingDrafts = false
     @State private var operationMessage: String?
 
     var body: some View {
@@ -187,10 +185,15 @@ struct PrivacySafetySettingsPage: View {
             }
             .settingsControlAnchor(.clearEmojiRanking, state: state)
 
-            Button("Clear Drafts for Active Account…", role: .destructive) {
-                confirmation = .drafts
+            Button("Manage Local Drafts in Storage & Downloads…") {
+                state.navigate(
+                    to: SettingsDestination(
+                        page: .storageDownloads,
+                        section: .storageLocalData
+                    ),
+                    controlID: .clearSelectedAccountDrafts
+                )
             }
-            .disabled(model.activeAccountID == nil || isClearingDrafts)
             .settingsControlAnchor(.clearDrafts, state: state)
 
             Button("Open Notification Preview Setting…") {
@@ -250,7 +253,6 @@ struct PrivacySafetySettingsPage: View {
         case .messageSearch: "Clear Current Message Search?"
         case .destinations: "Clear Recent Destinations?"
         case .emoji: "Clear Local Emoji Learning?"
-        case .drafts: "Clear Drafts for the Active Account?"
         case .reset: "Reset Privacy Preferences?"
         case nil: "Confirm Privacy Action"
         }
@@ -261,7 +263,6 @@ struct PrivacySafetySettingsPage: View {
         case .messageSearch: "Clear Message Search"
         case .destinations: "Clear Recent Destinations"
         case .emoji: "Clear Emoji Learning"
-        case .drafts: "Clear Active Account Drafts"
         case .reset: "Reset Privacy Preferences"
         case nil: "Confirm"
         }
@@ -275,8 +276,6 @@ struct PrivacySafetySettingsPage: View {
             "This clears the active account's bounded local recent list shared by Quick Switch and forwarding. Discord-synchronized ranking data is unchanged."
         case .emoji:
             "This clears app-wide local emoji recents and learned usage counts. Discord favorites and Discord-provided frequency remain unchanged."
-        case .drafts:
-            "This deletes all locally saved message drafts for the active account, including the visible channel and thread drafts. Sent Discord messages and other accounts are unchanged."
         case .reset:
             "This restores the registered oversized-uploader offer policy. It does not clear histories, searches, emoji learning, drafts, credentials, or Discord data."
         case nil:
@@ -296,17 +295,6 @@ struct PrivacySafetySettingsPage: View {
         case .emoji:
             model.clearLocallyLearnedEmojiRanking()
             operationMessage = "Cleared local emoji recents and learned ranking."
-        case .drafts:
-            isClearingDrafts = true
-            Task {
-                defer { isClearingDrafts = false }
-                do {
-                    try await model.clearLocalDrafts()
-                    operationMessage = "Cleared drafts for the active account."
-                } catch {
-                    operationMessage = "Draft clearing failed: \(error.localizedDescription)"
-                }
-            }
         case .reset:
             SettingsPreferenceStore.shared.reset(
                 scope: .appWide,

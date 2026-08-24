@@ -367,6 +367,48 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             defaultValue: .integer(2_147_483_648)
         ),
         SettingsPreferenceRegistration(
+            id: .mediaCacheLastCleared,
+            page: .storageDownloads,
+            storage: .appWide(key: "settings.storage.mediaCacheLastCleared"),
+            defaultValue: .double(0),
+            exports: false,
+            resets: false
+        ),
+        SettingsPreferenceRegistration(
+            id: .downloadLocationMode,
+            page: .storageDownloads,
+            storage: .appWide(key: "settings.storage.downloadLocationMode"),
+            defaultValue: .string(DownloadLocationMode.askEveryTime.rawValue)
+        ),
+        SettingsPreferenceRegistration(
+            id: .downloadFolderBookmark,
+            page: .storageDownloads,
+            storage: .appWide(key: "settings.storage.downloadFolderBookmark"),
+            defaultValue: .string(""),
+            exports: false
+        ),
+        SettingsPreferenceRegistration(
+            id: .downloadFolderName,
+            page: .storageDownloads,
+            storage: .appWide(key: "settings.storage.downloadFolderName"),
+            defaultValue: .string(""),
+            exports: false
+        ),
+        SettingsPreferenceRegistration(
+            id: .downloadCollisionPolicy,
+            page: .storageDownloads,
+            storage: .appWide(key: "settings.storage.downloadCollisionPolicy"),
+            defaultValue: .string(
+                DownloadFilenameCollisionPolicy.automaticallyRename.rawValue
+            )
+        ),
+        SettingsPreferenceRegistration(
+            id: .revealCompletedDownloads,
+            page: .storageDownloads,
+            storage: .appWide(key: "settings.storage.revealCompletedDownloads"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
             id: .notificationEnabled,
             page: .notifications,
             storage: .appWide(key: "notifications.enabled"),

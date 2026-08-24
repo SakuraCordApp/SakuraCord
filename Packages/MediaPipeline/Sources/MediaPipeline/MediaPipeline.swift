@@ -22,7 +22,29 @@ public protocol GIFProvider: Sendable {
 }
 
 public actor MediaCache {
-    public let maximumBytes: Int64
+    public enum EvictionStatus: Equatable, Sendable {
+        case withinLimit
+        case converging
+        case incomplete(failedFileCount: Int)
+    }
+
+    public struct Status: Equatable, Sendable {
+        public let currentBytes: Int64
+        public let maximumBytes: Int64
+        public let evictionStatus: EvictionStatus
+
+        public init(
+            currentBytes: Int64,
+            maximumBytes: Int64,
+            evictionStatus: EvictionStatus
+        ) {
+            self.currentBytes = currentBytes
+            self.maximumBytes = maximumBytes
+            self.evictionStatus = evictionStatus
+        }
+    }
+
+    public private(set) var maximumBytes: Int64
     private static let maximumEntryBytes = 32 * 1024 * 1024
     private let directory: URL
     private let beforeIndexLoad: @Sendable () -> Void
@@ -34,6 +56,8 @@ public actor MediaCache {
     private var isRemovingAll = false
     private var removeAllTask: Task<Void, any Error>?
     private var activeFileOperations: [UUID: Task<Void, Never>] = [:]
+    private var isEnforcingByteLimit = false
+    private var failedEvictionCount = 0
 
     public init(maximumBytes: Int64 = 2 * 1024 * 1024 * 1024, directory: URL? = nil) throws {
         self.maximumBytes = maximumBytes
@@ -77,6 +101,7 @@ public actor MediaCache {
     }
 
     private func performRemoveAll() async throws {
+        try Task.checkCancellation()
         isRemovingAll = true
         storageGeneration &+= 1
         let indexTask = cachedFileIndexTask
@@ -84,6 +109,7 @@ public actor MediaCache {
         cachedFileIndexTask = nil
         cachedFileIndexTaskGeneration = nil
         cachedFileIndex = [:]
+        failedEvictionCount = 0
         defer { isRemovingAll = false }
 
         _ = await indexTask?.result
@@ -94,6 +120,7 @@ public actor MediaCache {
 
         let directory = directory
         try await Task.detached(priority: .utility) {
+            try Task.checkCancellation()
             if FileManager.default.fileExists(atPath: directory.path) {
                 try FileManager.default.removeItem(at: directory)
             }
@@ -168,6 +195,35 @@ public actor MediaCache {
         } ?? 0
     }
 
+    public func status() async throws -> Status {
+        var currentBytes = try await currentByteCount()
+        if currentBytes > maximumBytes,
+           !isEnforcingByteLimit,
+           failedEvictionCount == 0
+        {
+            await enforceByteLimit(generation: storageGeneration)
+            currentBytes = try await currentByteCount()
+        }
+        let evictionStatus: EvictionStatus = if isEnforcingByteLimit {
+            .converging
+        } else if failedEvictionCount > 0 {
+            .incomplete(failedFileCount: failedEvictionCount)
+        } else {
+            .withinLimit
+        }
+        return Status(
+            currentBytes: currentBytes,
+            maximumBytes: maximumBytes,
+            evictionStatus: evictionStatus
+        )
+    }
+
+    public func setMaximumBytes(_ value: Int64) async throws {
+        maximumBytes = max(1, value)
+        try await loadCachedFileIndexIfNeeded()
+        await enforceByteLimit(generation: storageGeneration)
+    }
+
     private func cachedFileURL(for url: URL) -> URL {
         let digest = SHA256.hash(data: Data(url.absoluteString.utf8))
             .map { String(format: "%02x", $0) }
@@ -220,7 +276,12 @@ public actor MediaCache {
         var byteCount = index.values.reduce(into: Int64(0)) {
             $0 += $1.byteCount
         }
-        guard byteCount > maximumBytes else { return }
+        guard byteCount > maximumBytes else {
+            failedEvictionCount = 0
+            return
+        }
+        isEnforcingByteLimit = true
+        defer { isEnforcingByteLimit = false }
         let files = index.values.sorted {
             if $0.lastAccess == $1.lastAccess {
                 return $0.url.lastPathComponent < $1.url.lastPathComponent
@@ -249,7 +310,9 @@ public actor MediaCache {
             }
         }
         guard generation == storageGeneration, !isRemovingAll else { return }
-        for file in undeletedFiles ?? [] where cachedFileIndex?[file.url] == nil {
+        let remainingFiles = undeletedFiles ?? []
+        failedEvictionCount = remainingFiles.count
+        for file in remainingFiles where cachedFileIndex?[file.url] == nil {
             cachedFileIndex?[file.url] = file
         }
     }

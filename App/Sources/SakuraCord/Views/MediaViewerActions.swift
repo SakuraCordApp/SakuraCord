@@ -21,6 +21,55 @@ enum MediaViewerActionService {
     }
 
     static func save(_ item: RichMediaItem) async throws -> URL? {
+        let settings = StorageDownloadsSettingsStore.shared.load()
+        var accessedFolder: URL?
+        defer { accessedFolder?.stopAccessingSecurityScopedResource() }
+        let destination: URL?
+        switch settings.downloadLocationMode {
+        case .askEveryTime:
+            destination = await savePanelDestination(for: item)
+        case .defaultFolder:
+            guard let folder = try StorageDownloadsSettingsStore.shared
+                .resolvedDefaultFolder()
+            else {
+                throw MediaViewerActionError.defaultDownloadFolderUnavailable
+            }
+            guard folder.startAccessingSecurityScopedResource() else {
+                throw MediaViewerActionError.defaultDownloadFolderUnavailable
+            }
+            accessedFolder = folder
+            let proposed = folder.appendingPathComponent(
+                MediaViewerFilePolicy.suggestedFilename(
+                    title: item.title,
+                    sourceURL: item.url
+                )
+            )
+            if let automaticDestination = settings.filenameCollisionPolicy
+                .destination(for: proposed)
+            {
+                destination = automaticDestination
+            } else if settings.filenameCollisionPolicy == .ask {
+                destination = await savePanelDestination(
+                    for: item,
+                    directory: folder
+                )
+            } else {
+                throw MediaViewerActionError.couldNotChooseUniqueFilename
+            }
+        }
+
+        guard let destination else { return nil }
+        try await copyMedia(from: item.url, to: destination)
+        if settings.revealsCompletedDownloads {
+            NSWorkspace.shared.activateFileViewerSelecting([destination])
+        }
+        return destination
+    }
+
+    private static func savePanelDestination(
+        for item: RichMediaItem,
+        directory: URL? = nil
+    ) async -> URL? {
         let panel = NSSavePanel()
         panel.title = "Save Media"
         panel.prompt = "Save"
@@ -30,6 +79,7 @@ enum MediaViewerActionService {
             title: item.title,
             sourceURL: item.url
         )
+        panel.directoryURL = directory
         if let type = MediaViewerFilePolicy.contentType(
             title: item.title,
             sourceURL: item.url
@@ -43,9 +93,7 @@ enum MediaViewerActionService {
         // the panel is ordered above the frame-level viewer.
         await Task.yield()
         let response = panel.runModal()
-        guard response == .OK, let destination = panel.url else { return nil }
-        try await copyMedia(from: item.url, to: destination)
-        return destination
+        return response == .OK ? panel.url : nil
     }
 
     static func copyMedia(
@@ -157,6 +205,8 @@ nonisolated enum MediaViewerDetails {
 enum MediaViewerActionError: LocalizedError {
     case invalidImage
     case pasteboardWriteFailed
+    case defaultDownloadFolderUnavailable
+    case couldNotChooseUniqueFilename
 
     var errorDescription: String? {
         switch self {
@@ -164,6 +214,10 @@ enum MediaViewerActionError: LocalizedError {
             "The media could not be decoded as an image."
         case .pasteboardWriteFailed:
             "The image could not be copied to the clipboard."
+        case .defaultDownloadFolderUnavailable:
+            "The saved default download folder is unavailable. Choose it again in Storage & Downloads."
+        case .couldNotChooseUniqueFilename:
+            "SakuraCord could not choose an unused filename in the default download folder."
         }
     }
 }

@@ -2,6 +2,16 @@ import Foundation
 import GRDB
 import SakuraCordModels
 
+public struct DraftStorageSummary: Equatable, Sendable {
+    public let draftCount: Int
+    public let approximateByteCount: Int64
+
+    public init(draftCount: Int, approximateByteCount: Int64) {
+        self.draftCount = draftCount
+        self.approximateByteCount = approximateByteCount
+    }
+}
+
 /// Per-account storage is intentionally limited to user-authored state.
 /// Discord workspace, message, read, and Gateway state belongs to the running
 /// session and is never written here.
@@ -46,6 +56,18 @@ public actor SakuraCordDatabase {
                 .order(Column("updatedAt").desc)
                 .fetchAll(db)
                 .compactMap { ChannelID($0.channelID) }
+        }
+    }
+
+    public func draftStorageSummary() throws -> DraftStorageSummary {
+        try queue.read { db in
+            let records = try DraftRecord.fetchAll(db)
+            return DraftStorageSummary(
+                draftCount: records.count,
+                approximateByteCount: records.reduce(into: 0) { total, record in
+                    total += Int64(record.content.utf8.count)
+                }
+            )
         }
     }
 

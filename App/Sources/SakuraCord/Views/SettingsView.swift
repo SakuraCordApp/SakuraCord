@@ -110,7 +110,7 @@ private struct SettingsDetailRouter: View {
         case .privacySafety:
             PrivacySafetySettingsPage(model: model, state: state)
         case .storageDownloads:
-            StorageDownloadsSettingsPage(state: state)
+            StorageDownloadsSettingsPage(model: model, state: state)
         case .diagnostics:
             DiagnosticsSettingsPage(state: state)
         case .softwareUpdates:
