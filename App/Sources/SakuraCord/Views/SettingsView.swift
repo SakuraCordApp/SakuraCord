@@ -10,6 +10,7 @@ struct SettingsView: View {
     @SceneStorage("settings.selected-account") private var storedSelectedAccount = ""
     @State private var state = SettingsViewState()
     @State private var launchAtLogin = LaunchAtLoginController()
+    @State private var isSearchPresented = false
     private let navigationRouter = SettingsNavigationRouter.shared
 
     var body: some View {
@@ -33,6 +34,7 @@ struct SettingsView: View {
         }
         .searchable(
             text: $state.searchText,
+            isPresented: $isSearchPresented,
             placement: .sidebar,
             prompt: LocalizedStringResource(
                 "Search Settings",
@@ -43,6 +45,13 @@ struct SettingsView: View {
         .background(SettingsWindowBehaviorBridge())
         .onKeyPress(.return) {
             state.activateFirstSearchResult() ? .handled : .ignored
+        }
+        .onKeyPress(.escape) {
+            guard isSearchPresented else { return .ignored }
+            state.searchText = ""
+            isSearchPresented = false
+            NSApp.keyWindow?.makeFirstResponder(nil)
+            return .handled
         }
         .task {
             state.updateLocale(locale)
@@ -60,9 +69,9 @@ struct SettingsView: View {
         }
         .frame(
             minWidth: 760,
-            idealWidth: 920,
+            idealWidth: 980,
             minHeight: 520,
-            idealHeight: 640
+            idealHeight: 700
         )
     }
 }

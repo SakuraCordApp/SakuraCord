@@ -5,7 +5,7 @@ nonisolated struct SettingsSearchResult: Identifiable, Equatable, Sendable {
     let id: SettingsControlID
     let destination: SettingsDestination
     let title: LocalizedStringResource
-    let detail: LocalizedStringResource
+    let pageTitle: LocalizedStringResource?
     let systemImage: String
     let scope: SettingsValueScope?
 }
@@ -169,7 +169,7 @@ final class SettingsViewState {
                         id: page.overviewControlID,
                         destination: SettingsDestination(page: page.id),
                         title: page.title,
-                        detail: page.help,
+                        pageTitle: nil,
                         systemImage: page.systemImage,
                         scope: nil
                     ),
@@ -189,7 +189,7 @@ final class SettingsViewState {
                         id: control.id,
                         destination: control.destination,
                         title: control.label,
-                        detail: page.title,
+                        pageTitle: page.title,
                         systemImage: page.systemImage,
                         scope: control.scope
                     ),

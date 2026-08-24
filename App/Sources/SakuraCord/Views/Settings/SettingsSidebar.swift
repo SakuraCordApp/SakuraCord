@@ -54,7 +54,7 @@ private struct SettingsSidebarLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: 8) {
             configuration.icon
-                .environment(\.symbolVariants, .none)
+                .symbolVariant(.fill)
                 .foregroundStyle(isSelected ? Color.white : Color.accentColor)
                 .frame(width: 16)
             configuration.title
@@ -109,27 +109,23 @@ private struct SettingsSearchResultRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: result.systemImage)
+                .symbolVariant(.fill)
                 .foregroundStyle(.secondary)
                 .frame(width: 16)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(result.title)
                     .lineLimit(1)
-                Text(result.detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
 
-            Spacer(minLength: 8)
-
-            if let scope = result.scope {
-                Text(scope.title)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                if let pageTitle = result.pageTitle {
+                    Text(pageTitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
         }
-        .contentShape(Rectangle())
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(.interaction, Rectangle())
     }
 }

@@ -4,6 +4,7 @@ struct AboutSettingsPage: View {
     @ObservedObject var updateController: AppUpdateController
     let state: SettingsViewState
 
+    @Environment(\.openURL) private var openURL
     @State private var navigationPath: [AboutDestination] = []
 
     var body: some View {
@@ -122,11 +123,14 @@ struct AboutSettingsPage: View {
     private var projectLinks: some View {
         Section {
             ForEach(AboutProjectLink.allCases) { link in
-                Link(destination: link.url) {
+                Button {
+                    openURL(link.url)
+                } label: {
                     externalLinkLabel(link)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(.rect)
                 }
+                .buttonStyle(.plain)
                 .settingsControlAnchor(link.controlID, state: state)
             }
         } header: {
@@ -135,11 +139,20 @@ struct AboutSettingsPage: View {
     }
 
     private func externalLinkLabel(_ link: AboutProjectLink) -> some View {
-        Label {
-            Text(link.title)
-        } icon: {
-            externalLinkIcon(link)
+        HStack {
+            Label {
+                Text(link.title)
+            } icon: {
+                externalLinkIcon(link)
+            }
+
+            Spacer()
+
+            Image(systemName: "arrow.up.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
         }
+        .foregroundStyle(.primary)
     }
 
     @ViewBuilder
