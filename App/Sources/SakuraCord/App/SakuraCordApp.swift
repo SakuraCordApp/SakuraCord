@@ -215,6 +215,9 @@ struct SakuraCordApp: App {
                 updateController: appDelegate.updateController
             )
         }
+        .defaultSize(width: 920, height: 640)
+        .windowResizability(.contentMinSize)
+        .restorationBehavior(.disabled)
     }
 
     private var mainWindowLaunchBehavior: SceneLaunchBehavior {

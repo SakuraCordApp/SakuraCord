@@ -5,7 +5,17 @@ struct SettingsSidebar: View {
 
     var body: some View {
         @Bindable var state = state
-        List(selection: $state.selectedPage) {
+        let selection = Binding(
+            get: { state.selectedPage },
+            set: { page in
+                var transaction = Transaction(animation: nil)
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    state.selectedPage = page
+                }
+            }
+        )
+        List(selection: selection) {
             if state.searchText.isEmpty {
                 ForEach(SettingsSidebarGroupID.allCases) { group in
                     Section(group.title) {
@@ -13,7 +23,11 @@ struct SettingsSidebar: View {
                             HStack(spacing: 8) {
                                 Image(systemName: page.systemImage)
                                     .environment(\.symbolVariants, .none)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(
+                                        state.selectedPage == page.id
+                                            ? Color.white
+                                            : Color.accentColor
+                                    )
                                     .frame(width: 16)
                                 Text(page.title)
                                     .lineLimit(1)

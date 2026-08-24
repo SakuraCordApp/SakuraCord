@@ -21,8 +21,14 @@ final class SettingsViewState {
     var selectedPage: SettingsPageID = .myAccount {
         didSet {
             guard selectedPage != oldValue else { return }
-            revealRequest = nil
-            highlightedControlID = nil
+            if revealRequest != nil {
+                revealRequest = nil
+            }
+            if highlightedControlID != nil {
+                highlightTask?.cancel()
+                highlightTask = nil
+                highlightedControlID = nil
+            }
         }
     }
 

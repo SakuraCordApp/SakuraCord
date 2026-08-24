@@ -24,11 +24,11 @@ struct SettingsView: View {
                 state: state,
                 selectedAccountID: $storedSelectedAccount
             )
-            .contrast(
-                model.accessibilitySettings.increasesContrast
-                    && systemColorSchemeContrast == .standard
-                    ? 1.12
-                    : 1
+            .modifier(
+                SettingsContrastModifier(
+                    isEnabled: model.accessibilitySettings.increasesContrast
+                        && systemColorSchemeContrast == .standard
+                )
             )
         }
         .searchable(
@@ -40,7 +40,7 @@ struct SettingsView: View {
                 comment: "Prompt for the Settings sidebar search field."
             )
         )
-        .background(SettingsWindowToolbarStyleBridge())
+        .background(SettingsWindowBehaviorBridge())
         .onKeyPress(.return) {
             state.activateFirstSearchResult() ? .handled : .ignored
         }
@@ -71,28 +71,65 @@ struct SettingsView: View {
     }
 }
 
-/// Keeps the SwiftUI Settings scene on AppKit's standard unified toolbar.
-private struct SettingsWindowToolbarStyleBridge: NSViewRepresentable {
-    func makeNSView(context: Context) -> ToolbarStyleView {
-        ToolbarStyleView()
+/// Applies the Settings-specific behavior that SwiftUI doesn't expose.
+private struct SettingsWindowBehaviorBridge: NSViewRepresentable {
+    func makeNSView(context: Context) -> WindowBehaviorView {
+        WindowBehaviorView()
     }
 
-    func updateNSView(_ view: ToolbarStyleView, context: Context) {
-        view.applyToolbarStyle()
+    func updateNSView(_ view: WindowBehaviorView, context: Context) {
+        view.applyWindowBehavior()
     }
 
-    final class ToolbarStyleView: NSView {
+    final class WindowBehaviorView: NSView {
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            applyToolbarStyle()
+            applyWindowBehavior()
             DispatchQueue.main.async { [weak self] in
-                self?.applyToolbarStyle()
+                self?.applyWindowBehavior()
+                self?.centerWindow()
             }
         }
 
-        func applyToolbarStyle() {
-            guard window?.toolbarStyle != .unified else { return }
-            window?.toolbarStyle = .unified
+        func applyWindowBehavior() {
+            guard let window else { return }
+            window.toolbarStyle = .unified
+            window.styleMask.insert(.resizable)
+            window.contentMaxSize = NSSize(
+                width: CGFloat.greatestFiniteMagnitude,
+                height: CGFloat.greatestFiniteMagnitude
+            )
+            window.collectionBehavior.insert([.auxiliary, .moveToActiveSpace])
+        }
+
+        private func centerWindow() {
+            guard let window else { return }
+            let screen = NSApp.windows.first {
+                $0 !== window
+                    && $0.isVisible
+                    && $0.styleMask.contains(.fullScreen)
+            }?.screen ?? NSScreen.main ?? window.screen
+            guard let screen else { return }
+
+            let visibleFrame = screen.visibleFrame
+            let origin = NSPoint(
+                x: visibleFrame.midX - window.frame.width / 2,
+                y: visibleFrame.midY - window.frame.height / 2
+            )
+            window.setFrameOrigin(origin)
+        }
+    }
+}
+
+private struct SettingsContrastModifier: ViewModifier {
+    let isEnabled: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content.contrast(1.12)
+        } else {
+            content
         }
     }
 }
