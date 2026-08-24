@@ -160,7 +160,7 @@ import Testing
 }
 
 @MainActor
-@Test func `General preferences and Settings disclosure restore safely`() {
+@Test func `General preferences export and reset safely`() {
     let defaults = InMemoryPreferences()
     let store = SettingsPreferenceStore(defaults: defaults)
     store.set(.string(SettingsLaunchDestination.accountPicker.rawValue), for: .launchDestination)
@@ -179,15 +179,6 @@ import Testing
     )
     #expect(store.value(for: .showMainWindowAtLaunch) == .bool(true))
     #expect(store.value(for: .confirmQuitActiveWork) == .bool(true))
-
-    let viewState = SettingsViewState()
-    viewState.restoreExpandedGroups(from: "account,removed-group")
-    #expect(viewState.expandedGroups == [.account])
-    viewState.navigate(
-        to: SettingsDestination(page: .general, section: .confirmations),
-        controlID: .confirmQuitActiveWork
-    )
-    #expect(viewState.expandedGroups.contains(.preferences))
 
     let windowStore = GeneralWindowRestorationStore(defaults: defaults)
     #expect(windowStore.memberListIsVisible)

@@ -9,7 +9,6 @@ struct SettingsPageForm<Content: View>: View {
         let metadata = state.catalog.page(page)
         ScrollViewReader { proxy in
             Form {
-                SettingsPageIntroductionSection(metadata: metadata, state: state)
                 content
             }
             .formStyle(.grouped)
@@ -23,20 +22,6 @@ struct SettingsPageForm<Content: View>: View {
                     proxy.scrollTo(request.controlID, anchor: .center)
                 }
             }
-        }
-    }
-}
-
-private struct SettingsPageIntroductionSection: View {
-    let metadata: SettingsPageMetadata
-    let state: SettingsViewState
-
-    var body: some View {
-        Section {
-            Text(metadata.help)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .settingsControlAnchor(metadata.overviewControlID, state: state)
         }
     }
 }

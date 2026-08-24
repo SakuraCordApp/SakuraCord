@@ -8,22 +8,21 @@ struct SettingsSidebar: View {
         List(selection: $state.selectedPage) {
             if state.searchText.isEmpty {
                 ForEach(SettingsSidebarGroupID.allCases) { group in
-                    Section(
-                        isExpanded: Binding(
-                            get: { state.expandedGroups.contains(group) },
-                            set: { state.setGroup(group, expanded: $0) }
-                        )
-                    ) {
+                    Section(group.title) {
                         ForEach(state.catalog.pages(in: group)) { page in
-                            SettingsSidebarRow(
-                                title: page.title,
-                                systemImage: page.systemImage
-                            )
+                            HStack(spacing: 8) {
+                                Image(systemName: page.systemImage)
+                                    .environment(\.symbolVariants, .none)
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 16)
+                                Text(page.title)
+                                    .lineLimit(1)
+                                Spacer(minLength: 0)
+                            }
                             .tag(page.id)
                         }
-                    } header: {
-                        Text(group.title)
                     }
+                    .collapsible(false)
                 }
             } else {
                 SettingsSearchResults(state: state)
@@ -38,16 +37,6 @@ struct SettingsSidebar: View {
                 comment: "Accessibility label for the Settings source-list sidebar."
             )
         )
-    }
-}
-
-private struct SettingsSidebarRow: View {
-    let title: LocalizedStringResource
-    let systemImage: String
-
-    var body: some View {
-        Label(title, systemImage: systemImage)
-            .lineLimit(1)
     }
 }
 

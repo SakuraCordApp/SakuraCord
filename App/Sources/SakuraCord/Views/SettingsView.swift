@@ -10,8 +10,6 @@ struct SettingsView: View {
     @SceneStorage("settings.selected-page") private var storedSelectedPage =
         SettingsPageID.myAccount.rawValue
     @SceneStorage("settings.selected-account") private var storedSelectedAccount = ""
-    @SceneStorage("settings.expanded-groups") private var storedExpandedGroups =
-        SettingsSidebarGroupID.allCases.map(\.rawValue).joined(separator: ",")
     @State private var state = SettingsViewState()
     private let navigationRouter = SettingsNavigationRouter.shared
 
@@ -26,6 +24,12 @@ struct SettingsView: View {
                 state: state,
                 selectedAccountID: $storedSelectedAccount
             )
+            .contrast(
+                model.accessibilitySettings.increasesContrast
+                    && systemColorSchemeContrast == .standard
+                    ? 1.12
+                    : 1
+            )
         }
         .searchable(
             text: $state.searchText,
@@ -36,14 +40,12 @@ struct SettingsView: View {
                 comment: "Prompt for the Settings sidebar search field."
             )
         )
-        .toolbar(removing: .title)
-        .background(SettingsWindowToolbarConfigurator())
+        .background(SettingsWindowToolbarStyleBridge())
         .onKeyPress(.return) {
             state.activateFirstSearchResult() ? .handled : .ignored
         }
         .task {
             state.restoreSelection(from: storedSelectedPage)
-            state.restoreExpandedGroups(from: storedExpandedGroups)
             state.updateLocale(locale)
         }
         .task(id: navigationRouter.request?.id) {
@@ -57,9 +59,6 @@ struct SettingsView: View {
         .onChange(of: state.selectedPage) { _, page in
             storedSelectedPage = page.rawValue
         }
-        .onChange(of: state.expandedGroups) {
-            storedExpandedGroups = state.serializedExpandedGroups
-        }
         .onChange(of: locale) { _, locale in
             state.updateLocale(locale)
         }
@@ -69,38 +68,31 @@ struct SettingsView: View {
             minHeight: 520,
             idealHeight: 640
         )
-        .contrast(
-            model.accessibilitySettings.increasesContrast
-                && systemColorSchemeContrast == .standard
-                ? 1.12
-                : 1
-        )
     }
 }
 
-/// Reapplies compact chrome after the Settings scene installs its preference toolbar.
-private struct SettingsWindowToolbarConfigurator: NSViewRepresentable {
-    func makeNSView(context: Context) -> ConfiguringView {
-        ConfiguringView()
+/// Keeps the SwiftUI Settings scene on AppKit's standard unified toolbar.
+private struct SettingsWindowToolbarStyleBridge: NSViewRepresentable {
+    func makeNSView(context: Context) -> ToolbarStyleView {
+        ToolbarStyleView()
     }
 
-    func updateNSView(_ view: ConfiguringView, context: Context) {
+    func updateNSView(_ view: ToolbarStyleView, context: Context) {
         view.applyToolbarStyle()
     }
 
-    final class ConfiguringView: NSView {
+    final class ToolbarStyleView: NSView {
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             applyToolbarStyle()
-            // The Settings host can finish toolbar setup later in this update cycle.
             DispatchQueue.main.async { [weak self] in
                 self?.applyToolbarStyle()
             }
         }
 
         func applyToolbarStyle() {
-            guard window?.toolbarStyle != .unifiedCompact else { return }
-            window?.toolbarStyle = .unifiedCompact
+            guard window?.toolbarStyle != .unified else { return }
+            window?.toolbarStyle = .unified
         }
     }
 }
