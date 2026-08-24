@@ -35,6 +35,9 @@ struct SettingsView: View {
                 comment: "Prompt for the Settings sidebar search field."
             )
         )
+        .onKeyPress(.return) {
+            state.activateFirstSearchResult() ? .handled : .ignored
+        }
         .task {
             state.restoreSelection(from: storedSelectedPage)
             state.restoreExpandedGroups(from: storedExpandedGroups)

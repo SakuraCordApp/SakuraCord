@@ -89,6 +89,13 @@ final class SettingsViewState {
         searchText = ""
     }
 
+    @discardableResult
+    func activateFirstSearchResult() -> Bool {
+        guard let result = searchResults.first else { return false }
+        activate(result)
+        return true
+    }
+
     func navigate(
         to destination: SettingsDestination,
         controlID: SettingsControlID

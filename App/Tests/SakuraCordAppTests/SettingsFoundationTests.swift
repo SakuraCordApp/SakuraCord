@@ -50,13 +50,15 @@ import Testing
     #expect(inputVolume?.destination.page == .voiceVideo)
     #expect(inputVolume?.destination.section == .voiceLevels)
 
-    if let inputVolume {
-        state.activate(inputVolume)
-    }
+    #expect(state.activateFirstSearchResult())
     #expect(state.selectedPage == .voiceVideo)
     #expect(state.revealRequest?.controlID == .voiceInputVolume)
     #expect(state.highlightedControlID == .voiceInputVolume)
     #expect(state.searchText.isEmpty)
+
+    state.searchText = "no setting matches this phrase"
+    #expect(!state.activateFirstSearchResult())
+    #expect(state.selectedPage == .voiceVideo)
 
     state.searchText = "hotkeys"
     #expect(state.searchResults.first?.destination.page == .keyboardShortcuts)
