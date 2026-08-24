@@ -3,8 +3,6 @@ import UniformTypeIdentifiers
 
 struct ChatSettingsPage: View {
     private enum Confirmation: String, Identifiable {
-        case clearRecents
-        case clearRanking
         case reset
 
         var id: String { rawValue }
@@ -248,16 +246,16 @@ struct ChatSettingsPage: View {
             }
             .settingsControlAnchor(.chatEmojiSource, state: state)
 
-            HStack {
-                Button("Clear Local Recents…") {
-                    confirmation = .clearRecents
-                }
-                .settingsControlAnchor(.chatClearEmojiRecents, state: state)
-                Button("Reset Learned Ranking…") {
-                    confirmation = .clearRanking
-                }
-                .settingsControlAnchor(.chatClearEmojiRanking, state: state)
+            Button("Manage Local Emoji Data in Privacy & Safety…") {
+                state.navigate(
+                    to: SettingsDestination(
+                        page: .privacySafety,
+                        section: .privacyLocalData
+                    ),
+                    controlID: .clearEmojiRanking
+                )
             }
+            .settingsControlAnchor(.chatEmojiPrivacyLink, state: state)
         } header: {
             Text("Emoji", bundle: #bundle)
         } footer: {
@@ -302,8 +300,6 @@ struct ChatSettingsPage: View {
 
     private var confirmationTitle: String {
         switch confirmation {
-        case .clearRecents: "Clear Local Emoji Recents?"
-        case .clearRanking: "Reset Learned Emoji Ranking?"
         case .reset: "Reset Chat Settings?"
         case nil: "Confirm Chat Action"
         }
@@ -311,8 +307,6 @@ struct ChatSettingsPage: View {
 
     private var confirmationButtonTitle: String {
         switch confirmation {
-        case .clearRecents: "Clear Local Recents"
-        case .clearRanking: "Reset Learned Ranking"
         case .reset: "Reset Chat Settings"
         case nil: "Confirm"
         }
@@ -320,10 +314,6 @@ struct ChatSettingsPage: View {
 
     private var confirmationMessage: String {
         switch confirmation {
-        case .clearRecents:
-            "This clears only the ordered local recent-emoji list on this Mac."
-        case .clearRanking:
-            "This clears only SakuraCord’s local emoji usage counts."
         case .reset:
             "This restores registered Chat preferences. Drafts, credentials, local emoji history, and Discord data are unchanged."
         case nil:
@@ -334,12 +324,6 @@ struct ChatSettingsPage: View {
     private func perform(_ confirmation: Confirmation) {
         self.confirmation = nil
         switch confirmation {
-        case .clearRecents:
-            model.clearLocalEmojiRecents()
-            operationMessage = "Cleared local emoji recents."
-        case .clearRanking:
-            model.resetLocalEmojiRanking()
-            operationMessage = "Reset local emoji ranking."
         case .reset:
             SettingsPreferenceStore.shared.reset(scope: .appWide, page: .chat)
             value = ChatSettingsStore.shared.load()

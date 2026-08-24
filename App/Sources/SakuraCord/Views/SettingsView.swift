@@ -108,7 +108,7 @@ private struct SettingsDetailRouter: View {
         case .keyboardShortcuts:
             KeyboardShortcutsSettingsPage(state: state)
         case .privacySafety:
-            PrivacySafetySettingsPage(state: state)
+            PrivacySafetySettingsPage(model: model, state: state)
         case .storageDownloads:
             StorageDownloadsSettingsPage(state: state)
         case .diagnostics:

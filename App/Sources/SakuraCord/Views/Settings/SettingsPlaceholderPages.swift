@@ -1,13 +1,5 @@
 import SwiftUI
 
-struct PrivacySafetySettingsPage: View {
-    let state: SettingsViewState
-
-    var body: some View {
-        SettingsPendingPage(page: .privacySafety, phase: 9, state: state)
-    }
-}
-
 struct SoftwareUpdatesSettingsPage: View {
     let state: SettingsViewState
 

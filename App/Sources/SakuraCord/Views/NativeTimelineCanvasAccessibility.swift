@@ -1514,8 +1514,7 @@ extension NativeTimelineCanvasView {
     ) -> Bool {
         guard !region.isDisabled else { return false }
         if let url = region.url {
-            NSWorkspace.shared.open(url)
-            return true
+            return MessageLinkActivator.activate(url, model: model)
         }
         guard let customID = region.customID else { return false }
         actions?.submitComponent(message, customID, .button, [])

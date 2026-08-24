@@ -203,6 +203,10 @@ nonisolated extension SettingsSectionID {
     static let shortcutMessaging = Self(rawValue: "shortcut-messaging")
     static let shortcutVoiceVideo = Self(rawValue: "shortcut-voice-video")
     static let shortcutLocalData = Self(rawValue: "shortcut-local-data")
+    static let privacyDiscordActivity = Self(rawValue: "privacy-discord-activity")
+    static let privacyLinksServices = Self(rawValue: "privacy-links-services")
+    static let privacyCredentials = Self(rawValue: "privacy-credentials")
+    static let privacyLocalData = Self(rawValue: "privacy-local-data")
     static let mediaCache = Self(rawValue: "media-cache")
     static let apiDiagnostics = Self(rawValue: "api-diagnostics")
 }
@@ -265,8 +269,7 @@ nonisolated extension SettingsControlID {
     static let reduceAnimatedMedia = Self(rawValue: "chat.reduce-animated-media")
     static let chatEmojiSkinTone = Self(rawValue: "chat.emoji-skin-tone")
     static let chatEmojiSource = Self(rawValue: "chat.emoji-source")
-    static let chatClearEmojiRecents = Self(rawValue: "chat.clear-emoji-recents")
-    static let chatClearEmojiRanking = Self(rawValue: "chat.clear-emoji-ranking")
+    static let chatEmojiPrivacyLink = Self(rawValue: "chat.emoji-privacy-link")
     static let chatExport = Self(rawValue: "chat.export")
     static let chatReset = Self(rawValue: "chat.reset")
     static let updateReleaseTrack = Self(rawValue: "software-updates.release-track")
@@ -349,6 +352,19 @@ nonisolated extension SettingsControlID {
     static let accessibilityReset = Self(rawValue: "accessibility.reset")
     static let shortcutExport = Self(rawValue: "keyboard-shortcuts.export")
     static let shortcutReset = Self(rawValue: "keyboard-shortcuts.reset")
+    static let privacyTypingIndicators = Self(rawValue: "privacy.typing-indicators")
+    static let privacyReadAcknowledgements = Self(rawValue: "privacy.read-acknowledgements")
+    static let externalLinkProtection = Self(rawValue: "privacy.external-link-protection")
+    static let privacyInternalDiscordLinks = Self(rawValue: "privacy.internal-discord-links")
+    static let externalUploaderPolicy = Self(rawValue: "privacy.external-uploader-policy")
+    static let credentialStorage = Self(rawValue: "privacy.credential-storage")
+    static let clearMessageSearches = Self(rawValue: "privacy.clear-message-searches")
+    static let clearDestinationHistory = Self(rawValue: "privacy.clear-destination-history")
+    static let clearEmojiRanking = Self(rawValue: "privacy.clear-emoji-ranking")
+    static let clearDrafts = Self(rawValue: "privacy.clear-drafts")
+    static let privacyNotificationPreviews = Self(rawValue: "privacy.notification-previews")
+    static let privacyExport = Self(rawValue: "privacy.export")
+    static let privacyReset = Self(rawValue: "privacy.reset")
     static let diagnosticDetailedPayloads = Self(rawValue: "diagnostics.detailed-payloads")
     static let diagnosticDiskCapture = Self(rawValue: "diagnostics.disk-capture")
     static let diagnosticRetainedEntries = Self(rawValue: "diagnostics.retained-entries")
@@ -883,18 +899,12 @@ private nonisolated extension SettingsCatalog {
             scope: .mixed, persistence: .notApplicable, reset: .notApplicable
         ),
         control(
-            .chatClearEmojiRecents, page: .chat, section: .chatEmoji,
-            label: "Clear Local Recents",
-            help: "Clear only SakuraCord's ordered local recent-emoji list on this Mac.",
-            keywords: ["recent emoji", "history", "clear"], owner: .appModel,
-            scope: .appWideLocal, persistence: .appPreferences, reset: .categoryAction
-        ),
-        control(
-            .chatClearEmojiRanking, page: .chat, section: .chatEmoji,
-            label: "Reset Learned Ranking",
-            help: "Clear only SakuraCord's local learned emoji usage counts.",
-            keywords: ["frequency", "frecency", "ranking", "reset"], owner: .appModel,
-            scope: .appWideLocal, persistence: .appPreferences, reset: .categoryAction
+            .chatEmojiPrivacyLink, page: .chat, section: .chatEmoji,
+            label: "Manage Local Emoji Data",
+            help: "Open Privacy & Safety to clear SakuraCord's local emoji recents and learned ranking.",
+            keywords: ["recent emoji", "history", "frequency", "ranking", "clear"],
+            owner: .appModel, scope: .appWideLocal, persistence: .notApplicable,
+            reset: .notApplicable
         ),
         control(
             .chatExport, page: .chat, section: .chatLocalData,
@@ -1565,6 +1575,98 @@ private nonisolated extension SettingsCatalog {
             section: .shortcutLocalData, label: "Reset All Keyboard Shortcuts",
             help: "Restore every shortcut to SakuraCord's defaults.",
             keywords: ["defaults", "restore", "clear shortcuts"], scope: .appWideLocal,
+            persistence: .appPreferences, reset: .categoryAction
+        ),
+        control(
+            .privacyTypingIndicators, page: .privacySafety,
+            section: .privacyDiscordActivity, label: "Typing Indicators",
+            help: "Open the canonical Chat control for Discord typing signals.",
+            keywords: ["typing status", "Discord", "composer"], owner: .appModel,
+            scope: .mixed, persistence: .notApplicable, reset: .notApplicable
+        ),
+        control(
+            .privacyReadAcknowledgements, page: .privacySafety,
+            section: .privacyDiscordActivity, label: "Read Acknowledgements",
+            help: "Open the canonical Chat control for automatic or manual Discord read state.",
+            keywords: ["read receipt", "unread", "manual", "automatic"], owner: .discord,
+            scope: .discordSynchronized, persistence: .notApplicable, reset: .notApplicable
+        ),
+        control(
+            .externalLinkProtection, page: .privacySafety,
+            section: .privacyLinksServices, label: "External Link Confirmation",
+            help: "Review the destination domain and deterministic suspicious-link warnings before opening a web link.",
+            keywords: ["URL", "domain", "phishing", "warning", "browser"], owner: .appModel,
+            scope: .appWideLocal, persistence: .notApplicable, reset: .notApplicable
+        ),
+        control(
+            .privacyInternalDiscordLinks, page: .privacySafety,
+            section: .privacyLinksServices, label: "Internal Discord Links",
+            help: "Open the canonical Chat preference for resolving Discord channel links inside SakuraCord.",
+            keywords: ["channel URL", "navigate", "browser"], owner: .appModel,
+            scope: .appWideLocal, persistence: .notApplicable, reset: .notApplicable
+        ),
+        control(
+            .externalUploaderPolicy, page: .privacySafety,
+            section: .privacyLinksServices, label: "Oversized Attachment Uploader",
+            help: "Choose whether SakuraCord may offer the existing external uploader. Uploading always requires a separate confirmation.",
+            keywords: ["Catbox", "Litterbox", "third party", "large file"],
+            scope: .appWideLocal, persistence: .appPreferences,
+            reset: .registeredLocalValue
+        ),
+        control(
+            .credentialStorage, page: .privacySafety,
+            section: .privacyCredentials, label: "Credential Protection",
+            help: "Explain Keychain storage and the places from which credentials are excluded.",
+            keywords: ["Keychain", "token", "secret", "export", "logs"], owner: .appModel,
+            scope: .accountLocal, persistence: .systemManaged, reset: .notApplicable
+        ),
+        control(
+            .clearMessageSearches, page: .privacySafety,
+            section: .privacyLocalData, label: "Clear Current Message Search",
+            help: "Clear the current in-memory message-search query, filters, and results without deleting Discord messages.",
+            keywords: ["query", "results", "filters", "local"], owner: .appModel,
+            scope: .accountLocal, persistence: .sessionOnly, reset: .categoryAction
+        ),
+        control(
+            .clearDestinationHistory, page: .privacySafety,
+            section: .privacyLocalData, label: "Clear Recent Destinations",
+            help: "Clear the account-scoped recent list shared by Quick Switch and forwarding.",
+            keywords: ["history", "frecency", "channels", "forward"], owner: .appModel,
+            scope: .accountLocal, persistence: .accountPreferences, reset: .categoryAction
+        ),
+        control(
+            .clearEmojiRanking, page: .privacySafety,
+            section: .privacyLocalData, label: "Clear Local Emoji Learning",
+            help: "Clear SakuraCord's local emoji recents and usage counts without changing Discord ordering or favorites.",
+            keywords: ["recents", "frequency", "learned", "ranking"], owner: .appModel,
+            scope: .appWideLocal, persistence: .appPreferences, reset: .categoryAction
+        ),
+        control(
+            .clearDrafts, page: .privacySafety,
+            section: .privacyLocalData, label: "Clear Drafts",
+            help: "Delete locally saved message drafts for the active account without deleting Discord messages.",
+            keywords: ["unsent", "composer", "delete", "account"], owner: .appModel,
+            scope: .accountLocal, persistence: .accountPreferences, reset: .categoryAction
+        ),
+        control(
+            .privacyNotificationPreviews, page: .privacySafety,
+            section: .privacyLocalData, label: "Notification Previews",
+            help: "Open the single notification-preview privacy control.",
+            keywords: ["lock screen", "sender", "message content"], owner: .applicationPreferences,
+            scope: .appWideLocal, persistence: .notApplicable, reset: .notApplicable
+        ),
+        control(
+            .privacyExport, page: .privacySafety,
+            section: .privacyLocalData, label: "Export Privacy Preferences",
+            help: "Export registered local Privacy & Safety preferences without credentials or private content.",
+            keywords: ["JSON", "backup", "inspect"], scope: .appWideLocal,
+            persistence: .notApplicable, reset: .notApplicable
+        ),
+        control(
+            .privacyReset, page: .privacySafety,
+            section: .privacyLocalData, label: "Reset Privacy Preferences",
+            help: "Restore registered Privacy & Safety preferences without clearing local content or Discord data.",
+            keywords: ["defaults", "restore"], scope: .appWideLocal,
             persistence: .appPreferences, reset: .categoryAction
         ),
     ]

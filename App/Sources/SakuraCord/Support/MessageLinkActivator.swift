@@ -1,4 +1,4 @@
-import AppKit
+import Foundation
 import MessageRendering
 
 @MainActor
@@ -6,7 +6,11 @@ enum MessageLinkActivator {
     static func activate(
         _ url: URL,
         model: AppModel?,
-        customHandler: (URL) -> Bool = { _ in false }
+        displayedText: String? = nil,
+        customHandler: (URL) -> Bool = { _ in false },
+        confirmExternal: (ExternalLinkSafetyAssessment) -> Void = {
+            ExternalLinkConfirmationPresenter.shared.present($0)
+        }
     ) -> Bool {
         guard let destination = MessageLinkPolicy.destination(for: url) else {
             return true
@@ -16,11 +20,21 @@ enum MessageLinkActivator {
             if let model, model.chatSettings.opensDiscordLinksInternally {
                 model.navigate(to: guildID, linkedChannelID: channelID)
             } else if !customHandler(url) {
-                NSWorkspace.shared.open(url)
+                confirmExternal(
+                    ExternalLinkSafetyPolicy.assess(
+                        url,
+                        displayedText: displayedText
+                    )
+                )
             }
         case .web:
             if !customHandler(url) {
-                NSWorkspace.shared.open(url)
+                confirmExternal(
+                    ExternalLinkSafetyPolicy.assess(
+                        url,
+                        displayedText: displayedText
+                    )
+                )
             }
         }
         return true

@@ -244,9 +244,21 @@ struct SelectableMessageTextView: NSViewRepresentable {
             guard let richTextView = textView as? RichMessageNSTextView else {
                 return false
             }
+            var linkRange = NSRange(location: 0, length: 0)
+            richTextView.attributedString().attribute(
+                .link,
+                at: charIndex,
+                effectiveRange: &linkRange
+            )
+            let displayedText = linkRange.length > 0
+                ? richTextView.attributedString().attributedSubstring(
+                    from: linkRange
+                ).string
+                : nil
             return MessageLinkActivator.activate(
                 url,
                 model: richTextView.model,
+                displayedText: displayedText,
                 customHandler: richTextView.onURLClick
             )
         }

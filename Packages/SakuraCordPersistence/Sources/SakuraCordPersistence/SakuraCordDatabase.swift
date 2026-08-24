@@ -50,6 +50,10 @@ public actor SakuraCordDatabase {
     }
 
     public func clearAccountData() throws {
+        try clearDrafts()
+    }
+
+    public func clearDrafts() throws {
         _ = try queue.write { db in
             try DraftRecord.deleteAll(db)
         }

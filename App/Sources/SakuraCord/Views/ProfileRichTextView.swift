@@ -187,8 +187,22 @@ private struct ProfileTextRepresentable: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate {
         func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
             guard let url = link as? URL else { return false }
-            NSWorkspace.shared.open(url)
-            return true
+            var linkRange = NSRange(location: 0, length: 0)
+            textView.attributedString().attribute(
+                .link,
+                at: charIndex,
+                effectiveRange: &linkRange
+            )
+            let displayedText = linkRange.length > 0
+                ? textView.attributedString().attributedSubstring(
+                    from: linkRange
+                ).string
+                : nil
+            return MessageLinkActivator.activate(
+                url,
+                model: nil,
+                displayedText: displayedText
+            )
         }
     }
 }

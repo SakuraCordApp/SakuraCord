@@ -161,7 +161,7 @@ import Testing
         .chatInternalDiscordLinks, .chatAutoplayGIFs,
         .chatAutoplayStickers, .chatAutoplayVideos, .chatLinkPreviews,
         .chatInlineMediaSize, .reduceAnimatedMedia, .chatEmojiSkinTone,
-        .chatEmojiSource, .chatClearEmojiRecents, .chatClearEmojiRanking,
+        .chatEmojiSource, .chatEmojiPrivacyLink,
         .chatExport, .chatReset,
     ]
     let controls = SettingsCatalog.foundation.controls.filter {
@@ -175,7 +175,7 @@ import Testing
         ("read receipt", .chatReadAcknowledgement),
         ("unfurl", .chatLinkPreviews),
         ("option click", .chatSpoilerReveal),
-        ("recent emoji", .chatClearEmojiRecents),
+        ("recent emoji", .chatEmojiPrivacyLink),
     ] {
         state.searchText = term
         #expect(

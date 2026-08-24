@@ -4,14 +4,14 @@ import SakuraCordModels
 @testable import SakuraCordPersistence
 import Testing
 
-@Test func `drafts round trip and clear with account data`() async throws {
+@Test func `drafts round trip and clear with scoped draft action`() async throws {
     let database = try SakuraCordDatabase(inMemory: true)
     let channelID = ChannelID(rawValue: 12)
 
     try await database.saveDraft("hello", channelID: channelID)
     #expect(try await database.draft(channelID: channelID) == "hello")
 
-    try await database.clearAccountData()
+    try await database.clearDrafts()
     #expect(try await database.draft(channelID: channelID).isEmpty)
 }
 
