@@ -30,6 +30,8 @@ final class SettingsViewState {
         didSet { refreshSearchResults() }
     }
 
+    var expandedGroups = Set(SettingsSidebarGroupID.allCases)
+
     private(set) var searchResults: [SettingsSearchResult] = []
     private(set) var revealRequest: SettingsRevealRequest?
     private(set) var highlightedControlID: SettingsControlID?
@@ -52,6 +54,30 @@ final class SettingsViewState {
         selectedPage = SettingsPageID(rawValue: rawValue) ?? .myAccount
     }
 
+    func restoreExpandedGroups(from rawValue: String) {
+        let restored = Set(
+            rawValue.split(separator: ",").compactMap {
+                SettingsSidebarGroupID(rawValue: String($0))
+            }
+        )
+        expandedGroups = restored
+    }
+
+    var serializedExpandedGroups: String {
+        SettingsSidebarGroupID.allCases
+            .filter(expandedGroups.contains)
+            .map(\.rawValue)
+            .joined(separator: ",")
+    }
+
+    func setGroup(_ group: SettingsSidebarGroupID, expanded: Bool) {
+        if expanded {
+            expandedGroups.insert(group)
+        } else {
+            expandedGroups.remove(group)
+        }
+    }
+
     func updateLocale(_ locale: Locale) {
         guard self.locale != locale else { return }
         self.locale = locale
@@ -67,6 +93,7 @@ final class SettingsViewState {
         to destination: SettingsDestination,
         controlID: SettingsControlID
     ) {
+        expandedGroups.insert(catalog.page(destination.page).group)
         selectedPage = destination.page
         revealRequest = SettingsRevealRequest(
             id: UUID(),

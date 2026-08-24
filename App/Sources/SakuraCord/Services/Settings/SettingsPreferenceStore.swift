@@ -138,6 +138,36 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             defaultValue: .string("")
         ),
         SettingsPreferenceRegistration(
+            id: .launchDestination,
+            page: .general,
+            storage: .appWide(key: "settings.launchDestination"),
+            defaultValue: .string(SettingsLaunchDestination.preferredAccountLastLocation.rawValue)
+        ),
+        SettingsPreferenceRegistration(
+            id: .showMainWindowAtLaunch,
+            page: .general,
+            storage: .appWide(key: "settings.showMainWindowAtLaunch"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .rememberMemberListVisibility,
+            page: .general,
+            storage: .appWide(key: "settings.rememberMemberListVisibility"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .confirmQuitActiveWork,
+            page: .general,
+            storage: .appWide(key: "settings.confirmQuitActiveWork"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .confirmDiscardComposer,
+            page: .general,
+            storage: .appWide(key: "settings.confirmDiscardComposer"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
             id: .sendWithReturn,
             page: .general,
             storage: .appWide(key: "sendWithReturn"),

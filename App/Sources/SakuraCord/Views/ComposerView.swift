@@ -23,6 +23,7 @@ struct ComposerView: View {
     @State private var isAutocompleteDismissed = false
     @State private var commandSuggestionIndex = 0
     @State private var isCommandSuggestionsDismissed = false
+    @State private var pendingDiscard: ComposerDiscardRequest?
     @AppStorage("sendWithReturn") private var sendWithReturn = true
 
     var body: some View {
@@ -219,6 +220,10 @@ struct ComposerView: View {
                 model.addComposerAttachments(urls, to: conversation)
             }
         }
+        .composerDiscardConfirmation(
+            request: $pendingDiscard,
+            discard: performPendingDiscard
+        )
         .onReceive(NotificationCenter.default.publisher(for: .sakuracordFocusComposer)) { note in
             if let destination = note.object as? MessageComposerDestination,
                destination != conversation
@@ -403,7 +408,15 @@ struct ComposerView: View {
             showGIFPicker = false
         } else if showEmojiPicker {
             showEmojiPicker = false
-        } else if model.consumeEscapeForComposerAttachments(in: conversation) {
+        } else if !attachments.isEmpty {
+            if GeneralComposerDiscardPolicy.shouldConfirmUnsentContent(
+                isEnabled: confirmsDiscardComposer,
+                itemCount: attachments.count
+            ) {
+                pendingDiscard = .attachments
+            } else {
+                _ = model.consumeEscapeForComposerAttachments(in: conversation)
+            }
             return
         } else if model.consumeEscapeForSupplementaryConversation() {
             return
@@ -678,10 +691,39 @@ struct ComposerView: View {
     }
 
     private func cancelCommand() {
+        if GeneralComposerDiscardPolicy.shouldConfirmUnsentContent(
+            isEnabled: confirmsDiscardComposer,
+            itemCount: model.commandComposer.hasMeaningfulDraft ? 1 : 0
+        ) {
+            pendingDiscard = .command
+            return
+        }
+        discardCommand()
+    }
+
+    private func discardCommand() {
         model.commandComposer.cancelActiveCommand()
         commandSuggestionIndex = 0
         isCommandSuggestionsDismissed = false
         isFocused = true
+    }
+
+    private var confirmsDiscardComposer: Bool {
+        SettingsPreferenceStore.shared.value(for: .confirmDiscardComposer)
+            != .bool(false)
+    }
+
+    private func performPendingDiscard() {
+        let request = pendingDiscard
+        pendingDiscard = nil
+        switch request {
+        case .attachments:
+            _ = model.consumeEscapeForComposerAttachments(in: conversation)
+        case .command:
+            discardCommand()
+        case nil:
+            break
+        }
     }
 
     private func submitComposer() {

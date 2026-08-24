@@ -7,7 +7,12 @@ struct SettingsSidebar: View {
         @Bindable var state = state
         List(selection: $state.selectedPage) {
             ForEach(SettingsSidebarGroupID.allCases) { group in
-                Section {
+                Section(
+                    isExpanded: Binding(
+                        get: { state.expandedGroups.contains(group) },
+                        set: { state.setGroup(group, expanded: $0) }
+                    )
+                ) {
                     ForEach(state.catalog.pages(in: group)) { page in
                         SettingsSidebarRow(
                             title: page.title,

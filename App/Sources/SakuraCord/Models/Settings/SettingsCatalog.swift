@@ -169,6 +169,8 @@ nonisolated extension SettingsSectionID {
     static let accountIdentity = Self(rawValue: "account-identity")
     static let accountLaunch = Self(rawValue: "account-launch")
     static let accountLocalData = Self(rawValue: "account-local-data")
+    static let startupRestoration = Self(rawValue: "startup-restoration")
+    static let confirmations = Self(rawValue: "confirmations")
     static let messagesAndMedia = Self(rawValue: "messages-and-media")
     static let softwareUpdates = Self(rawValue: "software-updates")
     static let notificationDelivery = Self(rawValue: "notification-delivery")
@@ -192,6 +194,12 @@ nonisolated extension SettingsControlID {
     static let removeSavedSession = Self(rawValue: "my-account.remove-saved-session")
     static let exportAccountPreferences = Self(rawValue: "my-account.export-preferences")
     static let resetAccountPreferences = Self(rawValue: "my-account.reset-preferences")
+    static let launchAtLogin = Self(rawValue: "general.launch-at-login")
+    static let launchDestination = Self(rawValue: "general.launch-destination")
+    static let showMainWindowAtLaunch = Self(rawValue: "general.show-main-window")
+    static let rememberMemberListVisibility = Self(rawValue: "general.remember-member-list")
+    static let confirmQuitActiveWork = Self(rawValue: "general.confirm-quit-active-work")
+    static let confirmDiscardComposer = Self(rawValue: "general.confirm-discard-composer")
     static let sendWithReturn = Self(rawValue: "chat.send-with-return")
     static let reduceAnimatedMedia = Self(rawValue: "accessibility.reduce-animated-media")
     static let updateReleaseTrack = Self(rawValue: "software-updates.release-track")
@@ -384,6 +392,63 @@ private nonisolated extension SettingsCatalog {
             scope: .accountLocal,
             persistence: .accountPreferences,
             reset: .categoryAction
+        ),
+        control(
+            .launchAtLogin,
+            page: .general,
+            section: .startupRestoration,
+            label: "Launch at Login",
+            help: "Ask macOS to launch SakuraCord after this user logs in.",
+            keywords: ["startup", "login item", "open automatically", "Service Management"],
+            owner: .macOS,
+            scope: .appWideLocal,
+            persistence: .systemManaged,
+            reset: .notApplicable
+        ),
+        control(
+            .launchDestination,
+            page: .general,
+            section: .startupRestoration,
+            label: "Launch destination",
+            help: "Choose which account and safely restored conversation SakuraCord opens at launch.",
+            keywords: ["last conversation", "last location", "account picker", "startup page"],
+            scope: .appWideLocal
+        ),
+        control(
+            .showMainWindowAtLaunch,
+            page: .general,
+            section: .startupRestoration,
+            label: "Show the main window at launch",
+            help: "Present SakuraCord's main window immediately when the app launches.",
+            keywords: ["background", "hidden", "window", "Dock"],
+            scope: .appWideLocal
+        ),
+        control(
+            .rememberMemberListVisibility,
+            page: .general,
+            section: .startupRestoration,
+            label: "Remember member list visibility",
+            help: "Restore whether the conversation member list was visible when SakuraCord last quit.",
+            keywords: ["inspector", "members", "sidebar", "restore"],
+            scope: .appWideLocal
+        ),
+        control(
+            .confirmQuitActiveWork,
+            page: .general,
+            section: .confirmations,
+            label: "Confirm quitting during active work",
+            help: "Ask before quitting during a call, screen share, or active upload.",
+            keywords: ["quit warning", "call", "screen share", "upload"],
+            scope: .appWideLocal
+        ),
+        control(
+            .confirmDiscardComposer,
+            page: .general,
+            section: .confirmations,
+            label: "Confirm discarding composer changes",
+            help: "Ask before discarding meaningful unsent attachments, command input, or edited message text.",
+            keywords: ["draft", "unsent", "edit", "discard warning", "attachments"],
+            scope: .appWideLocal
         ),
         control(
             .sendWithReturn,

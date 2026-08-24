@@ -78,6 +78,13 @@ final class ApplicationCommandComposerModel {
     private(set) var displayedOptionIDs: [String] = []
     private(set) var values: [String: ApplicationCommandArgument] = [:]
     private(set) var optionDrafts: [String: String] = [:]
+
+    var hasMeaningfulDraft: Bool {
+        !values.isEmpty
+            || optionDrafts.values.contains {
+                !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+    }
     private(set) var focusedOptionID: String?
     private(set) var autocompleteChoices: [ApplicationCommandChoice] = []
     private(set) var autocompleteNonce: String?

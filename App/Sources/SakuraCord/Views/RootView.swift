@@ -72,6 +72,24 @@ struct RootView: View {
                 model.dismissMessageSearch()
             }
         }
+        .onChange(of: model.showInspector) { _, isVisible in
+            guard SettingsPreferenceStore.shared.value(
+                for: .rememberMemberListVisibility
+            ) == .bool(true) else { return }
+            GeneralWindowRestorationStore.shared.recordMemberListVisibility(
+                isVisible
+            )
+        }
+        .onChange(of: model.selectedChannelID) { _, _ in
+            guard let activeAccountID = model.activeAccountID,
+                  let selectedChannel = model.selectedChannel
+            else { return }
+            SettingsConversationRestorationStore.shared.record(
+                accountID: activeAccountID,
+                guildID: selectedChannel.guildID?.description,
+                channelID: selectedChannel.id.description
+            )
+        }
     }
 
     private var showsMessageSearchToolbar: Bool {

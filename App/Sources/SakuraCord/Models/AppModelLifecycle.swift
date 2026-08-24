@@ -636,6 +636,22 @@ extension AppModel {
                         "SAKURACORD_PERFORMANCE_ACCOUNT_ID"
                     ]
                     : nil
+            let launchDestination: SettingsLaunchDestination = if case let .string(value) =
+                SettingsPreferenceStore.shared.value(for: .launchDestination)
+            {
+                SettingsLaunchDestination(rawValue: value)
+                    ?? .preferredAccountLastLocation
+            } else {
+                .preferredAccountLastLocation
+            }
+            if SettingsLaunchAccountPolicy.presentsAccountPicker(
+                destination: launchDestination,
+                performanceAccountID: preferredPerformanceAccountID
+            ) {
+                isLoading = false
+                sessionState = .signedOut
+                return false
+            }
             let preferredStoredAccountID = await savedAccountStore
                 .preferredAccountID()
             let reopensLastActiveAccount = SettingsPreferenceStore.shared.value(
@@ -650,21 +666,22 @@ extension AppModel {
                 nil
             }
             let restoredHandle = handles.flatMap { handles in
-                if let preferredPerformanceAccountID {
-                    RestoredCredentialSelectionPolicy.handle(
-                        from: handles,
-                        preferredAccountID: preferredPerformanceAccountID
-                    )
-                } else {
-                    SettingsAccountLaunchPolicy.handle(
-                        from: handles,
-                        reopensLastActiveAccount: reopensLastActiveAccount,
-                        lastActiveAccountID: preferredStoredAccountID,
-                        preferredLaunchAccountID: preferredLaunchAccountID
-                    )
-                }
+                SettingsLaunchAccountPolicy.handle(
+                    from: handles,
+                    destination: launchDestination,
+                    performanceAccountID: preferredPerformanceAccountID,
+                    lastVisitedAccountID: SettingsConversationRestorationStore
+                        .shared.preferredAccountID(for: launchDestination),
+                    reopensLastActiveAccount: reopensLastActiveAccount,
+                    lastActiveAccountID: preferredStoredAccountID,
+                    preferredLaunchAccountID: preferredLaunchAccountID
+                )
             }
             if let restoredHandle {
+                SettingsConversationRestorationStore.shared.prepareLaunch(
+                    destination: launchDestination,
+                    selectedAccountID: restoredHandle.accountID
+                )
                 _ = await connectAuthenticatedAccount(restoredHandle)
                 return false
             }
@@ -732,9 +749,16 @@ extension AppModel {
             reconcilePrivateCallSounds()
             readState.applyInitialState(initialReadState)
         }
+        let launchRestoration = SettingsConversationRestorationStore.shared
+            .consumeLaunchRestoration(accountID: credentialHandle?.accountID)
+        let restoredLaunchChannel = launchRestoration
+            .flatMap { ChannelID($0.channelID) }
+            .flatMap { restoredID in
+                value.channels.first { $0.id == restoredID }
+            }
         let retainedChannel = selectedChannelID.flatMap { selectedChannelID in
             value.channels.first { $0.id == selectedChannelID }
-        }
+        } ?? restoredLaunchChannel
         let initialGuildID = bootstrapInitialGuildID(
             in: value,
             retainedChannel: retainedChannel
@@ -771,7 +795,10 @@ extension AppModel {
                     .flatMap { rememberedID in
                         selectableInitialChannels.first { $0.id == rememberedID }
                     }
-                return retainedChannel
+                let retainedSelectableChannel = retainedChannel.flatMap { retained in
+                    selectableInitialChannels.first { $0.id == retained.id }
+                }
+                return retainedSelectableChannel
                     ?? rememberedInitialChannel
                     ?? Self.preferredInitialChannelID(
                         in: selectableInitialChannels
@@ -855,6 +882,7 @@ extension AppModel {
         guard canPublishBootstrap(for: account) else { return }
         if let retainedChannel,
            retainedChannel.guildID == initialGuildID,
+           conversationAccess(for: retainedChannel).isReadable,
            selectedChannelID != retainedChannel.id
         {
             selectedChannelID = retainedChannel.id

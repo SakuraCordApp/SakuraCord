@@ -8,6 +8,8 @@ struct SettingsView: View {
     @SceneStorage("settings.selected-page") private var storedSelectedPage =
         SettingsPageID.myAccount.rawValue
     @SceneStorage("settings.selected-account") private var storedSelectedAccount = ""
+    @SceneStorage("settings.expanded-groups") private var storedExpandedGroups =
+        SettingsSidebarGroupID.allCases.map(\.rawValue).joined(separator: ",")
     @State private var state = SettingsViewState()
     private let navigationRouter = SettingsNavigationRouter.shared
 
@@ -37,6 +39,7 @@ struct SettingsView: View {
         }
         .task {
             state.restoreSelection(from: storedSelectedPage)
+            state.restoreExpandedGroups(from: storedExpandedGroups)
             state.updateLocale(locale)
         }
         .task(id: navigationRouter.request?.id) {
@@ -49,6 +52,9 @@ struct SettingsView: View {
         }
         .onChange(of: state.selectedPage) { _, page in
             storedSelectedPage = page.rawValue
+        }
+        .onChange(of: state.expandedGroups) {
+            storedExpandedGroups = state.serializedExpandedGroups
         }
         .onChange(of: locale) { _, locale in
             state.updateLocale(locale)
@@ -77,7 +83,11 @@ private struct SettingsDetailRouter: View {
                 selectedAccountID: $selectedAccountID
             )
         case .general:
-            GeneralSettingsPage(state: state, updateController: updateController)
+            GeneralSettingsPage(
+                model: model,
+                state: state,
+                updateController: updateController
+            )
         case .interface:
             InterfaceSettingsPage(state: state)
         case .chat:

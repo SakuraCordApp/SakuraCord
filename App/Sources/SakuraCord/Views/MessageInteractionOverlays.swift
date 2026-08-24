@@ -184,6 +184,7 @@ struct NativeTimelineEditingMessageContent: View {
     let react: (String) -> Void
     @State private var editText: String
     @State private var isReactionPickerPresented = false
+    @State private var confirmsDiscard = false
 
     init(
         model: AppModel,
@@ -213,7 +214,7 @@ struct NativeTimelineEditingMessageContent: View {
                     }
                     save(value)
                 },
-                cancel: cancel
+                cancel: requestCancel
             )
             let reactionItems = MessageReactionPresentation.items(
                 from: message.reactions
@@ -272,6 +273,30 @@ struct NativeTimelineEditingMessageContent: View {
                 for: message.outboxState
             )
         )
+        .confirmationDialog(
+            "Discard Message Edit?",
+            isPresented: $confirmsDiscard
+        ) {
+            Button("Discard Edit", role: .destructive, action: cancel)
+            Button("Keep Editing", role: .cancel) {}
+        } message: {
+            Text("Your changes to this message will be discarded.")
+        }
+    }
+
+    private func requestCancel() {
+        let confirms = SettingsPreferenceStore.shared.value(
+            for: .confirmDiscardComposer
+        ) != .bool(false)
+        if GeneralComposerDiscardPolicy.shouldConfirmEdit(
+            isEnabled: confirms,
+            original: message.content,
+            current: editText
+        ) {
+            confirmsDiscard = true
+        } else {
+            cancel()
+        }
     }
 }
 

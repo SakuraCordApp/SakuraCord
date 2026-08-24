@@ -87,12 +87,20 @@ struct SakuraCordApp: App {
             configuration.mode == .offlineTesting
             ? NoopAppSoundPlayer()
             : MacAppSoundPlayer()
-        _model = State(initialValue: AppModel(
+        let appModel = AppModel(
             launchMode: configuration.mode,
             provider: provider,
             notificationService: notificationService,
             soundPlayer: soundPlayer
-        ))
+        )
+        if SettingsPreferenceStore.shared.value(
+            for: .rememberMemberListVisibility
+        ) == .bool(true) {
+            appModel.showInspector = GeneralWindowRestorationStore.shared
+                .memberListIsVisible
+        }
+        SakuraCordRuntimeModelHolder.shared.model = appModel
+        _model = State(initialValue: appModel)
     }
 
     var body: some Scene {
@@ -102,10 +110,11 @@ struct SakuraCordApp: App {
             RootView(model: model)
                 .frame(minWidth: 860, minHeight: 560)
                 .onAppear {
+                    appDelegate.model = model
                     AppPerformanceSignposts.reportRootViewAppeared()
                 }
                 .task {
-                    await model.start()
+                    await appDelegate.startSession(for: model)
 #if DEBUG
                     if runsAuthenticatedNavigationBenchmark {
                         await model.runAuthenticatedNavigationPerformanceBenchmark()
@@ -189,7 +198,7 @@ struct SakuraCordApp: App {
                     }
                 }
         }
-        .defaultLaunchBehavior(.presented)
+        .defaultLaunchBehavior(mainWindowLaunchBehavior)
         .defaultSize(width: 1280, height: 780)
         .windowBackgroundDragBehavior(.disabled)
         .commands {
@@ -207,18 +216,85 @@ struct SakuraCordApp: App {
             )
         }
     }
+
+    private var mainWindowLaunchBehavior: SceneLaunchBehavior {
+        guard model.launchMode == .normal else { return .presented }
+        return SettingsPreferenceStore.shared.value(
+            for: .showMainWindowAtLaunch
+        ) == .bool(false) ? .suppressed : .presented
+    }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let updateController = AppUpdateController()
+    weak var model: AppModel?
     private let notificationCenterDelegate = SakuraCordNotificationCenterDelegate()
+    private var terminationPromptIsPresented = false
+    private var sessionStartTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = notificationCenterDelegate
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         updateController.start()
+        if let model = SakuraCordRuntimeModelHolder.shared.model {
+            self.model = model
+            Task { await startSession(for: model) }
+        }
     }
+
+    func startSession(for model: AppModel) async {
+        self.model = model
+        if sessionStartTask == nil {
+            sessionStartTask = Task { await model.start() }
+        }
+        await sessionStartTask?.value
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let confirmsActiveWork = SettingsPreferenceStore.shared.value(
+            for: .confirmQuitActiveWork
+        ) != .bool(false)
+        let activities = model?.generalQuitActivities ?? []
+        guard GeneralQuitConfirmationPolicy.shouldConfirm(
+            isEnabled: confirmsActiveWork,
+            activities: activities
+        ) else { return .terminateNow }
+        guard !terminationPromptIsPresented else { return .terminateLater }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Quit SakuraCord?"
+        alert.informativeText = quitConfirmationMessage(for: activities)
+        alert.addButton(withTitle: "Quit")
+        alert.addButton(withTitle: "Cancel")
+
+        if let window = sender.keyWindow ?? sender.mainWindow {
+            terminationPromptIsPresented = true
+            alert.beginSheetModal(for: window) { [weak self] response in
+                self?.terminationPromptIsPresented = false
+                sender.reply(toApplicationShouldTerminate: response == .alertFirstButtonReturn)
+            }
+            return .terminateLater
+        }
+        return alert.runModal() == .alertFirstButtonReturn
+            ? .terminateNow
+            : .terminateCancel
+    }
+
+    private func quitConfirmationMessage(
+        for activities: [GeneralQuitActivity]
+    ) -> String {
+        let descriptions = activities.map(\.title)
+        let joined = ListFormatter.localizedString(byJoining: descriptions)
+        return "SakuraCord is handling \(joined). Quitting will stop this activity immediately."
+    }
+}
+
+@MainActor
+private final class SakuraCordRuntimeModelHolder {
+    static let shared = SakuraCordRuntimeModelHolder()
+    weak var model: AppModel?
 }
 
 final class SakuraCordNotificationCenterDelegate: NSObject {}
