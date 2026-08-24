@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "tagName": "v0.1.1",
+  "githubDescription": "SakuraCord v0.1.1 improves unread-state handling, message rendering, member role colors, and keyboard navigation. It also updates the project’s licensing and lint enforcement.\n\n## Fixes\n- Fixed guild member role color hydration.\n- Fixed unread-state lifecycle behavior and timeline placement.\n- Fixed quadratic unread reconciliation.\n- Fixed rendering of Discord angle-bracket links.\n\n## Keyboard shortcuts\n- Added an Up Arrow shortcut for editing the latest message.\n- Added numbered server navigation shortcuts.\n\n## Project maintenance\n- Licensed SakuraCord under GPL-3.0.\n- Balanced the SwiftLint policy.\n- Eliminated the SwiftLint baseline and added commit-time checks.\n\n**Full Changelog:** [v0.1.0...v0.1.1](https://github.com/SakuraCordApp/SakuraCord/compare/v0.1.0...v0.1.1)",
+  "discordAnnouncement": "**Unread fixes and faster keyboard navigation 🌸**\n\n**Highlights**\n- Fixed guild member role colors\n- Improved unread-state lifecycle behavior and timeline placement\n- Removed slow quadratic unread reconciliation\n- Fixed Discord angle-bracket link rendering\n- Up Arrow now edits your latest message\n- Added numbered shortcuts for server navigation"
+}

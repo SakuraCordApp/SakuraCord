@@ -5,15 +5,9 @@ nonisolated extension SettingsCatalog {
         aboutControl(
             .aboutVersionInformation, section: .aboutVersion,
             label: "Version Information",
-            help: "Show the bundle semantic version, build number, and active release track.",
-            keywords: ["app version", "build number", "regular", "nightly"],
+            help: "Show SakuraCord’s semantic version.",
+            keywords: ["app version", "version number"],
             owner: .appModel
-        ),
-        aboutControl(
-            .aboutCopyVersionInformation, section: .aboutVersion,
-            label: "Copy Version Information",
-            help: "Copy a stable sanitized version summary for issue reports.",
-            keywords: ["clipboard", "support", "issue report"], owner: .macOS
         ),
         aboutControl(
             .aboutCheckForUpdates, section: .aboutVersion,
@@ -22,14 +16,15 @@ nonisolated extension SettingsCatalog {
             keywords: ["update now", "software update", "new version"], owner: .sparkle
         ),
         aboutControl(
-            .aboutWebsite, section: .aboutLinks,
-            label: "Project Website", help: "Open SakuraCord’s canonical website.",
-            keywords: ["home", "sakuracord.app"], owner: .macOS
+            .aboutChangelog, section: .aboutVersion,
+            label: "Open Changelog",
+            help: "Show the release notes included with SakuraCord.",
+            keywords: ["release notes", "what’s new", "versions"], owner: .appModel
         ),
         aboutControl(
-            .aboutDocumentation, section: .aboutLinks,
-            label: "Documentation", help: "Open SakuraCord’s canonical documentation set.",
-            keywords: ["docs", "guides", "architecture"], owner: .macOS
+            .aboutWebsite, section: .aboutLinks,
+            label: "Website", help: "Open SakuraCord’s canonical website.",
+            keywords: ["home", "sakuracord.app"], owner: .macOS
         ),
         aboutControl(
             .aboutRoadmap, section: .aboutLinks,
@@ -38,26 +33,20 @@ nonisolated extension SettingsCatalog {
         ),
         aboutControl(
             .aboutSource, section: .aboutLinks,
-            label: "Source Repository", help: "Open SakuraCord’s public source repository.",
+            label: "Source", help: "Open SakuraCord’s public source repository.",
             keywords: ["GitHub", "code", "GPL"], owner: .macOS
         ),
         aboutControl(
             .aboutSupport, section: .aboutLinks,
-            label: "Support Community",
+            label: "Discord",
             help: "Open SakuraCord’s Discord support community invite.",
             keywords: ["help", "community", "Discord server"], owner: .macOS
         ),
         aboutControl(
-            .aboutLatestRelease, section: .aboutLinks,
-            label: "Latest Release",
-            help: "Open SakuraCord’s latest published GitHub release.",
-            keywords: ["download", "DMG", "release notes"], owner: .macOS
-        ),
-        aboutControl(
             .aboutAcknowledgements, section: .aboutAcknowledgements,
             label: "Third-Party Acknowledgements",
-            help: "Open the third-party notices included in assembled SakuraCord app packages.",
-            keywords: ["licenses", "notices", "attribution"], owner: .macOS,
+            help: "Show the third-party notices included with SakuraCord.",
+            keywords: ["licenses", "notices", "attribution"], owner: .appModel,
             persistence: .systemManaged
         ),
         aboutControl(

@@ -1,50 +1,20 @@
 import Foundation
 
 nonisolated struct AboutVersionInformation: Equatable, Sendable {
-    static let unavailableValue = "Unavailable"
-
     let semanticVersion: String?
-    let buildNumber: String?
-    let releaseTrack: AppUpdateReleaseTrack
 
-    init(
-        infoDictionary: [String: Any],
-        releaseTrack: AppUpdateReleaseTrack
-    ) {
+    init(infoDictionary: [String: Any]) {
         semanticVersion = Self.sanitizedBundleValue(
             infoDictionary["CFBundleShortVersionString"]
         )
-        buildNumber = Self.sanitizedBundleValue(
-            infoDictionary["CFBundleVersion"]
-        )
-        self.releaseTrack = releaseTrack
     }
 
-    init(
-        bundle: Bundle = .main,
-        releaseTrack: AppUpdateReleaseTrack
-    ) {
-        self.init(
-            infoDictionary: bundle.infoDictionary ?? [:],
-            releaseTrack: releaseTrack
-        )
+    init(bundle: Bundle = .main) {
+        self.init(infoDictionary: bundle.infoDictionary ?? [:])
     }
 
     var semanticVersionDisplay: String {
         semanticVersion ?? "Unavailable in this build"
-    }
-
-    var buildNumberDisplay: String {
-        buildNumber ?? "Unavailable in this build"
-    }
-
-    var copyText: String {
-        """
-        SakuraCord Version Information
-        Version: \(semanticVersion ?? Self.unavailableValue)
-        Build: \(buildNumber ?? Self.unavailableValue)
-        Release track: \(releaseTrack.title)
-        """
     }
 
     private static func sanitizedBundleValue(_ value: Any?) -> String? {
@@ -61,13 +31,26 @@ nonisolated struct AboutVersionInformation: Equatable, Sendable {
     }
 }
 
+nonisolated struct AboutReleaseNotes: Decodable, Equatable, Identifiable, Sendable {
+    let schemaVersion: Int
+    let tagName: String
+    let githubDescription: String
+
+    var id: String { tagName }
+}
+
+nonisolated struct AboutAcknowledgement: Equatable, Identifiable, Sendable {
+    let title: String
+    let markdown: String
+
+    var id: String { title }
+}
+
 nonisolated enum AboutProjectLink: String, CaseIterable, Identifiable, Sendable {
     case website = "https://sakuracord.app"
-    case documentation = "https://github.com/SakuraCordApp/SakuraCord/tree/main/docs"
     case roadmap = "https://roadmap.sakuracord.app"
     case source = "https://github.com/SakuraCordApp/SakuraCord"
     case support = "https://discord.gg/hWNwFXkUTP"
-    case latestRelease = "https://github.com/SakuraCordApp/SakuraCord/releases/latest"
 
     var id: Self { self }
 
@@ -75,40 +58,33 @@ nonisolated enum AboutProjectLink: String, CaseIterable, Identifiable, Sendable 
 
     var title: LocalizedStringResource {
         switch self {
-        case .website: LocalizedStringResource("Project Website", bundle: #bundle)
-        case .documentation: LocalizedStringResource("Documentation", bundle: #bundle)
+        case .website: LocalizedStringResource("Website", bundle: #bundle)
         case .roadmap: LocalizedStringResource("Roadmap", bundle: #bundle)
-        case .source: LocalizedStringResource("Source Repository", bundle: #bundle)
-        case .support: LocalizedStringResource("Support Community", bundle: #bundle)
-        case .latestRelease: LocalizedStringResource("Latest Release", bundle: #bundle)
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .website: "globe"
-        case .documentation: "book.closed"
-        case .roadmap: "map"
-        case .source: "chevron.left.forwardslash.chevron.right"
-        case .support: "person.3"
-        case .latestRelease: "shippingbox"
+        case .source: LocalizedStringResource("Source", bundle: #bundle)
+        case .support: LocalizedStringResource("Discord", bundle: #bundle)
         }
     }
 
     var controlID: SettingsControlID {
         switch self {
         case .website: .aboutWebsite
-        case .documentation: .aboutDocumentation
         case .roadmap: .aboutRoadmap
         case .source: .aboutSource
         case .support: .aboutSupport
-        case .latestRelease: .aboutLatestRelease
         }
     }
 }
 
 nonisolated enum AboutResources {
     static let acknowledgementsFilename = "THIRD_PARTY_NOTICES.md"
+    static let releasesDirectoryName = "Releases"
+
+    static let packagedAcknowledgements = acknowledgements(
+        resourceURL: Bundle.main.resourceURL
+    )
+    static let packagedReleaseNotes = releaseNotes(
+        resourceURL: Bundle.main.resourceURL
+    )
 
     static func acknowledgementsURL(
         resourceURL: URL?,
@@ -124,5 +100,93 @@ nonisolated enum AboutResources {
             isDirectory: &isDirectory
         ), !isDirectory.boolValue else { return nil }
         return candidate
+    }
+
+    static func acknowledgementsText(
+        resourceURL: URL?,
+        fileManager: FileManager = .default
+    ) -> String? {
+        guard let url = acknowledgementsURL(
+            resourceURL: resourceURL,
+            fileManager: fileManager
+        ), let data = fileManager.contents(atPath: url.path)
+        else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    static func acknowledgements(
+        resourceURL: URL?,
+        fileManager: FileManager = .default
+    ) -> [AboutAcknowledgement] {
+        guard let markdown = acknowledgementsText(
+            resourceURL: resourceURL,
+            fileManager: fileManager
+        ) else { return [] }
+        return acknowledgements(markdown: markdown)
+    }
+
+    static func acknowledgements(markdown: String) -> [AboutAcknowledgement] {
+        var values: [AboutAcknowledgement] = []
+        var currentTitle: String?
+        var currentBody: [String] = []
+
+        func appendCurrentSection() {
+            guard let currentTitle else { return }
+            let body = currentBody.joined(separator: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !body.isEmpty else { return }
+            values.append(
+                AboutAcknowledgement(title: currentTitle, markdown: body)
+            )
+        }
+
+        for line in markdown.components(separatedBy: .newlines) {
+            if line.hasPrefix("## "), !line.hasPrefix("### ") {
+                appendCurrentSection()
+                currentTitle = String(line.dropFirst(3))
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                currentBody.removeAll(keepingCapacity: true)
+            } else if currentTitle != nil {
+                currentBody.append(line)
+            }
+        }
+        appendCurrentSection()
+        return values
+    }
+
+    static func releaseNotes(
+        resourceURL: URL?,
+        fileManager: FileManager = .default
+    ) -> [AboutReleaseNotes] {
+        guard let directory = resourceURL?.appendingPathComponent(
+            releasesDirectoryName,
+            isDirectory: true
+        ), let files = try? fileManager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+
+        return files
+            .filter { $0.pathExtension.lowercased() == "json" }
+            .compactMap { releaseNotes(at: $0, fileManager: fileManager) }
+            .sorted {
+                $0.tagName.localizedStandardCompare($1.tagName) == .orderedDescending
+            }
+    }
+
+    private static func releaseNotes(
+        at url: URL,
+        fileManager: FileManager
+    ) -> AboutReleaseNotes? {
+        guard let data = fileManager.contents(atPath: url.path),
+              let notes = try? JSONDecoder().decode(AboutReleaseNotes.self, from: data),
+              notes.schemaVersion == 1,
+              notes.tagName.hasPrefix("v"),
+              !notes.githubDescription.trimmingCharacters(
+                  in: .whitespacesAndNewlines
+              ).isEmpty
+        else { return nil }
+        return notes
     }
 }

@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "tagName": "v0.0.2",
+  "githubDescription": "SakuraCord v0.0.2 adds comprehensive support for Discord forum channels, integrating forum workflows with the app’s existing shared systems.\n\n## Forum channels\n- Browse forum channels and navigate their threads.\n- Search, filter, and sort forum content.\n- Create posts with uploads and tags.\n- Use reactions and moderation features.\n\n## Architecture and testing\n- Added request-contract, state-management, and presentation coverage.\n- Added regression coverage for large forum catalogues.\n- Added a protocol implementation record.\n\n**Full Changelog:** [v0.0.1...v0.0.2](https://github.com/SakuraCordApp/SakuraCord/compare/v0.0.1...v0.0.2)",
+  "discordAnnouncement": "**Discord forum channels have arrived! 🌸**\n\n**Highlights**\n- Browse forum channels and move through their threads\n- Search, filter, and sort forum content\n- Create posts with file uploads and tags\n- React to posts and use forum moderation controls\n- Improved reliability for large forum catalogues"
+}

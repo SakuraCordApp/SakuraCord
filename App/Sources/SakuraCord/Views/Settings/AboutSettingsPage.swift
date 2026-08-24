@@ -1,186 +1,187 @@
-import AppKit
 import SwiftUI
 
 struct AboutSettingsPage: View {
     @ObservedObject var updateController: AppUpdateController
     let state: SettingsViewState
 
-    @State private var versionCopyMessage: String?
-    @State private var acknowledgementsMessage: String?
+    @State private var navigationPath: [AboutDestination] = []
 
     var body: some View {
-        SettingsPageForm(page: .about, state: state) {
-            aboutHeader
-            versionActions
-            projectLinks
-            acknowledgements
-            disclaimer
+        NavigationStack(path: $navigationPath) {
+            aboutOverview
+                .navigationDestination(for: AboutDestination.self) { destination in
+                    switch destination {
+                    case .changelog:
+                        AboutChangelogPage(
+                            releaseNotes: AboutResources.packagedReleaseNotes
+                        )
+                    case .acknowledgements:
+                        AboutAcknowledgementsPage(
+                            acknowledgements: AboutResources.packagedAcknowledgements
+                        )
+                    }
+                }
         }
+        .onChange(of: state.revealRequest?.id) {
+            guard state.revealRequest?.destination.page == .about else { return }
+            navigationPath.removeAll()
+        }
+    }
+
+    private var aboutOverview: some View {
+        ScrollViewReader { proxy in
+            Form {
+                aboutHeader
+                    .padding(.horizontal, 32)
+                    .padding(.vertical, 8)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+
+                updates
+                projectLinks
+                acknowledgements
+            }
+            .formStyle(.grouped)
+            .task(id: state.revealRequest?.id) {
+                guard let request = state.revealRequest,
+                      request.destination.page == .about
+                else { return }
+                await Task.yield()
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    proxy.scrollTo(request.controlID, anchor: .center)
+                }
+            }
+        }
+        .navigationTitle(state.catalog.page(.about).title)
     }
 
     private var versionInformation: AboutVersionInformation {
-        AboutVersionInformation(releaseTrack: updateController.releaseTrack)
-    }
-
-    private var acknowledgementsURL: URL? {
-        AboutResources.acknowledgementsURL(
-            resourceURL: Bundle.main.resourceURL
-        )
-    }
-
-    private var applicationIcon: NSImage {
-        NSApp.applicationIconImage
-            ?? NSImage(named: NSImage.applicationIconName)
-            ?? NSImage(size: NSSize(width: 128, height: 128))
+        AboutVersionInformation()
     }
 
     private var aboutHeader: some View {
-        Section {
-            HStack(spacing: 20) {
-                Image(nsImage: applicationIcon)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 96, height: 96)
-                    .accessibilityLabel("SakuraCord app icon")
+        VStack(spacing: 6) {
+            Image("SakuraCordAboutLogo", bundle: .module)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 80, height: 80)
+                .accessibilityLabel("SakuraCord logo")
 
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("SakuraCord")
-                        .font(.largeTitle.bold())
-                    Text("Version \(versionInformation.semanticVersionDisplay)")
-                    Text("Build \(versionInformation.buildNumberDisplay)")
-                    Text("\(updateController.releaseTrack.title) release track")
-                }
+            Text("SakuraCord")
+                .font(.title.bold())
+                .foregroundStyle(.primary.opacity(0.86))
+
+            Text(versionInformation.semanticVersionDisplay)
+                .font(.subheadline.weight(.medium))
                 .foregroundStyle(.secondary)
-                .accessibilityElement(children: .combine)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .settingsControlAnchor(.aboutVersionInformation, state: state)
+    }
+
+    private var updates: some View {
+        Section {
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("SakuraCord Version", bundle: #bundle)
+                        .font(.headline)
+
+                    Text(updateVersionDisplay)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 16)
+
+                Button("Check Now") {
+                    updateController.checkForUpdates()
+                }
+                .disabled(!updateController.canCheckForUpdates)
+                .accessibilityHint(updateController.availabilityDescription)
+                .help(updateController.availabilityDescription)
+                .settingsControlAnchor(.aboutCheckForUpdates, state: state)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .settingsControlAnchor(.aboutVersionInformation, state: state)
+
+            NavigationLink(value: AboutDestination.changelog) {
+                Label("Open Changelog", systemImage: "clock.arrow.circlepath")
+            }
+            .accessibilityHint("Shows the release notes included with SakuraCord.")
+            .settingsControlAnchor(.aboutChangelog, state: state)
+        } header: {
+            Text("Updates", bundle: #bundle)
         }
     }
 
-    private var versionActions: some View {
-        Section {
-            Button("Copy Version Information") {
-                let pasteboard = NSPasteboard.general
-                pasteboard.clearContents()
-                versionCopyMessage = pasteboard.setString(
-                    versionInformation.copyText,
-                    forType: .string
-                )
-                    ? "Copied version information."
-                    : "Version information could not be copied."
-            }
-            .settingsControlAnchor(.aboutCopyVersionInformation, state: state)
-
-            LabeledContent("Update checking") {
-                Text(updateController.availabilityDescription)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.trailing)
-            }
-
-            Button("Check for Updates…") {
-                updateController.checkForUpdates()
-            }
-            .disabled(!updateController.canCheckForUpdates)
-            .accessibilityHint(updateController.availabilityDescription)
-            .settingsControlAnchor(.aboutCheckForUpdates, state: state)
-
-            if let versionCopyMessage {
-                Text(versionCopyMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel(versionCopyMessage)
-            }
-        } header: {
-            Text("Version and updates", bundle: #bundle)
-        } footer: {
-            Text(
-                "The copied format contains only SakuraCord’s semantic version, build number, and selected release track."
-            )
+    private var updateVersionDisplay: String {
+        guard let semanticVersion = versionInformation.semanticVersion else {
+            return versionInformation.semanticVersionDisplay
         }
+        return "v\(semanticVersion)"
     }
 
     private var projectLinks: some View {
         Section {
             ForEach(AboutProjectLink.allCases) { link in
-                Button {
-                    ExternalLinkConfirmationPresenter.shared.present(
-                        ExternalLinkSafetyPolicy.assess(link.url)
-                    )
-                } label: {
-                    Label(link.title, systemImage: link.systemImage)
+                Link(destination: link.url) {
+                    externalLinkLabel(link)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(.rect)
                 }
-                .buttonStyle(.link)
                 .settingsControlAnchor(link.controlID, state: state)
             }
         } header: {
-            Text("Project links", bundle: #bundle)
-        } footer: {
-            Text("SakuraCord shows and confirms each external destination before opening it.")
+            Text("External Links", bundle: #bundle)
+        }
+    }
+
+    private func externalLinkLabel(_ link: AboutProjectLink) -> some View {
+        Label {
+            Text(link.title)
+        } icon: {
+            externalLinkIcon(link)
+        }
+    }
+
+    @ViewBuilder
+    private func externalLinkIcon(_ link: AboutProjectLink) -> some View {
+        switch link {
+        case .website:
+            Image(systemName: "globe")
+        case .roadmap:
+            Image(systemName: "map")
+        case .source:
+            Image("github", bundle: .module)
+        case .support:
+            Image("discord", bundle: .module)
         }
     }
 
     private var acknowledgements: some View {
         Section {
-            Button("Open Third-Party Acknowledgements…") {
-                openAcknowledgements()
+            NavigationLink(value: AboutDestination.acknowledgements) {
+                Label("Third-Party Acknowledgements", systemImage: "doc.text")
             }
-            .disabled(acknowledgementsURL == nil)
-            .accessibilityHint(
-                acknowledgementsURL == nil
-                    ? "The packaged acknowledgements resource is unavailable in this build."
-                    : "Opens the notices file included in this app package."
-            )
             .settingsControlAnchor(.aboutAcknowledgements, state: state)
-
-            if let acknowledgementsMessage {
-                Text(acknowledgementsMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel(acknowledgementsMessage)
-            }
-        } header: {
-            Text("Acknowledgements", bundle: #bundle)
         } footer: {
-            if acknowledgementsURL == nil {
-                Text(
-                    "The acknowledgements resource is unavailable in this build. Assembled SakuraCord app packages include it."
-                )
-            } else {
-                Text("Opens the third-party notices included in this app package.")
-            }
+            disclaimer
         }
     }
 
     private var disclaimer: some View {
-        Section {
-            Text(
-                "SakuraCord is an independent project and is not affiliated with Discord. "
-                    + "Discord does not provide a supported third-party platform for "
-                    + "normal-account clients, so compatibility can change as Discord evolves."
-            )
-            .settingsControlAnchor(.aboutDisclaimer, state: state)
-        } header: {
-            Text("Independence", bundle: #bundle)
-        }
+        Text(
+            "SakuraCord is an independent project, is not affiliated with Discord, "
+                + "and connects through an unsupported third-party client."
+        )
+        .font(.caption)
+        .foregroundStyle(.tertiary)
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
+        .settingsControlAnchor(.aboutDisclaimer, state: state)
     }
 
-    private func openAcknowledgements() {
-        guard let acknowledgementsURL else {
-            acknowledgementsMessage =
-                "Third-party acknowledgements are unavailable in this build."
-            return
-        }
-        let configuration = NSWorkspace.OpenConfiguration()
-        NSWorkspace.shared.open(
-            acknowledgementsURL,
-            configuration: configuration
-        ) { _, error in
-            Task { @MainActor in
-                acknowledgementsMessage = error == nil
-                    ? "Opened third-party acknowledgements."
-                    : "Third-party acknowledgements could not be opened."
-            }
-        }
-    }
+}
+
+private enum AboutDestination: Hashable {
+    case changelog
+    case acknowledgements
 }

@@ -7,33 +7,17 @@ func aboutVersionInformationIsSanitized() {
     let available = AboutVersionInformation(
         infoDictionary: [
             "CFBundleShortVersionString": " 0.1.5-Beta+2 ",
-            "CFBundleVersion": "42",
-        ],
-        releaseTrack: .nightly
+        ]
     )
     #expect(available.semanticVersion == "0.1.5-Beta+2")
-    #expect(available.buildNumber == "42")
-    #expect(
-        available.copyText
-            == """
-            SakuraCord Version Information
-            Version: 0.1.5-Beta+2
-            Build: 42
-            Release track: Nightly
-            """
-    )
 
     let unavailable = AboutVersionInformation(
         infoDictionary: [
             "CFBundleShortVersionString": "0.1.5\ncredential",
-            "CFBundleVersion": "",
-        ],
-        releaseTrack: .regular
+        ]
     )
     #expect(unavailable.semanticVersion == nil)
-    #expect(unavailable.buildNumber == nil)
     #expect(unavailable.semanticVersionDisplay == "Unavailable in this build")
-    #expect(unavailable.copyText.contains("Version: Unavailable"))
 }
 
 @Test("About acknowledgements resolve only an existing packaged file")
@@ -52,21 +36,83 @@ func aboutAcknowledgementsRequirePackagedFile() throws {
     let notices = directory.appendingPathComponent(
         AboutResources.acknowledgementsFilename
     )
-    try Data("Third-party notices".utf8).write(to: notices)
+    try Data(
+        """
+        # Third-party notices
+
+        ## First dependency
+
+        First license.
+
+        ### Nested license
+
+        Nested details.
+
+        ## Second asset
+
+        Second notice.
+        """.utf8
+    ).write(to: notices)
     #expect(
         AboutResources.acknowledgementsURL(resourceURL: directory) == notices
     )
+    #expect(
+        AboutResources.acknowledgements(resourceURL: directory).map(\.title)
+            == ["First dependency", "Second asset"]
+    )
+    #expect(
+        AboutResources.acknowledgements(resourceURL: directory).map(\.markdown)
+            == [
+                "First license.\n\n### Nested license\n\nNested details.",
+                "Second notice.",
+            ]
+    )
+}
+
+@Test("About changelog loads release records newest first")
+func aboutChangelogLoadsPackagedReleaseNotes() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        UUID().uuidString,
+        isDirectory: true
+    )
+    let releases = directory.appendingPathComponent(
+        AboutResources.releasesDirectoryName,
+        isDirectory: true
+    )
+    try FileManager.default.createDirectory(
+        at: releases,
+        withIntermediateDirectories: true
+    )
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let current = releases.appendingPathComponent("v0.1.2.json")
+    try Data(
+        """
+        {"schemaVersion":1,"tagName":"v0.1.2","githubDescription":"Current notes"}
+        """.utf8
+    ).write(to: current)
+    let backport = releases.appendingPathComponent("v0.1.1.json")
+    try Data(
+        """
+        {"schemaVersion":1,"tagName":"v0.1.1","githubDescription":"Backported notes"}
+        """.utf8
+    ).write(to: backport)
+    try Data("Ignored".utf8).write(
+        to: releases.appendingPathComponent("README.txt")
+    )
+
+    let notes = AboutResources.releaseNotes(resourceURL: directory)
+    #expect(notes.map(\.tagName) == ["v0.1.2", "v0.1.1"])
+    #expect(notes.map(\.githubDescription) == ["Current notes", "Backported notes"])
 }
 
 @Test("About project destinations are canonical HTTPS links")
 func aboutProjectDestinationsAreCanonical() {
     #expect(Set(AboutProjectLink.allCases.map(\.url)) == Set([
         URL(string: "https://sakuracord.app")!,
-        URL(string: "https://github.com/SakuraCordApp/SakuraCord/tree/main/docs")!,
         URL(string: "https://roadmap.sakuracord.app")!,
         URL(string: "https://github.com/SakuraCordApp/SakuraCord")!,
         URL(string: "https://discord.gg/hWNwFXkUTP")!,
-        URL(string: "https://github.com/SakuraCordApp/SakuraCord/releases/latest")!,
     ]))
     #expect(AboutProjectLink.allCases.allSatisfy {
         ExternalLinkSafetyPolicy.assess($0.url).isAllowed
@@ -78,14 +124,12 @@ func aboutProjectDestinationsAreCanonical() {
 func aboutCatalogExposesProductionControls() {
     let expected: Set<SettingsControlID> = [
         .aboutVersionInformation,
-        .aboutCopyVersionInformation,
         .aboutCheckForUpdates,
+        .aboutChangelog,
         .aboutWebsite,
-        .aboutDocumentation,
         .aboutRoadmap,
         .aboutSource,
         .aboutSupport,
-        .aboutLatestRelease,
         .aboutAcknowledgements,
         .aboutDisclaimer,
     ]

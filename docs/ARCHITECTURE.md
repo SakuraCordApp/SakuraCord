@@ -20,6 +20,9 @@ workspace is a convenience entry point.
 Dependencies point inward toward models and explicit protocols. Views do not
 construct Discord requests or own network transports.
 
+The app resource catalog vendors only SocialSymbols' GitHub and Discord symbol
+sets for the About settings page. No SocialSymbols package dependency is used.
+
 ## Application state
 
 `AppModel` is a Main Actor observable projection over a `ChatProvider` and
@@ -208,8 +211,8 @@ work, not an implemented architecture claim.
 `script/build_and_run.sh` builds the debug or release SwiftPM product, assembles the `.app`,
 compiles the selected Icon Composer source with `actool`, embeds frameworks and
 resource bundles, copies the complete third-party notices into the app's
-otherwise hidden `Contents/Resources/THIRD_PARTY_NOTICES.md`, and ad-hoc signs
-the result.
+resources, copies the canonical versioned release notes into
+`Contents/Resources/Releases`, and ad-hoc signs the result.
 
 The canonical icon sources are:
 
