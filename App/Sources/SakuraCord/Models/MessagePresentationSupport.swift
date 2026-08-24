@@ -70,7 +70,8 @@ struct NativeTimelineTextPlan: Equatable, Sendable {
 
     nonisolated static func make(
         for message: Message,
-        currentUserID: UserID? = nil
+        currentUserID: UserID? = nil,
+        showsAutomaticLinkPreviews: Bool = true
     ) -> Self {
         let baseFontSize: CGFloat =
             if message.type.hasGeneratedContent {
@@ -85,7 +86,10 @@ struct NativeTimelineTextPlan: Equatable, Sendable {
                     currentUserID: currentUserID
                 )
             } else {
-                MessageEmbedPresentation.visibleMessageContent(for: message)
+                MessageEmbedPresentation.visibleMessageContent(
+                    for: message,
+                    showsAutomaticLinkPreviews: showsAutomaticLinkPreviews
+                )
             }
         let linkedPresentation = LinkedImagePresentation(content: visibleContent)
         let prepared = linkedPresentation.visibleText.isEmpty
@@ -98,7 +102,10 @@ struct NativeTimelineTextPlan: Equatable, Sendable {
         // process-local parse cache while message rows are already being
         // prepared off-main so a cold rich channel cannot move markdown
         // tokenization back onto the UI thread during first layout.
-        for embed in MessageEmbedPresentation.visibleEmbeds(for: message) {
+        for embed in MessageEmbedPresentation.visibleEmbeds(
+            for: message,
+            showsAutomaticLinkPreviews: showsAutomaticLinkPreviews
+        ) {
             if let description = embed.description {
                 _ = RichMessageAttributedText.prepare(source: description)
             }

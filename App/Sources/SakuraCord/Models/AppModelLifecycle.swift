@@ -52,6 +52,22 @@ nonisolated enum PerformanceBenchmarkInitialGuildPolicy {
 }
 
 extension AppModel {
+    static func loadEmojiRecents(usageCounts: [String: Int]) -> [String] {
+        if let stored = UserDefaults.standard.stringArray(
+            forKey: "dev.sakuracord.emoji-recents"
+        ) {
+            return stored
+        }
+        let migrated = usageCounts.sorted {
+            $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value
+        }.prefix(50).map(\.key)
+        UserDefaults.standard.set(
+            migrated,
+            forKey: "dev.sakuracord.emoji-recents"
+        )
+        return migrated
+    }
+
     var isOfflineTesting: Bool {
         launchMode == .offlineTesting
     }
@@ -1659,8 +1675,29 @@ extension AppModel {
 
     func recordEmojiUse(_ key: String) {
         emojiUsageCounts[key, default: 0] += 1
+        emojiRecentKeys.removeAll { $0 == key }
+        emojiRecentKeys.insert(key, at: 0)
+        if emojiRecentKeys.count > 50 {
+            emojiRecentKeys.removeLast(emojiRecentKeys.count - 50)
+        }
         if persistsEmojiPreferences {
             UserDefaults.standard.set(emojiUsageCounts, forKey: "dev.sakuracord.emoji-usage")
+            UserDefaults.standard.set(emojiRecentKeys, forKey: "dev.sakuracord.emoji-recents")
+        }
+    }
+
+    func clearLocalEmojiRecents() {
+        emojiRecentKeys.removeAll()
+        if persistsEmojiPreferences {
+            UserDefaults.standard.removeObject(forKey: "dev.sakuracord.emoji-recents")
+            UserDefaults.standard.set([String](), forKey: "dev.sakuracord.emoji-recents")
+        }
+    }
+
+    func resetLocalEmojiRanking() {
+        emojiUsageCounts.removeAll()
+        if persistsEmojiPreferences {
+            UserDefaults.standard.removeObject(forKey: "dev.sakuracord.emoji-usage")
         }
     }
 

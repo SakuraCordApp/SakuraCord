@@ -1022,6 +1022,15 @@ extension AppModel {
         }
     }
 
+    func updateThreadDraft(_ value: String) {
+        threadDraft = value
+        guard let thread = openThread else {
+            stopLocalTyping(clearThrottle: value.isEmpty)
+            return
+        }
+        scheduleLocalTyping(for: value, channelID: thread.id)
+    }
+
     func loadApplicationCommands() {
         guard supportedCapabilities.contains(.slashCommands),
               let channel = selectedChannel,
@@ -1613,43 +1622,57 @@ extension AppModel {
         }
     }
 
-    func scheduleLocalTyping(for value: String) {
-        guard !value.isEmpty,
+    func scheduleLocalTyping(for value: String, channelID: ChannelID? = nil) {
+        let destination: (id: ChannelID, supportsTyping: Bool)? =
+            if let channelID {
+                (channelID, true)
+            } else if let selectedChannel {
+                (selectedChannel.id, Self.supportsTyping(selectedChannel.kind))
+            } else {
+                nil
+            }
+        guard chatSettings.sendsTypingIndicators,
+              !value.isEmpty,
               connectionState == .ready,
-              let channel = selectedChannel,
-              Self.supportsTyping(channel.kind)
+              let destination,
+              destination.supportsTyping
         else {
             stopLocalTyping(clearThrottle: value.isEmpty)
             return
         }
-        if localTypingTask != nil, localTypingChannelID == channel.id {
+        if localTypingTask != nil, localTypingChannelID == destination.id {
             return
         }
         stopLocalTyping(clearThrottle: false)
         localTypingGeneration &+= 1
         let generation = localTypingGeneration
-        localTypingChannelID = channel.id
+        localTypingChannelID = destination.id
         let now = Date.now
         let debounce = Self.seconds(localTypingTiming.debounce)
         let remainingThrottle =
-            lastTypingRequestAt[channel.id]
+            lastTypingRequestAt[destination.id]
                 .map { max(0, Self.seconds(localTypingTiming.throttle) - now.timeIntervalSince($0)) }
                 ?? 0
         let delay = max(debounce, remainingThrottle)
         localTypingTask = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(delay)) } catch { return }
-            await self?.performLocalTyping(channelID: channel.id, generation: generation)
+            await self?.performLocalTyping(
+                channelID: destination.id,
+                generation: generation
+            )
         }
     }
 
     func performLocalTyping(channelID: ChannelID, generation: UInt64) async {
-        guard generation == localTypingGeneration,
+        let isActiveChannelDraft = selectedChannelID == channelID
+            && !draft.isEmpty
+        let isActiveThreadDraft = openThread?.id == channelID
+            && !threadDraft.isEmpty
+        guard chatSettings.sendsTypingIndicators,
+              generation == localTypingGeneration,
               localTypingChannelID == channelID,
-              selectedChannelID == channelID,
-              !draft.isEmpty,
-              connectionState == .ready,
-              let selectedChannel,
-              Self.supportsTyping(selectedChannel.kind)
+              isActiveChannelDraft || isActiveThreadDraft,
+              connectionState == .ready
         else { return }
         localTypingTask = nil
         localTypingChannelID = nil

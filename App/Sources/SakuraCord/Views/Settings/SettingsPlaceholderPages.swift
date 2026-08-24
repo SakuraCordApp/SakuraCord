@@ -1,13 +1,5 @@
 import SwiftUI
 
-struct ChatSettingsPage: View {
-    let state: SettingsViewState
-
-    var body: some View {
-        SettingsPendingPage(page: .chat, phase: 4, state: state)
-    }
-}
-
 struct AccessibilitySettingsPage: View {
     let state: SettingsViewState
 

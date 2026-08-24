@@ -466,6 +466,7 @@ nonisolated struct NativeTimelineTextSpoilerRevealKey: Hashable {
 
 @MainActor
 final class NativeTimelineSpoilerRevealStore {
+    var revealMode: ChatSpoilerRevealMode = .click
     var revealedMedia: Set<NativeTimelineComponentRevealKey> = []
     var revealedText: Set<NativeTimelineTextSpoilerRevealKey> = []
     var observers: [UUID: (MessageID) -> Void] = [:]
@@ -473,13 +474,14 @@ final class NativeTimelineSpoilerRevealStore {
     func isMediaRevealed(
         _ key: NativeTimelineComponentRevealKey
     ) -> Bool {
-        revealedMedia.contains(key)
+        revealMode == .always || revealedMedia.contains(key)
     }
 
     @discardableResult
     func revealMedia(
         _ key: NativeTimelineComponentRevealKey
     ) -> Bool {
+        guard permitsCurrentRevealInteraction else { return false }
         let inserted = revealedMedia.insert(key).inserted
         if inserted {
             notifyObservers(messageID: key.messageID)
@@ -490,13 +492,14 @@ final class NativeTimelineSpoilerRevealStore {
     func isTextRevealed(
         _ key: NativeTimelineTextSpoilerRevealKey
     ) -> Bool {
-        revealedText.contains(key)
+        revealMode == .always || revealedText.contains(key)
     }
 
     @discardableResult
     func revealText(
         _ key: NativeTimelineTextSpoilerRevealKey
     ) -> Bool {
+        guard permitsCurrentRevealInteraction else { return false }
         let inserted = revealedText.insert(key).inserted
         if inserted {
             notifyObservers(messageID: key.messageID)
@@ -518,6 +521,40 @@ final class NativeTimelineSpoilerRevealStore {
                 }
                 .map(\.rangeLocation)
         )
+    }
+
+    func revealedTextLocations(
+        messageID: MessageID,
+        contentID: String,
+        value: NSAttributedString
+    ) -> Set<Int> {
+        guard revealMode == .always else {
+            return revealedTextLocations(
+                messageID: messageID,
+                contentID: contentID,
+                contentHash: value.string.hashValue
+            )
+        }
+        var locations: Set<Int> = []
+        value.enumerateAttribute(
+            .discordMarkdownSpoiler,
+            in: NSRange(location: 0, length: value.length)
+        ) { rawValue, range, _ in
+            if (rawValue as? NSNumber)?.boolValue == true {
+                locations.insert(range.location)
+            }
+        }
+        return locations
+    }
+
+    private var permitsCurrentRevealInteraction: Bool {
+        guard revealMode != .always else { return true }
+        guard let event = NSApp?.currentEvent else {
+            // Accessibility actions do not necessarily have a backing pointer
+            // event, so they remain an equivalent way to reveal a spoiler.
+            return true
+        }
+        return revealMode.permitsReveal(modifierFlags: event.modifierFlags)
     }
 
     func reset() {

@@ -19,23 +19,45 @@ nonisolated enum MessageEmbedPresentationKind: Equatable {
 }
 
 nonisolated enum MessageEmbedPresentation {
-    static func visibleEmbeds(for message: Message) -> [MessageEmbed] {
+    static func visibleEmbeds(
+        for message: Message,
+        showsAutomaticLinkPreviews: Bool = true
+    ) -> [MessageEmbed] {
         guard !message.flags.contains(.suppressEmbeds) else { return [] }
         let linkedEmojiURLs =
             LinkedImagePresentation(content: message.content)
                 .matchedEmojiURLs
-        guard !linkedEmojiURLs.isEmpty else { return message.embeds }
         return message.embeds.filter { embed in
-            !(kind(for: embed) == .bareMedia
+            if !showsAutomaticLinkPreviews,
+               isAutomaticLinkPreview(embed, messageContent: message.content)
+            {
+                return false
+            }
+            return !(kind(for: embed) == .bareMedia
                 && embed.url.map(linkedEmojiURLs.contains) == true)
         }
     }
 
-    static func visibleMessageContent(for message: Message) -> String {
+    static func visibleMessageContent(
+        for message: Message,
+        showsAutomaticLinkPreviews: Bool = true
+    ) -> String {
         visibleMessageContent(
             message.content,
-            embeds: visibleEmbeds(for: message)
+            embeds: visibleEmbeds(
+                for: message,
+                showsAutomaticLinkPreviews: showsAutomaticLinkPreviews
+            )
         )
+    }
+
+    static func isAutomaticLinkPreview(
+        _ embed: MessageEmbed,
+        messageContent: String
+    ) -> Bool {
+        guard let url = embed.url?.absoluteString else { return false }
+        return messageContent.contains(url)
+            || messageContent.contains("<\(url)>")
     }
 
     static func kind(for embed: MessageEmbed) -> MessageEmbedPresentationKind {

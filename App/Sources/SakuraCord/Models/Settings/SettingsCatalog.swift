@@ -177,7 +177,11 @@ nonisolated extension SettingsSectionID {
     static let interfaceVisibility = Self(rawValue: "interface-visibility")
     static let interfacePreview = Self(rawValue: "interface-preview")
     static let interfaceLocalData = Self(rawValue: "interface-local-data")
-    static let messagesAndMedia = Self(rawValue: "messages-and-media")
+    static let chatComposer = Self(rawValue: "chat-composer")
+    static let chatMessages = Self(rawValue: "chat-messages")
+    static let chatMedia = Self(rawValue: "chat-media")
+    static let chatEmoji = Self(rawValue: "chat-emoji")
+    static let chatLocalData = Self(rawValue: "chat-local-data")
     static let softwareUpdates = Self(rawValue: "software-updates")
     static let notificationDelivery = Self(rawValue: "notification-delivery")
     static let notificationQuietHours = Self(rawValue: "notification-quiet-hours")
@@ -224,7 +228,31 @@ nonisolated extension SettingsControlID {
     static let exportInterfaceSettings = Self(rawValue: "interface.export")
     static let resetInterfaceSettings = Self(rawValue: "interface.reset")
     static let sendWithReturn = Self(rawValue: "chat.send-with-return")
-    static let reduceAnimatedMedia = Self(rawValue: "accessibility.reduce-animated-media")
+    static let chatSpellCheck = Self(rawValue: "chat.spell-check")
+    static let chatAutomaticCorrection = Self(rawValue: "chat.automatic-correction")
+    static let chatSmartQuotes = Self(rawValue: "chat.smart-quotes")
+    static let chatSmartDashes = Self(rawValue: "chat.smart-dashes")
+    static let chatTypingIndicators = Self(rawValue: "chat.typing-indicators")
+    static let chatFocusComposerOnTyping = Self(rawValue: "chat.focus-composer-on-typing")
+    static let chatCharacterCounter = Self(rawValue: "chat.character-counter")
+    static let chatDiscardConfirmationLink = Self(rawValue: "chat.discard-confirmation-link")
+    static let chatReadAcknowledgement = Self(rawValue: "chat.read-acknowledgement")
+    static let chatEditedMarkers = Self(rawValue: "chat.edited-markers")
+    static let chatExpandEmbeds = Self(rawValue: "chat.expand-embeds")
+    static let chatSpoilerReveal = Self(rawValue: "chat.spoiler-reveal")
+    static let chatInternalDiscordLinks = Self(rawValue: "chat.internal-discord-links")
+    static let chatAutoplayGIFs = Self(rawValue: "chat.autoplay-gifs")
+    static let chatAutoplayStickers = Self(rawValue: "chat.autoplay-stickers")
+    static let chatAutoplayVideos = Self(rawValue: "chat.autoplay-videos")
+    static let chatLinkPreviews = Self(rawValue: "chat.link-previews")
+    static let chatInlineMediaSize = Self(rawValue: "chat.inline-media-size")
+    static let reduceAnimatedMedia = Self(rawValue: "chat.reduce-animated-media")
+    static let chatEmojiSkinTone = Self(rawValue: "chat.emoji-skin-tone")
+    static let chatEmojiSource = Self(rawValue: "chat.emoji-source")
+    static let chatClearEmojiRecents = Self(rawValue: "chat.clear-emoji-recents")
+    static let chatClearEmojiRanking = Self(rawValue: "chat.clear-emoji-ranking")
+    static let chatExport = Self(rawValue: "chat.export")
+    static let chatReset = Self(rawValue: "chat.reset")
     static let updateReleaseTrack = Self(rawValue: "software-updates.release-track")
     static let updateAutomaticChecks = Self(rawValue: "software-updates.automatic-checks")
     static let updateAutomaticDownloads = Self(rawValue: "software-updates.automatic-downloads")
@@ -637,21 +665,173 @@ private nonisolated extension SettingsCatalog {
         ),
         control(
             .sendWithReturn,
-            page: .general,
-            section: .messagesAndMedia,
+            page: .chat,
+            section: .chatComposer,
             label: "Press Return to send messages",
-            help: "Choose whether Return sends a message or inserts a newline.",
-            keywords: ["enter", "newline", "composer"],
+            help: "Choose whether Return sends and Shift-Return inserts a newline, or Return inserts a newline and Command-Return sends.",
+            keywords: ["enter", "newline", "composer", "command return", "shift return"],
             scope: .appWideLocal
         ),
         control(
-            .reduceAnimatedMedia,
-            page: .general,
-            section: .messagesAndMedia,
-            label: "Reduce animated media",
-            help: "Reduce motion from animated images and media.",
-            keywords: ["GIF", "animation", "motion"],
+            .chatSpellCheck, page: .chat, section: .chatComposer,
+            label: "Check spelling while typing",
+            help: "Use AppKit's continuous spell checker in the real message composer.",
+            keywords: ["spellcheck", "spelling", "typo"], scope: .appWideLocal
+        ),
+        control(
+            .chatAutomaticCorrection, page: .chat, section: .chatComposer,
+            label: "Correct spelling automatically",
+            help: "Allow the native text system to apply spelling corrections in the composer.",
+            keywords: ["autocorrect", "correction", "typing"], scope: .appWideLocal
+        ),
+        control(
+            .chatSmartQuotes, page: .chat, section: .chatComposer,
+            label: "Smart quotes",
+            help: "Allow the native text system to substitute typographic quotation marks.",
+            keywords: ["curly quotes", "quotation", "substitution"], scope: .appWideLocal
+        ),
+        control(
+            .chatSmartDashes, page: .chat, section: .chatComposer,
+            label: "Smart dashes",
+            help: "Allow the native text system to substitute typographic dashes.",
+            keywords: ["em dash", "hyphen", "substitution"], scope: .appWideLocal
+        ),
+        control(
+            .chatTypingIndicators, page: .chat, section: .chatComposer,
+            label: "Send typing indicators",
+            help: "Tell Discord when you are composing a normal message. Disabling this cancels pending local typing signals.",
+            keywords: ["typing status", "privacy", "indicator"], scope: .appWideLocal
+        ),
+        control(
+            .chatFocusComposerOnTyping, page: .chat, section: .chatComposer,
+            label: "Focus composer when typing begins",
+            help: "Move printable typing to the composer only when another editable field, menu, overlay, or assisted interaction does not own input.",
+            keywords: ["type to focus", "keyboard", "first responder"], scope: .appWideLocal
+        ),
+        control(
+            .chatCharacterCounter, page: .chat, section: .chatComposer,
+            label: "Character limit",
+            help: "Show the live character count only within 200 characters of the effective Discord message limit.",
+            keywords: ["2000", "4000", "counter", "length"], owner: .appModel,
+            scope: .mixed, persistence: .notApplicable, reset: .notApplicable
+        ),
+        control(
+            .chatDiscardConfirmationLink, page: .chat, section: .chatComposer,
+            label: "Composer discard confirmation",
+            help: "Open the single confirmation preference in General Settings.",
+            keywords: ["draft", "unsent", "confirm", "discard"],
+            scope: .appWideLocal, persistence: .notApplicable, reset: .notApplicable
+        ),
+        control(
+            .chatReadAcknowledgement, page: .chat, section: .chatMessages,
+            label: "Mark messages read",
+            help: "Automatically acknowledge meaningfully visible content or wait for an explicit Mark Read action. Discord synchronizes the unread result to other clients.",
+            keywords: ["read receipt", "ack", "unread", "manual", "read state"],
             scope: .appWideLocal
+        ),
+        control(
+            .chatEditedMarkers, page: .chat, section: .chatMessages,
+            label: "Show edited markers",
+            help: "Show Discord's edited state beside message timestamps.",
+            keywords: ["modified", "timestamp", "edited"], scope: .appWideLocal
+        ),
+        control(
+            .chatExpandEmbeds, page: .chat, section: .chatMessages,
+            label: "Expand embeds by default",
+            help: "Show rich Discord embeds in the timeline by default.",
+            keywords: ["collapse", "rich embed", "card"], scope: .appWideLocal
+        ),
+        control(
+            .chatSpoilerReveal, page: .chat, section: .chatMessages,
+            label: "Reveal spoilers",
+            help: "Reveal spoilers with a click, only with Option-click, or without concealment.",
+            keywords: ["hidden content", "option click", "always reveal"], scope: .appWideLocal
+        ),
+        control(
+            .chatInternalDiscordLinks, page: .chat, section: .chatMessages,
+            label: "Open Discord links in SakuraCord",
+            help: "Navigate resolvable Discord channel links internally; other links continue to use the system browser.",
+            keywords: ["discord.com/channels", "internal link", "browser"], scope: .appWideLocal
+        ),
+        control(
+            .chatAutoplayGIFs, page: .chat, section: .chatMedia,
+            label: "Autoplay GIFs",
+            help: "Animate inline GIF and animated-image media when motion is permitted.",
+            keywords: ["animated images", "GIF", "playback"], scope: .appWideLocal
+        ),
+        control(
+            .chatAutoplayStickers, page: .chat, section: .chatMedia,
+            label: "Autoplay animated stickers",
+            help: "Animate APNG, GIF, and Lottie stickers when motion is permitted.",
+            keywords: ["sticker animation", "Lottie", "APNG"], scope: .appWideLocal
+        ),
+        control(
+            .chatAutoplayVideos, page: .chat, section: .chatMedia,
+            label: "Autoplay inline videos",
+            help: "Play Discord GIFV and other explicitly inline-autoplay video previews when motion is permitted.",
+            keywords: ["video playback", "GIFV", "loop"], scope: .appWideLocal
+        ),
+        control(
+            .chatLinkPreviews, page: .chat, section: .chatMedia,
+            label: "Show automatic link previews",
+            help: "Show Discord-generated preview embeds for links in message content.",
+            keywords: ["unfurl", "URL preview", "rich link"], scope: .appWideLocal
+        ),
+        control(
+            .chatInlineMediaSize, page: .chat, section: .chatMedia,
+            label: "Inline media size",
+            help: "Bound inline media to a compact, medium, or large Mac-appropriate width.",
+            keywords: ["image size", "attachment width", "preview size"], scope: .appWideLocal
+        ),
+        control(
+            .reduceAnimatedMedia,
+            page: .chat,
+            section: .chatMedia,
+            label: "Reduce animated media",
+            help: "Pause optional animated media. macOS Reduce Motion and the broader Accessibility preference take precedence.",
+            keywords: ["GIF", "animation", "motion", "reduce motion", "Accessibility"],
+            scope: .appWideLocal
+        ),
+        control(
+            .chatEmojiSkinTone, page: .chat, section: .chatEmoji,
+            label: "Default emoji skin tone",
+            help: "Choose the app-wide skin-tone modifier used by the native emoji picker.",
+            keywords: ["modifier", "hand", "tone", "emoji"], scope: .appWideLocal
+        ),
+        control(
+            .chatEmojiSource, page: .chat, section: .chatEmoji,
+            label: "Emoji favorites and frequency",
+            help: "Report whether Discord-synchronized ordering or SakuraCord's local fallback is currently available.",
+            keywords: ["favorites", "frequent", "frecency", "source"], owner: .appModel,
+            scope: .mixed, persistence: .notApplicable, reset: .notApplicable
+        ),
+        control(
+            .chatClearEmojiRecents, page: .chat, section: .chatEmoji,
+            label: "Clear Local Recents",
+            help: "Clear only SakuraCord's ordered local recent-emoji list on this Mac.",
+            keywords: ["recent emoji", "history", "clear"], owner: .appModel,
+            scope: .appWideLocal, persistence: .appPreferences, reset: .categoryAction
+        ),
+        control(
+            .chatClearEmojiRanking, page: .chat, section: .chatEmoji,
+            label: "Reset Learned Ranking",
+            help: "Clear only SakuraCord's local learned emoji usage counts.",
+            keywords: ["frequency", "frecency", "ranking", "reset"], owner: .appModel,
+            scope: .appWideLocal, persistence: .appPreferences, reset: .categoryAction
+        ),
+        control(
+            .chatExport, page: .chat, section: .chatLocalData,
+            label: "Export Chat Settings",
+            help: "Export registered app-wide Chat preferences as versioned JSON.",
+            keywords: ["backup", "JSON", "save preferences"],
+            scope: .appWideLocal, persistence: .notApplicable, reset: .notApplicable
+        ),
+        control(
+            .chatReset, page: .chat, section: .chatLocalData,
+            label: "Reset Chat Settings",
+            help: "Restore registered Chat preferences without changing drafts, credentials, or Discord state.",
+            keywords: ["defaults", "restore", "clear chat preferences"],
+            scope: .appWideLocal, persistence: .appPreferences, reset: .categoryAction
         ),
         control(
             .updateReleaseTrack,

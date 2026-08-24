@@ -1031,7 +1031,7 @@ extension NativeTimelineCanvasView {
             for location in spoilerRevealStore.revealedTextLocations(
                 messageID: messageID,
                 contentID: contentID,
-                contentHash: selectable.value.string.hashValue
+                value: selectable.value
             ) {
                 result.reveal(
                     region: selectable.region,
@@ -1698,7 +1698,13 @@ extension NativeTimelineCanvasView {
         else { return [] }
         let message = row.message
         let visibleEmbedCount =
-            MessageEmbedPresentation.visibleEmbeds(for: message).count
+            (model?.chatSettings.expandsEmbedsByDefault == false)
+                ? 0
+                : MessageEmbedPresentation.visibleEmbeds(
+                    for: message,
+                    showsAutomaticLinkPreviews:
+                        model?.chatSettings.showsAutomaticLinkPreviews ?? true
+                ).count
         var keys: [NativeTimelineMediaKey] = []
         keys.reserveCapacity(
             1 + message.attachments.count + visibleEmbedCount
@@ -1739,7 +1745,7 @@ extension NativeTimelineCanvasView {
                 model: model,
                 message: message
             )
-            for token in row.textPlan.preparedText?.tokens ?? [] {
+            for token in presentedTextPlan(for: row).preparedText?.tokens ?? [] {
                 switch token {
                 case let .customEmoji(emoji):
                     let reference = EmojiReference(rawToken: emoji.rawToken)

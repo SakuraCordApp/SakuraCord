@@ -87,7 +87,7 @@ extension NativeTimelineCanvasView {
             }
         }
         if let model {
-            for token in row.textPlan.preparedText?.tokens ?? [] {
+            for token in presentedTextPlan(for: row).preparedText?.tokens ?? [] {
                 guard case let .customEmoji(emoji) = token else { continue }
                 let reference = EmojiReference(rawToken: emoji.rawToken)
                 guard reference.isAnimated,

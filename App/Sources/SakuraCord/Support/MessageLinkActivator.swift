@@ -13,7 +13,11 @@ enum MessageLinkActivator {
         }
         switch destination {
         case let .discordChannel(guildID, channelID):
-            model?.navigate(to: guildID, linkedChannelID: channelID)
+            if let model, model.chatSettings.opensDiscordLinksInternally {
+                model.navigate(to: guildID, linkedChannelID: channelID)
+            } else if !customHandler(url) {
+                NSWorkspace.shared.open(url)
+            }
         case .web:
             if !customHandler(url) {
                 NSWorkspace.shared.open(url)

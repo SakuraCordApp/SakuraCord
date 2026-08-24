@@ -29,10 +29,17 @@ extension NativeTimelineCanvasView {
         reconcileAnimatedMedia(allowsScrolling: true)
         let reduceMotion =
             NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-            || UserDefaults.standard.bool(forKey: "reduceAnimatedMedia")
+            || (model?.chatSettings.reducesAnimatedMedia
+                ?? UserDefaults.standard.bool(forKey: "reduceAnimatedMedia"))
             || !permitsAnimatedMediaPlayback
-        reconcileInlineVideoOverlays(plays: !reduceMotion)
-        reconcileLottieStickerOverlays(reduceMotion: reduceMotion)
+        reconcileInlineVideoOverlays(
+            plays: !reduceMotion
+                && (model?.chatSettings.autoplaysInlineVideos ?? true)
+        )
+        reconcileLottieStickerOverlays(
+            reduceMotion: reduceMotion
+                || !(model?.chatSettings.autoplaysAnimatedStickers ?? true)
+        )
     }
 
     func scheduleAnimatedMediaReconciliation() {
@@ -71,7 +78,8 @@ extension NativeTimelineCanvasView {
         guard !suppressesHoverPresentation else { return }
         let reduceMotion =
             NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-            || UserDefaults.standard.bool(forKey: "reduceAnimatedMedia")
+            || (model?.chatSettings.reducesAnimatedMedia
+                ?? UserDefaults.standard.bool(forKey: "reduceAnimatedMedia"))
             || !permitsAnimatedMediaPlayback
         guard !items.isEmpty,
               var index = rowIndex(at: max(0, visibleRect.minY))
@@ -108,7 +116,10 @@ extension NativeTimelineCanvasView {
             index += 1
         }
         inlineVideoRows = rows
-        reconcileInlineVideoOverlays(plays: !reduceMotion)
+        reconcileInlineVideoOverlays(
+            plays: !reduceMotion
+                && (model?.chatSettings.autoplaysInlineVideos ?? true)
+        )
     }
 
     struct DesiredAnimatedMediaOverlay {
@@ -150,6 +161,17 @@ extension NativeTimelineCanvasView {
             fillsFrame: Bool = false,
             allowsStaticImage: Bool = false
         ) {
+            let settings = model?.chatSettings ?? .defaults
+            let categoryAllowsPlayback: Bool = switch role {
+            case .attachment, .linkedImage, .embedImage, .embedMedia,
+                 .componentImage, .componentMedia:
+                settings.autoplaysGIFs
+            case .sticker:
+                settings.autoplaysAnimatedStickers
+            default:
+                true
+            }
+            guard categoryAllowsPlayback else { return }
             let image = allowsStaticImage
                 ? NativeTimelineMediaStore.shared.decodedImage(for: media)
                 : NativeTimelineMediaStore.shared
@@ -690,7 +712,8 @@ extension NativeTimelineCanvasView {
         guard !animatedMediaOverlays.isEmpty else { return }
         let reduceMotion =
             NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-            || UserDefaults.standard.bool(forKey: "reduceAnimatedMedia")
+            || (model?.chatSettings.reducesAnimatedMedia
+                ?? UserDefaults.standard.bool(forKey: "reduceAnimatedMedia"))
         reconcileAnimatedMediaOverlays(reduceMotion: reduceMotion)
     }
 

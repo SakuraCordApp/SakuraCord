@@ -247,15 +247,117 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
         ),
         SettingsPreferenceRegistration(
             id: .sendWithReturn,
-            page: .general,
+            page: .chat,
             storage: .appWide(key: "sendWithReturn"),
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
+            id: .chatSpellCheck,
+            page: .chat,
+            storage: .appWide(key: "settings.chat.spellCheck"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .chatAutomaticCorrection,
+            page: .chat,
+            storage: .appWide(key: "settings.chat.automaticCorrection"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .chatSmartQuotes,
+            page: .chat,
+            storage: .appWide(key: "settings.chat.smartQuotes"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .chatSmartDashes,
+            page: .chat,
+            storage: .appWide(key: "settings.chat.smartDashes"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .chatTypingIndicators,
+            page: .chat,
+            storage: .appWide(key: "settings.chat.typingIndicators"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .chatFocusComposerOnTyping,
+            page: .chat,
+            storage: .appWide(key: "settings.chat.focusComposerOnTyping"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .chatReadAcknowledgement,
+            page: .chat,
+            storage: .appWide(key: "settings.chat.readAcknowledgement"),
+            defaultValue: .string(ChatReadAcknowledgementMode.automatic.rawValue)
+        ),
+        SettingsPreferenceRegistration(
+            id: .chatEditedMarkers,
+            page: .chat,
+            storage: .appWide(key: "settings.chat.editedMarkers"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .chatExpandEmbeds,
+            page: .chat,
+            storage: .appWide(key: "settings.chat.expandEmbeds"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .chatSpoilerReveal,
+            page: .chat,
+            storage: .appWide(key: "settings.chat.spoilerReveal"),
+            defaultValue: .string(ChatSpoilerRevealMode.click.rawValue)
+        ),
+        SettingsPreferenceRegistration(
+            id: .chatInternalDiscordLinks,
+            page: .chat,
+            storage: .appWide(key: "settings.chat.internalDiscordLinks"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .chatAutoplayGIFs,
+            page: .chat,
+            storage: .appWide(key: "settings.chat.autoplayGIFs"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .chatAutoplayStickers,
+            page: .chat,
+            storage: .appWide(key: "settings.chat.autoplayStickers"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .chatAutoplayVideos,
+            page: .chat,
+            storage: .appWide(key: "settings.chat.autoplayVideos"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .chatLinkPreviews,
+            page: .chat,
+            storage: .appWide(key: "settings.chat.linkPreviews"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .chatInlineMediaSize,
+            page: .chat,
+            storage: .appWide(key: "settings.chat.inlineMediaSize"),
+            defaultValue: .string(ChatInlineMediaSize.medium.rawValue)
+        ),
+        SettingsPreferenceRegistration(
             id: .reduceAnimatedMedia,
-            page: .general,
+            page: .chat,
             storage: .appWide(key: "reduceAnimatedMedia"),
             defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .chatEmojiSkinTone,
+            page: .chat,
+            storage: .appWide(key: "emojiSkinTone"),
+            defaultValue: .string(NativeEmojiSkinTone.standard.rawValue)
         ),
         SettingsPreferenceRegistration(
             id: .mediaCacheLimit,

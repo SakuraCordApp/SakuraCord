@@ -800,7 +800,9 @@ struct NativeTimelineRowLayout {
                 height: 13
             )
             headerX = timestampFrame?.maxX ?? headerX
-            if message.editedTimestamp != nil {
+            if message.editedTimestamp != nil,
+               model?.chatSettings.showsEditedMarkers != false
+            {
                 headerX += 7
                 let editedFont = NSFont.preferredFont(forTextStyle: .caption2)
                 editedFrame = CGRect(
@@ -871,11 +873,23 @@ struct NativeTimelineRowLayout {
         var contentFrame: CGRect?
         var hasRichContent = false
         let usesComponentsV2 = message.flags.contains(.isComponentsV2)
+        let chatSettings = model?.chatSettings ?? .defaults
+        let inlineMediaMaximumWidth = min(
+            contentWidth,
+            chatSettings.inlineMediaSize.maximumWidth
+        )
         let textPlan =
             if message.type == .call {
                 NativeTimelineTextPlan.make(
                     for: message,
                     currentUserID: model?.snapshot?.currentUser.id
+                )
+            } else if !chatSettings.showsAutomaticLinkPreviews
+                || !chatSettings.expandsEmbedsByDefault
+            {
+                NativeTimelineTextPlan.make(
+                    for: message,
+                    showsAutomaticLinkPreviews: false
                 )
             } else {
                 row.textPlan
@@ -907,7 +921,7 @@ struct NativeTimelineRowLayout {
             }
             let plan = InlineWrappingLayoutPlan.frames(
                 sizes: contentPresentation.linkedImages.map { $0.displaySize },
-                maximumWidth: contentWidth,
+                maximumWidth: inlineMediaMaximumWidth,
                 horizontalSpacing: 4,
                 verticalSpacing: 4
             )
@@ -929,7 +943,7 @@ struct NativeTimelineRowLayout {
             if hasRichContent {
                 verticalOffset += 8
             }
-            let galleryWidth = min(500, max(180, contentWidth))
+            let galleryWidth = min(500, max(180, inlineMediaMaximumWidth))
             let galleryFrames = MediaGalleryPlan.frames(
                 count: message.attachments.count,
                 width: galleryWidth,
@@ -968,9 +982,13 @@ struct NativeTimelineRowLayout {
         }
 
         var embedRegions: [EmbedRegion] = []
-        if !usesComponentsV2 {
+        if !usesComponentsV2, chatSettings.expandsEmbedsByDefault {
             let visibleEmbeds =
-                MessageEmbedPresentation.visibleEmbeds(for: message)
+                MessageEmbedPresentation.visibleEmbeds(
+                    for: message,
+                    showsAutomaticLinkPreviews:
+                        chatSettings.showsAutomaticLinkPreviews
+                )
             embedRegions.reserveCapacity(visibleEmbeds.count)
             for embed in visibleEmbeds {
                 let embedY = verticalOffset + (hasRichContent ? 8 : 0)
@@ -980,7 +998,7 @@ struct NativeTimelineRowLayout {
                     model: model,
                     attachments: message.attachments,
                     origin: CGPoint(x: contentX, y: embedY),
-                    maximumWidth: min(contentWidth, 520)
+                    maximumWidth: inlineMediaMaximumWidth
                 ) else { continue }
                 embedRegions.append(region)
                 verticalOffset = region.frame.maxY
@@ -995,7 +1013,7 @@ struct NativeTimelineRowLayout {
             message: message,
             model: model,
             origin: CGPoint(x: contentX, y: componentY),
-            maximumWidth: min(contentWidth, 520)
+            maximumWidth: inlineMediaMaximumWidth
         ) {
             componentLayouts.append(componentLayout)
             verticalOffset = componentLayout.frame.maxY

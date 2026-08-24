@@ -13,8 +13,6 @@ struct GeneralSettingsPage: View {
     @State private var remembersMemberListVisibility = true
     @State private var confirmsQuitActiveWork = true
     @State private var confirmsDiscardComposer = true
-    @AppStorage("sendWithReturn") private var sendWithReturn = true
-    @AppStorage("reduceAnimatedMedia") private var reduceAnimatedMedia = false
 
     var body: some View {
         SettingsPageForm(page: .general, state: state) {
@@ -37,11 +35,6 @@ struct GeneralSettingsPage: View {
                     $confirmsDiscardComposer,
                     id: .confirmDiscardComposer
                 ),
-                state: state
-            )
-            GeneralMessagesAndMediaSection(
-                sendWithReturn: $sendWithReturn,
-                reduceAnimatedMedia: $reduceAnimatedMedia,
                 state: state
             )
             GeneralSoftwareUpdatesSection(
@@ -221,26 +214,6 @@ private struct GeneralConfirmationSection: View {
                 )
                 SettingsScopeFooter(scope: .appWideLocal)
             }
-        }
-    }
-}
-
-private struct GeneralMessagesAndMediaSection: View {
-    @Binding var sendWithReturn: Bool
-    @Binding var reduceAnimatedMedia: Bool
-    let state: SettingsViewState
-
-    var body: some View {
-        Section {
-            Toggle("Press Return to send messages", isOn: $sendWithReturn)
-                .settingsControlAnchor(.sendWithReturn, state: state)
-
-            Toggle("Reduce animated media", isOn: $reduceAnimatedMedia)
-                .settingsControlAnchor(.reduceAnimatedMedia, state: state)
-        } header: {
-            Text("Messages and media", bundle: #bundle)
-        } footer: {
-            SettingsScopeFooter(scope: .appWideLocal)
         }
     }
 }

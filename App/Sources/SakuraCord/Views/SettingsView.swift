@@ -91,7 +91,7 @@ private struct SettingsDetailRouter: View {
         case .interface:
             InterfaceSettingsPage(model: model, state: state)
         case .chat:
-            ChatSettingsPage(state: state)
+            ChatSettingsPage(model: model, state: state)
         case .notifications:
             NotificationsSettingsPage(model: model, state: state)
         case .voiceVideo:

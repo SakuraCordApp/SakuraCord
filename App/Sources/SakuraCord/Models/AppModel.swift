@@ -187,6 +187,7 @@ final class AppModel {
     @ObservationIgnored var messageRowsRevision: UInt64 = 0
     var timelinePresentationRevision: UInt64 = 0
     var interfaceSettings: InterfaceSettingsSnapshot
+    var chatSettings: ChatSettingsSnapshot
     @ObservationIgnored var messageRowsUpdateHint:
         MessageRowsUpdateHint?
     @ObservationIgnored let messageRowsUpdateJournal =
@@ -471,6 +472,7 @@ final class AppModel {
     var emojiLoadErrorsByGuild: [GuildID: String] = [:]
     var favoriteEmojiKeys: Set<String>
     var emojiUsageCounts: [String: Int]
+    var emojiRecentKeys: [String]
     var discordFavoriteEmojiKeys: [String] = []
     var discordFrequentlyUsedEmojiKeys: [String] = []
     var discordEmojiUsageScores: [String: Int] = [:]
@@ -1213,6 +1215,7 @@ final class AppModel {
     ) {
         self.launchMode = launchMode
         interfaceSettings = InterfaceSettingsStore.shared.load()
+        chatSettings = ChatSettingsStore.shared.load()
         self.notificationService =
             notificationService ?? NoopNativeNotificationService()
         self.soundPlayer = soundPlayer ?? NoopAppSoundPlayer()
@@ -1276,12 +1279,20 @@ final class AppModel {
             launchMode == .normal
                 ? Set(UserDefaults.standard.stringArray(forKey: "dev.sakuracord.favorite-emojis") ?? [])
                 : []
-        emojiUsageCounts =
+        let initialEmojiUsageCounts =
             launchMode == .normal
                 ? UserDefaults.standard.dictionary(forKey: "dev.sakuracord.emoji-usage")
                 as? [String: Int]
                 ?? [:]
                 : [:]
+        emojiUsageCounts = initialEmojiUsageCounts
+        if launchMode == .normal {
+            emojiRecentKeys = Self.loadEmojiRecents(
+                usageCounts: initialEmojiUsageCounts
+            )
+        } else {
+            emojiRecentKeys = []
+        }
         // A normal launch does not know the account yet. Opening the historical
         // account-1 fallback here only to replace it during credential restore
         // duplicates filesystem and SQLite work on every startup.

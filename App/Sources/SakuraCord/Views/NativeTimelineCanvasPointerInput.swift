@@ -1736,7 +1736,8 @@ extension NativeTimelineCanvasView {
         }
         let reduceMotion =
             NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-            || UserDefaults.standard.bool(forKey: "reduceAnimatedMedia")
+            || (model?.chatSettings.reducesAnimatedMedia
+                ?? UserDefaults.standard.bool(forKey: "reduceAnimatedMedia"))
             || !permitsAnimatedMediaPlayback
 
         var rows:
@@ -1805,8 +1806,14 @@ extension NativeTimelineCanvasView {
         lottieStickerRows = stickerRows
         reconcileAnimatedMediaOverlays(reduceMotion: reduceMotion)
         if !allowsScrolling {
-            reconcileInlineVideoOverlays(plays: !reduceMotion)
-            reconcileLottieStickerOverlays(reduceMotion: reduceMotion)
+            reconcileInlineVideoOverlays(
+                plays: !reduceMotion
+                    && (model?.chatSettings.autoplaysInlineVideos ?? true)
+            )
+            reconcileLottieStickerOverlays(
+                reduceMotion: reduceMotion
+                    || !(model?.chatSettings.autoplaysAnimatedStickers ?? true)
+            )
         }
     }
 

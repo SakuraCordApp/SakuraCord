@@ -477,6 +477,7 @@ struct ApplicationCommandInlineInput: View {
     let composer: ApplicationCommandComposerModel
     let roles: [GuildRole]
     let sendWithReturn: Bool
+    let chatSettings: ChatSettingsSnapshot
     let onTextChange: (ApplicationCommandOption, String) -> Void
     let onSubmit: () -> Void
     let onKeyboardCommand: (ComposerAutocompleteCommand) -> Bool
@@ -503,6 +504,7 @@ struct ApplicationCommandInlineInput: View {
                     ),
                     focusedOptionID: composer.focusedOptionID,
                     sendWithReturn: sendWithReturn,
+                    chatSettings: chatSettings,
                     onTextChange: onTextChange,
                     onFocusOption: { optionID in
                         guard let optionID,
@@ -863,6 +865,7 @@ private struct ApplicationCommandStructuredTextView: NSViewRepresentable {
     let document: ApplicationCommandTextDocument
     let focusedOptionID: String?
     let sendWithReturn: Bool
+    let chatSettings: ChatSettingsSnapshot
     let onTextChange: (ApplicationCommandOption, String) -> Void
     let onFocusOption: (String?) -> Void
     let focusedOptionIDProvider: () -> String?
@@ -904,6 +907,8 @@ private struct ApplicationCommandStructuredTextView: NSViewRepresentable {
         textView.focusedOptionIDProvider = focusedOptionIDProvider
         textView.onSubmit = onSubmit
         textView.sendWithReturn = sendWithReturn
+        textView.capturesUnfocusedTyping = chatSettings.focusesComposerOnTyping
+        ComposerTextCheckingConfiguration.apply(chatSettings, to: textView)
         textView.document = document
         textView.setAccessibilityLabel("Command input")
 
@@ -924,6 +929,8 @@ private struct ApplicationCommandStructuredTextView: NSViewRepresentable {
         textView.focusedOptionIDProvider = focusedOptionIDProvider
         textView.onSubmit = onSubmit
         textView.sendWithReturn = sendWithReturn
+        textView.capturesUnfocusedTyping = chatSettings.focusesComposerOnTyping
+        ComposerTextCheckingConfiguration.apply(chatSettings, to: textView)
         context.coordinator.apply(document: document, to: textView, viewportWidth: scrollView.bounds.width)
         context.coordinator.applyFocus(to: textView)
     }
@@ -1365,13 +1372,24 @@ final class ApplicationCommandNSTextView: NSTextView {
     var focusedOptionIDProvider: () -> String? = { nil }
     var onSubmit: () -> Void = {}
     var sendWithReturn = true
+    var capturesUnfocusedTyping = true {
+        didSet {
+            unfocusedTypingMonitor.synchronize(
+                with: self,
+                enabled: capturesUnfocusedTyping,
+                onUnfocusedReturn: { [weak self] event in
+                    self?.handleReturn(event) ?? false
+                }
+            )
+        }
+    }
     private lazy var unfocusedTypingMonitor = ComposerUnfocusedTypingMonitor()
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         unfocusedTypingMonitor.synchronize(
             with: self,
-            enabled: true,
+            enabled: capturesUnfocusedTyping,
             onUnfocusedReturn: { [weak self] event in
                 self?.handleReturn(event) ?? false
             }

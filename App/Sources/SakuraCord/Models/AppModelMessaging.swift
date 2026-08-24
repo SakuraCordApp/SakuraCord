@@ -1829,7 +1829,10 @@ extension AppModel {
                 channelID: selectedChannelID,
                 windowIsActive: isActive
             ) {
-                scheduleAcknowledgement(channelID: selectedChannelID, messageID: target)
+                scheduleAutomaticAcknowledgement(
+                    channelID: selectedChannelID,
+                    messageID: target
+                )
             }
         }
         if let threadID = openThread?.id {
@@ -1838,7 +1841,7 @@ extension AppModel {
                 channelID: threadID,
                 windowIsActive: isActive
             ) {
-                scheduleAcknowledgement(channelID: threadID, messageID: target)
+                scheduleAutomaticAcknowledgement(channelID: threadID, messageID: target)
             }
         }
     }
@@ -1866,7 +1869,7 @@ extension AppModel {
             )
         }
         if let target {
-            scheduleAcknowledgement(channelID: channelID, messageID: target)
+            scheduleAutomaticAcknowledgement(channelID: channelID, messageID: target)
         }
     }
 
@@ -1890,7 +1893,7 @@ extension AppModel {
             "Timeline initial c=\(channel, privacy: .public) r=\(reached, privacy: .public) e=\(eligible, privacy: .public) m=\(targetID, privacy: .public)"
         )
         if let target {
-            scheduleAcknowledgement(channelID: channelID, messageID: target)
+            scheduleAutomaticAcknowledgement(channelID: channelID, messageID: target)
         }
     }
 
@@ -1913,7 +1916,7 @@ extension AppModel {
             isPresented: true,
             initialHistoryLoaded: true
         ) {
-            scheduleAcknowledgement(channelID: channelID, messageID: target)
+            scheduleAutomaticAcknowledgement(channelID: channelID, messageID: target)
         }
     }
 

@@ -337,7 +337,7 @@ private struct StaticEmojiImage: View {
     }
 }
 
-enum NativeEmojiSkinTone: String, CaseIterable, Identifiable {
+nonisolated enum NativeEmojiSkinTone: String, CaseIterable, Identifiable, Sendable {
     case standard
     case light
     case mediumLight
@@ -1494,6 +1494,7 @@ final class EmojiPickerDocumentStore {
     private var errorsByGuild: [GuildID: String] = [:]
     private var localFavorites: Set<String> = []
     private var localUsage: [String: Int] = [:]
+    private var localRecents: [String] = []
     private var discordFavorites: [String] = []
     private var discordFavoriteCandidates: Set<String> = []
     private var discordFrequentlyUsed: [String] = []
@@ -1539,6 +1540,7 @@ final class EmojiPickerDocumentStore {
         }
         let localFavorites = model.favoriteEmojiKeys
         let localUsage = model.emojiUsageCounts
+        let localRecents = model.emojiRecentKeys
         let discordFavorites = model.discordFavoriteEmojiKeys
         let discordFrequentlyUsed = model.discordFrequentlyUsedEmojiKeys
         let discordUsage = model.discordEmojiUsageScores
@@ -1548,6 +1550,7 @@ final class EmojiPickerDocumentStore {
             || self.errorsByGuild != errorsByGuild
             || self.localFavorites != localFavorites
             || self.localUsage != localUsage
+            || self.localRecents != localRecents
             || self.discordFavorites != discordFavorites
             || self.discordFrequentlyUsed != discordFrequentlyUsed
             || self.discordUsage != discordUsage
@@ -1559,6 +1562,7 @@ final class EmojiPickerDocumentStore {
         self.errorsByGuild = errorsByGuild
         self.localFavorites = localFavorites
         self.localUsage = localUsage
+        self.localRecents = localRecents
         self.discordFavorites = discordFavorites
         discordFavoriteCandidates = discordFavorites.reduce(into: []) { values, key in
             values.formUnion(settingsKeyCandidates(key))
@@ -1630,15 +1634,9 @@ final class EmojiPickerDocumentStore {
         )
         let frequentItems: [EmojiPickerItem]
         if discordFrequentlyUsed.isEmpty {
-            frequentItems = allItems
-                .filter { localUsage[$0.usageKey, default: 0] > 0 }
-                .sorted {
-                    let left = localUsage[$0.usageKey, default: 0]
-                    let right = localUsage[$1.usageKey, default: 0]
-                    return left == right ? $0.name < $1.name : left > right
-                }
-                .prefix(18)
-                .map(\.self)
+            frequentItems = Array(
+                orderedItems(for: localRecents, in: allItems).prefix(18)
+            )
         } else {
             frequentItems = Array(
                 orderedItems(for: discordFrequentlyUsed, in: allItems).prefix(18)
@@ -1812,6 +1810,11 @@ final class EmojiPickerDocumentStore {
         )
         keys.formUnion(
             localUsage.keys.compactMap { key in
+                key.hasPrefix("custom:") ? String(key.dropFirst("custom:".count)) : nil
+            }
+        )
+        keys.formUnion(
+            localRecents.compactMap { key in
                 key.hasPrefix("custom:") ? String(key.dropFirst("custom:".count)) : nil
             }
         )

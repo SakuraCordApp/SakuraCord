@@ -24,7 +24,6 @@ struct ComposerView: View {
     @State private var commandSuggestionIndex = 0
     @State private var isCommandSuggestionsDismissed = false
     @State private var pendingDiscard: ComposerDiscardRequest?
-    @AppStorage("sendWithReturn") private var sendWithReturn = true
 
     var body: some View {
         @Bindable var model = model
@@ -74,7 +73,8 @@ struct ComposerView: View {
                             ApplicationCommandInlineInput(
                                 composer: model.commandComposer,
                                 roles: model.guildRoles,
-                                sendWithReturn: sendWithReturn,
+                                sendWithReturn: model.chatSettings.sendsWithReturn,
+                                chatSettings: model.chatSettings,
                                 onTextChange: { option, text in
                                     updateCommandField(text, for: option)
                                 },
@@ -86,11 +86,12 @@ struct ComposerView: View {
                             .frame(minHeight: 36, alignment: .center)
                             .layoutPriority(1)
                         } else {
-                            ZStack(alignment: .leading) {
+                            ZStack(alignment: .bottomTrailing) {
                                 ComposerTextView(
                                     text: draft,
                                     placeholder: composerPlaceholder,
-                                    sendWithReturn: sendWithReturn,
+                                    sendWithReturn: model.chatSettings.sendsWithReturn,
+                                    chatSettings: model.chatSettings,
                                     mentionPresentations: composerMentionPresentations,
                                     onTextChange: updateDraft,
                                     onSubmit: send,
@@ -104,7 +105,8 @@ struct ComposerView: View {
                                     },
                                     onAutocompleteCommand: handleAutocomplete,
                                     onPasteAttachments: addPastedAttachments,
-                                    capturesUnfocusedTyping: true,
+                                    capturesUnfocusedTyping:
+                                        model.chatSettings.focusesComposerOnTyping,
                                     selection: $draftSelection,
                                     isFocused: $isFocused
                                 )
@@ -116,6 +118,13 @@ struct ComposerView: View {
                                         .truncationMode(.tail)
                                         .allowsHitTesting(false)
                                         .accessibilityHidden(true)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                if ChatCharacterLimitPolicy.shouldShowCounter(characterCount: draft.count, premiumType: model.snapshot?.currentUser.premiumType) {
+                                    ComposerCharacterCounter(
+                                        characterCount: draft.count,
+                                        premiumType: model.snapshot?.currentUser.premiumType
+                                    )
                                 }
                             }
                             .frame(minHeight: 36, alignment: .center)
@@ -612,6 +621,9 @@ struct ComposerView: View {
         return !isSubmitting
             && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 || !attachments.isEmpty)
+            && draft.count <= ChatCharacterLimitPolicy.limit(
+                premiumType: model.snapshot?.currentUser.premiumType
+            )
     }
 
     private var autocompleteSuggestions: [ColonAutocompleteSuggestion] {
@@ -995,7 +1007,7 @@ struct ComposerView: View {
         case .channel:
             model.updateDraft(value)
         case .thread:
-            model.threadDraft = value
+            model.updateThreadDraft(value)
         }
     }
 
