@@ -91,55 +91,6 @@ extension AppModel {
         forumNotificationMutationTasks.removeAll()
     }
 
-    func deliverNativeNotification(for message: Message) {
-        // The offline timeline benchmark measures event ingestion, layout,
-        // drawing, and scroll scheduling. Enqueuing thousands of synthetic
-        // UNUserNotificationCenter requests measures an unrelated XPC queue
-        // and eventually starves the main run loop in periodic bursts.
-        guard !runsChatPerformanceBenchmark else { return }
-        guard !readState.isActivelyPresentedAtNewest(message.channelID) else { return }
-        let channel =
-            snapshot?.channels.first { $0.id == message.channelID }
-                ?? visibleChannels.first { $0.id == message.channelID }
-        let guildID = message.guildID ?? channel?.guildID
-        let guild = guildID.flatMap { serverRailGuildsByID[$0] }
-        let accountID = readState.accountID ?? "offline"
-        if notificationPreferences.isEnabled,
-           notificationPreferences.playsSound,
-           !notificationPreferences.isQuiet()
-        {
-            // Apple's notification sound facility does not support MP3. Play
-            // Discord's exact message asset through the same retained audio
-            // path as the voice sounds, and let Notification Center own only
-            // the banner/list presentation.
-            soundPlayer.play(.message)
-        }
-        let account = accountSession()
-        startAccountChildTask(account: account) { model, account in
-            guard model.isCurrentAccountSession(account), !Task.isCancelled else { return }
-            await model.notificationService.deliver(
-                message: message,
-                channel: channel,
-                guild: guild,
-                accountID: accountID,
-                preferences: model.notificationPreferences
-            )
-        }
-    }
-
-    func cancelNativeNotifications(channelID: ChannelID) {
-        guard !runsChatPerformanceBenchmark else { return }
-        let accountID = readState.accountID ?? "offline"
-        let account = accountSession()
-        startAccountChildTask(account: account) { model, account in
-            guard model.isCurrentAccountSession(account), !Task.isCancelled else { return }
-            await model.notificationService.cancel(
-                accountID: accountID,
-                channelID: channelID
-            )
-        }
-    }
-
     func consume(_ event: ClientEvent) async {
         if case let .messageCreated(message) = event {
             let preparedTextPlan: NativeTimelineTextPlan? =
@@ -532,7 +483,11 @@ extension AppModel {
             refreshUnreadPresentation()
         }
         if disposition.shouldNotify {
-            deliverNativeNotification(for: message)
+            deliverNativeNotification(
+                for: message,
+                isMention: disposition.mentionKind != .none
+                    && disposition.mentionKind != .directMessage
+            )
         }
         if isFlushingCreatedMessageBatch {
             batchedAcknowledgementChannelIDs.insert(message.channelID)
@@ -784,11 +739,16 @@ extension AppModel {
     }
 
     func consumePrivateCallChanged(_ call: inout PrivateCall) {
+        let previousCall = privateCallsByChannel[call.channelID]
+        let currentUserID = snapshot?.currentUser.id
+        let wasRingingCurrentUser = currentUserID.map {
+            previousCall?.isRinging($0) == true
+        } ?? false
         if call.voiceStates == nil {
             call.voiceStates = privateCallsByChannel[call.channelID]?.voiceStates
         }
         privateCallsByChannel[call.channelID] = call
-        if let currentUserID = snapshot?.currentUser.id,
+        if let currentUserID,
            call.ongoingRings.contains(where: {
                $0.senderID == currentUserID && $0.recipientID != currentUserID
            })
@@ -796,6 +756,12 @@ extension AppModel {
             endLocalOutgoingPrivateCallRing(channelID: call.channelID)
         } else {
             reconcilePrivateCallSounds()
+        }
+        let isRingingCurrentUser = currentUserID.map(call.isRinging) ?? false
+        if !wasRingingCurrentUser, isRingingCurrentUser {
+            deliverIncomingCallNotification(call)
+        } else if wasRingingCurrentUser, !isRingingCurrentUser {
+            cancelIncomingCallNotification(channelID: call.channelID)
         }
     }
 
@@ -818,6 +784,7 @@ extension AppModel {
             }
         }
         endLocalOutgoingPrivateCallRing(channelID: channelID)
+        cancelIncomingCallNotification(channelID: channelID)
     }
 
     func consumeSnapshotChanged(_ value: BootstrapSnapshot) {

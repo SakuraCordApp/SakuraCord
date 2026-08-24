@@ -1429,11 +1429,18 @@ extension AppModel {
             }
             guard await connectAuthenticatedAccount(handle) else { return }
         }
-        navigate(
-            to: notification.guildID,
-            channelID: notification.channelID,
-            messageID: notification.messageID
-        )
+        if let messageID = notification.messageID {
+            navigate(
+                to: notification.guildID,
+                channelID: notification.channelID,
+                messageID: messageID
+            )
+        } else {
+            navigate(
+                to: notification.guildID,
+                linkedChannelID: notification.channelID
+            )
+        }
     }
 
     func completeMessageNavigation(requestID: UInt64) {

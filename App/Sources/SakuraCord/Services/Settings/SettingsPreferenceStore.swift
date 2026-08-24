@@ -369,50 +369,139 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             id: .notificationEnabled,
             page: .notifications,
             storage: .appWide(key: "notifications.enabled"),
-            defaultValue: .bool(true),
-            resets: false
+            defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .notificationPreview,
             page: .notifications,
             storage: .appWide(key: "notifications.preview"),
-            defaultValue: .string("full"),
-            resets: false
+            defaultValue: .string(NotificationPreviewStyle.full.rawValue)
         ),
         SettingsPreferenceRegistration(
             id: .notificationSound,
             page: .notifications,
             storage: .appWide(key: "notifications.sound"),
-            defaultValue: .bool(true),
-            resets: false
+            defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .notificationDockBadge,
             page: .notifications,
             storage: .appWide(key: "notifications.dockBadge"),
-            defaultValue: .bool(true),
-            resets: false
+            defaultValue: .string(NotificationDockBadgeStyle.mentions.rawValue)
+        ),
+        SettingsPreferenceRegistration(
+            id: .notificationDirectMessages,
+            page: .notifications,
+            storage: .appWide(key: "notifications.events.directMessages"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .notificationGroupDirectMessages,
+            page: .notifications,
+            storage: .appWide(key: "notifications.events.groupDirectMessages"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .notificationMentions,
+            page: .notifications,
+            storage: .appWide(key: "notifications.events.mentions"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .notificationReplies,
+            page: .notifications,
+            storage: .appWide(key: "notifications.events.replies"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .notificationIncomingCalls,
+            page: .notifications,
+            storage: .appWide(key: "notifications.events.incomingCalls"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .notificationServerActivity,
+            page: .notifications,
+            storage: .appWide(key: "notifications.events.serverActivity"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .notificationOnlyInBackground,
+            page: .notifications,
+            storage: .appWide(key: "notifications.onlyInBackground"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .notificationSuppressCurrent,
+            page: .notifications,
+            storage: .appWide(key: "notifications.suppressCurrentConversation"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .notificationGroupBursts,
+            page: .notifications,
+            storage: .appWide(key: "notifications.groupByConversation"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .notificationClearWhenRead,
+            page: .notifications,
+            storage: .appWide(key: "notifications.clearWhenRead"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .notificationCallsBypassSuppression,
+            page: .notifications,
+            storage: .appWide(key: "notifications.callsBypassMessageSuppression"),
+            defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .notificationQuietHours,
             page: .notifications,
             storage: .appWide(key: "notifications.quietHours"),
-            defaultValue: .bool(false),
-            resets: false
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .notificationQuietDays,
+            page: .notifications,
+            storage: .appWide(key: "notifications.quietDays"),
+            defaultValue: .strings((1 ... 7).map(String.init))
         ),
         SettingsPreferenceRegistration(
             id: .notificationQuietStart,
             page: .notifications,
             storage: .appWide(key: "notifications.quietStart"),
-            defaultValue: .integer(22),
-            resets: false
+            defaultValue: .integer(22 * 60)
         ),
         SettingsPreferenceRegistration(
             id: .notificationQuietEnd,
             page: .notifications,
             storage: .appWide(key: "notifications.quietEnd"),
-            defaultValue: .integer(8),
-            resets: false
+            defaultValue: .integer(8 * 60)
+        ),
+        SettingsPreferenceRegistration(
+            id: .notificationWeekendQuietStart,
+            page: .notifications,
+            storage: .appWide(key: "notifications.weekendQuietStart"),
+            defaultValue: .integer(22 * 60)
+        ),
+        SettingsPreferenceRegistration(
+            id: .notificationWeekendQuietEnd,
+            page: .notifications,
+            storage: .appWide(key: "notifications.weekendQuietEnd"),
+            defaultValue: .integer(8 * 60)
+        ),
+        SettingsPreferenceRegistration(
+            id: .notificationAllowDirectMessages,
+            page: .notifications,
+            storage: .appWide(key: "notifications.allowDirectMessagesDuringQuietHours"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .notificationAllowCalls,
+            page: .notifications,
+            storage: .appWide(key: "notifications.allowCallsDuringQuietHours"),
+            defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
             id: .voiceInputDevice,

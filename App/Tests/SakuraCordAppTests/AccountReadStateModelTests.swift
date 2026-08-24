@@ -2248,13 +2248,15 @@ struct AccountReadStateModelTests {
     )
     await provider.emit(.messageCreated(message))
     #expect(await eventually { service.deliveredMessageIDs == [message.id] })
-    #expect(sounds.played == [.message])
+    #expect(service.deliveredSoundEnabled == [true])
+    #expect(sounds.played.isEmpty)
     #expect(service.badgeCounts.last == baselineBadgeCount + 1)
 
     await provider.emit(.messageCreated(message))
     try? await Task.sleep(for: .milliseconds(20))
     #expect(service.deliveredMessageIDs == [message.id])
-    #expect(sounds.played == [.message])
+    #expect(service.deliveredSoundEnabled == [true])
+    #expect(sounds.played.isEmpty)
 
     await provider.emit(
         .readStateChanged(
@@ -2267,6 +2269,12 @@ struct AccountReadStateModelTests {
     )
     #expect(await eventually { service.cancelledChannelIDs.contains(message.channelID) })
     #expect(service.badgeCounts.last == baselineBadgeCount)
+
+    await provider.disconnect()
+    model.eventTask?.cancel()
+    await model.eventTask?.value
+    model.eventTask = nil
+    await model.drainAccountChildTasks()
 }
 
 @MainActor
@@ -2764,6 +2772,7 @@ struct AccountReadStateModelTests {
 @MainActor
 private final class RecordingNotificationService: NativeNotificationService {
     var deliveredMessageIDs: [MessageID] = []
+    var deliveredSoundEnabled: [Bool] = []
     var cancelledChannelIDs: [ChannelID] = []
     var badgeCounts: [Int] = []
 
@@ -2777,6 +2786,7 @@ private final class RecordingNotificationService: NativeNotificationService {
         preferences: NotificationPreferences
     ) async {
         deliveredMessageIDs.append(message.id)
+        deliveredSoundEnabled.append(preferences.playsSound)
     }
     func cancel(accountID: String, channelID: ChannelID) async {
         cancelledChannelIDs.append(channelID)

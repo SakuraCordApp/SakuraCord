@@ -259,9 +259,15 @@ extension AppModel {
         ) {
             readState.totalMentions
         }
+        let badgeCount: Int? = switch notificationPreferences.dockBadgeStyle {
+        case .mentions: totalMentions
+        case .unreadConversations:
+            readState.unreadPresentationProjection().unreadByChannelID.values.count { $0 }
+        case .off: nil
+        }
         notificationService.setDockBadge(
-            totalMentions,
-            enabled: notificationPreferences.showsDockBadge
+            badgeCount ?? 0,
+            enabled: badgeCount != nil
         )
         unreadPresentationPreparationGeneration &+= 1
         guard snapshot != nil else {
