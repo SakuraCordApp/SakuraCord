@@ -112,7 +112,11 @@ private struct SettingsDetailRouter: View {
         case .storageDownloads:
             StorageDownloadsSettingsPage(model: model, state: state)
         case .diagnostics:
-            DiagnosticsSettingsPage(state: state)
+            DiagnosticsSettingsPage(
+                model: model,
+                updateController: updateController,
+                state: state
+            )
         case .softwareUpdates:
             SoftwareUpdatesSettingsPage(state: state)
         case .extensions:

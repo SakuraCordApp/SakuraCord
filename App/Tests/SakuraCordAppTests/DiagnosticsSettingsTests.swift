@@ -1,0 +1,230 @@
+@testable import SakuraCord
+import Foundation
+import MediaPipeline
+import SakuraCordModels
+import Testing
+import UserNotifications
+
+@MainActor
+@Test func `Diagnostics status follows account reset without retaining identity`() {
+    let preferences = InMemoryPreferences()
+    let model = AppModel(
+        launchMode: .offlineTesting,
+        notificationPreferences: NotificationPreferences(defaults: preferences),
+        voiceVideoPreferences: VoiceVideoPreferences(defaults: preferences)
+    )
+    model.activeAccountID = "111111111111111111"
+    model.sessionState = .workspace
+    model.connectionState = .ready
+    model.voiceSessionState = .connected
+    let updateController = AppUpdateController(
+        configuration: AppUpdateConfiguration(
+            infoDictionary: [:],
+            bundleIdentifier: nil
+        ),
+        defaults: preferences
+    )
+    let permissions = VoiceMediaPermissionSnapshot(
+        microphone: .authorized,
+        camera: .authorized,
+        screenRecordingAllowed: true
+    )
+
+    let active = DiagnosticsStatusBuilder.make(
+        model: model,
+        updateController: updateController,
+        notificationAuthorization: .authorized,
+        mediaPermissions: permissions,
+        mediaDevices: .empty,
+        mediaCacheCheck: .available(.init(
+            currentBytes: 0,
+            maximumBytes: 1,
+            evictionStatus: .withinLimit
+        ))
+    )
+    #expect(active.first { $0.subsystem == .account }?.health == .healthy)
+    #expect(active.first { $0.subsystem == .gateway }?.health == .healthy)
+    #expect(active.first { $0.subsystem == .voice }?.health == .healthy)
+
+    model.activeAccountID = nil
+    model.sessionState = .signedOut
+    model.connectionState = .disconnected
+    model.voiceSessionState = .idle
+    let reset = DiagnosticsStatusBuilder.make(
+        model: model,
+        updateController: updateController,
+        notificationAuthorization: .authorized,
+        mediaPermissions: permissions,
+        mediaDevices: .empty,
+        mediaCacheCheck: .unavailable
+    )
+
+    #expect(reset.first { $0.subsystem == .account }?.health == .unavailable)
+    #expect(reset.first { $0.subsystem == .gateway }?.health == .unavailable)
+    #expect(reset.first { $0.subsystem == .voice }?.health == .unavailable)
+    #expect(!reset.map(\.detail).joined().contains("111111111111111111"))
+}
+
+@MainActor
+@Test func `Support summary excludes identity device and arbitrary error fields`() throws {
+    let preferences = InMemoryPreferences()
+    let model = AppModel(
+        launchMode: .offlineTesting,
+        notificationPreferences: NotificationPreferences(defaults: preferences),
+        voiceVideoPreferences: VoiceVideoPreferences(defaults: preferences)
+    )
+    model.activeAccountID = "222222222222222222"
+    model.sessionState = .workspace
+    model.connectionState = .ready
+    model.voiceSessionState = .failed
+    model.errorMessage = "credential-secret cookie-secret https://private.example/message"
+    model.voiceErrorMessage = "private-profile.txt request-333333333333333333"
+    model.voiceVideoPreferences.inputDeviceUID = "private-input-uid"
+    model.voiceVideoPreferences.outputDeviceUID = "private-output-uid"
+    model.selectedCameraUID = "private-camera-uid"
+    let updateController = AppUpdateController(
+        configuration: AppUpdateConfiguration(
+            infoDictionary: [:],
+            bundleIdentifier: nil
+        ),
+        defaults: preferences
+    )
+    let devices = MediaDeviceSnapshot(
+        audioInputs: [
+            AudioDeviceInfo(
+                id: 1,
+                uid: "private-input-uid",
+                name: "Owner Microphone",
+                isDefault: false
+            ),
+        ],
+        audioOutputs: [
+            AudioDeviceInfo(
+                id: 2,
+                uid: "private-output-uid",
+                name: "Owner Speaker",
+                isDefault: false
+            ),
+        ],
+        cameras: [
+            CameraDeviceInfo(
+                uniqueID: "private-camera-uid",
+                name: "Owner Camera"
+            ),
+        ]
+    )
+    let statuses = DiagnosticsStatusBuilder.make(
+        model: model,
+        updateController: updateController,
+        notificationAuthorization: .denied,
+        mediaPermissions: .init(
+            microphone: .denied,
+            camera: .restricted,
+            screenRecordingAllowed: false
+        ),
+        mediaDevices: devices,
+        mediaCacheCheck: .available(.init(
+            currentBytes: 2,
+            maximumBytes: 1,
+            evictionStatus: .incomplete(failedFileCount: 1)
+        ))
+    )
+    let summary = DiagnosticsSupportSummary(
+        application: .init(version: "0.1.5", build: "42", releaseTrack: "nightly"),
+        system: .init(macOSVersion: "27.0.0", architecture: "arm64"),
+        statusItems: statuses,
+        diagnosticModes: .init(
+            capturesDetailedSanitizedPayloads: true,
+            savesSanitizedDiagnosticsToDisk: true,
+            retainedEntryCount: 7
+        )
+    )
+    let text = try summary.encodedText()
+
+    #expect(text.contains(DiagnosticsSupportSummary.format))
+    #expect(text.contains("mediaCache"))
+    for prohibited in [
+        "222222222222222222", "333333333333333333",
+        "credential-secret", "cookie-secret", "private.example",
+        "private-profile.txt", "private-input-uid", "private-output-uid",
+        "private-camera-uid", "Owner Microphone", "Owner Speaker", "Owner Camera",
+    ] {
+        #expect(!text.contains(prohibited))
+    }
+}
+
+@Test func `Support summary export is private and matches the sanitized schema`() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "sakuracord-support-summary-\(UUID().uuidString)",
+        isDirectory: true
+    )
+    let stagingRoot = directory.appendingPathComponent("staging", isDirectory: true)
+    let destination = directory.appendingPathComponent("support.json")
+    try FileManager.default.createDirectory(at: stagingRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let summary = DiagnosticsSupportSummary(
+        application: .init(version: "0.1.5", build: "42", releaseTrack: "regular"),
+        system: .init(macOSVersion: "27.0.0", architecture: "arm64"),
+        statusItems: [
+            DiagnosticsStatusItem(
+                subsystem: .gateway,
+                health: .healthy,
+                detail: "free-form-detail-must-not-export"
+            ),
+        ],
+        diagnosticModes: .init(
+            capturesDetailedSanitizedPayloads: false,
+            savesSanitizedDiagnosticsToDisk: false,
+            retainedEntryCount: 0
+        )
+    )
+
+    try await DiagnosticsSupportSummaryExporter.write(
+        summary,
+        to: destination,
+        stagingRootURL: stagingRoot
+    )
+
+    let data = try Data(contentsOf: destination)
+    let expected = try summary.encodedData()
+    #expect(data == expected)
+    #expect(!String(decoding: data, as: UTF8.self).contains("free-form-detail"))
+    let attributes = try FileManager.default.attributesOfItem(atPath: destination.path)
+    #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
+}
+
+@Test func `Open diagnostics folder availability requires an existing directory`() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "sakuracord-managed-diagnostics-\(UUID().uuidString)",
+        isDirectory: true
+    )
+    let file = root.appendingPathComponent("not-a-directory")
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    #expect(!DiagnosticsManagedFolder.exists(at: root))
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    #expect(DiagnosticsManagedFolder.exists(at: root))
+    try Data().write(to: file)
+    #expect(!DiagnosticsManagedFolder.exists(at: file))
+}
+
+@MainActor
+@Test func `Diagnostics catalog exposes status support and preserved API controls`() {
+    let expected: Set<SettingsControlID> = [
+        .diagnosticsStatusOverview, .diagnosticsRefresh,
+        .diagnosticsSupportPreview, .diagnosticsSupportCopy,
+        .diagnosticsSupportExport, .diagnosticsOpenFolder,
+        .diagnosticDetailedPayloads, .diagnosticDiskCapture,
+        .diagnosticRetainedEntries, .diagnosticExport, .diagnosticClear,
+    ]
+    let controls = SettingsCatalog.foundation.controls.filter {
+        $0.destination.page == .diagnostics
+    }
+    #expect(Set(controls.map(\.id)) == expected)
+
+    let state = SettingsViewState()
+    state.searchText = "architecture build"
+    #expect(state.searchResults.contains { $0.id == .diagnosticsSupportPreview })
+    state.searchText = "Gateway permissions"
+    #expect(state.searchResults.contains { $0.id == .diagnosticsStatusOverview })
+}

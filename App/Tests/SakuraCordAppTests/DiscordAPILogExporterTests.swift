@@ -72,6 +72,26 @@ struct DiscordAPILogExporterTests {
         )
     }
 
+    @Test func `API log export writes owner-only file permissions`() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "sakuracord-api-export-permissions-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        let stagingRoot = directory.appendingPathComponent("staging", isDirectory: true)
+        let destination = directory.appendingPathComponent("export.jsonl")
+        try FileManager.default.createDirectory(at: stagingRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try await DiscordAPILogExporter.write(
+            Data("{\"format\":\"sanitized\"}\n".utf8),
+            to: destination,
+            stagingRootURL: stagingRoot
+        )
+
+        let attributes = try FileManager.default.attributesOfItem(atPath: destination.path)
+        #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
+    }
+
     @Test func `API log exporter attaches its save panel to the active settings window`() async {
         let panel = NSObject()
         let window = NSObject()

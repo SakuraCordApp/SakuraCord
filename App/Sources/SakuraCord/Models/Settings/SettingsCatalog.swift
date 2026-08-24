@@ -210,6 +210,8 @@ nonisolated extension SettingsSectionID {
     static let mediaCache = Self(rawValue: "media-cache")
     static let storageDownloads = Self(rawValue: "storage-downloads")
     static let storageLocalData = Self(rawValue: "storage-local-data")
+    static let diagnosticsStatus = Self(rawValue: "diagnostics-status")
+    static let diagnosticsSupport = Self(rawValue: "diagnostics-support")
     static let apiDiagnostics = Self(rawValue: "api-diagnostics")
 }
 
@@ -298,6 +300,12 @@ nonisolated extension SettingsControlID {
     static let storageDiagnosticsLink = Self(rawValue: "storage.diagnostics-link")
     static let storageExport = Self(rawValue: "storage.export")
     static let storageReset = Self(rawValue: "storage.reset")
+    static let diagnosticsStatusOverview = Self(rawValue: "diagnostics.status-overview")
+    static let diagnosticsRefresh = Self(rawValue: "diagnostics.refresh")
+    static let diagnosticsSupportPreview = Self(rawValue: "diagnostics.support-preview")
+    static let diagnosticsSupportCopy = Self(rawValue: "diagnostics.support-copy")
+    static let diagnosticsSupportExport = Self(rawValue: "diagnostics.support-export")
+    static let diagnosticsOpenFolder = Self(rawValue: "diagnostics.open-folder")
     static let notificationPermission = Self(rawValue: "notifications.system-permission")
     static let notificationEnabled = Self(rawValue: "notifications.enabled")
     static let notificationPreview = Self(rawValue: "notifications.preview")
@@ -1617,6 +1625,78 @@ private nonisolated extension SettingsCatalog {
             help: "Restore SakuraCord accessibility preferences without changing macOS accessibility settings.",
             keywords: ["defaults", "restore", "system settings"], scope: .appWideLocal,
             persistence: .appPreferences, reset: .categoryAction
+        ),
+        control(
+            .diagnosticsStatusOverview,
+            page: .diagnostics,
+            section: .diagnosticsStatus,
+            label: "Subsystem Status",
+            help: "Show current non-identifying account, Gateway, voice, device, notification, cache, update, and permission health.",
+            keywords: ["health", "connection", "Gateway", "voice", "permissions"],
+            owner: .appModel,
+            scope: .mixed,
+            persistence: .sessionOnly,
+            reset: .notApplicable
+        ),
+        control(
+            .diagnosticsRefresh,
+            page: .diagnostics,
+            section: .diagnosticsStatus,
+            label: "Refresh Status",
+            help: "Refresh system permissions, selected-device availability, notification authorization, cache state, and log count without polling.",
+            keywords: ["reload", "checking", "current"],
+            owner: .appModel,
+            scope: .mixed,
+            persistence: .notApplicable,
+            reset: .notApplicable
+        ),
+        control(
+            .diagnosticsSupportPreview,
+            page: .diagnostics,
+            section: .diagnosticsSupport,
+            label: "Support Summary",
+            help: "Preview fixed non-identifying app, system, feature-health, permission, and diagnostic-mode fields.",
+            keywords: ["version", "build", "architecture", "macOS", "track"],
+            owner: .appModel,
+            scope: .mixed,
+            persistence: .sessionOnly,
+            reset: .notApplicable
+        ),
+        control(
+            .diagnosticsSupportCopy,
+            page: .diagnostics,
+            section: .diagnosticsSupport,
+            label: "Copy Support Summary",
+            help: "Copy the sanitized support summary as JSON.",
+            keywords: ["clipboard", "support", "JSON"],
+            owner: .macOS,
+            scope: .mixed,
+            persistence: .notApplicable,
+            reset: .notApplicable
+        ),
+        control(
+            .diagnosticsSupportExport,
+            page: .diagnostics,
+            section: .diagnosticsSupport,
+            label: "Export Support Summary",
+            help: "Export the sanitized support summary as a private JSON file.",
+            keywords: ["save", "support", "JSON", "private"],
+            owner: .appModel,
+            scope: .mixed,
+            persistence: .notApplicable,
+            reset: .notApplicable
+        ),
+        control(
+            .diagnosticsOpenFolder,
+            page: .diagnostics,
+            section: .apiDiagnostics,
+            label: "Open Diagnostics Folder",
+            help: "Open the managed diagnostics directory when it exists.",
+            keywords: ["Finder", "Application Support", "logs"],
+            owner: .macOS,
+            scope: .appWideLocal,
+            persistence: .systemManaged,
+            reset: .notApplicable
         ),
         control(
             .diagnosticDetailedPayloads,

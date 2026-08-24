@@ -23,8 +23,21 @@ enum DiscordAPILogExporter {
             attachedTo: NSApp.keyWindow ?? NSApp.mainWindow
         )
         guard response == .OK, let url = panel.url else { return nil }
-        try await ExactDestinationFileWriter.write(data, to: url)
+        try await write(data, to: url)
         return url
+    }
+
+    static func write(
+        _ data: Data,
+        to url: URL,
+        stagingRootURL: URL? = nil
+    ) async throws {
+        try await ExactDestinationFileWriter.write(
+            data,
+            to: url,
+            stagingRootURL: stagingRootURL,
+            posixPermissions: 0o600
+        )
     }
 
     static func present(

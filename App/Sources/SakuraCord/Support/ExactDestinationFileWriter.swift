@@ -4,11 +4,13 @@ nonisolated enum ExactDestinationFileWriter {
     static func write(
         _ data: Data,
         to destination: URL,
-        stagingRootURL: URL? = nil
+        stagingRootURL: URL? = nil,
+        posixPermissions: Int? = nil
     ) async throws {
         try await write(
             to: destination,
-            stagingRootURL: stagingRootURL
+            stagingRootURL: stagingRootURL,
+            posixPermissions: posixPermissions
         ) { stagedURL in
             try await Task.detached(priority: .utility) {
                 try data.write(to: stagedURL)
@@ -19,6 +21,7 @@ nonisolated enum ExactDestinationFileWriter {
     static func write(
         to destination: URL,
         stagingRootURL: URL? = nil,
+        posixPermissions: Int? = nil,
         prepareStagedFile: @Sendable (URL) async throws -> Void
     ) async throws {
         let accessed = destination.startAccessingSecurityScopedResource()
@@ -33,6 +36,12 @@ nonisolated enum ExactDestinationFileWriter {
         defer { try? FileManager.default.removeItem(at: stagingDirectory) }
         try await prepareStagedFile(stagedURL)
         try await replaceDestination(destination, with: stagedURL)
+        if let posixPermissions {
+            try FileManager.default.setAttributes(
+                [.posixPermissions: posixPermissions],
+                ofItemAtPath: destination.path
+            )
+        }
     }
 
     static func rootDirectory(fileManager: FileManager = .default) -> URL {
