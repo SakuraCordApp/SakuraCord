@@ -468,7 +468,13 @@ private struct ChatRootView: View {
         } message: {
             Text(model.errorMessage ?? "Unknown error")
         }
-        .onReceive(NotificationCenter.default.publisher(for: .sakuracordToggleInspector)) { _ in model.showInspector.toggle() }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: .sakuracordToggleChannelSidebar
+            )
+        ) { _ in
+            columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
+        }
         .onReceive(NotificationCenter.default.publisher(for: .sakuracordNotificationDeepLink)) { notification in
             guard let link = notification.object as? NotificationDeepLink else { return }
             Task { await model.navigate(from: link) }

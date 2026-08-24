@@ -9,16 +9,28 @@ struct SakuraCordCommands: Commands {
             CheckForUpdatesCommand(updateController: updateController)
         }
 
-        CommandMenu("Navigate") {
-            Button("Quick Switch…") {
-                model.presentQuickSwitcher()
-            }
-            .keyboardShortcut("k")
+        CommandGroup(replacing: .appSettings) {
+            SettingsShortcutCommand()
+        }
 
-            Button("Search Messages…") {
-                model.presentMessageSearchFromCommand()
-            }
-            .keyboardShortcut("f")
+        CommandGroup(replacing: .sidebar) {
+            ShortcutCommandButton(
+                action: .toggleChannelSidebar,
+                model: model
+            )
+        }
+
+        CommandMenu("Navigate") {
+            ShortcutCommandButton(action: .quickSwitch, model: model)
+            ShortcutCommandButton(action: .messageSearch, model: model)
+
+            Divider()
+
+            ShortcutCommandButton(action: .previousConversation, model: model)
+            ShortcutCommandButton(action: .nextConversation, model: model)
+            ShortcutCommandButton(action: .previousUnread, model: model)
+            ShortcutCommandButton(action: .nextUnread, model: model)
+            ShortcutCommandButton(action: .currentCall, model: model)
 
             Divider()
 
@@ -38,11 +50,66 @@ struct SakuraCordCommands: Commands {
 
             Divider()
 
-            Button("Toggle Member Inspector") { NotificationCenter.default.post(name: .sakuracordToggleInspector, object: nil) }
-                .keyboardShortcut("i", modifiers: [.command, .option])
-            Button("Focus Composer") { NotificationCenter.default.post(name: .sakuracordFocusComposer, object: nil) }
-                .keyboardShortcut("l", modifiers: [.command, .shift])
+            ShortcutCommandButton(action: .toggleMemberList, model: model)
         }
+
+        CommandMenu("Message") {
+            ShortcutCommandButton(action: .focusComposer, model: model)
+            ShortcutCommandButton(action: .editLastMessage, model: model)
+            ShortcutCommandButton(action: .reply, model: model)
+            ShortcutCommandButton(action: .upload, model: model)
+
+            Divider()
+
+            ShortcutCommandButton(
+                action: .searchCurrentConversation,
+                model: model
+            )
+            ShortcutCommandButton(action: .markRead, model: model)
+        }
+
+        CommandMenu("Voice") {
+            ShortcutCommandButton(action: .toggleMute, model: model)
+            ShortcutCommandButton(action: .toggleDeafen, model: model)
+            ShortcutCommandButton(action: .toggleCamera, model: model)
+            ShortcutCommandButton(action: .toggleScreenShare, model: model)
+
+            Divider()
+
+            ShortcutCommandButton(action: .leaveCall, model: model)
+        }
+    }
+}
+
+private struct ShortcutCommandButton: View {
+    let action: KeyboardShortcutAction
+    let model: AppModel
+    private let shortcuts = KeyboardShortcutSettingsStore.shared
+
+    var body: some View {
+        Button(action.title) {
+            model.performKeyboardShortcutAction(action)
+        }
+        .disabled(!model.keyboardShortcutActionIsEnabled(action))
+        .keyboardShortcut(
+            action.registersMenuShortcut
+                ? shortcuts.shortcut(for: action)?.swiftUIShortcut
+                : nil
+        )
+    }
+}
+
+private struct SettingsShortcutCommand: View {
+    @Environment(\.openSettings) private var openSettings
+    private let shortcuts = KeyboardShortcutSettingsStore.shared
+
+    var body: some View {
+        Button(KeyboardShortcutAction.openSettings.title) {
+            openSettings()
+        }
+        .keyboardShortcut(
+            shortcuts.shortcut(for: .openSettings)?.swiftUIShortcut
+        )
     }
 }
 

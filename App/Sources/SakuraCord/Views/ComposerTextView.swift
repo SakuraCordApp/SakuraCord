@@ -301,6 +301,7 @@ struct ComposerTextView: NSViewRepresentable {
         textView.onReturn = { [weak coordinator = context.coordinator] event in
             coordinator?.handleReturn(event) ?? false
         }
+        textView.onSubmit = onSubmit
         textView.onAutocompleteCommand = { [weak coordinator = context.coordinator] command in
             coordinator?.parent.onAutocompleteCommand(command) ?? false
         }
@@ -336,6 +337,7 @@ struct ComposerTextView: NSViewRepresentable {
         textView.onReturn = { [weak coordinator = context.coordinator] event in
             coordinator?.handleReturn(event) ?? false
         }
+        textView.onSubmit = onSubmit
         textView.onAutocompleteCommand = { [weak coordinator = context.coordinator] command in
             coordinator?.parent.onAutocompleteCommand(command) ?? false
         }
@@ -651,12 +653,14 @@ final class ComposerEmojiImageStore {
 
 final class ComposerNSTextView: NSTextView {
     var onReturn: ((NSEvent) -> Bool)?
+    var onSubmit: (() -> Void)?
     var onEscape: (() -> Void)?
     var onEditLatestMessage: (() -> Bool)?
     var onNavigateReplySelection: ((MessageReplyNavigationDirection) -> Bool)?
     var onAutocompleteCommand: ((ComposerAutocompleteCommand) -> Bool)?
     var onPasteAttachments: (([URL]) -> Void)?
     var commandPasteboard = NSPasteboard.general
+    var shortcutSettings = KeyboardShortcutSettingsStore.shared
     var plainTypingAttributes: [NSAttributedString.Key: Any] = [:]
     var capturesUnfocusedTyping = false {
         didSet {
@@ -738,6 +742,22 @@ final class ComposerNSTextView: NSTextView {
     }
 
     override func keyDown(with event: NSEvent) {
+        if !hasMarkedText(),
+           let action = shortcutSettings.action(
+               matching: event
+           )
+        {
+            switch action {
+            case .sendMessage:
+                onSubmit?()
+                return
+            case .insertNewline:
+                insertNewline(nil)
+                return
+            default:
+                break
+            }
+        }
         let autocompleteCommand = autocompleteCommand(for: event)
         if let autocompleteCommand, onAutocompleteCommand?(autocompleteCommand) == true {
             return

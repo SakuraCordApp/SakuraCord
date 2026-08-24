@@ -203,7 +203,6 @@ struct SakuraCordApp: App {
         .defaultSize(width: 1280, height: 780)
         .windowBackgroundDragBehavior(.disabled)
         .commands {
-            SidebarCommands()
             SakuraCordCommands(
                 model: model,
                 updateController: appDelegate.updateController

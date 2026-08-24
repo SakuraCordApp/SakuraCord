@@ -199,6 +199,10 @@ nonisolated extension SettingsSectionID {
     static let accessibilityReadability = Self(rawValue: "accessibility-readability")
     static let accessibilityVoiceOver = Self(rawValue: "accessibility-voiceover")
     static let accessibilityLocalData = Self(rawValue: "accessibility-local-data")
+    static let shortcutNavigation = Self(rawValue: "shortcut-navigation")
+    static let shortcutMessaging = Self(rawValue: "shortcut-messaging")
+    static let shortcutVoiceVideo = Self(rawValue: "shortcut-voice-video")
+    static let shortcutLocalData = Self(rawValue: "shortcut-local-data")
     static let mediaCache = Self(rawValue: "media-cache")
     static let apiDiagnostics = Self(rawValue: "api-diagnostics")
 }
@@ -343,6 +347,8 @@ nonisolated extension SettingsControlID {
     static let accessibilityAnnounceNewMessages = Self(rawValue: "accessibility.announce-new-messages")
     static let accessibilityExport = Self(rawValue: "accessibility.export")
     static let accessibilityReset = Self(rawValue: "accessibility.reset")
+    static let shortcutExport = Self(rawValue: "keyboard-shortcuts.export")
+    static let shortcutReset = Self(rawValue: "keyboard-shortcuts.reset")
     static let diagnosticDetailedPayloads = Self(rawValue: "diagnostics.detailed-payloads")
     static let diagnosticDiskCapture = Self(rawValue: "diagnostics.disk-capture")
     static let diagnosticRetainedEntries = Self(rawValue: "diagnostics.retained-entries")
@@ -1529,6 +1535,37 @@ private nonisolated extension SettingsCatalog {
             scope: .appWideLocal,
             persistence: .notApplicable,
             reset: .categoryAction
+        ),
+    ] + KeyboardShortcutAction.allCases.map { action in
+        SettingsControlMetadata(
+            id: action.controlID,
+            destination: SettingsDestination(
+                page: .keyboardShortcuts,
+                section: action.group.settingsSection
+            ),
+            label: action.title,
+            help: action.help,
+            keywords: action.keywords,
+            owner: .applicationPreferences,
+            scope: .appWideLocal,
+            persistence: .appPreferences,
+            resetCapability: .registeredLocalValue,
+            availability: .available
+        )
+    } + [
+        control(
+            .shortcutExport, page: .keyboardShortcuts,
+            section: .shortcutLocalData, label: "Export Keyboard Shortcuts",
+            help: "Export app-wide shortcut assignments as versioned JSON.",
+            keywords: ["backup", "JSON", "save shortcuts"], scope: .appWideLocal,
+            persistence: .notApplicable, reset: .notApplicable
+        ),
+        control(
+            .shortcutReset, page: .keyboardShortcuts,
+            section: .shortcutLocalData, label: "Reset All Keyboard Shortcuts",
+            help: "Restore every shortcut to SakuraCord's defaults.",
+            keywords: ["defaults", "restore", "clear shortcuts"], scope: .appWideLocal,
+            persistence: .appPreferences, reset: .categoryAction
         ),
     ]
 

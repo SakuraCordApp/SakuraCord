@@ -704,7 +704,14 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             defaultValue: .string(AppUpdateReleaseTrack.regular.rawValue),
             resets: false
         ),
-    ])
+    ] + KeyboardShortcutAction.allCases.map { action in
+        SettingsPreferenceRegistration(
+            id: action.controlID,
+            page: .keyboardShortcuts,
+            storage: .appWide(key: "settings.shortcuts.\(action.rawValue)"),
+            defaultValue: .string(action.defaultShortcut?.storageValue ?? "")
+        )
+    })
 
     init(registrations: [SettingsPreferenceRegistration]) {
         let ids = registrations.map(\.id)

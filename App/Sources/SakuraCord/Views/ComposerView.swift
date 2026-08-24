@@ -233,14 +233,12 @@ struct ComposerView: View {
             request: $pendingDiscard,
             discard: performPendingDiscard
         )
-        .onReceive(NotificationCenter.default.publisher(for: .sakuracordFocusComposer)) { note in
-            if let destination = note.object as? MessageComposerDestination,
-               destination != conversation
-            {
-                return
-            }
-            isFocused = true
-        }
+        .composerShortcutCommands(
+            conversation: conversation,
+            focus: { isFocused = true },
+            editLatest: { if !hasActiveCommand { _ = editLatestMessage() } },
+            chooseAttachment: { if !hasActiveCommand { showFileImporter = true } }
+        )
         .onChange(of: showEmojiPicker) { wasPresented, isPresented in
             if wasPresented, !isPresented {
                 emojiPickerDismissedAt = ProcessInfo.processInfo.systemUptime
