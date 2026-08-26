@@ -27,48 +27,52 @@ struct ComposerView: View {
 
     var body: some View {
         @Bindable var model = model
-        GlassEffectContainer(spacing: 8) {
-            VStack(alignment: .leading, spacing: 0) {
-                if !hasActiveCommand, let reply = activeReply {
-                    let author = model.authorPresentation(for: reply)
-                    ComposerReplyHeader(
-                        authorName: author.user.displayName,
-                        avatarURL: author.user.avatarURL,
-                        roleColorHex: author.roleColorHex,
-                        mentionsAuthor: activeReplyMentionsAuthor,
-                        canMentionAuthor: author.user.id != model.snapshot?.currentUser.id,
-                        toggleMention: toggleReplyMention,
-                        cancel: cancelReply
-                    )
-                    Divider()
+        let accessoryButtonSize = ChatChromeMetrics.composerAccessoryButtonSize
+        GlassEffectContainer(spacing: ChatChromeMetrics.composerSegmentSpacing) {
+            HStack(alignment: .bottom, spacing: ChatChromeMetrics.composerSegmentSpacing) {
+                if !hasActiveCommand {
+                    ComposerActionButton(
+                        icon: Image(systemName: "plus"),
+                        help: "Add attachments",
+                        iconSize: 19,
+                        iconWeight: .regular,
+                        showsHoverBackground: false
+                    ) {
+                        showFileImporter = true
+                    }
+                    .glassEffect(.regular.interactive(), in: Circle())
                 }
-                if !hasActiveCommand, !attachments.isEmpty {
-                    ComposerAttachmentTray(
-                        attachments: attachments,
-                        toggleSpoiler: {
-                            model.toggleComposerAttachmentSpoiler($0, in: conversation)
-                        },
-                        update: {
-                            model.updateComposerAttachment($0, in: conversation)
-                        },
-                        remove: {
-                            model.removeComposerAttachment($0, from: conversation)
-                        }
-                    )
-                    Divider()
-                        .padding(.horizontal, 11)
-                }
-                HStack(alignment: .bottom, spacing: 9) {
-                        if !hasActiveCommand {
-                            ComposerActionButton(
-                                icon: Image(systemName: "plus"),
-                                help: "Add attachments",
-                                iconSize: 19,
-                                iconWeight: .regular
-                            ) {
-                                showFileImporter = true
+                VStack(alignment: .leading, spacing: 0) {
+                    if !hasActiveCommand, let reply = activeReply {
+                        let author = model.authorPresentation(for: reply)
+                        ComposerReplyHeader(
+                            authorName: author.user.displayName,
+                            avatarURL: author.user.avatarURL,
+                            roleColorHex: author.roleColorHex,
+                            mentionsAuthor: activeReplyMentionsAuthor,
+                            canMentionAuthor: author.user.id != model.snapshot?.currentUser.id,
+                            toggleMention: toggleReplyMention,
+                            cancel: cancelReply
+                        )
+                        Divider()
+                    }
+                    if !hasActiveCommand, !attachments.isEmpty {
+                        ComposerAttachmentTray(
+                            attachments: attachments,
+                            toggleSpoiler: {
+                                model.toggleComposerAttachmentSpoiler($0, in: conversation)
+                            },
+                            update: {
+                                model.updateComposerAttachment($0, in: conversation)
+                            },
+                            remove: {
+                                model.removeComposerAttachment($0, from: conversation)
                             }
-                        }
+                        )
+                        Divider()
+                            .padding(.horizontal, 11)
+                    }
+                    HStack(alignment: .bottom, spacing: 9) {
                         if hasActiveCommand {
                             ApplicationCommandInlineInput(
                                 composer: model.commandComposer,
@@ -83,7 +87,7 @@ struct ComposerView: View {
                                 cancel: cancelCommand,
                                 isFocused: $isFocused
                             )
-                            .frame(minHeight: 36, alignment: .center)
+                            .frame(minHeight: ChatChromeMetrics.composerControlHeight)
                             .layoutPriority(1)
                         } else {
                             ZStack(alignment: .bottomTrailing) {
@@ -107,6 +111,7 @@ struct ComposerView: View {
                                     onPasteAttachments: addPastedAttachments,
                                     capturesUnfocusedTyping:
                                         model.chatSettings.focusesComposerOnTyping,
+                                    verticalContentInset: ChatChromeMetrics.composerTextVerticalInset,
                                     selection: $draftSelection,
                                     isFocused: $isFocused
                                 )
@@ -118,7 +123,7 @@ struct ComposerView: View {
                                         .truncationMode(.tail)
                                         .allowsHitTesting(false)
                                         .accessibilityHidden(true)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                                 }
                                 if ChatCharacterLimitPolicy.shouldShowCounter(characterCount: draft.count, premiumType: model.snapshot?.currentUser.premiumType) {
                                     ComposerCharacterCounter(
@@ -127,7 +132,7 @@ struct ComposerView: View {
                                     )
                                 }
                             }
-                            .frame(minHeight: 36, alignment: .center)
+                            .frame(minHeight: ChatChromeMetrics.composerControlHeight)
                             .layoutPriority(1)
                         }
                         HStack(spacing: 1) {
@@ -137,7 +142,8 @@ struct ComposerView: View {
                                         icon: Image("gif.square", bundle: .module),
                                         help: "Choose GIF",
                                         iconSize: 20,
-                                        iconWeight: .medium
+                                        iconWeight: .medium,
+                                        size: accessoryButtonSize
                                     ) {
                                         toggleGIFPicker()
                                     }
@@ -150,14 +156,15 @@ struct ComposerView: View {
                                         ) {
                                             composerGIFPicker
                                         }
-                                        .frame(width: 36, height: 36)
+                                        .frame(width: accessoryButtonSize, height: accessoryButtonSize)
                                     }
                                 }
                                 ComposerActionButton(
                                     icon: SakuraCordSystemSymbol.emojiFaceGrinningImage,
                                     help: "Choose emoji",
                                     iconSize: 19,
-                                    iconWeight: .medium
+                                    iconWeight: .medium,
+                                    size: accessoryButtonSize
                                 ) {
                                     toggleEmojiPicker()
                                 }
@@ -170,34 +177,25 @@ struct ComposerView: View {
                                     ) {
                                         composerEmojiPicker
                                     }
-                                    .frame(width: 36, height: 36)
+                                    .frame(width: accessoryButtonSize, height: accessoryButtonSize)
                                 }
                             }
-                            Capsule()
-                                .fill(.primary.opacity(0.16))
-                                .frame(width: 1, height: 16)
-                                .frame(width: 9, height: 36)
-                                .accessibilityHidden(true)
-                            ComposerSendButton(action: submitComposer)
-                                .disabled(!composerCanSubmit)
                         }
+                        .frame(height: ChatChromeMetrics.composerControlHeight)
                     }
-                    .padding(.horizontal, 11)
-                    .padding(.vertical, 6)
-                    .frame(minHeight: ChatChromeMetrics.controlHeight)
-            }
+                    .padding(.leading, 11)
+                    .padding(.trailing, ChatChromeMetrics.composerAccessoryEdgeInset)
+                    .frame(minHeight: ChatChromeMetrics.composerControlHeight)
+                }
+                .frame(maxWidth: .infinity)
                 .background {
                     ComposerFocusSurface { isFocused = true }
                 }
                 .glassEffect(
                     .regular.interactive(),
                     in: ConcentricRectangle(
-                        corners: .concentric(
-                            minimum: .fixed(
-                                ChatChromeMetrics.composerMinimumCornerRadius
-                            )
-                        ),
-                        isUniform: true
+                        cornerRadius: ChatChromeMetrics.composerCornerRadius,
+                        style: .continuous
                     )
                 )
                 .overlay(alignment: .top) {
@@ -207,6 +205,10 @@ struct ComposerView: View {
                         }
                         .zIndex(10)
                 }
+                ComposerSendButton(action: submitComposer)
+                    .disabled(!composerCanSubmit)
+                    .glassEffect(.regular.interactive(), in: Circle())
+            }
         }
         .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, ChatChromeMetrics.composerWindowInset)

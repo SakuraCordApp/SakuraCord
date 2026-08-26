@@ -263,8 +263,20 @@ struct SakuraCordSessionLoadingView: View {
             bottomContentInset: ChatDetailLayoutPolicy.defaultFloatingFooterHeight
         )
         .overlay(alignment: .bottom) {
-            SkeletonShape(cornerRadius: ChatChromeMetrics.composerMinimumCornerRadius)
-            .frame(height: ChatChromeMetrics.controlHeight)
+            HStack(spacing: ChatChromeMetrics.composerSegmentSpacing) {
+                SkeletonShape(Circle())
+                    .frame(
+                        width: ChatChromeMetrics.composerControlHeight,
+                        height: ChatChromeMetrics.composerControlHeight
+                    )
+                SkeletonShape(cornerRadius: ChatChromeMetrics.composerCornerRadius)
+                    .frame(height: ChatChromeMetrics.composerControlHeight)
+                SkeletonShape(Circle())
+                    .frame(
+                        width: ChatChromeMetrics.composerControlHeight,
+                        height: ChatChromeMetrics.composerControlHeight
+                    )
+            }
             .padding(.horizontal, ChatChromeMetrics.composerWindowInset)
             .padding(.bottom, ChatChromeMetrics.composerWindowInset)
         }
@@ -319,10 +331,20 @@ struct SakuraCordSessionLoadingView: View {
 }
 
 struct SkeletonShape: View {
-    let cornerRadius: CGFloat
+    private let shape: AnyShape
+
+    init(cornerRadius: CGFloat) {
+        shape = AnyShape(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        )
+    }
+
+    init(_ shape: some Shape) {
+        self.shape = AnyShape(shape)
+    }
 
     var body: some View {
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        shape
             .fill(.white.opacity(0.09))
             .skeletonShimmer()
     }

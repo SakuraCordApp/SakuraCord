@@ -253,6 +253,7 @@ struct ComposerTextView: NSViewRepresentable {
     var onAutocompleteCommand: (ComposerAutocompleteCommand) -> Bool = { _ in false }
     var onPasteAttachments: (([URL]) -> Void)?
     var capturesUnfocusedTyping = false
+    var verticalContentInset: CGFloat = 0
     var maximumHeight: CGFloat = 150
     @Binding var selection: NSRange?
     @Binding var isFocused: Bool
@@ -286,7 +287,7 @@ struct ComposerTextView: NSViewRepresentable {
         textView.drawsBackground = false
         textView.isHorizontallyResizable = false
         textView.isVerticallyResizable = true
-        textView.textContainerInset = .zero
+        textView.textContainerInset = NSSize(width: 0, height: verticalContentInset)
         textView.minSize = .zero
         textView.maxSize = NSSize(
             width: CGFloat.greatestFiniteMagnitude,
@@ -333,6 +334,7 @@ struct ComposerTextView: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? ComposerNSTextView else { return }
         context.coordinator.parent = self
+        textView.textContainerInset = NSSize(width: 0, height: verticalContentInset)
 
         textView.onReturn = { [weak coordinator = context.coordinator] event in
             coordinator?.handleReturn(event) ?? false
@@ -415,7 +417,10 @@ struct ComposerTextView: NSViewRepresentable {
         layoutManager.ensureLayout(for: textContainer)
 
         let lineHeight = layoutManager.defaultLineHeight(for: font)
-        let contentHeight = ceil(max(lineHeight, layoutManager.usedRect(for: textContainer).height))
+        let contentHeight = ceil(
+            max(lineHeight, layoutManager.usedRect(for: textContainer).height)
+                + textView.textContainerInset.height * 2
+        )
 
         return CGSize(width: proposedWidth, height: min(contentHeight, maximumHeight))
     }
