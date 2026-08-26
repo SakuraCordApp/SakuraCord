@@ -31,19 +31,161 @@ nonisolated struct AboutVersionInformation: Equatable, Sendable {
     }
 }
 
+nonisolated struct AboutReleaseVersion: Comparable, Equatable, Sendable {
+    let major: Int
+    let minor: Int
+    let patch: Int
+    let beta: Int?
+
+    init?(tagName: String) {
+        guard tagName.hasPrefix("v") else { return nil }
+        let tagComponents = tagName.dropFirst().split(
+            separator: "-",
+            omittingEmptySubsequences: false
+        )
+        guard tagComponents.count == 1 || (
+            tagComponents.count == 3
+                && tagComponents[1] == "Beta"
+                && Int(tagComponents[2]) != nil
+        ) else { return nil }
+
+        let versionComponents = tagComponents[0].split(
+            separator: ".",
+            omittingEmptySubsequences: false
+        )
+        guard versionComponents.count == 3,
+              let major = Int(versionComponents[0]),
+              let minor = Int(versionComponents[1]),
+              let patch = Int(versionComponents[2])
+        else { return nil }
+
+        self.major = major
+        self.minor = minor
+        self.patch = patch
+        beta = tagComponents.count == 3 ? Int(tagComponents[2]) : nil
+    }
+
+    var releaseTrack: AppUpdateReleaseTrack {
+        beta == nil ? .regular : .nightly
+    }
+
+    static func < (lhs: Self, rhs: Self) -> Bool {
+        let lhsVersion = (lhs.major, lhs.minor, lhs.patch)
+        let rhsVersion = (rhs.major, rhs.minor, rhs.patch)
+        if lhsVersion != rhsVersion {
+            return lhsVersion < rhsVersion
+        }
+        return switch (lhs.beta, rhs.beta) {
+        case (nil, nil): false
+        case (nil, _): false
+        case (_, nil): true
+        case let (lhsBeta?, rhsBeta?): lhsBeta < rhsBeta
+        }
+    }
+}
+
 nonisolated struct AboutReleaseNotes: Decodable, Equatable, Identifiable, Sendable {
     let schemaVersion: Int
     let tagName: String
     let githubDescription: String
+    let discordAnnouncement: String
+    let releaseVersion: AboutReleaseVersion
+    let announcementHeadline: String
+    let renderedGithubDescription: AttributedString
 
     var id: String { tagName }
+
+    var displayName: String {
+        tagName.replacingOccurrences(of: "-Beta-", with: " Beta ")
+    }
+
+    var releaseTrack: AppUpdateReleaseTrack {
+        releaseVersion.releaseTrack
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case tagName
+        case githubDescription
+        case discordAnnouncement
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        tagName = try container.decode(String.self, forKey: .tagName)
+        githubDescription = try container.decode(String.self, forKey: .githubDescription)
+        discordAnnouncement = try container.decode(String.self, forKey: .discordAnnouncement)
+
+        guard schemaVersion == 1,
+              let releaseVersion = AboutReleaseVersion(tagName: tagName),
+              !githubDescription.trimmingCharacters(
+                  in: .whitespacesAndNewlines
+              ).isEmpty,
+              let announcementHeadline = Self.headline(
+                  in: discordAnnouncement,
+                  releaseTrack: releaseVersion.releaseTrack
+              )
+        else {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "Invalid SakuraCord release notes."
+                )
+            )
+        }
+
+        self.releaseVersion = releaseVersion
+        self.announcementHeadline = announcementHeadline
+        renderedGithubDescription = AboutMarkdownRenderer.render(githubDescription)
+    }
+
+    private static func headline(
+        in announcement: String,
+        releaseTrack: AppUpdateReleaseTrack
+    ) -> String? {
+        guard var headline = announcement.split(
+            separator: "\n",
+            maxSplits: 1,
+            omittingEmptySubsequences: false
+        ).first.map(String.init),
+            headline.hasPrefix("**"),
+            headline.hasSuffix("**")
+        else { return nil }
+
+        headline.removeFirst(2)
+        headline.removeLast(2)
+        let emoji = releaseTrack == .nightly ? "🌙" : "🌸"
+        guard headline.hasSuffix(emoji) else { return nil }
+        headline.removeLast(emoji.count)
+        let value = headline.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
 }
 
 nonisolated struct AboutAcknowledgement: Equatable, Identifiable, Sendable {
     let title: String
     let markdown: String
+    let renderedMarkdown: AttributedString
 
     var id: String { title }
+
+    init(title: String, markdown: String) {
+        self.title = title
+        self.markdown = markdown
+        renderedMarkdown = AboutMarkdownRenderer.render(markdown)
+    }
+}
+
+nonisolated enum AboutMarkdownRenderer {
+    static func render(_ markdown: String) -> AttributedString {
+        let options = AttributedString.MarkdownParsingOptions(
+            interpretedSyntax: .full,
+            failurePolicy: .returnPartiallyParsedIfPossible
+        )
+        return (try? AttributedString(markdown: markdown, options: options))
+            ?? AttributedString(markdown)
+    }
 }
 
 nonisolated enum AboutProjectLink: String, CaseIterable, Identifiable, Sendable {
@@ -170,23 +312,14 @@ nonisolated enum AboutResources {
         return files
             .filter { $0.pathExtension.lowercased() == "json" }
             .compactMap { releaseNotes(at: $0, fileManager: fileManager) }
-            .sorted {
-                $0.tagName.localizedStandardCompare($1.tagName) == .orderedDescending
-            }
+            .sorted { $0.releaseVersion > $1.releaseVersion }
     }
 
     private static func releaseNotes(
         at url: URL,
         fileManager: FileManager
     ) -> AboutReleaseNotes? {
-        guard let data = fileManager.contents(atPath: url.path),
-              let notes = try? JSONDecoder().decode(AboutReleaseNotes.self, from: data),
-              notes.schemaVersion == 1,
-              notes.tagName.hasPrefix("v"),
-              !notes.githubDescription.trimmingCharacters(
-                  in: .whitespacesAndNewlines
-              ).isEmpty
-        else { return nil }
-        return notes
+        guard let data = fileManager.contents(atPath: url.path) else { return nil }
+        return try? JSONDecoder().decode(AboutReleaseNotes.self, from: data)
     }
 }

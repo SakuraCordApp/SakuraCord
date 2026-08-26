@@ -46,15 +46,16 @@ observable models so it does not invalidate the complete app tree.
 
 `AppUpdateController` owns Sparkle's `SPUStandardUpdaterController` for the
 application lifetime. It starts only when the canonical release bundle contains
-the complete production update configuration. Source, debug, ad-hoc developer,
-and offline builds omit that configuration, make no update request, and leave
-the native **Check for Updates…** controls disabled.
+the complete production update configuration. Builds packaged without that
+configuration make no update request and leave the native **Check for Updates…**
+controls disabled. Code-signing identity does not determine updater eligibility;
+official ad-hoc-signed releases include the production update configuration.
 Production checks the signed feed every six hours while the app is running, or
 after launch when a check is overdue, and presents Sparkle's standard update
 alert when a release is available. Sparkle persists the user's automatic-check
 and automatic-download preferences. Installation remains manual by default.
 Sparkle's standard user driver reports no-update and update-cycle failures.
-The Software Updates settings pane also persists a regular/nightly release-track choice.
+The Updates settings pane also persists a regular/nightly release-track choice.
 `AppUpdateController` supplies the selected signed feed through Sparkle's
 dynamic-feed delegate. Changing tracks immediately requests a silent Sparkle
 information check, or queues one until the current update cycle ends. When that

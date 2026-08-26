@@ -54,13 +54,27 @@ func incompleteUpdateMetadataIsDisabled(missingKey: String) {
         infoDictionary: info,
         bundleIdentifier: AppUpdateConfiguration.canonicalBundleIdentifier
     )
+    let expectedReason: AppUpdateUnavailabilityReason
+    switch missingKey {
+    case AppUpdateConfiguration.enabledInfoKey: expectedReason = .disabledForBuild
+    case AppUpdateConfiguration.nightlyFeedInfoKey: expectedReason = .invalidNightlyFeed
+    case "SUFeedURL": expectedReason = .invalidStableFeed
+    case "SUPublicEDKey": expectedReason = .invalidPublicKey
+    case "SUEnableAutomaticChecks": expectedReason = .automaticChecksNotEnabled
+    case "SUScheduledCheckInterval": expectedReason = .invalidCheckInterval
+    case "SUAutomaticallyUpdate": expectedReason = .automaticInstallationNotDisabled
+    case "SUAllowsAutomaticUpdates": expectedReason = .automaticUpdatesNotAllowed
+    case "SUEnableInstallerLauncherService":
+        expectedReason = .installerLauncherServiceNotEnabled
+    case "SUVerifyUpdateBeforeExtraction": expectedReason = .updateVerificationNotEnabled
+    case "SURequireSignedFeed": expectedReason = .signedFeedNotRequired
+    default:
+        Issue.record("Unexpected update metadata key: \(missingKey)")
+        return
+    }
 
     #expect(!configuration.isEnabled)
-    if missingKey == AppUpdateConfiguration.enabledInfoKey {
-        #expect(configuration.unavailabilityReason == .disabledForBuild)
-    } else {
-        #expect(configuration.unavailabilityReason == .incompleteConfiguration)
-    }
+    #expect(configuration.unavailabilityReason == expectedReason)
 }
 
 @Test("update configuration rejects invalid trust or automatic-check metadata")
@@ -80,35 +94,53 @@ func invalidUpdateTrustMetadataIsDisabled() {
     automaticInstallByDefault["SUAutomaticallyUpdate"] = true
     var automaticInstallOptInDisabled = productionUpdateInfo()
     automaticInstallOptInDisabled["SUAllowsAutomaticUpdates"] = false
+    var installerLauncherDisabled = productionUpdateInfo()
+    installerLauncherDisabled["SUEnableInstallerLauncherService"] = false
+    var verificationDisabled = productionUpdateInfo()
+    verificationDisabled["SUVerifyUpdateBeforeExtraction"] = false
+    var signedFeedNotRequired = productionUpdateInfo()
+    signedFeedNotRequired["SURequireSignedFeed"] = false
 
-    #expect(!AppUpdateConfiguration(
+    #expect(AppUpdateConfiguration(
         infoDictionary: wrongFeed,
         bundleIdentifier: AppUpdateConfiguration.canonicalBundleIdentifier
-    ).isEnabled)
-    #expect(!AppUpdateConfiguration(
+    ).unavailabilityReason == .invalidStableFeed)
+    #expect(AppUpdateConfiguration(
         infoDictionary: malformedKey,
         bundleIdentifier: AppUpdateConfiguration.canonicalBundleIdentifier
-    ).isEnabled)
-    #expect(!AppUpdateConfiguration(
+    ).unavailabilityReason == .invalidPublicKey)
+    #expect(AppUpdateConfiguration(
         infoDictionary: wrongNightlyFeed,
         bundleIdentifier: AppUpdateConfiguration.canonicalBundleIdentifier
-    ).isEnabled)
-    #expect(!AppUpdateConfiguration(
+    ).unavailabilityReason == .invalidNightlyFeed)
+    #expect(AppUpdateConfiguration(
         infoDictionary: wrongInterval,
         bundleIdentifier: AppUpdateConfiguration.canonicalBundleIdentifier
-    ).isEnabled)
-    #expect(!AppUpdateConfiguration(
+    ).unavailabilityReason == .invalidCheckInterval)
+    #expect(AppUpdateConfiguration(
         infoDictionary: automaticChecksDisabled,
         bundleIdentifier: AppUpdateConfiguration.canonicalBundleIdentifier
-    ).isEnabled)
-    #expect(!AppUpdateConfiguration(
+    ).unavailabilityReason == .automaticChecksNotEnabled)
+    #expect(AppUpdateConfiguration(
         infoDictionary: automaticInstallByDefault,
         bundleIdentifier: AppUpdateConfiguration.canonicalBundleIdentifier
-    ).isEnabled)
-    #expect(!AppUpdateConfiguration(
+    ).unavailabilityReason == .automaticInstallationNotDisabled)
+    #expect(AppUpdateConfiguration(
         infoDictionary: automaticInstallOptInDisabled,
         bundleIdentifier: AppUpdateConfiguration.canonicalBundleIdentifier
-    ).isEnabled)
+    ).unavailabilityReason == .automaticUpdatesNotAllowed)
+    #expect(AppUpdateConfiguration(
+        infoDictionary: installerLauncherDisabled,
+        bundleIdentifier: AppUpdateConfiguration.canonicalBundleIdentifier
+    ).unavailabilityReason == .installerLauncherServiceNotEnabled)
+    #expect(AppUpdateConfiguration(
+        infoDictionary: verificationDisabled,
+        bundleIdentifier: AppUpdateConfiguration.canonicalBundleIdentifier
+    ).unavailabilityReason == .updateVerificationNotEnabled)
+    #expect(AppUpdateConfiguration(
+        infoDictionary: signedFeedNotRequired,
+        bundleIdentifier: AppUpdateConfiguration.canonicalBundleIdentifier
+    ).unavailabilityReason == .signedFeedNotRequired)
 }
 
 @Test("release track preference defaults safely and selects its signed feed")
@@ -126,6 +158,23 @@ func releaseTrackPreferenceAndFeedSelection() {
         AppUpdateReleaseTrack.nightly.feedURL(in: configuration)
             == configuration.nightlyFeedURL
     )
+    #expect(AppUpdateReleaseTrack.regular.systemImage == "sun.max.fill")
+    #expect(AppUpdateReleaseTrack.nightly.systemImage == "moon.fill")
+}
+
+@MainActor
+@Test("existing release track preference carries into a new updater controller")
+func existingReleaseTrackPreferenceCarriesForward() {
+    let defaults = InMemoryPreferences()
+    defaults.set("nightly", forKey: AppUpdateReleaseTrack.preferenceKey)
+    let configuration = AppUpdateConfiguration(
+        infoDictionary: productionUpdateInfo(),
+        bundleIdentifier: AppUpdateConfiguration.canonicalBundleIdentifier
+    )
+
+    let controller = AppUpdateController(configuration: configuration, defaults: defaults)
+
+    #expect(controller.releaseTrack == .nightly)
 }
 
 @MainActor
@@ -172,6 +221,10 @@ func disabledUpdaterLifecycleStaysInert() {
     #expect(
         controller.availabilityDescription
             == AppUpdateUnavailabilityReason.disabledForBuild.description
+    )
+    #expect(
+        controller.unavailabilityDescription
+            == "This build was packaged with update checking disabled."
     )
     #expect(
         defaults.object(forKey: AppUpdateController.lastSuccessfulCheckPreferenceKey)

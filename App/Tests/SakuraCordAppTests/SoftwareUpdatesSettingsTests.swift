@@ -2,15 +2,14 @@ import Testing
 @testable import SakuraCord
 
 @MainActor
-@Test("Software Updates owns all updater controls and General owns none")
+@Test("Updates owns all updater controls and General owns none")
 func softwareUpdatesCatalogOwnership() {
     let expected: Set<SettingsControlID> = [
         .updateReleaseTrack,
         .updateAutomaticChecks,
         .updateAutomaticDownloads,
-        .updateStatus,
-        .updateLastSuccessfulCheck,
         .checkForUpdates,
+        .updateChangelog,
     ]
     let updateControls = SettingsCatalog.foundation.controls.filter {
         $0.destination.page == .softwareUpdates && expected.contains($0.id)
@@ -23,8 +22,8 @@ func softwareUpdatesCatalogOwnership() {
     #expect(generalUpdateControls.isEmpty)
 
     let search = SettingsViewState()
-    search.searchText = "last successful appcast"
-    #expect(search.searchResults.contains { $0.id == .updateLastSuccessfulCheck })
+    search.searchText = "release notes version history"
+    #expect(search.searchResults.contains { $0.id == .updateChangelog })
     search.searchText = "nightly release channel"
     #expect(search.searchResults.contains { $0.id == .updateReleaseTrack })
 }

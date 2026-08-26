@@ -408,7 +408,7 @@ enum DiagnosticsStatusBuilder {
             return DiagnosticsStatusItem(
                 subsystem: .updateService,
                 health: .unavailable,
-                detail: "Unavailable in this build"
+                detail: controller.unavailabilityDescription ?? "Unavailable in this build"
             )
         }
         return DiagnosticsStatusItem(

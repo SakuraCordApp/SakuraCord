@@ -285,9 +285,8 @@ nonisolated extension SettingsControlID {
     static let updateReleaseTrack = Self(rawValue: "software-updates.release-track")
     static let updateAutomaticChecks = Self(rawValue: "software-updates.automatic-checks")
     static let updateAutomaticDownloads = Self(rawValue: "software-updates.automatic-downloads")
-    static let updateStatus = Self(rawValue: "software-updates.status")
-    static let updateLastSuccessfulCheck = Self(rawValue: "software-updates.last-successful-check")
     static let checkForUpdates = Self(rawValue: "software-updates.check-now")
+    static let updateChangelog = Self(rawValue: "software-updates.changelog")
     static let aboutVersionInformation = Self(rawValue: "about.version-information")
     static let aboutCheckForUpdates = Self(rawValue: "about.check-for-updates")
     static let aboutChangelog = Self(rawValue: "about.changelog")
@@ -479,7 +478,7 @@ private nonisolated extension SettingsCatalog {
             keywords: ["logs", "support", "status", "Gateway", "permissions", "export"]
         ),
         page(
-            .softwareUpdates, group: .sakuraCord, title: "Software Updates", image: "arrow.triangle.2.circlepath",
+            .softwareUpdates, group: .sakuraCord, title: "Updates", image: "arrow.triangle.2.circlepath",
             help: "Manage signed SakuraCord update checks, downloads, and release tracks.",
             keywords: ["update", "release", "regular", "nightly", "Sparkle", "version"]
         ),
@@ -1004,30 +1003,6 @@ private nonisolated extension SettingsCatalog {
             reset: .categoryAction
         ),
         control(
-            .updateStatus,
-            page: .softwareUpdates,
-            section: .softwareUpdates,
-            label: "Update status",
-            help: "Show whether update checking is available in this build.",
-            keywords: ["availability", "service"],
-            owner: .sparkle,
-            scope: .appWideLocal,
-            persistence: .sessionOnly,
-            reset: .notApplicable
-        ),
-        control(
-            .updateLastSuccessfulCheck,
-            page: .softwareUpdates,
-            section: .softwareUpdates,
-            label: "Last successful signed-feed check",
-            help: "Show when Sparkle most recently downloaded the configured signed appcast.",
-            keywords: ["last checked", "successful", "appcast", "feed"],
-            owner: .applicationPreferences,
-            scope: .appWideLocal,
-            persistence: .appPreferences,
-            reset: .notApplicable
-        ),
-        control(
             .checkForUpdates,
             page: .softwareUpdates,
             section: .softwareUpdates,
@@ -1035,6 +1010,17 @@ private nonisolated extension SettingsCatalog {
             help: "Ask the existing updater to check now.",
             keywords: ["update now", "new version"],
             owner: .sparkle,
+            scope: .appWideLocal,
+            persistence: .notApplicable,
+            reset: .notApplicable
+        ),
+        control(
+            .updateChangelog,
+            page: .softwareUpdates,
+            section: .softwareUpdates,
+            label: "Open Changelog",
+            help: "Show the release notes included with SakuraCord.",
+            keywords: ["release notes", "version history"],
             scope: .appWideLocal,
             persistence: .notApplicable,
             reset: .notApplicable

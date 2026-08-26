@@ -3,103 +3,106 @@ import SwiftUI
 struct SoftwareUpdatesSettingsPage: View {
     @ObservedObject var updateController: AppUpdateController
     let state: SettingsViewState
+    @State private var navigationPath: [SoftwareUpdatesDestination] = []
 
     var body: some View {
-        SettingsPageForm(page: .softwareUpdates, state: state) {
-            Section {
-                Picker(
-                    "Release track",
-                    selection: Binding(
-                        get: { updateController.releaseTrack },
-                        set: { updateController.setReleaseTrack($0) }
+        NavigationStack(path: $navigationPath) {
+            SettingsPageForm(page: .softwareUpdates, state: state) {
+                SoftwareUpdateOverviewSection(
+                    updateController: updateController,
+                    state: state,
+                    checkForUpdatesControlID: .checkForUpdates,
+                    changelogControlID: .updateChangelog,
+                    changelogDestination: SoftwareUpdatesDestination.changelog
+                )
+
+                Section {
+                    Picker(
+                        "Release track",
+                        selection: Binding(
+                            get: { updateController.releaseTrack },
+                            set: { updateController.setReleaseTrack($0) }
+                        )
+                    ) {
+                        ForEach(AppUpdateReleaseTrack.allCases) { track in
+                            Label(track.title, systemImage: track.systemImage)
+                                .tag(track)
+                        }
+                    }
+                    .disabled(!updateController.isEnabled)
+                    .settingsControlAnchor(.updateReleaseTrack, state: state)
+
+                    Toggle(
+                        "Automatically check for updates",
+                        isOn: Binding(
+                            get: { updateController.automaticallyChecksForUpdates },
+                            set: { updateController.setAutomaticallyChecksForUpdates($0) }
+                        )
                     )
-                ) {
-                    ForEach(AppUpdateReleaseTrack.allCases) { track in
-                        Text(track.title).tag(track)
+                    .disabled(!updateController.isEnabled)
+                    .settingsControlAnchor(.updateAutomaticChecks, state: state)
+
+                    Toggle(
+                        "Automatically download updates",
+                        isOn: Binding(
+                            get: { updateController.automaticallyDownloadsUpdates },
+                            set: { updateController.setAutomaticallyDownloadsUpdates($0) }
+                        )
+                    )
+                    .disabled(
+                        !updateController.isEnabled
+                            || !updateController.allowsAutomaticUpdates
+                    )
+                    .settingsControlAnchor(.updateAutomaticDownloads, state: state)
+                } header: {
+                    Text("Update preferences", bundle: #bundle)
+                }
+
+                if let reason = updateController.unavailabilityDescription {
+                    Section {
+                        UpdatesUnavailableNotice(reason: reason)
                     }
                 }
-                .disabled(!updateController.isEnabled)
-                .accessibilityHint(
-                    updateController.isEnabled
-                        ? "Changes which signed SakuraCord feed is checked."
-                        : updateController.availabilityDescription
-                )
-                .settingsControlAnchor(.updateReleaseTrack, state: state)
-
-                Text(updateController.releaseTrack.detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Toggle(
-                    "Automatically check for updates",
-                    isOn: Binding(
-                        get: { updateController.automaticallyChecksForUpdates },
-                        set: { updateController.setAutomaticallyChecksForUpdates($0) }
-                    )
-                )
-                .disabled(!updateController.isEnabled)
-                .accessibilityHint(
-                    updateController.isEnabled
-                        ? "Uses SakuraCord’s signed update feed on the configured schedule."
-                        : updateController.availabilityDescription
-                )
-                .settingsControlAnchor(.updateAutomaticChecks, state: state)
-
-                Toggle(
-                    "Automatically download updates",
-                    isOn: Binding(
-                        get: { updateController.automaticallyDownloadsUpdates },
-                        set: { updateController.setAutomaticallyDownloadsUpdates($0) }
-                    )
-                )
-                .disabled(
-                    !updateController.isEnabled
-                        || !updateController.allowsAutomaticUpdates
-                )
-                .accessibilityHint(
-                    updateController.isEnabled
-                        ? "Downloaded updates remain cryptographically verified before installation."
-                        : updateController.availabilityDescription
-                )
-                .settingsControlAnchor(.updateAutomaticDownloads, state: state)
-            } header: {
-                Text("Update preferences", bundle: #bundle)
-            } footer: {
-                SettingsScopeFooter(scope: .appWideLocal)
             }
-
-            Section {
-                LabeledContent("Update status") {
-                    Text(updateController.availabilityDescription)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.trailing)
+            .navigationDestination(for: SoftwareUpdatesDestination.self) { destination in
+                switch destination {
+                case .changelog:
+                    AboutChangelogPage(
+                        releaseNotes: AboutResources.packagedReleaseNotes
+                    )
                 }
-                .settingsControlAnchor(.updateStatus, state: state)
-
-                LabeledContent("Last successful signed-feed check") {
-                    if let date = updateController.lastSuccessfulCheckDate {
-                        Text(date, format: .dateTime)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("Never")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .settingsControlAnchor(.updateLastSuccessfulCheck, state: state)
-
-                Button("Check for Updates…") {
-                    updateController.checkForUpdates()
-                }
-                .disabled(!updateController.canCheckForUpdates)
-                .accessibilityHint(updateController.availabilityDescription)
-                .settingsControlAnchor(.checkForUpdates, state: state)
-            } header: {
-                Text("Update service", bundle: #bundle)
-            } footer: {
-                Text(
-                    "A successful check is recorded only after Sparkle downloads the configured signed appcast. Failed and unavailable checks do not change this date."
-                )
             }
         }
+        .onChange(of: state.revealRequest?.id) {
+            guard state.revealRequest?.destination.page == .softwareUpdates else { return }
+            navigationPath.removeAll()
+        }
+    }
+}
+
+private enum SoftwareUpdatesDestination: Hashable {
+    case changelog
+}
+
+private struct UpdatesUnavailableNotice: View {
+    let reason: String
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.title3)
+                .foregroundStyle(.orange)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Updates Unavailable", bundle: #bundle)
+                    .font(.headline)
+
+                Text(reason)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
     }
 }

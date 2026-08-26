@@ -5,16 +5,43 @@ import Sparkle
 nonisolated enum AppUpdateUnavailabilityReason: Equatable, Sendable {
     case disabledForBuild
     case noncanonicalBundle
-    case incompleteConfiguration
+    case invalidStableFeed
+    case invalidNightlyFeed
+    case invalidPublicKey
+    case automaticChecksNotEnabled
+    case invalidCheckInterval
+    case automaticInstallationNotDisabled
+    case automaticUpdatesNotAllowed
+    case installerLauncherServiceNotEnabled
+    case updateVerificationNotEnabled
+    case signedFeedNotRequired
 
     var description: String {
         switch self {
         case .disabledForBuild:
-            "This source, debug, offline, or ad-hoc build does not enable update checking."
+            "This build was packaged with update checking disabled."
         case .noncanonicalBundle:
-            "This noncanonical build cannot use SakuraCord’s production update feeds."
-        case .incompleteConfiguration:
-            "Required signed-feed or updater metadata is incomplete or invalid."
+            "Update checking is disabled because this is not the canonical SakuraCord app bundle."
+        case .invalidStableFeed:
+            "The configured stable update feed does not match SakuraCord’s signed stable feed."
+        case .invalidNightlyFeed:
+            "The configured nightly update feed does not match SakuraCord’s signed nightly feed."
+        case .invalidPublicKey:
+            "The Sparkle public key is not a valid 32-byte Ed25519 key."
+        case .automaticChecksNotEnabled:
+            "Automatic update checking is not enabled in this build’s configuration."
+        case .invalidCheckInterval:
+            "The configured update-check interval is not the required six hours."
+        case .automaticInstallationNotDisabled:
+            "Automatic update installation is not explicitly disabled in this build."
+        case .automaticUpdatesNotAllowed:
+            "Automatic update downloads are not allowed by this build’s configuration."
+        case .installerLauncherServiceNotEnabled:
+            "Sparkle’s installer launcher service is not enabled in this build."
+        case .updateVerificationNotEnabled:
+            "Update verification before extraction is not enabled in this build."
+        case .signedFeedNotRequired:
+            "This build does not require a signed update feed."
         }
     }
 }
@@ -49,15 +76,6 @@ nonisolated struct AppUpdateConfiguration: Equatable, Sendable {
         let publicKeyData = publicEdKey.flatMap {
             Data(base64Encoded: $0)
         }
-        let hasSafeDefaults =
-            infoDictionary["SUEnableAutomaticChecks"] as? Bool == true
-            && infoDictionary["SUScheduledCheckInterval"] as? Int == Self.scheduledCheckInterval
-            && infoDictionary["SUAutomaticallyUpdate"] as? Bool == false
-            && infoDictionary["SUAllowsAutomaticUpdates"] as? Bool == true
-            && infoDictionary["SUEnableInstallerLauncherService"] as? Bool == true
-            && infoDictionary["SUVerifyUpdateBeforeExtraction"] as? Bool == true
-            && infoDictionary["SURequireSignedFeed"] as? Bool == true
-
         self.feedURL = feedURL
         self.nightlyFeedURL = nightlyFeedURL
         self.publicEdKey = publicEdKey
@@ -65,12 +83,28 @@ nonisolated struct AppUpdateConfiguration: Equatable, Sendable {
             unavailabilityReason = .disabledForBuild
         } else if bundleIdentifier != Self.canonicalBundleIdentifier {
             unavailabilityReason = .noncanonicalBundle
-        } else if feedURL != Self.expectedFeedURL
-            || nightlyFeedURL != Self.expectedNightlyFeedURL
-            || publicKeyData?.count != 32
-            || !hasSafeDefaults
+        } else if feedURL != Self.expectedFeedURL {
+            unavailabilityReason = .invalidStableFeed
+        } else if nightlyFeedURL != Self.expectedNightlyFeedURL {
+            unavailabilityReason = .invalidNightlyFeed
+        } else if publicKeyData?.count != 32 {
+            unavailabilityReason = .invalidPublicKey
+        } else if infoDictionary["SUEnableAutomaticChecks"] as? Bool != true {
+            unavailabilityReason = .automaticChecksNotEnabled
+        } else if infoDictionary["SUScheduledCheckInterval"] as? Int
+            != Self.scheduledCheckInterval
         {
-            unavailabilityReason = .incompleteConfiguration
+            unavailabilityReason = .invalidCheckInterval
+        } else if infoDictionary["SUAutomaticallyUpdate"] as? Bool != false {
+            unavailabilityReason = .automaticInstallationNotDisabled
+        } else if infoDictionary["SUAllowsAutomaticUpdates"] as? Bool != true {
+            unavailabilityReason = .automaticUpdatesNotAllowed
+        } else if infoDictionary["SUEnableInstallerLauncherService"] as? Bool != true {
+            unavailabilityReason = .installerLauncherServiceNotEnabled
+        } else if infoDictionary["SUVerifyUpdateBeforeExtraction"] as? Bool != true {
+            unavailabilityReason = .updateVerificationNotEnabled
+        } else if infoDictionary["SURequireSignedFeed"] as? Bool != true {
+            unavailabilityReason = .signedFeedNotRequired
         } else {
             unavailabilityReason = nil
         }
@@ -100,12 +134,10 @@ nonisolated enum AppUpdateReleaseTrack: String, CaseIterable, Identifiable, Send
         }
     }
 
-    var detail: String {
+    var systemImage: String {
         switch self {
-        case .regular:
-            "Stable releases recommended for most people."
-        case .nightly:
-            "Early builds that may be less stable."
+        case .regular: "sun.max.fill"
+        case .nightly: "moon.fill"
         }
     }
 
@@ -135,10 +167,13 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
 
     let isEnabled: Bool
 
+    var unavailabilityDescription: String? {
+        configuration.unavailabilityReason?.description
+    }
+
     var availabilityDescription: String {
-        if !isEnabled {
-            return configuration.unavailabilityReason?.description
-                ?? "Update checking is unavailable in this build."
+        if let unavailabilityDescription {
+            return unavailabilityDescription
         }
         if canCheckForUpdates {
             return "SakuraCord is ready to check the signed \(releaseTrack.title.lowercased()) feed."

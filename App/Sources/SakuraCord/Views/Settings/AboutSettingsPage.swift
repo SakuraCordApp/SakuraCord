@@ -38,7 +38,13 @@ struct AboutSettingsPage: View {
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
 
-                updates
+                SoftwareUpdateOverviewSection(
+                    updateController: updateController,
+                    state: state,
+                    checkForUpdatesControlID: .aboutCheckForUpdates,
+                    changelogControlID: .aboutChangelog,
+                    changelogDestination: AboutDestination.changelog
+                )
                 projectLinks
                 acknowledgements
             }
@@ -79,45 +85,6 @@ struct AboutSettingsPage: View {
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
         .settingsControlAnchor(.aboutVersionInformation, state: state)
-    }
-
-    private var updates: some View {
-        Section {
-            HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("SakuraCord Version", bundle: #bundle)
-                        .font(.headline)
-
-                    Text(updateVersionDisplay)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer(minLength: 16)
-
-                Button("Check Now") {
-                    updateController.checkForUpdates()
-                }
-                .disabled(!updateController.canCheckForUpdates)
-                .accessibilityHint(updateController.availabilityDescription)
-                .help(updateController.availabilityDescription)
-                .settingsControlAnchor(.aboutCheckForUpdates, state: state)
-            }
-
-            NavigationLink(value: AboutDestination.changelog) {
-                Label("Open Changelog", systemImage: "clock.arrow.circlepath")
-            }
-            .accessibilityHint("Shows the release notes included with SakuraCord.")
-            .settingsControlAnchor(.aboutChangelog, state: state)
-        } header: {
-            Text("Updates", bundle: #bundle)
-        }
-    }
-
-    private var updateVersionDisplay: String {
-        guard let semanticVersion = versionInformation.semanticVersion else {
-            return versionInformation.semanticVersionDisplay
-        }
-        return "v\(semanticVersion)"
     }
 
     private var projectLinks: some View {

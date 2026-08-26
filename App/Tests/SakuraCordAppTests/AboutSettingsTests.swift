@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Testing
 @testable import SakuraCord
 
@@ -69,7 +69,7 @@ func aboutAcknowledgementsRequirePackagedFile() throws {
     )
 }
 
-@Test("About changelog loads release records newest first")
+@Test("About changelog loads regular and nightly releases in semantic order")
 func aboutChangelogLoadsPackagedReleaseNotes() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         UUID().uuidString,
@@ -85,25 +85,115 @@ func aboutChangelogLoadsPackagedReleaseNotes() throws {
     )
     defer { try? FileManager.default.removeItem(at: directory) }
 
-    let current = releases.appendingPathComponent("v0.1.2.json")
-    try Data(
-        """
-        {"schemaVersion":1,"tagName":"v0.1.2","githubDescription":"Current notes"}
-        """.utf8
-    ).write(to: current)
-    let backport = releases.appendingPathComponent("v0.1.1.json")
-    try Data(
-        """
-        {"schemaVersion":1,"tagName":"v0.1.1","githubDescription":"Backported notes"}
-        """.utf8
-    ).write(to: backport)
+    func writeRelease(
+        _ tagName: String,
+        description: String,
+        headline: String,
+        emoji: String
+    ) throws {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "schemaVersion": 1,
+            "tagName": tagName,
+            "githubDescription": description,
+            "discordAnnouncement": "**\(headline) \(emoji)**\n\n**Highlights**\n- Test",
+        ])
+        try data.write(
+            to: releases.appendingPathComponent("\(tagName).json")
+        )
+    }
+
+    try writeRelease(
+        "v0.1.3-Beta-1",
+        description: "Newest beta notes",
+        headline: "Newest beta",
+        emoji: "🌙"
+    )
+    try writeRelease(
+        "v0.1.2",
+        description: "Current stable notes",
+        headline: "Current stable",
+        emoji: "🌸"
+    )
+    try writeRelease(
+        "v0.1.2-Beta-10",
+        description: "Tenth beta notes",
+        headline: "Tenth beta",
+        emoji: "🌙"
+    )
+    try writeRelease(
+        "v0.1.2-Beta-2",
+        description: "Second beta notes",
+        headline: "Second beta",
+        emoji: "🌙"
+    )
+    try writeRelease(
+        "v0.1.1",
+        description: "Backported notes",
+        headline: "Backported release",
+        emoji: "🌸"
+    )
     try Data("Ignored".utf8).write(
         to: releases.appendingPathComponent("README.txt")
     )
 
     let notes = AboutResources.releaseNotes(resourceURL: directory)
-    #expect(notes.map(\.tagName) == ["v0.1.2", "v0.1.1"])
-    #expect(notes.map(\.githubDescription) == ["Current notes", "Backported notes"])
+    #expect(notes.map(\.tagName) == [
+        "v0.1.3-Beta-1",
+        "v0.1.2",
+        "v0.1.2-Beta-10",
+        "v0.1.2-Beta-2",
+        "v0.1.1",
+    ])
+    #expect(notes.map(\.displayName) == [
+        "v0.1.3 Beta 1",
+        "v0.1.2",
+        "v0.1.2 Beta 10",
+        "v0.1.2 Beta 2",
+        "v0.1.1",
+    ])
+    #expect(notes.map(\.releaseTrack) == [
+        .nightly,
+        .regular,
+        .nightly,
+        .nightly,
+        .regular,
+    ])
+    #expect(notes.map(\.announcementHeadline) == [
+        "Newest beta",
+        "Current stable",
+        "Tenth beta",
+        "Second beta",
+        "Backported release",
+    ])
+}
+
+@Test("About Markdown rendering materializes native block and inline formatting")
+@MainActor
+func aboutMarkdownMaterializesNativeFormatting() {
+    let document = AboutMarkdownRenderer.render(
+        "# Heading\n\nParagraph with **bold**.\n\n- First\n- Second"
+    )
+    let rendered = AboutMarkdownAttributedText.make(document)
+
+    #expect(document.runs.contains { $0.presentationIntent != nil })
+    #expect(document.runs.contains { $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true })
+    #expect(
+        rendered.string
+            == "Heading\nParagraph with bold.\n•\tFirst\n•\tSecond"
+    )
+
+    let headingFont = rendered.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
+    let bodyIndex = (rendered.string as NSString).range(of: "Paragraph").location
+    let bodyFont = rendered.attribute(.font, at: bodyIndex, effectiveRange: nil) as? NSFont
+    #expect((headingFont?.pointSize ?? 0) > (bodyFont?.pointSize ?? 0))
+
+    let boldIndex = (rendered.string as NSString).range(of: "bold").location
+    let boldFont = rendered.attribute(.font, at: boldIndex, effectiveRange: nil) as? NSFont
+    #expect(
+        boldFont.map {
+            NSFontManager.shared.traits(of: $0).contains(.boldFontMask)
+        } == true
+    )
 }
 
 @Test("About project destinations are canonical HTTPS links")
