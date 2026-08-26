@@ -1407,7 +1407,7 @@ import UserNotifications
 }
 
 @MainActor
-@Test func `thread send commits one final timeline revision`() async throws {
+@Test func `thread send commits optimistic insertion and confirmation revisions`() async throws {
     let provider = MockChatProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
@@ -1443,24 +1443,40 @@ import UserNotifications
     )
     await Task.yield()
 
-    #expect(model.threadMessageRowsRevision == previousRevision + 1)
-    guard case let .insert(insertedIndexes) =
+    #expect(model.threadMessageRowsRevision == previousRevision + 2)
+    #expect(
         model.threadMessageRowsUpdateHint?.change
-    else {
-        Issue.record("Expected a bounded thread insertion hint")
-        return
-    }
-    #expect(insertedIndexes == IndexSet(integer: previousCount))
+            == .replace(IndexSet(integer: previousCount))
+    )
     let records = try #require(
         model.threadMessageRowsUpdateJournal.records(
             after: previousRevision,
             through: model.threadMessageRowsRevision
         )
     )
-    let record = try #require(records.first)
-    #expect(record.revision == model.threadMessageRowsRevision)
-    #expect(record.insertedMessageIDs == [model.threadMessages[previousCount].id])
-    #expect(!record.invalidatesAllRows)
+    #expect(records.count == 2)
+    let insertion = try #require(records.first)
+    guard case let .insert(insertedIndexes) = insertion.change else {
+        Issue.record("Expected a bounded optimistic thread insertion hint")
+        return
+    }
+    #expect(insertedIndexes == IndexSet(integer: previousCount))
+    #expect(insertion.insertedMessageIDs.count == 1)
+    #expect(!insertion.invalidatesAllRows)
+    let confirmation = try #require(records.last)
+    #expect(confirmation.revision == model.threadMessageRowsRevision)
+    #expect(confirmation.insertedMessageIDs.isEmpty)
+    let confirmed = try #require(
+        model.threadMessages.first {
+            $0.content == "one thread timeline mutation"
+        }
+    )
+    #expect(confirmation.changedMessageIDs == [confirmed.id])
+    #expect(
+        confirmation.change
+            == .replace(IndexSet(integer: previousCount))
+    )
+    #expect(!confirmation.invalidatesAllRows)
 }
 
 @MainActor

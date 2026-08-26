@@ -146,6 +146,7 @@ private struct ChatRootView: View {
     @State private var isInstantUpload = false
     @State private var hoveredFileDropDestination: MessageComposerDestination?
     @State private var modifierPollingTask: Task<Void, Never>?
+    @State private var composerDropInteraction = ComposerDropInteractionState()
 
     var body: some View {
         @Bindable var model = model
@@ -208,6 +209,7 @@ private struct ChatRootView: View {
         .toolbar {
             conversationToolbar
         }
+        .environment(\.composerDropInteraction, composerDropInteraction)
         .overlay(alignment: .topLeading) {
             ZStack(alignment: .topLeading) {
                 if columnVisibility != .detailOnly {
@@ -262,9 +264,7 @@ private struct ChatRootView: View {
                 WindowActivityReader { isActive in
                     model.reportMainWindowActive(isActive)
                 }
-                WindowChromeDimmingBridge(
-                    isDimmed: isFileDropTargeted && canAcceptWindowDrops
-                )
+                WindowChromeDimmingBridge(isDimmed: showsFileDropEffect)
             }
             .frame(width: 0, height: 0)
         }
@@ -318,13 +318,13 @@ private struct ChatRootView: View {
             }
         }
         .overlay {
-            if isFileDropTargeted, canAcceptWindowDrops {
+            if showsFileDropEffect {
                 ComposerFileDropOverlay(
                     model: model,
                     workspaceFrame: workspaceFrame,
                     supplementaryPaneFrame: supplementaryPaneFrame,
-                    hoveredDestination: hoveredFileDropDestination,
-                    isInstantUpload: isInstantUpload
+                    hoveredDestination: effectiveFileDropDestination,
+                    isInstantUpload: effectiveInstantUpload
                 )
                 .allowsHitTesting(false)
             }
@@ -691,6 +691,21 @@ private struct ChatRootView: View {
     private func composerDestination(at location: CGPoint) -> MessageComposerDestination? {
         let proposed = proposedComposerDestination(atX: location.x)
         return model.isComposerDropEligible(proposed) ? proposed : nil
+    }
+
+    private var showsFileDropEffect: Bool {
+        canAcceptWindowDrops
+            && (isFileDropTargeted || composerDropInteraction.isTargeted)
+    }
+
+    private var effectiveFileDropDestination: MessageComposerDestination? {
+        composerDropInteraction.destination ?? hoveredFileDropDestination
+    }
+
+    private var effectiveInstantUpload: Bool {
+        composerDropInteraction.isTargeted
+            ? composerDropInteraction.isInstant
+            : isInstantUpload
     }
 
     private func proposedComposerDestination(atX horizontalPosition: CGFloat) -> MessageComposerDestination {

@@ -1769,6 +1769,7 @@ extension AppModel {
         releaseAllOwnedPromisedFiles()
         channelComposerAttachments = []
         threadComposerAttachments = []
+        outgoingMessages.reset()
         oversizedAttachmentPrompt = nil
         queuedOversizedAttachmentPrompts.removeAll()
         commandLoadTask?.cancel()

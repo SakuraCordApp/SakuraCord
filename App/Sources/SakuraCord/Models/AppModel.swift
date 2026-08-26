@@ -400,7 +400,7 @@ final class AppModel {
         threadErrorScope == .initialPage
             || threadErrorScope == .earlierPage
     }
-    var outgoingDraftsByNonce: [String: SendMessageDraft] = [:]
+    @ObservationIgnored var outgoingMessages = OutgoingMessageState()
     var gifResults: [GIFSearchResult] = []
     var gifCategories: [GIFPickerCategory] = []
     var gifTrendingPreviewURL: URL?

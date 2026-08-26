@@ -11,9 +11,25 @@ struct MediaImageContextMenuActions {
 
 @MainActor
 enum MediaImageContextMenuBuilder {
-    static func make(actions: MediaImageContextMenuActions) -> NSMenu {
+    static func make(
+        actions: MediaImageContextMenuActions,
+        includesLinkActions: Bool = true
+    ) -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
+        appendImageActions(
+            to: menu,
+            actions: actions,
+            includesLinkActions: includesLinkActions
+        )
+        return menu
+    }
+
+    static func appendImageActions(
+        to menu: NSMenu,
+        actions: MediaImageContextMenuActions,
+        includesLinkActions: Bool
+    ) {
         menu.addItem(
             actionItem(
                 "Copy Image",
@@ -28,6 +44,7 @@ enum MediaImageContextMenuBuilder {
                 action: actions.saveImage
             )
         )
+        guard includesLinkActions else { return }
         menu.addItem(.separator())
         menu.addItem(
             actionItem(
@@ -43,7 +60,6 @@ enum MediaImageContextMenuBuilder {
                 action: actions.openLink
             )
         )
-        return menu
     }
 
     private static func actionItem(

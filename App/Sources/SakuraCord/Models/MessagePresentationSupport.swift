@@ -151,6 +151,22 @@ nonisolated struct MessageSearchRowContext: Equatable, Sendable {
     let showsSectionHeader: Bool
 }
 
+nonisolated enum MessageRowIdentity: Hashable, Sendable {
+    case server(channelID: ChannelID, messageID: MessageID)
+    case outgoing(channelID: ChannelID, nonce: String)
+
+    init(_ message: Message) {
+        if let nonce = message.nonce {
+            self = .outgoing(channelID: message.channelID, nonce: nonce)
+        } else {
+            self = .server(
+                channelID: message.channelID,
+                messageID: message.id
+            )
+        }
+    }
+}
+
 final class MessageRowPresentation: Identifiable, Equatable, Sendable {
     var id: MessageID {
         message.id
@@ -163,6 +179,10 @@ final class MessageRowPresentation: Identifiable, Equatable, Sendable {
     let isReplyAvailable: Bool
     let textPlan: NativeTimelineTextPlan
     let searchContext: MessageSearchRowContext?
+
+    nonisolated var identity: MessageRowIdentity {
+        MessageRowIdentity(message)
+    }
 
     var replyMessageID: MessageID? {
         message.replyTo ?? replyPreview?.messageID

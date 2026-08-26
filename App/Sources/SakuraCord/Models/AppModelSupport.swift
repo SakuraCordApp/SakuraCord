@@ -167,14 +167,18 @@ struct PreparedCreatedMessage: Sendable {
 }
 
 nonisolated enum OptimisticAttachmentPresentation {
-    static func attachment(for url: URL, index: Int) -> Attachment {
+    static func attachment(
+        for url: URL,
+        index: Int,
+        id: String? = nil
+    ) -> Attachment {
         let source = CGImageSourceCreateWithURL(url as CFURL, nil)
         let properties = source.flatMap {
             CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any]
         }
         let resourceValues = try? url.resourceValues(forKeys: [.fileSizeKey])
         return Attachment(
-            id: "pending-\(index)",
+            id: id ?? "pending-\(index)",
             filename: url.lastPathComponent,
             url: url,
             mediaType: UTType(filenameExtension: url.pathExtension)?.preferredMIMEType,
@@ -182,6 +186,36 @@ nonisolated enum OptimisticAttachmentPresentation {
             height: (properties?[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue,
             size: resourceValues?.fileSize ?? 0
         )
+    }
+}
+
+nonisolated enum ComposerSubmissionResult: Equatable, Sendable {
+    case rejected
+    case enqueued(serverConfirmed: Bool)
+
+    var serverConfirmed: Bool {
+        guard case let .enqueued(serverConfirmed) = self else { return false }
+        return serverConfirmed
+    }
+
+    var consumedComposer: Bool {
+        if case .enqueued = self { return true }
+        return false
+    }
+}
+
+struct OutgoingMessageState {
+    var draftsByNonce: [String: SendMessageDraft] = [:]
+    private var nextOptimisticMessageRawValue = UInt64.max
+
+    mutating func nextOptimisticMessageID() -> MessageID {
+        defer { nextOptimisticMessageRawValue &-= 1 }
+        return MessageID(rawValue: nextOptimisticMessageRawValue)
+    }
+
+    mutating func reset() {
+        draftsByNonce.removeAll(keepingCapacity: false)
+        nextOptimisticMessageRawValue = UInt64.max
     }
 }
 
@@ -684,21 +718,21 @@ enum MessageRowsUpdateRecordBuilder {
         newRows: [MessageRowPresentation],
         revision: UInt64
     ) -> MessageRowsUpdateRecord {
-        let oldIDs = oldRows.map(\.id)
-        let newIDs = newRows.map(\.id)
-        let oldRowsByID = Dictionary(
-            uniqueKeysWithValues: oldRows.map { ($0.id, $0) }
+        let oldIdentities = oldRows.map(\.identity)
+        let newIdentities = newRows.map(\.identity)
+        let oldRowsByIdentity = Dictionary(
+            uniqueKeysWithValues: oldRows.map { ($0.identity, $0) }
         )
         let changedMessageIDs = Set<MessageID>(
             newRows.lazy.compactMap { row in
-                guard let oldRow = oldRowsByID[row.id],
+                guard let oldRow = oldRowsByIdentity[row.identity],
                       oldRow != row
                 else { return nil }
                 return row.id
             }
         )
 
-        if oldIDs == newIDs {
+        if oldIdentities == newIdentities {
             return MessageRowsUpdateRecord(
                 revision: revision,
                 change: .replace(
@@ -716,13 +750,13 @@ enum MessageRowsUpdateRecordBuilder {
         }
 
         if let insertedIndexes = insertedIndexes(
-            preserving: oldIDs,
-            in: newIDs
+            preserving: oldIdentities,
+            in: newIdentities
         ) {
             return MessageRowsUpdateRecord(
                 revision: revision,
                 change: .insert(insertedIndexes),
-                insertedMessageIDs: insertedIndexes.map { newIDs[$0] },
+                insertedMessageIDs: insertedIndexes.map { newRows[$0].id },
                 changedMessageIDs: changedMessageIDs,
                 removedMessageIDs: [],
                 invalidatesAllRows: false
@@ -730,8 +764,8 @@ enum MessageRowsUpdateRecordBuilder {
         }
 
         if let removedIndexes = removedIndexes(
-            preserving: newIDs,
-            in: oldIDs
+            preserving: newIdentities,
+            in: oldIdentities
         ) {
             let changedIndexes = IndexSet(
                 newRows.indices.filter {
@@ -746,7 +780,9 @@ enum MessageRowsUpdateRecordBuilder {
                 ),
                 insertedMessageIDs: [],
                 changedMessageIDs: changedMessageIDs,
-                removedMessageIDs: Set(removedIndexes.map { oldIDs[$0] }),
+                removedMessageIDs: Set(
+                    removedIndexes.map { oldRows[$0].id }
+                ),
                 invalidatesAllRows: false
             )
         }
@@ -761,9 +797,9 @@ enum MessageRowsUpdateRecordBuilder {
         )
     }
 
-    private static func insertedIndexes(
-        preserving oldIDs: [MessageID],
-        in newIDs: [MessageID]
+    private static func insertedIndexes<Element: Equatable>(
+        preserving oldIDs: [Element],
+        in newIDs: [Element]
     ) -> IndexSet? {
         guard newIDs.count >= oldIDs.count else { return nil }
         var oldIndex = oldIDs.startIndex
@@ -780,9 +816,9 @@ enum MessageRowsUpdateRecordBuilder {
         return oldIndex == oldIDs.endIndex ? inserted : nil
     }
 
-    private static func removedIndexes(
-        preserving newIDs: [MessageID],
-        in oldIDs: [MessageID]
+    private static func removedIndexes<Element: Equatable>(
+        preserving newIDs: [Element],
+        in oldIDs: [Element]
     ) -> IndexSet? {
         guard oldIDs.count >= newIDs.count else { return nil }
         var newIndex = newIDs.startIndex

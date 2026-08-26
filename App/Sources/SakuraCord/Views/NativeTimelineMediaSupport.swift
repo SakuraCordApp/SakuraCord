@@ -73,9 +73,22 @@ struct NativeTimelineMediaKey: Hashable {
         }
     }
 
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        // A fallback changes how the same primary resource can be loaded, not
+        // its decoded-image identity. Keeping it out of equality lets an
+        // optimistic local attachment acquire a CDN fallback without losing
+        // the image already retained by the timeline.
+        lhs.url == rhs.url
+            && lhs.maximumPixelDimension == rhs.maximumPixelDimension
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(url)
+        hasher.combine(maximumPixelDimension)
+    }
+
     var cacheKey: NSString {
-        let fallback = fallbackURL?.absoluteString ?? ""
-        return "\(url.absoluteString)#fallback=\(fallback)#native-timeline-pixel-max=\(maximumPixelDimension)"
+        "\(url.absoluteString)#native-timeline-pixel-max=\(maximumPixelDimension)"
             as NSString
     }
 
@@ -1266,11 +1279,11 @@ nonisolated enum NativeTimelineAccessibilityPolicy {
 
     static func editingOverlayInsertionIndex(
         in rowIdentifiers: [NativeMessageTimelineItem.Identifier],
-        editingMessageID: MessageID?
+        editingItemIdentifier: NativeMessageTimelineItem.Identifier?
     ) -> Int? {
-        guard let editingMessageID,
+        guard let editingItemIdentifier,
               let rowIndex = rowIdentifiers.firstIndex(
-                  of: .message(editingMessageID)
+                  of: editingItemIdentifier
               )
         else { return nil }
         return rowIndex + 1
@@ -1517,6 +1530,37 @@ struct NativeTimelineMediaViewerPresentation: Identifiable {
 }
 
 enum NativeTimelineMediaViewerPlan {
+    static func composerAttachments(
+        _ attachments: [ForumPostAttachment],
+        selectedAttachmentID: UUID,
+        author: User
+    ) -> NativeTimelineMediaViewerPresentation? {
+        let items = attachments.enumerated().compactMap { index, attachment -> RichMediaItem? in
+            var optimistic = OptimisticAttachmentPresentation.attachment(
+                for: attachment.url,
+                index: index,
+                id: attachment.id.uuidString
+            )
+            optimistic.filename = attachment.filename
+            optimistic.description = attachment.description
+            optimistic.isSpoiler = attachment.isSpoiler
+            guard optimistic.mediaKind == .image
+                    || optimistic.mediaKind == .animatedImage
+            else { return nil }
+            return RichMediaItem(optimistic)
+        }
+        guard let selection = items.firstIndex(where: {
+            $0.id == selectedAttachmentID.uuidString
+        }) else { return nil }
+        return NativeTimelineMediaViewerPresentation(
+            items: items,
+            selection: selection,
+            authorName: author.displayName,
+            authorAvatarURL: author.avatarURL,
+            timestamp: .now
+        )
+    }
+
     static func attachments(
         in message: Message,
         selectedAttachmentID: String,

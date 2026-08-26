@@ -195,6 +195,7 @@ nonisolated enum NativeTimelineMessageMenuAction: Equatable {
     case copyMessageID
     case copyAuthorID
     case deleteMessage
+    case discardFailedMessage
 }
 
 nonisolated enum NativeTimelineSearchResultPresentation {
@@ -223,15 +224,30 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
             return searchResultEntries(canDelete: canEdit)
         }
 
-        var result: [NativeTimelineMessageMenuEntry] = []
         if canRetry {
-            result.append(.action(
-                .retrySending,
-                title: "Retry Sending",
-                systemImage: "arrow.clockwise"
-            ))
-            result.append(.separator)
+            return [
+                .action(
+                    .retrySending,
+                    title: "Retry Send",
+                    systemImage: "arrow.clockwise"
+                ),
+                .separator,
+                .action(
+                    .copyText,
+                    title: "Copy Text",
+                    systemImage: "doc.on.doc"
+                ),
+                .separator,
+                .action(
+                    .discardFailedMessage,
+                    title: "Delete Message",
+                    systemImage: "trash",
+                    isDestructive: true
+                ),
+            ]
         }
+
+        var result: [NativeTimelineMessageMenuEntry] = []
         result.append(.action(
             .addReaction,
             title: "Add Reaction",

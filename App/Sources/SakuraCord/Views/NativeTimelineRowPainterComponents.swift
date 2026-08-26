@@ -350,6 +350,7 @@ struct NativeTimelineComponentsDrawInput {
     let layout: NativeTimelineComponentLayout
     let model: AppModel?
     let messageID: MessageID
+    let itemIdentifier: NativeMessageTimelineItem.Identifier
     let layoutIndex: Int
     let textSelection: NativeTimelineTextSelection?
     let hoveredMention: NativeTimelineMentionHover?
@@ -378,6 +379,7 @@ extension NativeTimelineRowPainter {
             let layout = input.layout
             let model = input.model
             let messageID = input.messageID
+            let itemIdentifier = input.itemIdentifier
             let layoutIndex = input.layoutIndex
             let textSelection = input.textSelection
             let hoveredMention = input.hoveredMention
@@ -455,7 +457,7 @@ extension NativeTimelineRowPainter {
                 in: region.frame,
                 model: model,
                 selectionRange:
-                    textSelection?.itemIdentifier == .message(messageID)
+                    textSelection?.itemIdentifier == itemIdentifier
                         && textSelection?.region == .component(
                             layoutIndex: layoutIndex,
                             textIndex: textIndex
@@ -463,7 +465,7 @@ extension NativeTimelineRowPainter {
                     ? textSelection?.range
                     : nil,
                 hoveredMentionCharacterIndex:
-                    hoveredMention?.itemIdentifier == .message(messageID)
+                    hoveredMention?.itemIdentifier == itemIdentifier
                         && hoveredMention?.region == .component(
                             layoutIndex: layoutIndex,
                             textIndex: textIndex
@@ -471,7 +473,7 @@ extension NativeTimelineRowPainter {
                     ? hoveredMention?.characterIndex
                     : nil,
                 hoveredLinkCharacterIndex:
-                    hoveredTextLink?.itemIdentifier == .message(messageID)
+                    hoveredTextLink?.itemIdentifier == itemIdentifier
                         && hoveredTextLink?.region == .component(
                             layoutIndex: layoutIndex,
                             textIndex: textIndex
@@ -480,7 +482,7 @@ extension NativeTimelineRowPainter {
                     : nil,
                 hoveredSpoilerRangeLocation:
                     hoveredTextSpoiler?.itemIdentifier
-                        == .message(messageID)
+                        == itemIdentifier
                         && hoveredTextSpoiler?.region == .component(
                             layoutIndex: layoutIndex,
                             textIndex: textIndex

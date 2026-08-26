@@ -1,5 +1,6 @@
 import AppKit
 import MessageRendering
+import Observation
 import SakuraCordModels
 import SwiftUI
 
@@ -18,6 +19,34 @@ enum ComposerAutocompleteCommand {
     case nextField
     case advance
     case removeField
+}
+
+@MainActor
+@Observable
+final class ComposerDropInteractionState {
+    private(set) var destination: MessageComposerDestination?
+    private(set) var isInstant = false
+
+    var isTargeted: Bool { destination != nil }
+
+    func update(
+        isTargeted: Bool,
+        destination: MessageComposerDestination,
+        isInstant: Bool
+    ) {
+        self.destination = isTargeted ? destination : nil
+        self.isInstant = isTargeted && isInstant
+    }
+
+    func clear(destination: MessageComposerDestination) {
+        guard self.destination == destination else { return }
+        self.destination = nil
+        isInstant = false
+    }
+}
+
+extension EnvironmentValues {
+    @Entry var composerDropInteraction: ComposerDropInteractionState?
 }
 
 nonisolated enum ComposerLatestMessageEditingPolicy {
@@ -252,6 +281,8 @@ struct ComposerTextView: NSViewRepresentable {
     var onNavigateReplySelection: (MessageReplyNavigationDirection) -> Bool = { _ in false }
     var onAutocompleteCommand: (ComposerAutocompleteCommand) -> Bool = { _ in false }
     var onPasteAttachments: (([URL]) -> Void)?
+    var onDropTargetChanged: ((_ isTargeted: Bool, _ isInstant: Bool) -> Void)?
+    var onDropAttachments: ((_ urls: [URL], _ isInstant: Bool) -> Bool)?
     var capturesUnfocusedTyping = false
     var verticalContentInset: CGFloat = 0
     var maximumHeight: CGFloat = 150
@@ -281,9 +312,11 @@ struct ComposerTextView: NSViewRepresentable {
         textView.isSelectable = true
         textView.isRichText = true
         textView.importsGraphics = false
-        // Let the workspace-level file destination own file drags. NSTextView's
-        // default destination otherwise inserts a dropped file path as text.
+        // NSTextView is the AppKit drag destination inside the SwiftUI
+        // workspace. Own file URLs here so AppKit cannot fall back to inserting
+        // their paths into the message text.
         textView.unregisterDraggedTypes()
+        textView.registerForDraggedTypes([.fileURL])
         textView.drawsBackground = false
         textView.isHorizontallyResizable = false
         textView.isVerticallyResizable = true
@@ -316,6 +349,8 @@ struct ComposerTextView: NSViewRepresentable {
             coordinator?.parent.onNavigateReplySelection(direction) ?? false
         }
         textView.onPasteAttachments = onPasteAttachments
+        textView.onDropTargetChanged = onDropTargetChanged
+        textView.onDropAttachments = onDropAttachments
         textView.capturesUnfocusedTyping = capturesUnfocusedTyping
         ComposerTextCheckingConfiguration.apply(chatSettings, to: textView)
 
@@ -353,6 +388,8 @@ struct ComposerTextView: NSViewRepresentable {
             coordinator?.parent.onNavigateReplySelection(direction) ?? false
         }
         textView.onPasteAttachments = onPasteAttachments
+        textView.onDropTargetChanged = onDropTargetChanged
+        textView.onDropAttachments = onDropAttachments
         textView.capturesUnfocusedTyping = capturesUnfocusedTyping
         ComposerTextCheckingConfiguration.apply(chatSettings, to: textView)
         textView.setAccessibilityLabel(placeholder)
@@ -664,6 +701,8 @@ final class ComposerNSTextView: NSTextView {
     var onNavigateReplySelection: ((MessageReplyNavigationDirection) -> Bool)?
     var onAutocompleteCommand: ((ComposerAutocompleteCommand) -> Bool)?
     var onPasteAttachments: (([URL]) -> Void)?
+    var onDropTargetChanged: ((_ isTargeted: Bool, _ isInstant: Bool) -> Void)?
+    var onDropAttachments: ((_ urls: [URL], _ isInstant: Bool) -> Bool)?
     var commandPasteboard = NSPasteboard.general
     var shortcutSettings = KeyboardShortcutSettingsStore.shared
     var plainTypingAttributes: [NSAttributedString.Key: Any] = [:]
@@ -716,6 +755,45 @@ final class ComposerNSTextView: NSTextView {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
+    }
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        updateAttachmentDropTarget(sender)
+    }
+
+    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        updateAttachmentDropTarget(sender)
+    }
+
+    override func draggingExited(_ sender: (any NSDraggingInfo)?) {
+        onDropTargetChanged?(false, false)
+    }
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        let urls = ComposerPasteboardAttachments.fileURLs(
+            from: sender.draggingPasteboard
+        )
+        let isInstant = NSEvent.modifierFlags.contains(.shift)
+        let handled = !urls.isEmpty
+            && onDropAttachments?(urls, isInstant) == true
+        onDropTargetChanged?(false, false)
+        return handled
+    }
+
+    override func concludeDragOperation(_ sender: (any NSDraggingInfo)?) {
+        onDropTargetChanged?(false, false)
+    }
+
+    private func updateAttachmentDropTarget(
+        _ sender: any NSDraggingInfo
+    ) -> NSDragOperation {
+        let acceptsDrop = onDropAttachments != nil
+            && !ComposerPasteboardAttachments.fileURLs(
+                from: sender.draggingPasteboard
+            ).isEmpty
+        let isInstant = acceptsDrop && NSEvent.modifierFlags.contains(.shift)
+        onDropTargetChanged?(acceptsDrop, isInstant)
+        return acceptsDrop ? .copy : []
     }
 
     override func viewDidMoveToWindow() {
@@ -871,22 +949,26 @@ final class ComposerNSTextView: NSTextView {
 
 @MainActor
 enum ComposerPasteboardAttachments {
-    static func urls(
-        from pasteboard: NSPasteboard,
-        fileManager: FileManager = .default
-    ) -> [URL] {
+    static func fileURLs(from pasteboard: NSPasteboard) -> [URL] {
         let objects = pasteboard.readObjects(
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
         ) ?? []
         var seen: Set<URL> = []
-        let fileURLs = objects.compactMap { object -> URL? in
+        return objects.compactMap { object -> URL? in
             guard let url = (object as? NSURL)?.absoluteURL,
                   url.isFileURL,
                   seen.insert(url.standardizedFileURL).inserted
             else { return nil }
             return url
         }
+    }
+
+    static func urls(
+        from pasteboard: NSPasteboard,
+        fileManager: FileManager = .default
+    ) -> [URL] {
+        let fileURLs = fileURLs(from: pasteboard)
         if !fileURLs.isEmpty {
             return fileURLs
         }

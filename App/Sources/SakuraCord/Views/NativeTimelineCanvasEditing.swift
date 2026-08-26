@@ -185,7 +185,11 @@ extension NativeTimelineCanvasView {
                   let messageID = actionCapsuleMessageID,
                   let index = items.firstIndex(where: {
                       $0.messageID == messageID
-                  })
+                  }),
+                  case let .message(row, _, _) = items[index],
+                  MessageOutboxPresentation.interactionMode(
+                    for: row.message.outboxState
+                  ).allowsHoverActions
             else {
                 removeActionCapsule()
                 return
@@ -203,6 +207,9 @@ extension NativeTimelineCanvasView {
                 ?? persistentActionCapsuleRow(),
               items.indices.contains(index),
               case let .message(row, _, _) = items[index],
+              MessageOutboxPresentation.interactionMode(
+                for: row.message.outboxState
+              ).allowsHoverActions,
               let model,
               let actions
         else {
@@ -318,12 +325,14 @@ extension NativeTimelineCanvasView {
         actionCapsuleHost = host
         actionCapsuleMessageID = row.id
         let controlCount = jumpToMessage == nil
-            ? 3
+            ? (row.message.outboxState == .failed
+                ? 2
+                : 3
                 + (retry == nil ? 0 : 1)
                 + (reply == nil ? 0 : 1)
                 + (forward == nil ? 0 : 1)
                 + (canEdit ? 2 : 0)
-                + (openThread == nil ? 0 : 1)
+                + (openThread == nil ? 0 : 1))
             : 1
         actionCapsuleSize = HoverActionPillMetrics.size(
             controlCount: controlCount,
@@ -1196,11 +1205,32 @@ extension NativeTimelineCanvasView {
 
     func requestDelete(_ message: Message) {
         guard let window, let actions else { return }
+        requestDelete(
+            message,
+            in: window,
+            perform: actions.delete
+        )
+    }
+
+    func requestDiscardFailed(_ message: Message) {
+        guard let window, let actions else { return }
+        requestDelete(
+            message,
+            in: window,
+            perform: actions.discardFailed
+        )
+    }
+
+    private func requestDelete(
+        _ message: Message,
+        in window: NSWindow,
+        perform delete: @escaping (Message) -> Void
+    ) {
         removeActionCapsule()
         if MessageDeleteConfirmationPolicy.isBypassed(
             by: NSEvent.modifierFlags
         ) {
-            actions.delete(message)
+            delete(message)
             return
         }
         let alert = NSAlert()
@@ -1220,7 +1250,7 @@ extension NativeTimelineCanvasView {
             else { return }
             alert.beginSheetModal(for: window) { response in
                 guard response == .alertFirstButtonReturn else { return }
-                actions.delete(message)
+                delete(message)
             }
         }
     }

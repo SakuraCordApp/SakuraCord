@@ -1904,17 +1904,182 @@ private func downArrowKeyEvent(
 }
 
 @MainActor
-@Test func `definite send failure removes the optimistic message`() async {
+@Test func `definite send failure keeps the optimistic message retryable`() async throws {
     let provider = TypingTestProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
     await provider.failNextSend()
 
-    model.updateDraft("remove me")
+    model.updateDraft("keep me")
     let didSend = await model.send()
     #expect(!didSend)
-    #expect(!model.messages.contains { $0.content == "remove me" })
+    let failed = try #require(model.messages.first { $0.content == "keep me" })
+    #expect(failed.outboxState == .failed)
+    #expect(failed.nonce != nil)
+    #expect(model.draft.isEmpty)
+    #expect(model.errorMessage == nil)
+    #expect(MessageOutboxPresentation.textOpacity(for: failed.outboxState) == 1)
+    let failedInteraction = MessageOutboxPresentation.interactionMode(
+        for: failed.outboxState
+    )
+    #expect(failedInteraction.allowsHoverActions)
+    #expect(failedInteraction.allowsMessageContextMenu)
+    #expect(!failedInteraction.allowsMediaContextMenu)
+    #expect(
+        MessageRowPersistentHighlight.resolve(
+            message: failed,
+            currentUserID: model.snapshot?.currentUser.id
+        ) == .failed
+    )
+    #expect(
+        NativeTimelineMessageMenuPolicy.entries(
+            canEdit: true,
+            canRetry: true,
+            canReply: true,
+            canForward: true
+        ) == [
+            .action(
+                .retrySending,
+                title: "Retry Send",
+                systemImage: "arrow.clockwise"
+            ),
+            .separator,
+            .action(
+                .copyText,
+                title: "Copy Text",
+                systemImage: "doc.on.doc"
+            ),
+            .separator,
+            .action(
+                .discardFailedMessage,
+                title: "Delete Message",
+                systemImage: "trash",
+                isDestructive: true
+            ),
+        ]
+    )
     #expect(await provider.sendCount == 1)
+    let nonce = try #require(failed.nonce)
+    #expect(model.outgoingMessages.draftsByNonce[nonce] != nil)
+
+    model.discardFailedOutgoingMessage(failed)
+
+    #expect(model.messages.allSatisfy { $0.nonce != nonce })
+    #expect(model.outgoingMessages.draftsByNonce[nonce] == nil)
+    #expect(await provider.sendCount == 1)
+}
+
+@MainActor
+@Test func `retry resends the exact failed draft through sending and confirmed states`() async throws {
+    let provider = TypingTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    await provider.failNextSend()
+    let attachment = ForumPostAttachment(
+        url: URL(fileURLWithPath: "/tmp/sakuracord-retry-image.png"),
+        filename: "renamed-image.png",
+        description: "exact attachment description",
+        isSpoiler: true
+    )
+
+    model.updateDraft("retry this exact message")
+    let didSend = await model.sendComposerMessage(attachments: [attachment])
+    #expect(!didSend)
+    let failed = try #require(model.messages.first {
+        $0.content == "retry this exact message"
+    })
+    #expect(failed.outboxState == .failed)
+
+    await provider.suspendNextSend()
+    let retry = Task { @MainActor in
+        await model.retrySending(failed)
+    }
+    await provider.waitUntilSendStarts()
+
+    let retrying = try #require(model.messages.first { $0.nonce == failed.nonce })
+    #expect(retrying.outboxState == .sending)
+    #expect(MessageOutboxPresentation.textOpacity(for: retrying.outboxState) == 0.55)
+    let sentDrafts = await provider.sentDrafts
+    #expect(sentDrafts.count == 2)
+    #expect(sentDrafts[0] == sentDrafts[1])
+    #expect(sentDrafts[1].content == "retry this exact message")
+    #expect(sentDrafts[1].attachments == [attachment])
+
+    await provider.releaseSend()
+    #expect(await retry.value)
+    let confirmed = try #require(model.messages.first { $0.nonce == failed.nonce })
+    #expect(confirmed.outboxState == .confirmed)
+}
+
+@MainActor
+@Test func `send confirmation preserves a local attachment preview with remote fallback`() async throws {
+    let provider = TypingTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let channelID = try #require(model.selectedChannelID)
+    let user = try #require(model.snapshot?.currentUser)
+    let localURL = URL(fileURLWithPath: "/tmp/sakuracord-local-preview.png")
+    let remoteURL = try #require(URL(string: "https://cdn.example/confirmed-image.png"))
+    let nonce = "local-preview-nonce"
+    model.appendSelectedMessage(Message(
+        id: MessageID(rawValue: UInt64.max),
+        channelID: channelID,
+        author: user,
+        content: "image",
+        attachments: [Attachment(
+            id: "optimistic-0",
+            filename: "image.png",
+            url: localURL,
+            mediaType: "image/png"
+        )],
+        nonce: nonce,
+        outboxState: .sending
+    ))
+    let optimisticRow = try #require(
+        model.messageRows.first(where: { $0.message.nonce == nonce })
+    )
+    let optimisticIdentity = optimisticRow.identity
+    let optimisticMediaKey = try #require(
+        optimisticRow.message.attachments.first.flatMap {
+            NativeTimelineMediaKey.attachment($0)
+        }
+    )
+    let incoming = Message(
+        id: MessageID(rawValue: 500),
+        channelID: channelID,
+        author: user,
+        content: "image",
+        attachments: [Attachment(
+            id: "remote-0",
+            filename: "image.png",
+            url: remoteURL,
+            mediaType: "image/png"
+        )],
+        nonce: nonce
+    )
+
+    let resolved = model.reconcileVisibleOrCached(incoming)
+
+    #expect(resolved.attachments.first?.url == remoteURL)
+    #expect(resolved.attachments.first?.proxyURL == localURL)
+    let mediaKey = try #require(resolved.attachments.first.flatMap {
+        NativeTimelineMediaKey.attachment($0)
+    })
+    #expect(mediaKey.url == localURL)
+    #expect(mediaKey.fallbackURL == remoteURL)
+    #expect(mediaKey == optimisticMediaKey)
+    #expect(mediaKey.cacheKey == optimisticMediaKey.cacheKey)
+    let confirmedRow = try #require(
+        model.messageRows.first(where: { $0.message.id == incoming.id })
+    )
+    #expect(confirmedRow.identity == optimisticIdentity)
+    #expect(
+        NativeMessageTimelineItem.message(
+            confirmedRow,
+            isUnreadBoundary: false,
+            isHighlighted: false
+        ).identifier == .message(optimisticIdentity)
+    )
 }
 
 @MainActor
@@ -1930,6 +2095,13 @@ private func downArrowKeyEvent(
 
     let pending = model.messages.last { $0.content == "pending message" }
     #expect(pending?.outboxState == .sending)
+    let pendingInteraction = pending.map {
+        MessageOutboxPresentation.interactionMode(for: $0.outboxState)
+    }
+    #expect(pendingInteraction == .disabled)
+    #expect(pendingInteraction?.allowsHoverActions == false)
+    #expect(pendingInteraction?.allowsMessageContextMenu == false)
+    #expect(pendingInteraction?.allowsMediaContextMenu == false)
     #expect(
         pending.map {
             MessageOutboxPresentation.textOpacity(for: $0.outboxState)
@@ -2078,6 +2250,7 @@ private actor TypingTestProvider: ChatProvider {
     private(set) var typingChannels: [ChannelID] = []
     private(set) var sendCount = 0
     private(set) var sentNonces: [String] = []
+    private(set) var sentDrafts: [SendMessageDraft] = []
     private var nextMessageID: UInt64 = 100
     private var nextSendFailure: SendFailure?
     private var suspendsNextSend = false
@@ -2122,6 +2295,7 @@ private actor TypingTestProvider: ChatProvider {
     func send(_ draft: SendMessageDraft) async throws -> Message {
         sendCount += 1
         sentNonces.append(draft.nonce)
+        sentDrafts.append(draft)
         if let failure = nextSendFailure {
             nextSendFailure = nil
             switch failure {

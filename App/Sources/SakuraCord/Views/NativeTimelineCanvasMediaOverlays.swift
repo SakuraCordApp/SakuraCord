@@ -411,7 +411,7 @@ extension NativeTimelineCanvasView {
                     frame: drawingFrame,
                     selectionRange:
                         textSelection?.itemIdentifier
-                            == .message(row.message.id)
+                            == identifier
                             && textSelection?.region == .content
                             ? textSelection?.range
                             : nil
@@ -469,7 +469,7 @@ extension NativeTimelineCanvasView {
                         frame: drawingFrame,
                         selectionRange:
                             textSelection?.itemIdentifier
-                                == .message(row.message.id)
+                                == identifier
                                 && textSelection?.region == .embed(
                                     embedID: embed.embedID,
                                     textIndex: textIndex
@@ -541,7 +541,7 @@ extension NativeTimelineCanvasView {
                         frame: drawingFrame,
                         selectionRange:
                             textSelection?.itemIdentifier
-                                == .message(row.message.id)
+                                == identifier
                                 && textSelection?.region == .component(
                                     layoutIndex: componentIndex,
                                     textIndex: textIndex

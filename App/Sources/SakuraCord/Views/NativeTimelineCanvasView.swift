@@ -547,6 +547,12 @@ enum NativeTimelineRowPainter {
             ) {
             case .none:
                 break
+            case .failed:
+                drawStripedHighlight(
+                    in: frame,
+                    color: .systemRed,
+                    backgroundAlpha: 0.12
+                )
             case .ephemeral:
                 NSColor(
                     srgbRed: 88 / 255,

@@ -892,11 +892,15 @@ extension NativeTimelineCanvasView {
               layouts.indices.contains(index),
               case let .message(row, _, _) = items[index]
         else { return nil }
+        let interactionMode = MessageOutboxPresentation.interactionMode(
+            for: row.message.outboxState
+        )
+        guard interactionMode.allowsMessageContextMenu else { return nil }
         let localPoint = CGPoint(
             x: point.x,
             y: point.y - displayedRowOrigin(at: index)
         )
-        if let imageItem = NativeTimelineImageContextMenuPlan.item(
+        let imageItem = NativeTimelineImageContextMenuPlan.item(
             in: row.message,
             layout: layouts[index],
             at: localPoint,
@@ -908,7 +912,10 @@ extension NativeTimelineCanvasView {
                     )
                 )
             }
-        ) {
+        )
+        if interactionMode.allowsMediaContextMenu,
+           let imageItem
+        {
             return MediaImageContextMenuBuilder.make(
                 actions: imageContextMenuActions(for: imageItem)
             )
@@ -918,7 +925,10 @@ extension NativeTimelineCanvasView {
             for: row,
             at: index,
             point: point,
-            actions: actions
+            actions: actions,
+            failedMediaActions: interactionMode == .failed
+                ? imageItem.map(imageContextMenuActions(for:))
+                : nil
         )
     }
 
@@ -926,7 +936,8 @@ extension NativeTimelineCanvasView {
         for row: MessageRowPresentation,
         at index: Int,
         point: CGPoint,
-        actions: NativeTimelineRowActions
+        actions: NativeTimelineRowActions,
+        failedMediaActions: MediaImageContextMenuActions?
     ) -> NSMenu? {
         guard TimelineContextMenuHitTesting.contains(
             point,
@@ -937,6 +948,7 @@ extension NativeTimelineCanvasView {
             row.message.author.id == model?.snapshot?.currentUser.id
         let menu = NSMenu()
         menu.autoenablesItems = false
+        var insertedFailedMediaActions = false
         for entry in NativeTimelineMessageMenuPolicy.entries(
             canEdit: canEdit,
             canRetry: row.message.outboxState == .failed,
@@ -952,6 +964,17 @@ extension NativeTimelineCanvasView {
             ) = entry
             else {
                 menu.addItem(.separator())
+                if !insertedFailedMediaActions,
+                   let failedMediaActions
+                {
+                    MediaImageContextMenuBuilder.appendImageActions(
+                        to: menu,
+                        actions: failedMediaActions,
+                        includesLinkActions: false
+                    )
+                    menu.addItem(.separator())
+                    insertedFailedMediaActions = true
+                }
                 continue
             }
             let handler = messageMenuHandler(
@@ -1010,9 +1033,19 @@ extension NativeTimelineCanvasView {
             { Self.copyText(row.message.id.description) }
         case .copyAuthorID:
             { Self.copyText(row.message.author.id.description) }
-        case .deleteMessage:
-            { [weak self] in self?.requestDelete(row.message) }
+        case .deleteMessage, .discardFailedMessage:
+            deletionMenuHandler(action: action, message: row.message)
         }
+    }
+
+    func deletionMenuHandler(
+        action: NativeTimelineMessageMenuAction,
+        message: Message
+    ) -> () -> Void {
+        if action == .discardFailedMessage {
+            return { [weak self] in self?.requestDiscardFailed(message) }
+        }
+        return { [weak self] in self?.requestDelete(message) }
     }
 
     func imageContextMenuActions(

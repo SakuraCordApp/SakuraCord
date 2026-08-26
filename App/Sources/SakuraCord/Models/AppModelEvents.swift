@@ -451,12 +451,15 @@ extension AppModel {
         _ message: inout Message,
         preparedTextPlan: NativeTimelineTextPlan?
     ) {
+        message = outgoingAttachmentPresentationPreserving(message)
         typingState.clear(userID: message.author.id, in: message.channelID)
         if let nonce = message.nonce {
             commandComposer.enrichInteractionResponse(
                 &message, currentUser: snapshot?.currentUser
             )
             commandComposer.interactionSucceeded(nonce: nonce)
+            outgoingMessages.draftsByNonce[nonce] = nil
+            pruneOwnedPromisedAttachmentFiles()
         }
         recordAuthoritativeMessageUpsert(message)
         if message.channelID == openThread?.id {
@@ -506,7 +509,9 @@ extension AppModel {
         _ incoming: Message,
         preparedTextPlan: NativeTimelineTextPlan?
     ) {
-        let message = reactionPresentationPreserving(incoming)
+        let message = reactionPresentationPreserving(
+            outgoingAttachmentPresentationPreserving(incoming)
+        )
         recordAuthoritativeMessageUpsert(message)
         if message.channelID == openThread?.id {
             reconcileThreadUpdate(message)
@@ -1674,7 +1679,9 @@ extension AppModel {
 
     @discardableResult
     func reconcileVisibleOrCached(_ incoming: Message) -> Message {
-        let message = reactionPresentationPreserving(incoming)
+        let message = reactionPresentationPreserving(
+            outgoingAttachmentPresentationPreserving(incoming)
+        )
         if message.channelID == openThread?.id {
             reconcileThread(message)
         }
@@ -1766,6 +1773,12 @@ extension AppModel {
     }
 
     func updateOutgoingState(_ state: OutboxState, nonce: String, channelID: ChannelID) {
+        if openThread?.id == channelID,
+           let index = threadMessages.firstIndex(where: { $0.nonce == nonce })
+        {
+            threadMessages[index].outboxState = state
+            return
+        }
         if selectedChannelID == channelID,
            let index = messages.firstIndex(where: { $0.nonce == nonce })
         {
@@ -1782,6 +1795,10 @@ extension AppModel {
     }
 
     func removeOutgoingMessage(nonce: String, channelID: ChannelID) {
+        if openThread?.id == channelID {
+            threadMessages.removeAll { $0.nonce == nonce }
+            return
+        }
         if selectedChannelID == channelID {
             mutateSelectedMessages {
                 $0.removeAll { $0.nonce == nonce }
@@ -1794,6 +1811,9 @@ extension AppModel {
     }
 
     func outgoingState(nonce: String, channelID: ChannelID) -> OutboxState? {
+        if openThread?.id == channelID {
+            return threadMessages.first { $0.nonce == nonce }?.outboxState
+        }
         if selectedChannelID == channelID {
             return messages.first { $0.nonce == nonce }?.outboxState
         }

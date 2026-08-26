@@ -145,11 +145,17 @@ func `timeline animated expansion stops when its final viewport owner leaves`() 
     let secondOwner = UUID()
     let firstSubscriber = NativeTimelineMediaStore.AnimatedSubscriberID(
         owner: firstOwner,
-        row: .message(MessageID(rawValue: 1))
+        row: .message(.server(
+            channelID: ChannelID(rawValue: 1),
+            messageID: MessageID(rawValue: 1)
+        ))
     )
     let secondSubscriber = NativeTimelineMediaStore.AnimatedSubscriberID(
         owner: secondOwner,
-        row: .message(MessageID(rawValue: 2))
+        row: .message(.server(
+            channelID: ChannelID(rawValue: 1),
+            messageID: MessageID(rawValue: 2)
+        ))
     )
     let task = Task<Void, Never> {
         try? await Task.sleep(for: .seconds(30))

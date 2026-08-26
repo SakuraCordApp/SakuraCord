@@ -985,6 +985,9 @@ extension NativeMessageTimelineCoordinator {
                             values: values
                         )
                     }
+                },
+                discardFailed: { [weak model = parent.model] message in
+                    model?.discardFailedOutgoingMessage(message)
                 }
             )
         }
@@ -1212,8 +1215,11 @@ extension NativeMessageTimelineCoordinator {
                     guard changedIndexes.allSatisfy({
                         newRows.indices.contains($0)
                             && items.indices.contains(oldLeadingCount + $0)
-                            && items[oldLeadingCount + $0].messageID
-                                == newRows[$0].id
+                            && items[oldLeadingCount + $0].identifier
+                                == messageItem(
+                                    newRows[$0],
+                                    from: newParent
+                                ).identifier
                     }) else {
                         performanceFallbackReason = "invalid-replace-hint"
                         return false
@@ -1227,14 +1233,18 @@ extension NativeMessageTimelineCoordinator {
                             ),
                             width: width
                         )
+                        messageIDs[rowIndex] = newRows[rowIndex].id
                     }
                     performanceUpdatePath = "replace-bounded"
                     return true
                 }
                 guard rowCount == newRows.count,
                       newRows.indices.allSatisfy({
-                          items[oldLeadingCount + $0].messageID
-                              == newRows[$0].id
+                          items[oldLeadingCount + $0].identifier
+                              == messageItem(
+                                  newRows[$0],
+                                  from: newParent
+                              ).identifier
                       })
                 else {
                     performanceFallbackReason = "same-count-identity-change"
@@ -1246,6 +1256,7 @@ extension NativeMessageTimelineCoordinator {
                         with: messageItem(newRows[rowIndex], from: newParent),
                         width: width
                     )
+                    messageIDs[rowIndex] = newRows[rowIndex].id
                 }
                 performanceUpdatePath = "replace"
                 return true
@@ -1546,18 +1557,23 @@ extension NativeMessageTimelineCoordinator {
                     }
                 }
             }
-            let finalMessageIDs = newRows.map(\.id)
-            let oldMessageIDSet = Set(messageIDs)
-            let finalMessageIDSet = Set(finalMessageIDs)
-            guard oldMessageIDSet.count == messageIDs.count,
-                  finalMessageIDSet.count == finalMessageIDs.count
+            let currentIdentities = items
+                .dropFirst(oldLeadingCount)
+                .compactMap { $0.messageRow?.identity }
+            let finalIdentities = newRows.map(\.identity)
+            let currentIdentitySet = Set(currentIdentities)
+            let finalIdentitySet = Set(finalIdentities)
+            guard currentIdentities.count == messageIDs.count,
+                  currentIdentitySet.count == currentIdentities.count,
+                  finalIdentitySet.count == finalIdentities.count
             else {
                 performanceFallbackReason =
-                    "journal-duplicate-message-id"
+                    "journal-duplicate-message-identity"
                 return false
             }
-            let removalRowIndexes = messageIDs.indices.filter { rowIndex in
-                !finalMessageIDSet.contains(messageIDs[rowIndex])
+            let finalMessageIDs = newRows.map(\.id)
+            let removalRowIndexes = currentIdentities.indices.filter { rowIndex in
+                !finalIdentitySet.contains(currentIdentities[rowIndex])
             }
             guard removalRowIndexes.allSatisfy({
                 journalRemovedMessageIDs.contains(messageIDs[$0])
@@ -1566,8 +1582,8 @@ extension NativeMessageTimelineCoordinator {
                 return false
             }
             let insertionRowIndexes =
-                finalMessageIDs.indices.filter { rowIndex in
-                    !oldMessageIDSet.contains(finalMessageIDs[rowIndex])
+                finalIdentities.indices.filter { rowIndex in
+                    !currentIdentitySet.contains(finalIdentities[rowIndex])
                 }
             guard insertionRowIndexes.allSatisfy({
                 journalInsertedMessageIDs.contains(finalMessageIDs[$0])
@@ -1575,17 +1591,17 @@ extension NativeMessageTimelineCoordinator {
                 performanceFallbackReason = "journal-insert-identity"
                 return false
             }
-            var appliedMessageIDs = messageIDs
+            var appliedIdentities = currentIdentities
             for rowIndex in removalRowIndexes.reversed() {
-                appliedMessageIDs.remove(at: rowIndex)
+                appliedIdentities.remove(at: rowIndex)
             }
             for rowIndex in insertionRowIndexes {
-                appliedMessageIDs.insert(
-                    finalMessageIDs[rowIndex],
+                appliedIdentities.insert(
+                    finalIdentities[rowIndex],
                     at: rowIndex
                 )
             }
-            guard appliedMessageIDs == finalMessageIDs else {
+            guard appliedIdentities == finalIdentities else {
                 performanceFallbackReason =
                     "journal-applied-identity"
                 return false
@@ -1635,7 +1651,7 @@ extension NativeMessageTimelineCoordinator {
             if let firstMessageID = finalMessageIDs.first {
                 didPrependItems =
                     previousFirstMessageID != firstMessageID
-                    && !oldMessageIDSet.contains(firstMessageID)
+                    && insertionRowIndexes.contains(0)
             } else {
                 didPrependItems = false
             }

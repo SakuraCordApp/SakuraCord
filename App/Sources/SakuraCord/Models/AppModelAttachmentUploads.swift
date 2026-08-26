@@ -216,6 +216,11 @@ extension AppModel {
                 oversizedAttachmentPrompt.fileURL.standardizedFileURL
             )
         }
+        retainedFileURLs.formUnion(
+            outgoingMessages.draftsByNonce.values.lazy
+                .flatMap(\.attachmentURLs)
+                .map(\.standardizedFileURL)
+        )
         retainedFileURLs.formUnion(promisedAttachmentFilesInFlight)
 
         let staleFileURLs = promisedAttachmentDirectoryByFileURL.keys.filter {

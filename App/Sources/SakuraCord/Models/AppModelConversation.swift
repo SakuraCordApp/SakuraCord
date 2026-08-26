@@ -943,20 +943,28 @@ extension AppModel {
 
     @discardableResult
     func sendThreadComposerMessage(attachments: [ForumPostAttachment]) async -> Bool {
-        guard let thread = openThread, openThreadAccess.canSend else { return false }
+        await submitThreadComposerMessage(attachments: attachments).serverConfirmed
+    }
+
+    func submitThreadComposerMessage(
+        attachments: [ForumPostAttachment]
+    ) async -> ComposerSubmissionResult {
+        guard let thread = openThread, openThreadAccess.canSend else { return .rejected }
         let content = threadDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !content.isEmpty || !attachments.isEmpty else { return false }
-        guard validateAttachmentCount(attachments) else { return false }
+        guard !content.isEmpty || !attachments.isEmpty else { return .rejected }
+        guard validateAttachmentCount(attachments) else { return .rejected }
         let replyTo = threadReplyingTo?.id
         let mentionsRepliedUser = threadReplyMentionsAuthor
-        return await sendThreadMessage(
+        let confirmed = await sendThreadMessage(
             content: content,
             replyTo: replyTo,
             mentionsRepliedUser: mentionsRepliedUser,
+            replyPreview: threadReplyingTo.map(MessageReplyPreview.init),
             attachments: attachments,
             thread: thread,
             clearsComposer: true
         )
+        return .enqueued(serverConfirmed: confirmed)
     }
 
     @discardableResult
@@ -964,6 +972,7 @@ extension AppModel {
         content: String,
         replyTo: MessageID? = nil,
         mentionsRepliedUser: Bool = true,
+        replyPreview: MessageReplyPreview? = nil,
         attachments: [ForumPostAttachment],
         thread: MessageThreadSummary,
         clearsComposer: Bool
@@ -975,32 +984,21 @@ extension AppModel {
             mentionsRepliedUser: mentionsRepliedUser,
             attachments: attachments
         )
-        threadErrorMessage = nil
-        threadErrorScope = nil
+        let optimistic = optimisticMessage(
+            for: draft,
+            replyPreview: replyPreview
+        )
+        appendOutgoingMessage(optimistic)
+        outgoingMessages.draftsByNonce[draft.nonce] = draft
         if clearsComposer {
             threadDraft = ""
             threadReplyingTo = nil
         }
-        let session = accountSession()
-        do {
-            let message = try await session.provider.send(draft)
-            guard isCurrentAccountSession(session) else { return false }
-            guard openThread?.id == thread.id else { return true }
-            let reconciled = reconcileVisibleOrCached(message)
-            journalAuthoritativeMessageUpsert(reconciled)
-            guard isCurrentAccountSession(session) else { return false }
+        let didSend = await performOutgoingSend(draft, isRetry: false)
+        if didSend {
             completeConversationReadingAndAdvance(channelID: thread.id)
-            return true
-        } catch {
-            guard isCurrentAccountSession(session) else { return false }
-            guard openThread?.id == thread.id else { return false }
-            if clearsComposer, threadDraft.isEmpty {
-                threadDraft = content
-            }
-            threadErrorMessage = error.localizedDescription
-            threadErrorScope = .action
-            return false
         }
+        return didSend
     }
 
     func updateDraft(_ value: String) {
@@ -1726,21 +1724,27 @@ extension AppModel {
 
     @discardableResult
     func sendComposerMessage(attachments: [ForumPostAttachment]) async -> Bool {
+        await submitComposerMessage(attachments: attachments).serverConfirmed
+    }
+
+    func submitComposerMessage(
+        attachments: [ForumPostAttachment]
+    ) async -> ComposerSubmissionResult {
         guard let channelID = selectedChannelID, selectedConversationAccess.canSend else {
-            return false
+            return .rejected
         }
         let content = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !content.isEmpty || !attachments.isEmpty else { return false }
-        guard validateAttachmentCount(attachments) else { return false }
+        guard !content.isEmpty || !attachments.isEmpty else { return .rejected }
+        guard validateAttachmentCount(attachments) else { return .rejected }
         if hasMoreLaterMessages {
-            guard await loadNewestMessageWindow() else { return false }
+            guard await loadNewestMessageWindow() else { return .rejected }
         }
         let replyTo = replyingTo?.id
         let mentionsRepliedUser = replyMentionsAuthor
         let replyPreview = replyingTo.map {
             MessageReplyPreview(message: $0)
         }
-        return await sendChannelMessage(
+        let confirmed = await sendChannelMessage(
             channelID: channelID,
             content: content,
             replyTo: replyTo,
@@ -1749,6 +1753,7 @@ extension AppModel {
             attachments: attachments,
             clearsComposer: true
         )
+        return .enqueued(serverConfirmed: confirmed)
     }
 
     @discardableResult
@@ -1771,24 +1776,12 @@ extension AppModel {
         if clearsComposer {
             stopLocalTyping(clearThrottle: true)
         }
-        let optimistic = Message(
-            id: MessageID(rawValue: UInt64.max - UInt64(messages.count)), channelID: channelID,
-            author: snapshot?.currentUser
-                ?? User(id: UserID(rawValue: 1), username: "me", displayName: "Me"),
-            content: content, replyTo: replyTo, replyPreview: replyPreview,
-            attachments: attachments.enumerated().map {
-                var presentation = OptimisticAttachmentPresentation.attachment(
-                    for: $0.element.url,
-                    index: $0.offset
-                )
-                presentation.filename = $0.element.filename
-                presentation.description = $0.element.description
-                presentation.isSpoiler = $0.element.isSpoiler
-                return presentation
-            }, nonce: outgoing.nonce, outboxState: .sending
+        let optimistic = optimisticMessage(
+            for: outgoing,
+            replyPreview: replyPreview
         )
-        appendSelectedMessage(optimistic)
-        outgoingDraftsByNonce[outgoing.nonce] = outgoing
+        appendOutgoingMessage(optimistic)
+        outgoingMessages.draftsByNonce[outgoing.nonce] = outgoing
         if clearsComposer {
             replyingTo = nil
             updateDraft("")
@@ -2009,25 +2002,26 @@ extension AppModel {
     func retrySending(_ message: Message) async -> Bool {
         guard message.outboxState == .failed,
               let nonce = message.nonce,
-              outgoingState(nonce: nonce, channelID: message.channelID) == .failed
+              outgoingState(nonce: nonce, channelID: message.channelID) == .failed,
+              let outgoing = outgoingMessages.draftsByNonce[nonce]
         else { return false }
-        let outgoing =
-            outgoingDraftsByNonce[nonce]
-                ?? SendMessageDraft(
-                    channelID: message.channelID,
-                    content: message.content,
-                    replyTo: message.replyTo,
-                    attachmentURLs: message.attachments.map(\.url),
-                    nonce: nonce,
-                    stickerIDs: message.stickers.map(\.id)
-                )
-        outgoingDraftsByNonce[nonce] = outgoing
         updateOutgoingState(.sending, nonce: nonce, channelID: message.channelID)
         return await performOutgoingSend(outgoing, isRetry: true)
     }
 
     func performOutgoingSend(_ outgoing: SendMessageDraft, isRetry: Bool) async -> Bool {
         let session = accountSession()
+        let attachmentURLs = outgoing.attachmentURLs
+        beginUsingOwnedPromisedFiles(attachmentURLs)
+        let securityScopedURLs = attachmentURLs.filter {
+            $0.startAccessingSecurityScopedResource()
+        }
+        defer {
+            for url in securityScopedURLs {
+                url.stopAccessingSecurityScopedResource()
+            }
+            endUsingOwnedPromisedFiles(attachmentURLs)
+        }
         Self.messageSendLogger.info(
             """
             Message send started channel=\(outgoing.channelID.description, privacy: .public) \
@@ -2039,7 +2033,7 @@ extension AppModel {
             let confirmed = try await session.provider.send(outgoing)
             guard isCurrentAccountSession(session) else { return false }
             let reconciled = reconcileVisibleOrCached(confirmed)
-            outgoingDraftsByNonce[outgoing.nonce] = nil
+            outgoingMessages.draftsByNonce[outgoing.nonce] = nil
             journalAuthoritativeMessageUpsert(reconciled)
             guard isCurrentAccountSession(session) else { return false }
             Self.messageSendLogger.info(
@@ -2058,10 +2052,8 @@ extension AppModel {
                 updateOutgoingState(state, nonce: outgoing.nonce, channelID: outgoing.channelID)
             } else {
                 state = .failed
-                outgoingDraftsByNonce[outgoing.nonce] = nil
-                removeOutgoingMessage(nonce: outgoing.nonce, channelID: outgoing.channelID)
+                updateOutgoingState(state, nonce: outgoing.nonce, channelID: outgoing.channelID)
             }
-            errorMessage = error.localizedDescription
             let nsError = error as NSError
             Self.messageSendLogger.error(
                 """
@@ -2072,6 +2064,46 @@ extension AppModel {
                 """
             )
             return false
+        }
+    }
+
+    func optimisticMessage(
+        for outgoing: SendMessageDraft,
+        replyPreview: MessageReplyPreview?
+    ) -> Message {
+        let id = outgoingMessages.nextOptimisticMessageID()
+        return Message(
+            id: id,
+            channelID: outgoing.channelID,
+            author: snapshot?.currentUser
+                ?? User(id: UserID(rawValue: 1), username: "me", displayName: "Me"),
+            content: outgoing.content,
+            replyTo: outgoing.replyTo,
+            replyPreview: replyPreview,
+            attachments: outgoing.attachments.enumerated().map {
+                var presentation = OptimisticAttachmentPresentation.attachment(
+                    for: $0.element.url,
+                    index: $0.offset
+                )
+                presentation.filename = $0.element.filename
+                presentation.description = $0.element.description
+                presentation.isSpoiler = $0.element.isSpoiler
+                return presentation
+            },
+            nonce: outgoing.nonce,
+            outboxState: .sending
+        )
+    }
+
+    func appendOutgoingMessage(_ message: Message) {
+        if message.channelID == openThread?.id {
+            var updated = threadMessages
+            Self.insert(message, intoSorted: &updated)
+            threadMessages = updated
+        } else if message.channelID == selectedChannelID {
+            appendSelectedMessage(message)
+        } else {
+            cache(message)
         }
     }
 }

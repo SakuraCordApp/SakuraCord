@@ -70,7 +70,11 @@ extension NativeTimelineCanvasView {
                NativeTimelineAccessibilityPolicy
                    .editingOverlayInsertionIndex(
                        in: accessibilityProxies.order,
-                       editingMessageID: editingMessageID
+                       editingItemIdentifier: editingMessageID.flatMap { messageID in
+                           items.first(where: {
+                               $0.messageID == messageID
+                           })?.identifier
+                       }
                    )
         {
             let editingChild = additionalChildren.remove(at: hostIndex)
@@ -304,7 +308,7 @@ extension NativeTimelineCanvasView {
         { [self] row, isUnreadBoundary, layout, rowFrame, rowIndex in
         let message = row.message
         let itemIdentifier =
-            NativeMessageTimelineItem.Identifier.message(message.id)
+            NativeMessageTimelineItem.Identifier.message(row.identity)
         let revealedTextSpoilerState =
             textSpoilerRevealState(for: itemIdentifier)
         let author =
@@ -1222,11 +1226,18 @@ extension NativeTimelineCanvasView {
         var result: [NSAccessibilityCustomAction] = []
         if message.outboxState == .failed {
             result.append(NSAccessibilityCustomAction(
-                name: "Retry Sending"
+                name: "Retry Send"
             ) { [weak self] in
                 self?.actions?.retry(message)
                 return self != nil
             })
+            result.append(NSAccessibilityCustomAction(
+                name: "Copy Text"
+            ) {
+                Self.copyText(message.content)
+                return true
+            })
+            return result
         }
         result.append(NSAccessibilityCustomAction(
             name: "Add Reaction"

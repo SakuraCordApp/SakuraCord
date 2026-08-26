@@ -353,7 +353,7 @@ enum NativeMessageTimelineItem: Equatable {
     nonisolated enum Identifier: Hashable {
         case beginning(ChannelID)
         case loader
-        case message(MessageID)
+        case message(MessageRowIdentity)
     }
 
     case beginning(NativeTimelineBeginning)
@@ -381,7 +381,7 @@ enum NativeMessageTimelineItem: Equatable {
         case .loader:
             .loader
         case let .message(row, _, _):
-            .message(row.id)
+            .message(row.identity)
         }
     }
 }

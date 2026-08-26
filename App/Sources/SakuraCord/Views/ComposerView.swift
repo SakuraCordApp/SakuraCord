@@ -7,6 +7,7 @@ struct ComposerView: View {
     typealias Conversation = MessageComposerDestination
 
     let model: AppModel
+    @Environment(\.composerDropInteraction) private var composerDropInteraction
     let channelName: String
     var conversation: Conversation = .channel
     var onEditMessage: (MessageID) -> Void = { _ in }
@@ -52,6 +53,7 @@ struct ComposerView: View {
                     if !hasActiveCommand, !attachments.isEmpty {
                         ComposerAttachmentTray(
                             attachments: attachments,
+                            open: openComposerAttachment,
                             toggleSpoiler: {
                                 model.toggleComposerAttachmentSpoiler($0, in: conversation)
                             },
@@ -119,6 +121,14 @@ struct ComposerView: View {
                                 },
                                 onAutocompleteCommand: handleAutocomplete,
                                 onPasteAttachments: addPastedAttachments,
+                                onDropTargetChanged: { targeted, instant in
+                                    composerDropInteraction?.update(
+                                        isTargeted: targeted,
+                                        destination: conversation,
+                                        isInstant: instant
+                                    )
+                                },
+                                onDropAttachments: handleDroppedAttachments,
                                 capturesUnfocusedTyping:
                                     model.chatSettings.focusesComposerOnTyping,
                                 verticalContentInset: appearance == .defaultStyle
@@ -275,6 +285,9 @@ struct ComposerView: View {
             commandSuggestionIndex = 0
             isCommandSuggestionsDismissed = false
             isFocused = hasActiveCommand
+        }
+        .onDisappear {
+            composerDropInteraction?.clear(destination: conversation)
         }
         .task(id: composerPresentationID) {
             draftSelection = nil
@@ -492,18 +505,59 @@ struct ComposerView: View {
                     url.stopAccessingSecurityScopedResource()
                 }
             }
-            let didSend = switch conversation {
+            let result = switch conversation {
             case .channel:
-                await model.sendComposerMessage(attachments: staged)
+                await model.submitComposerMessage(attachments: staged)
             case .thread:
-                await model.sendThreadComposerMessage(attachments: staged)
+                await model.submitThreadComposerMessage(attachments: staged)
             }
-            if !didSend, activeConversationID == conversationID {
+            if !result.consumedComposer, activeConversationID == conversationID {
                 model.restoreComposerAttachments(staged, to: conversation)
             }
             isSubmitting = false
             isFocused = true
         }
+    }
+
+    private func handleDroppedAttachments(
+        _ urls: [URL],
+        isInstant: Bool
+    ) -> Bool {
+        guard !urls.isEmpty else { return false }
+        if !isInstant {
+            return model.addComposerAttachments(urls, to: conversation)
+        }
+        let acceptedURLs = model.attachmentURLsWithinDiscordLimit(
+            urls,
+            offeringExternalUploadFor: conversation
+        )
+        guard !acceptedURLs.isEmpty else { return true }
+        Task {
+            let scopedURLs = acceptedURLs.filter {
+                $0.startAccessingSecurityScopedResource()
+            }
+            defer {
+                for url in scopedURLs {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+            await model.sendAttachmentsImmediately(
+                acceptedURLs.map { ForumPostAttachment(url: $0) },
+                to: conversation
+            )
+        }
+        return true
+    }
+
+    private func openComposerAttachment(_ id: UUID) {
+        guard let currentUser = model.snapshot?.currentUser,
+              let presentation = NativeTimelineMediaViewerPlan.composerAttachments(
+                  attachments,
+                  selectedAttachmentID: id,
+                  author: currentUser
+              )
+        else { return }
+        model.mediaViewerPresentation = presentation
     }
 
     private var autocompleteContext: ColonAutocompleteContext? {
@@ -1024,149 +1078,6 @@ struct ComposerView: View {
             !activeReplyMentionsAuthor,
             in: conversation
         )
-    }
-}
-
-private struct ComposerAttachmentTray: View {
-    let attachments: [ForumPostAttachment]
-    let toggleSpoiler: (UUID) -> Void
-    let update: (ForumPostAttachment) -> Void
-    let remove: (UUID) -> Void
-    @State private var hoveredID: UUID?
-    @State private var editingTarget: ComposerAttachmentEditorTarget?
-
-    private let tileSize: CGFloat = 230
-    private let filenameRowHeight: CGFloat = 38
-
-    var body: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 12) {
-                ForEach(attachments) { attachment in
-                    attachmentTile(attachment)
-                        .id(attachment.id)
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 14)
-        }
-        .scrollIndicators(.hidden)
-        .frame(height: tileSize + 28)
-        .accessibilityLabel("Message attachments")
-        .sheet(item: $editingTarget) { target in
-            if let attachment = attachments.first(where: { $0.id == target.id }) {
-                ForumAttachmentEditor(
-                    attachment: attachment,
-                    cancel: { editingTarget = nil },
-                    save: {
-                        update($0)
-                        editingTarget = nil
-                    }
-                )
-            }
-        }
-    }
-
-    private func attachmentTile(_ attachment: ForumPostAttachment) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ZStack {
-                LocalAttachmentThumbnail(
-                    url: attachment.url,
-                    maximumPixelDimension: 480,
-                    preservesImageAspectRatio: true,
-                    imageCornerRadius: 16
-                )
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-
-                if attachment.isSpoiler {
-                    Rectangle()
-                        .fill(.black.opacity(0.58))
-                    VStack(spacing: 5) {
-                        Image(systemName: "eye.slash")
-                        Text("SPOILER")
-                            .font(.caption2.weight(.bold))
-                    }
-                    .foregroundStyle(.white)
-                }
-            }
-            .frame(width: tileSize, height: tileSize - filenameRowHeight)
-            .overlay(alignment: .topTrailing) {
-                if hoveredID == attachment.id {
-                    HoverActionPill(
-                        glass: .regular.interactive(),
-                        spacing: 1,
-                        padding: 3
-                    ) {
-                        HoverActionButton(
-                            systemImage: attachment.isSpoiler ? "eye.slash" : "eye",
-                            help: attachment.isSpoiler ? "Remove spoiler" : "Mark as spoiler",
-                            isSelected: attachment.isSpoiler,
-                            diameter: 22,
-                            iconFont: .caption2.weight(.semibold)
-                        ) {
-                            toggleSpoiler(attachment.id)
-                        }
-                        HoverActionButton(
-                            systemImage: "pencil",
-                            help: "Edit attachment",
-                            diameter: 22,
-                            iconFont: .caption2.weight(.semibold)
-                        ) {
-                            editingTarget = ComposerAttachmentEditorTarget(id: attachment.id)
-                        }
-                        HoverActionButton(
-                            systemImage: "trash",
-                            help: "Delete attachment",
-                            role: .destructive,
-                            diameter: 22,
-                            iconFont: .caption2.weight(.semibold)
-                        ) {
-                            remove(attachment.id)
-                        }
-                    }
-                    .padding(7)
-                }
-            }
-
-            Text(attachment.filename)
-                .font(.callout.weight(.medium))
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .padding(.horizontal, 14)
-                .frame(
-                    width: tileSize,
-                    height: filenameRowHeight,
-                    alignment: .leading
-                )
-        }
-            .frame(width: tileSize, height: tileSize, alignment: .topLeading)
-            .background(.primary.opacity(0.035))
-            .clipShape(ConcentricRectangle(cornerRadius: 16, style: .continuous))
-            .overlay {
-                ConcentricRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(.separator, lineWidth: 1)
-            }
-            .contentShape(ConcentricRectangle(cornerRadius: 14, style: .continuous))
-            .onHover { hovering in
-                hoveredID =
-                    hovering
-                        ? attachment.id
-                        : (hoveredID == attachment.id ? nil : hoveredID)
-            }
-            .help(attachment.filename)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(attachment.filename)
-            .accessibilityAction(
-                named: attachment.isSpoiler ? "Remove spoiler" : "Mark as spoiler"
-            ) {
-                toggleSpoiler(attachment.id)
-            }
-            .accessibilityAction(named: "Edit attachment") {
-                editingTarget = ComposerAttachmentEditorTarget(id: attachment.id)
-            }
-            .accessibilityAction(named: "Delete attachment") {
-                remove(attachment.id)
-            }
     }
 }
 

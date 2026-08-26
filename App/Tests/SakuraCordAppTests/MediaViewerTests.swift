@@ -6,6 +6,50 @@ import Testing
 
 @MainActor
 struct MediaViewerTests {
+    @Test func `composer images open in the shared media viewer`() throws {
+        let firstID = UUID()
+        let secondID = UUID()
+        let textID = UUID()
+        let attachments = [
+            ForumPostAttachment(
+                id: firstID,
+                url: URL(fileURLWithPath: "/tmp/first.png"),
+                filename: "first.png"
+            ),
+            ForumPostAttachment(
+                id: textID,
+                url: URL(fileURLWithPath: "/tmp/readme.txt"),
+                filename: "readme.txt"
+            ),
+            ForumPostAttachment(
+                id: secondID,
+                url: URL(fileURLWithPath: "/tmp/second.gif"),
+                filename: "second.gif"
+            ),
+        ]
+        let author = User(
+            id: UserID(rawValue: 1),
+            username: "me",
+            displayName: "Me"
+        )
+
+        let presentation = try #require(
+            NativeTimelineMediaViewerPlan.composerAttachments(
+                attachments,
+                selectedAttachmentID: secondID,
+                author: author
+            )
+        )
+
+        #expect(presentation.items.map(\.id) == [
+            firstID.uuidString,
+            secondID.uuidString,
+        ])
+        #expect(presentation.selection == 1)
+        #expect(presentation.authorName == "Me")
+        #expect(presentation.items[presentation.selection].url == attachments[2].url)
+    }
+
     @Test func `media save copies local files without loading them into the media cache`() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
             "sakuracord-media-save-\(UUID().uuidString)",
@@ -330,6 +374,22 @@ struct MediaViewerTests {
         #expect(item.id == attachment.id)
         #expect(item.url == mediaURL)
         #expect(item.kind == .image(animated: false))
+    }
+
+    @Test func `failed image menu keeps local actions without CDN actions`() {
+        let actions = MediaImageContextMenuActions(
+            copyImage: {},
+            saveImage: {},
+            copyLink: {},
+            openLink: {}
+        )
+
+        let menu = MediaImageContextMenuBuilder.make(
+            actions: actions,
+            includesLinkActions: false
+        )
+
+        #expect(menu.items.map(\.title) == ["Copy Image", "Save Image"])
     }
 
     @Test func `escape prioritizer dismisses media before reaching the timeline`() throws {

@@ -276,23 +276,23 @@ extension NativeTimelineRowPainter {
                 in: drawingFrame,
                 model: model,
                 selectionRange:
-                    textSelection?.itemIdentifier == .message(message.id)
+                    textSelection?.itemIdentifier == .message(row.identity)
                         && textSelection?.region == .content
                     ? textSelection?.range
                     : nil,
                 hoveredMentionCharacterIndex:
-                    hoveredMention?.itemIdentifier == .message(message.id)
+                    hoveredMention?.itemIdentifier == .message(row.identity)
                         && hoveredMention?.region == .content
                     ? hoveredMention?.characterIndex
                     : nil,
                 hoveredLinkCharacterIndex:
-                    hoveredTextLink?.itemIdentifier == .message(message.id)
+                    hoveredTextLink?.itemIdentifier == .message(row.identity)
                         && hoveredTextLink?.region == .content
                     ? hoveredTextLink?.characterIndex
                     : nil,
                 hoveredSpoilerRangeLocation:
                     hoveredTextSpoiler?.itemIdentifier
-                        == .message(message.id)
+                        == .message(row.identity)
                         && hoveredTextSpoiler?.region == .content
                     ? hoveredTextSpoiler?.rangeLocation
                     : nil,
@@ -432,7 +432,7 @@ extension NativeTimelineRowPainter {
                     model: model,
                     selectionRange:
                         textSelection?.itemIdentifier
-                            == .message(message.id)
+                            == .message(row.identity)
                             && textSelection?.region == .embed(
                                 embedID: region.embedID,
                                 textIndex: textIndex
@@ -441,7 +441,7 @@ extension NativeTimelineRowPainter {
                         : nil,
                     hoveredMentionCharacterIndex:
                         hoveredMention?.itemIdentifier
-                            == .message(message.id)
+                            == .message(row.identity)
                             && hoveredMention?.region == .embed(
                                 embedID: region.embedID,
                                 textIndex: textIndex
@@ -450,7 +450,7 @@ extension NativeTimelineRowPainter {
                         : nil,
                     hoveredLinkCharacterIndex:
                         hoveredTextLink?.itemIdentifier
-                            == .message(message.id)
+                            == .message(row.identity)
                             && hoveredTextLink?.region == .embed(
                                 embedID: region.embedID,
                                 textIndex: textIndex
@@ -459,7 +459,7 @@ extension NativeTimelineRowPainter {
                         : nil,
                     hoveredSpoilerRangeLocation:
                         hoveredTextSpoiler?.itemIdentifier
-                            == .message(message.id)
+                            == .message(row.identity)
                             && hoveredTextSpoiler?.region == .embed(
                                 embedID: region.embedID,
                                 textIndex: textIndex
@@ -550,6 +550,7 @@ extension NativeTimelineRowPainter {
                 layout: componentLayout,
                 model: model,
                 messageID: message.id,
+                itemIdentifier: .message(row.identity),
                 layoutIndex: layoutIndex,
                 textSelection: textSelection,
                 hoveredMention: hoveredMention,

@@ -146,6 +146,7 @@ struct NativeTimelineRowActions {
     var edit: (Message, String) -> Void
     var markUnread: (Message) -> Void
     var delete: (Message) -> Void
+    var discardFailed: (Message) -> Void
     var react: (String, Message) -> Void
     var openThread: (MessageThreadSummary) -> Void
     var submitComponent: (
@@ -172,7 +173,8 @@ struct NativeTimelineRowActions {
             String,
             ComponentInteractionKind,
             [String]
-        ) -> Void
+        ) -> Void,
+        discardFailed: @escaping (Message) -> Void = { _ in }
     ) {
         self.loadEarlier = loadEarlier
         self.openMessage = openMessage
@@ -183,6 +185,7 @@ struct NativeTimelineRowActions {
         self.edit = edit
         self.markUnread = markUnread
         self.delete = delete
+        self.discardFailed = discardFailed
         self.react = react
         self.openThread = openThread
         self.submitComponent = submitComponent

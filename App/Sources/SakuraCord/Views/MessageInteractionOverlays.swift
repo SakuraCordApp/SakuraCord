@@ -114,6 +114,7 @@ struct MessageRowLayoutGeometry: Equatable {
 
 nonisolated enum MessageRowPersistentHighlight: Equatable {
     case none
+    case failed
     case ephemeral
     case mention
 
@@ -122,6 +123,9 @@ nonisolated enum MessageRowPersistentHighlight: Equatable {
         currentUserID: UserID?,
         currentUserRoleIDs: Set<RoleID> = []
     ) -> Self {
+        if message.outboxState == .failed {
+            return .failed
+        }
         if message.flags.contains(.ephemeral) {
             return .ephemeral
         }
@@ -148,6 +152,35 @@ nonisolated enum MessageRowPersistentHighlight: Equatable {
 }
 
 nonisolated enum MessageOutboxPresentation {
+    enum InteractionMode: Equatable {
+        case disabled
+        case failed
+        case confirmed
+
+        var allowsHoverActions: Bool {
+            self != .disabled
+        }
+
+        var allowsMessageContextMenu: Bool {
+            self != .disabled
+        }
+
+        var allowsMediaContextMenu: Bool {
+            self == .confirmed
+        }
+    }
+
+    static func interactionMode(for state: OutboxState) -> InteractionMode {
+        switch state {
+        case .queued, .uploading, .sending, .awaitingReconciliation:
+            .disabled
+        case .failed:
+            .failed
+        case .confirmed:
+            .confirmed
+        }
+    }
+
     static func textOpacity(for state: OutboxState) -> Double {
         contentOpacity(for: state)
     }
@@ -347,52 +380,60 @@ struct MessageActionCapsule: View {
 
     private var actions: some View {
         HoverActionPill {
-            if let retry {
-                HoverActionButton(
+            if message.outboxState == .failed {
+                if let retry {
+                    HoverActionButton(
                         systemImage: "arrow.clockwise",
-                        help: "Retry sending",
+                        help: "Retry send",
                         action: retry
-                )
-            }
-            ReactionActionMenu(
-                model: model,
-                guildID: message.guildID,
-                isPickerPresented: $isReactionPickerPresented,
-                react: react
-            )
-            .id("reaction-picker-\(message.id)-toolbar")
-            if let reply {
-                HoverActionButton(systemImage: "arrowshape.turn.up.left", help: "Reply", action: reply)
-            }
-            if let forward {
+                    )
+                }
                 HoverActionButton(
-                    systemImage: "arrowshape.turn.up.right",
-                    help: "Forward",
-                    action: forward
+                    systemImage: "doc.on.doc",
+                    help: "Copy text",
+                    action: copy
                 )
-            }
-            if canEdit {
-                HoverActionButton(systemImage: "pencil", help: "Edit message", action: edit)
-            }
-            HoverActionButton(systemImage: "doc.on.doc", help: "Copy text", action: copy)
-            HoverActionButton(systemImage: "link", help: "Copy message link", action: copyLink)
-            if let openThread {
-                HoverActionButton(
-                    systemImage: "bubble.left.and.bubble.right", help: "Open thread", action: openThread
+            } else {
+                ReactionActionMenu(
+                    model: model,
+                    guildID: message.guildID,
+                    isPickerPresented: $isReactionPickerPresented,
+                    react: react
                 )
-            }
-            if canEdit {
-                HoverActionButton(
-                    systemImage: "trash",
-                    help: "Delete message",
-                    role: .destructive
-                ) {
-                    if MessageDeleteConfirmationPolicy.isBypassed(
-                        by: NSEvent.modifierFlags
+                .id("reaction-picker-\(message.id)-toolbar")
+                if let reply {
+                    HoverActionButton(systemImage: "arrowshape.turn.up.left", help: "Reply", action: reply)
+                }
+                if let forward {
+                    HoverActionButton(
+                        systemImage: "arrowshape.turn.up.right",
+                        help: "Forward",
+                        action: forward
+                    )
+                }
+                if canEdit {
+                    HoverActionButton(systemImage: "pencil", help: "Edit message", action: edit)
+                }
+                HoverActionButton(systemImage: "doc.on.doc", help: "Copy text", action: copy)
+                HoverActionButton(systemImage: "link", help: "Copy message link", action: copyLink)
+                if let openThread {
+                    HoverActionButton(
+                        systemImage: "bubble.left.and.bubble.right", help: "Open thread", action: openThread
+                    )
+                }
+                if canEdit {
+                    HoverActionButton(
+                        systemImage: "trash",
+                        help: "Delete message",
+                        role: .destructive
                     ) {
-                        delete()
-                    } else {
-                        isDeleteConfirmationPresented = true
+                        if MessageDeleteConfirmationPolicy.isBypassed(
+                            by: NSEvent.modifierFlags
+                        ) {
+                            delete()
+                        } else {
+                            isDeleteConfirmationPresented = true
+                        }
                     }
                 }
             }
