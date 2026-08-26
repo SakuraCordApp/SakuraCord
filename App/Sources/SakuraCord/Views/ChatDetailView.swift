@@ -77,7 +77,10 @@ private struct ChatDetailFooter: View {
         VStack(spacing: 0) {
             switch access {
             case .checking:
-                DisabledComposerView(message: "Checking channel permissions…")
+                DisabledComposerView(
+                    message: "Checking channel permissions…",
+                    appearance: model.appearanceSettings.composerBarAppearance
+                )
             case .readable(canSend: true):
                 TypingIndicatorView(typingState: model.typingState, channelID: channel.id)
                 ComposerView(
@@ -89,7 +92,8 @@ private struct ChatDetailFooter: View {
                 DisabledComposerView(
                     message: channel.isOfficialSystemDirectMessage
                         ? "This chat is reserved for official Discord notifications."
-                        : "You do not have permission to send messages in this channel."
+                        : "You do not have permission to send messages in this channel.",
+                    appearance: model.appearanceSettings.composerBarAppearance
                 )
             case .hidden:
                 EmptyView()
@@ -100,8 +104,24 @@ private struct ChatDetailFooter: View {
 
 struct DisabledComposerView: View {
     let message: String
+    let appearance: ComposerBarAppearance
 
     var body: some View {
+        let usesDefaultStyle = appearance == .defaultStyle
+        let shape = usesDefaultStyle
+            ? AnyShape(ConcentricRectangle(
+                cornerRadius: ChatChromeMetrics.composerCornerRadius,
+                style: .continuous
+            ))
+            : AnyShape(ConcentricRectangle(
+                corners: .concentric(
+                    minimum: .fixed(
+                        ChatChromeMetrics.composerMinimumCornerRadius
+                    )
+                ),
+                isUniform: true
+            ))
+
         HStack(spacing: 0) {
             Text(message)
                 .font(.system(size: 15))
@@ -109,19 +129,13 @@ struct DisabledComposerView: View {
             Spacer(minLength: 0)
         }
         .foregroundStyle(.tertiary)
-        .padding(.horizontal, 24)
-        .frame(height: ChatChromeMetrics.controlHeight)
-        .glassEffect(
-            .regular,
-            in: ConcentricRectangle(
-                corners: .concentric(
-                    minimum: .fixed(
-                        ChatChromeMetrics.composerMinimumCornerRadius
-                    )
-                ),
-                isUniform: true
-            )
+        .padding(.horizontal, usesDefaultStyle ? 11 : 24)
+        .frame(
+            height: usesDefaultStyle
+                ? ChatChromeMetrics.composerControlHeight
+                : ChatChromeMetrics.controlHeight
         )
+        .glassEffect(.regular, in: shape)
         .padding(.horizontal, ChatChromeMetrics.composerWindowInset)
         .padding(.bottom, ChatChromeMetrics.composerWindowInset)
         .accessibilityElement(children: .combine)
