@@ -273,7 +273,6 @@ import Testing
         .groupingInterval,
         .underlineLinks,
         .showMemberList,
-        .showChannelHeader,
         .showActivityDetails,
         .messageActionVisibility,
         .showRoleColors,

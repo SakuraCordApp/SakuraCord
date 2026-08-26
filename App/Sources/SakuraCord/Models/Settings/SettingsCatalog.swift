@@ -248,7 +248,6 @@ nonisolated extension SettingsControlID {
     static let groupingInterval = Self(rawValue: "interface.grouping-interval")
     static let underlineLinks = Self(rawValue: "interface.underline-links")
     static let showMemberList = Self(rawValue: "interface.show-member-list")
-    static let showChannelHeader = Self(rawValue: "interface.show-channel-header")
     static let showActivityDetails = Self(rawValue: "interface.show-activity-details")
     static let messageActionVisibility = Self(rawValue: "interface.message-actions")
     static let showRoleColors = Self(rawValue: "interface.show-role-colors")
@@ -726,15 +725,6 @@ private nonisolated extension SettingsCatalog {
             label: "Show member list",
             help: "Show the member inspector for ordinary conversations.",
             keywords: ["members", "people", "inspector", "right sidebar"],
-            scope: .appWideLocal
-        ),
-        control(
-            .showChannelHeader,
-            page: .interface,
-            section: .interfaceVisibility,
-            label: "Show channel topic in header",
-            help: "Show the selected channel topic beneath its name when Discord provides one.",
-            keywords: ["topic", "header", "toolbar", "channel description"],
             scope: .appWideLocal
         ),
         control(

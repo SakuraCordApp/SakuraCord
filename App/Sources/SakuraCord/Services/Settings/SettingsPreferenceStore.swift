@@ -223,12 +223,6 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
-            id: .showChannelHeader,
-            page: .interface,
-            storage: .appWide(key: "settings.interface.showChannelHeader"),
-            defaultValue: .bool(true)
-        ),
-        SettingsPreferenceRegistration(
             id: .showActivityDetails,
             page: .interface,
             storage: .appWide(key: "settings.interface.showActivityDetails"),

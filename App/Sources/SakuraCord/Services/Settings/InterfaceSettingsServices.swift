@@ -138,7 +138,6 @@ nonisolated struct InterfaceSettingsSnapshot: Equatable, Sendable {
         groupingIntervalMinutes: 7,
         underlinesLinks: false,
         showsMemberList: true,
-        showsChannelHeader: true,
         showsActivityDetails: true,
         messageActionVisibility: .onHover,
         showsRoleColors: true
@@ -153,7 +152,6 @@ nonisolated struct InterfaceSettingsSnapshot: Equatable, Sendable {
     var groupingIntervalMinutes: Int
     var underlinesLinks: Bool
     var showsMemberList: Bool
-    var showsChannelHeader: Bool
     var showsActivityDetails: Bool
     var messageActionVisibility: InterfaceMessageActionVisibility
     var showsRoleColors: Bool
@@ -266,7 +264,6 @@ final class InterfaceSettingsStore {
             ?? value.groupingIntervalMinutes
         value.underlinesLinks = boolValue(.underlineLinks) ?? value.underlinesLinks
         value.showsMemberList = boolValue(.showMemberList) ?? value.showsMemberList
-        value.showsChannelHeader = boolValue(.showChannelHeader) ?? value.showsChannelHeader
         value.showsActivityDetails = boolValue(.showActivityDetails)
             ?? value.showsActivityDetails
         value.messageActionVisibility = enumValue(.messageActionVisibility)
@@ -286,7 +283,6 @@ final class InterfaceSettingsStore {
         preferences.set(.integer(value.groupingIntervalMinutes), for: .groupingInterval)
         preferences.set(.bool(value.underlinesLinks), for: .underlineLinks)
         preferences.set(.bool(value.showsMemberList), for: .showMemberList)
-        preferences.set(.bool(value.showsChannelHeader), for: .showChannelHeader)
         preferences.set(.bool(value.showsActivityDetails), for: .showActivityDetails)
         preferences.set(
             .string(value.messageActionVisibility.rawValue),

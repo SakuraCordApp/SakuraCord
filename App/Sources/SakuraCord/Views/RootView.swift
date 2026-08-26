@@ -521,16 +521,32 @@ private struct ChatRootView: View {
                     .padding(.vertical, 5)
                 }
             } else if let channel = model.selectedChannel {
-                ConversationToolbarLabel(
-                    title: channel.name,
-                    systemImage: channelToolbarSymbol(channel),
-                    subtitle: isDirectMessageSelected
-                        ? directMessageToolbarSubtitle(for: channel)
-                        : channelTopic(for: channel),
-                    textSize: model.interfaceSettings.interfaceTextSize
-                )
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
+                if isDirectMessageSelected {
+                    ConversationToolbarLabel(
+                        title: channel.name,
+                        systemImage: channelToolbarSymbol(channel),
+                        subtitle: directMessageToolbarSubtitle(for: channel),
+                        textSize: model.interfaceSettings.interfaceTextSize
+                    )
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                } else if let topic = channelTopic(for: channel) {
+                    ChannelTopicToolbarButton(
+                        title: channel.name,
+                        systemImage: channelToolbarSymbol(channel),
+                        topic: topic,
+                        textSize: model.interfaceSettings.interfaceTextSize
+                    )
+                } else {
+                    ConversationToolbarLabel(
+                        title: channel.name,
+                        systemImage: channelToolbarSymbol(channel),
+                        subtitle: nil,
+                        textSize: model.interfaceSettings.interfaceTextSize
+                    )
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                }
             }
         }
         .visibilityPriority(.high)
@@ -782,8 +798,7 @@ private struct ChatRootView: View {
     }
 
     private func channelTopic(for channel: Channel) -> String? {
-        guard model.interfaceSettings.showsChannelHeader,
-              let topic = channel.topic?.trimmingCharacters(in: .whitespacesAndNewlines),
+        guard let topic = channel.topic?.trimmingCharacters(in: .whitespacesAndNewlines),
               !topic.isEmpty
         else { return nil }
         return topic
@@ -1144,5 +1159,48 @@ private struct ConversationToolbarLabel: View {
             }
         }
         .padding(.horizontal, 6)
+    }
+}
+
+private struct ChannelTopicToolbarButton: View {
+    let title: String
+    let systemImage: String
+    let topic: String
+    let textSize: Double
+    @State private var isTopicPresented = false
+
+    var body: some View {
+        Button {
+            isTopicPresented.toggle()
+        } label: {
+            ConversationToolbarLabel(
+                title: title,
+                systemImage: systemImage,
+                subtitle: nil,
+                textSize: textSize
+            )
+        }
+        .popover(
+            isPresented: $isTopicPresented,
+            attachmentAnchor: .rect(.bounds),
+            arrowEdge: .bottom
+        ) {
+            ChannelTopicPopover(topic: topic)
+        }
+        .help("Show channel topic")
+        .accessibilityLabel("Show channel topic")
+        .accessibilityValue(title)
+    }
+}
+
+private struct ChannelTopicPopover: View {
+    let topic: String
+
+    var body: some View {
+        Text(topic)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .textSelection(.enabled)
+            .padding(16)
+            .frame(width: 320, alignment: .leading)
     }
 }

@@ -33,22 +33,14 @@ struct InterfaceSettingsPreview: View {
     private var previewHeader: some View {
         HStack(spacing: 7) {
             Image(systemName: "number")
-            VStack(alignment: .leading, spacing: 0) {
-                Text("design-lab", bundle: #bundle)
-                    .font(.system(size: value.interfaceTextSize, weight: .semibold))
-                if value.showsChannelHeader {
-                    Text("Critique, prototypes, and experiments", bundle: #bundle)
-                        .font(.system(size: max(10, value.interfaceTextSize - 2)))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
+            Text("design-lab", bundle: #bundle)
+                .font(.system(size: value.interfaceTextSize))
             Spacer()
             Image(systemName: value.showsMemberList ? "person.2.fill" : "person.2")
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 12)
-        .frame(height: value.showsChannelHeader ? 48 : 38)
+        .frame(height: 38)
     }
 
     private var previewSidebar: some View {

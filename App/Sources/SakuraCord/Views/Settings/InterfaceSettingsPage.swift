@@ -234,11 +234,6 @@ private struct InterfaceVisibilitySection: View {
             Toggle("Show member list", isOn: $value.showsMemberList)
                 .settingsControlAnchor(.showMemberList, state: state)
             Toggle(
-                "Show channel topic in header",
-                isOn: $value.showsChannelHeader
-            )
-            .settingsControlAnchor(.showChannelHeader, state: state)
-            Toggle(
                 "Show activity and presence details",
                 isOn: $value.showsActivityDetails
             )
