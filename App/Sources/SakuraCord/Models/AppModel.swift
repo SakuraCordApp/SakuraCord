@@ -186,6 +186,7 @@ final class AppModel {
     @ObservationIgnored var messageRows: [MessageRowPresentation] = []
     @ObservationIgnored var messageRowsRevision: UInt64 = 0
     var timelinePresentationRevision: UInt64 = 0
+    var appearanceSettings: AppearanceSettingsSnapshot
     var interfaceSettings: InterfaceSettingsSnapshot
     var chatSettings: ChatSettingsSnapshot
     var accessibilitySettings: AccessibilitySettingsSnapshot
@@ -196,8 +197,7 @@ final class AppModel {
     @ObservationIgnored var latestMessageRowsRevision: UInt64 = 0
     @ObservationIgnored var messageRowsNonAppendRevision: UInt64 = 0
     @ObservationIgnored var selectedMessageIDs: Set<MessageID> = []
-    @ObservationIgnored var selectedMessageStoredIndexByID:
-        [MessageID: Int] = [:]
+    @ObservationIgnored var selectedMessageStoredIndexByID: [MessageID: Int] = [:]
     /// Stored indexes use a movable origin so prepending a history page does
     /// not rewrite every existing message's dictionary value. A logical array
     /// index is `stored - selectedMessageIndexOrigin`.
@@ -1211,6 +1211,7 @@ final class AppModel {
         privacySafetySettingsStore: PrivacySafetySettingsStore? = nil
     ) {
         self.launchMode = launchMode
+        appearanceSettings = AppearanceSettingsStore.shared.load()
         interfaceSettings = InterfaceSettingsStore.shared.load()
         chatSettings = ChatSettingsStore.shared.load()
         accessibilitySettings = AccessibilitySettingsStore.shared.load()

@@ -3,6 +3,7 @@ import Foundation
 nonisolated enum SettingsPageID: String, CaseIterable, Codable, Identifiable, Sendable {
     case myAccount
     case general
+    case appearance
     case interface
     case chat
     case notifications
@@ -171,6 +172,7 @@ nonisolated extension SettingsSectionID {
     static let accountLocalData = Self(rawValue: "account-local-data")
     static let startupRestoration = Self(rawValue: "startup-restoration")
     static let confirmations = Self(rawValue: "confirmations")
+    static let appearanceComposer = Self(rawValue: "appearance-composer")
     static let interfaceDensity = Self(rawValue: "interface-density")
     static let interfaceTypography = Self(rawValue: "interface-typography")
     static let interfaceTime = Self(rawValue: "interface-time")
@@ -238,6 +240,7 @@ nonisolated extension SettingsControlID {
     static let rememberMemberListVisibility = Self(rawValue: "general.remember-member-list")
     static let confirmQuitActiveWork = Self(rawValue: "general.confirm-quit-active-work")
     static let confirmDiscardComposer = Self(rawValue: "general.confirm-discard-composer")
+    static let composerBarAppearance = Self(rawValue: "appearance.composer-bar")
     static let messageDensity = Self(rawValue: "interface.message-density")
     static let sidebarDensity = Self(rawValue: "interface.sidebar-density")
     static let messageTextSize = Self(rawValue: "interface.message-text-size")
@@ -424,6 +427,11 @@ private nonisolated extension SettingsCatalog {
             .general, group: .preferences, title: "General", image: "gearshape",
             help: "Choose startup, restoration, and confirmation behavior.",
             keywords: ["startup", "launch", "restore", "confirmation", "quit"]
+        ),
+        page(
+            .appearance, group: .preferences, title: "Appearance", image: "circle.lefthalf.filled",
+            help: "Choose how SakuraCord's interface looks.",
+            keywords: ["appearance", "look", "style", "composer", "input bar", "legacy"]
         ),
         page(
             .interface, group: .preferences, title: "Interface", image: "macwindow",
@@ -633,6 +641,15 @@ private nonisolated extension SettingsCatalog {
             label: "Confirm discarding composer changes",
             help: "Ask before discarding meaningful unsent attachments, command input, or edited message text.",
             keywords: ["draft", "unsent", "edit", "discard warning", "attachments"],
+            scope: .appWideLocal
+        ),
+        control(
+            .composerBarAppearance,
+            page: .appearance,
+            section: .appearanceComposer,
+            label: "Input bar",
+            help: "Choose the current split input bar or SakuraCord's legacy unified input bar.",
+            keywords: ["composer", "message input", "default", "legacy", "pill"],
             scope: .appWideLocal
         ),
         control(

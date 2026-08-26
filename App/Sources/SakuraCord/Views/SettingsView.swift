@@ -159,6 +159,8 @@ private struct SettingsDetailRouter: View {
                 state: state,
                 launchAtLogin: launchAtLogin
             )
+        case .appearance:
+            AppearanceSettingsPage(model: model, state: state)
         case .interface:
             InterfaceSettingsPage(model: model, state: state)
         case .chat:

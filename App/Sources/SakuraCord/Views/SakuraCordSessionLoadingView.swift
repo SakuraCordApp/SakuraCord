@@ -263,6 +263,16 @@ struct SakuraCordSessionLoadingView: View {
             bottomContentInset: ChatDetailLayoutPolicy.defaultFloatingFooterHeight
         )
         .overlay(alignment: .bottom) {
+            composerLoadingSkeleton
+                .padding(.horizontal, ChatChromeMetrics.composerWindowInset)
+                .padding(.bottom, ChatChromeMetrics.composerWindowInset)
+        }
+    }
+
+    @ViewBuilder
+    private var composerLoadingSkeleton: some View {
+        switch AppearanceSettingsStore.shared.load().composerBarAppearance {
+        case .defaultStyle:
             HStack(spacing: ChatChromeMetrics.composerSegmentSpacing) {
                 SkeletonShape(Circle())
                     .frame(
@@ -277,8 +287,16 @@ struct SakuraCordSessionLoadingView: View {
                         height: ChatChromeMetrics.composerControlHeight
                     )
             }
-            .padding(.horizontal, ChatChromeMetrics.composerWindowInset)
-            .padding(.bottom, ChatChromeMetrics.composerWindowInset)
+        case .legacy:
+            SkeletonShape(
+                ConcentricRectangle(
+                    corners: .concentric(
+                        minimum: .fixed(ChatChromeMetrics.composerMinimumCornerRadius)
+                    ),
+                    isUniform: true
+                )
+            )
+            .frame(height: ChatChromeMetrics.controlHeight)
         }
     }
 

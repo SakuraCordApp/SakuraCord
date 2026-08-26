@@ -169,6 +169,12 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
+            id: .composerBarAppearance,
+            page: .appearance,
+            storage: .appWide(key: "settings.appearance.composerBar"),
+            defaultValue: .string(ComposerBarAppearance.defaultStyle.rawValue)
+        ),
+        SettingsPreferenceRegistration(
             id: .messageDensity,
             page: .interface,
             storage: .appWide(key: "settings.interface.messageDensity"),

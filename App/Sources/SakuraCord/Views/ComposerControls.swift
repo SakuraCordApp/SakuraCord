@@ -96,6 +96,7 @@ struct ComposerActionButton: View {
     var iconWeight: Font.Weight = .medium
     var size = ChatChromeMetrics.composerControlHeight
     var showsHoverBackground = true
+    var appearance: ComposerBarAppearance = .defaultStyle
     let action: () -> Void
 
     @Environment(\.isEnabled) private var isEnabled
@@ -117,8 +118,13 @@ struct ComposerActionButton: View {
         .help(help)
     }
 
-    private var buttonShape: Circle {
-        Circle()
+    private var buttonShape: AnyShape {
+        switch appearance {
+        case .defaultStyle:
+            AnyShape(Circle())
+        case .legacy:
+            AnyShape(ConcentricRectangle(cornerRadius: 9, style: .continuous))
+        }
     }
 
     private var hoverColor: Color {
@@ -130,8 +136,10 @@ struct ComposerActionButton: View {
 
 struct ComposerSendButton: View {
     let action: () -> Void
+    var appearance: ComposerBarAppearance = .defaultStyle
 
     @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovering = false
 
     var body: some View {
         Button(action: action) {
@@ -145,11 +153,24 @@ struct ComposerSendButton: View {
                 .contentShape(buttonShape)
         }
         .buttonStyle(.plain)
+        .background(hoverColor, in: buttonShape)
         .contentShape(buttonShape)
+        .onHover { isHovering = appearance == .legacy && $0 }
         .help("Send message")
     }
 
-    private var buttonShape: Circle {
-        Circle()
+    private var buttonShape: AnyShape {
+        switch appearance {
+        case .defaultStyle:
+            AnyShape(Circle())
+        case .legacy:
+            AnyShape(ConcentricRectangle(cornerRadius: 9, style: .continuous))
+        }
+    }
+
+    private var hoverColor: Color {
+        appearance == .legacy && isHovering && isEnabled
+            ? .primary.opacity(0.14)
+            : .clear
     }
 }

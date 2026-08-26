@@ -27,21 +27,14 @@ struct ComposerView: View {
 
     var body: some View {
         @Bindable var model = model
-        let accessoryButtonSize = ChatChromeMetrics.composerAccessoryButtonSize
-        GlassEffectContainer(spacing: ChatChromeMetrics.composerSegmentSpacing) {
-            HStack(alignment: .bottom, spacing: ChatChromeMetrics.composerSegmentSpacing) {
-                if !hasActiveCommand {
-                    ComposerActionButton(
-                        icon: Image(systemName: "plus"),
-                        help: "Add attachments",
-                        iconSize: 19,
-                        iconWeight: .regular,
-                        showsHoverBackground: false
-                    ) {
-                        showFileImporter = true
-                    }
-                    .glassEffect(.regular.interactive(), in: Circle())
-                }
+        let appearance = model.appearanceSettings.composerBarAppearance
+        let accessoryButtonSize = appearance == .defaultStyle
+            ? ChatChromeMetrics.composerAccessoryButtonSize
+            : ChatChromeMetrics.composerControlHeight
+        let chrome = ComposerChromeLayout(
+            appearance: appearance,
+            focus: { isFocused = true },
+            header: {
                 VStack(alignment: .leading, spacing: 0) {
                     if !hasActiveCommand, let reply = activeReply {
                         let author = model.authorPresentation(for: reply)
@@ -72,147 +65,158 @@ struct ComposerView: View {
                         Divider()
                             .padding(.horizontal, 11)
                     }
-                    HStack(alignment: .bottom, spacing: 9) {
-                        if hasActiveCommand {
-                            ApplicationCommandInlineInput(
-                                composer: model.commandComposer,
-                                roles: model.guildRoles,
+                }
+            },
+            leading: {
+                Group {
+                    if !hasActiveCommand {
+                        ComposerActionButton(
+                            icon: Image(systemName: "plus"),
+                            help: "Add attachments",
+                            iconSize: 19,
+                            iconWeight: .regular,
+                            showsHoverBackground: appearance == .legacy,
+                            appearance: appearance
+                        ) {
+                            showFileImporter = true
+                        }
+                    }
+                }
+            },
+            input: {
+                Group {
+                    if hasActiveCommand {
+                        ApplicationCommandInlineInput(
+                            composer: model.commandComposer,
+                            roles: model.guildRoles,
+                            sendWithReturn: model.chatSettings.sendsWithReturn,
+                            chatSettings: model.chatSettings,
+                            onTextChange: { option, text in
+                                updateCommandField(text, for: option)
+                            },
+                            onSubmit: submitComposer,
+                            onKeyboardCommand: handleAutocomplete,
+                            cancel: cancelCommand,
+                            isFocused: $isFocused
+                        )
+                    } else {
+                        ZStack(alignment: .bottomTrailing) {
+                            ComposerTextView(
+                                text: draft,
+                                placeholder: composerPlaceholder,
                                 sendWithReturn: model.chatSettings.sendsWithReturn,
                                 chatSettings: model.chatSettings,
-                                onTextChange: { option, text in
-                                    updateCommandField(text, for: option)
+                                mentionPresentations: composerMentionPresentations,
+                                onTextChange: updateDraft,
+                                onSubmit: send,
+                                onEscape: handleEscapeCommand,
+                                onEditLatestMessage: editLatestMessage,
+                                onNavigateReplySelection: { direction in
+                                    model.navigateReplySelection(
+                                        in: conversation,
+                                        direction: direction
+                                    )
                                 },
-                                onSubmit: submitComposer,
-                                onKeyboardCommand: handleAutocomplete,
-                                cancel: cancelCommand,
+                                onAutocompleteCommand: handleAutocomplete,
+                                onPasteAttachments: addPastedAttachments,
+                                capturesUnfocusedTyping:
+                                    model.chatSettings.focusesComposerOnTyping,
+                                verticalContentInset: appearance == .defaultStyle
+                                    ? ChatChromeMetrics.composerTextVerticalInset
+                                    : 0,
+                                selection: $draftSelection,
                                 isFocused: $isFocused
                             )
-                            .frame(minHeight: ChatChromeMetrics.composerControlHeight)
-                            .layoutPriority(1)
-                        } else {
-                            ZStack(alignment: .bottomTrailing) {
-                                ComposerTextView(
-                                    text: draft,
-                                    placeholder: composerPlaceholder,
-                                    sendWithReturn: model.chatSettings.sendsWithReturn,
-                                    chatSettings: model.chatSettings,
-                                    mentionPresentations: composerMentionPresentations,
-                                    onTextChange: updateDraft,
-                                    onSubmit: send,
-                                    onEscape: handleEscapeCommand,
-                                    onEditLatestMessage: editLatestMessage,
-                                    onNavigateReplySelection: { direction in
-                                        model.navigateReplySelection(
-                                            in: conversation,
-                                            direction: direction
-                                        )
-                                    },
-                                    onAutocompleteCommand: handleAutocomplete,
-                                    onPasteAttachments: addPastedAttachments,
-                                    capturesUnfocusedTyping:
-                                        model.chatSettings.focusesComposerOnTyping,
-                                    verticalContentInset: ChatChromeMetrics.composerTextVerticalInset,
-                                    selection: $draftSelection,
-                                    isFocused: $isFocused
-                                )
-                                if draft.isEmpty {
-                                    Text(composerPlaceholder)
-                                        .foregroundStyle(.tertiary)
-                                        .font(.system(size: 15))
-                                        .lineLimit(1)
-                                        .truncationMode(.tail)
-                                        .allowsHitTesting(false)
-                                        .accessibilityHidden(true)
-                                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                                }
-                                if ChatCharacterLimitPolicy.shouldShowCounter(characterCount: draft.count, premiumType: model.snapshot?.currentUser.premiumType) {
-                                    ComposerCharacterCounter(
-                                        characterCount: draft.count,
-                                        premiumType: model.snapshot?.currentUser.premiumType
+                            if draft.isEmpty {
+                                Text(composerPlaceholder)
+                                    .foregroundStyle(.tertiary)
+                                    .font(.system(size: 15))
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                    .allowsHitTesting(false)
+                                    .accessibilityHidden(true)
+                                    .frame(
+                                        maxWidth: .infinity,
+                                        maxHeight: .infinity,
+                                        alignment: .leading
                                     )
-                                }
                             }
-                            .frame(minHeight: ChatChromeMetrics.composerControlHeight)
-                            .layoutPriority(1)
-                        }
-                        HStack(spacing: 1) {
-                            if !hasActiveCommand {
-                                if model.supportedCapabilities.contains(.gifs) {
-                                    ComposerActionButton(
-                                        icon: Image("gif.square", bundle: .module),
-                                        help: "Choose GIF",
-                                        iconSize: 20,
-                                        iconWeight: .medium,
-                                        size: accessoryButtonSize
-                                    ) {
-                                        toggleGIFPicker()
-                                    }
-                                    .fixedSize()
-                                    .background {
-                                        StableReactionPickerPresenter(
-                                            isPresented: $showGIFPicker,
-                                            preferredEdge: .maxY,
-                                            accessibilityIdentifier: "composer-gif-picker"
-                                        ) {
-                                            composerGIFPicker
-                                        }
-                                        .frame(width: accessoryButtonSize, height: accessoryButtonSize)
-                                    }
-                                }
-                                ComposerActionButton(
-                                    icon: SakuraCordSystemSymbol.emojiFaceGrinningImage,
-                                    help: "Choose emoji",
-                                    iconSize: 19,
-                                    iconWeight: .medium,
-                                    size: accessoryButtonSize
-                                ) {
-                                    toggleEmojiPicker()
-                                }
-                                .fixedSize()
-                                .background {
-                                    StableReactionPickerPresenter(
-                                        isPresented: $showEmojiPicker,
-                                        preferredEdge: .maxY,
-                                        accessibilityIdentifier: "composer-emoji-picker"
-                                    ) {
-                                        composerEmojiPicker
-                                    }
-                                    .frame(width: accessoryButtonSize, height: accessoryButtonSize)
-                                }
+                            if ChatCharacterLimitPolicy.shouldShowCounter(
+                                characterCount: draft.count,
+                                premiumType: model.snapshot?.currentUser.premiumType
+                            ) {
+                                ComposerCharacterCounter(
+                                    characterCount: draft.count,
+                                    premiumType: model.snapshot?.currentUser.premiumType
+                                )
                             }
                         }
-                        .frame(height: ChatChromeMetrics.composerControlHeight)
                     }
-                    .padding(.leading, 11)
-                    .padding(.trailing, ChatChromeMetrics.composerAccessoryEdgeInset)
-                    .frame(minHeight: ChatChromeMetrics.composerControlHeight)
                 }
-                .frame(maxWidth: .infinity)
-                .background {
-                    ComposerFocusSurface { isFocused = true }
-                }
-                .glassEffect(
-                    .regular.interactive(),
-                    in: ConcentricRectangle(
-                        cornerRadius: ChatChromeMetrics.composerCornerRadius,
-                        style: .continuous
-                    )
-                )
-                .overlay(alignment: .top) {
-                    composerOverlay
-                        .alignmentGuide(.top) { dimensions in
-                            dimensions[.bottom] + 7
+                .frame(minHeight: ChatChromeMetrics.composerControlHeight)
+                .layoutPriority(1)
+            },
+            accessories: {
+                HStack(spacing: 1) {
+                    if !hasActiveCommand {
+                        if model.supportedCapabilities.contains(.gifs) {
+                            ComposerActionButton(
+                                icon: Image("gif.square", bundle: .module),
+                                help: "Choose GIF",
+                                iconSize: 20,
+                                iconWeight: .medium,
+                                size: accessoryButtonSize,
+                                appearance: appearance
+                            ) {
+                                toggleGIFPicker()
+                            }
+                            .fixedSize()
+                            .background {
+                                StableReactionPickerPresenter(
+                                    isPresented: $showGIFPicker,
+                                    preferredEdge: .maxY,
+                                    accessibilityIdentifier: "composer-gif-picker"
+                                ) {
+                                    composerGIFPicker
+                                }
+                                .frame(width: accessoryButtonSize, height: accessoryButtonSize)
+                            }
                         }
-                        .zIndex(10)
+                        ComposerActionButton(
+                            icon: SakuraCordSystemSymbol.emojiFaceGrinningImage,
+                            help: "Choose emoji",
+                            iconSize: 19,
+                            iconWeight: .medium,
+                            size: accessoryButtonSize,
+                            appearance: appearance
+                        ) {
+                            toggleEmojiPicker()
+                        }
+                        .fixedSize()
+                        .background {
+                            StableReactionPickerPresenter(
+                                isPresented: $showEmojiPicker,
+                                preferredEdge: .maxY,
+                                accessibilityIdentifier: "composer-emoji-picker"
+                            ) {
+                                composerEmojiPicker
+                            }
+                            .frame(width: accessoryButtonSize, height: accessoryButtonSize)
+                        }
+                    }
                 }
-                ComposerSendButton(action: submitComposer)
-                    .disabled(!composerCanSubmit)
-                    .glassEffect(.regular.interactive(), in: Circle())
-            }
-        }
-        .fixedSize(horizontal: false, vertical: true)
-        .padding(.horizontal, ChatChromeMetrics.composerWindowInset)
-        .padding(.bottom, ChatChromeMetrics.composerWindowInset)
+                .frame(height: ChatChromeMetrics.composerControlHeight)
+            },
+            send: {
+                ComposerSendButton(
+                    action: submitComposer,
+                    appearance: appearance
+                )
+                .disabled(!composerCanSubmit)
+            },
+            overlay: { composerOverlay }
+        )
+        chrome
         .fileImporter(
             isPresented: $showFileImporter,
             allowedContentTypes: [.item],
@@ -1927,7 +1931,7 @@ struct EmojiAutocompleteList: View {
     }
 }
 
-private struct ComposerAutocompletePanel<Content: View>: View {
+struct ComposerAutocompletePanel<Content: View>: View {
     let heading: String
     let count: Int
     @ViewBuilder let content: () -> Content
@@ -1965,36 +1969,5 @@ private struct ComposerAutocompletePanel<Content: View>: View {
                 style: .continuous
             )
         )
-    }
-}
-
-struct MentionAutocompleteList: View {
-    let heading: String
-    let suggestions: [MentionAutocompleteSuggestion]
-    let selectedIndex: Int
-    let highlight: (Int) -> Void
-    let select: (MentionAutocompleteSuggestion) -> Void
-
-    var body: some View {
-        ComposerAutocompletePanel(heading: heading, count: suggestions.count) {
-            LazyVStack(spacing: 2) {
-                ForEach(suggestions.enumerated(), id: \.element.id) { index, suggestion in
-                    if index > 0,
-                       case .role = suggestion.target,
-                       case .user = suggestions[index - 1].target
-                    {
-                        Divider()
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 3)
-                    }
-                    MentionAutocompleteRow(
-                        suggestion: suggestion,
-                        isSelected: index == selectedIndex,
-                        select: { select(suggestion) },
-                        highlight: { highlight(index) }
-                    )
-                }
-            }
-        }
     }
 }
