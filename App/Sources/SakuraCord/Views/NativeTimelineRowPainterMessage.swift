@@ -332,13 +332,17 @@ extension NativeTimelineRowPainter {
         }
 
         NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current?.cgContext.setAlpha(
-            CGFloat(
-                MessageOutboxPresentation.mediaOpacity(
-                    for: message.outboxState
-                )
-            )
+        let attachmentContext = NSGraphicsContext.current?.cgContext
+        attachmentContext?.setAlpha(
+            CGFloat(MessageOutboxPresentation.mediaOpacity(
+                for: message.outboxState
+            ))
         )
+        // AppKit's NSImage drawing does not consistently inherit a CGContext's
+        // global alpha. Composite the complete attachment gallery as one layer
+        // so bitmap images, symbols, text, and placeholders share the pending
+        // message presentation instead of only dimming Quartz-drawn pieces.
+        attachmentContext?.beginTransparencyLayer(auxiliaryInfo: nil)
         let attachmentFillsFrame =
             MediaGalleryImagePresentation.fillsFrame(
                 itemCount: layout.attachmentRegions.count
@@ -418,6 +422,7 @@ extension NativeTimelineRowPainter {
                 )
             }
         }
+        attachmentContext?.endTransparencyLayer()
         NSGraphicsContext.restoreGraphicsState()
         for region in layout.embedRegions {
             if region.kind == .card {
