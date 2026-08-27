@@ -5,10 +5,10 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
         <title>SakuraCord</title>
         <item>
             <title>0.1.5 Beta 2</title>
-            <pubDate>Thu, 27 Aug 2026 02:39:35 +0000</pubDate>
+            <pubDate>Thu, 27 Aug 2026 09:21:09 +0000</pubDate>
             <link>https://github.com/SakuraCordApp/SakuraCord/releases/tag/v0.1.5-Beta-2</link>
             <sparkle:fullReleaseNotesLink>https://github.com/SakuraCordApp/SakuraCord/releases/tag/v0.1.5-Beta-2</sparkle:fullReleaseNotesLink>
-            <sparkle:version>51</sparkle:version>
+            <sparkle:version>55</sparkle:version>
             <sparkle:shortVersionString>0.1.5 Beta 2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>27.0</sparkle:minimumSystemVersion>
             <description sparkle:format="markdown"><![CDATA[# SakuraCord v0.1.5-Beta-2
@@ -23,8 +23,12 @@ SakuraCord v0.1.5 Beta 2 repairs release-track switching and shows the complete 
 
 ## Version labels
 
-- Fixed About, Software Updates, the macOS About panel, and support summaries so they include the `0.1.5 Beta 2` label instead of shortening the release to `0.1.5`.
-- Preserved the numeric bundle version required by macOS while using the complete beta label in user-facing surfaces.
+- Fixed About, Software Updates, support summaries, and Sparkle’s update window so they identify the installed release as `0.1.5 Beta 2` instead of shortening it to `0.1.5`.
+- Kept the macOS About panel focused on `0.1.5 Beta 2` without exposing the internal build number used for update ordering.
+
+## Interface
+
+- Removed the duplicate Settings item from the SakuraCord app menu.
 
 ## Update reliability
 
@@ -34,10 +38,10 @@ SakuraCord v0.1.5 Beta 2 repairs release-track switching and shows the complete 
 
 <!-- sakuracord-release-action:v1 -->
 ]]></description>
-            <enclosure url="https://github.com/SakuraCordApp/SakuraCord/releases/download/v0.1.5-Beta-2/SakuraCord-v0.1.5-Beta-2.dmg" length="27034240" type="application/octet-stream" sparkle:edSignature="SNuWH+HwbMe6UXvYDYn033SVDD23YA3lnKpUBMOlyBPpauCnRceOpKc6T+jLQuESPCpQlese3awR/xA0lJfHCg=="></enclosure>
+            <enclosure url="https://github.com/SakuraCordApp/SakuraCord/releases/download/v0.1.5-Beta-2/SakuraCord-v0.1.5-Beta-2.dmg" length="27033845" type="application/octet-stream" sparkle:edSignature="JvT1SEShCsOdq+QBdwV0cw8tCrEDh2+1mK7cB9RSusl1sYwcpz9nXR9AqhhBExmpaRv/VWf9m891VWCvxHtyAA=="></enclosure>
         </item>
     </channel>
 </rss><!-- sparkle-signatures:
-edSignature: 1GpCpM6ev21uKe2kiwxQwu3HtU9L8ti0hGMFemtsbxOZDV7lL/rzL3Xr0bIvmBy392qrVuzOuKpFGviRUmGyAw==
-length: 2593
+edSignature: 6Ahdqg4q+hmaWkwknmm3uiLk4jLXNiRGRYMUd/FLSAb2KDsP0GdVH1W6zFXDDohC8JbMEm0C541FtKwG76OZCQ==
+length: 2693
 -->
