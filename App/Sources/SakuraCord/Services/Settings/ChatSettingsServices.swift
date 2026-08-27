@@ -65,10 +65,10 @@ nonisolated enum ChatInlineMediaSize: String, CaseIterable, Identifiable, Sendab
 nonisolated struct ChatSettingsSnapshot: Equatable, Sendable {
     static let defaults = Self(
         sendsWithReturn: true,
-        checksSpelling: true,
-        correctsSpellingAutomatically: true,
-        usesSmartQuotes: true,
-        usesSmartDashes: true,
+        checksSpelling: false,
+        correctsSpellingAutomatically: false,
+        usesSmartQuotes: false,
+        usesSmartDashes: false,
         sendsTypingIndicators: true,
         focusesComposerOnTyping: true,
         readAcknowledgementMode: .automatic,

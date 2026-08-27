@@ -256,25 +256,25 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             id: .chatSpellCheck,
             page: .chat,
             storage: .appWide(key: "settings.chat.spellCheck"),
-            defaultValue: .bool(true)
+            defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .chatAutomaticCorrection,
             page: .chat,
             storage: .appWide(key: "settings.chat.automaticCorrection"),
-            defaultValue: .bool(true)
+            defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .chatSmartQuotes,
             page: .chat,
             storage: .appWide(key: "settings.chat.smartQuotes"),
-            defaultValue: .bool(true)
+            defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .chatSmartDashes,
             page: .chat,
             storage: .appWide(key: "settings.chat.smartDashes"),
-            defaultValue: .bool(true)
+            defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
             id: .chatTypingIndicators,
