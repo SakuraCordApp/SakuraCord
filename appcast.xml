@@ -5,10 +5,10 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
         <title>SakuraCord</title>
         <item>
             <title>0.1.5 Beta 2</title>
-            <pubDate>Thu, 27 Aug 2026 09:21:09 +0000</pubDate>
+            <pubDate>Thu, 27 Aug 2026 09:51:19 +0000</pubDate>
             <link>https://github.com/SakuraCordApp/SakuraCord/releases/tag/v0.1.5-Beta-2</link>
             <sparkle:fullReleaseNotesLink>https://github.com/SakuraCordApp/SakuraCord/releases/tag/v0.1.5-Beta-2</sparkle:fullReleaseNotesLink>
-            <sparkle:version>55</sparkle:version>
+            <sparkle:version>57</sparkle:version>
             <sparkle:shortVersionString>0.1.5 Beta 2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>27.0</sparkle:minimumSystemVersion>
             <description sparkle:format="markdown"><![CDATA[# SakuraCord v0.1.5-Beta-2
@@ -32,16 +32,17 @@ SakuraCord v0.1.5 Beta 2 repairs release-track switching and shows the complete 
 
 ## Update reliability
 
+- Moved the Nightly update feed to `sakuracord.app` so it no longer needs a generated source branch.
 - Republished this repaired Beta 2 with a newer build number so installations of the earlier broken Beta 2 can update normally.
 
 **Full Changelog:** [v0.1.5-Beta-1...v0.1.5-Beta-2](https://github.com/SakuraCordApp/SakuraCord/compare/v0.1.5-Beta-1...v0.1.5-Beta-2)
 
 <!-- sakuracord-release-action:v1 -->
 ]]></description>
-            <enclosure url="https://github.com/SakuraCordApp/SakuraCord/releases/download/v0.1.5-Beta-2/SakuraCord-v0.1.5-Beta-2.dmg" length="27033845" type="application/octet-stream" sparkle:edSignature="JvT1SEShCsOdq+QBdwV0cw8tCrEDh2+1mK7cB9RSusl1sYwcpz9nXR9AqhhBExmpaRv/VWf9m891VWCvxHtyAA=="></enclosure>
+            <enclosure url="https://github.com/SakuraCordApp/SakuraCord/releases/download/v0.1.5-Beta-2/SakuraCord-v0.1.5-Beta-2.dmg" length="27033714" type="application/octet-stream" sparkle:edSignature="XBGAxg3YNVz6oL7myPGXLnwiTlFOx6knBSvUG6/U6dn+jpk9JTIkFFn+5GCT7G3vgtqb4UCwdD8MMsOoFQDEAg=="></enclosure>
         </item>
     </channel>
 </rss><!-- sparkle-signatures:
-edSignature: 6Ahdqg4q+hmaWkwknmm3uiLk4jLXNiRGRYMUd/FLSAb2KDsP0GdVH1W6zFXDDohC8JbMEm0C541FtKwG76OZCQ==
-length: 2693
+edSignature: v6bCL1IbKsoljxaicOA5EFHbCe+50H8mk8AT2h+d0ywEHt9X72iF1Z5tp7PXh8NXn4GZbWmKTvit7ucSGKIvBQ==
+length: 2794
 -->
