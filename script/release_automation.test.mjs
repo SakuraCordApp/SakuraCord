@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   RELEASE_ACTION_MARKER,
   createDiscordPayload,
+  editDiscordAnnouncement,
   prepareReleaseCopy,
   releaseDisplayName,
   validateReleaseCopy,
@@ -121,7 +122,45 @@ test("gives nightly announcements distinct visual framing", () => {
     "1541194051196289157",
   );
 
-  assert.equal(payload.embeds[0].title, "SakuraCord v0.2.0 Beta 3 🌙");
+  assert.equal(payload.embeds[0].title, "SakuraCord v0.2.0 Beta 3");
   assert.equal(payload.embeds[0].color, 0x5865f2);
   assert.deepEqual(payload.allowed_mentions.roles, ["1541194051196289157"]);
+});
+
+test("edits an existing Discord announcement without send-only nonce fields", async () => {
+  let request;
+  const messageId = "1542334215637434462";
+  const result = await editDiscordAnnouncement({
+    token: "secret-token",
+    channelId: "1541185451090645064",
+    roleId: "1541194051196289157",
+    messageId,
+    repository: "SakuraCordApp/SakuraCord",
+    releaseId: 124,
+    releaseUrl: "https://github.com/SakuraCordApp/SakuraCord/releases/tag/v0.2.0-Beta-3",
+    copy: releaseCopy({
+      tagName: "v0.2.0-Beta-3",
+      discordAnnouncement:
+        "**A specific nightly headline 🌙**\n\n**Highlights**\n- Good things",
+    }),
+    fetchImpl: async (url, options) => {
+      request = { url, options };
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ id: messageId }),
+      };
+    },
+  });
+
+  assert.equal(result, messageId);
+  assert.equal(
+    request.url,
+    `https://discord.com/api/v10/channels/1541185451090645064/messages/${messageId}`,
+  );
+  assert.equal(request.options.method, "PATCH");
+  const payload = JSON.parse(request.options.body);
+  assert.equal(payload.embeds[0].title, "SakuraCord v0.2.0 Beta 3");
+  assert.equal(payload.nonce, undefined);
+  assert.equal(payload.enforce_nonce, undefined);
 });

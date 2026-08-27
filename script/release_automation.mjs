@@ -83,7 +83,7 @@ export function createDiscordPayload(copy, repository, releaseId, releaseUrl, ro
     content: `<@&${roleId}>`,
     embeds: [
       {
-        title: `SakuraCord ${releaseDisplayName(validated.tagName)}${isNightly ? " 🌙" : ""}`,
+        title: `SakuraCord ${releaseDisplayName(validated.tagName)}`,
         description: validated.discordAnnouncement,
         color: isNightly ? NIGHTLY_RELEASE_COLOR : REGULAR_RELEASE_COLOR,
       },
@@ -110,17 +110,60 @@ export async function announceDiscord({
   copy,
   fetchImpl = fetch,
 }) {
+  validateDiscordReleaseContext(channelId, roleId, releaseId);
+  const payload = createDiscordPayload(copy, repository, releaseId, releaseUrl, roleId);
+  return requestDiscordMessage({
+    label: "Discord release announcement",
+    token,
+    url: `${DISCORD_API}/channels/${channelId}/messages`,
+    method: "POST",
+    payload,
+    fetchImpl,
+  });
+}
+
+export async function editDiscordAnnouncement({
+  token,
+  channelId,
+  roleId,
+  messageId,
+  repository,
+  releaseId,
+  releaseUrl,
+  copy,
+  fetchImpl = fetch,
+}) {
+  validateDiscordReleaseContext(channelId, roleId, releaseId);
+  if (!/^\d{17,20}$/.test(messageId)) {
+    throw new Error("Discord announcement message ID must be 17-20 digits.");
+  }
+  const payload = createDiscordPayload(copy, repository, releaseId, releaseUrl, roleId);
+  delete payload.nonce;
+  delete payload.enforce_nonce;
+  return requestDiscordMessage({
+    label: "Discord release announcement edit",
+    token,
+    url: `${DISCORD_API}/channels/${channelId}/messages/${messageId}`,
+    method: "PATCH",
+    payload,
+    fetchImpl,
+  });
+}
+
+function validateDiscordReleaseContext(channelId, roleId, releaseId) {
   if (!/^\d{17,20}$/.test(channelId) || !/^\d{17,20}$/.test(roleId)) {
     throw new Error("Discord release channel and updates role IDs must be 17-20 digits.");
   }
   if (!Number.isSafeInteger(releaseId) || releaseId <= 0) {
     throw new Error("Invalid GitHub release ID.");
   }
+}
+
+async function requestDiscordMessage({ label, token, url, method, payload, fetchImpl }) {
   maskSecret(token);
-  const payload = createDiscordPayload(copy, repository, releaseId, releaseUrl, roleId);
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const response = await fetchImpl(`${DISCORD_API}/channels/${channelId}/messages`, {
-      method: "POST",
+    const response = await fetchImpl(url, {
+      method,
       headers: { Authorization: `Bot ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(30_000),
@@ -131,7 +174,7 @@ export async function announceDiscord({
       try {
         message = JSON.parse(bodyText);
       } catch {
-        throw new Error("Discord returned invalid JSON after accepting the announcement.");
+        throw new Error(`${label} returned invalid JSON after succeeding.`);
       }
       if (!/^\d{17,20}$/.test(String(message.id))) {
         throw new Error("Discord returned no message ID.");
@@ -149,9 +192,9 @@ export async function announceDiscord({
       await new Promise((resolve) => setTimeout(resolve, delayMs));
       continue;
     }
-    throw new Error(formatUpstreamFailure("Discord release announcement", response, bodyText));
+    throw new Error(formatUpstreamFailure(label, response, bodyText));
   }
-  throw new Error("Discord release announcement exhausted its retry budget.");
+  throw new Error(`${label} exhausted its retry budget.`);
 }
 
 function stripDiscordMentions(value) {
@@ -271,7 +314,25 @@ async function main() {
     console.log(`Discord release announcement checkpoint: ${messageId}`);
     return;
   }
-  throw new Error("Expected validate-copy, prepare, or announce-discord.");
+  if (command === "edit-discord") {
+    const copy = JSON.parse(await readFile(requiredString(options.input, "--input"), "utf8"));
+    const messageId = await editDiscordAnnouncement({
+      token: requiredString(process.env.DISCORD_BOT_TOKEN, "DISCORD_BOT_TOKEN"),
+      channelId: requiredString(
+        process.env.DISCORD_RELEASE_CHANNEL_ID,
+        "DISCORD_RELEASE_CHANNEL_ID",
+      ),
+      roleId: requiredString(process.env.DISCORD_UPDATES_ROLE_ID, "DISCORD_UPDATES_ROLE_ID"),
+      messageId: requiredString(options["message-id"], "--message-id"),
+      repository: requiredString(options.repo, "--repo"),
+      releaseId: Number(requiredString(options["release-id"], "--release-id")),
+      releaseUrl: requiredString(options["release-url"], "--release-url"),
+      copy,
+    });
+    console.log(`Discord release announcement updated: ${messageId}`);
+    return;
+  }
+  throw new Error("Expected validate-copy, prepare, announce-discord, or edit-discord.");
 }
 
 if (

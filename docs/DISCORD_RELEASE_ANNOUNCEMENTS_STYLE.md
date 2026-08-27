@@ -12,7 +12,7 @@ copy:
 
 - the updates-role mention;
 - the embed title, derived from `tagName` (for example,
-  `v0.1.5-Beta-1` becomes `SakuraCord v0.1.5 Beta 1 🌙`); and
+  `v0.1.5-Beta-1` becomes `SakuraCord v0.1.5 Beta 1`); and
 - the **View release** button and its GitHub Release URL.
 
 Only the embed description belongs in `discordAnnouncement`.
@@ -51,9 +51,10 @@ For a nightly tag, replace only that headline emoji with the moon:
 - [User-facing feature or outcome]
 ```
 
-The action also gives nightly embeds a distinct indigo color and routes them to
-the nightly channel with the nightly updates-role mention. Keep the authored
-copy free of role, user, `@here`, and `@everyone` mentions for both tracks.
+The custom headline is the only place the nightly moon appears. The action also
+gives nightly embeds a distinct indigo color and routes them to the nightly
+channel with the nightly updates-role mention. Keep the authored copy free of
+role, user, `@here`, and `@everyone` mentions for both tracks.
 
 ## Headline guidance
 

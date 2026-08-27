@@ -126,6 +126,7 @@ jobs:
         run: |
           published=false
           announced=false
+          announcement_message_id=""
           if gh release view "$SAKURACORD_RELEASE_TAG" >/dev/null 2>&1; then
             release_state="$(gh release view "$SAKURACORD_RELEASE_TAG" --json isDraft,isPrerelease)"
             is_draft="$(jq -r .isDraft <<< "$release_state")"
@@ -145,11 +146,21 @@ jobs:
             mkdir -p "$checkpoint_dir"
             if gh release download "$SAKURACORD_RELEASE_TAG" \
               --pattern discord-announcement.json --dir "$checkpoint_dir" >/dev/null 2>&1; then
+              checkpoint_file="$checkpoint_dir/discord-announcement.json"
+              if ! jq -e \
+                --arg tag "$SAKURACORD_RELEASE_TAG" \
+                '.schemaVersion == 1 and .tagName == $tag and (.messageId | test("^[0-9]{17,20}$"))' \
+                "$checkpoint_file" >/dev/null; then
+                echo "Existing Discord announcement checkpoint is invalid." >&2
+                exit 1
+              fi
               announced=true
+              announcement_message_id="$(jq -r .messageId "$checkpoint_file")"
             fi
           fi
           echo "published=$published" >> "$GITHUB_OUTPUT"
           echo "announced=$announced" >> "$GITHUB_OUTPUT"
+          echo "announcement_message_id=$announcement_message_id" >> "$GITHUB_OUTPUT"
       - name: Validate Sparkle release secrets
         if: steps.existing_release.outputs.published != 'true'
         env:
@@ -268,8 +279,7 @@ jobs:
           fi
           echo "id=$(jq -r .databaseId <<< "$release_json")" >> "$GITHUB_OUTPUT"
           echo "url=$(jq -r .url <<< "$release_json")" >> "$GITHUB_OUTPUT"
-      - name: Send the pre-made Discord release announcement
-        if: steps.existing_release.outputs.announced != 'true'
+      - name: Send or update the pre-made Discord release announcement
         env:
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
           DISCORD_RELEASE_CHANNEL_ID: ${{ secrets.DISCORD_RELEASE_CHANNEL_ID }}
@@ -281,6 +291,21 @@ jobs:
           if [[ "$SAKURACORD_RELEASE_TRACK" == "nightly" ]]; then
             export DISCORD_RELEASE_CHANNEL_ID="$DISCORD_NIGHTLY_RELEASE_CHANNEL_ID"
             export DISCORD_UPDATES_ROLE_ID="$DISCORD_NIGHTLY_UPDATES_ROLE_ID"
+          fi
+          if [[ "${{ steps.existing_release.outputs.announced }}" == "true" ]]; then
+            message_id="${{ steps.existing_release.outputs.announcement_message_id }}"
+            updated_id="$(node "$SAKURACORD_RELEASE_CONTROL_ROOT/script/release_automation.mjs" edit-discord \
+              --input dist/release-copy.json \
+              --repo "$GITHUB_REPOSITORY" \
+              --release-id "${{ steps.published_release.outputs.id }}" \
+              --release-url "${{ steps.published_release.outputs.url }}" \
+              --message-id "$message_id" \
+              | sed -n 's/^Discord release announcement updated: //p')"
+            if [[ "$updated_id" != "$message_id" ]]; then
+              echo "Discord did not update the expected announcement message." >&2
+              exit 1
+            fi
+            exit 0
           fi
           message_id="$(node "$SAKURACORD_RELEASE_CONTROL_ROOT/script/release_automation.mjs" announce-discord \
             --input dist/release-copy.json \
