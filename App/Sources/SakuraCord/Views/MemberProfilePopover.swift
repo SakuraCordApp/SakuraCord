@@ -767,9 +767,7 @@ private struct RoleChip: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Circle()
-                .fill(item.role.colorHex.map(Color.init(hex:)) ?? .secondary)
-                .frame(width: 10, height: 10)
+            RoleColorIndicator(colorHex: item.role.colorHex, size: 10)
             Text(item.name)
                 .font(.callout.weight(.medium))
                 .lineLimit(1)

@@ -53,9 +53,7 @@ struct MentionAutocompleteRow: View {
         case .user:
             AvatarView(name: suggestion.title, url: suggestion.avatarURL, size: 28)
         case .role:
-            Circle()
-                .fill(Color(hex: suggestion.colorHex ?? 0x5865F2))
-                .frame(width: 16, height: 16)
+            RoleColorIndicator(colorHex: suggestion.colorHex, size: 16)
                 .frame(width: 28, height: 28)
         case .channel:
             Image(systemName: suggestion.systemImage ?? "questionmark")

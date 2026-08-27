@@ -1673,13 +1673,44 @@ final class NativeMemberListCanvasView: NSView {
             ofSize: presentation.interfaceTextSize,
             weight: .semibold
         )
-        let color = (presentation.showsRoleColors ? section.colorHex : nil)
-            .map(Self.color(hex:))
-            ?? .secondaryLabelColor
+        let isRoleSection = if case .role = section.id { true } else { false }
+        let showsRoleIndicator = presentation.showsRoleColors && isRoleSection
+        let color: NSColor = if showsRoleIndicator {
+            SakuraCordAccentColor.nsColor(forRoleColorHex: section.colorHex)
+        } else {
+            .secondaryLabelColor
+        }
+        let labelX: CGFloat
+        if showsRoleIndicator {
+            let indicatorSize: CGFloat = 8
+            let indicatorRect = CGRect(
+                x: NativeMemberListMetrics.horizontalInset + 10,
+                y: origins[index]
+                    + (NativeMemberListMetrics.sectionHeaderHeight - indicatorSize) / 2,
+                width: indicatorSize,
+                height: indicatorSize
+            )
+            let indicator = NSBezierPath(ovalIn: indicatorRect)
+            if SakuraCordAccentColor.usesAccentFallback(
+                forRoleColorHex: section.colorHex
+            ) {
+                color.withAlphaComponent(0.14).setFill()
+                indicator.fill()
+                color.setStroke()
+                indicator.lineWidth = 1.25
+                indicator.stroke()
+            } else {
+                color.setFill()
+                indicator.fill()
+            }
+            labelX = indicatorRect.maxX + 6
+        } else {
+            labelX = NativeMemberListMetrics.horizontalInset + 10
+        }
         Self.draw(
             line: Self.line(label, font: font, color: color),
             at: CGPoint(
-                x: NativeMemberListMetrics.horizontalInset + 10,
+                x: labelX,
                 y: origins[index] + 12
             ),
             context: context

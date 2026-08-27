@@ -793,15 +793,25 @@ extension NativeTimelineRowPainter {
         isHovered: Bool
     ) {
         let color = roleColor(presentation.colorHex) ?? .sakuraCordAccentColor
+        let shape = NSBezierPath(
+            concentricRoundedRect: frame,
+            cornerRadius: 5.5
+        )
         color.withAlphaComponent(
             NativeTimelineMentionAppearance.backgroundAlpha(
                 isHovered: isHovered
             )
         ).setFill()
-        NSBezierPath(
-            concentricRoundedRect: frame,
-            cornerRadius: 5.5
-        ).fill()
+        shape.fill()
+        if case .role = presentation.target,
+           SakuraCordAccentColor.usesAccentFallback(
+               forRoleColorHex: presentation.colorHex
+           )
+        {
+            color.withAlphaComponent(isHovered ? 0.9 : 0.7).setStroke()
+            shape.lineWidth = 1
+            shape.stroke()
+        }
 
         var labelX = frame.minX + 6
         if let systemImage = presentation.systemImage {

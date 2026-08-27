@@ -382,6 +382,29 @@ enum SakuraCordAccentColor {
         SystemAccentPalette.textSelectionBackgroundColor(for: selection)
     }
 
+    static func color(forRoleColorHex colorHex: UInt32?) -> Color {
+        guard !usesAccentFallback(forRoleColorHex: colorHex), let colorHex else {
+            return color
+        }
+        return Color(hex: colorHex)
+    }
+
+    static func nsColor(forRoleColorHex colorHex: UInt32?) -> NSColor {
+        guard !usesAccentFallback(forRoleColorHex: colorHex), let colorHex else {
+            return nsColor
+        }
+        return NSColor(
+            srgbRed: CGFloat((colorHex >> 16) & 0xFF) / 255,
+            green: CGFloat((colorHex >> 8) & 0xFF) / 255,
+            blue: CGFloat(colorHex & 0xFF) / 255,
+            alpha: 1
+        )
+    }
+
+    static func usesAccentFallback(forRoleColorHex colorHex: UInt32?) -> Bool {
+        colorHex == nil || colorHex == 0
+    }
+
     static func apply(_ selection: AccentColorChoice) {
         state.selection = selection
     }

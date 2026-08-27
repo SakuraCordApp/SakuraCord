@@ -97,13 +97,26 @@ enum MentionAttachmentRenderer {
         )
         let size = NSSize(width: width, height: height)
         let color = mentionColor(hex: presentation.colorHex)
+        let usesRoleAccentFallback = if case .role = presentation.target {
+            SakuraCordAccentColor.usesAccentFallback(
+                forRoleColorHex: presentation.colorHex
+            )
+        } else {
+            false
+        }
         let image = NSImage(size: size, flipped: false) { bounds in
             let background = color.withAlphaComponent(hovered ? 0.34 : 0.18)
-            background.setFill()
-            NSBezierPath(
+            let shape = NSBezierPath(
                 concentricRoundedRect: bounds,
                 cornerRadius: 5.5
-            ).fill()
+            )
+            background.setFill()
+            shape.fill()
+            if usesRoleAccentFallback {
+                color.withAlphaComponent(hovered ? 0.9 : 0.7).setStroke()
+                shape.lineWidth = 1
+                shape.stroke()
+            }
 
             var textX = horizontalPadding
             if let systemImage = presentation.systemImage {

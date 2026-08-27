@@ -411,11 +411,8 @@ private struct ApplicationCommandSuggestionRow: View {
     }
 
     private var titleColor: Color {
-        guard case let .role(colorHex, _, _) = leadingVisual,
-              let colorHex,
-              colorHex != 0
-        else { return .primary }
-        return Color(hex: colorHex)
+        guard case let .role(colorHex, _, _) = leadingVisual else { return .primary }
+        return SakuraCordAccentColor.color(forRoleColorHex: colorHex)
     }
 }
 
@@ -447,9 +444,7 @@ private struct ApplicationCommandSuggestionIcon: View {
                 Text(unicodeEmoji)
                     .font(.system(size: 18))
             } else {
-                Circle()
-                    .fill(colorHex.map(Color.init(hex:)) ?? .secondary)
-                    .frame(width: 13, height: 13)
+                RoleColorIndicator(colorHex: colorHex, size: 13)
             }
         }
     }
@@ -693,15 +688,9 @@ struct ApplicationCommandTextDocument {
         case let .mentionable(id): RoleID(id)
         default: nil
         }
-        guard let roleID,
-              let color = roles.first(where: { $0.id == roleID })?.colorHex,
-              color != 0
-        else { return .labelColor }
-        return NSColor(
-            srgbRed: CGFloat((color >> 16) & 0xFF) / 255,
-            green: CGFloat((color >> 8) & 0xFF) / 255,
-            blue: CGFloat(color & 0xFF) / 255,
-            alpha: 1
+        guard let roleID else { return .labelColor }
+        return SakuraCordAccentColor.nsColor(
+            forRoleColorHex: roles.first(where: { $0.id == roleID })?.colorHex
         )
     }
 

@@ -262,7 +262,7 @@ private struct HiddenChannelPrincipalChip: View {
     let principal: HiddenChannelAccessPrincipal
 
     private var tint: Color {
-        principal.colorHex.map(Color.init(hex:)) ?? SakuraCordAccentColor.color
+        SakuraCordAccentColor.color(forRoleColorHex: principal.colorHex)
     }
 
     var body: some View {
@@ -271,9 +271,7 @@ private struct HiddenChannelPrincipalChip: View {
             case .member:
                 AvatarView(name: principal.name, url: principal.avatarURL, size: 21)
             case .role:
-                Circle()
-                    .fill(tint)
-                    .frame(width: 9, height: 9)
+                RoleColorIndicator(colorHex: principal.colorHex, size: 9)
             }
             Text(principal.name)
                 .font(.callout.weight(.semibold))
