@@ -17,6 +17,7 @@ struct PickerSearchField: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
             TextField(placeholder, text: $text)
+                .tint(SakuraCordAccentColor.color)
                 .textFieldStyle(.plain)
                 .focused($isFocused)
             if !text.isEmpty {
@@ -2441,6 +2442,7 @@ struct ForwardMessageOverlay: View {
                 .padding(.top, 16)
             HStack(alignment: .bottom, spacing: 8) {
                 TextField("Add an optional message...", text: $context, axis: .vertical)
+                    .tint(SakuraCordAccentColor.color)
                     .textFieldStyle(.plain)
                     .focused($isContextFocused)
                     .lineLimit(1 ... 3)
@@ -2473,7 +2475,7 @@ struct ForwardMessageOverlay: View {
                 .buttonStyle(.plain)
                 .contentShape(ConcentricRectangle(cornerRadius: 12, style: .continuous))
                 .glassEffect(
-                    .regular.tint(.accentColor).interactive(),
+                    .regular.tint(SakuraCordAccentColor.color).interactive(),
                     in: ConcentricRectangle(cornerRadius: 12, style: .continuous)
                 )
                 .disabled(selectedDestinationIDs.isEmpty || model.isForwardingMessages)

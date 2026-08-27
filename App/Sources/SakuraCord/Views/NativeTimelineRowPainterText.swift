@@ -780,11 +780,11 @@ extension NativeTimelineRowPainter {
     }
 
     static var textSelectionHighlightColor: NSColor {
-        NSColor.selectedTextBackgroundColor
+        NSColor.sakuraCordTextSelectionBackgroundColor
     }
 
     static var attachmentSelectionHighlightColor: NSColor {
-        NSColor.selectedTextBackgroundColor.withAlphaComponent(0.5)
+        NSColor.sakuraCordTextSelectionBackgroundColor.withAlphaComponent(0.5)
     }
 
     static func drawMention(
@@ -792,7 +792,7 @@ extension NativeTimelineRowPainter {
         in frame: CGRect,
         isHovered: Bool
     ) {
-        let color = roleColor(presentation.colorHex) ?? .controlAccentColor
+        let color = roleColor(presentation.colorHex) ?? .sakuraCordAccentColor
         color.withAlphaComponent(
             NativeTimelineMentionAppearance.backgroundAlpha(
                 isHovered: isHovered

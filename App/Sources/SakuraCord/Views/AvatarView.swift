@@ -28,7 +28,7 @@ struct AvatarView: View {
                     .resizable()
                     .scaledToFill()
             } else if showsFallback {
-                Circle().fill(Color.accentColor.gradient)
+                Circle().fill(SakuraCordAccentColor.color.gradient)
                 fallback
             }
             if let url {

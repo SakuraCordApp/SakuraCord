@@ -293,7 +293,9 @@ private struct MediaViewerThumbnail: View {
             .overlay {
                 thumbnailShape
                     .strokeBorder(
-                        isSelected ? Color.accentColor : Color.white.opacity(0.16),
+                        isSelected
+                            ? SakuraCordAccentColor.color
+                            : Color.white.opacity(0.16),
                         lineWidth: isSelected
                             ? MediaViewerThumbnailMetrics.selectedBorderWidth
                             : MediaViewerThumbnailMetrics.ordinaryBorderWidth

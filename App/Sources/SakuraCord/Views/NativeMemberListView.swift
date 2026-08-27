@@ -26,6 +26,7 @@ nonisolated struct NativeMemberListPresentation: Equatable, Sendable {
     var interfaceTextSize: Double = 13
     var showsActivityDetails = true
     var showsRoleColors = true
+    var accentColor: AccentColorChoice = .blurple
 }
 
 nonisolated enum MemberListSkeletonLayout {
@@ -2043,7 +2044,7 @@ final class NativeMemberListCanvasView: NSView {
         in rect: CGRect,
         context: CGContext
     ) {
-        let accent = NSColor.controlAccentColor
+        let accent = presentation.accentColor.effectiveNSColor
         let gradient = CGGradient(
             colorsSpace: CGColorSpaceCreateDeviceRGB(),
             colors: [
@@ -2587,15 +2588,17 @@ final class NativeMemberListCanvasView: NSView {
         }
         setNeedsDisplay(itemRect(at: index))
         let isSelected = selectedMemberID == member.id
-        host.rootView = AnyView(MemberRow(
-            member: member,
-            isSelected: isSelected,
-            isProfilePresented: false,
-            profilePresentation: nil,
-            showsContents: false,
-            select: { [weak self] in self?.selectMember(member) },
-            dismissProfile: {}
-        ))
+        host.rootView = AnyView(
+            MemberRow(
+                member: member,
+                isSelected: isSelected,
+                isProfilePresented: false,
+                profilePresentation: nil,
+                showsContents: false,
+                select: { [weak self] in self?.selectMember(member) },
+                dismissProfile: {}
+            )
+        )
         host.frame = CGRect(
             x: NativeMemberListMetrics.horizontalInset,
             y: origins[index],

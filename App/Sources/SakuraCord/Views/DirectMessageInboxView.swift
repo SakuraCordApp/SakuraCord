@@ -252,7 +252,7 @@ struct DirectMessageAvatar: View {
                 .font(.system(size: size * 0.38, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: size, height: size)
-                .background(Color.accentColor.gradient, in: Circle())
+                .background(SakuraCordAccentColor.color.gradient, in: Circle())
                 .accessibilityLabel("\(channel.name) group avatar")
         }
     }

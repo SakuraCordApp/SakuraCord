@@ -329,6 +329,7 @@ struct ComposerTextView: NSViewRepresentable {
         textView.autoresizingMask = [.width]
         textView.font = font
         textView.textColor = .labelColor
+        textView.applySakuraCordTextSelectionAppearance()
         textView.plainTypingAttributes = textAttributes
         textView.restorePlainTypingAttributes()
         textView.setAccessibilityLabel(placeholder)
@@ -369,6 +370,7 @@ struct ComposerTextView: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? ComposerNSTextView else { return }
         context.coordinator.parent = self
+        textView.applySakuraCordTextSelectionAppearance()
         textView.textContainerInset = NSSize(width: 0, height: verticalContentInset)
 
         textView.onReturn = { [weak coordinator = context.coordinator] event in

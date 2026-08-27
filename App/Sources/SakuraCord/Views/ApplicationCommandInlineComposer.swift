@@ -680,11 +680,11 @@ struct ApplicationCommandTextDocument {
         guard !placeholder else { return .tertiaryLabelColor }
         switch value {
         case .user, .channel:
-            return .controlAccentColor
+            return .sakuraCordAccentColor
         case let .mentionable(id):
             guard let roleID = RoleID(id),
                   roles.contains(where: { $0.id == roleID })
-            else { return .controlAccentColor }
+            else { return .sakuraCordAccentColor }
         default:
             break
         }
@@ -911,6 +911,7 @@ private struct ApplicationCommandStructuredTextView: NSViewRepresentable {
         ComposerTextCheckingConfiguration.apply(chatSettings, to: textView)
         textView.document = document
         textView.setAccessibilityLabel("Command input")
+        textView.applySakuraCordTextSelectionAppearance()
 
         let scrollView = NSScrollView()
         scrollView.documentView = textView
@@ -925,6 +926,7 @@ private struct ApplicationCommandStructuredTextView: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? ApplicationCommandNSTextView else { return }
         context.coordinator.parent = self
+        textView.applySakuraCordTextSelectionAppearance()
         textView.onKeyboardCommand = onKeyboardCommand
         textView.focusedOptionIDProvider = focusedOptionIDProvider
         textView.onSubmit = onSubmit

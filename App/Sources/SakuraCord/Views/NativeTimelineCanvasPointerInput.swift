@@ -1623,7 +1623,7 @@ extension NativeTimelineCanvasView {
         reactionCountAnimationHosts[key]?.removeFromSuperview()
 
         let color: NSColor = reaction.didCurrentUserReact
-            ? .controlAccentColor
+            ? .sakuraCordAccentColor
             : .labelColor
         let animationState = TimelineReactionCountAnimation(
             from: from,

@@ -169,6 +169,18 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
+            id: .appColorScheme,
+            page: .appearance,
+            storage: .appWide(key: "settings.appearance.colorScheme"),
+            defaultValue: .string(AppColorScheme.system.rawValue)
+        ),
+        SettingsPreferenceRegistration(
+            id: .accentColor,
+            page: .appearance,
+            storage: .appWide(key: "settings.appearance.accentColor"),
+            defaultValue: .string(AccentColorChoice.blurple.rawValue)
+        ),
+        SettingsPreferenceRegistration(
             id: .composerBarAppearance,
             page: .appearance,
             storage: .appWide(key: "settings.appearance.composerBar"),

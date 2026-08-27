@@ -533,7 +533,7 @@ enum NativeTimelineRowPainter {
         if isHighlighted {
             drawStripedHighlight(
                 in: frame,
-                color: .controlAccentColor,
+                color: .sakuraCordAccentColor,
                 backgroundAlpha: 0.14
             )
         } else {

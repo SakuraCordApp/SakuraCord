@@ -1349,9 +1349,9 @@ private struct EmojiSearchTextField: NSViewRepresentable {
 
         private static func configureEditor(from notification: Notification) {
             guard let textField = notification.object as? NSTextField else { return }
-            EmojiSearchTextField.disableCompletionFeatures(
-                in: textField.currentEditor() as? NSTextView
-            )
+            let editor = textField.currentEditor() as? NSTextView
+            EmojiSearchTextField.disableCompletionFeatures(in: editor)
+            editor?.applySakuraCordTextSelectionAppearance()
         }
     }
 }

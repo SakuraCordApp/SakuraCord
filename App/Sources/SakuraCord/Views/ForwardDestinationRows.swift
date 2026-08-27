@@ -7,10 +7,10 @@ struct ForwardSelectionControl: View {
     var body: some View {
         ZStack {
             Circle()
-                .fill(isSelected ? Color.accentColor : .clear)
+                .fill(isSelected ? SakuraCordAccentColor.color : .clear)
             Circle()
                 .stroke(
-                    isSelected ? Color.accentColor : Color.secondary,
+                    isSelected ? SakuraCordAccentColor.color : Color.secondary,
                     lineWidth: 1.8
                 )
             if isSelected {

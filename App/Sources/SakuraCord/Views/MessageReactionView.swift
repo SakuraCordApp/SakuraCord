@@ -257,7 +257,7 @@ struct MessageReactionPill: View {
                         .font(.caption.weight(.semibold))
                         .monospacedDigit()
                         .foregroundStyle(
-                            reaction.didCurrentUserReact ? Color.accentColor : .primary
+                            reaction.didCurrentUserReact ? SakuraCordAccentColor.color : .primary
                         )
                         .contentTransition(.numericText(value: Double(reaction.count)))
                         .animation(
@@ -326,13 +326,15 @@ struct MessageReactionPill: View {
 
     private var backgroundColor: Color {
         if reaction.didCurrentUserReact {
-            return Color.accentColor.opacity(isHovered ? 0.22 : 0.16)
+            return SakuraCordAccentColor.color.opacity(isHovered ? 0.22 : 0.16)
         }
         return Color.primary.opacity(isHovered ? 0.14 : 0.09)
     }
 
     private var borderColor: Color {
-        if reaction.didCurrentUserReact { return Color.accentColor.opacity(0.95) }
+        if reaction.didCurrentUserReact {
+            return SakuraCordAccentColor.color.opacity(0.95)
+        }
         return isHovered ? Color.primary.opacity(0.28) : .clear
     }
 }

@@ -72,7 +72,7 @@ struct InterfaceSettingsPreview: View {
             .frame(height: value.sidebarDensity.minimumRowHeight)
             .background(
                 selected
-                    ? AnyShapeStyle(Color.accentColor.opacity(0.18))
+                    ? AnyShapeStyle(SakuraCordAccentColor.color.opacity(0.18))
                     : AnyShapeStyle(Color.clear),
                 in: RoundedRectangle(cornerRadius: 6)
             )

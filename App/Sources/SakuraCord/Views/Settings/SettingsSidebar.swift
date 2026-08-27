@@ -55,7 +55,9 @@ private struct SettingsSidebarLabelStyle: LabelStyle {
         HStack(spacing: 8) {
             configuration.icon
                 .symbolVariant(.fill)
-                .foregroundStyle(isSelected ? Color.white : Color.accentColor)
+                .foregroundStyle(
+                    isSelected ? Color.white : SakuraCordAccentColor.color
+                )
                 .frame(width: 16)
             configuration.title
         }

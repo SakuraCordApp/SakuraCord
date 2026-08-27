@@ -18,7 +18,10 @@ struct RoleMembersPopover: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Circle()
-                    .fill(role.map { Color(hex: $0.colorHex ?? 0x5865F2) } ?? .accentColor)
+                    .fill(
+                        role.map { Color(hex: $0.colorHex ?? 0x5865F2) }
+                            ?? SakuraCordAccentColor.color
+                    )
                     .frame(width: 10, height: 10)
                 Text(role.map { "@\($0.name)" } ?? "Role members")
                     .font(.headline)

@@ -110,6 +110,7 @@ struct SakuraCordApp: App {
         Window("SakuraCord", id: "main") {
             RootView(model: model)
                 .frame(minWidth: 860, minHeight: 560)
+                .preferredColorScheme(model.appearanceSettings.colorScheme.colorScheme)
                 .onAppear {
                     appDelegate.model = model
                     AppPerformanceSignposts.reportRootViewAppeared()
@@ -214,6 +215,7 @@ struct SakuraCordApp: App {
                 model: model,
                 updateController: appDelegate.updateController
             )
+            .preferredColorScheme(model.appearanceSettings.colorScheme.colorScheme)
         }
         .defaultSize(width: 980, height: 700)
         .windowResizability(.contentMinSize)

@@ -289,7 +289,7 @@ struct NativeTimelineEditingMessageContent: View {
                         model.dismissEphemeralMessage(message)
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.tint)
+                    .foregroundStyle(SakuraCordAccentColor.color)
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)

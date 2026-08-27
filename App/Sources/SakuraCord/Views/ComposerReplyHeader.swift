@@ -68,7 +68,9 @@ private struct ComposerReplyMentionButton: View {
                 Text(mentionsAuthor ? "ON" : "OFF")
             }
             .font(.callout.weight(.bold))
-            .foregroundStyle(mentionsAuthor ? Color.accentColor : .secondary)
+            .foregroundStyle(
+                mentionsAuthor ? SakuraCordAccentColor.color : .secondary
+            )
             .padding(.horizontal, 7)
             .frame(height: 28)
             .contentShape(Capsule())

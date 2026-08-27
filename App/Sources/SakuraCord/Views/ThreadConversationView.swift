@@ -346,7 +346,7 @@ private struct ThreadMessageTimelineView: View {
                         .padding(.vertical, 8)
                         .contentShape(Capsule())
                         .glassEffect(
-                            .regular.tint(Color.accentColor).interactive(),
+                            .regular.tint(SakuraCordAccentColor.color).interactive(),
                             in: Capsule()
                         )
                 }

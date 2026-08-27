@@ -172,6 +172,7 @@ nonisolated extension SettingsSectionID {
     static let accountLocalData = Self(rawValue: "account-local-data")
     static let startupRestoration = Self(rawValue: "startup-restoration")
     static let confirmations = Self(rawValue: "confirmations")
+    static let appearanceTheme = Self(rawValue: "appearance-theme")
     static let appearanceComposer = Self(rawValue: "appearance-composer")
     static let interfaceDensity = Self(rawValue: "interface-density")
     static let interfaceTypography = Self(rawValue: "interface-typography")
@@ -240,6 +241,8 @@ nonisolated extension SettingsControlID {
     static let rememberMemberListVisibility = Self(rawValue: "general.remember-member-list")
     static let confirmQuitActiveWork = Self(rawValue: "general.confirm-quit-active-work")
     static let confirmDiscardComposer = Self(rawValue: "general.confirm-discard-composer")
+    static let appColorScheme = Self(rawValue: "appearance.color-scheme")
+    static let accentColor = Self(rawValue: "appearance.accent-color")
     static let composerBarAppearance = Self(rawValue: "appearance.composer-bar")
     static let messageDensity = Self(rawValue: "interface.message-density")
     static let sidebarDensity = Self(rawValue: "interface.sidebar-density")
@@ -430,7 +433,7 @@ private nonisolated extension SettingsCatalog {
         page(
             .appearance, group: .preferences, title: "Appearance", image: "circle.lefthalf.filled",
             help: "Choose how SakuraCord's interface looks.",
-            keywords: ["appearance", "look", "style", "composer", "input bar", "legacy"]
+            keywords: ["appearance", "look", "style", "accent", "color", "theme", "composer", "input bar", "legacy"]
         ),
         page(
             .interface, group: .preferences, title: "Interface", image: "macwindow",
@@ -640,6 +643,24 @@ private nonisolated extension SettingsCatalog {
             label: "Confirm discarding composer changes",
             help: "Ask before discarding meaningful unsent attachments, command input, or edited message text.",
             keywords: ["draft", "unsent", "edit", "discard warning", "attachments"],
+            scope: .appWideLocal
+        ),
+        control(
+            .appColorScheme,
+            page: .appearance,
+            section: .appearanceTheme,
+            label: "Appearance",
+            help: "Follow the system appearance or choose SakuraCord's light or dark appearance.",
+            keywords: ["appearance", "theme", "system", "light", "dark", "mode", "sun", "moon"],
+            scope: .appWideLocal
+        ),
+        control(
+            .accentColor,
+            page: .appearance,
+            section: .appearanceTheme,
+            label: "Accent color",
+            help: "Choose SakuraCord's preferred accent color. macOS overrides it when the system accent is not Multicolor.",
+            keywords: ["accent", "color", "theme", "system", "multicolor", "blurple", "blue", "purple", "pink", "red", "orange", "yellow", "green", "graphite"],
             scope: .appWideLocal
         ),
         control(

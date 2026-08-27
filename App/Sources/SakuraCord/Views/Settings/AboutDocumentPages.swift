@@ -154,10 +154,7 @@ private struct AboutMarkdownTextView: NSViewRepresentable {
             .foregroundColor: NSColor.linkColor,
             .underlineStyle: 0,
         ]
-        textView.selectedTextAttributes = [
-            .backgroundColor: NSColor.selectedTextBackgroundColor,
-            .foregroundColor: NSColor.selectedTextColor,
-        ]
+        textView.applySakuraCordTextSelectionAppearance()
         textView.textStorage?.setAttributedString(
             AboutMarkdownAttributedText.make(document)
         )
@@ -169,6 +166,7 @@ private struct AboutMarkdownTextView: NSViewRepresentable {
         _ textView: NSTextView,
         context: Context
     ) {
+        textView.applySakuraCordTextSelectionAppearance()
         guard context.coordinator.document != document else { return }
 
         let selectedRange = textView.selectedRange()

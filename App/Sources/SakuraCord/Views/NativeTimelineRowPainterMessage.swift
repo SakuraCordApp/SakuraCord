@@ -127,14 +127,14 @@ extension NativeTimelineRowPainter {
                     weight: .semibold
                 ),
                 color: presentedAuthor.isBot
-                    ? .controlAccentColor
+                    ? .sakuraCordAccentColor
                     : model?.interfaceSettings.showsRoleColors == false
                     ? .labelColor
                     : roleColor(author?.roleColorHex) ?? .labelColor
             )
         }
         if let frame = layout.botBadgeFrame {
-            NSColor.controlAccentColor.setFill()
+            NSColor.sakuraCordAccentColor.setFill()
             NSBezierPath(
                 concentricRoundedRect: frame,
                 cornerRadius: 3
@@ -711,7 +711,7 @@ extension NativeTimelineRowPainter {
         }
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(ovalIn: frame).addClip()
-        let accent = NSColor.controlAccentColor
+        let accent = NSColor.sakuraCordAccentColor
         let lighter =
             accent.blended(withFraction: 0.28, of: .white)
             ?? accent
@@ -876,7 +876,7 @@ extension NativeTimelineRowPainter {
             in: authorFrame,
             font: font,
             color: author.isBot
-                ? .controlAccentColor
+                ? .sakuraCordAccentColor
                 : roleColor(presentation?.roleColorHex) ?? .labelColor
         )
         return authorFrame
@@ -937,7 +937,7 @@ extension NativeTimelineRowPainter {
             font: .preferredFont(forTextStyle: .caption1),
             color: .secondaryLabelColor
         )
-        NSColor.controlAccentColor.withAlphaComponent(0.16).setFill()
+        NSColor.sakuraCordAccentColor.withAlphaComponent(0.16).setFill()
         NSBezierPath(
             roundedRect: region.pillFrame,
             xRadius: 4,
@@ -946,7 +946,7 @@ extension NativeTimelineRowPainter {
         systemSymbol(
             "xmark.triangle.circle.square.fill",
             in: region.commandSymbolFrame,
-            color: .controlAccentColor,
+            color: .sakuraCordAccentColor,
             inset: 0,
             weight: .semibold
         )
@@ -959,7 +959,7 @@ extension NativeTimelineRowPainter {
                 ).pointSize,
                 weight: .semibold
             ),
-            color: .controlAccentColor,
+            color: .sakuraCordAccentColor,
             lineBreakMode: .byTruncatingTail
         )
     }
@@ -990,7 +990,7 @@ extension NativeTimelineRowPainter {
             "Dismiss message",
             in: region.dismissFrame,
             font: font,
-            color: .controlAccentColor
+            color: .sakuraCordAccentColor
         )
     }
 

@@ -1274,7 +1274,7 @@ private final class MessageSearchAutocompleteCanvas: NSView {
             context.scaleBy(x: 1, y: -1)
             context.draw(image, in: destination)
         } else {
-            NSColor.controlAccentColor.setFill()
+            NSColor.sakuraCordAccentColor.setFill()
             context.fillEllipse(in: rect)
             drawText(
                 String(name.prefix(1)).uppercased(),

@@ -1215,6 +1215,7 @@ private struct ChannelTopicPopover: View {
         Text(topic)
             .frame(maxWidth: .infinity, alignment: .leading)
             .textSelection(.enabled)
+            .tint(SakuraCordAccentColor.color)
             .padding(16)
             .frame(width: 320, alignment: .leading)
     }

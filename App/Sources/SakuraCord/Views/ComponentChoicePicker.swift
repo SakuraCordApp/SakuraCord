@@ -111,6 +111,7 @@ struct ComponentChoicePicker: View {
                     set: model.updateQuery
                 )
             )
+            .tint(SakuraCordAccentColor.color)
             .textFieldStyle(.roundedBorder)
             .focused($searchIsFocused)
             .accessibilityLabel("Search component choices")

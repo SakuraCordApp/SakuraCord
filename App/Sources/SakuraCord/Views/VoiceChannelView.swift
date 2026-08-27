@@ -105,7 +105,7 @@ struct VoiceChannelView: View {
         .buttonStyle(.plain)
         .foregroundStyle(.white)
         .glassEffect(
-            .regular.tint(Color.accentColor).interactive(),
+            .regular.tint(SakuraCordAccentColor.color).interactive(),
             in: Capsule()
         )
         .disabled(channel.map(model.canJoinVoice) != true)

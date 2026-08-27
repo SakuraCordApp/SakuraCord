@@ -83,6 +83,7 @@ struct DiagnosticsSettingsPage: View {
                 }
             }
             .textSelection(.enabled)
+            .tint(SakuraCordAccentColor.color)
             .settingsControlAnchor(.diagnosticsStatusOverview, state: state)
 
             HStack {
@@ -194,6 +195,7 @@ struct DiagnosticsSettingsPage: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
+                    .tint(SakuraCordAccentColor.color)
             }
         } header: {
             Text("Discord API Logs", bundle: #bundle)
@@ -424,6 +426,7 @@ private struct DiagnosticsSupportSummaryPreview: View {
         }
         .font(.callout)
         .textSelection(.enabled)
+        .tint(SakuraCordAccentColor.color)
         .accessibilityElement(children: .combine)
     }
 

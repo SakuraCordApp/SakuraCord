@@ -86,12 +86,14 @@ private struct ProfileStatusTextRepresentable: NSViewRepresentable {
         textView.textContainer?.heightTracksTextView = false
         textView.isHorizontallyResizable = false
         textView.isVerticallyResizable = true
+        textView.applySakuraCordTextSelectionAppearance()
         return textView
     }
 
     func updateNSView(_ textView: ProfileStatusNSTextView, context: Context) {
         let selection = textView.selectedRange()
         textView.onHoverChange = onHoverChange
+        textView.applySakuraCordTextSelectionAppearance()
         textView.textContainer?.maximumNumberOfLines = isExpanded ? 0 : 1
         textView.textContainer?.lineBreakMode = isExpanded ? .byWordWrapping : .byTruncatingTail
         textView.textStorage?.setAttributedString(attributedText())
@@ -149,11 +151,13 @@ private struct ProfileTextRepresentable: NSViewRepresentable {
             .foregroundColor: NSColor.systemBlue,
             .underlineStyle: 0
         ]
+        textView.applySakuraCordTextSelectionAppearance()
         return textView
     }
 
     func updateNSView(_ textView: HoverLinkTextView, context: Context) {
         let selection = textView.selectedRange()
+        textView.applySakuraCordTextSelectionAppearance()
         textView.textStorage?.setAttributedString(attributedText())
         textView.setSelectedRange(selection.clamped(toLength: textView.string.utf16.count))
         textView.invalidateIntrinsicContentSize()

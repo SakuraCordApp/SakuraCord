@@ -428,6 +428,7 @@ private struct ProfileIdentitySection: View {
                     .font(.title2.weight(.bold))
                     .foregroundStyle(nameGradient)
                     .textSelection(.enabled)
+                    .tint(SakuraCordAccentColor.color)
                 if isBot {
                     Text("APP")
                         .font(.caption.weight(.bold))

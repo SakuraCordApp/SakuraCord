@@ -125,7 +125,7 @@ struct MessageTimelineView: View {
                         .padding(.vertical, 8)
                         .contentShape(Capsule())
                         .glassEffect(
-                            .regular.tint(Color.accentColor).interactive(),
+                            .regular.tint(SakuraCordAccentColor.color).interactive(),
                             in: Capsule()
                         )
                 }
@@ -714,11 +714,13 @@ struct ChannelBeginningView: View {
             Text(title)
                 .font(.largeTitle.weight(.bold))
                 .textSelection(.enabled)
+                .tint(SakuraCordAccentColor.color)
 
             Text(description)
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
+                .tint(SakuraCordAccentColor.color)
         }
         .padding(.horizontal, 16)
         .padding(.top, 28)

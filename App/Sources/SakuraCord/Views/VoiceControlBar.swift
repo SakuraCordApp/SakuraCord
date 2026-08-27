@@ -477,7 +477,7 @@ private struct ScreenShareControlsPopover: View {
                     Image(systemName: model.screenShareSettings.includesAudio
                         ? "checkmark.square.fill" : "square")
                         .foregroundStyle(model.screenShareSettings.includesAudio
-                            ? Color.accentColor : Color.secondary)
+                            ? SakuraCordAccentColor.color : Color.secondary)
                 }
                 .padding(.horizontal, 8)
                 .frame(maxWidth: .infinity)
@@ -532,7 +532,7 @@ struct ScreenShareQualityPopover: View {
                         Spacer()
                         if model.screenShareSettings.quality == quality {
                             Image(systemName: "checkmark")
-                                .foregroundStyle(Color.accentColor)
+                                .foregroundStyle(SakuraCordAccentColor.color)
                         }
                     }
                     .padding(.horizontal, 8)

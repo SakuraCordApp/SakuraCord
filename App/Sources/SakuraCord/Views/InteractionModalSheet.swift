@@ -84,8 +84,10 @@ struct InteractionModalSheet: View {
                         TextField(placeholder ?? "", text: textBinding(customID), axis: .vertical).lineLimit(
                             3 ... 10
                         )
+                        .tint(SakuraCordAccentColor.color)
                     } else {
                         TextField(placeholder ?? "", text: textBinding(customID))
+                            .tint(SakuraCordAccentColor.color)
                     }
                 }
                 .textFieldStyle(.roundedBorder)

@@ -694,7 +694,7 @@ extension NativeTimelineCanvasView {
     func drawMessageJumpHighlight(at index: Int) {
         guard let presentation = messageJumpHighlightPresentation(at: index)
         else { return }
-        NSColor.controlAccentColor.withAlphaComponent(
+        NSColor.sakuraCordAccentColor.withAlphaComponent(
             0.12 * presentation.opacity
         ).setFill()
         presentation.frame.fill()

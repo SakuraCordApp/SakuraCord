@@ -1808,10 +1808,7 @@ final class NativeTimelineAnimatedMediaOverlay: NSView {
         imageClipView.addSubview(imageView)
 
         selectionView.wantsLayer = true
-        selectionView.layer?.backgroundColor =
-            NSColor.selectedTextBackgroundColor
-                .withAlphaComponent(0.5)
-                .cgColor
+        updateSelectionColor()
         selectionView.isHidden = true
         addSubview(selectionView)
     }
@@ -1830,6 +1827,7 @@ final class NativeTimelineAnimatedMediaOverlay: NSView {
         opacity: CGFloat,
         fillsFrame: Bool
     ) {
+        updateSelectionColor()
         imageClipView.frame = mediaFrame
         imageClipView.alphaValue = opacity
         imageClipView.layer?.cornerRadius = cornerRadius
@@ -1846,6 +1844,13 @@ final class NativeTimelineAnimatedMediaOverlay: NSView {
         } else {
             selectionView.isHidden = true
         }
+    }
+
+    private func updateSelectionColor() {
+        selectionView.layer?.backgroundColor =
+            NSColor.sakuraCordTextSelectionBackgroundColor
+                .withAlphaComponent(0.5)
+                .cgColor
     }
 
     func setPlaybackSuppressed(_ isSuppressed: Bool) {

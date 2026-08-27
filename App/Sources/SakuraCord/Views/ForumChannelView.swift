@@ -259,6 +259,7 @@ private struct ForumBrowseHeader: View {
                     HStack(spacing: 10) {
                         Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                         TextField("Search posts", text: $searchText)
+                            .tint(SakuraCordAccentColor.color)
                             .textFieldStyle(.plain)
                             .focused($isSearchFocused)
                             .onChange(of: searchText) { _, value in model.updateForumSearch(value) }
@@ -636,7 +637,7 @@ private struct ForumTagButton: View {
         .buttonStyle(.plain)
         .glassEffect(
             isSelected
-                ? .regular.tint(Color.accentColor.opacity(0.28)).interactive()
+                ? .regular.tint(SakuraCordAccentColor.color.opacity(0.28)).interactive()
                 : .regular.interactive(),
             in: Capsule()
         )
@@ -991,7 +992,7 @@ private struct ForumPostAuthorName: View {
     }
 
     private var nameColor: Color {
-        if presentation.user.isBot { return .accentColor }
+        if presentation.user.isBot { return SakuraCordAccentColor.color }
         return presentation.roleColorHex.map(Color.init(hex:)) ?? .primary
     }
 }
@@ -1011,7 +1012,7 @@ private struct ForumPostStarterExcerpt: View {
     }
 
     private var nameColor: Color {
-        if presentation.user.isBot { return .accentColor }
+        if presentation.user.isBot { return SakuraCordAccentColor.color }
         return presentation.roleColorHex.map(Color.init(hex:)) ?? .primary
     }
 }
@@ -1115,7 +1116,7 @@ private struct ForumPostMessageCount: View {
             if unreadCount > 0 {
                 Text("(\(unreadCount.formatted()) New)")
                     .fontWeight(.semibold)
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(SakuraCordAccentColor.color)
             }
         }
         .allowsHitTesting(false)
@@ -1505,8 +1506,10 @@ private struct ForumPostComposer: View {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Posting Guidelines").font(.title.bold())
                 ScrollView {
-                    Text(channel.topic ?? "").textSelection(.enabled).frame(
-                        maxWidth: .infinity, alignment: .leading)
+                    Text(channel.topic ?? "")
+                        .textSelection(.enabled)
+                        .tint(SakuraCordAccentColor.color)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 HStack {
                     Spacer()
@@ -1548,6 +1551,7 @@ private struct ForumPostComposer: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     TextField("Title", text: $title)
+                        .tint(SakuraCordAccentColor.color)
                         .font(.title2.weight(.bold))
                         .textFieldStyle(.plain)
                         .focused($isTitleFocused)

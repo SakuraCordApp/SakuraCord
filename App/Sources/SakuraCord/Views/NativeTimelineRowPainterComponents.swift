@@ -761,7 +761,7 @@ extension NativeTimelineRowPainter {
         )
         (
             selected
-                ? NSColor.controlAccentColor.withAlphaComponent(
+                ? NSColor.sakuraCordAccentColor.withAlphaComponent(
                     isHovered ? 0.22 : 0.16
                 )
                 : NSColor.labelColor.withAlphaComponent(
@@ -770,7 +770,7 @@ extension NativeTimelineRowPainter {
         ).setFill()
         shape.fill()
         if selected {
-            NSColor.controlAccentColor.withAlphaComponent(0.95).setStroke()
+            NSColor.sakuraCordAccentColor.withAlphaComponent(0.95).setStroke()
             shape.lineWidth = 1.5
             shape.stroke()
         } else if isHovered {
@@ -827,7 +827,7 @@ extension NativeTimelineRowPainter {
             reactionCount(
                 region.reaction.count,
                 in: countFrame,
-                color: selected ? .controlAccentColor : .labelColor
+                color: selected ? .sakuraCordAccentColor : .labelColor
             )
         }
         for avatarRegion in region.avatarRegions {
@@ -1223,7 +1223,7 @@ extension NativeTimelineRowPainter {
     }
 
     static func pill(_ frame: CGRect, selected: Bool) {
-        let color = selected ? NSColor.controlAccentColor : NSColor.quaternaryLabelColor
+        let color = selected ? NSColor.sakuraCordAccentColor : NSColor.quaternaryLabelColor
         color.withAlphaComponent(selected ? 0.22 : 0.18).setFill()
         NSBezierPath(roundedRect: frame, xRadius: frame.height / 2, yRadius: frame.height / 2)
             .fill()

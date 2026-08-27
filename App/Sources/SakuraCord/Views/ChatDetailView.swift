@@ -262,7 +262,7 @@ private struct HiddenChannelPrincipalChip: View {
     let principal: HiddenChannelAccessPrincipal
 
     private var tint: Color {
-        principal.colorHex.map(Color.init(hex:)) ?? .accentColor
+        principal.colorHex.map(Color.init(hex:)) ?? SakuraCordAccentColor.color
     }
 
     var body: some View {

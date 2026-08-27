@@ -1,6 +1,13 @@
 import AppKit
 
 extension NSTextView {
+    func applySakuraCordTextSelectionAppearance() {
+        selectedTextAttributes = [
+            .backgroundColor: NSColor.sakuraCordTextSelectionBackgroundColor,
+            .foregroundColor: NSColor.selectedTextColor,
+        ]
+    }
+
     func attachmentSelectionRects() -> [NSRect] {
         guard let layoutManager, let textContainer else { return [] }
         let origin = textContainerOrigin
@@ -29,7 +36,7 @@ extension NSTextView {
     func drawSelectionOverAttachments(in dirtyRect: NSRect) {
         let emphasized = window?.isKeyWindow == true && window?.firstResponder === self
         let color = emphasized
-            ? NSColor.selectedTextBackgroundColor
+            ? NSColor.sakuraCordTextSelectionBackgroundColor
             : NSColor.unemphasizedSelectedTextBackgroundColor
         color.withAlphaComponent(emphasized ? 0.5 : 0.38).setFill()
         for rect in attachmentSelectionRects() where rect.intersects(dirtyRect) {

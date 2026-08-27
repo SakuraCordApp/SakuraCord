@@ -812,6 +812,7 @@ private struct CommandTextOptionEditor: View {
 
     var body: some View {
         TextField(placeholder, text: $text)
+            .tint(SakuraCordAccentColor.color)
             .textFieldStyle(.plain)
             .padding(.horizontal, 8)
             .frame(minHeight: 30)
@@ -931,6 +932,7 @@ private struct CommandEntityResolver: View {
             Text("Choose \(title)")
                 .font(.headline)
             TextField("Search", text: $query)
+                .tint(SakuraCordAccentColor.color)
                 .textFieldStyle(.roundedBorder)
                 .focused($searchFocused)
                 .onMoveCommand { direction in

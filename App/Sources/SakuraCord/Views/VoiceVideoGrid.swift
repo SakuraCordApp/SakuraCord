@@ -553,7 +553,8 @@ private struct VoiceStreamTile: View {
             ConcentricRectangle(cornerRadius: metrics.value(16), style: .continuous)
                 .stroke(
                     isActiveStreamSurface
-                        ? Color.accentColor.opacity(0.7) : Color.primary.opacity(0.1),
+                        ? SakuraCordAccentColor.color.opacity(0.7)
+                        : Color.primary.opacity(0.1),
                     lineWidth: metrics.value(isActiveStreamSurface ? 2 : 1)
                 )
         }
@@ -637,7 +638,10 @@ private struct VoiceStreamTile: View {
             }
             .buttonStyle(.plain)
             .contentShape(Capsule())
-            .glassEffect(.regular.tint(Color.accentColor).interactive(), in: Capsule())
+            .glassEffect(
+                .regular.tint(SakuraCordAccentColor.color).interactive(),
+                in: Capsule()
+            )
             .disabled(state == .connecting)
         }
     }

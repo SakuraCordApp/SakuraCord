@@ -146,10 +146,7 @@ struct SelectableMessageTextView: NSViewRepresentable {
             .foregroundColor: NSColor.linkColor,
             .underlineStyle: 0
         ]
-        textView.selectedTextAttributes = [
-            .backgroundColor: NSColor.selectedTextBackgroundColor,
-            .foregroundColor: NSColor.selectedTextColor
-        ]
+        textView.applySakuraCordTextSelectionAppearance()
         textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         textView.onMentionClick = onMentionClick
         textView.onURLClick = onURLClick
@@ -162,6 +159,7 @@ struct SelectableMessageTextView: NSViewRepresentable {
         textView.onURLClick = onURLClick
         textView.model = model
         textView.isSelectable = isSelectable
+        textView.applySakuraCordTextSelectionAppearance()
         configureTextContainer(textView.textContainer)
         let signature = RichMessageRenderSignature(
             source: source,

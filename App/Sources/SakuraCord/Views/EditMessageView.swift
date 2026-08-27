@@ -16,7 +16,10 @@ struct EditMessageView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Edit Message").font(.headline)
-            TextEditor(text: $content).frame(minHeight: 120).font(.body)
+            TextEditor(text: $content)
+                .tint(SakuraCordAccentColor.color)
+                .frame(minHeight: 120)
+                .font(.body)
             HStack {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }

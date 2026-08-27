@@ -123,7 +123,7 @@ struct HoverActionControlLabel<Content: View>: View {
 
     private var iconColor: Color {
         if role == .destructive, isHovering { return .red }
-        if isSelected == true { return .accentColor }
+        if isSelected == true { return SakuraCordAccentColor.color }
         return .primary
     }
 
@@ -131,6 +131,8 @@ struct HoverActionControlLabel<Content: View>: View {
         if isHovering {
             return role == .destructive ? .red.opacity(0.18) : .primary.opacity(0.14)
         }
-        return isSelected == true ? .accentColor.opacity(0.16) : .clear
+        return isSelected == true
+            ? SakuraCordAccentColor.color.opacity(0.16)
+            : .clear
     }
 }
