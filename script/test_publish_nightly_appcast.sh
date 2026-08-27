@@ -12,6 +12,7 @@ trap cleanup EXIT
 APPCAST="$TEMP_ROOT/appcast.xml"
 FAKE_BIN="$TEMP_ROOT/bin"
 GH_LOG="$TEMP_ROOT/gh.log"
+CURL_COUNT="$TEMP_ROOT/curl-count"
 mkdir -p "$FAKE_BIN"
 
 printf '%s\n' \
@@ -36,8 +37,14 @@ printf '%s\n' \
   'while [[ "$#" -gt 0 ]]; do' \
   '  if [[ "$1" == "--output" ]]; then output="$2"; shift 2; else shift; fi' \
   'done' \
-  'cp "$SAKURACORD_TEST_APPCAST" "$output"' > "$FAKE_BIN/curl"
-chmod +x "$FAKE_BIN/gh" "$FAKE_BIN/curl"
+  'count=0' \
+  'if [[ -f "$SAKURACORD_TEST_CURL_COUNT" ]]; then count="$(<"$SAKURACORD_TEST_CURL_COUNT")"; fi' \
+  'count=$((count + 1))' \
+  'echo "$count" > "$SAKURACORD_TEST_CURL_COUNT"' \
+  'if [[ "$count" == "1" ]]; then echo stale > "$output"; else cp "$SAKURACORD_TEST_APPCAST" "$output"; fi' \
+  > "$FAKE_BIN/curl"
+printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$FAKE_BIN/sleep"
+chmod +x "$FAKE_BIN/gh" "$FAKE_BIN/curl" "$FAKE_BIN/sleep"
 
 if PATH="$FAKE_BIN:$PATH" \
   GH_TOKEN=test-token \
@@ -55,6 +62,7 @@ GITHUB_RUN_ID=123 \
 SAKURACORD_RELEASE_TAG=v0.2.0-Beta-3 \
 SAKURACORD_TEST_APPCAST="$APPCAST" \
 SAKURACORD_TEST_GH_LOG="$GH_LOG" \
+SAKURACORD_TEST_CURL_COUNT="$CURL_COUNT" \
   "$ROOT_DIR/script/publish_nightly_appcast.sh" "$APPCAST" >/dev/null
 
 if ! grep -Fq -- "--method POST repos/SakuraCordApp/SakuraCord/git/refs" "$GH_LOG"; then
@@ -63,6 +71,10 @@ if ! grep -Fq -- "--method POST repos/SakuraCordApp/SakuraCord/git/refs" "$GH_LO
 fi
 if ! grep -Fq -- "--method PUT repos/SakuraCordApp/SakuraCord/contents/appcast.xml" "$GH_LOG"; then
   echo "Nightly feed publication did not upload its signed appcast." >&2
+  exit 1
+fi
+if [[ "$(<"$CURL_COUNT")" != "2" ]]; then
+  echo "Nightly feed publication did not wait for the raw feed to refresh." >&2
   exit 1
 fi
 

@@ -96,8 +96,22 @@ cleanup() {
 }
 trap cleanup EXIT
 RAW_URL="https://raw.githubusercontent.com/$REPOSITORY/$BRANCH/appcast.xml"
-curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 \
-  --output "$PUBLISHED_APPCAST" \
-  "$RAW_URL?run=${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
-cmp "$APPCAST_PATH" "$PUBLISHED_APPCAST"
+published_matches=false
+for attempt in {1..15}; do
+  curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 \
+    --output "$PUBLISHED_APPCAST" \
+    "$RAW_URL?run=${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-$attempt"
+  if cmp -s "$APPCAST_PATH" "$PUBLISHED_APPCAST"; then
+    published_matches=true
+    break
+  fi
+  if (( attempt < 15 )); then
+    sleep 2
+  fi
+done
+if [[ "$published_matches" != "true" ]]; then
+  echo "The raw nightly feed did not refresh after publication." >&2
+  cmp "$APPCAST_PATH" "$PUBLISHED_APPCAST"
+  exit 1
+fi
 printf 'Published and verified %s at %s.\n' "$RELEASE_TAG" "$RAW_URL"
