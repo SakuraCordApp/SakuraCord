@@ -4,69 +4,38 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>SakuraCord</title>
         <item>
-            <title>0.1.5</title>
-            <pubDate>Thu, 27 Aug 2026 00:45:14 +0000</pubDate>
-            <link>https://github.com/SakuraCordApp/SakuraCord/releases/tag/v0.1.5-Beta-1</link>
-            <sparkle:fullReleaseNotesLink>https://github.com/SakuraCordApp/SakuraCord/releases/tag/v0.1.5-Beta-1</sparkle:fullReleaseNotesLink>
-            <sparkle:version>43</sparkle:version>
-            <sparkle:shortVersionString>0.1.5</sparkle:shortVersionString>
+            <title>0.1.5 Beta 2</title>
+            <pubDate>Thu, 27 Aug 2026 01:44:10 +0000</pubDate>
+            <link>https://github.com/SakuraCordApp/SakuraCord/releases/tag/v0.1.5-Beta-2</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/SakuraCordApp/SakuraCord/releases/tag/v0.1.5-Beta-2</sparkle:fullReleaseNotesLink>
+            <sparkle:version>49</sparkle:version>
+            <sparkle:shortVersionString>0.1.5 Beta 2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>27.0</sparkle:minimumSystemVersion>
-            <description sparkle:format="markdown"><![CDATA[# SakuraCord v0.1.5-Beta-1
+            <description sparkle:format="markdown"><![CDATA[# SakuraCord v0.1.5-Beta-2
 
-SakuraCord v0.1.5 Beta 1 adds a rebuilt, searchable Settings experience with controls for accounts, interface, chat, notifications, voice and video, accessibility, shortcuts, privacy, storage, diagnostics, updates, and app information. It also refreshes the message composer, improves attachment sending and failed-message recovery, and polishes channel and member-list presentation.
+SakuraCord v0.1.5 Beta 2 fixes update labeling and makes moving between Nightly and Regular release tracks clearer.
 
-## Settings and account management
+## Update labels
 
-- Rebuilt Settings around a resizable sidebar that searches individual pages and controls and opens directly to the selected result.
-- Added saved-account inspection, switching, sign-in, removal, preferred launch-account selection, and scoped preference export and reset controls.
-- Added launch-at-login, startup destination, window restoration, member-list restoration, and confirmation options for quitting or discarding composer changes.
-- Added scoped JSON exports and reset actions throughout supported settings pages without including credentials or Discord-managed data.
+- Fixed Sparkle prompts so nightly updates show full beta names such as `0.1.5 Beta 2`.
 
-## Interface, chat, and accessibility
+## Release tracks
 
-- Added controls for message and sidebar density, text sizes, timestamp formatting, message grouping, links, member-list visibility, activity details, message actions, and Discord role colors, with a live local preview.
-- Added chat preferences for sending and typing behavior, read acknowledgements, edited markers, embeds, spoilers, internal Discord links, animated media, inline media size, and default emoji skin tone.
-- Made composer spell checking, automatic correction, smart quotes, and smart dashes opt-in by disabling them by default.
-- Added customizable navigation, messaging, and voice-and-video keyboard shortcuts with conflict handling, individual and grouped resets, and export support.
-- Added motion, contrast, interaction-target, animated-content, and VoiceOver controls, including privacy-preserving new-message announcements.
+- Changed Nightly-to-Regular switching to offer the latest Regular release directly instead of reporting the newer Nightly build as up to date.
+- Added clear guidance when installing the Regular release requires a manual replacement because Sparkle blocks downgrades.
 
-## Notifications, voice, video, and updates
+## Release announcements
 
-- Added notification controls for previews, sounds, Dock badges, direct messages, mentions, replies, calls, server activity, background-only delivery, conversation suppression, grouping, and clearing notifications when read.
-- Added configurable quiet hours with weekday and weekend schedules and optional exceptions for direct messages and incoming calls.
-- Added voice and video settings for devices, input and output levels, microphone and speaker tests, call defaults, camera previews, noise suppression, screen-share defaults, and macOS permission status.
-- Refreshed update controls with the installed version, Regular and Nightly tracks, automatic checks and downloads, manual update checks, and an in-app changelog.
-- Redesigned About with project links, packaged release notes, third-party acknowledgements, and clearer version and independence information.
+- Removed duplicate moon emoji from generated nightly announcement titles so the emoji appears only in the main headline.
 
-## Storage, privacy, and diagnostics
-
-- Added media-cache limits, usage reporting, eviction controls, download-folder and filename-collision preferences, Finder reveal behavior, and cleanup for stale incomplete downloads.
-- Added scoped controls for inspecting and clearing saved drafts without affecting Discord messages or another account’s data.
-- Added privacy controls for oversized-attachment uploader offers, external-link protections, typing and read-state visibility, notification previews, and independently confirmed cleanup of searches, recent destinations, and local emoji learning.
-- Added subsystem health reporting, sanitized support summaries, API-log export and clearing, configurable diagnostic retention, and optional detailed or on-disk diagnostic capture.
-
-## Messaging and attachments
-
-- Redesigned the default message composer with separate attachment and send controls while preserving a selectable legacy unified input bar.
-- Added the ability to open staged image attachments in the media viewer before sending.
-- Fixed attachment sending and preserved local image previews while confirmed uploads transition to Discord-hosted media.
-- Added clearer pending and failed message presentation, including retry, copy, and discard actions for failed outgoing messages.
-- Dimmed pending attachments and matched the composer’s disabled appearance to unavailable conversations and threads.
-
-## Interface polish and reliability
-
-- Moved channel topics into a selectable toolbar popover so long topics remain available without crowding the conversation header.
-- Restored solid member status indicators and adopted the native iMessage-style emoji symbol throughout the app.
-- Improved Settings window behavior, keyboard search, sidebar rendering, selection stability, and presentation latency.
-
-**Full Changelog:** [v0.1.4...v0.1.5-Beta-1](https://github.com/SakuraCordApp/SakuraCord/compare/v0.1.4...v0.1.5-Beta-1)
+**Full Changelog:** [v0.1.5-Beta-1...v0.1.5-Beta-2](https://github.com/SakuraCordApp/SakuraCord/compare/v0.1.5-Beta-1...v0.1.5-Beta-2)
 
 <!-- sakuracord-release-action:v1 -->
 ]]></description>
-            <enclosure url="https://github.com/SakuraCordApp/SakuraCord/releases/download/v0.1.5-Beta-1/SakuraCord-v0.1.5-Beta-1.dmg" length="27466326" type="application/octet-stream" sparkle:edSignature="6wdltPswYf8z6Tbti7mokCLTtMe4YbionxDhiF3EnjXLs3UFmNLpRrb2jIL/OeulOMo68KuE5vW2OMcKNmBFAA=="></enclosure>
+            <enclosure url="https://github.com/SakuraCordApp/SakuraCord/releases/download/v0.1.5-Beta-2/SakuraCord-v0.1.5-Beta-2.dmg" length="27467628" type="application/octet-stream" sparkle:edSignature="da7uknF1K0dNcIDeeozI19cMsSrHJB2wqbd/qtoErszI57ZGeSS3vdaIYfQA80P4zWfmN89oGUe0Cv9q9KWIAA=="></enclosure>
         </item>
     </channel>
 </rss><!-- sparkle-signatures:
-edSignature: Ys8RfQyCtM0aZN3sN1XsThkxl3aF0WYfXPRRty1J+FZ1j8P0S+HRpAosuqgs3bVL6Q9/zbDKcdY7B0BDH+xbDg==
-length: 6192
+edSignature: s9ybarTzo0zj11VlBsf4hdriJpShGBaDavyRr3zhSIxK8g6UonbU7KLdoFSjtFbFv2YPuhZ6qryGTdZT2BiICw==
+length: 2264
 -->
