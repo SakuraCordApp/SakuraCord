@@ -11,16 +11,13 @@ struct SakuraCordCommands: Commands {
                 NSApp.orderFrontStandardAboutPanel(options: [
                     .applicationVersion:
                         AboutVersionInformation().semanticVersionDisplay,
+                    .version: "",
                 ])
             }
 
             Divider()
 
             CheckForUpdatesCommand(updateController: updateController)
-        }
-
-        CommandGroup(replacing: .appSettings) {
-            SettingsShortcutCommand()
         }
 
         CommandGroup(replacing: .sidebar) {
@@ -105,20 +102,6 @@ private struct ShortcutCommandButton: View {
             action.registersMenuShortcut
                 ? shortcuts.shortcut(for: action)?.swiftUIShortcut
                 : nil
-        )
-    }
-}
-
-private struct SettingsShortcutCommand: View {
-    @Environment(\.openSettings) private var openSettings
-    private let shortcuts = KeyboardShortcutSettingsStore.shared
-
-    var body: some View {
-        Button(KeyboardShortcutAction.openSettings.title) {
-            openSettings()
-        }
-        .keyboardShortcut(
-            shortcuts.shortcut(for: .openSettings)?.swiftUIShortcut
         )
     }
 }

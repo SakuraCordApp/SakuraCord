@@ -95,6 +95,15 @@ func releaseTrackComparatorScopesDowngradesToInstalledBuild() {
     #expect(comparator.compareVersion("300", toVersion: "400") == .orderedAscending)
 }
 
+@Test("update display preserves the installed release label")
+func updateDisplayPreservesInstalledReleaseLabel() {
+    let display = AppUpdateVersionDisplay(installedDisplayVersion: "0.1.5 Beta 2")
+    #expect(display.bundleDisplayVersion(fallback: "0.1.5") == "0.1.5 Beta 2")
+
+    let fallback = AppUpdateVersionDisplay(installedDisplayVersion: nil)
+    #expect(fallback.bundleDisplayVersion(fallback: "0.1.5") == "0.1.5")
+}
+
 @Test("update configuration rejects invalid trust or automatic-check metadata")
 func invalidUpdateTrustMetadataIsDisabled() {
     var wrongFeed = productionUpdateInfo()

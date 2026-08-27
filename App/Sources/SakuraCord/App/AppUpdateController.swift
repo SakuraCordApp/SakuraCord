@@ -182,6 +182,40 @@ nonisolated final class AppUpdateVersionComparator: NSObject, SUVersionCompariso
     }
 }
 
+nonisolated final class AppUpdateVersionDisplay: NSObject, SUVersionDisplay,
+    @unchecked Sendable
+{
+    private let installedDisplayVersion: String?
+
+    init(installedDisplayVersion: String?) {
+        self.installedDisplayVersion = installedDisplayVersion
+    }
+
+    func bundleDisplayVersion(fallback: String) -> String {
+        installedDisplayVersion ?? fallback
+    }
+
+    func formatUpdateVersion(
+        fromUpdate update: SUAppcastItem,
+        andBundleDisplayVersion bundleDisplayVersion:
+            AutoreleasingUnsafeMutablePointer<NSString>,
+        withBundleVersion _: String
+    ) -> String {
+        bundleDisplayVersion.pointee = self.bundleDisplayVersion(
+            fallback: bundleDisplayVersion.pointee as String
+        ) as NSString
+        return update.displayVersionString
+    }
+
+    func formatBundleDisplayVersion(
+        _ bundleDisplayVersion: String,
+        withBundleVersion _: String,
+        matchingUpdate _: SUAppcastItem?
+    ) -> String {
+        self.bundleDisplayVersion(fallback: bundleDisplayVersion)
+    }
+}
+
 nonisolated enum AppUpdateReleaseTrack: String, CaseIterable, Identifiable, Sendable {
     case regular
     case nightly
@@ -217,7 +251,9 @@ nonisolated enum AppUpdateReleaseTrack: String, CaseIterable, Identifiable, Send
 }
 
 @MainActor
-final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate {
+final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate,
+    SPUStandardUserDriverDelegate
+{
     static let lastSuccessfulCheckPreferenceKey =
         "updates.lastSuccessfulSignedFeedCheck"
 
@@ -253,10 +289,11 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
     private var pendingReleaseTrackUpdatePresentation = false
     private var cancellables: Set<AnyCancellable> = []
     private let versionComparator: AppUpdateVersionComparator?
+    private let versionDisplay: AppUpdateVersionDisplay
     private lazy var updaterController = SPUStandardUpdaterController(
         startingUpdater: false,
         updaterDelegate: self,
-        userDriverDelegate: nil
+        userDriverDelegate: self
     )
 
     init(
@@ -271,6 +308,9 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
         releaseTrack = initialReleaseTrack
         versionComparator = configuration.installedBuildVersion.map(
             AppUpdateVersionComparator.init(installedVersion:)
+        )
+        versionDisplay = AppUpdateVersionDisplay(
+            installedDisplayVersion: AboutVersionInformation().displayVersion
         )
         lastSuccessfulCheckDate = defaults.object(
             forKey: Self.lastSuccessfulCheckPreferenceKey
@@ -337,6 +377,10 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
 
     func versionComparator(for _: SPUUpdater) -> (any SUVersionComparison)? {
         versionComparator
+    }
+
+    func standardUserDriverRequestsVersionDisplayer() -> (any SUVersionDisplay)? {
+        versionDisplay
     }
 
     func updater(_: SPUUpdater, didFindValidUpdate _: SUAppcastItem) {
