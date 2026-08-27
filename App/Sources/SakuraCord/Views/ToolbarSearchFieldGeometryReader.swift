@@ -42,26 +42,43 @@ private final class ToolbarSearchFieldSkeletonOverlay: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        layer?.backgroundColor = NSColor.white.withAlphaComponent(0.09).cgColor
         layer?.cornerRadius = 10
         layer?.cornerCurve = .continuous
         layer?.masksToBounds = true
 
-        shimmerLayer.colors = [
-            NSColor.clear.cgColor,
-            NSColor.white.withAlphaComponent(0.04).cgColor,
-            NSColor.white.withAlphaComponent(0.2).cgColor,
-            NSColor.white.withAlphaComponent(0.04).cgColor,
-            NSColor.clear.cgColor,
-        ]
         shimmerLayer.startPoint = CGPoint(x: 0, y: 0.5)
         shimmerLayer.endPoint = CGPoint(x: 1, y: 0.5)
         layer?.addSublayer(shimmerLayer)
+        updateColorsForEffectiveAppearance()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateColorsForEffectiveAppearance()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateColorsForEffectiveAppearance()
+    }
+
+    private func updateColorsForEffectiveAppearance() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = NSColor.labelColor
+                .withAlphaComponent(0.09).cgColor
+            shimmerLayer.colors = [
+                NSColor.clear.cgColor,
+                NSColor.labelColor.withAlphaComponent(0.04).cgColor,
+                NSColor.labelColor.withAlphaComponent(0.2).cgColor,
+                NSColor.labelColor.withAlphaComponent(0.04).cgColor,
+                NSColor.clear.cgColor,
+            ]
+        }
     }
 
     override func layout() {

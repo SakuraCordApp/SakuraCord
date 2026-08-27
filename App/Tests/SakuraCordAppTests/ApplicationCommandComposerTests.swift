@@ -531,7 +531,10 @@ func commandArgumentsUseAtomicMentionPresentation() throws {
         at: userSegment.valueRange.location,
         effectiveRange: nil
     ) as? NSColor)
-    #expect(userColor == .sakuraCordAccentColor)
+    #expect(
+        userColor.usingColorSpace(.sRGB)
+            == NSColor.sakuraCordAccentColor.usingColorSpace(.sRGB)
+    )
     #expect(document.attributedText.attribute(
         .applicationCommandOptionID,
         at: userSegment.valueRange.location,

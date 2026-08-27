@@ -80,7 +80,7 @@ struct ChannelListLoadingSkeleton: View {
         HStack(spacing: 5) {
             Image(systemName: "chevron.down")
                 .font(.caption2.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.12))
+                .foregroundStyle(.primary.opacity(0.12))
                 .frame(width: 8)
             SkeletonShape(cornerRadius: 4)
                 .frame(width: 86, height: 9)
@@ -124,7 +124,6 @@ struct SakuraCordSessionLoadingView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .preferredColorScheme(.dark)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Opening SakuraCord. \(detail)")
     }
@@ -363,7 +362,7 @@ struct SkeletonShape: View {
 
     var body: some View {
         shape
-            .fill(.white.opacity(0.09))
+            .fill(.primary.opacity(0.09))
             .skeletonShimmer()
     }
 }

@@ -1,5 +1,50 @@
 @testable import SakuraCord
+import AppKit
 import Testing
+
+@Test func `App color schemes map to native appearances`() {
+    #expect(AppColorScheme.system.appearanceName(increasesContrast: false) == nil)
+    #expect(AppColorScheme.system.appearanceName(increasesContrast: true) == nil)
+    #expect(AppColorScheme.light.appearanceName(increasesContrast: false) == .aqua)
+    #expect(
+        AppColorScheme.light.appearanceName(increasesContrast: true)
+            == .accessibilityHighContrastAqua
+    )
+    #expect(AppColorScheme.dark.appearanceName(increasesContrast: false) == .darkAqua)
+    #expect(
+        AppColorScheme.dark.appearanceName(increasesContrast: true)
+            == .accessibilityHighContrastDarkAqua
+    )
+}
+
+@MainActor
+@Test func `Effective accent resolves in the destination appearance`() throws {
+    // Create the color outside either drawing appearance. It must remain dynamic
+    // until its eventual AppKit or SwiftUI destination resolves it.
+    let effectiveAccent = AccentColorChoice.purple.effectiveNSColor
+    for appearanceName in [
+        NSAppearance.Name.aqua,
+        .darkAqua,
+        .accessibilityHighContrastAqua,
+        .accessibilityHighContrastDarkAqua,
+    ] {
+        let appearance = try #require(NSAppearance(named: appearanceName))
+        var expected: NSColor?
+        var actual: NSColor?
+        appearance.performAsCurrentDrawingAppearance {
+            expected = NSTintConfiguration(preferredColor: AccentColorChoice.purple.nsColor)
+                .equivalentContentTintColor?
+                .usingColorSpace(.sRGB)
+            actual = effectiveAccent.usingColorSpace(.sRGB)
+        }
+
+        let expectedComponents = try #require(expected)
+        let actualComponents = try #require(actual)
+        #expect(abs(actualComponents.redComponent - expectedComponents.redComponent) < 0.0001)
+        #expect(abs(actualComponents.greenComponent - expectedComponents.greenComponent) < 0.0001)
+        #expect(abs(actualComponents.blueComponent - expectedComponents.blueComponent) < 0.0001)
+    }
+}
 
 @MainActor
 @Test func `Appearance preferences persist export and reset by page`() {

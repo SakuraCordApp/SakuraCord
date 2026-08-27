@@ -952,6 +952,12 @@ private final class MessageSearchAutocompleteCanvas: NSView {
 
     override var isFlipped: Bool { true }
 
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+        layer?.setNeedsDisplay()
+    }
+
     private var rows: [MessageSearchAutocompleteSuggestion] = []
     private var channelSystemImagesByID: [ChannelID: String] = [:]
     private var origins: [CGFloat] = []

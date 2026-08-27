@@ -368,6 +368,7 @@ final class NativeTimelineCanvasView: NSView {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
+        invalidatePresentationCaches()
         reconcileBeginningSelectionOverlay()
     }
 

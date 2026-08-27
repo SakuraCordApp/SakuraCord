@@ -203,6 +203,26 @@ final class NativeMemberListScrollView: NSScrollView {
         synchronizeCanvasFrame()
     }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateBackgroundForEffectiveAppearance()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateBackgroundForEffectiveAppearance()
+    }
+
+    private func updateBackgroundForEffectiveAppearance() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            backgroundColor = NSColor.controlBackgroundColor
+                .withAlphaComponent(0.45)
+        }
+        needsDisplay = true
+        contentView.needsDisplay = true
+        documentView?.needsDisplay = true
+    }
+
     func synchronizeCanvasFrame() {
         guard let canvas = documentView as? NativeMemberListCanvasView else { return }
         let targetSize = NSSize(
@@ -269,7 +289,6 @@ final class NativeMemberListCoordinator: NSObject {
         scrollView.inputPerformanceProbe.install(on: scrollView)
         scrollView.documentView = canvas
         scrollView.drawsBackground = true
-        scrollView.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.45)
         scrollView.borderType = .noBorder
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
@@ -855,6 +874,20 @@ final class NativeMemberListCanvasView: NSView {
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+        layer?.setNeedsDisplay()
+        rowOverlay?.needsDisplay = true
+        rowForegroundOverlay?.needsDisplay = true
+        for overlay in avatarOverlays.values {
+            overlay.needsDisplay = true
+        }
+        for overlay in activityEmojiOverlays.values {
+            overlay.needsDisplay = true
+        }
+    }
 
     var items: [Item] = []
     var presentedSections: [MemberSection] = []

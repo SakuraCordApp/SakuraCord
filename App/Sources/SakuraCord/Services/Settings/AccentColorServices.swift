@@ -51,12 +51,22 @@ extension AccentColorChoice {
     }
 
     var effectiveNSColor: NSColor {
-        NSTintConfiguration(preferredColor: nsColor).equivalentContentTintColor
-            ?? .controlAccentColor
+        NSColor(name: nil) { appearance in
+            var result = NSColor.controlAccentColor
+            appearance.performAsCurrentDrawingAppearance {
+                result = NSTintConfiguration(preferredColor: nsColor)
+                    .equivalentContentTintColor
+                    ?? .controlAccentColor
+            }
+            return result
+        }
     }
 
     var nsColor: NSColor {
-        switch self {
+        if let systemColor = SystemAccentPalette.accentColor(for: self) {
+            return systemColor
+        }
+        return switch self {
         case .blurple:
             Self.paletteColor(0x58, 0x65, 0xF2)
         case .blue:
@@ -178,6 +188,26 @@ enum SystemAccentPalette {
         _ = refresh
         guard let systemAccentKey = choice.systemAccentKey else { return nil }
         return imageProvider?(systemAccentKey)?.takeUnretainedValue()
+    }
+
+    static func accentColor(for choice: AccentColorChoice) -> NSColor? {
+        let selectorName: String
+        switch choice {
+        case .blurple:
+            return nil
+        case .gray:
+            selectorName = "controlAccentNoColor"
+        case .red, .orange, .yellow, .green, .blue, .purple, .pink:
+            guard let systemAccentKey = choice.systemAccentKey,
+                  systemAccentColorSelectors.indices.contains(systemAccentKey)
+            else { return nil }
+            selectorName = systemAccentColorSelectors[systemAccentKey]
+        }
+
+        let selector = NSSelectorFromString(selectorName)
+        let colorClass = NSColor.self as AnyObject
+        guard colorClass.responds(to: selector) else { return nil }
+        return colorClass.perform(selector)?.takeUnretainedValue() as? NSColor
     }
 
     static func allowsPreferredAccentColor(refresh: UInt64) -> Bool {

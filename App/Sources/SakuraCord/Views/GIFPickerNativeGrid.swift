@@ -429,7 +429,6 @@ private final class GIFPickerCollectionCellView: NSView {
     init() {
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.07).cgColor
         layer?.cornerRadius = 11
         layer?.cornerCurve = .continuous
         layer?.masksToBounds = true
@@ -458,11 +457,25 @@ private final class GIFPickerCollectionCellView: NSView {
         addSubview(favoriteGlass)
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
+        updateColorsForEffectiveAppearance()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateColorsForEffectiveAppearance()
+        needsDisplay = true
+    }
+
+    private func updateColorsForEffectiveAppearance() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = NSColor.labelColor
+                .withAlphaComponent(0.07).cgColor
+        }
     }
 
     isolated deinit {
@@ -486,6 +499,7 @@ private final class GIFPickerCollectionCellView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        updateColorsForEffectiveAppearance()
         if window == nil {
             stopObservingViewport()
         } else {

@@ -1077,15 +1077,26 @@ final class NativeTimelineLoadingIndicator: NSView {
             1
         )
         layer?.addSublayer(replicator)
-        spoke.backgroundColor = NSColor.secondaryLabelColor
-            .withAlphaComponent(0.82).cgColor
         replicator.addSublayer(spoke)
+        updateColorsForEffectiveAppearance()
         startAnimating()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateColorsForEffectiveAppearance()
+    }
+
+    private func updateColorsForEffectiveAppearance() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            spoke.backgroundColor = NSColor.secondaryLabelColor
+                .withAlphaComponent(0.82).cgColor
+        }
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -1114,6 +1125,7 @@ final class NativeTimelineLoadingIndicator: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        updateColorsForEffectiveAppearance()
         if window == nil {
             replicator.removeAnimation(forKey: "rotation")
         } else {
@@ -1156,15 +1168,31 @@ final class NativeTimelineInlineVideoOverlay: NSView {
         layer?.cornerRadius = 8
         layer?.cornerCurve = .continuous
         layer?.masksToBounds = true
-        layer?.backgroundColor = NativeTimelineSemanticColor.opacity(
-            .secondaryLabelColor,
-            0.10
-        ).cgColor
+        updateColorsForEffectiveAppearance()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateColorsForEffectiveAppearance()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateColorsForEffectiveAppearance()
+    }
+
+    private func updateColorsForEffectiveAppearance() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = NativeTimelineSemanticColor.opacity(
+                .secondaryLabelColor,
+                0.10
+            ).cgColor
+        }
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -1818,6 +1846,16 @@ final class NativeTimelineAnimatedMediaOverlay: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateSelectionColor()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateSelectionColor()
+    }
+
     func display(
         _ image: DecodedAnimatedImage,
         mediaFrame: CGRect,
@@ -1847,10 +1885,12 @@ final class NativeTimelineAnimatedMediaOverlay: NSView {
     }
 
     private func updateSelectionColor() {
-        selectionView.layer?.backgroundColor =
-            NSColor.sakuraCordTextSelectionBackgroundColor
-                .withAlphaComponent(0.5)
-                .cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            selectionView.layer?.backgroundColor =
+                NSColor.sakuraCordTextSelectionBackgroundColor
+                    .withAlphaComponent(0.5)
+                    .cgColor
+        }
     }
 
     func setPlaybackSuppressed(_ isSuppressed: Bool) {

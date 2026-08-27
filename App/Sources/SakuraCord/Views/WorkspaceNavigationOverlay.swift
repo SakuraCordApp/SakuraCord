@@ -818,6 +818,12 @@ private final class QuickSwitcherResultCanvas: NSView {
 
     override var isFlipped: Bool { true }
 
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+        layer?.setNeedsDisplay()
+    }
+
     private var rows: [QuickSwitcherRowPresentation] = []
     private var origins: [CGFloat] = []
     private var selectedResultID: QuickSwitcherResultID?

@@ -121,6 +121,8 @@ struct MessageTimelineView: View {
                 } label: {
                     Label("New messages", systemImage: "arrow.down")
                         .font(.callout.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .environment(\.colorScheme, .dark)
                         .padding(.horizontal, 15)
                         .padding(.vertical, 8)
                         .contentShape(Capsule())

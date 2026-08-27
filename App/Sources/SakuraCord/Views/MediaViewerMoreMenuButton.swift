@@ -292,6 +292,18 @@ final class MediaViewerMenuNSControl: NSControl {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateBackground()
+        needsDisplay = true
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateBackground()
+        needsDisplay = true
+    }
+
     override func layout() {
         super.layout()
         layer?.cornerRadius = min(bounds.width, bounds.height) / 2
@@ -348,8 +360,10 @@ final class MediaViewerMenuNSControl: NSControl {
     }
 
     private func updateBackground() {
-        layer?.backgroundColor = pointerIsInside
-            ? NSColor.labelColor.withAlphaComponent(0.14).cgColor
-            : NSColor.clear.cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = pointerIsInside
+                ? NSColor.labelColor.withAlphaComponent(0.14).cgColor
+                : NSColor.clear.cgColor
+        }
     }
 }

@@ -1,5 +1,5 @@
+import AppKit
 import Foundation
-import SwiftUI
 
 nonisolated enum AppColorScheme: String, CaseIterable, Identifiable, Sendable {
     case system
@@ -27,12 +27,54 @@ nonisolated enum AppColorScheme: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    var colorScheme: ColorScheme? {
+    func appearanceName(increasesContrast: Bool) -> NSAppearance.Name? {
         switch self {
-        case .system: nil
-        case .light: .light
-        case .dark: .dark
+        case .system:
+            nil
+        case .light:
+            increasesContrast ? .accessibilityHighContrastAqua : .aqua
+        case .dark:
+            increasesContrast ? .accessibilityHighContrastDarkAqua : .darkAqua
         }
+    }
+}
+
+@MainActor
+final class AppAppearanceController: NSObject {
+    static let shared = AppAppearanceController()
+
+    private var selection = AppColorScheme.system
+
+    private override init() {
+        super.init()
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(accessibilityDisplayOptionsDidChange),
+            name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
+            object: nil
+        )
+    }
+
+    func apply(_ selection: AppColorScheme) {
+        self.selection = selection
+        applyCurrentAppearance()
+    }
+
+    @objc
+    private func accessibilityDisplayOptionsDidChange(_: Notification) {
+        applyCurrentAppearance()
+    }
+
+    private func applyCurrentAppearance() {
+        let name = selection.appearanceName(
+            increasesContrast: NSWorkspace.shared
+                .accessibilityDisplayShouldIncreaseContrast
+        )
+        let appearance = name.flatMap(NSAppearance.init(named:))
+        guard NSApplication.shared.appearance?.name != appearance?.name else {
+            return
+        }
+        NSApplication.shared.appearance = appearance
     }
 }
 
@@ -129,6 +171,9 @@ extension AppModel {
     ) {
         let colorSchemeChanged = appearanceSettings.colorScheme != value.colorScheme
         let accentColorChanged = appearanceSettings.accentColor != value.accentColor
+        if colorSchemeChanged {
+            AppAppearanceController.shared.apply(value.colorScheme)
+        }
         SakuraCordAccentColor.apply(value.accentColor)
         appearanceSettings = value
         if colorSchemeChanged || accentColorChanged {

@@ -47,7 +47,7 @@ struct AccountSwitcherView: View {
             }
         }
         .frame(minWidth: 860, minHeight: 600)
-        .preferredColorScheme(.dark)
+        .environment(\.colorScheme, .dark)
         .toolbar(removing: .title)
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .task {
