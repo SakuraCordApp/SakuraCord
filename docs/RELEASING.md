@@ -88,9 +88,16 @@ information check and remains silent when no newer build exists.
 
 ## One-time Sparkle setup
 
-SakuraCord pins the official Sparkle package. Generate one Ed25519 keypair on a
-trusted maintainer Mac, back up the private key in an offline secret store, and
-configure the repository secrets:
+SakuraCord pins the `SakuraCordApp/Sparkle` fork at
+`2.9.6-sakuracord.2`, based on upstream Sparkle 2.9.6. The fork preserves
+Sparkle's signed-feed, archive, bundle-identity, and installation verification.
+Its only behavioral change lets a currently installed build opt in to replacing
+itself with a signed update whose `CFBundleVersion` is lower. Packaging adds the
+`SUAllowsVersionDowngrades` opt-in only to Nightly builds so they can return to
+the Regular track; Regular builds retain upstream downgrade protection.
+
+Generate one Ed25519 keypair on a trusted maintainer Mac, back up the private
+key in an offline secret store, and configure the repository secrets:
 
 ```sh
 swift package --package-path App resolve

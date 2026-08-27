@@ -227,11 +227,15 @@ END OF TERMS AND CONDITIONS
 
 ## Sparkle
 
-SakuraCord uses the official Sparkle 2 software update framework, pinned to
-version 2.9.4.
+SakuraCord uses the `SakuraCordApp/Sparkle` fork of the Sparkle 2 software
+update framework, pinned to version `2.9.6-sakuracord.2` and based on upstream
+Sparkle 2.9.6. The fork adds an explicit application-controlled opt-in for the
+plain installer to accept a signed update whose `CFBundleVersion` is lower; it
+otherwise preserves upstream Sparkle's verification and installation behavior.
 
-- Project: <https://github.com/sparkle-project/Sparkle>
-- License: `LICENSE` at tag `2.9.4`
+- Fork: <https://github.com/SakuraCordApp/Sparkle>
+- Upstream project: <https://github.com/sparkle-project/Sparkle>
+- Source and license: `LICENSE` at tag `2.9.6-sakuracord.2`
 
 Copyright (c) 2006-2013 Andy Matuschak.
 Copyright (c) 2009-2013 Elgato Systems GmbH.
