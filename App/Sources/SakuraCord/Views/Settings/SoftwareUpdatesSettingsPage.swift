@@ -58,6 +58,29 @@ struct SoftwareUpdatesSettingsPage: View {
                     Text("Update preferences", bundle: #bundle)
                 }
 
+                if updateController.requiresManualRegularTrackInstall {
+                    Section {
+                        Label {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Regular track selected", bundle: #bundle)
+                                    .font(.headline)
+                                Text(
+                                    """
+                                    You’re running a Nightly build. Sparkle prevents automatic \
+                                    downgrades, so use Get Regular Release to install the current \
+                                    Regular version now. Future Regular updates will then arrive normally.
+                                    """,
+                                    bundle: #bundle
+                                )
+                                .foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "sun.max.fill")
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                }
+
                 if let reason = updateController.unavailabilityDescription {
                     Section {
                         UpdatesUnavailableNotice(reason: reason)

@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import Foundation
 import Sparkle
@@ -50,6 +51,7 @@ nonisolated struct AppUpdateConfiguration: Equatable, Sendable {
     static let canonicalBundleIdentifier = "dev.sakuracord.SakuraCord"
     static let enabledInfoKey = "SakuraCordUpdatesEnabled"
     static let nightlyFeedInfoKey = "SakuraCordNightlyFeedURL"
+    static let releaseTrackInfoKey = "SakuraCordReleaseTrack"
     static let expectedFeedURL = URL(
         string: "https://github.com/SakuraCordApp/SakuraCord/releases/latest/download/appcast.xml"
     )!
@@ -61,6 +63,7 @@ nonisolated struct AppUpdateConfiguration: Equatable, Sendable {
     let isEnabled: Bool
     let feedURL: URL?
     let nightlyFeedURL: URL?
+    let installedReleaseTrack: AppUpdateReleaseTrack
     let publicEdKey: String?
     let unavailabilityReason: AppUpdateUnavailabilityReason?
 
@@ -78,6 +81,9 @@ nonisolated struct AppUpdateConfiguration: Equatable, Sendable {
         }
         self.feedURL = feedURL
         self.nightlyFeedURL = nightlyFeedURL
+        installedReleaseTrack = AppUpdateReleaseTrack(
+            storedValue: infoDictionary[Self.releaseTrackInfoKey] as? String
+        )
         self.publicEdKey = publicEdKey
         if !enabled {
             unavailabilityReason = .disabledForBuild
@@ -167,6 +173,14 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
 
     let isEnabled: Bool
 
+    static let regularReleaseURL = URL(
+        string: "https://github.com/SakuraCordApp/SakuraCord/releases/latest"
+    )!
+
+    var requiresManualRegularTrackInstall: Bool {
+        configuration.installedReleaseTrack == .nightly && releaseTrack == .regular
+    }
+
     var unavailabilityDescription: String? {
         configuration.unavailabilityReason?.description
     }
@@ -176,6 +190,9 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
             return unavailabilityDescription
         }
         if canCheckForUpdates {
+            if requiresManualRegularTrackInstall {
+                return "Open the latest Regular release to replace this Nightly build."
+            }
             return "SakuraCord is ready to check the signed \(releaseTrack.title.lowercased()) feed."
         }
         return "An update check or installation is currently in progress."
@@ -237,7 +254,12 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
     }
 
     func checkForUpdates() {
-        guard configuration.isEnabled, canCheckForUpdates else { return }
+        guard configuration.isEnabled else { return }
+        if requiresManualRegularTrackInstall {
+            NSWorkspace.shared.open(Self.regularReleaseURL)
+            return
+        }
+        guard canCheckForUpdates else { return }
         updaterController.checkForUpdates(nil)
     }
 

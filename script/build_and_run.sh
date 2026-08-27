@@ -40,6 +40,11 @@ if [[ "$UPDATES_ENABLED" != "0" && "$UPDATES_ENABLED" != "1" ]]; then
   echo "SAKURACORD_ENABLE_UPDATES must be 0 or 1." >&2
   exit 2
 fi
+RELEASE_TRACK="${SAKURACORD_RELEASE_TRACK:-regular}"
+if [[ "$RELEASE_TRACK" != "regular" && "$RELEASE_TRACK" != "nightly" ]]; then
+  echo "SAKURACORD_RELEASE_TRACK must be regular or nightly." >&2
+  exit 2
+fi
 sakuracord_resolve_insecure_debug_credentials "$ROOT_DIR"
 sakuracord_apply_secure_release_credential_policy "$MODE" "$UPDATES_ENABLED"
 INSECURE_DEBUG_CREDENTIALS="$SAKURACORD_RESOLVED_INSECURE_DEBUG_CREDENTIALS"
@@ -207,6 +212,9 @@ PLIST
 
 if [[ "$UPDATES_ENABLED" == "1" ]]; then
   /usr/libexec/PlistBuddy -c "Add :SakuraCordUpdatesEnabled bool true" "$CONTENTS/Info.plist"
+  /usr/libexec/PlistBuddy -c \
+    "Add :SakuraCordReleaseTrack string $RELEASE_TRACK" \
+    "$CONTENTS/Info.plist"
   /usr/libexec/PlistBuddy -c \
     "Add :SUFeedURL string https://github.com/SakuraCordApp/SakuraCord/releases/latest/download/appcast.xml" \
     "$CONTENTS/Info.plist"

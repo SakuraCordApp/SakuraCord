@@ -160,6 +160,40 @@ func releaseTrackPreferenceAndFeedSelection() {
     )
     #expect(AppUpdateReleaseTrack.regular.systemImage == "sun.max.fill")
     #expect(AppUpdateReleaseTrack.nightly.systemImage == "moon.fill")
+
+    #expect(configuration.installedReleaseTrack == .regular)
+    var nightlyInfo = productionUpdateInfo()
+    nightlyInfo[AppUpdateConfiguration.releaseTrackInfoKey] = "nightly"
+    let nightlyConfiguration = AppUpdateConfiguration(
+        infoDictionary: nightlyInfo,
+        bundleIdentifier: AppUpdateConfiguration.canonicalBundleIdentifier
+    )
+    #expect(nightlyConfiguration.installedReleaseTrack == .nightly)
+}
+
+@MainActor
+@Test("nightly builds route regular-track replacement outside Sparkle")
+func nightlyToRegularTrackReplacement() {
+    let defaults = InMemoryPreferences()
+    defaults.set("regular", forKey: AppUpdateReleaseTrack.preferenceKey)
+    var info = productionUpdateInfo()
+    info[AppUpdateConfiguration.releaseTrackInfoKey] = "nightly"
+    let controller = AppUpdateController(
+        configuration: AppUpdateConfiguration(
+            infoDictionary: info,
+            bundleIdentifier: AppUpdateConfiguration.canonicalBundleIdentifier
+        ),
+        defaults: defaults
+    )
+
+    #expect(controller.releaseTrack == .regular)
+    #expect(controller.requiresManualRegularTrackInstall)
+
+    controller.setReleaseTrack(.nightly)
+    #expect(!controller.requiresManualRegularTrackInstall)
+
+    controller.setReleaseTrack(.regular)
+    #expect(controller.requiresManualRegularTrackInstall)
 }
 
 @MainActor

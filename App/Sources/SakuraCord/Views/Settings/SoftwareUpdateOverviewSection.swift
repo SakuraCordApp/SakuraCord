@@ -28,10 +28,14 @@ struct SoftwareUpdateOverviewSection<Destination: Hashable>: View {
 
                 Spacer(minLength: 16)
 
-                Button("Check Now") {
+                Button(updateController.requiresManualRegularTrackInstall ? "Get Regular Release" : "Check Now") {
                     updateController.checkForUpdates()
                 }
-                .disabled(!updateController.canCheckForUpdates)
+                .disabled(
+                    !updateController.isEnabled
+                        || (!updateController.requiresManualRegularTrackInstall
+                            && !updateController.canCheckForUpdates)
+                )
                 .accessibilityHint(updateController.availabilityDescription)
                 .help(updateController.availabilityDescription)
                 .settingsControlAnchor(checkForUpdatesControlID, state: state)

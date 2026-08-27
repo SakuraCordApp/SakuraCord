@@ -60,10 +60,11 @@ The Updates settings pane also persists a regular/nightly release-track choice.
 dynamic-feed delegate. Changing tracks immediately requests a silent Sparkle
 information check, or queues one until the current update cycle ends. When that
 probe finds an update, the controller asks Sparkle to present its normal update
-alert; an up-to-date result remains silent. Returning to
-the regular track selects the stable feed immediately; Sparkle offers the next
-regular release whose shared workflow build number is newer than the installed
-nightly build rather than performing an unsupported downgrade.
+alert; an up-to-date result remains silent. Returning to the regular track
+selects the stable feed immediately. Because Sparkle intentionally refuses to
+replace an app with a lower build number, an installed Nightly build exposes a
+**Get Regular Release** action for the explicit manual replacement; after that,
+Sparkle resumes normal signed Regular-track upgrades.
 
 ## Discord boundary
 
