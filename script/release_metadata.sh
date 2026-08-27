@@ -1,19 +1,34 @@
 #!/usr/bin/env bash
 
+sakuracord_latest_release_tag() {
+  local root_dir="$1"
+  local release_tag
+
+  release_tag="$(
+    git -C "$root_dir" describe \
+      --tags \
+      --abbrev=0 \
+      --match 'v[0-9]*.[0-9]*.[0-9]*' \
+      2>/dev/null || true
+  )"
+  if [[ -n "$release_tag" ]] && ! sakuracord_is_release_tag "$release_tag"; then
+    echo "The latest release tag must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-Beta-NUMBER." >&2
+    return 2
+  fi
+
+  printf '%s\n' "$release_tag"
+}
+
 sakuracord_release_version() {
   local root_dir="$1"
   local version="${SAKURACORD_VERSION:-}"
   local release_tag
 
   if [[ -z "$version" ]]; then
-    release_tag="$(
-      git -C "$root_dir" describe \
-        --tags \
-        --abbrev=0 \
-        --match 'v[0-9]*.[0-9]*.[0-9]*' \
-        2>/dev/null || true
-    )"
-    version="${release_tag#v}"
+    release_tag="$(sakuracord_latest_release_tag "$root_dir")" || return
+    if [[ -n "$release_tag" ]]; then
+      version="$(sakuracord_release_version_from_tag "$release_tag")" || return
+    fi
   fi
 
   if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -22,6 +37,21 @@ sakuracord_release_version() {
   fi
 
   printf '%s\n' "$version"
+}
+
+sakuracord_bundle_display_version() {
+  local root_dir="$1"
+  local bundle_version="$2"
+  local release_tag="${SAKURACORD_RELEASE_TAG:-}"
+
+  if [[ -z "$release_tag" && -z "${SAKURACORD_VERSION:-}" ]]; then
+    release_tag="$(sakuracord_latest_release_tag "$root_dir")" || return
+  fi
+  if [[ -n "$release_tag" ]]; then
+    sakuracord_release_appcast_display_version_from_tag "$release_tag"
+  else
+    printf '%s\n' "$bundle_version"
+  fi
 }
 
 sakuracord_is_release_tag() {
