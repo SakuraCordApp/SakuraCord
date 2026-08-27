@@ -53,16 +53,12 @@ struct AppearanceSettingsPage: View {
             } header: {
                 Text("Theme", bundle: #bundle)
             } footer: {
-                VStack(alignment: .leading, spacing: 4) {
-                    if !accentColorSelectionIsEnabled {
-                        Text(
-                            "Disabled unless the system accent color is set to “Multicolour”.",
-                            bundle: #bundle,
-                            comment: "Explains why the app accent color picker is disabled."
-                        )
-                    }
-
-                    SettingsScopeFooter(scope: .appWideLocal)
+                if !accentColorSelectionIsEnabled {
+                    Text(
+                        "Disabled unless the system accent color is set to “Multicolour”.",
+                        bundle: #bundle,
+                        comment: "Explains why the app accent color picker is disabled."
+                    )
                 }
             }
 
@@ -81,8 +77,6 @@ struct AppearanceSettingsPage: View {
                 .settingsControlAnchor(.composerBarAppearance, state: state)
             } header: {
                 Text("Message Composer", bundle: #bundle)
-            } footer: {
-                SettingsScopeFooter(scope: .appWideLocal)
             }
         }
         .background {

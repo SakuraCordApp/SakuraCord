@@ -120,8 +120,6 @@ private struct InterfaceDensitySection: View {
             .settingsControlAnchor(.sidebarDensity, state: state)
         } header: {
             Text("Density", bundle: #bundle)
-        } footer: {
-            SettingsScopeFooter(scope: .appWideLocal)
         }
     }
 }
@@ -258,8 +256,6 @@ private struct InterfaceVisibilitySection: View {
                 .settingsControlAnchor(.showRoleColors, state: state)
         } header: {
             Text("Visibility", bundle: #bundle)
-        } footer: {
-            SettingsScopeFooter(scope: .appWideLocal)
         }
     }
 }

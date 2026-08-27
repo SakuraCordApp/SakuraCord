@@ -201,8 +201,6 @@ struct DiagnosticsSettingsPage: View {
             }
         } header: {
             Text("Discord API Logs", bundle: #bundle)
-        } footer: {
-            SettingsScopeFooter(scope: .appWideLocal)
         }
     }
 

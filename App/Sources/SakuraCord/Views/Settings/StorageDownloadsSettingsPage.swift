@@ -136,13 +136,10 @@ struct StorageDownloadsSettingsPage: View {
         } header: {
             Text("Media Cache", bundle: #bundle)
         } footer: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(
-                    "The limit applies to SakuraCord's least-recently-used disk cache. "
-                        + "Lower limits converge asynchronously. Visible and playing media remain in memory."
-                )
-                SettingsScopeFooter(scope: .appWideLocal)
-            }
+            Text(
+                "The limit applies to SakuraCord's least-recently-used disk cache. "
+                    + "Lower limits converge asynchronously. Visible and playing media remain in memory."
+            )
         }
     }
 
@@ -201,13 +198,10 @@ struct StorageDownloadsSettingsPage: View {
         } header: {
             Text("Downloads", bundle: #bundle)
         } footer: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(
-                    "Default folders use a macOS security-scoped bookmark. Cleanup is limited to "
-                        + "SakuraCord-owned temporary download folders older than one hour."
-                )
-                SettingsScopeFooter(scope: .appWideLocal)
-            }
+            Text(
+                "Default folders use a macOS security-scoped bookmark. Cleanup is limited to "
+                    + "SakuraCord-owned temporary download folders older than one hour."
+            )
         }
     }
 
@@ -283,13 +277,10 @@ struct StorageDownloadsSettingsPage: View {
         } header: {
             Text("Local Data", bundle: #bundle)
         } footer: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(
-                    "Drafts are account-local. Diagnostic capture and download preferences are "
-                        + "app-wide. Resetting preferences does not delete drafts, media, or diagnostics."
-                )
-                SettingsScopeFooter(scope: .mixed)
-            }
+            Text(
+                "Drafts are account-local. Diagnostic capture and download preferences are "
+                    + "app-wide. Resetting preferences does not delete drafts, media, or diagnostics."
+            )
         }
     }
 

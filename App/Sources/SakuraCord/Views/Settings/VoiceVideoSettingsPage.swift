@@ -51,8 +51,6 @@ struct VoiceVideoSettingsPage: View {
                 .settingsControlAnchor(.voiceReset, state: state)
             } header: {
                 Text("Local data", bundle: #bundle)
-            } footer: {
-                SettingsScopeFooter(scope: .appWideLocal)
             }
         }
         .task {
@@ -206,10 +204,7 @@ private struct VoiceDevicesSettingsSection: View {
         } header: {
             Text("Devices", bundle: #bundle)
         } footer: {
-            VStack(alignment: .leading, spacing: 6) {
-                SettingsScopeFooter(scope: .appWideLocal)
-                Text("System Default follows changes made in macOS. If a saved device disappears, SakuraCord uses and saves the system default instead.")
-            }
+            Text("System Default follows changes made in macOS. If a saved device disappears, SakuraCord uses and saves the system default instead.")
         }
     }
 
@@ -308,13 +303,10 @@ private struct VoiceLevelsSettingsSection: View {
         } header: {
             Text("Levels & tests", bundle: #bundle)
         } footer: {
-            VStack(alignment: .leading, spacing: 6) {
-                SettingsScopeFooter(scope: .appWideLocal)
-                if isCallActive {
-                    Text("Device tests are unavailable during a call so they cannot interfere with live audio.")
-                } else {
-                    Text("Tests run only while their Stop button is visible. Microphone samples are metered in memory and are never retained.")
-                }
+            if isCallActive {
+                Text("Device tests are unavailable during a call so they cannot interfere with live audio.")
+            } else {
+                Text("Tests run only while their Stop button is visible. Microphone samples are metered in memory and are never retained.")
             }
         }
     }
@@ -385,10 +377,7 @@ private struct VoiceCallDefaultsSettingsSection: View {
         } header: {
             Text("Call defaults", bundle: #bundle)
         } footer: {
-            VStack(alignment: .leading, spacing: 6) {
-                SettingsScopeFooter(scope: .appWideLocal)
-                Text("Join defaults apply when entering the next call. Changing them never mutes or deafens a call already in progress.")
-            }
+            Text("Join defaults apply when entering the next call. Changing them never mutes or deafens a call already in progress.")
         }
     }
 }
@@ -446,10 +435,7 @@ private struct VoiceCameraSettingsSection: View {
         } header: {
             Text("Camera", bundle: #bundle)
         } footer: {
-            VStack(alignment: .leading, spacing: 6) {
-                SettingsScopeFooter(scope: .appWideLocal)
-                Text("Mirroring affects only your local preview. Camera defaults apply when joining the next call; live camera controls remain in the call.")
-            }
+            Text("Mirroring affects only your local preview. Camera defaults apply when joining the next call; live camera controls remain in the call.")
         }
     }
 
@@ -482,15 +468,12 @@ private struct VoiceProcessingSettingsSection: View {
         } header: {
             Text("Audio processing", bundle: #bundle)
         } footer: {
-            VStack(alignment: .leading, spacing: 6) {
-                SettingsScopeFooter(scope: .appWideLocal)
-                Text(
-                    "Uses Apple’s built-in voice-processing input/output path to reduce "
-                        + "steady background noise and acoustic echo. Changing it restarts "
-                        + "SakuraCord’s audio graph and reports any device error without "
-                        + "changing the saved value."
-                )
-            }
+            Text(
+                "Uses Apple’s built-in voice-processing input/output path to reduce "
+                    + "steady background noise and acoustic echo. Changing it restarts "
+                    + "SakuraCord’s audio graph and reports any device error without "
+                    + "changing the saved value."
+            )
         }
     }
 
@@ -539,10 +522,7 @@ private struct ScreenShareDefaultsSettingsSection: View {
         } header: {
             Text("Screen share defaults", bundle: #bundle)
         } footer: {
-            VStack(alignment: .leading, spacing: 6) {
-                SettingsScopeFooter(scope: .appWideLocal)
-                Text("These values initialize the next share. The existing share preview remains the place to change quality, frame rate, audio, and pointer capture for the active share.")
-            }
+            Text("These values initialize the next share. The existing share preview remains the place to change quality, frame rate, audio, and pointer capture for the active share.")
         }
     }
 }

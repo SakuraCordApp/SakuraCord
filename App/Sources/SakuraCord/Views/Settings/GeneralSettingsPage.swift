@@ -182,10 +182,7 @@ private struct GeneralStartupRestorationSection: View {
         } header: {
             Text("Startup and restoration", bundle: #bundle)
         } footer: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Window launch changes take effect the next time SakuraCord starts.")
-                SettingsScopeFooter(scope: .appWideLocal)
-            }
+            Text("Window launch changes take effect the next time SakuraCord starts.")
         }
     }
 }
@@ -213,12 +210,9 @@ private struct GeneralConfirmationSection: View {
         } header: {
             Text("Confirmations", bundle: #bundle)
         } footer: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(
-                    "Ordinary quitting stays immediate. Saved message drafts are never discarded by these prompts."
-                )
-                SettingsScopeFooter(scope: .appWideLocal)
-            }
+            Text(
+                "Ordinary quitting stays immediate. Saved message drafts are never discarded by these prompts."
+            )
         }
     }
 }

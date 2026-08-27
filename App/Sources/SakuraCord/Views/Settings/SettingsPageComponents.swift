@@ -75,17 +75,6 @@ private struct SettingsConstructionNotice: View {
     }
 }
 
-struct SettingsScopeFooter: View {
-    let scope: SettingsValueScope
-
-    var body: some View {
-        Label(scope.title, systemImage: "externaldrive.badge.checkmark")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .accessibilityLabel(scope.title)
-    }
-}
-
 extension View {
     func settingsControlAnchor(
         _ id: SettingsControlID,

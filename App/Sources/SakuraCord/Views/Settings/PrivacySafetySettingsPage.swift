@@ -89,14 +89,11 @@ struct PrivacySafetySettingsPage: View {
         } header: {
             Text("Discord Activity", bundle: #bundle)
         } footer: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(
-                    "Typing-indicator preference is local to SakuraCord, but enabled indicators "
-                        + "are sent to Discord while you compose. Read acknowledgements alter "
-                        + "Discord unread state and are visible in other clients."
-                )
-                SettingsScopeFooter(scope: .mixed)
-            }
+            Text(
+                "Typing-indicator preference is local to SakuraCord, but enabled indicators "
+                    + "are sent to Discord while you compose. Read acknowledgements alter "
+                    + "Discord unread state and are visible in other clients."
+            )
         }
     }
 
@@ -137,7 +134,6 @@ struct PrivacySafetySettingsPage: View {
                         + "SakuraCord has no automatic-upload mode: choosing a service in the "
                         + "separate prompt is always required before any third-party transfer."
                 )
-                SettingsScopeFooter(scope: .appWideLocal)
             }
         }
     }
@@ -163,8 +159,6 @@ struct PrivacySafetySettingsPage: View {
             }
         } header: {
             Text("Credentials", bundle: #bundle)
-        } footer: {
-            SettingsScopeFooter(scope: .accountLocal)
         }
     }
 
@@ -227,14 +221,11 @@ struct PrivacySafetySettingsPage: View {
         } header: {
             Text("Local Privacy Actions", bundle: #bundle)
         } footer: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(
-                    "Each clear action is independently confirmed. None deletes Discord messages, "
-                        + "favorites, server data, credentials, or another account's drafts. "
-                        + "Preference reset/export covers only the registered uploader policy."
-                )
-                SettingsScopeFooter(scope: .mixed)
-            }
+            Text(
+                "Each clear action is independently confirmed. None deletes Discord messages, "
+                    + "favorites, server data, credentials, or another account's drafts. "
+                    + "Preference reset/export covers only the registered uploader policy."
+            )
         }
     }
 

@@ -117,7 +117,6 @@ struct AccessibilitySettingsPage: View {
                     Text("The master reduction currently pauses every category above; category choices are retained for later.")
                 }
                 Text("macOS Reduce Motion always takes precedence. SakuraCord never overrides it to permit more motion.")
-                SettingsScopeFooter(scope: .appWideLocal)
             }
         }
     }
@@ -170,7 +169,6 @@ struct AccessibilitySettingsPage: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Unread state uses weight, labels, counts, and separators; presence states use distinct shapes as well as color.")
                 Text("Link and message-action controls live in Interface so there is only one setting for each behavior.")
-                SettingsScopeFooter(scope: .appWideLocal)
             }
         }
     }
@@ -200,10 +198,7 @@ struct AccessibilitySettingsPage: View {
         } header: {
             Text("VoiceOver", bundle: #bundle)
         } footer: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("New-message announcements run only while VoiceOver is active, group bursts, and say only a generic count—never sender, channel, or message content.")
-                SettingsScopeFooter(scope: .appWideLocal)
-            }
+            Text("New-message announcements run only while VoiceOver is active, group bursts, and say only a generic count—never sender, channel, or message content.")
         }
     }
 
@@ -234,8 +229,6 @@ struct AccessibilitySettingsPage: View {
             }
         } header: {
             Text("Local Data", bundle: #bundle)
-        } footer: {
-            SettingsScopeFooter(scope: .appWideLocal)
         }
     }
 

@@ -37,8 +37,6 @@ struct NotificationsSettingsPage: View {
                 .settingsControlAnchor(.notificationReset, state: state)
             } header: {
                 Text("Local data", bundle: #bundle)
-            } footer: {
-                SettingsScopeFooter(scope: .appWideLocal)
             }
         }
         .task { await updateAuthorizationStatus() }
@@ -180,10 +178,7 @@ private struct NotificationDeliverySettingsSection: View {
         } header: {
             Text("System delivery", bundle: #bundle)
         } footer: {
-            VStack(alignment: .leading, spacing: 6) {
-                SettingsScopeFooter(scope: .appWideLocal)
-                Text("Sounds and banners use standard active Notification Center delivery, so macOS notification and Focus settings remain authoritative.")
-            }
+            Text("Sounds and banners use standard active Notification Center delivery, so macOS notification and Focus settings remain authoritative.")
         }
     }
 
@@ -252,7 +247,6 @@ private struct NotificationEventSettingsSection: View {
             Text("Events and behavior", bundle: #bundle)
         } footer: {
             VStack(alignment: .leading, spacing: 6) {
-                SettingsScopeFooter(scope: .appWideLocal)
                 Text("These controls only narrow events already eligible under Discord’s synchronized notification and mute settings.")
                 Text("Change server, category, and channel controls from their existing right-click context menus.")
             }
@@ -341,10 +335,7 @@ private struct NotificationQuietHoursSettingsSection: View {
         } header: {
             Text("Quiet hours", bundle: #bundle)
         } footer: {
-            VStack(alignment: .leading, spacing: 6) {
-                SettingsScopeFooter(scope: .appWideLocal)
-                Text("Ranges use the Mac’s current calendar and time zone. Overnight ranges continue into the following day; matching start and end means quiet for the entire enabled day.")
-            }
+            Text("Ranges use the Mac’s current calendar and time zone. Overnight ranges continue into the following day; matching start and end means quiet for the entire enabled day.")
         }
     }
 

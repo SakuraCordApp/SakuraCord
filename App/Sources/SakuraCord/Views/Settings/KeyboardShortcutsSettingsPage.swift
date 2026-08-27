@@ -109,7 +109,6 @@ struct KeyboardShortcutsSettingsPage: View {
                 } else if group == .voiceVideo {
                     Text("Voice and video commands are unavailable until a call is active.")
                 }
-                SettingsScopeFooter(scope: .appWideLocal)
             }
         }
     }
@@ -181,10 +180,7 @@ struct KeyboardShortcutsSettingsPage: View {
         } header: {
             Text("Local Data", bundle: #bundle)
         } footer: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Shortcuts work only while SakuraCord is active. Global system-wide shortcuts are not registered.")
-                SettingsScopeFooter(scope: .appWideLocal)
-            }
+            Text("Shortcuts work only while SakuraCord is active. Global system-wide shortcuts are not registered.")
         }
     }
 

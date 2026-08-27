@@ -123,10 +123,7 @@ struct ChatSettingsPage: View {
         } header: {
             Text("Composer", bundle: #bundle)
         } footer: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Drafts remain saved by the existing conversation draft store.")
-                SettingsScopeFooter(scope: .appWideLocal)
-            }
+            Text("Drafts remain saved by the existing conversation draft store.")
         }
     }
 
@@ -169,10 +166,7 @@ struct ChatSettingsPage: View {
         } header: {
             Text("Messages", bundle: #bundle)
         } footer: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Read acknowledgements synchronize through Discord and affect unread state in other clients.")
-                SettingsScopeFooter(scope: .mixed)
-            }
+            Text("Read acknowledgements synchronize through Discord and affect unread state in other clients.")
         }
     }
 
@@ -220,7 +214,6 @@ struct ChatSettingsPage: View {
                 {
                     Text("One or more autoplay choices are unavailable while the stronger Accessibility motion reduction is active.")
                 }
-                SettingsScopeFooter(scope: .appWideLocal)
             }
         }
     }

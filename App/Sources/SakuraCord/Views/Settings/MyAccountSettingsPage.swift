@@ -180,8 +180,6 @@ struct MyAccountSettingsPage: View {
             }
         } header: {
             Text("Saved account", bundle: #bundle)
-        } footer: {
-            SettingsScopeFooter(scope: .mixed)
         }
     }
 
@@ -232,14 +230,11 @@ struct MyAccountSettingsPage: View {
         } header: {
             Text("On launch", bundle: #bundle)
         } footer: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(
-                    reopensLastActiveAccount
-                        ? "SakuraCord reconnects the account used most recently."
-                        : "SakuraCord reconnects the fixed account selected above. If it is no longer saved, the first available account is used."
-                )
-                SettingsScopeFooter(scope: .appWideLocal)
-            }
+            Text(
+                reopensLastActiveAccount
+                    ? "SakuraCord reconnects the account used most recently."
+                    : "SakuraCord reconnects the fixed account selected above. If it is no longer saved, the first available account is used."
+            )
         }
     }
 
@@ -271,8 +266,6 @@ struct MyAccountSettingsPage: View {
             }
         } header: {
             Text("Account-local data", bundle: #bundle)
-        } footer: {
-            SettingsScopeFooter(scope: .accountLocal)
         }
     }
 
