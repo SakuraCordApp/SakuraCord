@@ -185,7 +185,7 @@ fi
 assert_plist_value "SUFeedURL" \
   "https://github.com/SakuraCordApp/SakuraCord/releases/latest/download/appcast.xml"
 assert_plist_value "SakuraCordNightlyFeedURL" \
-  "https://raw.githubusercontent.com/SakuraCordApp/SakuraCord/nightly-feed/appcast.xml"
+  "https://sakuracord.app/updates/appcast.xml"
 assert_plist_value "SUPublicEDKey" "$SPARKLE_ED_PUBLIC_KEY"
 assert_plist_value "SUEnableAutomaticChecks" "true"
 assert_plist_value "SUScheduledCheckInterval" "21600"

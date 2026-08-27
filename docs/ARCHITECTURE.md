@@ -254,11 +254,12 @@ Nightly beta tags must point to commits on the `nightly` source branch, use
 human-facing `vX.Y.Z Beta N` release and Discord titles, and use tag-specific
 `SakuraCord-vX.Y.Z-Beta-N.dmg` assets. They run the same validation and
 packaging job, publish as GitHub prereleases, and select their dedicated
-Discord channel and role. Only after a
-nightly prerelease's assets are publicly re-downloaded and compared does the
-workflow atomically update the signed appcast on the generated `nightly-feed`
-branch. The application reads that feed from
-`https://raw.githubusercontent.com/SakuraCordApp/SakuraCord/nightly-feed/appcast.xml`.
+Discord channel and role. The application reads the latest signed prerelease
+appcast through the website's Cloudflare Worker at
+`https://sakuracord.app/updates/appcast.xml`. The Worker selects the newest
+published GitHub prerelease and serves its canonical `appcast.xml` asset with a
+short cache lifetime; no generated source branch or cross-repository write
+credential is required.
 If a maintainer edits the GitHub Release body after publication, a
 release-edit workflow downloads the unchanged DMG,
 preserves its build number, regenerates and verifies the signed appcast with the

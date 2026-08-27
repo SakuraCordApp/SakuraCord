@@ -277,11 +277,6 @@ jobs:
           curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 \
             --output "$published_dmg" "$enclosure_url"
           cmp "$SAKURACORD_DMG_PATH" "$published_dmg"
-      - name: Publish the signed nightly feed
-        if: steps.existing_release.outputs.published != 'true' && env.SAKURACORD_RELEASE_TRACK == 'nightly'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: ./script/publish_nightly_appcast.sh dist/appcast.xml
       - name: Resolve the published release
         id: published_release
         env:

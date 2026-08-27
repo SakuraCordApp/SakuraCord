@@ -231,7 +231,7 @@ if [[ "$UPDATES_ENABLED" == "1" ]]; then
     "Add :SUFeedURL string https://github.com/SakuraCordApp/SakuraCord/releases/latest/download/appcast.xml" \
     "$CONTENTS/Info.plist"
   /usr/libexec/PlistBuddy -c \
-    "Add :SakuraCordNightlyFeedURL string https://raw.githubusercontent.com/SakuraCordApp/SakuraCord/nightly-feed/appcast.xml" \
+    "Add :SakuraCordNightlyFeedURL string https://sakuracord.app/updates/appcast.xml" \
     "$CONTENTS/Info.plist"
   /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $SPARKLE_ED_PUBLIC_KEY" "$CONTENTS/Info.plist"
   /usr/libexec/PlistBuddy -c "Add :SUEnableAutomaticChecks bool true" "$CONTENTS/Info.plist"

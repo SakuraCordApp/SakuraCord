@@ -62,7 +62,7 @@ nonisolated struct AppUpdateConfiguration: Equatable, Sendable {
         string: "https://github.com/SakuraCordApp/SakuraCord/releases/latest/download/appcast.xml"
     )!
     static let expectedNightlyFeedURL = URL(
-        string: "https://raw.githubusercontent.com/SakuraCordApp/SakuraCord/nightly-feed/appcast.xml"
+        string: "https://sakuracord.app/updates/appcast.xml"
     )!
     static let scheduledCheckInterval = 6 * 60 * 60
 
