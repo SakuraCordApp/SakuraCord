@@ -625,12 +625,6 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
-            id: .voiceNoiseSuppression,
-            page: .voiceVideo,
-            storage: .appWide(key: "voice.noiseSuppression"),
-            defaultValue: .bool(true)
-        ),
-        SettingsPreferenceRegistration(
             id: .voiceScreenShareQuality,
             page: .voiceVideo,
             storage: .appWide(key: "voice.screenShare.quality"),

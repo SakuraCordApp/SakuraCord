@@ -17,7 +17,6 @@ final class VoiceVideoPreferences {
         static let remembersCamera = "voice.remembersCamera"
         static let mirrorsLocalPreview = "voice.mirrorsLocalPreview"
         static let joinsWithCameraOff = "voice.joinsWithCameraOff"
-        static let noiseSuppression = "voice.noiseSuppression"
         static let screenShareQuality = "voice.screenShare.quality"
         static let screenShareFrameRate = "voice.screenShare.frameRate"
         static let screenShareIncludesAudio = "voice.screenShare.includesAudio"
@@ -57,9 +56,6 @@ final class VoiceVideoPreferences {
     var joinsWithCameraOff: Bool {
         didSet { defaults.set(joinsWithCameraOff, forKey: Key.joinsWithCameraOff) }
     }
-    var noiseSuppressionEnabled: Bool {
-        didSet { defaults.set(noiseSuppressionEnabled, forKey: Key.noiseSuppression) }
-    }
     var screenShareQuality: ScreenShareQuality {
         didSet { defaults.set(screenShareQuality.rawValue, forKey: Key.screenShareQuality) }
     }
@@ -88,7 +84,6 @@ final class VoiceVideoPreferences {
         remembersCamera = true
         mirrorsLocalPreview = true
         joinsWithCameraOff = true
-        noiseSuppressionEnabled = true
         screenShareQuality = .p1080
         screenShareFrameRate = .fps30
         screenShareIncludesAudio = true
@@ -117,7 +112,6 @@ final class VoiceVideoPreferences {
         remembersCamera = bool(Key.remembersCamera, default: true)
         mirrorsLocalPreview = bool(Key.mirrorsLocalPreview, default: true)
         joinsWithCameraOff = bool(Key.joinsWithCameraOff, default: true)
-        noiseSuppressionEnabled = bool(Key.noiseSuppression, default: true)
         screenShareQuality = defaults.string(forKey: Key.screenShareQuality)
             .flatMap(ScreenShareQuality.init(rawValue:)) ?? .p1080
         screenShareFrameRate = (defaults.object(forKey: Key.screenShareFrameRate) as? Int)

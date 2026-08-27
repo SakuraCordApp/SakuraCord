@@ -74,35 +74,6 @@ extension AppModel {
         await installMediaDeviceSnapshot(snapshot)
     }
 
-    func updateNoiseSuppression(_ enabled: Bool) async -> Bool {
-        let account = accountSession()
-        let generation = voiceMigrationGeneration
-        let session = voiceSession
-        do {
-            try await session?.setNoiseSuppressionEnabled(enabled)
-            guard isCurrentVoiceOperation(
-                account,
-                generation: generation,
-                voiceSession: session
-            ) else { return false }
-            voiceVideoPreferences.noiseSuppressionEnabled = enabled
-            voiceDeviceStatusMessage = enabled
-                ? "Apple voice processing is active for microphone capture."
-                : "Microphone capture is using the selected device without voice processing."
-            return true
-        } catch {
-            guard isCurrentVoiceOperation(
-                account,
-                generation: generation,
-                voiceSession: session
-            ) else { return false }
-            voiceDeviceStatusMessage = "Noise suppression could not be changed."
-            voiceErrorMessage = error.localizedDescription
-            errorMessage = error.localizedDescription
-            return false
-        }
-    }
-
     func updateCameraPersistence(_ remembersCamera: Bool) {
         voiceVideoPreferences.remembersCamera = remembersCamera
         if remembersCamera {
@@ -222,8 +193,7 @@ extension AppModel {
             outputVolume: outputVolume,
             isMuted: isVoiceMuted,
             isDeafened: isVoiceDeafened,
-            cameraUniqueID: selectedCameraUID,
-            isNoiseSuppressionEnabled: voiceVideoPreferences.noiseSuppressionEnabled
+            cameraUniqueID: selectedCameraUID
         )
     }
 

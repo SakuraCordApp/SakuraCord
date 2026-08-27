@@ -31,7 +31,6 @@ struct VoiceVideoSettingsPage: View {
                 state: state
             )
             VoiceCameraSettingsSection(model: model, tests: tests, state: state)
-            VoiceProcessingSettingsSection(model: model, tests: tests, state: state)
             ScreenShareDefaultsSettingsSection(
                 preferences: model.voiceVideoPreferences,
                 state: state
@@ -153,7 +152,6 @@ struct VoiceVideoSettingsPage: View {
             _ = await model.selectCamera(nil)
             await model.updateInputVolume(1)
             await model.updateOutputVolume(1)
-            _ = await model.updateNoiseSuppression(true)
             operationMessage = "Restored Voice & Video settings to their defaults. Current mute, deafen, camera, and sharing state were left unchanged."
         }
     }
@@ -339,8 +337,7 @@ private struct VoiceLevelsSettingsSection: View {
             await tests.startMicrophoneTest(
                 inputDeviceID: inputID,
                 outputDeviceID: outputID,
-                inputVolume: Float(model.voiceVideoPreferences.inputVolume),
-                noiseSuppressionEnabled: model.voiceVideoPreferences.noiseSuppressionEnabled
+                inputVolume: Float(model.voiceVideoPreferences.inputVolume)
             )
         }
     }
@@ -452,43 +449,6 @@ private struct VoiceCameraSettingsSection: View {
         } else {
             Task { await tests.startCameraPreview(cameraUniqueID: model.selectedCameraUID) }
         }
-    }
-}
-
-private struct VoiceProcessingSettingsSection: View {
-    let model: AppModel
-    let tests: VoiceVideoTestController
-    let state: SettingsViewState
-
-    var body: some View {
-        Section {
-            Toggle("Noise suppression", isOn: noiseSuppression)
-                .tint(SakuraCordAccentColor.color)
-                .settingsControlAnchor(.voiceNoiseSuppression, state: state)
-        } header: {
-            Text("Audio processing", bundle: #bundle)
-        } footer: {
-            Text(
-                "Uses Apple’s built-in voice-processing input/output path to reduce "
-                    + "steady background noise and acoustic echo. Changing it restarts "
-                    + "SakuraCord’s audio graph and reports any device error without "
-                    + "changing the saved value."
-            )
-        }
-    }
-
-    private var noiseSuppression: Binding<Bool> {
-        Binding(
-            get: { model.voiceVideoPreferences.noiseSuppressionEnabled },
-            set: { enabled in
-                tests.stopMicrophoneTest()
-                Task {
-                    if !(await model.updateNoiseSuppression(enabled)) {
-                        tests.errorMessage = model.voiceErrorMessage
-                    }
-                }
-            }
-        )
     }
 }
 

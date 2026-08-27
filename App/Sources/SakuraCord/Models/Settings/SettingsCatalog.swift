@@ -194,7 +194,6 @@ nonisolated extension SettingsSectionID {
     static let voiceLevels = Self(rawValue: "voice-levels")
     static let voiceCallDefaults = Self(rawValue: "voice-call-defaults")
     static let voiceCamera = Self(rawValue: "voice-camera")
-    static let voiceProcessing = Self(rawValue: "voice-processing")
     static let voiceScreenShare = Self(rawValue: "voice-screen-share")
     static let voicePermissions = Self(rawValue: "voice-permissions")
     static let voiceLocalData = Self(rawValue: "voice-local-data")
@@ -367,7 +366,6 @@ nonisolated extension SettingsControlID {
     static let voiceMirrorPreview = Self(rawValue: "voice-video.mirror-preview")
     static let voiceRememberCamera = Self(rawValue: "voice-video.remember-camera")
     static let voiceJoinCameraOff = Self(rawValue: "voice-video.join-camera-off")
-    static let voiceNoiseSuppression = Self(rawValue: "voice-video.noise-suppression")
     static let voiceScreenShareQuality = Self(rawValue: "voice-video.share-quality")
     static let voiceScreenShareFrameRate = Self(rawValue: "voice-video.share-frame-rate")
     static let voiceScreenShareAudio = Self(rawValue: "voice-video.share-audio")
@@ -452,8 +450,8 @@ private nonisolated extension SettingsCatalog {
         ),
         page(
             .voiceVideo, group: .preferences, title: "Voice & Video", image: "waveform.and.mic",
-            help: "Choose call devices, levels, tests, processing, and share defaults.",
-            keywords: ["microphone", "speaker", "camera", "audio", "video", "screen share", "noise suppression"]
+            help: "Choose call devices, levels, tests, and share defaults.",
+            keywords: ["microphone", "speaker", "camera", "audio", "video", "screen share"]
         ),
         page(
             .accessibility, group: .preferences, title: "Accessibility", image: "accessibility",
@@ -1476,13 +1474,6 @@ private nonisolated extension SettingsCatalog {
             label: "Join calls with camera off",
             help: "Keep video off when entering the next call without changing the current camera state.",
             keywords: ["video off", "camera on join"], scope: .appWideLocal
-        ),
-        control(
-            .voiceNoiseSuppression, page: .voiceVideo, section: .voiceProcessing,
-            label: "Noise suppression",
-            help: "Use Apple’s built-in voice-processing input and output path for noise and echo reduction.",
-            keywords: ["background noise", "echo cancellation", "voice processing"],
-            scope: .appWideLocal
         ),
         control(
             .voiceScreenShareQuality, page: .voiceVideo, section: .voiceScreenShare,

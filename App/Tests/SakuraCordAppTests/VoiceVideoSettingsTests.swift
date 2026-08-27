@@ -20,7 +20,6 @@ import Testing
     preferences.remembersCamera = false
     preferences.mirrorsLocalPreview = false
     preferences.joinsWithCameraOff = false
-    preferences.noiseSuppressionEnabled = false
     preferences.screenShareQuality = .source
     preferences.screenShareFrameRate = .fps60
     preferences.screenShareIncludesAudio = false
@@ -38,7 +37,6 @@ import Testing
     #expect(!restored.remembersCamera)
     #expect(!restored.mirrorsLocalPreview)
     #expect(!restored.joinsWithCameraOff)
-    #expect(!restored.noiseSuppressionEnabled)
     #expect(restored.screenShareDefaults == ScreenShareSettings(
         frameRate: .fps60,
         quality: .source,
@@ -48,7 +46,7 @@ import Testing
 
     let store = SettingsPreferenceStore(defaults: defaults)
     let export = store.export(scope: .appWide, page: .voiceVideo)
-    #expect(export.values.count == 16)
+    #expect(export.values.count == 15)
     #expect(export.values[SettingsControlID.voiceInputDevice.rawValue] == .string("input"))
     #expect(export.values[SettingsControlID.voiceJoinMuted.rawValue] == .bool(true))
     #expect(
@@ -70,7 +68,6 @@ import Testing
     #expect(restored.remembersCamera)
     #expect(restored.mirrorsLocalPreview)
     #expect(restored.joinsWithCameraOff)
-    #expect(restored.noiseSuppressionEnabled)
     #expect(restored.screenShareDefaults == ScreenShareSettings())
 }
 
@@ -155,7 +152,7 @@ import Testing
 }
 
 @MainActor
-@Test func `Microphone test passes the Apple processing choice and releases its engine`() async {
+@Test func `Microphone test passes selected routes and releases its engine`() async {
     let fake = ControlledMicrophoneTestEngine()
     let controller = VoiceVideoTestController(
         microphoneFactory: { fake },
@@ -165,15 +162,13 @@ import Testing
     await controller.startMicrophoneTest(
         inputDeviceID: 41,
         outputDeviceID: 42,
-        inputVolume: 1.25,
-        noiseSuppressionEnabled: true
+        inputVolume: 1.25
     )
 
     #expect(controller.isMicrophoneTestRunning)
     #expect(fake.startRequest == ControlledMicrophoneTestEngine.StartRequest(
         inputDeviceID: 41,
-        outputDeviceID: 42,
-        voiceProcessingEnabled: true
+        outputDeviceID: 42
     ))
     #expect(fake.inputVolume == 1.25)
     fake.emitLevel(0.64)
@@ -186,18 +181,10 @@ import Testing
     #expect(fake.stopCount == 1)
     #expect(fake.inputLevelHandler == nil)
 
-    await controller.startMicrophoneTest(
-        inputDeviceID: 41,
-        outputDeviceID: 42,
-        inputVolume: 1.25,
-        noiseSuppressionEnabled: false
-    )
-    #expect(fake.startRequest?.voiceProcessingEnabled == false)
-    controller.stopMicrophoneTest()
 }
 
 @MainActor
-@Test func `Voice settings metadata describes ownership and searchable processing`() {
+@Test func `Voice settings metadata describes system-owned permissions`() {
     let catalog = SettingsCatalog.foundation
     let permissions = [
         SettingsControlID.voiceMicrophonePermission,
@@ -211,10 +198,6 @@ import Testing
         #expect(control?.resetCapability == .notApplicable)
     }
 
-    let state = SettingsViewState()
-    state.searchText = "echo cancellation"
-    #expect(state.searchResults.first?.id == .voiceNoiseSuppression)
-    #expect(state.searchResults.first?.destination.section == .voiceProcessing)
 }
 
 @MainActor
@@ -222,7 +205,6 @@ private final class ControlledMicrophoneTestEngine: VoiceMicrophoneTesting {
     struct StartRequest: Equatable {
         var inputDeviceID: AudioDeviceID?
         var outputDeviceID: AudioDeviceID?
-        var voiceProcessingEnabled: Bool
     }
 
     var inputVolume: Float = 1
@@ -233,13 +215,11 @@ private final class ControlledMicrophoneTestEngine: VoiceMicrophoneTesting {
     func start(
         inputDeviceID: AudioDeviceID?,
         outputDeviceID: AudioDeviceID?,
-        voiceProcessingEnabled: Bool,
         onCapturedFrame _: @escaping @Sendable (CapturedOpusFrame) -> Void
     ) throws {
         startRequest = StartRequest(
             inputDeviceID: inputDeviceID,
-            outputDeviceID: outputDeviceID,
-            voiceProcessingEnabled: voiceProcessingEnabled
+            outputDeviceID: outputDeviceID
         )
     }
 

@@ -15,7 +15,6 @@ public struct VoiceSessionConfiguration: Equatable, Sendable {
     public var isMuted: Bool
     public var isDeafened: Bool
     public var cameraUniqueID: String?
-    public var isNoiseSuppressionEnabled: Bool
 
     public init(
         inputDeviceID: AudioDeviceID? = nil,
@@ -24,8 +23,7 @@ public struct VoiceSessionConfiguration: Equatable, Sendable {
         outputVolume: Float = 1,
         isMuted: Bool = false,
         isDeafened: Bool = false,
-        cameraUniqueID: String? = nil,
-        isNoiseSuppressionEnabled: Bool = true
+        cameraUniqueID: String? = nil
     ) {
         self.inputDeviceID = inputDeviceID
         self.outputDeviceID = outputDeviceID
@@ -34,7 +32,6 @@ public struct VoiceSessionConfiguration: Equatable, Sendable {
         self.isMuted = isMuted
         self.isDeafened = isDeafened
         self.cameraUniqueID = cameraUniqueID
-        self.isNoiseSuppressionEnabled = isNoiseSuppressionEnabled
     }
 }
 
@@ -406,13 +403,6 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
             try await audioEngine.selectOutputDevice(deviceID)
         }
         configuration.outputDeviceID = deviceID
-    }
-
-    public func setNoiseSuppressionEnabled(_ enabled: Bool) async throws {
-        if let audioEngine {
-            try await audioEngine.setVoiceProcessingEnabled(enabled)
-        }
-        configuration.isNoiseSuppressionEnabled = enabled
     }
 
     public func setParticipantVolume(_ volume: Float, userID: String) async {
@@ -836,8 +826,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         do {
             try await audio.start(
                 inputDeviceID: configuration.inputDeviceID,
-                outputDeviceID: configuration.outputDeviceID,
-                voiceProcessingEnabled: configuration.isNoiseSuppressionEnabled
+                outputDeviceID: configuration.outputDeviceID
             ) { [continuation = capturedFrames.continuation] frame in
                 continuation.yield(frame)
             }

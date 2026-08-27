@@ -10,7 +10,6 @@ protocol VoiceMicrophoneTesting: AnyObject, Sendable {
     func start(
         inputDeviceID: AudioDeviceID?,
         outputDeviceID: AudioDeviceID?,
-        voiceProcessingEnabled: Bool,
         onCapturedFrame: @escaping @Sendable (CapturedOpusFrame) -> Void
     ) throws
     func stop()
@@ -57,8 +56,7 @@ final class VoiceVideoTestController {
     func startMicrophoneTest(
         inputDeviceID: AudioDeviceID?,
         outputDeviceID: AudioDeviceID?,
-        inputVolume: Float,
-        noiseSuppressionEnabled: Bool
+        inputVolume: Float
     ) async {
         stopMicrophoneTest()
         guard await microphonePermissionRequester() else {
@@ -82,7 +80,6 @@ final class VoiceVideoTestController {
             try engine.start(
                 inputDeviceID: inputDeviceID,
                 outputDeviceID: outputDeviceID,
-                voiceProcessingEnabled: noiseSuppressionEnabled,
                 onCapturedFrame: { _ in }
             )
             microphoneEngine = engine
