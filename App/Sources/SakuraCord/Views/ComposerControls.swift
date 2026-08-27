@@ -72,7 +72,9 @@ struct UploadProgressView: View {
                 ProgressView()
                 Text("Reserving \(files) file\(files == 1 ? "" : "s")…")
             case let .uploading(fileName, completed, total):
-                ProgressView(value: total > 0 ? Double(completed) / Double(total) : 0).frame(width: 90)
+                ProgressView(value: total > 0 ? Double(completed) / Double(total) : 0)
+                    .tint(SakuraCordAccentColor.color)
+                    .frame(width: 90)
                 Text("Uploading \(fileName)…").lineLimit(1)
             case .submitting:
                 ProgressView()

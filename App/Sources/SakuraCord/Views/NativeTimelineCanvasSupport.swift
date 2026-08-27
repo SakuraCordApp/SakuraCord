@@ -1767,7 +1767,7 @@ final class NativeTimelineSpoilerOverlayHost: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         if window?.firstResponder === self {
-            NSColor.keyboardFocusIndicatorColor.setStroke()
+            NSColor.sakuraCordAccentColor.setStroke()
             let focus = NSBezierPath(
                 concentricRoundedRect: bounds.insetBy(dx: 2, dy: 2),
                 cornerRadius: max(1, cornerRadius - 2)

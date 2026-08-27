@@ -42,7 +42,14 @@ struct SettingsView: View {
                 comment: "Prompt for the Settings sidebar search field."
             )
         )
-        .background(SettingsWindowBehaviorBridge())
+        .background {
+            ZStack {
+                SettingsWindowBehaviorBridge()
+                SakuraCordTextInputAccentBridge(
+                    accentColor: model.appearanceSettings.accentColor
+                )
+            }
+        }
         .onKeyPress(.return) {
             state.activateFirstSearchResult() ? .handled : .ignored
         }

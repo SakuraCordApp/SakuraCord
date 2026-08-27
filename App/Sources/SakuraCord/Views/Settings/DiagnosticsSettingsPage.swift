@@ -147,12 +147,14 @@ struct DiagnosticsSettingsPage: View {
                 "Capture detailed sanitized payloads",
                 isOn: $capturesDetailedAPIPayloads
             )
+            .tint(SakuraCordAccentColor.color)
             .settingsControlAnchor(.diagnosticDetailedPayloads, state: state)
 
             Toggle(
                 "Save diagnostics to disk",
                 isOn: $savesAPIDiagnosticsToDisk
             )
+            .tint(SakuraCordAccentColor.color)
             .settingsControlAnchor(.diagnosticDiskCapture, state: state)
 
             LabeledContent("Retained entries") {

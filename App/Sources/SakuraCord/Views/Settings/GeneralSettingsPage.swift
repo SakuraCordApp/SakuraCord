@@ -139,6 +139,7 @@ private struct GeneralStartupRestorationSection: View {
                     }
                 )
             )
+            .tint(SakuraCordAccentColor.color)
             .disabled(launchAtLogin.isChanging || !launchAtLogin.isAvailable)
             .settingsControlAnchor(.launchAtLogin, state: state)
 
@@ -169,12 +170,14 @@ private struct GeneralStartupRestorationSection: View {
                 "Show the main window at launch",
                 isOn: $showsMainWindowAtLaunch
             )
+            .tint(SakuraCordAccentColor.color)
             .settingsControlAnchor(.showMainWindowAtLaunch, state: state)
 
             Toggle(
                 "Remember member list visibility",
                 isOn: $remembersMemberListVisibility
             )
+            .tint(SakuraCordAccentColor.color)
             .settingsControlAnchor(.rememberMemberListVisibility, state: state)
         } header: {
             Text("Startup and restoration", bundle: #bundle)
@@ -198,12 +201,14 @@ private struct GeneralConfirmationSection: View {
                 "Confirm quitting during active work",
                 isOn: $confirmsQuitActiveWork
             )
+            .tint(SakuraCordAccentColor.color)
             .settingsControlAnchor(.confirmQuitActiveWork, state: state)
 
             Toggle(
                 "Confirm discarding composer changes",
                 isOn: $confirmsDiscardComposer
             )
+            .tint(SakuraCordAccentColor.color)
             .settingsControlAnchor(.confirmDiscardComposer, state: state)
         } header: {
             Text("Confirmations", bundle: #bundle)

@@ -90,6 +90,7 @@ struct AccessibilitySettingsPage: View {
             .settingsControlAnchor(.accessibilityMotionOverride, state: state)
 
             Toggle("Reduce animated content", isOn: $value.reducesAnimatedContent)
+                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.accessibilityReduceAnimatedContent, state: state)
 
             Group {
@@ -106,6 +107,7 @@ struct AccessibilitySettingsPage: View {
                 Toggle("Nonessential transitions", isOn: $value.reducesTransitions)
                     .settingsControlAnchor(.accessibilityReduceTransitions, state: state)
             }
+            .tint(SakuraCordAccentColor.color)
             .disabled(value.reducesAnimatedContent)
         } header: {
             Text("Motion & Animated Content", bundle: #bundle)
@@ -138,11 +140,13 @@ struct AccessibilitySettingsPage: View {
             }
 
             Toggle("Increase contrast in SakuraCord", isOn: $value.increasesContrast)
+                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.accessibilityIncreaseContrast, state: state)
             Toggle(
                 "Use larger message action targets",
                 isOn: $value.enlargesMessageActionTargets
             )
+            .tint(SakuraCordAccentColor.color)
             .settingsControlAnchor(.accessibilityLargerTargets, state: state)
 
             Button("Open Underline Links in Interface…") {
@@ -180,16 +184,19 @@ struct AccessibilitySettingsPage: View {
                 .id(systemRevision)
             }
 
-            Toggle("Include timestamps", isOn: $value.announcesTimestamps)
-                .settingsControlAnchor(.accessibilityAnnounceTimestamp, state: state)
-            Toggle("Include edited status", isOn: $value.announcesEditedStatus)
-                .settingsControlAnchor(.accessibilityAnnounceEdited, state: state)
-            Toggle("Include reaction counts", isOn: $value.announcesReactionCounts)
-                .settingsControlAnchor(.accessibilityAnnounceReactions, state: state)
-            Toggle("Include attachment types", isOn: $value.announcesAttachmentTypes)
-                .settingsControlAnchor(.accessibilityAnnounceAttachmentTypes, state: state)
-            Toggle("Announce new messages", isOn: $value.announcesNewMessages)
-                .settingsControlAnchor(.accessibilityAnnounceNewMessages, state: state)
+            Group {
+                Toggle("Include timestamps", isOn: $value.announcesTimestamps)
+                    .settingsControlAnchor(.accessibilityAnnounceTimestamp, state: state)
+                Toggle("Include edited status", isOn: $value.announcesEditedStatus)
+                    .settingsControlAnchor(.accessibilityAnnounceEdited, state: state)
+                Toggle("Include reaction counts", isOn: $value.announcesReactionCounts)
+                    .settingsControlAnchor(.accessibilityAnnounceReactions, state: state)
+                Toggle("Include attachment types", isOn: $value.announcesAttachmentTypes)
+                    .settingsControlAnchor(.accessibilityAnnounceAttachmentTypes, state: state)
+                Toggle("Announce new messages", isOn: $value.announcesNewMessages)
+                    .settingsControlAnchor(.accessibilityAnnounceNewMessages, state: state)
+            }
+            .tint(SakuraCordAccentColor.color)
         } header: {
             Text("VoiceOver", bundle: #bundle)
         } footer: {

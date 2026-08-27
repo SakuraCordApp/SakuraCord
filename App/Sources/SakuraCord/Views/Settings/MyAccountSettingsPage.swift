@@ -211,6 +211,7 @@ struct MyAccountSettingsPage: View {
                 "Reopen the last active account",
                 isOn: reopensLastActiveAccountBinding
             )
+            .tint(SakuraCordAccentColor.color)
             .settingsControlAnchor(.reopenLastAccount, state: state)
 
             Picker(

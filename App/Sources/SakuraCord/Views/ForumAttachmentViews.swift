@@ -465,6 +465,7 @@ struct ForumAttachmentEditor: View {
                     }
 
                     Toggle("Mark as spoiler", isOn: $isSpoiler)
+                        .tint(SakuraCordAccentColor.color)
                         .toggleStyle(.checkbox)
                 }
                 .frame(maxWidth: .infinity)
@@ -484,6 +485,7 @@ struct ForumAttachmentEditor: View {
                     save(updated)
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(SakuraCordAccentColor.color)
                 .keyboardShortcut(.defaultAction)
                 .disabled(filename.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }

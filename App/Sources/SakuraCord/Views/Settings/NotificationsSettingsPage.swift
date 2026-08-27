@@ -151,6 +151,7 @@ private struct NotificationDeliverySettingsSection: View {
             .settingsControlAnchor(.notificationPermission, state: state)
 
             Toggle("Enable native notifications", isOn: $preferences.isEnabled)
+                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.notificationEnabled, state: state)
 
             Picker("Notification previews", selection: $preferences.previewStyle) {
@@ -161,6 +162,7 @@ private struct NotificationDeliverySettingsSection: View {
             .settingsControlAnchor(.notificationPreview, state: state)
 
             Toggle("Play sound", isOn: $preferences.playsSound)
+                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.notificationSound, state: state)
 
             Picker("Dock badge", selection: $preferences.dockBadgeStyle) {
@@ -203,37 +205,43 @@ private struct NotificationEventSettingsSection: View {
     var body: some View {
         @Bindable var preferences = preferences
         Section {
-            Toggle("Direct messages", isOn: $preferences.notifiesDirectMessages)
-                .settingsControlAnchor(.notificationDirectMessages, state: state)
-            Toggle("Group direct messages", isOn: $preferences.notifiesGroupDirectMessages)
-                .settingsControlAnchor(.notificationGroupDirectMessages, state: state)
-            Toggle("Mentions", isOn: $preferences.notifiesMentions)
-                .settingsControlAnchor(.notificationMentions, state: state)
-            Toggle("Replies", isOn: $preferences.notifiesReplies)
-                .settingsControlAnchor(.notificationReplies, state: state)
-            Toggle("Incoming calls", isOn: $preferences.notifiesIncomingCalls)
-                .settingsControlAnchor(.notificationIncomingCalls, state: state)
-            Toggle("Server activity", isOn: $preferences.notifiesServerActivity)
-                .settingsControlAnchor(.notificationServerActivity, state: state)
+            Group {
+                Toggle("Direct messages", isOn: $preferences.notifiesDirectMessages)
+                    .settingsControlAnchor(.notificationDirectMessages, state: state)
+                Toggle("Group direct messages", isOn: $preferences.notifiesGroupDirectMessages)
+                    .settingsControlAnchor(.notificationGroupDirectMessages, state: state)
+                Toggle("Mentions", isOn: $preferences.notifiesMentions)
+                    .settingsControlAnchor(.notificationMentions, state: state)
+                Toggle("Replies", isOn: $preferences.notifiesReplies)
+                    .settingsControlAnchor(.notificationReplies, state: state)
+                Toggle("Incoming calls", isOn: $preferences.notifiesIncomingCalls)
+                    .settingsControlAnchor(.notificationIncomingCalls, state: state)
+                Toggle("Server activity", isOn: $preferences.notifiesServerActivity)
+                    .settingsControlAnchor(.notificationServerActivity, state: state)
+            }
+            .tint(SakuraCordAccentColor.color)
 
             Divider()
 
-            Toggle("Notify only in the background", isOn: $preferences.notifiesOnlyInBackground)
-                .settingsControlAnchor(.notificationOnlyInBackground, state: state)
-            Toggle(
-                "Suppress the current conversation",
-                isOn: $preferences.suppressesCurrentConversation
-            )
-            .settingsControlAnchor(.notificationSuppressCurrent, state: state)
-            Toggle("Group bursts by conversation", isOn: $preferences.groupsByConversation)
-                .settingsControlAnchor(.notificationGroupBursts, state: state)
-            Toggle("Clear notifications when read", isOn: $preferences.clearsWhenRead)
-                .settingsControlAnchor(.notificationClearWhenRead, state: state)
-            Toggle(
-                "Let calls bypass message suppression",
-                isOn: $preferences.callsBypassMessageSuppression
-            )
-            .settingsControlAnchor(.notificationCallsBypassSuppression, state: state)
+            Group {
+                Toggle("Notify only in the background", isOn: $preferences.notifiesOnlyInBackground)
+                    .settingsControlAnchor(.notificationOnlyInBackground, state: state)
+                Toggle(
+                    "Suppress the current conversation",
+                    isOn: $preferences.suppressesCurrentConversation
+                )
+                .settingsControlAnchor(.notificationSuppressCurrent, state: state)
+                Toggle("Group bursts by conversation", isOn: $preferences.groupsByConversation)
+                    .settingsControlAnchor(.notificationGroupBursts, state: state)
+                Toggle("Clear notifications when read", isOn: $preferences.clearsWhenRead)
+                    .settingsControlAnchor(.notificationClearWhenRead, state: state)
+                Toggle(
+                    "Let calls bypass message suppression",
+                    isOn: $preferences.callsBypassMessageSuppression
+                )
+                .settingsControlAnchor(.notificationCallsBypassSuppression, state: state)
+            }
+            .tint(SakuraCordAccentColor.color)
 
             LabeledContent("Discord notification controls") {
                 Text("Server and conversation context menus")
@@ -268,6 +276,7 @@ private struct NotificationQuietHoursSettingsSection: View {
         @Bindable var preferences = preferences
         Section {
             Toggle("Quiet hours", isOn: $preferences.quietHoursEnabled)
+                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.notificationQuietHours, state: state)
 
             if preferences.quietHoursEnabled {
@@ -278,6 +287,7 @@ private struct NotificationQuietHoursSettingsSection: View {
                                 day.shortName,
                                 isOn: quietDayBinding(day.value)
                             )
+                            .tint(SakuraCordAccentColor.color)
                             .toggleStyle(.button)
                             .controlSize(.small)
                             .accessibilityLabel(day.fullName)
@@ -291,35 +301,41 @@ private struct NotificationQuietHoursSettingsSection: View {
                     selection: timeBinding(\.weekdayQuietStartMinutes),
                     displayedComponents: .hourAndMinute
                 )
+                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.notificationQuietStart, state: state)
                 DatePicker(
                     "Weekdays end",
                     selection: timeBinding(\.weekdayQuietEndMinutes),
                     displayedComponents: .hourAndMinute
                 )
+                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.notificationQuietEnd, state: state)
                 DatePicker(
                     "Weekends start",
                     selection: timeBinding(\.weekendQuietStartMinutes),
                     displayedComponents: .hourAndMinute
                 )
+                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.notificationWeekendQuietStart, state: state)
                 DatePicker(
                     "Weekends end",
                     selection: timeBinding(\.weekendQuietEndMinutes),
                     displayedComponents: .hourAndMinute
                 )
+                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.notificationWeekendQuietEnd, state: state)
 
                 Toggle(
                     "Allow direct messages",
                     isOn: $preferences.allowsDirectMessagesDuringQuietHours
                 )
+                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.notificationAllowDirectMessages, state: state)
                 Toggle(
                     "Allow incoming calls",
                     isOn: $preferences.allowsCallsDuringQuietHours
                 )
+                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.notificationAllowCalls, state: state)
             }
         } header: {

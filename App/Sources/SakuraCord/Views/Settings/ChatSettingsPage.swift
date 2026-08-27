@@ -70,6 +70,7 @@ struct ChatSettingsPage: View {
     private var composerSection: some View {
         Section {
             Toggle("Press Return to send messages", isOn: $value.sendsWithReturn)
+                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.sendWithReturn, state: state)
 
             Text(
@@ -81,22 +82,28 @@ struct ChatSettingsPage: View {
             .foregroundStyle(.secondary)
 
             Toggle("Check spelling while typing", isOn: $value.checksSpelling)
+                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.chatSpellCheck, state: state)
             Toggle(
                 "Correct spelling automatically",
                 isOn: $value.correctsSpellingAutomatically
             )
+            .tint(SakuraCordAccentColor.color)
             .settingsControlAnchor(.chatAutomaticCorrection, state: state)
             Toggle("Smart quotes", isOn: $value.usesSmartQuotes)
+                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.chatSmartQuotes, state: state)
             Toggle("Smart dashes", isOn: $value.usesSmartDashes)
+                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.chatSmartDashes, state: state)
             Toggle("Send typing indicators", isOn: $value.sendsTypingIndicators)
+                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.chatTypingIndicators, state: state)
             Toggle(
                 "Focus composer when printable typing begins",
                 isOn: $value.focusesComposerOnTyping
             )
+            .tint(SakuraCordAccentColor.color)
             .settingsControlAnchor(.chatFocusComposerOnTyping, state: state)
 
             LabeledContent("Character limit") {
@@ -142,8 +149,10 @@ struct ChatSettingsPage: View {
             .foregroundStyle(.secondary)
 
             Toggle("Show edited markers", isOn: $value.showsEditedMarkers)
+                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.chatEditedMarkers, state: state)
             Toggle("Expand embeds by default", isOn: $value.expandsEmbedsByDefault)
+                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.chatExpandEmbeds, state: state)
             Picker("Reveal spoilers", selection: $value.spoilerRevealMode) {
                 ForEach(ChatSpoilerRevealMode.allCases) { mode in
@@ -155,6 +164,7 @@ struct ChatSettingsPage: View {
                 "Open Discord channel links in SakuraCord",
                 isOn: $value.opensDiscordLinksInternally
             )
+            .tint(SakuraCordAccentColor.color)
             .settingsControlAnchor(.chatInternalDiscordLinks, state: state)
         } header: {
             Text("Messages", bundle: #bundle)
@@ -169,21 +179,25 @@ struct ChatSettingsPage: View {
     private var mediaSection: some View {
         Section {
             Toggle("Autoplay GIFs", isOn: $value.autoplaysGIFs)
+                .tint(SakuraCordAccentColor.color)
                 .disabled(reducesGIFPlaybackForAccessibility)
                 .settingsControlAnchor(.chatAutoplayGIFs, state: state)
             Toggle(
                 "Autoplay animated stickers",
                 isOn: $value.autoplaysAnimatedStickers
             )
+            .tint(SakuraCordAccentColor.color)
             .disabled(reducesStickerPlaybackForAccessibility)
             .settingsControlAnchor(.chatAutoplayStickers, state: state)
             Toggle("Autoplay inline videos", isOn: $value.autoplaysInlineVideos)
+                .tint(SakuraCordAccentColor.color)
                 .disabled(reducesAllOptionalMotionForAccessibility)
                 .settingsControlAnchor(.chatAutoplayVideos, state: state)
             Toggle(
                 "Show automatic link previews",
                 isOn: $value.showsAutomaticLinkPreviews
             )
+            .tint(SakuraCordAccentColor.color)
             .settingsControlAnchor(.chatLinkPreviews, state: state)
             Picker("Inline media size", selection: $value.inlineMediaSize) {
                 ForEach(ChatInlineMediaSize.allCases) { size in
@@ -193,6 +207,7 @@ struct ChatSettingsPage: View {
             .pickerStyle(.segmented)
             .settingsControlAnchor(.chatInlineMediaSize, state: state)
             Toggle("Reduce animated media", isOn: $value.reducesAnimatedMedia)
+                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.reduceAnimatedMedia, state: state)
         } header: {
             Text("Media", bundle: #bundle)

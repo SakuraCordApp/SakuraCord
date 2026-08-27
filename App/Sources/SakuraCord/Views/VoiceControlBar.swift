@@ -851,6 +851,7 @@ private struct VolumeControl: View {
             }
             .font(.caption)
             Slider(value: $value, in: 0 ... 2)
+                .tint(SakuraCordAccentColor.color)
         }
     }
 }

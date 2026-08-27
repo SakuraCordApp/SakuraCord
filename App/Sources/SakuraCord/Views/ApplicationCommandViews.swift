@@ -429,6 +429,7 @@ private struct ApplicationCommandEditorFooter: View {
                 Label("Run command", systemImage: "paperplane.fill")
             }
             .buttonStyle(.borderedProminent)
+            .tint(SakuraCordAccentColor.color)
             .controlSize(.small)
             .disabled(!composer.canSubmit || composer.executionProgress != nil)
             .keyboardShortcut(.return, modifiers: [.command])

@@ -1654,6 +1654,7 @@ private struct ForumPostComposer: View {
             }
             Button("Post", systemImage: "paperplane") { submit() }
                 .buttonStyle(.borderedProminent)
+                .tint(SakuraCordAccentColor.color)
                 .keyboardShortcut(.defaultAction)
                 .disabled(!isValid || isSubmitting)
         }

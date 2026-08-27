@@ -176,6 +176,7 @@ struct StorageDownloadsSettingsPage: View {
                 "Reveal completed downloads in Finder",
                 isOn: $value.revealsCompletedDownloads
             )
+            .tint(SakuraCordAccentColor.color)
             .settingsControlAnchor(.revealCompletedDownloads, state: state)
 
             LabeledContent("Stale incomplete downloads") {

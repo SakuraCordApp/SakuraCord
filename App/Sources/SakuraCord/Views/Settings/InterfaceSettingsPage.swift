@@ -166,6 +166,7 @@ private struct InterfaceTextSizeSlider: View {
         LabeledContent(label) {
             HStack {
                 Slider(value: $value, in: range, step: 1)
+                    .tint(SakuraCordAccentColor.color)
                     .frame(minWidth: 220)
                 Text("\(Int(value)) pt")
                     .monospacedDigit()
@@ -193,6 +194,7 @@ private struct InterfaceTimeSection: View {
                 "Show seconds in full timestamps",
                 isOn: $value.includesTimestampSeconds
             )
+            .tint(SakuraCordAccentColor.color)
             .settingsControlAnchor(.timestampSeconds, state: state)
 
             LabeledContent("Consecutive-message grouping") {
@@ -206,6 +208,7 @@ private struct InterfaceTimeSection: View {
                             ... Double(InterfaceSettingsSnapshot.groupingIntervalRange.upperBound),
                         step: 1
                     )
+                    .tint(SakuraCordAccentColor.color)
                     .frame(minWidth: 220)
                     Text(value.groupingIntervalMinutes, format: .number)
                         .monospacedDigit()
@@ -230,13 +233,16 @@ private struct InterfaceVisibilitySection: View {
     var body: some View {
         Section {
             Toggle("Underline links", isOn: $value.underlinesLinks)
+                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.underlineLinks, state: state)
             Toggle("Show member list", isOn: $value.showsMemberList)
+                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.showMemberList, state: state)
             Toggle(
                 "Show activity and presence details",
                 isOn: $value.showsActivityDetails
             )
+            .tint(SakuraCordAccentColor.color)
             .settingsControlAnchor(.showActivityDetails, state: state)
             Picker(
                 "Message actions",
@@ -248,6 +254,7 @@ private struct InterfaceVisibilitySection: View {
             }
             .settingsControlAnchor(.messageActionVisibility, state: state)
             Toggle("Show Discord role colors", isOn: $value.showsRoleColors)
+                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.showRoleColors, state: state)
         } header: {
             Text("Visibility", bundle: #bundle)

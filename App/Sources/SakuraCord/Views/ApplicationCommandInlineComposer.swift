@@ -1556,7 +1556,7 @@ final class ApplicationCommandNSTextView: NSTextView {
             NSGraphicsContext.restoreGraphicsState()
 
             let isFocused = segment.option.id == document.focusedOptionID
-            (isFocused ? NSColor.keyboardFocusIndicatorColor.withAlphaComponent(0.72)
+            (isFocused ? NSColor.sakuraCordAccentColor.withAlphaComponent(0.72)
                 : NSColor.labelColor.withAlphaComponent(0.18)).setStroke()
             path.lineWidth = isFocused ? 1.5 : 1
             path.stroke()

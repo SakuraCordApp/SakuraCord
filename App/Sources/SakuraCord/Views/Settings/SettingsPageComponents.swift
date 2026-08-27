@@ -43,7 +43,7 @@ struct SettingsPageForm<Content: View>: View {
 private extension SettingsPageID {
     var showsConstructionNotice: Bool {
         switch self {
-        case .softwareUpdates, .extensions, .about:
+        case .appearance, .softwareUpdates, .extensions, .about:
             false
         default:
             true
@@ -105,7 +105,7 @@ private struct SettingsControlAnchorModifier: ViewModifier {
             .overlay {
                 if state.highlightedControlID == id {
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .stroke(.tint, lineWidth: 2)
+                        .stroke(SakuraCordAccentColor.color, lineWidth: 2)
                         .padding(-5)
                         .transition(.opacity)
                         .allowsHitTesting(false)

@@ -269,6 +269,7 @@ private struct VoiceLevelsSettingsSection: View {
         Section {
             LabeledContent("Input volume") {
                 Slider(value: inputVolume, in: 0 ... 2)
+                    .tint(SakuraCordAccentColor.color)
                 Text("\(Int(model.voiceVideoPreferences.inputVolume * 100))%")
                     .monospacedDigit()
                     .frame(width: 46, alignment: .trailing)
@@ -277,6 +278,7 @@ private struct VoiceLevelsSettingsSection: View {
 
             LabeledContent("Microphone level") {
                 ProgressView(value: Double(tests.microphoneLevel))
+                    .tint(SakuraCordAccentColor.color)
                     .frame(width: 160)
                     .accessibilityLabel("Microphone level")
                     .accessibilityValue("\(Int(tests.microphoneLevel * 100)) percent")
@@ -289,6 +291,7 @@ private struct VoiceLevelsSettingsSection: View {
 
             LabeledContent("Output volume") {
                 Slider(value: outputVolume, in: 0 ... 2)
+                    .tint(SakuraCordAccentColor.color)
                 Text("\(Int(model.voiceVideoPreferences.outputVolume * 100))%")
                     .monospacedDigit()
                     .frame(width: 46, alignment: .trailing)
@@ -370,12 +373,15 @@ private struct VoiceCallDefaultsSettingsSection: View {
     var body: some View {
         @Bindable var preferences = preferences
         Section {
-            Toggle("Join calls muted", isOn: $preferences.joinsMuted)
-                .settingsControlAnchor(.voiceJoinMuted, state: state)
-            Toggle("Join calls deafened", isOn: $preferences.joinsDeafened)
-                .settingsControlAnchor(.voiceJoinDeafened, state: state)
-            Toggle("Play call feedback sounds", isOn: $preferences.playsFeedbackSounds)
-                .settingsControlAnchor(.voiceFeedbackSounds, state: state)
+            Group {
+                Toggle("Join calls muted", isOn: $preferences.joinsMuted)
+                    .settingsControlAnchor(.voiceJoinMuted, state: state)
+                Toggle("Join calls deafened", isOn: $preferences.joinsDeafened)
+                    .settingsControlAnchor(.voiceJoinDeafened, state: state)
+                Toggle("Play call feedback sounds", isOn: $preferences.playsFeedbackSounds)
+                    .settingsControlAnchor(.voiceFeedbackSounds, state: state)
+            }
+            .tint(SakuraCordAccentColor.color)
         } header: {
             Text("Call defaults", bundle: #bundle)
         } footer: {
@@ -428,12 +434,15 @@ private struct VoiceCameraSettingsSection: View {
             }
             .settingsControlAnchor(.voiceCameraPreview, state: state)
 
-            Toggle("Mirror my local preview", isOn: $preferences.mirrorsLocalPreview)
-                .settingsControlAnchor(.voiceMirrorPreview, state: state)
-            Toggle("Remember selected camera", isOn: rememberCamera)
-                .settingsControlAnchor(.voiceRememberCamera, state: state)
-            Toggle("Join calls with camera off", isOn: $preferences.joinsWithCameraOff)
-                .settingsControlAnchor(.voiceJoinCameraOff, state: state)
+            Group {
+                Toggle("Mirror my local preview", isOn: $preferences.mirrorsLocalPreview)
+                    .settingsControlAnchor(.voiceMirrorPreview, state: state)
+                Toggle("Remember selected camera", isOn: rememberCamera)
+                    .settingsControlAnchor(.voiceRememberCamera, state: state)
+                Toggle("Join calls with camera off", isOn: $preferences.joinsWithCameraOff)
+                    .settingsControlAnchor(.voiceJoinCameraOff, state: state)
+            }
+            .tint(SakuraCordAccentColor.color)
         } header: {
             Text("Camera", bundle: #bundle)
         } footer: {
@@ -468,6 +477,7 @@ private struct VoiceProcessingSettingsSection: View {
     var body: some View {
         Section {
             Toggle("Noise suppression", isOn: noiseSuppression)
+                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.voiceNoiseSuppression, state: state)
         } header: {
             Text("Audio processing", bundle: #bundle)
@@ -521,8 +531,10 @@ private struct ScreenShareDefaultsSettingsSection: View {
             .settingsControlAnchor(.voiceScreenShareFrameRate, state: state)
 
             Toggle("Include system audio", isOn: $preferences.screenShareIncludesAudio)
+                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.voiceScreenShareAudio, state: state)
             Toggle("Show pointer", isOn: $preferences.screenShareShowsPointer)
+                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.voiceScreenSharePointer, state: state)
         } header: {
             Text("Screen share defaults", bundle: #bundle)

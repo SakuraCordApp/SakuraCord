@@ -45,7 +45,7 @@ struct AccentColorPicker: View {
                 if isEnabled, selection == choice {
                     ZStack {
                         Circle()
-                            .fill(Color.accentColor)
+                            .fill(SakuraCordAccentColor.color)
                             .frame(width: ringDiameter, height: ringDiameter)
 
                         Circle()

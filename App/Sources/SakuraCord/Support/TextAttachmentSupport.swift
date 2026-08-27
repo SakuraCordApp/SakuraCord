@@ -1,7 +1,9 @@
 import AppKit
+import SwiftUI
 
 extension NSTextView {
     func applySakuraCordTextSelectionAppearance() {
+        insertionPointColor = .sakuraCordAccentColor
         selectedTextAttributes = [
             .backgroundColor: NSColor.sakuraCordTextSelectionBackgroundColor,
             .foregroundColor: NSColor.selectedTextColor,
@@ -41,6 +43,71 @@ extension NSTextView {
         color.withAlphaComponent(emphasized ? 0.5 : 0.38).setFill()
         for rect in attachmentSelectionRects() where rect.intersects(dirtyRect) {
             NSBezierPath(rect: rect).fill()
+        }
+    }
+}
+
+/// Applies SakuraCord's accent to AppKit field editors created internally by
+/// native SwiftUI text fields and search fields in this window.
+struct SakuraCordTextInputAccentBridge: NSViewRepresentable {
+    let accentColor: AccentColorChoice
+
+    func makeNSView(context: Context) -> ObserverView {
+        ObserverView()
+    }
+
+    func updateNSView(_ view: ObserverView, context: Context) {
+        _ = accentColor
+        view.applyToCurrentEditor()
+    }
+
+    @MainActor
+    final class ObserverView: NSView {
+        private var observers: [NSObjectProtocol] = []
+
+        override init(frame frameRect: NSRect) {
+            super.init(frame: frameRect)
+            let center = NotificationCenter.default
+            for name in [
+                NSControl.textDidBeginEditingNotification,
+                NSText.didBeginEditingNotification,
+            ] {
+                observers.append(center.addObserver(
+                    forName: name,
+                    object: nil,
+                    queue: .main
+                ) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        self?.applyToCurrentEditor()
+                    }
+                })
+            }
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        isolated deinit {
+            for observer in observers {
+                NotificationCenter.default.removeObserver(observer)
+            }
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            applyToCurrentEditor()
+        }
+
+        override func viewDidChangeEffectiveAppearance() {
+            super.viewDidChangeEffectiveAppearance()
+            applyToCurrentEditor()
+        }
+
+        func applyToCurrentEditor() {
+            (window?.firstResponder as? NSTextView)?
+                .applySakuraCordTextSelectionAppearance()
         }
     }
 }
