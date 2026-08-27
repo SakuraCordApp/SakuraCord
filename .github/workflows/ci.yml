@@ -18,22 +18,50 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
       - name: Toolchain
+        id: toolchain
         run: |
-          sw_vers
-          xcodebuild -version
-          swift --version
-          xcrun --sdk macosx --show-sdk-version
+          toolchain="$({
+            sw_vers
+            xcodebuild -version
+            swift --version
+            xcrun --sdk macosx --show-sdk-version
+            printf 'Workspace: %s\n' "${GITHUB_WORKSPACE:-$(pwd -P)}"
+          })"
+          printf '%s\n' "$toolchain"
+          fingerprint="$(printf '%s' "$toolchain" | shasum -a 256 | awk '{print $1}')"
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
       - name: Cache SwiftPM dependencies
         if: github.event_name != 'workflow_dispatch' && !(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .codex-runtime/swiftpm-cache
           key: swiftpm-${{ runner.os }}-${{ runner.arch }}-xcode-27-${{ hashFiles('App/Package.resolved', 'App/Package.swift', 'Packages/**/Package.swift') }}
           restore-keys: |
             swiftpm-${{ runner.os }}-${{ runner.arch }}-xcode-27-
+      - name: Restore SwiftPM build artifacts
+        id: swiftpm-build-cache
+        if: github.event_name != 'workflow_dispatch' && !(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+        uses: actions/cache/restore@v5
+        with:
+          path: App/.build/out
+          key: swiftpm-build-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('App/Package.resolved', 'App/Package.swift', 'Packages/**/Package.swift', 'script/ci.sh', 'script/runtime.sh') }}-${{ github.sha }}
+          restore-keys: |
+            swiftpm-build-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('App/Package.resolved', 'App/Package.swift', 'Packages/**/Package.swift', 'script/ci.sh', 'script/runtime.sh') }}-
       - name: Build
         if: github.event_name != 'workflow_dispatch' && !(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
         run: ./script/ci.sh
+      - name: Report SwiftPM build cache
+        if: github.event_name != 'workflow_dispatch' && !(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+        run: |
+          echo "Exact cache hit: ${{ steps.swiftpm-build-cache.outputs.cache-hit }}"
+          echo "Matched cache key: ${{ steps.swiftpm-build-cache.outputs.cache-matched-key }}"
+          du -sh App/.build/out
+      - name: Save SwiftPM build artifacts
+        if: success() && github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/v') && steps.swiftpm-build-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: App/.build/out
+          key: ${{ steps.swiftpm-build-cache.outputs.cache-primary-key }}
       - name: Validate release sources
         if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
         run: ./script/ci.sh checks
@@ -53,7 +81,7 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
       - name: Restore SwiftPM dependencies
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: .codex-runtime/swiftpm-cache
           key: swiftpm-${{ runner.os }}-${{ runner.arch }}-xcode-27-${{ hashFiles('App/Package.resolved', 'App/Package.swift', 'Packages/**/Package.swift') }}
