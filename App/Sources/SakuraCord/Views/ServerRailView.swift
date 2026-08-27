@@ -319,10 +319,11 @@ struct ServerRailSelectionIndicator: View {
     let isSelected: Bool
     let isHovering: Bool
     let hasNotification: Bool
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Capsule()
-            .fill(Color.primary)
+            .fill(colorScheme == .dark ? Color.white : Color.black)
             .frame(width: 4, height: indicatorHeight)
             .opacity(indicatorHeight == 0 ? 0 : 1)
             .frame(width: 7, height: 40)
