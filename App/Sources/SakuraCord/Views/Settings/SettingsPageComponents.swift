@@ -27,10 +27,51 @@ struct SettingsPageForm<Content: View>: View {
     private var pageForm: some View {
         let metadata = state.catalog.page(page)
         return Form {
+            if page.showsConstructionNotice {
+                Section {
+                    SettingsConstructionNotice()
+                }
+            }
+
             content
         }
         .formStyle(.grouped)
         .navigationTitle(metadata.title)
+    }
+}
+
+private extension SettingsPageID {
+    var showsConstructionNotice: Bool {
+        switch self {
+        case .softwareUpdates, .extensions, .about:
+            false
+        default:
+            true
+        }
+    }
+}
+
+private struct SettingsConstructionNotice: View {
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.title3)
+                .foregroundStyle(.red)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("This Settings Page Is Under Construction", bundle: #bundle)
+                    .font(.headline)
+
+                Text(
+                    "Some features may be unfinished or nonfunctional. Proceed with care.",
+                    bundle: #bundle
+                )
+                .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
     }
 }
 
