@@ -78,7 +78,7 @@ struct AboutSettingsPage: View {
                 .font(.title.bold())
                 .foregroundStyle(.primary.opacity(0.86))
 
-            Text(versionInformation.semanticVersionDisplay)
+            Text(versionInformation.prefixedDisplay)
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.secondary)
         }

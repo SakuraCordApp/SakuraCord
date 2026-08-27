@@ -170,6 +170,8 @@ assert_plist_value() {
 assert_plist_value "CFBundleIdentifier" "dev.sakuracord.SakuraCord"
 assert_plist_value "CFBundleVersion" "$SAKURACORD_BUILD_NUMBER"
 assert_plist_value "CFBundleShortVersionString" "$SAKURACORD_VERSION"
+assert_plist_value "SakuraCordReleaseDisplayVersion" \
+  "$EXPECTED_APPCAST_DISPLAY_VERSION"
 assert_plist_value "SakuraCordUpdatesEnabled" "true"
 EXPECTED_RELEASE_TRACK="$(sakuracord_release_track_from_tag "$EXPECTED_TAG")"
 assert_plist_value "SakuraCordReleaseTrack" "$EXPECTED_RELEASE_TRACK"

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct SakuraCordCommands: Commands {
@@ -5,7 +6,16 @@ struct SakuraCordCommands: Commands {
     let updateController: AppUpdateController
 
     var body: some Commands {
-        CommandGroup(after: .appInfo) {
+        CommandGroup(replacing: .appInfo) {
+            Button("About SakuraCord") {
+                NSApp.orderFrontStandardAboutPanel(options: [
+                    .applicationVersion:
+                        AboutVersionInformation().semanticVersionDisplay,
+                ])
+            }
+
+            Divider()
+
             CheckForUpdatesCommand(updateController: updateController)
         }
 

@@ -510,8 +510,7 @@ nonisolated struct DiagnosticsSupportSummary: Codable, Equatable, Sendable {
         releaseTrack: AppUpdateReleaseTrack
     ) -> Application {
         Application(
-            version: bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString")
-                as? String ?? "Unknown",
+            version: AboutVersionInformation(bundle: bundle).semanticVersionDisplay,
             build: bundle.object(forInfoDictionaryKey: "CFBundleVersion")
                 as? String ?? "Unknown",
             releaseTrack: releaseTrack.rawValue

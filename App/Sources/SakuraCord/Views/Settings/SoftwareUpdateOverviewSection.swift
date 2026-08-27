@@ -8,11 +8,7 @@ struct SoftwareUpdateOverviewSection<Destination: Hashable>: View {
     let changelogDestination: Destination
 
     private var versionDisplay: String {
-        let versionInformation = AboutVersionInformation()
-        guard let semanticVersion = versionInformation.semanticVersion else {
-            return versionInformation.semanticVersionDisplay
-        }
-        return "v\(semanticVersion)"
+        AboutVersionInformation().prefixedDisplay
     }
 
     var body: some View {

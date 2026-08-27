@@ -30,6 +30,12 @@ FRAMEWORKS="$CONTENTS/Frameworks"
 RESOURCES="$CONTENTS/Resources"
 PRODUCT_NAME="$SAKURACORD_PRODUCT_NAME"
 BUNDLE_SHORT_VERSION="$(sakuracord_release_version "$ROOT_DIR")"
+BUNDLE_DISPLAY_VERSION="$BUNDLE_SHORT_VERSION"
+if [[ -n "${SAKURACORD_RELEASE_TAG:-}" ]]; then
+  BUNDLE_DISPLAY_VERSION="$(
+    sakuracord_release_appcast_display_version_from_tag "$SAKURACORD_RELEASE_TAG"
+  )"
+fi
 BUNDLE_BUILD_VERSION="${SAKURACORD_BUILD_NUMBER:-1}"
 if [[ ! "$BUNDLE_BUILD_VERSION" =~ ^[0-9]+$ ]]; then
   echo "SAKURACORD_BUILD_NUMBER must be an integer." >&2
@@ -199,6 +205,7 @@ cat >"$CONTENTS/Info.plist" <<PLIST
   <key>CFBundleIconName</key><string>$APP_ICON_NAME</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$BUNDLE_SHORT_VERSION</string>
+  <key>SakuraCordReleaseDisplayVersion</key><string>$BUNDLE_DISPLAY_VERSION</string>
   <key>CFBundleVersion</key><string>$BUNDLE_BUILD_VERSION</string>
   <key>LSMinimumSystemVersion</key><string>27.0</string>
   <key>NSPrincipalClass</key><string>NSApplication</string>

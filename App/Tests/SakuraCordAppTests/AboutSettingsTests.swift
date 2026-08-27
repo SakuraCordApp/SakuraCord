@@ -7,9 +7,24 @@ func aboutVersionInformationIsSanitized() {
     let available = AboutVersionInformation(
         infoDictionary: [
             "CFBundleShortVersionString": " 0.1.5-Beta+2 ",
+            "SakuraCordReleaseDisplayVersion": " 0.1.5 Beta 2 ",
         ]
     )
     #expect(available.semanticVersion == "0.1.5-Beta+2")
+    #expect(available.displayVersion == "0.1.5 Beta 2")
+    #expect(available.semanticVersionDisplay == "0.1.5 Beta 2")
+    #expect(available.prefixedDisplay == "v0.1.5 Beta 2")
+
+    let fallback = AboutVersionInformation(
+        infoDictionary: [
+            "CFBundleShortVersionString": "0.1.5",
+            "SakuraCordReleaseDisplayVersion": "0.1.5\ncredential",
+        ]
+    )
+    #expect(fallback.semanticVersion == "0.1.5")
+    #expect(fallback.displayVersion == "0.1.5")
+    #expect(fallback.semanticVersionDisplay == "0.1.5")
+    #expect(fallback.prefixedDisplay == "v0.1.5")
 
     let unavailable = AboutVersionInformation(
         infoDictionary: [
@@ -18,6 +33,7 @@ func aboutVersionInformationIsSanitized() {
     )
     #expect(unavailable.semanticVersion == nil)
     #expect(unavailable.semanticVersionDisplay == "Unavailable in this build")
+    #expect(unavailable.prefixedDisplay == "Unavailable in this build")
 }
 
 @Test("About acknowledgements resolve only an existing packaged file")

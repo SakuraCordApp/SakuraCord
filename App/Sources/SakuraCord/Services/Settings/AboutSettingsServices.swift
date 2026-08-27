@@ -2,11 +2,17 @@ import Foundation
 
 nonisolated struct AboutVersionInformation: Equatable, Sendable {
     let semanticVersion: String?
+    let displayVersion: String?
 
     init(infoDictionary: [String: Any]) {
         semanticVersion = Self.sanitizedBundleValue(
-            infoDictionary["CFBundleShortVersionString"]
+            infoDictionary["CFBundleShortVersionString"],
+            allowsSpaces: false
         )
+        displayVersion = Self.sanitizedBundleValue(
+            infoDictionary["SakuraCordReleaseDisplayVersion"],
+            allowsSpaces: true
+        ) ?? semanticVersion
     }
 
     init(bundle: Bundle = .main) {
@@ -14,16 +20,26 @@ nonisolated struct AboutVersionInformation: Equatable, Sendable {
     }
 
     var semanticVersionDisplay: String {
-        semanticVersion ?? "Unavailable in this build"
+        displayVersion ?? "Unavailable in this build"
     }
 
-    private static func sanitizedBundleValue(_ value: Any?) -> String? {
+    var prefixedDisplay: String {
+        displayVersion.map { "v\($0)" } ?? semanticVersionDisplay
+    }
+
+    private static func sanitizedBundleValue(
+        _ value: Any?,
+        allowsSpaces: Bool
+    ) -> String? {
         guard let value = value as? String else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= 64 else { return nil }
-        let allowed = CharacterSet.alphanumerics.union(
+        var allowed = CharacterSet.alphanumerics.union(
             CharacterSet(charactersIn: ".+-_")
         )
+        if allowsSpaces {
+            allowed.insert(charactersIn: " ")
+        }
         guard trimmed.unicodeScalars.allSatisfy(allowed.contains) else {
             return nil
         }
