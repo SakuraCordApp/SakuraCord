@@ -1,4 +1,3 @@
-import AppKit
 import Combine
 import Foundation
 import Sparkle
@@ -8,6 +7,8 @@ nonisolated enum AppUpdateUnavailabilityReason: Equatable, Sendable {
     case noncanonicalBundle
     case invalidStableFeed
     case invalidNightlyFeed
+    case invalidBuildVersion
+    case invalidVersionDowngradePolicy
     case invalidPublicKey
     case automaticChecksNotEnabled
     case invalidCheckInterval
@@ -27,6 +28,10 @@ nonisolated enum AppUpdateUnavailabilityReason: Equatable, Sendable {
             "The configured stable update feed does not match SakuraCord’s signed stable feed."
         case .invalidNightlyFeed:
             "The configured nightly update feed does not match SakuraCord’s signed nightly feed."
+        case .invalidBuildVersion:
+            "This build does not have a valid numeric update version."
+        case .invalidVersionDowngradePolicy:
+            "This build’s release-track replacement policy is invalid."
         case .invalidPublicKey:
             "The Sparkle public key is not a valid 32-byte Ed25519 key."
         case .automaticChecksNotEnabled:
@@ -52,6 +57,7 @@ nonisolated struct AppUpdateConfiguration: Equatable, Sendable {
     static let enabledInfoKey = "SakuraCordUpdatesEnabled"
     static let nightlyFeedInfoKey = "SakuraCordNightlyFeedURL"
     static let releaseTrackInfoKey = "SakuraCordReleaseTrack"
+    static let versionDowngradeInfoKey = "SUAllowsVersionDowngrades"
     static let expectedFeedURL = URL(
         string: "https://github.com/SakuraCordApp/SakuraCord/releases/latest/download/appcast.xml"
     )!
@@ -64,6 +70,7 @@ nonisolated struct AppUpdateConfiguration: Equatable, Sendable {
     let feedURL: URL?
     let nightlyFeedURL: URL?
     let installedReleaseTrack: AppUpdateReleaseTrack
+    let installedBuildVersion: String?
     let publicEdKey: String?
     let unavailabilityReason: AppUpdateUnavailabilityReason?
 
@@ -76,6 +83,9 @@ nonisolated struct AppUpdateConfiguration: Equatable, Sendable {
         let nightlyFeedURL = (infoDictionary[Self.nightlyFeedInfoKey] as? String)
             .flatMap(URL.init(string:))
         let publicEdKey = infoDictionary["SUPublicEDKey"] as? String
+        let installedBuildVersion = infoDictionary["CFBundleVersion"] as? String
+        let allowsVersionDowngrades =
+            infoDictionary[Self.versionDowngradeInfoKey] as? Bool == true
         let publicKeyData = publicEdKey.flatMap {
             Data(base64Encoded: $0)
         }
@@ -84,6 +94,7 @@ nonisolated struct AppUpdateConfiguration: Equatable, Sendable {
         installedReleaseTrack = AppUpdateReleaseTrack(
             storedValue: infoDictionary[Self.releaseTrackInfoKey] as? String
         )
+        self.installedBuildVersion = installedBuildVersion
         self.publicEdKey = publicEdKey
         if !enabled {
             unavailabilityReason = .disabledForBuild
@@ -93,6 +104,10 @@ nonisolated struct AppUpdateConfiguration: Equatable, Sendable {
             unavailabilityReason = .invalidStableFeed
         } else if nightlyFeedURL != Self.expectedNightlyFeedURL {
             unavailabilityReason = .invalidNightlyFeed
+        } else if installedBuildVersion.flatMap(Int.init).map({ $0 > 0 }) != true {
+            unavailabilityReason = .invalidBuildVersion
+        } else if allowsVersionDowngrades != (installedReleaseTrack == .nightly) {
+            unavailabilityReason = .invalidVersionDowngradePolicy
         } else if publicKeyData?.count != 32 {
             unavailabilityReason = .invalidPublicKey
         } else if infoDictionary["SUEnableAutomaticChecks"] as? Bool != true {
@@ -122,6 +137,48 @@ nonisolated struct AppUpdateConfiguration: Equatable, Sendable {
             infoDictionary: bundle.infoDictionary ?? [:],
             bundleIdentifier: bundle.bundleIdentifier
         )
+    }
+}
+
+nonisolated final class AppUpdateVersionComparator: NSObject, SUVersionComparison,
+    @unchecked Sendable
+{
+    private let installedVersion: String
+    private let standardComparator = SUStandardVersionComparator()
+    private let lock = NSLock()
+    private var allowsInstalledVersionDowngrade = false
+
+    init(installedVersion: String) {
+        self.installedVersion = installedVersion
+    }
+
+    func setAllowsInstalledVersionDowngrade(_ allowed: Bool) {
+        lock.withLock {
+            allowsInstalledVersionDowngrade = allowed
+        }
+    }
+
+    func compareVersion(
+        _ versionA: String,
+        toVersion versionB: String
+    ) -> ComparisonResult {
+        let result = standardComparator.compareVersion(versionA, toVersion: versionB)
+        let allowsDowngrade = lock.withLock { allowsInstalledVersionDowngrade }
+        guard allowsDowngrade else { return result }
+
+        if versionA == installedVersion,
+           versionB != installedVersion,
+           result == .orderedDescending
+        {
+            return .orderedAscending
+        }
+        if versionB == installedVersion,
+           versionA != installedVersion,
+           result == .orderedAscending
+        {
+            return .orderedDescending
+        }
+        return result
     }
 }
 
@@ -173,14 +230,6 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
 
     let isEnabled: Bool
 
-    static let regularReleaseURL = URL(
-        string: "https://github.com/SakuraCordApp/SakuraCord/releases/latest"
-    )!
-
-    var requiresManualRegularTrackInstall: Bool {
-        configuration.installedReleaseTrack == .nightly && releaseTrack == .regular
-    }
-
     var unavailabilityDescription: String? {
         configuration.unavailabilityReason?.description
     }
@@ -190,9 +239,6 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
             return unavailabilityDescription
         }
         if canCheckForUpdates {
-            if requiresManualRegularTrackInstall {
-                return "Open the latest Regular release to replace this Nightly build."
-            }
             return "SakuraCord is ready to check the signed \(releaseTrack.title.lowercased()) feed."
         }
         return "An update check or installation is currently in progress."
@@ -206,6 +252,7 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
     private var releaseTrackProbeFoundUpdate = false
     private var pendingReleaseTrackUpdatePresentation = false
     private var cancellables: Set<AnyCancellable> = []
+    private let versionComparator: AppUpdateVersionComparator?
     private lazy var updaterController = SPUStandardUpdaterController(
         startingUpdater: false,
         updaterDelegate: self,
@@ -218,14 +265,20 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
     ) {
         self.configuration = configuration
         self.defaults = defaults
-        releaseTrack = AppUpdateReleaseTrack(
+        let initialReleaseTrack = AppUpdateReleaseTrack(
             storedValue: defaults.string(forKey: AppUpdateReleaseTrack.preferenceKey)
+        )
+        releaseTrack = initialReleaseTrack
+        versionComparator = configuration.installedBuildVersion.map(
+            AppUpdateVersionComparator.init(installedVersion:)
         )
         lastSuccessfulCheckDate = defaults.object(
             forKey: Self.lastSuccessfulCheckPreferenceKey
         ) as? Date
         isEnabled = configuration.isEnabled
         super.init()
+
+        updateVersionDowngradeComparison(for: initialReleaseTrack)
 
         guard configuration.isEnabled else { return }
         let updater = updaterController.updater
@@ -254,12 +307,7 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
     }
 
     func checkForUpdates() {
-        guard configuration.isEnabled else { return }
-        if requiresManualRegularTrackInstall {
-            NSWorkspace.shared.open(Self.regularReleaseURL)
-            return
-        }
-        guard canCheckForUpdates else { return }
+        guard configuration.isEnabled, canCheckForUpdates else { return }
         updaterController.checkForUpdates(nil)
     }
 
@@ -277,6 +325,7 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
         guard configuration.isEnabled, track != releaseTrack else { return }
         defaults.set(track.rawValue, forKey: AppUpdateReleaseTrack.preferenceKey)
         releaseTrack = track
+        updateVersionDowngradeComparison(for: track)
         pendingReleaseTrackCheck = true
         pendingReleaseTrackUpdatePresentation = false
         continueReleaseTrackChange()
@@ -284,6 +333,10 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
 
     func feedURLString(for _: SPUUpdater) -> String? {
         releaseTrack.feedURL(in: configuration)?.absoluteString
+    }
+
+    func versionComparator(for _: SPUUpdater) -> (any SUVersionComparison)? {
+        versionComparator
     }
 
     func updater(_: SPUUpdater, didFindValidUpdate _: SUAppcastItem) {
@@ -329,6 +382,12 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
             pendingReleaseTrackUpdatePresentation = false
             updater.checkForUpdates()
         }
+    }
+
+    private func updateVersionDowngradeComparison(for track: AppUpdateReleaseTrack) {
+        versionComparator?.setAllowsInstalledVersionDowngrade(
+            configuration.installedReleaseTrack == .nightly && track == .regular
+        )
     }
 
     func recordSuccessfulFeedCheck(at date: Date) {

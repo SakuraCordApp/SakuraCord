@@ -61,10 +61,11 @@ dynamic-feed delegate. Changing tracks immediately requests a silent Sparkle
 information check, or queues one until the current update cycle ends. When that
 probe finds an update, the controller asks Sparkle to present its normal update
 alert; an up-to-date result remains silent. Returning to the regular track
-selects the stable feed immediately. Because Sparkle intentionally refuses to
-replace an app with a lower build number, an installed Nightly build exposes a
-**Get Regular Release** action for the explicit manual replacement; after that,
-Sparkle resumes normal signed Regular-track upgrades.
+selects the stable feed immediately. SakuraCord's macOS 27 Sparkle 2.9.6 fork lets an
+installed Nightly build explicitly accept the signed Regular build even when
+its workflow build number is lower. The normal Sparkle alert, verification,
+download, installation, and relaunch flow remain in place; Regular builds keep
+upstream downgrade protection enabled.
 
 ## Discord boundary
 

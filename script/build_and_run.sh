@@ -215,6 +215,11 @@ if [[ "$UPDATES_ENABLED" == "1" ]]; then
   /usr/libexec/PlistBuddy -c \
     "Add :SakuraCordReleaseTrack string $RELEASE_TRACK" \
     "$CONTENTS/Info.plist"
+  if [[ "$RELEASE_TRACK" == "nightly" ]]; then
+    /usr/libexec/PlistBuddy -c \
+      "Add :SUAllowsVersionDowngrades bool true" \
+      "$CONTENTS/Info.plist"
+  fi
   /usr/libexec/PlistBuddy -c \
     "Add :SUFeedURL string https://github.com/SakuraCordApp/SakuraCord/releases/latest/download/appcast.xml" \
     "$CONTENTS/Info.plist"

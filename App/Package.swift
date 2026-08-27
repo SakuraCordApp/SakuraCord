@@ -16,7 +16,10 @@ let package = Package(
         .package(path: "../Packages/MediaPipeline"),
         .package(path: "../Packages/SakuraCordPluginSDK"),
         .package(url: "https://github.com/airbnb/lottie-ios.git", exact: "4.6.1"),
-        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.4"),
+        .package(
+            url: "https://github.com/SakuraCordApp/Sparkle",
+            exact: "2.9.6-sakuracord.2"
+        ),
         .package(
             url: "https://github.com/llsc12/hcaptcha",
             revision: "29de12bd290c5cc9c61b3e3c15fe9a9d21449465"

@@ -171,6 +171,15 @@ assert_plist_value "CFBundleIdentifier" "dev.sakuracord.SakuraCord"
 assert_plist_value "CFBundleVersion" "$SAKURACORD_BUILD_NUMBER"
 assert_plist_value "CFBundleShortVersionString" "$SAKURACORD_VERSION"
 assert_plist_value "SakuraCordUpdatesEnabled" "true"
+EXPECTED_RELEASE_TRACK="$(sakuracord_release_track_from_tag "$EXPECTED_TAG")"
+assert_plist_value "SakuraCordReleaseTrack" "$EXPECTED_RELEASE_TRACK"
+if [[ "$EXPECTED_RELEASE_TRACK" == "nightly" ]]; then
+  assert_plist_value "SUAllowsVersionDowngrades" "true"
+elif plutil -extract "SUAllowsVersionDowngrades" raw -o - "$INFO_PLIST" \
+  >/dev/null 2>&1; then
+  echo "Regular builds must keep Sparkle downgrade protection enabled." >&2
+  exit 1
+fi
 assert_plist_value "SUFeedURL" \
   "https://github.com/SakuraCordApp/SakuraCord/releases/latest/download/appcast.xml"
 assert_plist_value "SakuraCordNightlyFeedURL" \

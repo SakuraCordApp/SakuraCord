@@ -35,6 +35,7 @@ func noncanonicalBundlesCannotEnableUpdates() {
     arguments: [
         AppUpdateConfiguration.enabledInfoKey,
         AppUpdateConfiguration.nightlyFeedInfoKey,
+        "CFBundleVersion",
         "SUFeedURL",
         "SUPublicEDKey",
         "SUEnableAutomaticChecks",
@@ -58,6 +59,7 @@ func incompleteUpdateMetadataIsDisabled(missingKey: String) {
     switch missingKey {
     case AppUpdateConfiguration.enabledInfoKey: expectedReason = .disabledForBuild
     case AppUpdateConfiguration.nightlyFeedInfoKey: expectedReason = .invalidNightlyFeed
+    case "CFBundleVersion": expectedReason = .invalidBuildVersion
     case "SUFeedURL": expectedReason = .invalidStableFeed
     case "SUPublicEDKey": expectedReason = .invalidPublicKey
     case "SUEnableAutomaticChecks": expectedReason = .automaticChecksNotEnabled
@@ -75,6 +77,22 @@ func incompleteUpdateMetadataIsDisabled(missingKey: String) {
 
     #expect(!configuration.isEnabled)
     #expect(configuration.unavailabilityReason == expectedReason)
+}
+
+@Test("release-track comparator only reclassifies downgrades from the installed build")
+func releaseTrackComparatorScopesDowngradesToInstalledBuild() {
+    let comparator = AppUpdateVersionComparator(installedVersion: "300")
+
+    #expect(comparator.compareVersion("300", toVersion: "200") == .orderedDescending)
+    #expect(comparator.compareVersion("200", toVersion: "300") == .orderedAscending)
+
+    comparator.setAllowsInstalledVersionDowngrade(true)
+
+    #expect(comparator.compareVersion("300", toVersion: "200") == .orderedAscending)
+    #expect(comparator.compareVersion("200", toVersion: "300") == .orderedDescending)
+    #expect(comparator.compareVersion("100", toVersion: "200") == .orderedAscending)
+    #expect(comparator.compareVersion("200", toVersion: "100") == .orderedDescending)
+    #expect(comparator.compareVersion("300", toVersion: "400") == .orderedAscending)
 }
 
 @Test("update configuration rejects invalid trust or automatic-check metadata")
@@ -164,6 +182,7 @@ func releaseTrackPreferenceAndFeedSelection() {
     #expect(configuration.installedReleaseTrack == .regular)
     var nightlyInfo = productionUpdateInfo()
     nightlyInfo[AppUpdateConfiguration.releaseTrackInfoKey] = "nightly"
+    nightlyInfo[AppUpdateConfiguration.versionDowngradeInfoKey] = true
     let nightlyConfiguration = AppUpdateConfiguration(
         infoDictionary: nightlyInfo,
         bundleIdentifier: AppUpdateConfiguration.canonicalBundleIdentifier
@@ -171,29 +190,27 @@ func releaseTrackPreferenceAndFeedSelection() {
     #expect(nightlyConfiguration.installedReleaseTrack == .nightly)
 }
 
-@MainActor
-@Test("nightly builds route regular-track replacement outside Sparkle")
-func nightlyToRegularTrackReplacement() {
-    let defaults = InMemoryPreferences()
-    defaults.set("regular", forKey: AppUpdateReleaseTrack.preferenceKey)
-    var info = productionUpdateInfo()
-    info[AppUpdateConfiguration.releaseTrackInfoKey] = "nightly"
-    let controller = AppUpdateController(
-        configuration: AppUpdateConfiguration(
-            infoDictionary: info,
-            bundleIdentifier: AppUpdateConfiguration.canonicalBundleIdentifier
-        ),
-        defaults: defaults
-    )
+@Test("only nightly builds opt into signed release-track downgrades")
+func releaseTrackDowngradePolicyMatchesInstalledTrack() {
+    var regularInfo = productionUpdateInfo()
+    regularInfo[AppUpdateConfiguration.versionDowngradeInfoKey] = true
+    #expect(AppUpdateConfiguration(
+        infoDictionary: regularInfo,
+        bundleIdentifier: AppUpdateConfiguration.canonicalBundleIdentifier
+    ).unavailabilityReason == .invalidVersionDowngradePolicy)
 
-    #expect(controller.releaseTrack == .regular)
-    #expect(controller.requiresManualRegularTrackInstall)
+    var nightlyInfo = productionUpdateInfo()
+    nightlyInfo[AppUpdateConfiguration.releaseTrackInfoKey] = "nightly"
+    #expect(AppUpdateConfiguration(
+        infoDictionary: nightlyInfo,
+        bundleIdentifier: AppUpdateConfiguration.canonicalBundleIdentifier
+    ).unavailabilityReason == .invalidVersionDowngradePolicy)
 
-    controller.setReleaseTrack(.nightly)
-    #expect(!controller.requiresManualRegularTrackInstall)
-
-    controller.setReleaseTrack(.regular)
-    #expect(controller.requiresManualRegularTrackInstall)
+    nightlyInfo[AppUpdateConfiguration.versionDowngradeInfoKey] = true
+    #expect(AppUpdateConfiguration(
+        infoDictionary: nightlyInfo,
+        bundleIdentifier: AppUpdateConfiguration.canonicalBundleIdentifier
+    ).isEnabled)
 }
 
 @MainActor
@@ -293,6 +310,7 @@ private func productionUpdateInfo() -> [String: Any] {
         AppUpdateConfiguration.enabledInfoKey: true,
         AppUpdateConfiguration.nightlyFeedInfoKey:
             AppUpdateConfiguration.expectedNightlyFeedURL.absoluteString,
+        "CFBundleVersion": "123",
         "SUFeedURL": AppUpdateConfiguration.expectedFeedURL.absoluteString,
         "SUPublicEDKey": validPublicKey,
         "SUEnableAutomaticChecks": true,
