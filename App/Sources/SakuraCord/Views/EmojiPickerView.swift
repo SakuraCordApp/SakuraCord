@@ -45,45 +45,6 @@ struct EmojiPickerHeader: View {
     }
 }
 
-private struct EmojiSkinToneMenu: View {
-    @Binding var selection: String
-
-    var body: some View {
-        Menu {
-            ForEach(NativeEmojiSkinTone.allCases) { tone in
-                Button {
-                    selection = tone.rawValue
-                } label: {
-                    HStack {
-                        Text(tone.symbol)
-                        Text(tone.title)
-                        if selection == tone.rawValue {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                }
-            }
-        } label: {
-            Image(
-                nsImage: EmojiSkinToneGlyph.image(
-                for: (NativeEmojiSkinTone(rawValue: selection) ?? .standard).symbol
-                )
-            )
-            .resizable()
-            .interpolation(.high)
-            .scaledToFit()
-            .frame(width: 22, height: 22)
-            .frame(width: 28, height: 28)
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .focusable(false)
-        .fixedSize()
-        .help("Emoji skin tone")
-        .accessibilityLabel("Emoji skin tone")
-    }
-}
-
 struct EmojiPickerButton: View {
     let cell: EmojiPickerCell
     let isFavorite: Bool
@@ -127,8 +88,14 @@ final class EmojiPickerInteractionModel {
     private(set) var selectedCellID: String?
     private(set) var selectedRowID: String?
     private(set) var item = NativeEmojiPickerIndex.allItems[0]
+    private var hasExplicitSelection = false
 
     func select(_ cell: EmojiPickerCell) {
+        hasExplicitSelection = true
+        updateSelection(to: cell)
+    }
+
+    private func updateSelection(to cell: EmojiPickerCell) {
         selectedCellID = cell.id
         selectedRowID = cell.rowID
         item = cell.item
@@ -136,10 +103,19 @@ final class EmojiPickerInteractionModel {
 
     func synchronize(with cells: [EmojiPickerCell]) {
         guard !cells.isEmpty else { return }
+        guard hasExplicitSelection else {
+            updateSelection(to: cells[0])
+            return
+        }
         if let selectedCellID, cells.contains(where: { $0.id == selectedCellID }) {
             return
         }
-        select(cells.first(where: { $0.item.id == item.id }) ?? cells[0])
+        updateSelection(to: cells.first(where: { $0.item.id == item.id }) ?? cells[0])
+    }
+
+    func resetSelection(with cells: [EmojiPickerCell]) {
+        hasExplicitSelection = false
+        synchronize(with: cells)
     }
 }
 
@@ -149,34 +125,6 @@ enum EmojiPickerScrollPolicy {
         destinationRowID: String
     ) -> Bool {
         previousRowID != destinationRowID
-    }
-}
-
-@MainActor
-private enum EmojiSkinToneGlyph {
-    private static var cache: [String: NSImage] = [:]
-
-    static func image(for symbol: String) -> NSImage {
-        if let cached = cache[symbol] {
-            return cached
-        }
-
-        let size = NSSize(width: 26, height: 26)
-        let font = NSFont(name: "Apple Color Emoji", size: 20) ?? .systemFont(ofSize: 20)
-        let string = NSAttributedString(string: symbol, attributes: [.font: font])
-        let image = NSImage(size: size, flipped: false) { rect in
-            let textSize = string.size()
-            string.draw(
-                at: NSPoint(
-                x: rect.midX - textSize.width / 2,
-                y: rect.midY - textSize.height / 2
-                )
-            )
-            return true
-        }
-        image.isTemplate = false
-        cache[symbol] = image
-        return image
     }
 }
 
@@ -947,6 +895,7 @@ struct EmojiPickerView: View {
     let model: AppModel
     let useCase: DiscordEmojiUseCase
     let allowsPersistentSelection: Bool
+    let dismiss: () -> Void
     let select: (EmojiPickerActivation) -> Void
     @State private var document = EmojiPickerDocumentStore()
     @State private var interaction = EmojiPickerInteractionModel()
@@ -961,106 +910,92 @@ struct EmojiPickerView: View {
         model: AppModel,
         useCase: DiscordEmojiUseCase = .message,
         allowsPersistentSelection: Bool = false,
+        dismiss: @escaping () -> Void,
         select: @escaping (EmojiPickerActivation) -> Void
     ) {
         self.model = model
         self.useCase = useCase
         self.allowsPersistentSelection = allowsPersistentSelection
+        self.dismiss = dismiss
         self.select = select
     }
 
     var body: some View {
-        @Bindable var document = document
-        GlassEffectContainer(spacing: 8) {
-            GeometryReader { _ in
-                ScrollViewReader { proxy in
-                    VStack(alignment: .leading, spacing: 0) {
-                        HStack(spacing: 8) {
-                            EmojiSearchField(
-                                text: $document.query,
-                                isFocused: $searchIsFocused
-                            )
-                            EmojiSkinToneMenu(selection: $skinToneRawValue)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.top, 10)
-                        .padding(.bottom, 8)
+        GeometryReader { _ in
+            ScrollViewReader { proxy in
+                VStack(alignment: .leading, spacing: 0) {
+                    EmojiSearchField(
+                        text: searchQuery,
+                        isFocused: $searchIsFocused
+                    )
 
-                        HStack(spacing: 0) {
-                            EmojiDocumentSidebar(
-                                guilds: document.guilds,
-                                visibleSection: document.visibleSection,
-                                nativeCategoriesAreVisible: $nativeCategoriesAreVisibleInSidebar,
-                                showsNativeJumpButton: !nativeCategoriesAreVisibleInSidebar,
-                                jump: {
-                                    jump(to: $0, proxy: proxy)
-                                    searchIsFocused = true
-                                },
-                                jumpToNative: {
-                                    jumpToNative(proxy: proxy)
-                                    searchIsFocused = true
-                                }
+                    Divider()
+
+                    HStack(spacing: 0) {
+                        EmojiDocumentSidebar(
+                            guilds: document.guilds,
+                            visibleSection: document.visibleSection,
+                            nativeCategoriesAreVisible: $nativeCategoriesAreVisibleInSidebar,
+                            showsNativeJumpButton: !nativeCategoriesAreVisibleInSidebar,
+                            jump: {
+                                jump(to: $0, proxy: proxy)
+                                requestSearchFocus()
+                            },
+                            jumpToNative: {
+                                jumpToNative(proxy: proxy)
+                                requestSearchFocus()
+                            }
+                        )
+                        Divider()
+                        VStack(spacing: 0) {
+                            EmojiPickerDocumentList(
+                                document: document,
+                                interaction: interaction,
+                                skinTone: selectedSkinTone,
+                                proxy: proxy,
+                                choose: choose,
+                                toggleFavorite: toggleFavorite,
+                                retry: retry,
+                                becameVisible: sectionBecameVisible
                             )
                             Divider()
-                            VStack(spacing: 0) {
-                                EmojiPickerDocumentList(
-                                    document: document,
-                                    interaction: interaction,
-                                    skinTone: selectedSkinTone,
-                                    proxy: proxy,
-                                    choose: choose,
-                                    toggleFavorite: toggleFavorite,
-                                    retry: retry,
-                                    becameVisible: sectionBecameVisible
-                                )
-                                Divider()
-                                EmojiHoverPreviewBar(
-                                    interaction: interaction,
-                                    skinTone: selectedSkinTone
-                                )
-                                .frame(height: 38)
-                            }
+                            EmojiHoverPreviewBar(
+                                interaction: interaction,
+                                skinTone: selectedSkinTone
+                            )
+                            .frame(height: 38)
                         }
                     }
-                    .focusable()
-                    .focused($keyboardNavigationIsFocused)
-                    .focusEffectDisabled()
-                    .onKeyPress(phases: .down) { press in
-                        handleKeyPress(press, proxy: proxy)
+                }
+                .focusable()
+                .focused($keyboardNavigationIsFocused)
+                .focusEffectDisabled()
+                .onKeyPress(phases: .down) { press in
+                    handleKeyPress(press, proxy: proxy)
+                }
+                .task {
+                    document.synchronize(with: model, useCase: useCase)
+                    interaction.synchronize(with: document.selectableCells)
+                    searchIsFocused = true
+                    await Task.yield()
+                    await model.loadDiscordEmojiSettings()
+                    if let guildID = model.selectedGuildID {
+                        await model.loadEmojis(for: guildID)
                     }
-                    .padding(5)
-                    .glassEffect(
-                        .regular,
-                        in: ConcentricRectangle(cornerRadius: 16, style: .continuous)
-                    )
-                    .containerShape(
-                        .rect(cornerRadius: 16, style: .continuous)
-                    )
-                    .task {
-                        document.synchronize(with: model, useCase: useCase)
-                        interaction.synchronize(with: document.selectableCells)
-                        searchIsFocused = true
-                        await Task.yield()
-                        await model.loadDiscordEmojiSettings()
-                        if let guildID = model.selectedGuildID {
-                            await model.loadEmojis(for: guildID)
-                        }
-                        document.synchronize(with: model, useCase: useCase)
-                        interaction.synchronize(with: document.selectableCells)
-                        document.visibleSection = .favorites
-                        await Task.yield()
-                        proxy.scrollTo(EmojiDocumentRow.headerID(for: .favorites), anchor: .top)
-                        await Task.yield()
-                        searchIsFocused = true
-                    }
+                    document.synchronize(with: model, useCase: useCase)
+                    interaction.synchronize(with: document.selectableCells)
+                    document.visibleSection = .favorites
+                    await Task.yield()
+                    proxy.scrollTo(EmojiDocumentRow.headerID(for: .favorites), anchor: .top)
+                    await Task.yield()
+                    searchIsFocused = true
                 }
             }
         }
-        .padding(6)
         .frame(width: ChatChromeMetrics.emojiPickerWidth, height: 420)
-        .presentationBackground(.clear)
+        .onExitCommand(perform: handleEscapeCommand)
         .onChange(of: skinToneRawValue) { _, _ in
-            searchIsFocused = true
+            requestSearchFocus()
         }
         .onDisappear {
             visibleGuildLoadTask?.cancel()
@@ -1069,8 +1004,37 @@ struct EmojiPickerView: View {
         }
     }
 
+    private var searchQuery: Binding<String> {
+        Binding(
+            get: { document.query },
+            set: { query in
+                let clearsSearch = !document.query.isEmpty && query.isEmpty
+                document.setQuery(query)
+                guard clearsSearch else { return }
+                interaction.resetSelection(with: document.selectableCells)
+            }
+        )
+    }
+
     private var selectedSkinTone: NativeEmojiSkinTone {
         NativeEmojiSkinTone(rawValue: skinToneRawValue) ?? .standard
+    }
+
+    private func handleEscapeCommand() {
+        guard !document.query.isEmpty else {
+            dismiss()
+            return
+        }
+        searchQuery.wrappedValue = ""
+        requestSearchFocus()
+    }
+
+    private func requestSearchFocus() {
+        searchIsFocused = false
+        Task { @MainActor in
+            await Task.yield()
+            searchIsFocused = true
+        }
     }
 
     private func choose(_ cell: EmojiPickerCell, shiftPressed: Bool) {
@@ -1255,19 +1219,33 @@ private struct EmojiSearchField: View {
     @Binding var isFocused: Bool
 
     var body: some View {
-        Label {
+        HStack(spacing: ChatChromeMetrics.pickerSearchHeaderSpacing) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(
+                    size: ChatChromeMetrics.pickerSearchHeaderIconSize,
+                    weight: .medium
+                ))
+                .foregroundStyle(.secondary)
             EmojiSearchTextField(text: $text, isFocused: $isFocused)
                 .frame(maxWidth: .infinity)
-        } icon: {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
+            if !text.isEmpty {
+                Button { text = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Clear search")
+            }
         }
-        .padding(.horizontal, 12)
-        .frame(height: 40)
-        .glassEffect(
-            .regular.tint(Color.white.opacity(0.055)).interactive(),
-            in: Capsule()
-        )
+        .padding(.horizontal, ChatChromeMetrics.pickerSearchHeaderInset)
+        .frame(height: ChatChromeMetrics.pickerSearchHeaderHeight)
+        .contentShape(Rectangle())
+        .onTapGesture { isFocused = true }
+        .accessibilityIdentifier("picker-search")
+        .task {
+            await Task.yield()
+            isFocused = true
+        }
     }
 }
 
@@ -1287,7 +1265,7 @@ private struct EmojiSearchTextField: NSViewRepresentable {
         textField.isBezeled = false
         textField.drawsBackground = false
         textField.focusRingType = .none
-        textField.font = .systemFont(ofSize: NSFont.systemFontSize)
+        textField.font = .systemFont(ofSize: ChatChromeMetrics.pickerSearchHeaderFontSize)
         textField.textColor = .labelColor
         textField.lineBreakMode = .byTruncatingTail
         textField.cell?.usesSingleLineMode = true
@@ -1367,16 +1345,23 @@ private final class EmojiSearchNSTextField: NSTextField {
             focusRequestIsScheduled = false
             return
         }
+        guard !didAutofocus else { return }
         requestFirstResponderWhenReady()
     }
 
     func requestFirstResponderWhenReady() {
-        guard window != nil, !didAutofocus, !focusRequestIsScheduled else { return }
+        guard let window, !focusRequestIsScheduled else { return }
+        if window.firstResponder === currentEditor() {
+            didAutofocus = true
+            return
+        }
         focusRequestIsScheduled = true
         Task { @MainActor [weak self] in
             guard let self else { return }
-            for delay in [80, 140, 220] {
-                try? await Task.sleep(for: .milliseconds(delay))
+            for delay in [0, 80, 140, 220] {
+                if delay > 0 {
+                    try? await Task.sleep(for: .milliseconds(delay))
+                }
                 guard let window = self.window else { break }
                 window.makeKey()
                 _ = window.makeFirstResponder(self)

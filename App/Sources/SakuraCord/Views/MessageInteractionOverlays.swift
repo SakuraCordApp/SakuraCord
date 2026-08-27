@@ -517,16 +517,18 @@ private struct ReactionActionMenu: View {
                 EmojiPickerView(
                     model: model,
                     useCase: .reaction(guildID: guildID ?? model.selectedGuildID),
-                    allowsPersistentSelection: true
-                ) { activation in
-                    switch activation.selection {
-                    case let .native(value): react(value)
-                    case let .custom(emoji): react(emoji.messageToken)
+                    allowsPersistentSelection: true,
+                    dismiss: { isPickerPresented = false },
+                    select: { activation in
+                        switch activation.selection {
+                        case let .native(value): react(value)
+                        case let .custom(emoji): react(emoji.messageToken)
+                        }
+                        if !activation.keepsPickerPresented {
+                            isPickerPresented = false
+                        }
                     }
-                    if !activation.keepsPickerPresented {
-                        isPickerPresented = false
-                    }
-                }
+                )
             }
             .frame(
                 width: width,

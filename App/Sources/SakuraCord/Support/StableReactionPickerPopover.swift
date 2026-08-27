@@ -47,6 +47,8 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
         private var popover: NSPopover?
         private var hostingController: NSHostingController<Content>?
         private weak var snapshotAnchor: NSView?
+        private weak var returnWindow: NSWindow?
+        private weak var returnResponder: NSResponder?
         private var setPresented: ((Bool) -> Void)?
         private var showIsScheduled = false
         private var shouldPresent = false
@@ -66,6 +68,7 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
                 return
             }
             guard popover == nil, !showIsScheduled else { return }
+            captureReturnResponder(from: sourceView.window)
             showIsScheduled = true
             Task { @MainActor [weak self, weak sourceView] in
                 await Task.yield()
@@ -92,6 +95,7 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
                   !sourceView.bounds.isEmpty
             else { return }
 
+            captureReturnResponder(from: window)
             sourceView.layoutSubtreeIfNeeded()
             let snapshotAnchor = sourceView.installSnapshotAnchor(in: window)
 
@@ -138,6 +142,11 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
             StableReactionPickerAnchorPolicy.maximumContentSize
         }
 
+        func popoverWillClose(_ notification: Notification) {
+            guard Self.currentEventIsEscape else { return }
+            restoreReturnResponder()
+        }
+
         func popoverDidClose(_ notification: Notification) {
             finishClosing(notifyBinding: true)
         }
@@ -149,10 +158,13 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
                 snapshotAnchor?.removeFromSuperview()
                 snapshotAnchor = nil
                 hostingController = nil
+                clearReturnResponder()
                 return
             }
+            restoreReturnResponder()
             popover.delegate = nil
             popover.performClose(nil)
+            restoreReturnResponder()
             finishClosing(notifyBinding: notifyBinding)
         }
 
@@ -161,11 +173,40 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
             hostingController = nil
             snapshotAnchor?.removeFromSuperview()
             snapshotAnchor = nil
+            clearReturnResponder()
             guard notifyBinding else { return }
             let setPresented = setPresented
             Task { @MainActor in
                 setPresented?(false)
             }
+        }
+
+        private func captureReturnResponder(from window: NSWindow?) {
+            guard returnWindow == nil, let window else { return }
+            returnWindow = window
+            returnResponder = window.firstResponder
+        }
+
+        private func restoreReturnResponder() {
+            guard let window = returnWindow,
+                  let responder = returnResponder
+            else { return }
+            if let view = responder as? NSView,
+               view.window !== window
+            {
+                return
+            }
+            window.makeFirstResponder(responder)
+        }
+
+        private func clearReturnResponder() {
+            returnWindow = nil
+            returnResponder = nil
+        }
+
+        private static var currentEventIsEscape: Bool {
+            guard let event = NSApp.currentEvent else { return false }
+            return event.type == .keyDown && event.keyCode == 53
         }
     }
 }

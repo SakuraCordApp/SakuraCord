@@ -355,21 +355,27 @@ extension NativeTimelineCanvasView {
             useCase: .reaction(
                 guildID: message.guildID ?? model.selectedGuildID
             ),
-            allowsPersistentSelection: true
-        ) { [weak self] activation in
-            guard let self else { return }
-            let value = switch activation.selection {
-            case let .native(value): value
-            case let .custom(emoji): emoji.messageToken
-            }
-            self.actions?.react(value, message)
-            if !activation.keepsPickerPresented {
-                self.reactionPickerCoordinator.close(
-                    notifyBinding: false
-                )
+            allowsPersistentSelection: true,
+            dismiss: { [weak self] in
+                guard let self else { return }
+                self.reactionPickerCoordinator.close(notifyBinding: false)
                 self.reactionPickerSource.frame = .zero
+            },
+            select: { [weak self] activation in
+                guard let self else { return }
+                let value = switch activation.selection {
+                case let .native(value): value
+                case let .custom(emoji): emoji.messageToken
+                }
+                self.actions?.react(value, message)
+                if !activation.keepsPickerPresented {
+                    self.reactionPickerCoordinator.close(
+                        notifyBinding: false
+                    )
+                    self.reactionPickerSource.frame = .zero
+                }
             }
-        }
+        )
         reactionPickerCoordinator.update(
             sourceView: reactionPickerSource,
             isPresented: true,

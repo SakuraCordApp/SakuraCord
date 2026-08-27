@@ -130,7 +130,9 @@ struct ComposerView: View {
                                 },
                                 onDropAttachments: handleDroppedAttachments,
                                 capturesUnfocusedTyping:
-                                    model.chatSettings.focusesComposerOnTyping,
+                                    model.chatSettings.focusesComposerOnTyping
+                                        && !showEmojiPicker
+                                        && !showGIFPicker,
                                 verticalContentInset: appearance == .defaultStyle
                                     ? ChatChromeMetrics.composerTextVerticalInset
                                     : 0,
@@ -376,43 +378,37 @@ struct ComposerView: View {
     private var composerEmojiPicker: some View {
         EmojiPickerView(
             model: model,
-            allowsPersistentSelection: true
-        ) { activation in
-            let replacementSelection =
-                selectionBeforeEmojiPicker
-                    ?? NSRange(location: draft.utf16.count, length: 0)
-            let restoredSelection: NSRange
-            switch activation.selection {
-            case let .native(value):
-                restoredSelection = insertInDraft(value, replacing: replacementSelection)
-            case let .custom(emoji):
-                ComposerEmojiImageStore.shared.register(emoji)
-                let value = model.composerText(for: emoji)
-                restoredSelection = applyDraftEdit(
-                    ComposerDraftEditing.insertCustomEmoji(
-                        value,
-                        into: draft,
-                        replacing: replacementSelection
+            allowsPersistentSelection: true,
+            dismiss: dismissEmojiPicker,
+            select: { activation in
+                let replacementSelection =
+                    selectionBeforeEmojiPicker
+                        ?? NSRange(location: draft.utf16.count, length: 0)
+                let restoredSelection: NSRange
+                switch activation.selection {
+                case let .native(value):
+                    restoredSelection = insertInDraft(value, replacing: replacementSelection)
+                case let .custom(emoji):
+                    ComposerEmojiImageStore.shared.register(emoji)
+                    let value = model.composerText(for: emoji)
+                    restoredSelection = applyDraftEdit(
+                        ComposerDraftEditing.insertCustomEmoji(
+                            value,
+                            into: draft,
+                            replacing: replacementSelection
+                        )
                     )
-                )
+                }
+                if activation.keepsPickerPresented {
+                    selectionBeforeEmojiPicker = restoredSelection
+                    draftSelection = restoredSelection
+                    return
+                }
+                showEmojiPicker = false
+                selectionBeforeEmojiPicker = nil
+                restoreComposerFocus(selection: restoredSelection)
             }
-            if activation.keepsPickerPresented {
-                selectionBeforeEmojiPicker = restoredSelection
-                draftSelection = restoredSelection
-                return
-            }
-            showEmojiPicker = false
-            selectionBeforeEmojiPicker = nil
-            Task { @MainActor in
-                await Task.yield()
-                isFocused = true
-                await Task.yield()
-                draftSelection = restoredSelection
-            }
-        }
-        .onExitCommand {
-            handleEscapeCommand()
-        }
+        )
     }
 
     private var composerGIFPicker: some View {
@@ -433,7 +429,7 @@ struct ComposerView: View {
         } else if showGIFPicker {
             showGIFPicker = false
         } else if showEmojiPicker {
-            showEmojiPicker = false
+            dismissEmojiPicker()
         } else if !attachments.isEmpty {
             if GeneralComposerDiscardPolicy.shouldConfirmUnsentContent(
                 isEnabled: confirmsDiscardComposer,
@@ -450,6 +446,23 @@ struct ComposerView: View {
             model.completeConversationReadingAndAdvance(
                 channelID: conversationID
             )
+        }
+    }
+
+    private func dismissEmojiPicker() {
+        guard showEmojiPicker else { return }
+        let restoredSelection = selectionBeforeEmojiPicker
+        showEmojiPicker = false
+        selectionBeforeEmojiPicker = nil
+        restoreComposerFocus(selection: restoredSelection)
+    }
+
+    private func restoreComposerFocus(selection: NSRange?) {
+        Task { @MainActor in
+            await Task.yield()
+            isFocused = true
+            await Task.yield()
+            draftSelection = selection
         }
     }
 

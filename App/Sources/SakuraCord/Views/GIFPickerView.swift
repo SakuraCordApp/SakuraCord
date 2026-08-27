@@ -218,7 +218,6 @@ struct GIFPickerView: View {
                 showsBackButton: page != .landing,
                 back: showLanding
             )
-            .padding(12)
 
             Divider()
 
@@ -392,30 +391,65 @@ private struct GIFPickerHeader: View {
     @Binding var text: String
     let showsBackButton: Bool
     let back: () -> Void
+    @FocusState private var isFocused: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: ChatChromeMetrics.pickerSearchHeaderSpacing) {
             if showsBackButton {
-                Button(action: back) {
-                    ZStack {
-                        Color.clear
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 13, weight: .semibold))
-                    }
-                    .frame(width: 38, height: 38)
-                    .contentShape(
-                        ConcentricRectangle(cornerRadius: 12, style: .continuous)
-                    )
+                GIFPickerBackButton(action: back)
+            }
+            Image(systemName: "magnifyingglass")
+                .font(.system(
+                    size: ChatChromeMetrics.pickerSearchHeaderIconSize,
+                    weight: .medium
+                ))
+                .foregroundStyle(.secondary)
+            TextField("Search GIFs", text: $text)
+                .font(.system(size: ChatChromeMetrics.pickerSearchHeaderFontSize))
+                .tint(SakuraCordAccentColor.color)
+                .textFieldStyle(.plain)
+                .focused($isFocused)
+            if !text.isEmpty {
+                Button { text = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .glassEffect(
-                    .regular.interactive(),
-                    in: ConcentricRectangle(cornerRadius: 12, style: .continuous)
-                )
-                .help("All GIF categories")
+                .help("Clear search")
             }
-            PickerSearchField(text: $text, placeholder: "Search GIFs")
         }
+        .padding(.horizontal, ChatChromeMetrics.pickerSearchHeaderInset)
+        .frame(height: ChatChromeMetrics.pickerSearchHeaderHeight)
+        .contentShape(Rectangle())
+        .onTapGesture { isFocused = true }
+        .accessibilityIdentifier("picker-search")
+        .task {
+            await Task.yield()
+            isFocused = true
+        }
+    }
+}
+
+private struct GIFPickerBackButton: View {
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 30, height: 30)
+                .contentShape(Circle())
+                .background {
+                    Circle()
+                        .fill(.primary.opacity(isHovered ? 0.09 : 0.001))
+                }
+        }
+        .buttonStyle(.plain)
+        .contentShape(Circle())
+        .onHover { isHovered = $0 }
+        .help("All GIF categories")
+        .accessibilityIdentifier("gif-picker-back")
     }
 }
 

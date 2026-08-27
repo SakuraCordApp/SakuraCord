@@ -21,6 +21,11 @@ nonisolated enum ChatChromeMetrics {
     static let channelListTopPadding: CGFloat = 10
     static let memberListWidth: CGFloat = 280
     static let emojiPickerWidth: CGFloat = 520
+    static let pickerSearchHeaderHeight: CGFloat = 48
+    static let pickerSearchHeaderInset: CGFloat = 15
+    static let pickerSearchHeaderSpacing: CGFloat = 9
+    static let pickerSearchHeaderIconSize: CGFloat = 14
+    static let pickerSearchHeaderFontSize: CGFloat = 15
 }
 
 nonisolated enum ChatDetailLayoutPolicy {

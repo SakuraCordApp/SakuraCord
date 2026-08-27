@@ -1624,10 +1624,14 @@ private struct ForumPostComposer: View {
                     preferredEdge: .maxY,
                     accessibilityIdentifier: "forum-post-emoji-picker"
                 ) {
-                    EmojiPickerView(model: model, allowsPersistentSelection: true) { activation in
-                        insertEmoji(activation)
-                    }
-                    .onExitCommand { showsEmojiPicker = false }
+                    EmojiPickerView(
+                        model: model,
+                        allowsPersistentSelection: true,
+                        dismiss: { showsEmojiPicker = false },
+                        select: { activation in
+                            insertEmoji(activation)
+                        }
+                    )
                 }
                 .frame(width: 28, height: 28)
             }
