@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "tagName": "v0.1.5-Beta-2",
+  "githubDescription": "SakuraCord v0.1.5 Beta 2 fixes update labeling and makes moving between Nightly and Regular release tracks clearer.\n\n## Update labels\n\n- Fixed Sparkle prompts so nightly updates show full beta names such as `0.1.5 Beta 2`.\n\n## Release tracks\n\n- Changed Nightly-to-Regular switching to offer the latest Regular release directly instead of reporting the newer Nightly build as up to date.\n- Added clear guidance when installing the Regular release requires a manual replacement because Sparkle blocks downgrades.\n\n## Release announcements\n\n- Removed duplicate moon emoji from generated nightly announcement titles so the emoji appears only in the main headline.\n\n**Full Changelog:** [v0.1.5-Beta-1...v0.1.5-Beta-2](https://github.com/SakuraCordApp/SakuraCord/compare/v0.1.5-Beta-1...v0.1.5-Beta-2)",
+  "discordAnnouncement": "**Clearer beta updates and release-track switching 🌙**\n\n**Highlights**\n- Nightly updates now show full beta labels in Sparkle\n- Switching from Nightly to Regular no longer shows a misleading up-to-date message\n- A new Get Regular Release action makes moving back to Regular straightforward\n- Nightly announcements now keep the moon only in the main headline"
+}
