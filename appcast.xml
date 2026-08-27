@@ -5,37 +5,39 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
         <title>SakuraCord</title>
         <item>
             <title>0.1.5 Beta 2</title>
-            <pubDate>Thu, 27 Aug 2026 01:44:10 +0000</pubDate>
+            <pubDate>Thu, 27 Aug 2026 02:39:35 +0000</pubDate>
             <link>https://github.com/SakuraCordApp/SakuraCord/releases/tag/v0.1.5-Beta-2</link>
             <sparkle:fullReleaseNotesLink>https://github.com/SakuraCordApp/SakuraCord/releases/tag/v0.1.5-Beta-2</sparkle:fullReleaseNotesLink>
-            <sparkle:version>49</sparkle:version>
+            <sparkle:version>51</sparkle:version>
             <sparkle:shortVersionString>0.1.5 Beta 2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>27.0</sparkle:minimumSystemVersion>
             <description sparkle:format="markdown"><![CDATA[# SakuraCord v0.1.5-Beta-2
 
-SakuraCord v0.1.5 Beta 2 fixes update labeling and makes moving between Nightly and Regular release tracks clearer.
-
-## Update labels
-
-- Fixed Sparkle prompts so nightly updates show full beta names such as `0.1.5 Beta 2`.
+SakuraCord v0.1.5 Beta 2 repairs release-track switching and shows the complete beta version everywhere the app identifies itself.
 
 ## Release tracks
 
-- Changed Nightly-to-Regular switching to offer the latest Regular release directly instead of reporting the newer Nightly build as up to date.
-- Added clear guidance when installing the Regular release requires a manual replacement because Sparkle blocks downgrades.
+- Fixed switching from Nightly to Regular so the current Regular release appears in Sparkle’s normal update window and installs through the standard download, verification, and relaunch flow.
+- Kept downgrade protection enabled for Regular builds while allowing an explicit signed Regular replacement from Nightly.
+- Updated the app to a verified SakuraCord fork of Sparkle 2.9.6.
 
-## Release announcements
+## Version labels
 
-- Removed duplicate moon emoji from generated nightly announcement titles so the emoji appears only in the main headline.
+- Fixed About, Software Updates, the macOS About panel, and support summaries so they include the `0.1.5 Beta 2` label instead of shortening the release to `0.1.5`.
+- Preserved the numeric bundle version required by macOS while using the complete beta label in user-facing surfaces.
+
+## Update reliability
+
+- Republished this repaired Beta 2 with a newer build number so installations of the earlier broken Beta 2 can update normally.
 
 **Full Changelog:** [v0.1.5-Beta-1...v0.1.5-Beta-2](https://github.com/SakuraCordApp/SakuraCord/compare/v0.1.5-Beta-1...v0.1.5-Beta-2)
 
 <!-- sakuracord-release-action:v1 -->
 ]]></description>
-            <enclosure url="https://github.com/SakuraCordApp/SakuraCord/releases/download/v0.1.5-Beta-2/SakuraCord-v0.1.5-Beta-2.dmg" length="27467628" type="application/octet-stream" sparkle:edSignature="da7uknF1K0dNcIDeeozI19cMsSrHJB2wqbd/qtoErszI57ZGeSS3vdaIYfQA80P4zWfmN89oGUe0Cv9q9KWIAA=="></enclosure>
+            <enclosure url="https://github.com/SakuraCordApp/SakuraCord/releases/download/v0.1.5-Beta-2/SakuraCord-v0.1.5-Beta-2.dmg" length="27034240" type="application/octet-stream" sparkle:edSignature="SNuWH+HwbMe6UXvYDYn033SVDD23YA3lnKpUBMOlyBPpauCnRceOpKc6T+jLQuESPCpQlese3awR/xA0lJfHCg=="></enclosure>
         </item>
     </channel>
 </rss><!-- sparkle-signatures:
-edSignature: s9ybarTzo0zj11VlBsf4hdriJpShGBaDavyRr3zhSIxK8g6UonbU7KLdoFSjtFbFv2YPuhZ6qryGTdZT2BiICw==
-length: 2264
+edSignature: 1GpCpM6ev21uKe2kiwxQwu3HtU9L8ti0hGMFemtsbxOZDV7lL/rzL3Xr0bIvmBy392qrVuzOuKpFGviRUmGyAw==
+length: 2593
 -->
