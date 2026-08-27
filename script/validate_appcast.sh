@@ -110,8 +110,11 @@ if [[ "$APPCAST_VERSION" != "${SAKURACORD_BUILD_NUMBER:-}" ]]; then
   echo "Appcast build version does not match SAKURACORD_BUILD_NUMBER." >&2
   exit 1
 fi
-if [[ "$APPCAST_SHORT_VERSION" != "${SAKURACORD_VERSION:-}" ]]; then
-  echo "Appcast short version does not match SAKURACORD_VERSION." >&2
+EXPECTED_APPCAST_DISPLAY_VERSION="$(
+  sakuracord_release_appcast_display_version_from_tag "$EXPECTED_TAG"
+)"
+if [[ "$APPCAST_SHORT_VERSION" != "$EXPECTED_APPCAST_DISPLAY_VERSION" ]]; then
+  echo "Appcast short version does not match the release display version." >&2
   exit 1
 fi
 if [[ "$APPCAST_HAS_RELEASE_NOTES" != "true" ]]; then

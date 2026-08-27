@@ -20,6 +20,7 @@ esac
 "$ROOT_DIR/script/test_sync_main_into_nightly.sh"
 "$ROOT_DIR/script/test_debug_credentials_config.sh"
 node --test "$ROOT_DIR/script/release_automation.test.mjs"
+node --test "$ROOT_DIR/script/update_appcast_display_version.test.mjs"
 "$ROOT_DIR/script/test_release_tag_guard.sh"
 
 CREDENTIAL_PATTERN='(Authorization:[[:space:]]*(Bot|Bearer)?[[:space:]]*[A-Za-z0-9._-]{24,}|mfa\.[A-Za-z0-9_-]{20,})'

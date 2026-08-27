@@ -79,6 +79,13 @@ printf '%s\n' "$SPARKLE_ED_PRIVATE_KEY" | "$GENERATE_APPCAST" \
   -o "$OUTPUT_PATH" \
   "$STAGING_DIR"
 
+if sakuracord_is_nightly_release_tag "$RELEASE_TAG"; then
+  node "$ROOT_DIR/script/update_appcast_display_version.mjs" \
+    "$OUTPUT_PATH" "$RELEASE_TAG"
+  printf '%s\n' "$SPARKLE_ED_PRIVATE_KEY" | \
+    "$SIGN_UPDATE" --ed-key-file - "$OUTPUT_PATH" >/dev/null
+fi
+
 SPARKLE_SIGN_UPDATE="$SIGN_UPDATE" \
   "$ROOT_DIR/script/validate_appcast.sh" "$OUTPUT_PATH" "$DMG_PATH"
 

@@ -53,5 +53,12 @@ if [[ "$(sakuracord_release_display_name_from_tag "v0.2.0-Beta-7")" \
   echo "Nightly release names must use human-readable beta naming." >&2
   exit 1
 fi
+if [[ "$(sakuracord_release_appcast_display_version_from_tag "v0.2.0")" \
+  != "0.2.0" ]] \
+  || [[ "$(sakuracord_release_appcast_display_version_from_tag "v0.2.0-Beta-7")" \
+    != "0.2.0 Beta 7" ]]; then
+  echo "Sparkle display versions must preserve the nightly beta label." >&2
+  exit 1
+fi
 
 printf 'Release metadata tests passed.\n'

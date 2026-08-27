@@ -97,6 +97,14 @@ sakuracord_release_display_name_from_tag() {
   fi
 }
 
+sakuracord_release_appcast_display_version_from_tag() {
+  local tag="$1"
+  local display_name
+
+  display_name="$(sakuracord_release_display_name_from_tag "$tag")" || return
+  printf '%s\n' "${display_name#v}"
+}
+
 sakuracord_release_dmg_name() {
   local version="$1"
 
