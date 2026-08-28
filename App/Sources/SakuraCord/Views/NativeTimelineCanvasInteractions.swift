@@ -833,10 +833,13 @@ extension NativeTimelineCanvasView {
         closeComponentChoicePopover()
         let popover = NSPopover()
         popover.behavior = .transient
-        popover.animates = true
+        popover.animates = false
         popover.contentViewController = NSHostingController(
             rootView: ComponentChoicePicker(
                 placeholder: region.placeholder,
+                options: region.options,
+                minimumSelectionCount: region.minimumSelectionCount,
+                maximumSelectionCount: region.maximumSelectionCount,
                 loader: { [weak model] query in
                     guard let model else {
                         throw CancellationError()
@@ -848,13 +851,13 @@ extension NativeTimelineCanvasView {
                         channelID: message.channelID
                     )
                 },
-                select: { [weak self] option in
+                submit: { [weak self] values in
                     guard let self else { return }
                     self.actions?.submitComponent(
                         message,
                         region.customID,
                         self.interactionKind(region.kind),
-                        [option.value]
+                        values
                     )
                     self.closeComponentChoicePopover()
                 }

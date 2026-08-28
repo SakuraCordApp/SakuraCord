@@ -91,6 +91,7 @@ final class MessageSearchState {
         submittedQuery = nil
         errorMessage = nil
         isSearching = false
+        isFilterSheetPresented = false
         selectedMessageID = nil
         lastCompletedLatencyMilliseconds = nil
         isInputFocused = false

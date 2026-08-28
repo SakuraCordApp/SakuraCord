@@ -67,6 +67,8 @@ struct NativeTimelineComponentLayout {
         let kind: ComponentSelectKind
         let customID: String
         let placeholder: String
+        let minimumSelectionCount: Int
+        let maximumSelectionCount: Int
         let options: [ComponentSelectOption]
         let isDisabled: Bool
     }
@@ -242,6 +244,8 @@ private struct Node {
                 kind: $0.kind,
                 customID: $0.customID,
                 placeholder: $0.placeholder,
+                minimumSelectionCount: $0.minimumSelectionCount,
+                maximumSelectionCount: $0.maximumSelectionCount,
                 options: $0.options,
                 isDisabled: $0.isDisabled
             )
@@ -509,8 +513,8 @@ private enum NodeBuilder {
             kind,
             customID,
             rawPlaceholder,
-            _,
-            _,
+            minimumSelectionCount,
+            maximumSelectionCount,
             disabled,
             options,
             _
@@ -554,6 +558,8 @@ private enum NodeBuilder {
                         kind: kind,
                         customID: customID,
                         placeholder: placeholder,
+                        minimumSelectionCount: minimumSelectionCount,
+                        maximumSelectionCount: maximumSelectionCount,
                         options: options,
                         isDisabled: isDisabled
                     )

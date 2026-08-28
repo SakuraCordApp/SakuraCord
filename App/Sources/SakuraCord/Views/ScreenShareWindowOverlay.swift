@@ -11,6 +11,7 @@ struct CommunicationWindowOverlays: View {
     var body: some View {
         ZStack {
             ForwardMessageWindowOverlay(model: model)
+            MessageSearchFiltersWindowOverlay(model: model)
             ScreenShareWindowOverlay(model: model)
         }
     }

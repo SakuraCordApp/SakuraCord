@@ -1,184 +1,144 @@
-import Observation
 import SakuraCordModels
 import SwiftUI
 
-@MainActor
-@Observable
-final class ComponentChoicePickerModel {
-    enum LoadState: Equatable {
-        case idle
-        case loading
-        case loaded
-        case failed(String)
-    }
-
-    typealias Loader =
-        @MainActor (String) async throws -> [ComponentSelectOption]
-
-    private let loader: Loader
-    private let debounce: Duration
-    private var loadTask: Task<Void, Never>?
-    private var requestGeneration = 0
-
-    private(set) var query = ""
-    private(set) var choices: [ComponentSelectOption] = []
-    private(set) var state: LoadState = .idle
-
-    init(
-        debounce: Duration = .milliseconds(180),
-        loader: @escaping Loader
-    ) {
-        self.debounce = debounce
-        self.loader = loader
-    }
-
-    func loadInitialChoices() {
-        scheduleLoad(isImmediate: true)
-    }
-
-    func updateQuery(_ value: String) {
-        guard query != value else { return }
-        query = value
-        scheduleLoad(isImmediate: false)
-    }
-
-    func cancel() {
-        requestGeneration += 1
-        loadTask?.cancel()
-        loadTask = nil
-    }
-
-    private func scheduleLoad(isImmediate: Bool) {
-        requestGeneration += 1
-        let generation = requestGeneration
-        let requestedQuery = query
-        loadTask?.cancel()
-        state = .loading
-        loadTask = Task { [weak self] in
-            guard let self else { return }
-            do {
-                if !isImmediate, debounce > .zero {
-                    try await Task.sleep(for: debounce)
-                }
-                try Task.checkCancellation()
-                let loadedChoices = try await loader(requestedQuery)
-                try Task.checkCancellation()
-                guard generation == requestGeneration else { return }
-                choices = Array(loadedChoices.prefix(25))
-                state = .loaded
-                loadTask = nil
-            } catch is CancellationError {
-                return
-            } catch {
-                guard generation == requestGeneration else { return }
-                choices = []
-                state = .failed(error.localizedDescription)
-                loadTask = nil
-            }
-        }
-    }
-}
-
 struct ComponentChoicePicker: View {
-    @State private var model: ComponentChoicePickerModel
-    @FocusState private var searchIsFocused: Bool
+    typealias Loader = @MainActor @Sendable (String) async throws
+        -> [ComponentSelectOption]
+
+    @State private var selection: [String] = []
 
     private let placeholder: String
-    private let select: (ComponentSelectOption) -> Void
+    private let options: [ComponentSelectOption]
+    private let minimumSelectionCount: Int
+    private let maximumSelectionCount: Int
+    private let loader: Loader
+    private let submit: ([String]) -> Void
 
     init(
         placeholder: String,
-        loader: @escaping ComponentChoicePickerModel.Loader,
-        select: @escaping (ComponentSelectOption) -> Void
+        options: [ComponentSelectOption],
+        minimumSelectionCount: Int,
+        maximumSelectionCount: Int,
+        loader: @escaping Loader,
+        submit: @escaping ([String]) -> Void
     ) {
         self.placeholder = placeholder
-        self.select = select
-        _model = State(
-            initialValue: ComponentChoicePickerModel(loader: loader)
+        self.options = options
+        self.minimumSelectionCount = max(0, minimumSelectionCount)
+        self.maximumSelectionCount = max(1, maximumSelectionCount)
+        self.loader = loader
+        self.submit = submit
+        _selection = State(
+            initialValue: Array(
+                options.filter(\.isDefault).map(\.value)
+                    .prefix(max(1, maximumSelectionCount))
+            )
         )
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(placeholder)
-                .font(.headline)
-                .lineLimit(2)
-
-            TextField(
-                "Search",
-                text: Binding(
-                    get: { model.query },
-                    set: model.updateQuery
-                )
+        VStack(alignment: .leading, spacing: 12) {
+            SelectionField(
+                selection: $selection,
+                mode: selectionMode,
+                source: source,
+                configuration: SelectionFieldConfiguration(
+                    placeholder: placeholder,
+                    searchPlaceholder: "Search options",
+                    maximumListHeight: maximumSelectionCount > 1 ? 232 : 260,
+                    initiallyExpanded: true,
+                    clearsQueryAfterSelection: maximumSelectionCount > 1,
+                    collapsesAfterSingleSelection: false,
+                    selectionPresentation: .cards
+                ),
+                accessibilityIdentifier: "component-selection-field"
             )
-            .tint(SakuraCordAccentColor.color)
-            .textFieldStyle(.roundedBorder)
-            .focused($searchIsFocused)
-            .accessibilityLabel("Search component choices")
 
-            choiceContent
+            if maximumSelectionCount > 1 {
+                HStack(spacing: 8) {
+                    Text(selectionSummary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Select") {
+                        submit(selection)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(SakuraCordAccentColor.color)
+                    .disabled(!selectionCountIsValid)
+                }
+            }
         }
         .padding(12)
-        .frame(width: 340, height: 300)
-        .task {
-            model.loadInitialChoices()
-            searchIsFocused = true
-        }
-        .onDisappear {
-            model.cancel()
+        .frame(
+            width: 372,
+            height: maximumSelectionCount > 1 ? 358 : 326,
+            alignment: .top
+        )
+        .onChange(of: selection) { oldValue, newValue in
+            guard maximumSelectionCount == 1,
+                  newValue.count == 1,
+                  newValue != oldValue
+            else { return }
+            submit(newValue)
         }
     }
 
-    @ViewBuilder
-    private var choiceContent: some View {
-        switch model.state {
-        case .idle, .loading:
-            Spacer()
-            ProgressView("Loading choices…")
-                .frame(maxWidth: .infinity)
-            Spacer()
-        case .loaded where model.choices.isEmpty:
-            ContentUnavailableView(
-                "No Matches",
-                systemImage: "magnifyingglass",
-                description: Text("Try a different search.")
-            )
-        case .loaded:
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 2) {
-                    ForEach(model.choices) { option in
-                        Button {
-                            select(option)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(option.label)
-                                    .lineLimit(1)
-                                if let description = option.description {
-                                    Text(description)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                }
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
-                        .accessibilityLabel(option.label)
-                        .accessibilityHint(
-                            option.description ?? "Select this option"
-                        )
-                    }
-                }
-            }
-        case let .failed(message):
-            ContentUnavailableView(
-                "Choices Unavailable",
-                systemImage: "exclamationmark.triangle",
-                description: Text(message)
+    private var selectionMode: SelectionFieldSelectionMode {
+        maximumSelectionCount == 1
+            ? .single
+            : .multiple(maximum: maximumSelectionCount)
+    }
+
+    private var source: SelectionFieldSource<String> {
+        if !options.isEmpty {
+            return .local(
+                options: options.map(Self.fieldOption),
+                maximumResults: 25
             )
         }
+        return .dynamic(
+            debounce: .milliseconds(120),
+            maximumResults: 25
+        ) { query in
+            try await loader(query).map(Self.fieldOption)
+        }
+    }
+
+    private var selectionCountIsValid: Bool {
+        selection.count >= minimumSelectionCount
+            && selection.count <= maximumSelectionCount
+    }
+
+    private var selectionSummary: String {
+        if minimumSelectionCount == maximumSelectionCount {
+            return "Select \(minimumSelectionCount)"
+        }
+        return "Select \(minimumSelectionCount)–\(maximumSelectionCount)"
+    }
+
+    private static func fieldOption(
+        _ option: ComponentSelectOption
+    ) -> SelectionFieldOption<String> {
+        SelectionFieldOption(
+            id: option.value,
+            title: option.label,
+            subtitle: option.description,
+            leading: option.emoji.map(leading(for:)) ?? .none,
+            searchTerms: [option.value]
+        )
+    }
+
+    private static func leading(
+        for emoji: EmojiReference
+    ) -> SelectionFieldLeading {
+        if let url = emoji.imageURL(size: 64) {
+            return .remoteImage(
+                url: url,
+                fallback: emoji.name,
+                shape: .roundedRectangle
+            )
+        }
+        return .text(emoji.name)
     }
 }

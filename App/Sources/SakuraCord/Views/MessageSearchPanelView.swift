@@ -89,9 +89,12 @@ private struct MessageSearchResultsHeader: View {
                 .font(.headline.weight(.semibold))
                 .contentTransition(.numericText())
             Spacer(minLength: 8)
-            Label("Coming Soon", systemImage: "line.3.horizontal.decrease")
-                .foregroundStyle(.secondary)
-                .help("Search filters are being revamped")
+            Button {
+                search.isFilterSheetPresented = true
+            } label: {
+                Label("Filters", systemImage: "line.3.horizontal.decrease")
+            }
+            .buttonStyle(.borderless)
 
             Menu {
                 ForEach(MessageSearchSort.allCases, id: \.self) { sort in
@@ -259,6 +262,35 @@ private struct MessageSearchPagination: View {
     }
 }
 
+private struct MessageSearchFilterPresentation: Identifiable {
+    let id = "message-search-filters"
+}
+
+struct MessageSearchFiltersWindowOverlay: View {
+    let model: AppModel
+
+    var body: some View {
+        WindowModalOverlay(
+            presentation: model.messageSearch.isFilterSheetPresented
+                ? MessageSearchFilterPresentation() : nil,
+            zPosition: 100_125,
+            dismiss: {
+                model.messageSearch.isFilterSheetPresented = false
+            },
+            content: { _, animationState in
+                MessageSearchFiltersOverlay(
+                    model: model,
+                    search: model.messageSearch,
+                    animationState: animationState,
+                    dismiss: {
+                        animationState.dismiss(committingPresentation: true)
+                    }
+                )
+            }
+        )
+    }
+}
+
 struct MessageSearchFiltersOverlay: View {
     private static let contentWidth: CGFloat = 464
 
@@ -335,6 +367,13 @@ struct MessageSearchFiltersOverlay: View {
                         values: users,
                         selectedIDs: draft.authorIDs,
                         label: { $0.displayName },
+                        rowSubtitle: { $0.username },
+                        leading: { user in
+                            .remoteImage(
+                                url: user.avatarURL,
+                                fallback: user.displayName
+                            )
+                        },
                         update: { draft.authorIDs = $0 }
                     )
 
@@ -344,6 +383,8 @@ struct MessageSearchFiltersOverlay: View {
                         values: channels,
                         selectedIDs: draft.channelIDs,
                         label: { $0.name },
+                        rowSubtitle: { channelSelectionSubtitle($0) },
+                        leading: { channelSelectionLeading($0) },
                         update: { draft.channelIDs = $0 }
                     )
 
@@ -362,6 +403,13 @@ struct MessageSearchFiltersOverlay: View {
                         values: users,
                         selectedIDs: draft.mentionedUserIDs,
                         label: { $0.displayName },
+                        rowSubtitle: { $0.username },
+                        leading: { user in
+                            .remoteImage(
+                                url: user.avatarURL,
+                                fallback: user.displayName
+                            )
+                        },
                         update: { draft.mentionedUserIDs = $0 }
                     )
 
@@ -440,6 +488,51 @@ struct MessageSearchFiltersOverlay: View {
             : "Sent in any of the selected channels"
     }
 
+    private func channelSelectionLeading(
+        _ channel: Channel
+    ) -> SelectionFieldLeading {
+        switch channel.kind {
+        case .directMessage:
+            let recipient = channel.recipients.first
+            return .remoteImage(
+                url: recipient?.avatarURL,
+                fallback: recipient?.displayName ?? channel.name
+            )
+        case .groupDirectMessage:
+            return .remoteImage(
+                url: channel.iconURL,
+                fallback: channel.name
+            )
+        case .voice:
+            return .systemImage("speaker.wave.2.fill")
+        case .forum:
+            return .systemImage("rectangle.3.group.bubble.left.fill")
+        case .announcement:
+            return .systemImage("megaphone.fill")
+        case .text, .unknown:
+            return .systemImage("number")
+        }
+    }
+
+    private func channelSelectionSubtitle(_ channel: Channel) -> String? {
+        switch channel.kind {
+        case .directMessage:
+            return channel.recipients.first?.username
+        case .groupDirectMessage:
+            return "Group DM"
+        case .voice:
+            return "Voice"
+        case .forum:
+            return "Forum"
+        case .announcement:
+            return "Announcement"
+        case .text:
+            return "Text"
+        case .unknown:
+            return nil
+        }
+    }
+
     private func restoreDraft() {
         draft = search.effectiveFilters
         beforeEnabled = draft.maximumMessageID != nil
@@ -472,87 +565,99 @@ struct MessageSearchFiltersOverlay: View {
 }
 
 private struct MessageSearchMultiSelect<Value: Identifiable>: View
-where Value.ID: Hashable {
+where Value.ID: Hashable & Sendable {
     let title: String
     let subtitle: String
     let values: [Value]
     let selectedIDs: [Value.ID]
     let label: (Value) -> String
-    let update: ([Value.ID]) -> Void
+    let rowSubtitle: (Value) -> String?
+    let leading: (Value) -> SelectionFieldLeading
+    let update: @MainActor @Sendable ([Value.ID]) -> Void
+
+    init(
+        title: String,
+        subtitle: String,
+        values: [Value],
+        selectedIDs: [Value.ID],
+        label: @escaping (Value) -> String,
+        rowSubtitle: @escaping (Value) -> String? = { _ in nil },
+        leading: @escaping (Value) -> SelectionFieldLeading = { _ in .none },
+        update: @escaping @MainActor @Sendable ([Value.ID]) -> Void
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.values = values
+        self.selectedIDs = selectedIDs
+        self.label = label
+        self.rowSubtitle = rowSubtitle
+        self.leading = leading
+        self.update = update
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             MessageSearchFilterLabel(title: title, subtitle: subtitle)
-            MessageSearchFilterMenu(title: selectionTitle) {
-                ForEach(values) { value in
-                    Button {
-                        toggle(value.id)
-                    } label: {
-                        if selectedIDs.contains(value.id) {
-                            Label(label(value), systemImage: "checkmark")
-                        } else {
-                            Text(label(value))
-                        }
-                    }
-                }
-            }
+            SelectionField(
+                selection: Binding(
+                    get: { selectedIDs },
+                    set: update
+                ),
+                mode: .multiple(),
+                source: .local(options: values.map { value in
+                    SelectionFieldOption(
+                        id: value.id,
+                        title: label(value),
+                        subtitle: rowSubtitle(value),
+                        leading: leading(value)
+                    )
+                }),
+                configuration: SelectionFieldConfiguration(
+                    placeholder: "Any",
+                    searchPlaceholder: "Search \(title.lowercased())",
+                    maximumListHeight: 220,
+                    selectionPresentation: .cards
+                ),
+                accessibilityIdentifier: "message-search-\(title.lowercased())-field"
+            )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
-
-    private var selectionTitle: String {
-        selectedIDs.isEmpty ? "Any" : "\(selectedIDs.count) selected"
-    }
-
-    private func toggle(_ id: Value.ID) {
-        var values = selectedIDs
-        if let index = values.firstIndex(of: id) {
-            values.remove(at: index)
-        } else {
-            values.append(id)
-        }
-        update(values)
-    }
 }
 
-private struct MessageSearchOptionMenu<Value: Hashable>: View {
+private struct MessageSearchOptionMenu<Value: Hashable & Sendable>: View {
     let title: String
     let subtitle: String
     let values: [Value]
     let selected: [Value]
     let label: (Value) -> String
-    let update: ([Value]) -> Void
+    let update: @MainActor @Sendable ([Value]) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             MessageSearchFilterLabel(title: title, subtitle: subtitle)
-            MessageSearchFilterMenu(
-                title: selected.isEmpty ? "Any" : "\(selected.count) selected"
-            ) {
-                ForEach(values, id: \.self) { value in
-                    Button {
-                        toggle(value)
-                    } label: {
-                        if selected.contains(value) {
-                            Label(label(value), systemImage: "checkmark")
-                        } else {
-                            Text(label(value))
-                        }
-                    }
-                }
-            }
+            SelectionField(
+                selection: Binding(
+                    get: { selected },
+                    set: update
+                ),
+                mode: .multiple(),
+                source: .local(options: values.map { value in
+                    SelectionFieldOption(
+                        id: value,
+                        title: label(value)
+                    )
+                }),
+                configuration: SelectionFieldConfiguration(
+                    placeholder: "Any",
+                    searchPlaceholder: "Search \(title.lowercased())",
+                    maximumListHeight: 220,
+                    selectionPresentation: .cards
+                ),
+                accessibilityIdentifier: "message-search-\(title.lowercased())-field"
+            )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func toggle(_ value: Value) {
-        var values = selected
-        if let index = values.firstIndex(of: value) {
-            values.remove(at: index)
-        } else {
-            values.append(value)
-        }
-        update(values)
     }
 }
 
