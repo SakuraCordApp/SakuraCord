@@ -292,7 +292,7 @@ nonisolated enum KeyboardShortcutAction: String, CaseIterable, Codable, Identifi
         case .quickSwitch:
             KeyboardShortcutChord(key: "k", modifiers: command)
         case .messageSearch:
-            KeyboardShortcutChord(key: "f", modifiers: command)
+            KeyboardShortcutChord(key: "f", modifiers: [command, .shift])
         case .toggleChannelSidebar:
             KeyboardShortcutChord(key: "s", modifiers: [command, .control])
         case .toggleMemberList:
@@ -302,7 +302,7 @@ nonisolated enum KeyboardShortcutAction: String, CaseIterable, Codable, Identifi
         case .focusComposer:
             KeyboardShortcutChord(key: "l", modifiers: [command, .shift])
         case .searchCurrentConversation:
-            KeyboardShortcutChord(key: "f", modifiers: [command, .shift])
+            KeyboardShortcutChord(key: "f", modifiers: command)
         case .sendMessage:
             KeyboardShortcutChord(key: "\r", modifiers: command)
         case .insertNewline:
@@ -430,7 +430,7 @@ nonisolated enum KeyboardShortcutValidator {
                 return "That shortcut is reserved for standard text editing."
             }
             if ["g", "n", "o", "p", "s", "t"].contains(chord.key)
-                || (chord.key == "f" && action != .messageSearch)
+                || (chord.key == "f" && action != .searchCurrentConversation)
             {
                 return "That shortcut is reserved for a standard macOS application command."
             }
