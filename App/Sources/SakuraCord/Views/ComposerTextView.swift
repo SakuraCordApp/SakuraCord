@@ -320,6 +320,7 @@ struct ComposerTextView: NSViewRepresentable {
         textView.drawsBackground = false
         textView.isHorizontallyResizable = false
         textView.isVerticallyResizable = true
+        textView.allowsUndo = true
         textView.textContainerInset = NSSize(width: 0, height: verticalContentInset)
         textView.minSize = .zero
         textView.maxSize = NSSize(
