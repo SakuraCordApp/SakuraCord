@@ -1680,13 +1680,21 @@ final class NativeMemberListCanvasView: NSView {
         } else {
             .secondaryLabelColor
         }
+        let line = Self.line(label, font: font, color: color)
+        let labelY = origins[index] + 12
         let labelX: CGFloat
         if showsRoleIndicator {
             let indicatorSize: CGFloat = 8
+            var lineAscent: CGFloat = 0
+            CTLineGetTypographicBounds(line, &lineAscent, nil, nil)
+            let glyphBounds = CTLineGetBoundsWithOptions(
+                line,
+                [.useGlyphPathBounds]
+            )
+            let labelMidY = labelY + lineAscent - glyphBounds.midY
             let indicatorRect = CGRect(
                 x: NativeMemberListMetrics.horizontalInset + 10,
-                y: origins[index]
-                    + (NativeMemberListMetrics.sectionHeaderHeight - indicatorSize) / 2,
+                y: labelMidY - indicatorSize / 2,
                 width: indicatorSize,
                 height: indicatorSize
             )
@@ -1708,10 +1716,10 @@ final class NativeMemberListCanvasView: NSView {
             labelX = NativeMemberListMetrics.horizontalInset + 10
         }
         Self.draw(
-            line: Self.line(label, font: font, color: color),
+            line: line,
             at: CGPoint(
                 x: labelX,
-                y: origins[index] + 12
+                y: labelY
             ),
             context: context
         )
