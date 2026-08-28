@@ -330,7 +330,7 @@ extension AppModel {
         let maximum: String
         switch limit {
         case DiscordAttachmentUploadPolicy.baseLimit:
-            maximum = "10 MB"
+            maximum = "20 MB"
         case DiscordAttachmentUploadPolicy.basicAndClassicLimit:
             maximum = "50 MB"
         case DiscordAttachmentUploadPolicy.nitroLimit:

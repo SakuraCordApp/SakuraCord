@@ -522,21 +522,22 @@ GET, and each favourite action creates one non-retried PATCH.
 ### Attachment selection and external-host fallback
 
 Before an attachment enters a composer, SakuraCord applies Discord's current
-per-file account cap using binary byte counts: 10 MiB for a base account,
+per-file account cap using binary byte counts: 20 MiB for a base account,
 50 MiB for Nitro Basic or legacy Nitro Classic, and 500 MiB for Nitro. A file
 at the exact boundary is accepted. A larger file is rejected during selection,
 before `/channels/{channel}/attachments` can be reserved; the provider repeats
 the check as a fail-closed guard.
 
-The 5 August 2026 evidence for this mapping is Discord's public
-[account-caps article](https://support.discord.com/hc/en-us/articles/33694251638295-Discord-Account-Caps-Server-Caps-and-More),
-the public [user resource](https://docs.discord.com/developers/resources/user)
-premium-type values, and current production web asset
+Discord's public
+[file-attachments FAQ](https://support.discord.com/hc/en-us/articles/25444343291031-File-Attachments-FAQ)
+documents the August 2026 advertised base-limit increase from 10 MB to 20 MB. The
+remaining tier mapping is supported by the public
+[user resource](https://docs.discord.com/developers/resources/user)
+premium-type values and the 5 August 2026 production web asset
 `web.d96787f461ff77e9.js` (SHA-256
 `216e7f6ce5c61983a33254229f76773984545f0a35402dca7c3376176573215e`).
-That asset maps premium types 1 and 3 to `0x3200000`, type 2 to
-`524288000`, and the default to `0xa00000`, and rejects only when
-`file.size > maximum`. Paicord revision
+That asset maps premium types 1 and 3 to `0x3200000` and type 2 to
+`524288000`, and rejects only when `file.size > maximum`. Paicord revision
 `694761c1938b73bb60bd58942674dfe73aab1135` independently performs its size
 check before staging in `Common/Chat/Input/InputBar.swift` and uses the same
 tier values in `Utilities/PaicordLib++/NitroHelper.swift`. Swiftcord v1 revision
