@@ -237,7 +237,8 @@ final class NativeTimelineCanvasView: NSView {
     let messageProfilePopoverCoordinator =
         StableAnchoredPopoverPresenter<AnyView>.Coordinator()
     var activeMessageProfilePopoverAnchor: StablePopoverAnchor?
-    var componentChoicePopover: NSPopover?
+    var componentChoiceOverlay: ComponentChoiceOverlayController?
+    var activeComponentChoiceTarget: NativeTimelineComponentSelectTarget?
     let mentionPopoverCoordinator =
         StableAnchoredPopoverPresenter<AnyView>.Coordinator()
     var activeMentionPopoverAnchor: StablePopoverAnchor?
@@ -430,6 +431,8 @@ enum NativeTimelineRowPainter {
         hoveredTextSpoiler: NativeTimelineTextSpoilerHover? = nil,
         hoveredComponentButton:
             NativeTimelineComponentButtonTarget? = nil,
+        activeComponentChoiceTarget:
+            NativeTimelineComponentSelectTarget? = nil,
         pressedComponentButton:
             NativeTimelineComponentButtonTarget? = nil,
         componentButtonPressProgress: CGFloat = 0,
@@ -489,6 +492,7 @@ enum NativeTimelineRowPainter {
                 hoveredTextLink: hoveredTextLink,
                 hoveredTextSpoiler: hoveredTextSpoiler,
                 hoveredComponentButton: hoveredComponentButton,
+                activeComponentChoiceTarget: activeComponentChoiceTarget,
                 pressedComponentButton: pressedComponentButton,
                 componentButtonPressProgress:
                     componentButtonPressProgress,

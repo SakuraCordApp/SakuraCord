@@ -5,6 +5,7 @@ nonisolated struct SelectionFieldCanvasRow: Hashable, Sendable {
     let title: String
     let subtitle: String?
     let leading: SelectionFieldLeading
+    let titleStyle: SelectionFieldTitleStyle
     let isSelected: Bool
 }
 
@@ -50,6 +51,8 @@ private final class SelectionFieldResultCanvas: NSView {
     private static let indicatorSize: CGFloat = 18
 
     override var isFlipped: Bool { true }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     private var rows: [SelectionFieldCanvasRow] = []
     private var rowHeight: CGFloat = 44
@@ -111,6 +114,7 @@ private final class SelectionFieldResultCanvas: NSView {
             self.hoveredIndex = nil
         }
         rebuildDocumentFrame()
+        installCachedImages()
         pruneImages()
         reconcileAccessibilityRows()
         if previousKeyboardIndex != keyboardIndex, let keyboardIndex {
@@ -231,19 +235,12 @@ private final class SelectionFieldResultCanvas: NSView {
             yRadius: 7
         )
 
-        if hoveredIndex == index {
+        if hoveredIndex == index || keyboardIndex == index {
             NSColor.labelColor.withAlphaComponent(0.075).setFill()
             shape.fill()
         }
-        if keyboardIndex == index {
-            NSColor.sakuraCordAccentColor.withAlphaComponent(0.10).setFill()
-            shape.fill()
-            NSColor.sakuraCordAccentColor.withAlphaComponent(0.78).setStroke()
-            shape.lineWidth = 1.25
-            shape.stroke()
-        }
         if pressedIndex == index {
-            NSColor.labelColor.withAlphaComponent(0.06).setFill()
+            NSColor.labelColor.withAlphaComponent(0.11).setFill()
             shape.fill()
         }
 
@@ -295,14 +292,14 @@ private final class SelectionFieldResultCanvas: NSView {
             row.title,
             in: titleRect,
             font: .systemFont(ofSize: 14, weight: .medium),
-            color: .labelColor
+            color: titleColor(for: row.titleStyle)
         )
         if let subtitle = row.subtitle {
             drawText(
                 subtitle,
                 in: subtitleRect,
                 font: subtitleFont,
-                color: .secondaryLabelColor,
+                color: NSColor.labelColor.withAlphaComponent(0.72),
                 alignment: .right
             )
         }
@@ -322,6 +319,29 @@ private final class SelectionFieldResultCanvas: NSView {
                 color: .labelColor,
                 alignment: .center
             )
+        case let .role(colorHex, iconURL, unicodeEmoji):
+            if let iconURL, images[iconURL] != nil {
+                drawRemoteImage(
+                    url: iconURL,
+                    fallback: "",
+                    shape: .roundedRectangle,
+                    in: rect
+                )
+            } else if let unicodeEmoji, !unicodeEmoji.isEmpty {
+                drawText(
+                    unicodeEmoji,
+                    in: rect.offsetBy(dx: 0, dy: 3),
+                    font: .systemFont(ofSize: 17),
+                    color: .labelColor,
+                    alignment: .center
+                )
+            } else {
+                RoleColorIndicatorRenderer.draw(
+                    colorHex: colorHex,
+                    in: rect.insetBy(dx: 4, dy: 4)
+                )
+                if let iconURL { requestImage(iconURL) }
+            }
         case .remoteImage(let url, let fallback, let imageShape):
             drawRemoteImage(
                 url: url,
@@ -332,12 +352,33 @@ private final class SelectionFieldResultCanvas: NSView {
         }
     }
 
+    private func titleColor(
+        for style: SelectionFieldTitleStyle
+    ) -> NSColor {
+        switch style {
+        case .standard:
+            .labelColor
+        case .memberColor(let colorHex):
+            if SakuraCordAccentColor.usesAccentFallback(
+                forRoleColorHex: colorHex
+            ) {
+                .labelColor
+            } else {
+                SakuraCordAccentColor.nsColor(
+                    forRoleColorHex: colorHex
+                )
+            }
+        case .roleColor(let colorHex):
+            SakuraCordAccentColor.nsColor(forRoleColorHex: colorHex)
+        }
+    }
+
     private func drawSelectionIndicator(selected: Bool, in rect: CGRect) {
         if allowsMultipleSelection {
             let box = NSBezierPath(roundedRect: rect, xRadius: 5, yRadius: 5)
             (selected
                 ? NSColor.sakuraCordAccentColor
-                : NSColor.tertiaryLabelColor.withAlphaComponent(0.7))
+                : NSColor.labelColor.withAlphaComponent(0.72))
                 .setStroke()
             box.lineWidth = selected ? 1.7 : 1.4
             if selected {
@@ -467,6 +508,13 @@ private final class SelectionFieldResultCanvas: NSView {
         }
     }
 
+    private func installCachedImages() {
+        for url in rows.compactMap({ $0.leading.imageURL })
+        where images[url] == nil {
+            images[url] = SelectionFieldCachedImage.cgImage(for: url)
+        }
+    }
+
     private func pruneImages() {
         let wantedURLs = Set(rows.compactMap { $0.leading.imageURL })
         for (url, task) in imageTasks where !wantedURLs.contains(url) {
@@ -534,7 +582,13 @@ private final class SelectionFieldAccessibilityRow: NSView {
 
 private extension SelectionFieldLeading {
     var imageURL: URL? {
-        guard case .remoteImage(let url, _, _) = self else { return nil }
-        return url
+        switch self {
+        case .role(_, let iconURL, _):
+            iconURL
+        case .remoteImage(let url, _, _):
+            url
+        case .none, .systemImage, .text:
+            nil
+        }
     }
 }

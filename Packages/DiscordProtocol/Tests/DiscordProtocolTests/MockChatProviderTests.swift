@@ -675,6 +675,24 @@ private func verifyAnimatedAndCommandFixtures(
     }
     #expect(
         try await provider.componentChoices(
+            kind: .user,
+            query: "",
+            guildID: guildID,
+            channelID: channelID
+        ).contains { $0.imageURL != nil && $0.imageShape == nil }
+    )
+    #expect(
+        try await provider.componentChoices(
+            kind: .role,
+            query: "engineering",
+            guildID: guildID,
+            channelID: channelID
+        ).contains {
+            $0.imageURL != nil && $0.imageShape == .roundedRectangle
+        }
+    )
+    #expect(
+        try await provider.componentChoices(
             kind: .role,
             query: "engineering",
             guildID: guildID,

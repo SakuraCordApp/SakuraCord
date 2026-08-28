@@ -18,6 +18,7 @@ struct NativeTimelineMessageDrawInput {
     let hoveredTextLink: NativeTimelineTextLinkHover?
     let hoveredTextSpoiler: NativeTimelineTextSpoilerHover?
     let hoveredComponentButton: NativeTimelineComponentButtonTarget?
+    let activeComponentChoiceTarget: NativeTimelineComponentSelectTarget?
     let pressedComponentButton: NativeTimelineComponentButtonTarget?
     let componentButtonPressProgress: CGFloat
     let isForwardedSourceHovered: Bool
@@ -43,6 +44,8 @@ extension NativeTimelineRowPainter {
             let hoveredTextLink = input.hoveredTextLink
             let hoveredTextSpoiler = input.hoveredTextSpoiler
             let hoveredComponentButton = input.hoveredComponentButton
+            let activeComponentChoiceTarget =
+                input.activeComponentChoiceTarget
             let pressedComponentButton = input.pressedComponentButton
             let componentButtonPressProgress = input.componentButtonPressProgress
             let isForwardedSourceHovered = input.isForwardedSourceHovered
@@ -565,6 +568,7 @@ extension NativeTimelineRowPainter {
                     revealedTextSpoilerState,
                 spoilerRevealStore: spoilerRevealStore,
                 hoveredComponentButton: hoveredComponentButton,
+                activeComponentChoiceTarget: activeComponentChoiceTarget,
                 pressedComponentButton: pressedComponentButton,
                 componentButtonPressProgress:
                     componentButtonPressProgress

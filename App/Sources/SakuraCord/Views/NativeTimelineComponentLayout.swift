@@ -70,6 +70,8 @@ struct NativeTimelineComponentLayout {
         let minimumSelectionCount: Int
         let maximumSelectionCount: Int
         let options: [ComponentSelectOption]
+        let channelTypes: [Int]
+        let selectedOptions: [ComponentSelectOption]
         let isDisabled: Bool
     }
 
@@ -247,6 +249,8 @@ private struct Node {
                 minimumSelectionCount: $0.minimumSelectionCount,
                 maximumSelectionCount: $0.maximumSelectionCount,
                 options: $0.options,
+                channelTypes: $0.channelTypes,
+                selectedOptions: $0.selectedOptions,
                 isDisabled: $0.isDisabled
             )
         }
@@ -517,10 +521,10 @@ private enum NodeBuilder {
             maximumSelectionCount,
             disabled,
             options,
-            _
+            channelTypes
         ):
             let placeholder = rawPlaceholder ?? "Select an option…"
-            let font = NSFont.systemFont(ofSize: 13)
+            let font = NSFont.systemFont(ofSize: 14)
             let labelWidth = ceil(
                 (placeholder as NSString).size(
                     withAttributes: [.font: font]
@@ -528,7 +532,16 @@ private enum NodeBuilder {
             )
             let width = min(
                 maximumWidth,
-                max(210, min(380, labelWidth + 76))
+                max(372, min(420, labelWidth + 76))
+            )
+            let selectedOptions = model?.componentSelection(
+                messageID: message.id,
+                customID: customID
+            ) ?? options.filter(\.isDefault)
+            let height = ComponentChoiceOptionPresentation.fieldHeight(
+                options: selectedOptions,
+                selectKind: kind,
+                fieldWidth: width
             )
             let isDisabled = !NativeTimelineComponentSelectPolicy.isEnabled(
                 kind: kind,
@@ -545,14 +558,14 @@ private enum NodeBuilder {
                     ) == true
             )
             return Node(
-                size: CGSize(width: width, height: 38),
+                size: CGSize(width: width, height: height),
                 selects: [
                     .init(
                         frame: CGRect(
                             x: 0,
                             y: 0,
                             width: width,
-                            height: 38
+                            height: height
                         ),
                         componentID: id,
                         kind: kind,
@@ -561,6 +574,8 @@ private enum NodeBuilder {
                         minimumSelectionCount: minimumSelectionCount,
                         maximumSelectionCount: maximumSelectionCount,
                         options: options,
+                        channelTypes: channelTypes,
+                        selectedOptions: selectedOptions,
                         isDisabled: isDisabled
                     )
                 ]

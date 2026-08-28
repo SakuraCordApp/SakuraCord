@@ -203,6 +203,7 @@ extension NativeTimelineCanvasView {
         positionLottieStickerOverlays()
         reconcileLoadingIndicators()
         positionSpoilerOverlays()
+        componentChoiceOverlay?.repositionWithAnchor()
         needsDisplay = true
         redrawMovedShortContentSynchronously(
             from: oldOriginY,
@@ -263,6 +264,7 @@ extension NativeTimelineCanvasView {
         mentionPointerRegionCache.removeAll(keepingCapacity: true)
         codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
         invalidateVisibleMediaProjection(keepingCapacity: true)
+        removeAccessibilityProxies()
         presentationCacheInvalidationCount += 1
         needsDisplay = true
     }
@@ -441,7 +443,7 @@ extension NativeTimelineCanvasView {
             reactionHoverCoordinator.close()
             closeMessageProfilePopover()
             closeMentionPopover()
-            closeComponentChoicePopover()
+            closeComponentChoiceOverlay()
         }
         if isBlocked, mediaViewerHighlightedMessageID == nil {
             removeActionCapsule()
@@ -537,7 +539,7 @@ extension NativeTimelineCanvasView {
             reactionPickerCoordinator.close(notifyBinding: false)
             reactionHoverCoordinator.close()
             closeMessageProfilePopover()
-            closeComponentChoicePopover()
+            closeComponentChoiceOverlay()
             closeMentionPopover()
             reactionPickerSource.frame = .zero
             pointer.clearHoverAndPressTargets()
@@ -548,10 +550,9 @@ extension NativeTimelineCanvasView {
         super.viewWillMove(toWindow: newWindow)
     }
 
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        if window != nil {
-            installReactionMouseMonitor()
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        if superview != nil {
             Task { @MainActor [weak self] in
                 await Task.yield()
                 self?.reconcileAccessibilityProxiesIfActive()
@@ -559,9 +560,10 @@ extension NativeTimelineCanvasView {
         }
     }
 
-    override func viewDidMoveToSuperview() {
-        super.viewDidMoveToSuperview()
-        if superview != nil {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil {
+            installReactionMouseMonitor()
             Task { @MainActor [weak self] in
                 await Task.yield()
                 self?.reconcileAccessibilityProxiesIfActive()
@@ -812,6 +814,8 @@ extension NativeTimelineCanvasView {
                         == item.identifier
                     || hoveredComponentButton?.messageID
                         == item.messageID
+                    || activeComponentChoiceTarget?.messageID
+                        == item.messageID
                     || visualPressedComponentButton?.messageID
                         == item.messageID
                     || hoveredForwardedSourceMessageID
@@ -850,6 +854,11 @@ extension NativeTimelineCanvasView {
                             hoveredComponentButton?.messageID
                                 == item.messageID
                             ? hoveredComponentButton
+                            : nil,
+                        activeComponentChoiceTarget:
+                            activeComponentChoiceTarget?.messageID
+                                == item.messageID
+                            ? activeComponentChoiceTarget
                             : nil,
                         pressedComponentButton:
                             visualPressedComponentButton?.messageID
@@ -1885,6 +1894,7 @@ extension NativeTimelineCanvasView {
                 else { continue }
                 keys.append(.media(url, maximumPixelDimension: 64))
             }
+            keys += componentLayout.selectMediaKeys(hiddenContainerFrames)
             for textRegion in componentLayout.textRegions {
                 guard !NativeTimelineSpoilerConcealmentPolicy
                     .isInsideHiddenContainer(

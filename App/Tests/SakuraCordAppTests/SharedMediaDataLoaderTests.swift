@@ -206,6 +206,10 @@ import Testing
     #expect(await first.value != nil)
     #expect(await second.value != nil)
     #expect(await probe.fetchCount == 1)
+    #expect(decodedLoader.cachedImage(
+        for: url,
+        maximumPixelDimension: 32
+    ) != nil)
     await decodeScheduler.releasePermitForTesting(priority: .visible)
 }
 

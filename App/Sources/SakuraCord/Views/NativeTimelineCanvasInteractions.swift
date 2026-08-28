@@ -447,10 +447,9 @@ extension NativeTimelineCanvasView {
             for region in componentLayout.selects
             where region.frame.contains(point) {
                 guard !region.isDisabled else { return true }
-                showMenu(
+                showComponentChoicePicker(
                     for: region,
-                    message: message,
-                    rowIndex: rowIndex
+                    message: message
                 )
                 return true
             }
@@ -780,66 +779,74 @@ extension NativeTimelineCanvasView {
         rebuildAccessibilityProxy(for: identifier)
     }
 
-    func showMenu(
+    func showComponentChoicePicker(
         for region: NativeTimelineComponentLayout.SelectRegion,
-        message: Message,
-        rowIndex: Int
+        message: Message
     ) {
-        guard region.kind == .string else {
-            showComponentChoicePicker(
-                for: region,
-                message: message,
-                rowIndex: rowIndex
-            )
-            return
-        }
-        let menu = NSMenu()
-        menu.autoenablesItems = false
-        for option in region.options {
-            let title = option.emoji.map {
-                "\($0.name) \(option.label)"
-            } ?? option.label
-            let item = actionItem(
-                title,
-                systemImage: option.isDefault
-                    ? "checkmark.circle.fill"
-                    : "circle"
-            ) { [weak self] in
+        guard let model else { return }
+        closeComponentChoiceOverlay()
+        let selectedOptions = model.componentSelection(
+            messageID: message.id,
+            customID: region.customID
+        )
+        let initialSelection = Array(
+            (selectedOptions ?? region.options.filter(\.isDefault))
+                .map(\.value)
+                .prefix(max(1, region.maximumSelectionCount))
+        )
+        let initialOptions = initialComponentChoices(for: region, message: message, model: model)
+        let overlay = ComponentChoiceOverlayController(
+            initialSelection: initialSelection,
+            minimumSelectionCount: region.minimumSelectionCount,
+            maximumSelectionCount: region.maximumSelectionCount,
+            submit: { [weak self] values in
                 guard let self else { return }
                 self.actions?.submitComponent(
                     message,
                     region.customID,
                     self.interactionKind(region.kind),
-                    [option.value]
+                    values
                 )
+            },
+            onClose: { [weak self] in
+                if model.componentSelection(
+                    messageID: message.id,
+                    customID: region.customID
+                )?.map(\.value) != initialSelection
+                {
+                    model.publishComponentSelectionPresentation()
+                }
+                self?.componentChoiceOverlay = nil
+                self?.activeComponentChoiceTarget = nil
+                self?.needsDisplay = true
             }
-            item.state = option.isDefault ? .on : .off
-            item.toolTip = option.description
-            menu.addItem(item)
-        }
-        let point = CGPoint(
-            x: region.frame.minX,
-            y: displayedRowOrigin(at: rowIndex) + region.frame.maxY + 2
         )
-        menu.popUp(positioning: nil, at: point, in: self)
-    }
-
-    func showComponentChoicePicker(
-        for region: NativeTimelineComponentLayout.SelectRegion,
-        message: Message,
-        rowIndex: Int
-    ) {
-        guard let model else { return }
-        closeComponentChoicePopover()
-        let popover = NSPopover()
-        popover.behavior = .transient
-        popover.animates = false
-        popover.contentViewController = NSHostingController(
-            rootView: ComponentChoicePicker(
+        componentChoiceOverlay = overlay
+        activeComponentChoiceTarget = NativeTimelineComponentSelectTarget(
+            messageID: message.id,
+            componentID: region.componentID
+        )
+        needsDisplay = true
+        guard let anchorRect = componentSelectAnchorRect(
+            messageID: message.id,
+            componentID: region.componentID
+        ) else {
+            overlay.close()
+            return
+        }
+        let placement = ComponentChoiceOverlayController.placement(
+            for: anchorRect,
+            in: self
+        )
+        overlay.present(
+            rootView: AnyView(ComponentChoicePicker(
                 placeholder: region.placeholder,
+                selectKind: region.kind,
                 options: region.options,
-                minimumSelectionCount: region.minimumSelectionCount,
+                initialOptions: initialOptions,
+                selectedOptions: selectedOptions,
                 maximumSelectionCount: region.maximumSelectionCount,
+                resultPlacement: placement,
                 loader: { [weak model] query in
                     guard let model else {
                         throw CancellationError()
@@ -851,35 +858,66 @@ extension NativeTimelineCanvasView {
                         channelID: message.channelID
                     )
                 },
-                submit: { [weak self] values in
-                    guard let self else { return }
-                    self.actions?.submitComponent(
-                        message,
-                        region.customID,
-                        self.interactionKind(region.kind),
-                        values
+                selectionChanged: { [weak model, weak overlay] options in
+                    model?.setComponentSelection(
+                        options,
+                        messageID: message.id,
+                        customID: region.customID
                     )
-                    self.closeComponentChoicePopover()
+                    overlay?.updateSelection(options.map(\.value))
+                },
+                submitSingleSelection: { [weak overlay] values in
+                    overlay?.submitSingleSelection(values)
+                },
+                dismiss: { [weak overlay] in
+                    overlay?.close()
                 }
-            )
-        )
-        componentChoicePopover = popover
-        popover.show(
-            relativeTo: CGRect(
-                x: region.frame.minX,
-                y: displayedRowOrigin(at: rowIndex)
-                    + region.frame.minY,
-                width: region.frame.width,
-                height: region.frame.height
-            ),
-            of: self,
-            preferredEdge: .maxY
+            )),
+            in: self,
+            placement: placement,
+            anchorRectProvider: { [weak self] in
+                self?.componentSelectAnchorRect(
+                    messageID: message.id,
+                    componentID: region.componentID
+                )
+            }
         )
     }
 
-    func closeComponentChoicePopover() {
-        componentChoicePopover?.performClose(nil)
-        componentChoicePopover = nil
+    func initialComponentChoices(
+        for region: NativeTimelineComponentLayout.SelectRegion,
+        message: Message,
+        model: AppModel
+    ) -> [ComponentSelectOption] {
+        guard region.options.isEmpty else { return region.options }
+        return model.cachedComponentChoices(
+            kind: region.kind,
+            guildID: message.guildID,
+            channelTypes: region.channelTypes
+        )
+    }
+
+    func componentSelectAnchorRect(
+        messageID: MessageID,
+        componentID: String
+    ) -> CGRect? {
+        guard let rowIndex = items.firstIndex(where: {
+            $0.messageID == messageID
+        }),
+        layouts.indices.contains(rowIndex),
+        let region = layouts[rowIndex].componentLayouts
+            .flatMap(\.selects)
+            .first(where: { $0.componentID == componentID })
+        else { return nil }
+        return region.frame.offsetBy(
+            dx: 0,
+            dy: displayedRowOrigin(at: rowIndex)
+        )
+    }
+
+    func closeComponentChoiceOverlay() {
+        componentChoiceOverlay?.close()
+        componentChoiceOverlay = nil
     }
 
     func interactionKind(

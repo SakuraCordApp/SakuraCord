@@ -255,8 +255,7 @@ extension AppModel {
         readState.reset(accountID: handle.accountID)
         currentUserRoleIDsByGuild = [:]
         supportedCapabilities = []
-        pendingComponentControls = []
-        componentErrors = [:]
+        componentInteractionPresentation = .init()
         componentKeyByNonce = [:]
         credentialHandle = handle
         activeAccountID = handle.accountID
@@ -422,8 +421,7 @@ extension AppModel {
         let signedOutProvider: any ChatProvider =
             launchMode == .offlineTesting ? MockChatProvider() : SignedOutChatProvider()
         supportedCapabilities = []
-        pendingComponentControls = []
-        componentErrors = [:]
+        componentInteractionPresentation = .init()
         componentKeyByNonce = [:]
         let signedOutDatabase = launchMode == .offlineTesting
             ? try? SakuraCordDatabase(inMemory: true)

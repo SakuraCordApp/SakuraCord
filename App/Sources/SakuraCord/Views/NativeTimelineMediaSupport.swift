@@ -110,6 +110,25 @@ nonisolated final class SharedDecodedImageBox: NSObject, @unchecked Sendable {
     }
 }
 
+nonisolated final class SharedDecodedImageCache: @unchecked Sendable {
+    private let storage: NSCache<NSString, SharedDecodedImageBox> = {
+        let cache = NSCache<NSString, SharedDecodedImageBox>()
+        cache.totalCostLimit =
+            NativeTimelineMediaMemoryPolicy.sharedStaticImageBytes
+        cache.countLimit = 256
+        return cache
+    }()
+
+    func image(for key: NSString) -> CGImage? {
+        storage.object(forKey: key)?.image
+    }
+
+    func insert(_ image: CGImage, for key: NSString) {
+        let box = SharedDecodedImageBox(image)
+        storage.setObject(box, forKey: key, cost: box.cost)
+    }
+}
+
 actor SharedDecodedImageLoader {
     static let shared = SharedDecodedImageLoader()
 
@@ -130,13 +149,7 @@ actor SharedDecodedImageLoader {
         }
     }
 
-    private let cache: NSCache<NSString, SharedDecodedImageBox> = {
-        let cache = NSCache<NSString, SharedDecodedImageBox>()
-        cache.totalCostLimit =
-            NativeTimelineMediaMemoryPolicy.sharedStaticImageBytes
-        cache.countLimit = 256
-        return cache
-    }()
+    nonisolated private let cache = SharedDecodedImageCache()
     private var inFlight: [RequestKey: InFlightRequest] = [:]
     private let dataLoader: SharedMediaDataLoader
     private let decodeScheduler: NativeTimelineMediaDecodeScheduler
@@ -149,6 +162,17 @@ actor SharedDecodedImageLoader {
         self.decodeScheduler = decodeScheduler
     }
 
+    nonisolated func cachedImage(
+        for url: URL,
+        maximumPixelDimension: Int
+    ) -> CGImage? {
+        let key = RequestKey(
+            url: url,
+            maximumPixelDimension: max(1, maximumPixelDimension)
+        )
+        return cache.image(for: key.cacheKey)
+    }
+
     func image(
         for url: URL,
         maximumPixelDimension: Int,
@@ -158,8 +182,11 @@ actor SharedDecodedImageLoader {
             url: url,
             maximumPixelDimension: max(1, maximumPixelDimension)
         )
-        if let cached = cache.object(forKey: key.cacheKey) {
-            return cached.image
+        if let cached = cachedImage(
+            for: key.url,
+            maximumPixelDimension: key.maximumPixelDimension
+        ) {
+            return cached
         }
 
         let waiterID = UUID()
@@ -296,8 +323,7 @@ actor SharedDecodedImageLoader {
             inFlight[key] = request
         }
         if let image {
-            let box = SharedDecodedImageBox(image)
-            cache.setObject(box, forKey: key.cacheKey, cost: box.cost)
+            cache.insert(image, for: key.cacheKey)
         }
         return image
     }

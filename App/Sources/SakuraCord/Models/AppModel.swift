@@ -49,6 +49,12 @@ struct MentionMemberSearchCacheEntry {
     var storedAt: Date
 }
 
+struct ComponentInteractionPresentationState {
+    var pendingControls: Set<ComponentControlKey> = []
+    var errors: [ComponentControlKey: String] = [:]
+    var selections: [ComponentControlKey: [ComponentSelectOption]] = [:]
+}
+
 @Observable
 final class AppModel {
     enum ThreadErrorScope {
@@ -411,8 +417,8 @@ final class AppModel {
     var gifFavoriteMutationURL: URL?
     var stickersByGuild: [GuildID: [MessageSticker]] = [:]
     var supportedCapabilities: Set<ChatCapability> = []
-    var pendingComponentControls: Set<ComponentControlKey> = []
-    var componentErrors: [ComponentControlKey: String] = [:]
+    var componentInteractionPresentation =
+        ComponentInteractionPresentationState()
     var inspectorProfilePresentation:
         ProfilePresentationState?
     var contextualProfilePresentation:

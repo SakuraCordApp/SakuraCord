@@ -941,22 +941,22 @@ extension AppModel {
         case .succeeded(let nonce):
             commandComposer.interactionSucceeded(nonce: nonce)
             if let key = componentKeyByNonce.removeValue(forKey: nonce) {
-                pendingComponentControls.remove(key)
-                componentErrors[key] = nil
+                componentInteractionPresentation.pendingControls.remove(key)
+                componentInteractionPresentation.errors[key] = nil
             }
             interactionErrorMessage = nil
         case .failed(let nonce, let message):
             let commandHandled = commandComposer.interactionFailed(nonce: nonce, message: message)
             if let key = componentKeyByNonce.removeValue(forKey: nonce) {
-                pendingComponentControls.remove(key)
-                componentErrors[key] = message
+                componentInteractionPresentation.pendingControls.remove(key)
+                componentInteractionPresentation.errors[key] = message
             } else if !commandHandled {
                 interactionErrorMessage = message
             }
         case .presentModal(let nonce, let modal):
             interactionModalNonce = nonce
             if let key = componentKeyByNonce.removeValue(forKey: nonce) {
-                pendingComponentControls.remove(key)
+                componentInteractionPresentation.pendingControls.remove(key)
             }
             presentedInteractionModal = modal
             interactionErrorMessage = nil

@@ -1,3 +1,4 @@
+import AppKit
 import SakuraCordModels
 import SwiftUI
 
@@ -6,82 +7,101 @@ struct ComponentChoicePicker: View {
         -> [ComponentSelectOption]
 
     @State private var selection: [String] = []
+    @State private var knownOptionsByValue:
+        [String: ComponentSelectOption] = [:]
 
     private let placeholder: String
+    private let selectKind: ComponentSelectKind
     private let options: [ComponentSelectOption]
-    private let minimumSelectionCount: Int
+    private let initialOptions: [ComponentSelectOption]
     private let maximumSelectionCount: Int
     private let loader: Loader
-    private let submit: ([String]) -> Void
+    private let resultPlacement: SelectionFieldResultPlacement
+    private let selectionChanged: ([ComponentSelectOption]) -> Void
+    private let submitSingleSelection: ([String]) -> Void
+    private let dismiss: () -> Void
 
     init(
         placeholder: String,
+        selectKind: ComponentSelectKind,
         options: [ComponentSelectOption],
-        minimumSelectionCount: Int,
+        initialOptions: [ComponentSelectOption],
+        selectedOptions: [ComponentSelectOption]?,
         maximumSelectionCount: Int,
+        resultPlacement: SelectionFieldResultPlacement,
         loader: @escaping Loader,
-        submit: @escaping ([String]) -> Void
+        selectionChanged: @escaping ([ComponentSelectOption]) -> Void,
+        submitSingleSelection: @escaping ([String]) -> Void,
+        dismiss: @escaping () -> Void
     ) {
         self.placeholder = placeholder
+        self.selectKind = selectKind
         self.options = options
-        self.minimumSelectionCount = max(0, minimumSelectionCount)
+        self.initialOptions = initialOptions
         self.maximumSelectionCount = max(1, maximumSelectionCount)
+        self.resultPlacement = resultPlacement
         self.loader = loader
-        self.submit = submit
+        self.selectionChanged = selectionChanged
+        self.submitSingleSelection = submitSingleSelection
+        self.dismiss = dismiss
+        let initialOptions = selectedOptions
+            ?? options.filter(\.isDefault)
         _selection = State(
-            initialValue: Array(
-                options.filter(\.isDefault).map(\.value)
-                    .prefix(max(1, maximumSelectionCount))
+            initialValue: Array(initialOptions.map(\.value).prefix(
+                max(1, maximumSelectionCount)
+            ))
+        )
+        _knownOptionsByValue = State(
+            initialValue: Dictionary(
+                (options + (selectedOptions ?? []) + initialOptions).map {
+                    ($0.value, $0)
+                },
+                uniquingKeysWith: { _, newer in newer }
             )
         )
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SelectionField(
-                selection: $selection,
-                mode: selectionMode,
-                source: source,
-                configuration: SelectionFieldConfiguration(
-                    placeholder: placeholder,
-                    searchPlaceholder: "Search options",
-                    maximumListHeight: maximumSelectionCount > 1 ? 232 : 260,
-                    initiallyExpanded: true,
-                    clearsQueryAfterSelection: maximumSelectionCount > 1,
-                    collapsesAfterSingleSelection: false,
-                    selectionPresentation: .cards
-                ),
-                accessibilityIdentifier: "component-selection-field"
-            )
-
-            if maximumSelectionCount > 1 {
-                HStack(spacing: 8) {
-                    Text(selectionSummary)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Select") {
-                        submit(selection)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(SakuraCordAccentColor.color)
-                    .disabled(!selectionCountIsValid)
-                }
-            }
-        }
-        .padding(12)
-        .frame(
-            width: 372,
-            height: maximumSelectionCount > 1 ? 358 : 326,
-            alignment: .top
+        SelectionField(
+            selection: selectionBinding,
+            mode: selectionMode,
+            source: source,
+            configuration: SelectionFieldConfiguration(
+                placeholder: placeholder,
+                searchPlaceholder: "Search options",
+                maximumListHeight: 232,
+                initiallyExpanded: true,
+                clearsQueryAfterSelection: maximumSelectionCount > 1,
+                collapsesAfterSingleSelection: true,
+                selectionPresentation: .cards,
+                resultPlacement: resultPlacement
+            ),
+            accessibilityIdentifier: "component-selection-field",
+            onDismiss: dismiss
         )
-        .onChange(of: selection) { oldValue, newValue in
-            guard maximumSelectionCount == 1,
-                  newValue.count == 1,
-                  newValue != oldValue
-            else { return }
-            submit(newValue)
-        }
+        .frame(maxWidth: .infinity)
+        .frame(
+            maxHeight: .infinity,
+            alignment: resultPlacement == .below ? .top : .bottom
+        )
+    }
+
+    private var selectionBinding: Binding<[String]> {
+        Binding(
+            get: { selection },
+            set: { newValue in
+                let oldValue = selection
+                selection = newValue
+                selectionChanged(
+                    newValue.compactMap { knownOptionsByValue[$0] }
+                )
+                guard maximumSelectionCount == 1,
+                      newValue.count == 1,
+                      newValue != oldValue
+                else { return }
+                submitSingleSelection(newValue)
+            }
+        )
     }
 
     private var selectionMode: SelectionFieldSelectionMode {
@@ -91,45 +111,153 @@ struct ComponentChoicePicker: View {
     }
 
     private var source: SelectionFieldSource<String> {
-        if !options.isEmpty {
+        if selectKind == .string {
             return .local(
-                options: options.map(Self.fieldOption),
+                options: options.map {
+                    ComponentChoiceOptionPresentation.fieldOption(
+                        $0,
+                        selectKind: selectKind
+                    )
+                },
                 maximumResults: 25
             )
         }
+        var seenInitialValues = Set<String>()
+        let initial = (initialOptions + selection.compactMap {
+            knownOptionsByValue[$0]
+        }).filter { seenInitialValues.insert($0.value).inserted }
         return .dynamic(
+            initialOptions: initial.map {
+                ComponentChoiceOptionPresentation.fieldOption(
+                    $0,
+                    selectKind: selectKind
+                )
+            },
             debounce: .milliseconds(120),
             maximumResults: 25
         ) { query in
-            try await loader(query).map(Self.fieldOption)
+            let loaded = try await loader(query)
+            for option in loaded {
+                knownOptionsByValue[option.value] = option
+            }
+            return loaded.map {
+                ComponentChoiceOptionPresentation.fieldOption(
+                    $0,
+                    selectKind: selectKind
+                )
+            }
         }
     }
+}
 
-    private var selectionCountIsValid: Bool {
-        selection.count >= minimumSelectionCount
-            && selection.count <= maximumSelectionCount
-    }
-
-    private var selectionSummary: String {
-        if minimumSelectionCount == maximumSelectionCount {
-            return "Select \(minimumSelectionCount)"
-        }
-        return "Select \(minimumSelectionCount)–\(maximumSelectionCount)"
-    }
-
-    private static func fieldOption(
-        _ option: ComponentSelectOption
+enum ComponentChoiceOptionPresentation {
+    static func fieldOption(
+        _ option: ComponentSelectOption,
+        selectKind: ComponentSelectKind
     ) -> SelectionFieldOption<String> {
-        SelectionFieldOption(
+        let entityKind = option.entityKind
+            ?? defaultEntityKind(for: selectKind)
+        return SelectionFieldOption(
             id: option.value,
-            title: option.label,
+            title: title(for: option, entityKind: entityKind),
             subtitle: option.description,
-            leading: option.emoji.map(leading(for:)) ?? .none,
+            leading: leading(for: option, entityKind: entityKind),
+            titleStyle: titleStyle(
+                for: option,
+                entityKind: entityKind
+            ),
             searchTerms: [option.value]
         )
     }
 
+    private static func defaultEntityKind(
+        for selectKind: ComponentSelectKind
+    ) -> ComponentSelectOptionEntityKind? {
+        switch selectKind {
+        case .string:
+            nil
+        case .user:
+            .user
+        case .role:
+            .role
+        case .channel:
+            .channel
+        case .mentionable:
+            nil
+        }
+    }
+
+    private static func title(
+        for option: ComponentSelectOption,
+        entityKind: ComponentSelectOptionEntityKind?
+    ) -> String {
+        switch entityKind {
+        case .role:
+            option.label.hasPrefix("@")
+                ? String(option.label.dropFirst())
+                : option.label
+        case .channel:
+            option.label.hasPrefix("#")
+                ? String(option.label.dropFirst())
+                : option.label
+        case .user, nil:
+            option.label
+        }
+    }
+
     private static func leading(
+        for option: ComponentSelectOption,
+        entityKind: ComponentSelectOptionEntityKind?
+    ) -> SelectionFieldLeading {
+        switch entityKind {
+        case .user:
+            return .remoteImage(
+                url: option.imageURL,
+                fallback: option.label,
+                shape: .circle
+            )
+        case .role:
+            return .role(
+                colorHex: option.colorHex,
+                iconURL: option.imageURL,
+                unicodeEmoji: option.unicodeEmoji
+            )
+        case .channel:
+            return .systemImage(
+                ChannelIconPresentation.systemImage(
+                    for: option.channelKind ?? .unknown,
+                    isHidden: false
+                )
+            )
+        case nil:
+            if let imageURL = option.imageURL {
+                return .remoteImage(
+                    url: imageURL,
+                    fallback: option.label,
+                    shape: (option.imageShape ?? .circle) == .circle
+                        ? .circle
+                        : .roundedRectangle
+                )
+            }
+            return option.emoji.map(leading(for:)) ?? .none
+        }
+    }
+
+    private static func titleStyle(
+        for option: ComponentSelectOption,
+        entityKind: ComponentSelectOptionEntityKind?
+    ) -> SelectionFieldTitleStyle {
+        switch entityKind {
+        case .user:
+            .memberColor(option.colorHex)
+        case .role:
+            .roleColor(option.colorHex)
+        case .channel, nil:
+            .standard
+        }
+    }
+
+    static func leading(
         for emoji: EmojiReference
     ) -> SelectionFieldLeading {
         if let url = emoji.imageURL(size: 64) {
@@ -140,5 +268,53 @@ struct ComponentChoicePicker: View {
             )
         }
         return .text(emoji.name)
+    }
+
+    static func fieldHeight(
+        options: [ComponentSelectOption],
+        selectKind: ComponentSelectKind,
+        fieldWidth: CGFloat
+    ) -> CGFloat {
+        SelectionFieldLayoutMetrics.preferredHeight(
+            options: options.map {
+                fieldOption($0, selectKind: selectKind)
+            },
+            width: fieldWidth,
+            usesCards: true
+        )
+    }
+}
+
+extension NativeTimelineComponentLayout {
+    func selectMediaKeys(
+        _ hiddenContainerFrames: [CGRect]
+    ) -> [NativeTimelineMediaKey] {
+        selects.flatMap { select -> [NativeTimelineMediaKey] in
+            guard !NativeTimelineSpoilerConcealmentPolicy
+                .isInsideHiddenContainer(
+                    select.frame,
+                    hiddenContainerFrames: hiddenContainerFrames
+                )
+            else { return [] }
+            return select.selectedOptions.flatMap { option in
+                var keys: [NativeTimelineMediaKey] = []
+                if let url = option.imageURL, !url.isFileURL {
+                    keys.append(.media(
+                        url,
+                        maximumPixelDimension: 64
+                    ))
+                }
+                if let emoji = option.emoji,
+                   emoji.id != nil,
+                   let url = emoji.imageURL(size: 32)
+                {
+                    keys.append(.media(
+                        url,
+                        maximumPixelDimension: 64
+                    ))
+                }
+                return keys
+            }
+        }
     }
 }

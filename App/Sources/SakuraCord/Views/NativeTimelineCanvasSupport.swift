@@ -785,6 +785,11 @@ nonisolated struct NativeTimelineComponentButtonTarget: Hashable {
     let componentID: String
 }
 
+nonisolated struct NativeTimelineComponentSelectTarget: Hashable {
+    let messageID: MessageID
+    let componentID: String
+}
+
 nonisolated enum NativeTimelineComponentButtonVisualState {
     static let pressAnimationDuration: TimeInterval = 0.09
 

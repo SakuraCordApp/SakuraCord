@@ -36,7 +36,7 @@ struct MockChatFixture {
         ).fixture
     }
 
-    fileprivate static func demoAsset(_ name: String) -> URL? {
+    static func demoAsset(_ name: String) -> URL? {
         demoResource(name, extension: "png")
     }
 
@@ -687,7 +687,8 @@ private struct MockFixtureAssembly {
             id: RoleID(rawValue: 10), name: "Design", position: 20, colorHex: 0xF472B6
         )
         let engineeringRole = GuildRole(
-            id: RoleID(rawValue: 11), name: "Engineering", position: 18, colorHex: 0x67E8F9
+            id: RoleID(rawValue: 11), name: "Engineering", position: 18, colorHex: 0x67E8F9,
+            iconURL: demoAsset("guild-native-lab")
         )
         let moderatorRole = GuildRole(
             id: RoleID(rawValue: 12), name: "Community", position: 16, colorHex: 0xFBBF24
@@ -1037,7 +1038,7 @@ private struct MockFixtureAssembly {
     }
 }
 
-private struct MockMessageFixtureBuilder {
+struct MockMessageFixtureBuilder {
     let auroraID: GuildID
     let nativeLabID: GuildID
     let base: Date
@@ -1203,8 +1204,8 @@ private struct MockMessageFixtureBuilder {
                             provider: MessageEmbedProvider(name: "Offline fixture")
                         )
                     ]
-                )
-            ],
+                ),
+            ] + selectionFieldFixtureMessages(),
             ChannelID(rawValue: 211): [
                 message(
                     2101, 211, maya,

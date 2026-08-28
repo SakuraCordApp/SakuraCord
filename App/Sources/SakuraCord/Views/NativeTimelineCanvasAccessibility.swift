@@ -1019,7 +1019,7 @@ extension NativeTimelineCanvasView {
                 children.append(accessibilityElement(
                     role: .popUpButton,
                     label: region.placeholder,
-                    value: region.options.filter(\.isDefault)
+                    value: region.selectedOptions
                         .map(\.label)
                         .joined(separator: ", "),
                     frame: accessibilityChildFrame(
@@ -1032,10 +1032,9 @@ extension NativeTimelineCanvasView {
                     guard let self, !region.isDisabled else {
                         return false
                     }
-                    self.showMenu(
+                    self.showComponentChoicePicker(
                         for: region,
-                        message: message,
-                        rowIndex: rowIndex
+                        message: message
                     )
                     return true
                 })

@@ -1043,7 +1043,9 @@ public actor MockChatProvider: ChatProvider {
             choices = try await channels(in: guildID).map {
                 ComponentSelectOption(
                     label: "#\($0.name)",
-                    value: String($0.id.rawValue)
+                    value: String($0.id.rawValue),
+                    imageURL: $0.iconURL,
+                    imageShape: .roundedRectangle
                 )
             }
         }
@@ -1078,7 +1080,8 @@ public actor MockChatProvider: ChatProvider {
         ComponentSelectOption(
             label: member.user.displayName,
             value: String(member.id.rawValue),
-            description: "@\(member.user.username)"
+            description: "@\(member.user.username)",
+            imageURL: member.user.avatarURL
         )
     }
 
@@ -1087,7 +1090,9 @@ public actor MockChatProvider: ChatProvider {
     ) -> ComponentSelectOption {
         ComponentSelectOption(
             label: "@\(role.name)",
-            value: String(role.id.rawValue)
+            value: String(role.id.rawValue),
+            imageURL: role.iconURL,
+            imageShape: .roundedRectangle
         )
     }
 

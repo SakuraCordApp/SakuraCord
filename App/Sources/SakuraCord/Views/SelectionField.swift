@@ -11,11 +11,22 @@ nonisolated enum SelectionFieldLeading: Hashable, Sendable {
     case none
     case systemImage(String)
     case text(String)
+    case role(
+        colorHex: UInt32?,
+        iconURL: URL?,
+        unicodeEmoji: String?
+    )
     case remoteImage(
         url: URL?,
         fallback: String,
         shape: SelectionFieldImageShape = .circle
     )
+}
+
+nonisolated enum SelectionFieldTitleStyle: Hashable, Sendable {
+    case standard
+    case memberColor(UInt32?)
+    case roleColor(UInt32?)
 }
 
 nonisolated struct SelectionFieldOption<ID: Hashable & Sendable>: Identifiable, Hashable, Sendable
@@ -24,6 +35,7 @@ nonisolated struct SelectionFieldOption<ID: Hashable & Sendable>: Identifiable, 
     let title: String
     let subtitle: String?
     let leading: SelectionFieldLeading
+    let titleStyle: SelectionFieldTitleStyle
     let searchText: String
 
     init(
@@ -31,12 +43,14 @@ nonisolated struct SelectionFieldOption<ID: Hashable & Sendable>: Identifiable, 
         title: String,
         subtitle: String? = nil,
         leading: SelectionFieldLeading = .none,
+        titleStyle: SelectionFieldTitleStyle = .standard,
         searchTerms: [String] = []
     ) {
         self.id = id
         self.title = title
         self.subtitle = subtitle
         self.leading = leading
+        self.titleStyle = titleStyle
         searchText = Self.normalized(
             ([title, subtitle].compactMap { $0 } + searchTerms)
                 .joined(separator: " ")
@@ -83,9 +97,14 @@ nonisolated enum SelectionFieldSelectionMode: Equatable, Sendable {
     }
 }
 
-nonisolated enum SelectionFieldSelectionPresentation: Sendable {
+nonisolated enum SelectionFieldSelectionPresentation: Equatable, Sendable {
     case title
     case cards
+}
+
+nonisolated enum SelectionFieldResultPlacement: Equatable, Sendable {
+    case below
+    case above
 }
 
 nonisolated enum SelectionFieldSelectionPolicy {
@@ -122,6 +141,7 @@ nonisolated struct SelectionFieldConfiguration: Sendable {
     var clearsQueryAfterSelection: Bool
     var collapsesAfterSingleSelection: Bool
     var selectionPresentation: SelectionFieldSelectionPresentation
+    var resultPlacement: SelectionFieldResultPlacement
 
     init(
         placeholder: String = "Select an option…",
@@ -133,7 +153,8 @@ nonisolated struct SelectionFieldConfiguration: Sendable {
         searches: Bool = true,
         clearsQueryAfterSelection: Bool = true,
         collapsesAfterSingleSelection: Bool = true,
-        selectionPresentation: SelectionFieldSelectionPresentation = .cards
+        selectionPresentation: SelectionFieldSelectionPresentation = .cards,
+        resultPlacement: SelectionFieldResultPlacement = .below
     ) {
         self.placeholder = placeholder
         self.searchPlaceholder = searchPlaceholder
@@ -145,6 +166,7 @@ nonisolated struct SelectionFieldConfiguration: Sendable {
         self.clearsQueryAfterSelection = clearsQueryAfterSelection
         self.collapsesAfterSingleSelection = collapsesAfterSingleSelection
         self.selectionPresentation = selectionPresentation
+        self.resultPlacement = resultPlacement
     }
 }
 
@@ -168,7 +190,7 @@ final class SelectionFieldModel<ID: Hashable & Sendable> {
 
     private(set) var query = ""
     private(set) var results: [Option]
-    private(set) var state: State = .idle
+    private(set) var state: State
 
     init(source: SelectionFieldSource<ID>) {
         self.source = source
@@ -183,6 +205,10 @@ final class SelectionFieldModel<ID: Hashable & Sendable> {
         case .dynamic(let initialOptions, _, _, _, _): initialOptions
         }
         results = initialOptions
+        state = switch source {
+        case .local: .loaded
+        case .dynamic: .loaded
+        }
         optionsByID = Dictionary(
             retainedOptions.map { ($0.id, $0) },
             uniquingKeysWith: { _, newer in newer }
@@ -221,8 +247,12 @@ final class SelectionFieldModel<ID: Hashable & Sendable> {
 
         switch source {
         case .local(let options, let maximumResults):
-            state = .loading
             let normalizedQuery = Option.normalized(query)
+            if normalizedQuery.isEmpty {
+                install(Self.limited(options, maximum: maximumResults))
+                return
+            }
+            state = .loading
             task = Task { [weak self] in
                 let matches = await Task.detached(priority: .userInitiated) {
                     let filtered = normalizedQuery.isEmpty
@@ -247,6 +277,13 @@ final class SelectionFieldModel<ID: Hashable & Sendable> {
             let normalizedQuery = query.trimmingCharacters(
                 in: .whitespacesAndNewlines
             )
+            if normalizedQuery.isEmpty {
+                install(Self.limited(
+                    initialOptions,
+                    maximum: maximumResults
+                ))
+                return
+            }
             guard normalizedQuery.count >= minimumQueryLength else {
                 results = Self.limited(initialOptions, maximum: maximumResults)
                 state = .needsMoreCharacters(minimumQueryLength)
@@ -301,18 +338,20 @@ struct SelectionField<ID: Hashable & Sendable>: View {
     @State private var model: SelectionFieldModel<ID>
     @State private var isExpanded: Bool
     @State private var keyboardIndex: Int?
-    @FocusState private var searchIsFocused: Bool
+    @State private var searchIsFocused = false
 
     private let mode: SelectionFieldSelectionMode
     private let configuration: SelectionFieldConfiguration
     private let accessibilityIdentifier: String
+    private let onDismiss: (() -> Void)?
 
     init(
         selection: Binding<[ID]>,
         mode: SelectionFieldSelectionMode,
         source: SelectionFieldSource<ID>,
         configuration: SelectionFieldConfiguration = .init(),
-        accessibilityIdentifier: String = "selection-field"
+        accessibilityIdentifier: String = "selection-field",
+        onDismiss: (() -> Void)? = nil
     ) {
         _selection = selection
         _model = State(initialValue: SelectionFieldModel(source: source))
@@ -320,13 +359,15 @@ struct SelectionField<ID: Hashable & Sendable>: View {
         self.mode = mode
         self.configuration = configuration
         self.accessibilityIdentifier = accessibilityIdentifier
+        self.onDismiss = onDismiss
     }
 
     init(
         selection: Binding<ID?>,
         source: SelectionFieldSource<ID>,
         configuration: SelectionFieldConfiguration = .init(),
-        accessibilityIdentifier: String = "selection-field"
+        accessibilityIdentifier: String = "selection-field",
+        onDismiss: (() -> Void)? = nil
     ) {
         self.init(
             selection: Binding(
@@ -336,14 +377,18 @@ struct SelectionField<ID: Hashable & Sendable>: View {
             mode: .single,
             source: source,
             configuration: configuration,
-            accessibilityIdentifier: accessibilityIdentifier
+            accessibilityIdentifier: accessibilityIdentifier,
+            onDismiss: onDismiss
         )
     }
 
     var body: some View {
         VStack(spacing: 7) {
+            if isExpanded, configuration.resultPlacement == .above {
+                resultSurface
+            }
             field
-            if isExpanded {
+            if isExpanded, configuration.resultPlacement == .below {
                 resultSurface
             }
         }
@@ -365,107 +410,21 @@ struct SelectionField<ID: Hashable & Sendable>: View {
     }
 
     private var field: some View {
-        HStack(spacing: 7) {
-            selectedPresentation
-            if shouldShowSearchField {
-                TextField(
-                    searchPrompt,
-                    text: Binding(
-                        get: { model.query },
-                        set: model.updateQuery
-                    )
-                )
-                .textFieldStyle(.plain)
-                .tint(SakuraCordAccentColor.color)
-                .focused($searchIsFocused)
-                .frame(minWidth: 72)
-                .onKeyPress(phases: .down, action: handleKeyPress)
-            } else if selection.isEmpty {
-                Text(configuration.placeholder)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 0)
-            if !model.query.isEmpty {
-                Button {
-                    model.updateQuery("")
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("Clear search")
-            }
-            Button {
-                toggleExpanded()
-            } label: {
-                Image(systemName: "chevron.down")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .rotationEffect(.degrees(isExpanded ? 180 : 0))
-                    .frame(width: 20, height: 20)
-                    .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .help(isExpanded ? "Close options" : "Show options")
-        }
-        .padding(.horizontal, 11)
-        .frame(minHeight: 42)
-        .contentShape(
-            ConcentricRectangle(cornerRadius: 11, style: .continuous)
+        SelectionFieldChrome(
+            options: selection.compactMap(model.option(for:)),
+            query: model.query,
+            placeholder: searchPrompt,
+            isEditable: configuration.searches && isExpanded,
+            usesCards: configuration.selectionPresentation == .cards,
+            isExpanded: isExpanded,
+            wantsFocus: searchIsFocused,
+            onQueryChange: model.updateQuery,
+            onRemove: remove(_:),
+            onFocusChange: { searchIsFocused = $0 },
+            onActivate: activateInput,
+            onCommand: handleInputCommand(_:),
+            onToggle: toggleExpanded
         )
-        .onTapGesture {
-            guard !isExpanded else {
-                searchIsFocused = configuration.searches
-                return
-            }
-            open()
-        }
-        .glassEffect(
-            .regular.interactive(),
-            in: ConcentricRectangle(cornerRadius: 11, style: .continuous)
-        )
-        .overlay {
-            ConcentricRectangle(cornerRadius: 11, style: .continuous)
-                .stroke(
-                    isExpanded || searchIsFocused
-                        ? SakuraCordAccentColor.color.opacity(0.9)
-                        : Color.primary.opacity(0.10),
-                    lineWidth: isExpanded || searchIsFocused ? 1.5 : 0.75
-                )
-                .allowsHitTesting(false)
-        }
-    }
-
-    @ViewBuilder
-    private var selectedPresentation: some View {
-        let options = selection.compactMap(model.option(for:))
-        switch configuration.selectionPresentation {
-        case .title:
-            if let option = options.first {
-                SelectionFieldLeadingView(leading: option.leading, size: 19)
-                Text(option.title)
-                    .lineLimit(1)
-            }
-        case .cards:
-            if !options.isEmpty {
-                ScrollView(.horizontal) {
-                    HStack(spacing: 5) {
-                        ForEach(options) { option in
-                            SelectionFieldCard(option: option) {
-                                remove(option.id)
-                            }
-                        }
-                    }
-                }
-                .scrollIndicators(.hidden)
-                .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    private var shouldShowSearchField: Bool {
-        configuration.searches && (isExpanded || selection.isEmpty)
     }
 
     private var searchPrompt: String {
@@ -487,6 +446,7 @@ struct SelectionField<ID: Hashable & Sendable>: View {
                             title: option.title,
                             subtitle: option.subtitle,
                             leading: option.leading,
+                            titleStyle: option.titleStyle,
                             isSelected: selection.contains(option.id)
                         )
                     },
@@ -567,6 +527,10 @@ struct SelectionField<ID: Hashable & Sendable>: View {
     }
 
     private func close() {
+        if let onDismiss {
+            onDismiss()
+            return
+        }
         isExpanded = false
         keyboardIndex = nil
         searchIsFocused = false
@@ -578,32 +542,36 @@ struct SelectionField<ID: Hashable & Sendable>: View {
         searchIsFocused = true
     }
 
-    private func handleKeyPress(_ press: KeyPress) -> KeyPress.Result {
-        switch press.key {
-        case .upArrow:
+    private func activateInput() {
+        if !isExpanded {
+            open()
+        } else if configuration.searches {
+            searchIsFocused = true
+        }
+    }
+
+    private func handleInputCommand(
+        _ command: SelectionFieldInputCommand
+    ) -> Bool {
+        switch command {
+        case .previous:
             moveKeyboardSelection(by: -1)
-            return .handled
-        case .downArrow:
+            return true
+        case .next:
             if !isExpanded { open() }
             moveKeyboardSelection(by: 1)
-            return .handled
-        case .return:
+            return true
+        case .accept:
             guard isExpanded, let keyboardIndex else {
                 open()
-                return .handled
+                return true
             }
             activate(index: keyboardIndex)
-            return .handled
-        case .escape:
-            guard isExpanded else { return .ignored }
+            return true
+        case .dismiss:
+            guard isExpanded else { return false }
             close()
-            return .handled
-        case .delete where model.query.isEmpty:
-            guard let last = selection.last else { return .ignored }
-            remove(last)
-            return .handled
-        default:
-            return .ignored
+            return true
         }
     }
 
@@ -652,74 +620,57 @@ struct SelectionField<ID: Hashable & Sendable>: View {
     }
 }
 
-private struct SelectionFieldCard<ID: Hashable & Sendable>: View {
-    let option: SelectionFieldOption<ID>
-    let remove: () -> Void
+struct SelectionFieldChrome<
+    ID: Hashable & Sendable
+>: NSViewRepresentable {
+    let options: [SelectionFieldOption<ID>]
+    let query: String
+    let placeholder: String
+    let isEditable: Bool
+    let usesCards: Bool
+    let isExpanded: Bool
+    let wantsFocus: Bool
+    let onQueryChange: (String) -> Void
+    let onRemove: (ID) -> Void
+    let onFocusChange: (Bool) -> Void
+    let onActivate: () -> Void
+    let onCommand: (SelectionFieldInputCommand) -> Bool
+    let onToggle: () -> Void
 
-    var body: some View {
-        HStack(spacing: 5) {
-            SelectionFieldLeadingView(leading: option.leading, size: 18)
-            Text(option.title)
-                .lineLimit(1)
-            Button(action: remove) {
-                Image(systemName: "xmark")
-                    .font(.caption2.weight(.bold))
-                    .frame(width: 14, height: 14)
-                    .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .help("Remove \(option.title)")
-        }
-        .font(.callout)
-        .padding(.leading, option.leading == .none ? 8 : 5)
-        .padding(.trailing, 5)
-        .frame(height: 28)
-        .background(
-            Color.primary.opacity(0.075),
-            in: ConcentricRectangle(cornerRadius: 7, style: .continuous)
-        )
-        .overlay {
-            ConcentricRectangle(cornerRadius: 7, style: .continuous)
-                .stroke(Color.primary.opacity(0.12), lineWidth: 0.75)
-        }
+    func makeNSView(context: Context) -> SelectionFieldControl<ID> {
+        SelectionFieldControl(frame: .zero)
     }
-}
 
-private struct SelectionFieldLeadingView: View {
-    let leading: SelectionFieldLeading
-    let size: CGFloat
+    func updateNSView(
+        _ control: SelectionFieldControl<ID>,
+        context: Context
+    ) {
+        control.update(SelectionFieldControlConfiguration(
+            options: options,
+            query: query,
+            placeholder: placeholder,
+            isEditable: isEditable,
+            usesCards: usesCards,
+            isExpanded: isExpanded,
+            wantsFocus: wantsFocus,
+            onQueryChange: onQueryChange,
+            onRemove: onRemove,
+            onFocusChange: onFocusChange,
+            onActivate: onActivate,
+            onCommand: onCommand,
+            onToggle: onToggle
+        ))
+    }
 
-    @ViewBuilder
-    var body: some View {
-        switch leading {
-        case .none:
-            EmptyView()
-        case .systemImage(let name):
-            Image(systemName: name)
-                .foregroundStyle(.secondary)
-                .frame(width: size, height: size)
-        case .text(let value):
-            Text(value)
-                .font(.system(size: size * 0.78))
-                .frame(width: size, height: size)
-        case .remoteImage(let url, let fallback, let shape):
-            if shape == .circle {
-                AvatarView(name: fallback, url: url, size: size, animates: false)
-            } else if let url {
-                StaticRemoteImage(url: url, maximumPixelDimension: 64)
-                    .frame(width: size, height: size)
-                    .clipShape(
-                        ConcentricRectangle(cornerRadius: 4, style: .continuous)
-                    )
-            } else {
-                Text(String(fallback.prefix(1)).uppercased())
-                    .font(.caption2.weight(.semibold))
-                    .frame(width: size, height: size)
-                    .background(
-                        Color.secondary.opacity(0.16),
-                        in: ConcentricRectangle(cornerRadius: 4)
-                    )
-            }
-        }
+    func sizeThatFits(
+        _ proposal: ProposedViewSize,
+        nsView control: SelectionFieldControl<ID>,
+        context: Context
+    ) -> CGSize? {
+        guard let width = proposal.width, width > 0 else { return nil }
+        return CGSize(
+            width: width,
+            height: control.preferredHeight(forWidth: width)
+        )
     }
 }

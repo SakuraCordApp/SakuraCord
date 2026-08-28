@@ -1,4 +1,5 @@
 @testable import SakuraCord
+import SakuraCordModels
 import Testing
 
 @Test func `selection field single and multiple policies preserve ordered choices`() {
@@ -37,6 +38,9 @@ import Testing
             maximumResults: 2
         )
     )
+
+    #expect(model.state == .loaded)
+    #expect(model.results.map(\.id) == [1, 2])
 
     model.updateQuery("feliz")
     while model.state == .loading {
@@ -84,6 +88,71 @@ import Testing
     )
     await Task.yield()
     #expect(model.results.map(\.id) == ["new"])
+}
+
+@MainActor
+@Test func `dynamic selection starts from initial options without searching`() {
+    let model = SelectionFieldModel(
+        source: SelectionFieldSource<String>.dynamic(
+            initialOptions: [
+                SelectionFieldOption(id: "cached", title: "Cached")
+            ],
+            search: { _ in
+                Issue.record("Opening a dynamic selection field must not search")
+                return []
+            }
+        )
+    )
+
+    model.activate()
+
+    #expect(model.state == .loaded)
+    #expect(model.results.map(\.id) == ["cached"])
+}
+
+@MainActor
+@Test func `component choices use semantic icons titles and role colors`() {
+    let channel = ComponentChoiceOptionPresentation.fieldOption(
+        ComponentSelectOption(
+            label: "#Stage",
+            value: "channel",
+            entityKind: .channel,
+            channelKind: .voice
+        ),
+        selectKind: .channel
+    )
+    #expect(channel.title == "Stage")
+    #expect(channel.leading == .systemImage("speaker.wave.2.fill"))
+    #expect(channel.titleStyle == .standard)
+
+    let role = ComponentChoiceOptionPresentation.fieldOption(
+        ComponentSelectOption(
+            label: "@Design",
+            value: "role",
+            entityKind: .role,
+            colorHex: 0xF472B6,
+            unicodeEmoji: "🎨"
+        ),
+        selectKind: .role
+    )
+    #expect(role.title == "Design")
+    #expect(role.leading == .role(
+        colorHex: 0xF472B6,
+        iconURL: nil,
+        unicodeEmoji: "🎨"
+    ))
+    #expect(role.titleStyle == .roleColor(0xF472B6))
+
+    let member = ComponentChoiceOptionPresentation.fieldOption(
+        ComponentSelectOption(
+            label: "Nova",
+            value: "member",
+            entityKind: .user,
+            colorHex: 0x67E8F9
+        ),
+        selectKind: .user
+    )
+    #expect(member.titleStyle == .memberColor(0x67E8F9))
 }
 
 @MainActor

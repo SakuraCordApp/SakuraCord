@@ -448,6 +448,17 @@ public enum ComponentSelectKind: Int, Codable, Hashable, Sendable {
     case channel = 8
 }
 
+public enum ComponentSelectOptionImageShape: String, Codable, Hashable, Sendable {
+    case circle
+    case roundedRectangle
+}
+
+public enum ComponentSelectOptionEntityKind: String, Codable, Hashable, Sendable {
+    case user
+    case role
+    case channel
+}
+
 public struct ComponentSelectOption: Identifiable, Codable, Hashable, Sendable {
     public var id: String {
         value
@@ -457,15 +468,33 @@ public struct ComponentSelectOption: Identifiable, Codable, Hashable, Sendable {
     public var value: String
     public var description: String?
     public var emoji: EmojiReference?
+    public var imageURL: URL?
+    public var imageShape: ComponentSelectOptionImageShape?
+    public var entityKind: ComponentSelectOptionEntityKind?
+    public var channelKind: ChannelKindValue?
+    public var colorHex: UInt32?
+    public var unicodeEmoji: String?
     public var isDefault: Bool
     public init(
         label: String, value: String, description: String? = nil, emoji: EmojiReference? = nil,
+        imageURL: URL? = nil,
+        imageShape: ComponentSelectOptionImageShape? = nil,
+        entityKind: ComponentSelectOptionEntityKind? = nil,
+        channelKind: ChannelKindValue? = nil,
+        colorHex: UInt32? = nil,
+        unicodeEmoji: String? = nil,
         isDefault: Bool = false
     ) {
         self.label = label
         self.value = value
         self.description = description
         self.emoji = emoji
+        self.imageURL = imageURL
+        self.imageShape = imageShape
+        self.entityKind = entityKind
+        self.channelKind = channelKind
+        self.colorHex = colorHex
+        self.unicodeEmoji = unicodeEmoji
         self.isDefault = isDefault
     }
 }

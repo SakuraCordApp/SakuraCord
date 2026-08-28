@@ -359,6 +359,7 @@ struct NativeTimelineComponentsDrawInput {
     let revealedTextSpoilerState: NativeTimelineTextSpoilerRevealState
     let spoilerRevealStore: NativeTimelineSpoilerRevealStore?
     let hoveredComponentButton: NativeTimelineComponentButtonTarget?
+    let activeComponentChoiceTarget: NativeTimelineComponentSelectTarget?
     let pressedComponentButton: NativeTimelineComponentButtonTarget?
     let componentButtonPressProgress: CGFloat
 }
@@ -388,6 +389,8 @@ extension NativeTimelineRowPainter {
             let revealedTextSpoilerState = input.revealedTextSpoilerState
             let spoilerRevealStore = input.spoilerRevealStore
             let hoveredComponentButton = input.hoveredComponentButton
+            let activeComponentChoiceTarget =
+                input.activeComponentChoiceTarget
             let pressedComponentButton = input.pressedComponentButton
             let componentButtonPressProgress = input.componentButtonPressProgress
         let hiddenContainerFrames =
@@ -606,7 +609,13 @@ extension NativeTimelineRowPainter {
         }
         for region in layout.selects
         where !isInsideHiddenContainer(region.frame) {
-            componentSelect(region)
+            let target = NativeTimelineComponentSelectTarget(
+                messageID: messageID,
+                componentID: region.componentID
+            )
+            if target != activeComponentChoiceTarget {
+                componentSelect(region)
+            }
         }
         for region in layout.unsupported
         where !isInsideHiddenContainer(region.frame) {
@@ -1065,37 +1074,114 @@ extension NativeTimelineRowPainter {
         NSColor.labelColor.withAlphaComponent(0.075 * opacity).setFill()
         NSBezierPath(
             concentricRoundedRect: region.frame,
-            cornerRadius: 7
+            cornerRadius: 11
         ).fill()
-        NSColor.labelColor.withAlphaComponent(0.16 * opacity).setStroke()
+        NSColor.labelColor.withAlphaComponent(0.10 * opacity).setStroke()
         let border = NSBezierPath(
             concentricRoundedRect: region.frame.insetBy(dx: 0.5, dy: 0.5),
-            cornerRadius: 6.5
+            cornerRadius: 10.5
         )
         border.lineWidth = 1
         border.stroke()
-        text(
-            region.placeholder,
-            in: CGRect(
-                x: region.frame.minX + 12,
-                y: region.frame.minY,
-                width: max(1, region.frame.width - 54),
-                height: region.frame.height
-            ),
-            font: .systemFont(ofSize: 13),
-            color: NSColor.labelColor.withAlphaComponent(opacity)
+
+        let options = region.selectedOptions.map {
+            ComponentChoiceOptionPresentation.fieldOption(
+                $0,
+                selectKind: region.kind
+            )
+        }
+        if options.isEmpty {
+            SelectionFieldChromeRenderer.drawText(
+                region.placeholder,
+                in: region.frame,
+                color: .placeholderTextColor,
+                opacity: opacity
+            )
+        } else {
+            componentSelectTokens(
+                options,
+                in: region.frame,
+                opacity: opacity
+            )
+        }
+        SelectionFieldChromeRenderer.drawChevron(
+            isExpanded: false,
+            in: region.frame,
+            opacity: opacity
         )
-        systemSymbol(
-            "chevron.down",
-            in: CGRect(
-                x: region.frame.maxX - 26,
-                y: region.frame.midY - 7,
-                width: 14,
-                height: 14
-            ),
-            color: NSColor.secondaryLabelColor.withAlphaComponent(opacity),
-            inset: 1
+    }
+
+    static func componentSelectTokens(
+        _ options: [SelectionFieldOption<String>],
+        in frame: CGRect,
+        opacity: CGFloat
+    ) {
+        let maximumX = frame.maxX
+            - SelectionFieldLayoutMetrics.trailingAccessoryInset
+        let rendered = options.map { option in
+            SelectionFieldTokenRenderer.images(
+                option: option,
+                font: SelectionFieldLayoutMetrics.font,
+                usesCard: true,
+                leadingImage: componentSelectLeadingImage(option.leading)
+            )
+        }
+        var lineCount = 1
+        var lineWidth: CGFloat = 0
+        for images in rendered {
+            let width = images.normal.size.width
+            if lineWidth > 0,
+               frame.minX + SelectionFieldLayoutMetrics.leadingInset
+                   + lineWidth + width > maximumX
+            {
+                lineCount += 1
+                lineWidth = width
+            } else {
+                lineWidth += width
+            }
+        }
+        let contentHeight = CGFloat(lineCount)
+            * SelectionFieldLayoutMetrics.tokenHeight
+        var origin = CGPoint(
+            x: frame.minX + SelectionFieldLayoutMetrics.leadingInset,
+            y: frame.minY + max(
+                SelectionFieldLayoutMetrics.verticalInset,
+                floor((frame.height - contentHeight) / 2)
+            )
         )
+        for images in rendered {
+            let size = images.normal.size
+            if origin.x
+                > frame.minX + SelectionFieldLayoutMetrics.leadingInset,
+                origin.x + size.width > maximumX
+            {
+                origin.x = frame.minX
+                    + SelectionFieldLayoutMetrics.leadingInset
+                origin.y += SelectionFieldLayoutMetrics.tokenHeight
+            }
+            images.normal.draw(
+                in: CGRect(origin: origin, size: size),
+                from: .zero,
+                operation: .sourceOver,
+                fraction: opacity,
+                respectFlipped: true,
+                hints: [.interpolation: NSImageInterpolation.high]
+            )
+            origin.x += size.width
+        }
+    }
+
+    static func componentSelectLeadingImage(
+        _ leading: SelectionFieldLeading
+    ) -> NSImage? {
+        let url: URL? = switch leading {
+        case .role(_, let iconURL, _): iconURL
+        case .remoteImage(let url, _, _): url
+        case .none, .systemImage, .text: nil
+        }
+        guard let url else { return nil }
+        if url.isFileURL { return NSImage(contentsOf: url) }
+        return mediaImage(for: .media(url, maximumPixelDimension: 64))
     }
 
     static func componentFile(
