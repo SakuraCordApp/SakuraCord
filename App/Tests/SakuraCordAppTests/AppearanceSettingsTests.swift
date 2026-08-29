@@ -491,12 +491,27 @@ import Testing
         ThemePickerGeometry.intensityTrackWidth(at: 1)
             == ThemePickerGeometry.intensityTrackBottomWidth
     )
-    #expect(ThemePickerGeometry.wheelDisplayBrightness(for: 0) == 0)
-    #expect(ThemePickerGeometry.wheelDisplayBrightness(for: 1) == 1)
-    #expect(ThemePickerGeometry.wheelDisplayBrightness(for: 0.5) > 0.7)
     #expect(ThemePickerGeometry.hapticStep(for: -1, divisions: 20) == 0)
     #expect(ThemePickerGeometry.hapticStep(for: 0.49, divisions: 20) == 10)
     #expect(ThemePickerGeometry.hapticStep(for: 2, divisions: 20) == 20)
+
+    let brightnessGapMidpoint = CGPoint(
+        x: ThemePickerGeometry.sideControlDiameter / 2,
+        y: ThemePickerGeometry.sideControlDiameter / 2
+            + ThemePickerGeometry.brightnessTickRadius
+    )
+    #expect(
+        ThemePickerGeometry.brightness(
+            at: brightnessGapMidpoint,
+            preservingEndpointFor: 0
+        ) == 0
+    )
+    #expect(
+        ThemePickerGeometry.brightness(
+            at: brightnessGapMidpoint,
+            preservingEndpointFor: 1
+        ) == 1
+    )
 
     for value in stride(from: 0.0, through: 1.0, by: 0.05) {
         let intensityY = ThemePickerGeometry.intensityHandleCenterY(for: value)

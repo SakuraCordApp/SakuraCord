@@ -43,14 +43,20 @@ private struct GradientThemePresetCard: View {
         let theme = preset == .custom
             ? themeStore.customTheme
             : (preset.presetTheme ?? .defaultCustom)
+        let previewTheme = SakuraCordGradientTheme(
+            first: theme.first,
+            second: theme.second,
+            intensity: 1,
+            brightness: 1
+        )
 
         Button {
             themeStore.select(preset)
         } label: {
             ZStack(alignment: .bottomLeading) {
                 GradientThemePreview(
-                    theme: theme,
-                    usesSystemAppearance: preset.usesSystemAppearance || theme.intensity == 0,
+                    theme: previewTheme,
+                    usesSystemAppearance: preset.usesSystemAppearance,
                     colorScheme: colorScheme,
                     increasesContrast: colorSchemeContrast == .increased
                 )
@@ -186,21 +192,18 @@ private struct GradientThemeControls: View {
     let themeStore: SakuraCordThemeStore
 
     var body: some View {
-        HStack(alignment: .center, spacing: 20) {
-            CircularBrightnessControl(themeStore: themeStore)
-                .frame(
-                    width: ThemePickerGeometry.sideControlDiameter,
-                    height: ThemePickerGeometry.sideControlDiameter
-                )
-            Spacer(minLength: 0)
-            DualHuePicker(themeStore: themeStore)
-                .frame(width: 270, height: 270)
-            Spacer(minLength: 0)
-            ThemeRandomizeButton(themeStore: themeStore)
-                .frame(
-                    width: ThemePickerGeometry.sideControlDiameter,
-                    height: ThemePickerGeometry.sideControlDiameter
-                )
+        GlassEffectContainer(spacing: 20) {
+            HStack(alignment: .center, spacing: 0) {
+                CircularBrightnessControl(themeStore: themeStore)
+                    .frame(maxWidth: .infinity)
+                DualHuePicker(themeStore: themeStore)
+                    .frame(
+                        width: ThemePickerGeometry.diameter,
+                        height: ThemePickerGeometry.diameter
+                    )
+                ThemeRandomizeButton(themeStore: themeStore)
+                    .frame(maxWidth: .infinity)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 6)
@@ -212,11 +215,8 @@ private struct DualHuePicker: View {
 
     var body: some View {
         let theme = themeStore.activeTheme
-        let wheelBrightness = ThemePickerGeometry.wheelDisplayBrightness(
-            for: theme.brightness
-        )
         let wheelColors = stride(from: 0.0, through: 1.0, by: 1.0 / 6.0).map {
-            Color(hue: $0, saturation: 1, brightness: wheelBrightness)
+            Color(hue: $0, saturation: 1, brightness: 1)
         }
         let wheelGradient = AngularGradient(
             colors: wheelColors,
@@ -224,50 +224,48 @@ private struct DualHuePicker: View {
             startAngle: .degrees(-90),
             endAngle: .degrees(270)
         )
-        GlassEffectContainer(spacing: 20) {
-            ZStack {
-                Circle()
-                    .stroke(
-                        wheelGradient,
-                        lineWidth: ThemePickerGeometry.ringGlowLineWidth
-                    )
-                    .blur(radius: ThemePickerGeometry.ringGlowRadius)
-                    .opacity(ThemePickerGeometry.ringGlowOpacity)
-
-                Circle()
-                    .inset(by: ThemePickerGeometry.ringWidth)
-                    .stroke(
-                        wheelGradient,
-                        lineWidth: ThemePickerGeometry.ringGlowLineWidth
-                    )
-                    .blur(radius: ThemePickerGeometry.ringGlowRadius)
-                    .opacity(ThemePickerGeometry.ringGlowOpacity)
-
-                Circle()
-                    .strokeBorder(
-                        wheelGradient,
-                        lineWidth: ThemePickerGeometry.ringWidth
-                    )
-
-                ThemeHueHandle(
-                    hue: theme.first.hue,
-                    setter: themeStore.setFirstHue,
-                    finishInteraction: themeStore.finishInteraction
+        ZStack {
+            Circle()
+                .stroke(
+                    wheelGradient,
+                    lineWidth: ThemePickerGeometry.ringGlowLineWidth
                 )
-                ThemeHueHandle(
-                    hue: theme.second.hue,
-                    setter: themeStore.setSecondHue,
-                    finishInteraction: themeStore.finishInteraction
+                .blur(radius: ThemePickerGeometry.ringGlowRadius)
+                .opacity(ThemePickerGeometry.ringGlowOpacity)
+
+            Circle()
+                .inset(by: ThemePickerGeometry.ringWidth)
+                .stroke(
+                    wheelGradient,
+                    lineWidth: ThemePickerGeometry.ringGlowLineWidth
+                )
+                .blur(radius: ThemePickerGeometry.ringGlowRadius)
+                .opacity(ThemePickerGeometry.ringGlowOpacity)
+
+            Circle()
+                .strokeBorder(
+                    wheelGradient,
+                    lineWidth: ThemePickerGeometry.ringWidth
                 )
 
-                // Keep the intensity control above every hue-handle hit target.
-                // Its central interaction region must never lose a drag to the ring.
-                ThemeIntensityControl(themeStore: themeStore)
-                    .frame(
-                        width: ThemePickerGeometry.intensityHitWidth,
-                        height: ThemePickerGeometry.intensityTrackHeight
-                    )
-            }
+            ThemeHueHandle(
+                hue: theme.first.hue,
+                setter: themeStore.setFirstHue,
+                finishInteraction: themeStore.finishInteraction
+            )
+            ThemeHueHandle(
+                hue: theme.second.hue,
+                setter: themeStore.setSecondHue,
+                finishInteraction: themeStore.finishInteraction
+            )
+
+            // Keep the intensity control above every hue-handle hit target.
+            // Its central interaction region must never lose a drag to the ring.
+            ThemeIntensityControl(themeStore: themeStore)
+                .frame(
+                    width: ThemePickerGeometry.intensityHitWidth,
+                    height: ThemePickerGeometry.intensityTrackHeight
+                )
         }
         .frame(width: ThemePickerGeometry.diameter, height: ThemePickerGeometry.diameter)
         .coordinateSpace(.named("dual-hue-picker"))
@@ -339,6 +337,7 @@ private struct ThemeHueHandle: View {
 private struct ThemeIntensityControl: View {
     let themeStore: SakuraCordThemeStore
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     @State private var lastHapticStep: Int?
 
@@ -363,14 +362,14 @@ private struct ThemeIntensityControl: View {
                 .overlay {
                     IntensityWaveShape(intensity: theme.intensity)
                         .stroke(
-                            .white.opacity(0.78),
+                            .white.opacity(0.72),
                             style: StrokeStyle(
                                 lineWidth: ThemePickerGeometry.intensityWaveLineWidth,
                                 lineCap: .round,
                                 lineJoin: .round
                             )
                         )
-                        .shadow(color: .white.opacity(0.34), radius: 3)
+                        .shadow(color: .black.opacity(0.22), radius: 2)
                         .clipShape(IntensityTrackShape())
                 }
                 .frame(
@@ -396,7 +395,7 @@ private struct ThemeIntensityControl: View {
         )
         .contentShape(Rectangle())
         .highPriorityGesture(
-            DragGesture(minimumDistance: 0)
+            DragGesture(minimumDistance: ThemePickerGeometry.sliderDragMinimumDistance)
                 .onChanged { value in
                     let intensity = ThemePickerGeometry.intensity(atY: value.location.y)
                     updateHaptics(for: intensity)
@@ -404,6 +403,16 @@ private struct ThemeIntensityControl: View {
                 }
                 .onEnded { _ in
                     lastHapticStep = nil
+                    themeStore.finishInteraction()
+                }
+        )
+        .simultaneousGesture(
+            SpatialTapGesture()
+                .onEnded { value in
+                    let intensity = ThemePickerGeometry.intensity(atY: value.location.y)
+                    withAnimation(reduceMotion ? nil : .themeRandomizationTransition) {
+                        themeStore.setIntensity(intensity)
+                    }
                     themeStore.finishInteraction()
                 }
         )
@@ -505,20 +514,14 @@ private nonisolated struct IntensityWaveShape: Shape {
 private struct CircularBrightnessControl: View {
     let themeStore: SakuraCordThemeStore
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var lastHapticStep: Int?
 
     var body: some View {
         let brightness = themeStore.activeTheme.brightness
         let indicatorAngle = ThemePickerGeometry.brightnessAngle(for: brightness)
-        let indicatorCenter = ThemePickerGeometry.brightnessHandleCenter(for: brightness)
 
         ZStack {
-            Circle()
-                .fill(.primary.opacity(0.045))
-                .overlay {
-                    Circle().stroke(.primary.opacity(0.14), lineWidth: 1)
-                }
-
             ForEach(0 ..< ThemePickerGeometry.brightnessTickCount, id: \.self) { index in
                 let isLarge = index.isMultiple(of: 3)
                 Capsule()
@@ -538,29 +541,42 @@ private struct CircularBrightnessControl: View {
                 .foregroundStyle(.primary.opacity(0.78))
 
             Capsule()
-                .fill(.primary.opacity(0.86))
+                .fill(Color(nsColor: .labelColor))
                 .frame(
                     width: ThemePickerGeometry.brightnessIndicatorWidth,
                     height: ThemePickerGeometry.brightnessIndicatorHeight
                 )
-                .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
+                .offset(x: ThemePickerGeometry.brightnessTickRadius)
                 .rotationEffect(.degrees(indicatorAngle))
-                .position(indicatorCenter)
         }
         .frame(
             width: ThemePickerGeometry.sideControlDiameter,
             height: ThemePickerGeometry.sideControlDiameter
         )
+        .glassEffect(.regular.interactive(), in: Circle())
         .contentShape(Circle())
         .gesture(
-            DragGesture(minimumDistance: 0)
+            DragGesture(minimumDistance: ThemePickerGeometry.sliderDragMinimumDistance)
                 .onChanged { value in
-                    let brightness = ThemePickerGeometry.brightness(at: value.location)
+                    let brightness = ThemePickerGeometry.brightness(
+                        at: value.location,
+                        preservingEndpointFor: themeStore.activeTheme.brightness
+                    )
                     updateHaptics(for: brightness)
                     themeStore.setBrightness(brightness)
                 }
                 .onEnded { _ in
                     lastHapticStep = nil
+                    themeStore.finishInteraction()
+                }
+        )
+        .simultaneousGesture(
+            SpatialTapGesture()
+                .onEnded { value in
+                    let brightness = ThemePickerGeometry.brightness(at: value.location)
+                    withAnimation(reduceMotion ? nil : .themeRandomizationTransition) {
+                        themeStore.setBrightness(brightness)
+                    }
                     themeStore.finishInteraction()
                 }
         )
@@ -609,7 +625,7 @@ private struct ThemeRandomizeButton: View {
             if reduceMotion {
                 rotation += 360
             } else {
-                withAnimation(.easeInOut(duration: 0.22)) {
+                withAnimation(.themeControlResponse) {
                     rotation += 360
                 }
             }
@@ -619,7 +635,7 @@ private struct ThemeRandomizeButton: View {
         } label: {
             Image(systemName: "shuffle")
                 .font(.system(size: 32, weight: .semibold))
-                .foregroundStyle(.primary)
+                .foregroundStyle(Color(nsColor: .labelColor))
                 .rotationEffect(.degrees(rotation))
                 .frame(
                     width: ThemePickerGeometry.sideControlDiameter,
@@ -628,11 +644,11 @@ private struct ThemeRandomizeButton: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .glassEffect(.regular.interactive(), in: Circle())
         .frame(
             width: ThemePickerGeometry.sideControlDiameter,
             height: ThemePickerGeometry.sideControlDiameter
         )
+        .glassEffect(.regular.interactive(), in: Circle())
         .contentShape(Circle())
         .accessibilityLabel("Randomise theme")
         .onDisappear {
@@ -652,7 +668,7 @@ nonisolated enum ThemePickerGeometry {
     static let intensityTrackHeight: CGFloat = 132
     static let intensityTrackTopWidth: CGFloat = 34
     static let intensityTrackBottomWidth: CGFloat = 18
-    static let intensityWaveLineWidth: CGFloat = 2
+    static let intensityWaveLineWidth: CGFloat = 3.5
     static let intensityWaveMinimumStrength = 0.13
     static let intensityWaveMaximumStrength = 0.84
     static let intensityWaveCount = 3.0
@@ -665,13 +681,15 @@ nonisolated enum ThemePickerGeometry {
     static let brightnessIndicatorHeight: CGFloat = 12
     static let brightnessTickCount = 19
     static let brightnessTickRadius: CGFloat = 38
+    static let sliderDragMinimumDistance: CGFloat = 3
     static let hueHapticDivisions = 36
     static let linearHapticDivisions = 20
 
     private static let hueRadius = (diameter - ringWidth) / 2
-    private static let brightnessRadius: CGFloat = 35
+    private static let brightnessRadius = brightnessTickRadius
     private static let brightnessStartAngle = 135.0
     private static let brightnessSweep = 270.0
+    private static let brightnessEndpointActivationAngle = 10.0
 
     static func intensityTrackWidth(at progress: Double) -> CGFloat {
         let clampedProgress = min(max(progress, 0), 1)
@@ -730,25 +748,43 @@ nonisolated enum ThemePickerGeometry {
         return brightnessStartAngle + brightnessSweep * progress + 90
     }
 
-    static func wheelDisplayBrightness(for brightness: Double) -> Double {
-        pow(min(max(brightness, 0), 1), 0.42)
-    }
-
     static func hapticStep(for value: Double, divisions: Int) -> Int {
         Int((min(max(value, 0), 1) * Double(divisions)).rounded())
     }
 
-    static func brightness(at location: CGPoint) -> Double {
+    static func brightness(
+        at location: CGPoint,
+        preservingEndpointFor currentBrightness: Double? = nil
+    ) -> Double {
         let center = CGPoint(x: sideControlDiameter / 2, y: sideControlDiameter / 2)
         var degrees = atan2(location.y - center.y, location.x - center.x) * 180 / .pi
         if degrees < 0 { degrees += 360 }
         var relative = degrees - brightnessStartAngle
         if relative < 0 { relative += 360 }
         if relative > brightnessSweep {
+            if let currentBrightness {
+                if currentBrightness >= 0.5 {
+                    return 360 - relative <= brightnessEndpointActivationAngle ? 0 : 1
+                }
+                return relative - brightnessSweep <= brightnessEndpointActivationAngle ? 1 : 0
+            }
             relative = relative - brightnessSweep < (360 - brightnessSweep) / 2
                 ? brightnessSweep
                 : 0
         }
         return relative / brightnessSweep
     }
+}
+
+private extension Animation {
+    static let themeControlResponse = Animation.easeInOut(
+        duration: SakuraCordThemeStore.randomizationDurationSeconds
+    )
+    static let themeRandomizationTransition = Animation.timingCurve(
+        1.0 / 3.0,
+        1,
+        2.0 / 3.0,
+        1,
+        duration: SakuraCordThemeStore.randomizationDurationSeconds
+    )
 }

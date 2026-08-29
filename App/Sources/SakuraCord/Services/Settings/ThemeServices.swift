@@ -489,7 +489,8 @@ final class SakuraCordThemeSettingsStore {
 @Observable
 final class SakuraCordThemeStore {
     static let shared = SakuraCordThemeStore()
-    static let randomizationDuration: Duration = .milliseconds(220)
+    static let randomizationDurationSeconds = 0.22
+    static let randomizationDuration: Duration = .seconds(randomizationDurationSeconds)
 
     private(set) var selectedPreset: SakuraCordThemePreset
     private(set) var activeTheme: SakuraCordGradientTheme
@@ -742,8 +743,16 @@ extension Notification.Name {
 extension SakuraCordGradientTheme {
     @MainActor
     func colors(for colorScheme: ColorScheme) -> (first: Color, second: Color) {
-        let firstColor = renderedColor(first, for: colorScheme)
-        let secondColor = renderedColor(second, for: colorScheme)
+        // Interface color cues stay vivid while brightness remains exclusive
+        // to the resulting theme surface.
+        let interfaceTheme = SakuraCordGradientTheme(
+            first: first,
+            second: second,
+            intensity: intensity,
+            brightness: 1
+        )
+        let firstColor = interfaceTheme.renderedColor(first, for: colorScheme)
+        let secondColor = interfaceTheme.renderedColor(second, for: colorScheme)
         return (firstColor, secondColor)
     }
 
