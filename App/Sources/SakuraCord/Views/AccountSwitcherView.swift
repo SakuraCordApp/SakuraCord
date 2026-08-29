@@ -47,7 +47,6 @@ struct AccountSwitcherView: View {
             }
         }
         .frame(minWidth: 860, minHeight: 600)
-        .environment(\.colorScheme, .dark)
         .toolbar(removing: .title)
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .task {
@@ -128,10 +127,10 @@ struct AccountSwitcherView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Manage accounts.")
                 .font(.title.bold())
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
             Text("Switch between saved sessions or add another Discord account.")
                 .font(.callout)
-                .foregroundStyle(.white.opacity(0.68))
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -140,20 +139,17 @@ struct AccountSwitcherView: View {
             ForEach(Array(model.savedAccounts.enumerated()), id: \.element.id) { index, account in
                 if index > 0 {
                     Rectangle()
-                        .fill(.white.opacity(0.075))
+                        .fill(Color(nsColor: .separatorColor).opacity(0.72))
                         .frame(height: 1)
                         .padding(.leading, 76)
                 }
                 accountRow(account)
             }
         }
-        .background(
-            Color(hex: 0x130F17).opacity(0.64),
-            in: ConcentricRectangle(cornerRadius: 14, style: .continuous)
-        )
+        .background(.regularMaterial, in: ConcentricRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
             ConcentricRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(.white.opacity(0.09), lineWidth: 1)
+                .stroke(.primary.opacity(0.11), lineWidth: 1)
         }
     }
 
@@ -173,14 +169,14 @@ struct AccountSwitcherView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(account.resolvedDisplayName)
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
                 Text(isActive ? "Current account" : account.resolvedSubtitle)
                     .font(.callout)
                     .foregroundStyle(
                         isActive
-                            ? Color(hex: 0xFF8BB6)
-                            : .white.opacity(0.58)
+                            ? SakuraCordAccentColor.color
+                            : Color.secondary
                     )
                     .lineLimit(1)
             }
@@ -190,7 +186,7 @@ struct AccountSwitcherView: View {
             if isSwitching {
                 ProgressView()
                     .controlSize(.small)
-                    .tint(Color(hex: 0xFF8BB6))
+                    .tint(SakuraCordAccentColor.color)
                     .frame(width: 78)
             } else if isActive {
                 Color.clear
@@ -202,7 +198,7 @@ struct AccountSwitcherView: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.large)
-                .tint(Color(hex: 0xFF8BB6))
+                .tint(SakuraCordAccentColor.color)
                 .disabled(switchingAccountID != nil)
                 .frame(width: 78)
             }
@@ -210,7 +206,7 @@ struct AccountSwitcherView: View {
             if isLoggingOut {
                 ProgressView()
                     .controlSize(.small)
-                    .tint(Color(hex: 0xFF8BB6))
+                    .tint(SakuraCordAccentColor.color)
                     .frame(width: 28)
             } else {
                 AccountOptionsMenuControl(

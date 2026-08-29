@@ -50,14 +50,11 @@ extension NSTextView {
 /// Applies SakuraCord's accent to AppKit field editors created internally by
 /// native SwiftUI text fields and search fields in this window.
 struct SakuraCordTextInputAccentBridge: NSViewRepresentable {
-    let accentColor: AccentColorChoice
-
     func makeNSView(context: Context) -> ObserverView {
         ObserverView()
     }
 
     func updateNSView(_ view: ObserverView, context: Context) {
-        _ = accentColor
         view.applyToCurrentEditor()
     }
 
@@ -71,6 +68,7 @@ struct SakuraCordTextInputAccentBridge: NSViewRepresentable {
             for name in [
                 NSControl.textDidBeginEditingNotification,
                 NSText.didBeginEditingNotification,
+                .sakuraCordThemeDidCommit,
             ] {
                 observers.append(center.addObserver(
                     forName: name,

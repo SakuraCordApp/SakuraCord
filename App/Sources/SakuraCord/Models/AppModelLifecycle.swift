@@ -508,6 +508,9 @@ extension AppModel {
         guard isCurrentAccountSession(session) else { return }
         if publishesSessionState {
             sessionState = .connecting
+            if launchMode == .offlineTesting {
+                try? await Task.sleep(for: .seconds(8))
+            }
         }
         await refreshSupportedCapabilities(for: session)
         guard isCurrentAccountSession(session) else { return }

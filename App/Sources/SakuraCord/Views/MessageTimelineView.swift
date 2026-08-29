@@ -663,7 +663,7 @@ struct MessageTimelineLoadingSkeleton: View {
     var body: some View {
         SkeletonShimmerTimeline {
             ZStack {
-                Color(nsColor: .windowBackgroundColor)
+                SakuraCordThemeBackground()
                 GeometryReader { geometry in
                     VStack(alignment: .leading, spacing: 20) {
                         ForEach(

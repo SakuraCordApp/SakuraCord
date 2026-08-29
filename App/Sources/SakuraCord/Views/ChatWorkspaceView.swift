@@ -192,8 +192,7 @@ private struct ChatWorkspaceSupplementaryContent: View {
                     presentation: NativeMemberListPresentation(
                         interfaceTextSize: model.interfaceSettings.interfaceTextSize,
                         showsActivityDetails: model.interfaceSettings.showsActivityDetails,
-                        showsRoleColors: model.interfaceSettings.showsRoleColors,
-                        accentColor: model.appearanceSettings.accentColor
+                        showsRoleColors: model.interfaceSettings.showsRoleColors
                     ),
                     updateViewport: model.updateMemberListViewport
                 )

@@ -110,7 +110,7 @@ struct DiscordLoginView: View {
                                 .frame(width: 390, alignment: .leading)
 
                                 Rectangle()
-                                    .fill(.white.opacity(0.075))
+                                    .fill(Color(nsColor: .separatorColor).opacity(0.72))
                                     .frame(width: 1, height: 300)
 
                                 DiscordRemoteAuthPanel(
@@ -157,7 +157,6 @@ struct DiscordLoginView: View {
             }
         }
         .frame(minWidth: 860, minHeight: 600)
-        .environment(\.colorScheme, .dark)
         .toolbar(removing: .title)
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .onAppear {
@@ -435,23 +434,29 @@ private struct DiscordLoginHeader: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Welcome home.")
                 .font(.title.bold())
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
             Text("Sign in to pick up where you left off.")
                 .font(.callout)
-                .foregroundStyle(.white.opacity(0.68))
+                .foregroundStyle(.secondary)
         }
     }
 }
 
 struct SakuraCordAuthenticationCard<Content: View>: View {
     @ViewBuilder let content: Content
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
+        let colors = SakuraCordThemeStore.shared.activeTheme.colors(for: colorScheme)
         VStack(spacing: 18) { content }
             .padding(36)
             .background(
+                .regularMaterial,
+                in: ConcentricRectangle(cornerRadius: 18, style: .continuous)
+            )
+            .background(
                 LinearGradient(
-                    colors: [Color(hex: 0x2A1D30).opacity(0.96), Color(hex: 0x201824).opacity(0.96)],
+                    colors: [colors.first.opacity(0.20), colors.second.opacity(0.16)],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 ),
@@ -461,14 +466,14 @@ struct SakuraCordAuthenticationCard<Content: View>: View {
                 ConcentricRectangle(cornerRadius: 18, style: .continuous)
                     .stroke(
                         LinearGradient(
-                            colors: [Color(hex: 0xFF7EAD).opacity(0.32), .white.opacity(0.05)],
+                            colors: [colors.first.opacity(0.34), .primary.opacity(0.08)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
                         lineWidth: 1
                     )
             }
-            .shadow(color: Color(hex: 0x07040A).opacity(0.58), radius: 30, y: 18)
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.42 : 0.18), radius: 30, y: 18)
     }
 }
 
@@ -480,16 +485,31 @@ struct SakuraCordAuthenticationCloseButton: View {
             Image(systemName: "xmark")
                 .font(.body.weight(.semibold))
                 .frame(width: 32, height: 32)
-                .background(.white.opacity(0.08), in: Circle())
+                .background(.primary.opacity(0.07), in: Circle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.white.opacity(0.72))
+        .foregroundStyle(.secondary)
         .keyboardShortcut(.cancelAction)
     }
 }
 
 struct SakuraCordAuthPrimaryButtonStyle: ButtonStyle {
+    @Environment(\.colorScheme) private var colorScheme
+
     func makeBody(configuration: Configuration) -> some View {
+        let theme = SakuraCordThemeStore.shared.committedTheme
+        let firstRGB = SakuraCordThemeRGB(
+            hue: theme.first.hue,
+            saturation: max(0.68, theme.first.saturation),
+            brightness: colorScheme == .dark ? 0.78 : 0.60
+        ).adjustedForContrast(with: .white, toward: .black)
+        let secondRGB = SakuraCordThemeRGB(
+            hue: theme.second.hue,
+            saturation: max(0.64, theme.second.saturation),
+            brightness: colorScheme == .dark ? 0.72 : 0.55
+        ).adjustedForContrast(with: .white, toward: .black)
+        let first = Color(red: firstRGB.red, green: firstRGB.green, blue: firstRGB.blue)
+        let second = Color(red: secondRGB.red, green: secondRGB.green, blue: secondRGB.blue)
         configuration.label
             .font(.body.weight(.semibold))
             .frame(maxWidth: .infinity)
@@ -498,14 +518,14 @@ struct SakuraCordAuthPrimaryButtonStyle: ButtonStyle {
             .foregroundStyle(.white)
             .background(
                 LinearGradient(
-                    colors: [Color(hex: 0xFF659F), Color(hex: 0xE84778)],
+                    colors: [first, second],
                     startPoint: .leading,
                     endPoint: .trailing
                 ),
                 in: ConcentricRectangle(cornerRadius: 10, style: .continuous)
             )
             .shadow(
-                color: Color(hex: 0xE84778).opacity(0.28),
+                color: first.opacity(0.28),
                 radius: 12,
                 y: 6
             )
@@ -525,7 +545,7 @@ private struct DiscordCredentialForm: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Email or phone")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.72))
+                    .foregroundStyle(.secondary)
                 TextField("", text: $identifier)
                     .textContentType(.username)
                     .focused(focusedField, equals: .identifier)
@@ -538,7 +558,7 @@ private struct DiscordCredentialForm: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Password")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.72))
+                    .foregroundStyle(.secondary)
                 SecureField("", text: $password)
                     .textContentType(.password)
                     .focused(focusedField, equals: .password)
@@ -566,13 +586,13 @@ private extension View {
     ) -> some View {
         textFieldStyle(.plain)
             .font(.body)
-            .foregroundStyle(.white)
+            .foregroundStyle(.primary)
             .padding(.horizontal, 13)
             .frame(height: 44)
-            .background(Color(hex: 0x130F17).opacity(0.76), in: ConcentricRectangle(cornerRadius: 10))
+            .background(.background.opacity(0.72), in: ConcentricRectangle(cornerRadius: 10))
             .overlay {
                 ConcentricRectangle(cornerRadius: 10)
-                    .stroke(.white.opacity(0.09), lineWidth: 1)
+                    .stroke(.primary.opacity(0.12), lineWidth: 1)
             }
             .background {
                 LoginTextEditorStyleBridge(isActive: isEditorActive)
@@ -580,7 +600,7 @@ private extension View {
             }
             .contentShape(ConcentricRectangle(cornerRadius: 10, style: .continuous))
             .simultaneousGesture(TapGesture().onEnded(onActivate))
-            .tint(.white)
+            .tint(SakuraCordAccentColor.color)
     }
 }
 
@@ -599,10 +619,10 @@ private struct LoginTextEditorStyleBridge: NSViewRepresentable {
         Task { @MainActor [weak nsView] in
             await Task.yield()
             guard let editor = nsView?.window?.firstResponder as? NSTextView else { return }
-            editor.insertionPointColor = .white
+            editor.insertionPointColor = .sakuraCordAccentColor
             editor.selectedTextAttributes = [
-                .backgroundColor: NSColor.white.withAlphaComponent(0.22),
-                .foregroundColor: NSColor.white
+                .backgroundColor: NSColor.sakuraCordTextSelectionBackgroundColor,
+                .foregroundColor: NSColor.selectedTextColor,
             ]
         }
     }
@@ -629,7 +649,7 @@ private struct DiscordRemoteAuthPanel: View {
                 remoteAuthSymbol {
                     Image(systemName: "network.slash")
                         .font(.system(size: 36, weight: .medium))
-                        .foregroundStyle(Color(hex: 0xFF79AA))
+                        .foregroundStyle(SakuraCordAccentColor.color)
                 }
                 title("Sign-in paused")
                 detail("Discord networking is disabled for this launch.")
@@ -638,7 +658,7 @@ private struct DiscordRemoteAuthPanel: View {
                 remoteAuthSymbol {
                     ProgressView()
                         .controlSize(.large)
-                        .tint(Color(hex: 0xFF79AA))
+                        .tint(SakuraCordAccentColor.color)
                 }
                 title("Creating your code")
                 detail("Opening a private sign-in session…")
@@ -654,9 +674,9 @@ private struct DiscordRemoteAuthPanel: View {
                     )
                     .overlay {
                         ConcentricRectangle(cornerRadius: 18, style: .continuous)
-                            .stroke(Color(hex: 0xFF8BB6).opacity(0.32), lineWidth: 1)
+                            .stroke(SakuraCordAccentColor.color.opacity(0.32), lineWidth: 1)
                     }
-                    .shadow(color: Color(hex: 0xFF659F).opacity(0.18), radius: 18, y: 8)
+                    .shadow(color: SakuraCordAccentColor.color.opacity(0.18), radius: 18, y: 8)
                 title("Scan to sign in")
                 detail("Open Discord on your phone and scan this code.")
 
@@ -664,7 +684,7 @@ private struct DiscordRemoteAuthPanel: View {
                 remoteAuthSymbol {
                     Image(systemName: "iphone.gen3.radiowaves.left.and.right")
                         .font(.system(size: 38, weight: .medium))
-                        .foregroundStyle(Color(hex: 0xFF79AA))
+                        .foregroundStyle(SakuraCordAccentColor.color)
                 }
                 title(user.map { "Hi, \($0.username)" } ?? "Code scanned")
                 detail("Approve the sign-in on your phone to finish.")
@@ -673,7 +693,7 @@ private struct DiscordRemoteAuthPanel: View {
                 remoteAuthSymbol {
                     ProgressView()
                         .controlSize(.large)
-                        .tint(Color(hex: 0xFF79AA))
+                        .tint(SakuraCordAccentColor.color)
                 }
                 title("Opening SakuraCord")
                 detail("Your phone approved the sign-in.")
@@ -682,7 +702,7 @@ private struct DiscordRemoteAuthPanel: View {
                 remoteAuthSymbol {
                     Image(systemName: "checkmark.shield")
                         .font(.system(size: 38, weight: .medium))
-                        .foregroundStyle(Color(hex: 0xFF79AA))
+                        .foregroundStyle(SakuraCordAccentColor.color)
                 }
                 title("One more check")
                 detail("Complete Discord’s verification to finish signing in.")
@@ -691,14 +711,14 @@ private struct DiscordRemoteAuthPanel: View {
                 remoteAuthSymbol {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 34, weight: .semibold))
-                        .foregroundStyle(Color(hex: 0xFF79AA))
+                        .foregroundStyle(SakuraCordAccentColor.color)
                 }
                 title("That code expired")
                 detail(message)
                 Button("Create a new code", action: retry)
                     .buttonStyle(.plain)
                     .font(.callout.weight(.semibold))
-                    .foregroundStyle(Color(hex: 0xFF8BB6))
+                    .foregroundStyle(SakuraCordAccentColor.color)
             }
         }
         .multilineTextAlignment(.center)
@@ -709,23 +729,23 @@ private struct DiscordRemoteAuthPanel: View {
     private func title(_ value: String) -> some View {
         Text(value)
             .font(.title3.bold())
-            .foregroundStyle(.white)
+            .foregroundStyle(.primary)
     }
 
     private func detail(_ value: String) -> some View {
         Text(value)
             .font(.callout)
-            .foregroundStyle(.white.opacity(0.62))
+            .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
     }
 
     private func remoteAuthSymbol(@ViewBuilder content: () -> some View) -> some View {
         content()
             .frame(width: 174, height: 174)
-            .background(Color(hex: 0x160F1A).opacity(0.68), in: ConcentricRectangle(cornerRadius: 18))
+            .background(.background.opacity(0.66), in: ConcentricRectangle(cornerRadius: 18))
             .overlay {
                 ConcentricRectangle(cornerRadius: 18)
-                    .stroke(Color(hex: 0xFF79AA).opacity(0.15), lineWidth: 1)
+                    .stroke(SakuraCordAccentColor.color.opacity(0.18), lineWidth: 1)
             }
     }
 }
@@ -743,7 +763,7 @@ private struct DiscordQRCodeView: View {
                     .scaledToFit()
             } else {
                 ProgressView()
-                    .tint(Color(hex: 0xE84778))
+                    .tint(SakuraCordAccentColor.color)
             }
         }
         .task(id: url) {
@@ -1050,7 +1070,7 @@ private struct DiscordLoginStatus: View {
         if let title, let message {
             VStack(alignment: .leading, spacing: 7) {
                 Label(title, systemImage: "exclamationmark.circle")
-                    .foregroundStyle(.white.opacity(0.64))
+                    .foregroundStyle(.secondary)
                 Text(message)
                     .foregroundStyle(Color(hex: 0xF23F42))
             }

@@ -26,7 +26,6 @@ nonisolated struct NativeMemberListPresentation: Equatable, Sendable {
     var interfaceTextSize: Double = 13
     var showsActivityDetails = true
     var showsRoleColors = true
-    var accentColor: AccentColorChoice = .blurple
 }
 
 nonisolated enum MemberListSkeletonLayout {
@@ -214,10 +213,7 @@ final class NativeMemberListScrollView: NSScrollView {
     }
 
     private func updateBackgroundForEffectiveAppearance() {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            backgroundColor = NSColor.controlBackgroundColor
-                .withAlphaComponent(0.45)
-        }
+        backgroundColor = .clear
         needsDisplay = true
         contentView.needsDisplay = true
         documentView?.needsDisplay = true
@@ -288,7 +284,7 @@ final class NativeMemberListCoordinator: NSObject {
         let scrollView = NativeMemberListScrollView()
         scrollView.inputPerformanceProbe.install(on: scrollView)
         scrollView.documentView = canvas
-        scrollView.drawsBackground = true
+        scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
@@ -302,6 +298,17 @@ final class NativeMemberListCoordinator: NSObject {
             queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.viewportDidScroll() }
+        })
+        observations.append(center.addObserver(
+            forName: .sakuraCordThemeDidCommit,
+            object: nil,
+            queue: .main
+        ) { [weak self, weak scrollView] _ in
+            MainActor.assumeIsolated {
+                scrollView?.needsDisplay = true
+                scrollView?.contentView.needsDisplay = true
+                self?.canvas?.needsDisplay = true
+            }
         })
         self.scrollView = scrollView
         self.canvas = canvas
@@ -2116,7 +2123,7 @@ final class NativeMemberListCanvasView: NSView {
         in rect: CGRect,
         context: CGContext
     ) {
-        let accent = presentation.accentColor.effectiveNSColor
+        let accent = SakuraCordAccentColor.nsColor
         let gradient = CGGradient(
             colorsSpace: CGColorSpaceCreateDeviceRGB(),
             colors: [

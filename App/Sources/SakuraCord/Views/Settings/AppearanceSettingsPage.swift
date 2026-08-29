@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 struct AppearanceSettingsPage: View {
@@ -6,21 +5,6 @@ struct AppearanceSettingsPage: View {
     let state: SettingsViewState
 
     @State private var value = AppearanceSettingsSnapshot.defaults
-    @State private var accentPaletteRefresh: UInt64 = 0
-
-    private var accentColorSelectionIsEnabled: Bool {
-        SystemAccentPalette.allowsPreferredAccentColor(
-            refresh: accentPaletteRefresh
-        )
-    }
-
-    private var radioControlTint: Color {
-        if accentColorSelectionIsEnabled {
-            value.accentColor.effectiveColor
-        } else {
-            Color(nsColor: .controlAccentColor)
-        }
-    }
 
     var body: some View {
         SettingsPageForm(page: .appearance, state: state) {
@@ -44,22 +28,10 @@ struct AppearanceSettingsPage: View {
                 }
                 .settingsControlAnchor(.appColorScheme, state: state)
 
-                AccentColorPicker(
-                    selection: $value.accentColor,
-                    isEnabled: accentColorSelectionIsEnabled,
-                    paletteRefresh: accentPaletteRefresh
-                )
-                    .settingsControlAnchor(.accentColor, state: state)
+                GradientThemeEditor(themeStore: .shared)
+                    .settingsControlAnchor(.gradientTheme, state: state)
             } header: {
                 Text("Theme", bundle: #bundle)
-            } footer: {
-                if !accentColorSelectionIsEnabled {
-                    Text(
-                        "Disabled unless the system accent color is set to “Multicolour”.",
-                        bundle: #bundle,
-                        comment: "Explains why the app accent color picker is disabled."
-                    )
-                }
             }
 
             Section {
@@ -72,16 +44,12 @@ struct AppearanceSettingsPage: View {
                     .labelsHidden()
                     .pickerStyle(.radioGroup)
                     .horizontalRadioGroupLayout()
-                    .tint(radioControlTint)
+                    .tint(SakuraCordAccentColor.color)
                 }
                 .settingsControlAnchor(.composerBarAppearance, state: state)
             } header: {
                 Text("Message Composer", bundle: #bundle)
             }
-        }
-        .background {
-            SystemAccentPaletteRefreshBridge(refresh: $accentPaletteRefresh)
-                .frame(width: 0, height: 0)
         }
         .task {
             value = model.appearanceSettings

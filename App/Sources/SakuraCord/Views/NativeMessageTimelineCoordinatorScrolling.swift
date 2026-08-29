@@ -932,6 +932,15 @@ extension NativeMessageTimelineCoordinator {
                         self?.scheduleModelRowsUpdate()
                     }
                 },
+                center.addObserver(
+                    forName: .sakuraCordThemeDidCommit,
+                    object: nil,
+                    queue: .main
+                ) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        self?.canvas?.invalidatePresentationCaches()
+                    }
+                },
             ]
         }
 

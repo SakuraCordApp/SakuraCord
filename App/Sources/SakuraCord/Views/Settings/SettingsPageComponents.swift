@@ -36,6 +36,7 @@ struct SettingsPageForm<Content: View>: View {
             content
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
         .navigationTitle(metadata.title)
     }
 }

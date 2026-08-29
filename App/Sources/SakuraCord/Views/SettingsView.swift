@@ -44,10 +44,10 @@ struct SettingsView: View {
         )
         .background {
             ZStack {
+                SakuraCordThemeBackground()
+                    .ignoresSafeArea()
                 SettingsWindowBehaviorBridge()
-                SakuraCordTextInputAccentBridge(
-                    accentColor: model.appearanceSettings.accentColor
-                )
+                SakuraCordTextInputAccentBridge()
             }
         }
         .onKeyPress(.return) {

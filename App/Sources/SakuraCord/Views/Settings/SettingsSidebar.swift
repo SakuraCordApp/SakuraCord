@@ -37,6 +37,7 @@ struct SettingsSidebar: View {
             }
         }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
         .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 280)
         .accessibilityLabel(
             LocalizedStringResource(
@@ -56,7 +57,7 @@ private struct SettingsSidebarLabelStyle: LabelStyle {
             configuration.icon
                 .symbolVariant(.fill)
                 .foregroundStyle(
-                    isSelected ? Color.white : SakuraCordAccentColor.color
+                    isSelected ? Color.primary : SakuraCordAccentColor.color
                 )
                 .frame(width: 16)
             configuration.title

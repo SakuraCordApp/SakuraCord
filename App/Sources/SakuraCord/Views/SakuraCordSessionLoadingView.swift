@@ -371,18 +371,17 @@ struct SkeletonShape: View {
 // intentionally uses only structural placeholders.
 struct SakuraCordAuroraBackdrop: View {
     let elapsed: TimeInterval
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
+        let theme = SakuraCordThemeStore.shared.activeTheme
+        let colors = theme.colors(for: colorScheme)
         ZStack {
-            LinearGradient(
-                colors: [Color(hex: 0x0D0914), Color(hex: 0x1B1022), Color(hex: 0x0B0913)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            SakuraCordThemeBackground(emphasizesGradient: true)
 
             GeometryReader { geometry in
                 Ellipse()
-                    .fill(Color(hex: 0xFF4F96).opacity(0.2))
+                    .fill(colors.first.opacity(colorScheme == .dark ? 0.24 : 0.18))
                     .frame(width: geometry.size.width * 0.72, height: geometry.size.height * 0.68)
                     .blur(radius: 110)
                     .offset(
@@ -391,7 +390,7 @@ struct SakuraCordAuroraBackdrop: View {
                     )
 
                 Ellipse()
-                    .fill(Color(hex: 0x7A5CFF).opacity(0.13))
+                    .fill(colors.second.opacity(colorScheme == .dark ? 0.18 : 0.14))
                     .frame(width: geometry.size.width * 0.64, height: geometry.size.height * 0.58)
                     .blur(radius: 120)
                     .offset(
@@ -400,7 +399,7 @@ struct SakuraCordAuroraBackdrop: View {
                     )
 
                 Ellipse()
-                    .fill(Color(hex: 0x58C6D8).opacity(0.07))
+                    .fill(colors.first.mix(with: colors.second, by: 0.5).opacity(0.10))
                     .frame(width: geometry.size.width * 0.48, height: geometry.size.height * 0.48)
                     .blur(radius: 100)
                     .offset(
@@ -410,7 +409,12 @@ struct SakuraCordAuroraBackdrop: View {
             }
 
             RadialGradient(
-                colors: [.clear, Color.black.opacity(0.36)],
+                colors: [
+                    .clear,
+                    colorScheme == .dark
+                        ? Color.black.opacity(0.30)
+                        : Color.white.opacity(0.22),
+                ],
                 center: .center,
                 startRadius: 180,
                 endRadius: 800
@@ -422,11 +426,20 @@ struct SakuraCordAuroraBackdrop: View {
 struct SakuraCordSakuraPetalField: View {
     let elapsed: TimeInterval
     let size: CGSize
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
+        let theme = SakuraCordThemeStore.shared.activeTheme
+        let colors = theme.colors(for: colorScheme)
         Canvas(rendersAsynchronously: true) { context, _ in
             for index in 0 ..< 24 {
-                let petal = SakuraPetal.motion(index: index, elapsed: elapsed, canvasSize: size)
+                let petal = SakuraPetal.motion(
+                    index: index,
+                    elapsed: elapsed,
+                    canvasSize: size,
+                    firstColor: colors.first,
+                    secondColor: colors.second
+                )
                 context.drawLayer { layer in
                     layer.translateBy(x: petal.position.x, y: petal.position.y)
                     layer.rotate(by: petal.rotation)
@@ -465,7 +478,13 @@ private enum SakuraPetal {
         return path
     }()
 
-    static func motion(index: Int, elapsed: TimeInterval, canvasSize: CGSize) -> Motion {
+    static func motion(
+        index: Int,
+        elapsed: TimeInterval,
+        canvasSize: CGSize,
+        firstColor: Color,
+        secondColor: Color
+    ) -> Motion {
         let seed = fraction(sin(Double(index + 1) * 12.9898) * 43_758.5453)
         let secondarySeed = fraction(sin(Double(index + 7) * 78.233) * 19_341.274)
         let duration = 10 + seed * 9
@@ -483,7 +502,7 @@ private enum SakuraPetal {
             rotation: .radians(elapsed * (0.3 + seed * 0.75) + secondarySeed * .pi * 2),
             scale: depth,
             opacity: 0.18 + seed * 0.38,
-            color: index.isMultiple(of: 4) ? Color(hex: 0xFFD1E1) : Color(hex: 0xFF8FBA)
+            color: index.isMultiple(of: 4) ? secondColor : firstColor
         )
     }
 

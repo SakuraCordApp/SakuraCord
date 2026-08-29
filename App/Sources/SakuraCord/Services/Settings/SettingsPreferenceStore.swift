@@ -175,10 +175,16 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             defaultValue: .string(AppColorScheme.system.rawValue)
         ),
         SettingsPreferenceRegistration(
-            id: .accentColor,
+            id: .gradientTheme,
             page: .appearance,
-            storage: .appWide(key: "settings.appearance.accentColor"),
-            defaultValue: .string(AccentColorChoice.blurple.rawValue)
+            storage: .appWide(key: "settings.appearance.gradientTheme"),
+            defaultValue: .string(SakuraCordThemePreset.system.rawValue)
+        ),
+        SettingsPreferenceRegistration(
+            id: .customGradientTheme,
+            page: .appearance,
+            storage: .appWide(key: "settings.appearance.customGradientTheme"),
+            defaultValue: .string(SakuraCordGradientTheme.defaultCustom.storageValue)
         ),
         SettingsPreferenceRegistration(
             id: .composerBarAppearance,

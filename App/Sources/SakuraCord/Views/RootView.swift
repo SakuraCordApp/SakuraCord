@@ -100,6 +100,10 @@ struct RootView: View {
                 ? 1.12
                 : 1
         )
+        .background {
+            SakuraCordThemeBackground()
+                .ignoresSafeArea()
+        }
     }
 
     private var showsMessageSearchToolbar: Bool {
@@ -212,9 +216,7 @@ private struct ChatRootView: View {
         .environment(\.composerDropInteraction, composerDropInteraction)
         .overlay(alignment: .topLeading) {
             ZStack(alignment: .topLeading) {
-                SakuraCordTextInputAccentBridge(
-                    accentColor: model.appearanceSettings.accentColor
-                )
+                SakuraCordTextInputAccentBridge()
                 .frame(width: 0, height: 0)
 
                 if columnVisibility != .detailOnly {

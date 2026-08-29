@@ -241,7 +241,8 @@ nonisolated extension SettingsControlID {
     static let confirmQuitActiveWork = Self(rawValue: "general.confirm-quit-active-work")
     static let confirmDiscardComposer = Self(rawValue: "general.confirm-discard-composer")
     static let appColorScheme = Self(rawValue: "appearance.color-scheme")
-    static let accentColor = Self(rawValue: "appearance.accent-color")
+    static let gradientTheme = Self(rawValue: "appearance.gradient-theme")
+    static let customGradientTheme = Self(rawValue: "appearance.custom-gradient-theme")
     static let composerBarAppearance = Self(rawValue: "appearance.composer-bar")
     static let messageDensity = Self(rawValue: "interface.message-density")
     static let sidebarDensity = Self(rawValue: "interface.sidebar-density")
@@ -653,12 +654,12 @@ private nonisolated extension SettingsCatalog {
             scope: .appWideLocal
         ),
         control(
-            .accentColor,
+            .gradientTheme,
             page: .appearance,
             section: .appearanceTheme,
-            label: "Accent color",
-            help: "Choose SakuraCord's preferred accent color. macOS overrides it when the system accent is not Multicolor.",
-            keywords: ["accent", "color", "theme", "system", "multicolor", "blurple", "blue", "purple", "pink", "red", "orange", "yellow", "green", "graphite"],
+            label: "Gradient theme",
+            help: "Choose a preset or shape one persistent custom gradient with color, intensity, and brightness controls.",
+            keywords: ["gradient", "theme", "preset", "custom", "color", "intensity", "brightness", "randomise"],
             scope: .appWideLocal
         ),
         control(
