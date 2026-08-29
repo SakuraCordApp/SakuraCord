@@ -92,8 +92,17 @@ import Testing
 
     themeStore.select(.blueHour)
     #expect(!themeStore.usesSystemAppearance)
+    #expect(!themeStore.usesSystemSurface)
+    themeStore.setIntensity(0)
+    #expect(themeStore.selectedPreset == .custom)
+    #expect(!themeStore.usesSystemAppearance)
+    #expect(themeStore.usesSystemSurface)
+    themeStore.setIntensity(0.01)
+    #expect(!themeStore.usesSystemAppearance)
+    #expect(!themeStore.usesSystemSurface)
     themeStore.select(.system)
     #expect(themeStore.usesSystemAppearance)
+    #expect(themeStore.usesSystemSurface)
 }
 
 @MainActor
@@ -137,6 +146,7 @@ import Testing
         themeStore.select(preset)
         #expect(themeStore.selectedPreset == preset)
         #expect(themeStore.activeTheme == expected)
+        #expect(themeStore.activeTheme.brightness == 1)
 
         themeStore.setFirstHue(expected.first.hue + 0.1)
         #expect(themeStore.selectedPreset == .custom)
@@ -219,6 +229,8 @@ import Testing
     let themeStore = SakuraCordThemeStore(
         persistence: SakuraCordThemeSettingsStore(preferences: preferences)
     )
+    themeStore.setBrightness(0.27)
+    themeStore.finishInteraction()
     let original = themeStore.activeTheme
 
     await themeStore.randomize(reduceMotion: true)
@@ -226,6 +238,8 @@ import Testing
     #expect(themeStore.selectedPreset == .custom)
     #expect(themeStore.activeTheme == themeStore.committedTheme)
     #expect(themeStore.activeTheme != original)
+    #expect(themeStore.activeTheme.brightness == original.brightness)
+    #expect(themeStore.activeTheme.intensity >= 0.6)
 }
 
 @MainActor
@@ -234,6 +248,8 @@ import Testing
     let themeStore = SakuraCordThemeStore(
         persistence: SakuraCordThemeSettingsStore(preferences: preferences)
     )
+    themeStore.setBrightness(0.31)
+    themeStore.finishInteraction()
     let original = themeStore.activeTheme
 
     let task = Task { await themeStore.randomize(reduceMotion: false) }
@@ -242,9 +258,12 @@ import Testing
     #expect(themeStore.selectedPreset == .custom)
     #expect(themeStore.activeTheme != original)
     #expect(themeStore.committedTheme == original)
+    #expect(themeStore.activeTheme.brightness == original.brightness)
 
     await task.value
     #expect(themeStore.activeTheme == themeStore.committedTheme)
+    #expect(themeStore.activeTheme.brightness == original.brightness)
+    #expect(themeStore.activeTheme.intensity >= 0.6)
 }
 
 @MainActor
@@ -284,17 +303,21 @@ import Testing
     ]
 
     for theme in presets + extremes {
-        #expect(theme.tintOpacity >= 0.17)
-        #expect(theme.tintOpacity <= 0.40)
         for appearance in [SakuraCordThemeAppearance.light, .dark] {
+            let blendOpacity = theme.backgroundBlendOpacity(for: appearance)
+            #expect(blendOpacity >= 0)
+            #expect(blendOpacity <= 0.96)
             let base = theme.surfaceBaseRGB(for: appearance)
             let label: SakuraCordThemeRGB = appearance == .dark ? .white : .black
             for background in theme.backgroundSamples(for: appearance) {
                 #expect(background.contrastRatio(with: label) >= 4.5)
             }
             for color in [theme.first, theme.second] {
-                let background = theme.renderedRGB(color, for: appearance)
-                    .composited(over: base, opacity: theme.tintOpacity)
+                let background = theme.backgroundTintRGB(color, for: appearance)
+                    .composited(
+                        over: base,
+                        opacity: blendOpacity
+                    )
                 #expect(background.contrastRatio(with: label) >= 4.5)
             }
             let sourceColors = [
@@ -337,15 +360,45 @@ import Testing
         intensity: 1,
         brightness: 1
     )
+    let halfIntensityTheme = SakuraCordGradientTheme(
+        first: color,
+        second: color,
+        intensity: 0.5,
+        brightness: 1
+    )
 
     #expect(darkTheme.renderedRGB(color, for: .dark) == .black)
     #expect(darkTheme.surfaceBaseRGB(for: .dark) == .black)
     #expect(darkTheme.backgroundSamples(for: .dark).allSatisfy { $0 == .black })
+    #expect(midTheme.surfaceBaseRGB(for: .dark) == .darkWindow)
+    #expect(midTheme.backgroundBlendOpacity(for: .dark) == 0)
+    #expect(midTheme.backgroundBlendOpacity(for: .light) == 0)
+    let maximumDarkBase = SakuraCordThemeRGB.darkWindow.blended(
+        toward: .black,
+        fraction: 0.68
+    )
+    #expect(brightTheme.surfaceBaseRGB(for: .dark) == maximumDarkBase)
+    #expect(brightTheme.backgroundBlendOpacity(for: .dark) == 0.96)
+    #expect(halfIntensityTheme.intensityProgress < 0.5)
+    #expect(
+        halfIntensityTheme.backgroundBlendOpacity(for: .dark)
+            == 0.96 * halfIntensityTheme.intensityProgress
+    )
 
     let middleColor = midTheme.renderedRGB(color, for: .dark)
     let brightestColor = brightTheme.renderedRGB(color, for: .dark)
+    let brightestBackgroundTint = brightTheme.backgroundTintRGB(color, for: .dark)
     #expect(middleColor.relativeLuminance > 0)
     #expect(brightestColor.relativeLuminance > middleColor.relativeLuminance)
+    #expect(brightestBackgroundTint.relativeLuminance < brightestColor.relativeLuminance)
+    #expect(
+        brightTheme.surfaceBaseRGB(for: .dark).relativeLuminance
+            < midTheme.surfaceBaseRGB(for: .dark).relativeLuminance
+    )
+    #expect(
+        brightTheme.backgroundBlendOpacity(for: .dark)
+            > brightTheme.backgroundBlendOpacity(for: .light)
+    )
 
     let lowIntensity = SakuraCordGradientTheme(
         first: color,
@@ -363,7 +416,10 @@ import Testing
         lowIntensity.renderedRGB(color, for: .dark)
             == highIntensity.renderedRGB(color, for: .dark)
     )
-    #expect(lowIntensity.tintOpacity < highIntensity.tintOpacity)
+    #expect(
+        lowIntensity.backgroundBlendOpacity(for: .dark)
+            < highIntensity.backgroundBlendOpacity(for: .dark)
+    )
     #expect(
         lowIntensity.backgroundSamples(for: .dark)
             != highIntensity.backgroundSamples(for: .dark)
@@ -405,9 +461,42 @@ import Testing
 @Test func `Intensity and brightness handles remain centered on their tracks`() {
     #expect(ThemePickerGeometry.brightnessIndicatorWidth > ThemePickerGeometry.brightnessIndicatorHeight)
     #expect(ThemePickerGeometry.sideControlDiameter == 112)
+    #expect(
+        ThemePickerGeometry.intensityTrackTopWidth
+            > ThemePickerGeometry.intensityTrackBottomWidth
+    )
+    #expect(
+        ThemePickerGeometry.intensityHandleWidth
+            < ThemePickerGeometry.intensityHitWidth
+    )
+    #expect(ThemePickerGeometry.intensityWaveCount >= 3)
+    #expect(ThemePickerGeometry.ringGlowLineWidth < ThemePickerGeometry.ringGlowRadius)
+    #expect(ThemePickerGeometry.ringGlowOpacity < 0.4)
+    #expect(ThemePickerGeometry.intensityWaveStrength(for: 0) > 0)
+    #expect(ThemePickerGeometry.intensityWaveStrength(for: 1) < 1)
+    #expect(
+        ThemePickerGeometry.intensityWaveStrength(for: 0)
+            < ThemePickerGeometry.intensityWaveStrength(for: 0.5)
+    )
+    #expect(
+        ThemePickerGeometry.intensityTrackWidth(at: 0)
+            == ThemePickerGeometry.intensityTrackTopWidth
+    )
+    #expect(
+        ThemePickerGeometry.intensityTrackWidth(at: 0.5)
+            == (ThemePickerGeometry.intensityTrackTopWidth
+                + ThemePickerGeometry.intensityTrackBottomWidth) / 2
+    )
+    #expect(
+        ThemePickerGeometry.intensityTrackWidth(at: 1)
+            == ThemePickerGeometry.intensityTrackBottomWidth
+    )
     #expect(ThemePickerGeometry.wheelDisplayBrightness(for: 0) == 0)
     #expect(ThemePickerGeometry.wheelDisplayBrightness(for: 1) == 1)
     #expect(ThemePickerGeometry.wheelDisplayBrightness(for: 0.5) > 0.7)
+    #expect(ThemePickerGeometry.hapticStep(for: -1, divisions: 20) == 0)
+    #expect(ThemePickerGeometry.hapticStep(for: 0.49, divisions: 20) == 10)
+    #expect(ThemePickerGeometry.hapticStep(for: 2, divisions: 20) == 20)
 
     for value in stride(from: 0.0, through: 1.0, by: 0.05) {
         let intensityY = ThemePickerGeometry.intensityHandleCenterY(for: value)

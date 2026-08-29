@@ -47,63 +47,63 @@ nonisolated enum SakuraCordThemePreset: String, CaseIterable, Codable, Identifia
                 first: .init(hue: 0.91, saturation: 0.72),
                 second: .init(hue: 0.63, saturation: 0.70),
                 intensity: 0.62,
-                brightness: 0.52
+                brightness: 1
             )
         case .velvetDusk:
             SakuraCordGradientTheme(
                 first: .init(hue: 0.72, saturation: 0.77),
                 second: .init(hue: 0.89, saturation: 0.66),
                 intensity: 0.69,
-                brightness: 0.43
+                brightness: 1
             )
         case .polarBloom:
             SakuraCordGradientTheme(
                 first: .init(hue: 0.48, saturation: 0.74),
                 second: .init(hue: 0.39, saturation: 0.62),
                 intensity: 0.58,
-                brightness: 0.55
+                brightness: 1
             )
         case .sunsetSoda:
             SakuraCordGradientTheme(
                 first: .init(hue: 0.04, saturation: 0.82),
                 second: .init(hue: 0.96, saturation: 0.67),
                 intensity: 0.72,
-                brightness: 0.53
+                brightness: 1
             )
         case .blueHour:
             SakuraCordGradientTheme(
                 first: .init(hue: 0.56, saturation: 0.78),
                 second: .init(hue: 0.67, saturation: 0.62),
                 intensity: 0.61,
-                brightness: 0.47
+                brightness: 1
             )
         case .wildMint:
             SakuraCordGradientTheme(
                 first: .init(hue: 0.34, saturation: 0.72),
                 second: .init(hue: 0.43, saturation: 0.65),
                 intensity: 0.64,
-                brightness: 0.56
+                brightness: 1
             )
         case .rosewater:
             SakuraCordGradientTheme(
                 first: .init(hue: 0.94, saturation: 0.68),
                 second: .init(hue: 0.86, saturation: 0.48),
                 intensity: 0.56,
-                brightness: 0.64
+                brightness: 1
             )
         case .solarFlare:
             SakuraCordGradientTheme(
                 first: .init(hue: 0.075, saturation: 0.86),
                 second: .init(hue: 0.995, saturation: 0.73),
                 intensity: 0.74,
-                brightness: 0.58
+                brightness: 1
             )
         case .deepLagoon:
             SakuraCordGradientTheme(
                 first: .init(hue: 0.48, saturation: 0.84),
                 second: .init(hue: 0.57, saturation: 0.72),
                 intensity: 0.68,
-                brightness: 0.42
+                brightness: 1
             )
         case .custom:
             nil
@@ -224,7 +224,7 @@ nonisolated struct SakuraCordGradientTheme: Codable, Equatable, Sendable {
         first: .init(hue: 0.97, saturation: 0.72),
         second: .init(hue: 0.34, saturation: 0.70),
         intensity: 0.62,
-        brightness: 0.52
+        brightness: 1
     )
 
     var first: SakuraCordThemeColor
@@ -291,6 +291,10 @@ nonisolated struct SakuraCordGradientTheme: Codable, Equatable, Sendable {
         return start + delta * progress
     }
 
+    var intensityProgress: Double {
+        pow(intensity, 1.75)
+    }
+
     func renderedRGB(
         _ color: SakuraCordThemeColor,
         for appearance: SakuraCordThemeAppearance
@@ -322,18 +326,21 @@ nonisolated struct SakuraCordGradientTheme: Codable, Equatable, Sendable {
         )
     }
 
-    func surfaceBaseRGB(for appearance: SakuraCordThemeAppearance) -> SakuraCordThemeRGB {
+    private func surfaceTargetRGB(
+        for appearance: SakuraCordThemeAppearance
+    ) -> SakuraCordThemeRGB {
         if appearance == .dark {
+            let target = SakuraCordThemeRGB.darkWindow.blended(
+                toward: .black,
+                fraction: 0.68
+            )
             if brightness <= 0.5 {
-                return SakuraCordThemeRGB.darkWindow.blended(
+                return target.blended(
                     toward: .black,
                     fraction: 1 - brightness / 0.5
                 )
             }
-            return SakuraCordThemeRGB.darkWindow.blended(
-                toward: .white,
-                fraction: (brightness - 0.5) * 0.15
-            )
+            return target
         }
 
         if brightness <= 0.5 {
@@ -348,14 +355,44 @@ nonisolated struct SakuraCordGradientTheme: Codable, Equatable, Sendable {
         )
     }
 
+    func surfaceBaseRGB(for appearance: SakuraCordThemeAppearance) -> SakuraCordThemeRGB {
+        let systemBase: SakuraCordThemeRGB = appearance == .dark ? .darkWindow : .lightWindow
+        return systemBase.blended(
+            toward: surfaceTargetRGB(for: appearance),
+            fraction: intensityProgress
+        )
+    }
+
+    func backgroundTintRGB(
+        _ color: SakuraCordThemeColor,
+        for appearance: SakuraCordThemeAppearance
+    ) -> SakuraCordThemeRGB {
+        guard appearance == .dark else {
+            return renderedRGB(color, for: appearance)
+        }
+
+        // Dark surfaces use a deep version of the selected color rather
+        // than a faint full-brightness color over gray. This preserves hue
+        // and saturation without lifting the whole window's luminance.
+        let saturation = color.saturation
+            + (1 - color.saturation) * intensity * 0.65
+        let surfaceBrightness = 0.28 * pow(brightness, 0.72)
+        return SakuraCordThemeRGB(
+            hue: color.hue,
+            saturation: saturation,
+            brightness: surfaceBrightness
+        )
+    }
+
     func backgroundSamples(for appearance: SakuraCordThemeAppearance) -> [SakuraCordThemeRGB] {
         let base = surfaceBaseRGB(for: appearance)
-        let firstBackground = renderedRGB(first, for: appearance)
-            .composited(over: base, opacity: tintOpacity)
-        let secondBackground = renderedRGB(second, for: appearance)
-            .composited(over: base, opacity: tintOpacity * 0.86)
-        let radialTint = renderedRGB(second, for: appearance)
-        let radialOpacity = tintOpacity * 0.48
+        let opacity = backgroundBlendOpacity(for: appearance)
+        let firstBackground = backgroundTintRGB(first, for: appearance)
+            .composited(over: base, opacity: opacity)
+        let secondBackground = backgroundTintRGB(second, for: appearance)
+            .composited(over: base, opacity: opacity * 0.86)
+        let radialTint = backgroundTintRGB(second, for: appearance)
+        let radialOpacity = opacity * 0.48
         return [
             firstBackground,
             secondBackground,
@@ -481,6 +518,10 @@ final class SakuraCordThemeStore {
         selectedPreset.usesSystemAppearance
     }
 
+    var usesSystemSurface: Bool {
+        usesSystemAppearance || activeTheme.intensity == 0
+    }
+
     func select(_ preset: SakuraCordThemePreset) {
         interactionGeneration &+= 1
         selectedPreset = preset
@@ -509,16 +550,17 @@ final class SakuraCordThemeStore {
     }
 
     func randomizedTheme() -> SakuraCordGradientTheme {
+        let brightness = activeTheme.brightness
         let firstHue = Double.random(in: 0 ..< 1)
         var secondHue = Double.random(in: 0 ..< 1)
-        if Self.circularDistance(firstHue, secondHue) < 0.16 {
-            secondHue = Self.normalizedHue(firstHue + Double.random(in: 0.18 ... 0.48))
+        if Self.circularDistance(firstHue, secondHue) < 0.06 {
+            secondHue = Self.normalizedHue(firstHue + Double.random(in: 0.06 ... 0.18))
         }
         return SakuraCordGradientTheme(
             first: .init(hue: firstHue, saturation: .random(in: 0.62 ... 0.90)),
             second: .init(hue: secondHue, saturation: .random(in: 0.58 ... 0.86)),
-            intensity: .random(in: 0.38 ... 0.82),
-            brightness: .random(in: 0.32 ... 0.74)
+            intensity: .random(in: 0.60 ... 1),
+            brightness: brightness
         )
     }
 
@@ -706,6 +748,17 @@ extension SakuraCordGradientTheme {
     }
 
     @MainActor
+    func backgroundColors(for colorScheme: ColorScheme) -> (first: Color, second: Color) {
+        let appearance: SakuraCordThemeAppearance = colorScheme == .dark ? .dark : .light
+        let firstRGB = backgroundTintRGB(first, for: appearance)
+        let secondRGB = backgroundTintRGB(second, for: appearance)
+        return (
+            Color(red: firstRGB.red, green: firstRGB.green, blue: firstRGB.blue),
+            Color(red: secondRGB.red, green: secondRGB.green, blue: secondRGB.blue)
+        )
+    }
+
+    @MainActor
     func renderedColor(_ color: SakuraCordThemeColor, for colorScheme: ColorScheme) -> Color {
         let rgb = renderedRGB(color, for: colorScheme == .dark ? .dark : .light)
         return Color(
@@ -716,13 +769,16 @@ extension SakuraCordGradientTheme {
     }
 
     @MainActor
-    func surfaceBaseColor(for colorScheme: ColorScheme) -> Color {
-        let rgb = surfaceBaseRGB(for: colorScheme == .dark ? .dark : .light)
+    func surfaceTargetColor(for colorScheme: ColorScheme) -> Color {
+        let rgb = surfaceTargetRGB(for: colorScheme == .dark ? .dark : .light)
         return Color(red: rgb.red, green: rgb.green, blue: rgb.blue)
     }
 
-    nonisolated var tintOpacity: Double {
-        0.17 + intensity * 0.23
+    nonisolated func backgroundBlendOpacity(
+        for appearance: SakuraCordThemeAppearance
+    ) -> Double {
+        let maximumOpacity = appearance == .dark ? 0.96 : 0.40
+        return maximumOpacity * intensityProgress
     }
 }
 
@@ -739,7 +795,7 @@ struct SakuraCordThemeBackground: View {
     }
 
     var body: some View {
-        if themeStore.usesSystemAppearance {
+        if themeStore.usesSystemSurface {
             Color(nsColor: .windowBackgroundColor)
                 .accessibilityHidden(true)
         } else {
@@ -759,13 +815,20 @@ private struct SakuraCordGradientBackground: View {
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
 
     var body: some View {
-        let colors = theme.colors(for: colorScheme)
+        let appearance: SakuraCordThemeAppearance = colorScheme == .dark ? .dark : .light
+        let colors = theme.backgroundColors(for: colorScheme)
         let contrastScale = colorSchemeContrast == .increased ? 0.76 : 1
         let emphasis = emphasizesGradient ? 1.22 : 1
-        let opacity = min(0.46, theme.tintOpacity * contrastScale * emphasis)
+        let maximumOpacity = appearance == .dark ? 0.98 : 0.46
+        let opacity = min(
+            maximumOpacity,
+            theme.backgroundBlendOpacity(for: appearance) * contrastScale * emphasis
+        )
 
         ZStack {
-            theme.surfaceBaseColor(for: colorScheme)
+            Color(nsColor: .windowBackgroundColor)
+            theme.surfaceTargetColor(for: colorScheme)
+                .opacity(theme.intensityProgress)
 
             LinearGradient(
                 colors: [

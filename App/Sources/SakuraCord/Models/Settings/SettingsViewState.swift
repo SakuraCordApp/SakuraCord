@@ -18,7 +18,7 @@ nonisolated struct SettingsRevealRequest: Equatable, Identifiable, Sendable {
 
 @Observable
 final class SettingsViewState {
-    var selectedPage: SettingsPageID = .appearance {
+    var selectedPage: SettingsPageID = .myAccount {
         didSet {
             guard selectedPage != oldValue else { return }
             if revealRequest != nil {
