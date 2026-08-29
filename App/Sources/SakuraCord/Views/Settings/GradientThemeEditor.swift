@@ -3,10 +3,14 @@ import SwiftUI
 
 struct GradientThemeEditor: View {
     let themeStore: SakuraCordThemeStore
+    let appearance: AppColorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            GradientThemeEditorHeader(themeStore: themeStore)
+            GradientThemeEditorHeader(
+                themeStore: themeStore,
+                appearance: appearance
+            )
             GradientThemeControls(themeStore: themeStore)
         }
         .padding(.vertical, 6)
@@ -15,6 +19,7 @@ struct GradientThemeEditor: View {
 
 private struct GradientThemeEditorHeader: View {
     let themeStore: SakuraCordThemeStore
+    let appearance: AppColorScheme
 
     var body: some View {
         HStack(alignment: .center) {
@@ -26,7 +31,71 @@ private struct GradientThemeEditorHeader: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 16)
-            ThemeColorCountControls(themeStore: themeStore)
+            HStack(spacing: 8) {
+                ThemeShareCopyButton(
+                    themeStore: themeStore,
+                    appearance: appearance
+                )
+                ThemeColorCountControls(themeStore: themeStore)
+            }
+        }
+    }
+}
+
+private struct ThemeShareCopyButton: View {
+    let themeStore: SakuraCordThemeStore
+    let appearance: AppColorScheme
+
+    @State private var isShowingConfirmation = false
+    @State private var confirmationTask: Task<Void, Never>?
+
+    var body: some View {
+        Button(action: copyTheme) {
+            HStack(spacing: 7) {
+                if isShowingConfirmation {
+                    Image(systemName: "checkmark")
+                    Text("Copied", bundle: #bundle)
+                } else {
+                    Image(systemName: "document.on.document")
+                    Text("Copy Theme", bundle: #bundle)
+                }
+            }
+            .font(.callout.weight(.semibold))
+            .foregroundStyle(Color(nsColor: .labelColor))
+            .padding(.horizontal, 14)
+            .frame(height: ThemePickerGeometry.colorCountButtonDiameter)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: Capsule())
+        .contentShape(Capsule())
+        .accessibilityLabel("Copy theme link")
+        .onDisappear {
+            confirmationTask?.cancel()
+        }
+    }
+
+    private func copyTheme() {
+        let sharedTheme = SakuraCordSharedTheme(
+            appearance: appearance,
+            theme: themeStore.activeTheme
+        )
+        guard let url = try? SakuraCordThemeShareCodec.shareURL(
+            for: sharedTheme
+        ) else { return }
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        guard pasteboard.setString(url.absoluteString, forType: .string) else {
+            return
+        }
+
+        confirmationTask?.cancel()
+        isShowingConfirmation = true
+        confirmationTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            isShowingConfirmation = false
         }
     }
 }

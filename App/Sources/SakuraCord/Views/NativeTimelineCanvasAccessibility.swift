@@ -943,15 +943,21 @@ extension NativeTimelineCanvasView {
         let button = accessibilityElement(
             role: .button,
             label: region.action.buttonTitle,
-            help: "Checks SakuraCord's signed update feed",
+            help: region.action.accessibilityHelp,
             frame: accessibilityChildFrame(
                 region.buttonFrame,
                 rowIndex: rowIndex
             ),
             parent: group
         ) { [weak self] in
-            self?.actions?.checkForUpdates()
-            return self?.actions != nil
+            guard let actions = self?.actions else { return false }
+            switch region.action {
+            case .checkForUpdates, .updateToApplyTheme:
+                actions.checkForUpdates()
+            case let .applyTheme(theme):
+                actions.applyTheme(theme)
+            }
+            return true
         }
         group.setAccessibilityChildren([button])
         children.append(group)

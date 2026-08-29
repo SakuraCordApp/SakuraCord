@@ -169,6 +169,88 @@ import Testing
     #expect(reactivated.colors[3] == originalColors[3])
 }
 
+@Test func `Theme share links are compact deterministic and preserve ordered controls`() throws {
+    let sharedTheme = SakuraCordSharedTheme(
+        appearance: .dark,
+        theme: SakuraCordGradientTheme(
+            colors: [
+                .init(hue: 0.05, saturation: 0.70),
+                .init(hue: 0.25, saturation: 0.72),
+                .init(hue: 0.45, saturation: 0.74),
+                .init(hue: 0.65, saturation: 0.76),
+                .init(hue: 0.85, saturation: 0.78),
+            ],
+            activeColorCount: 3,
+            intensity: 0.812345,
+            brightness: 0.412345
+        )
+    )
+
+    let token = try SakuraCordThemeShareCodec.token(for: sharedTheme)
+    #expect(token == "AQGKz_VpjwzNszNAALhRczO9cKZmwo_Zmcet62c")
+    #expect(token.count == 39)
+    #expect(token.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" })
+
+    let url = try SakuraCordThemeShareCodec.shareURL(for: sharedTheme)
+    #expect(url.absoluteString == "https://sakuracord.app/settings/themes/\(token)")
+
+    guard case let .current(decoded) = SakuraCordThemeShareCodec.decode(token) else {
+        Issue.record("Current theme token did not decode")
+        return
+    }
+    #expect(decoded.appearance == .dark)
+    #expect(decoded.theme.activeColorCount == 3)
+    #expect(decoded.theme.colors.count == 5)
+    let tolerance = 1.0 / 65_535
+    #expect(abs(decoded.theme.intensity - sharedTheme.theme.intensity) <= tolerance)
+    #expect(abs(decoded.theme.brightness - sharedTheme.theme.brightness) <= tolerance)
+    for (decodedColor, sourceColor) in zip(
+        decoded.theme.colors,
+        sharedTheme.theme.colors
+    ) {
+        #expect(abs(decodedColor.hue - sourceColor.hue) <= tolerance)
+        #expect(abs(decodedColor.saturation - sourceColor.saturation) <= tolerance)
+    }
+    #expect(try SakuraCordThemeShareCodec.token(for: decoded) == token)
+
+    var corrupted = token
+    let corruptionIndex = corrupted.index(corrupted.startIndex, offsetBy: 8)
+    corrupted.replaceSubrange(corruptionIndex ... corruptionIndex, with: "A")
+    #expect(SakuraCordThemeShareCodec.decode(corrupted) == nil)
+}
+
+@Test func `Future theme links retain their preview and require a SakuraCord update`() throws {
+    let sharedTheme = SakuraCordSharedTheme(
+        appearance: .light,
+        theme: .defaultTheme
+    )
+    let token = try SakuraCordThemeShareCodec.token(
+        for: sharedTheme,
+        minimumReaderVersion: SakuraCordThemeShareCodec.readerVersion + 1
+    )
+
+    guard case let .requiresNewerClient(preview) =
+        SakuraCordThemeShareCodec.decode(token)
+    else {
+        Issue.record("Future theme token was not recognized")
+        return
+    }
+    let decodedPreview = try #require(preview)
+    #expect(decodedPreview.appearance == .light)
+    #expect(decodedPreview.theme.activeColorCount == 2)
+
+    let url = try #require(
+        URL(string: "https://sakuracord.app/settings/themes/\(token)")
+    )
+    guard case let .updateToApplyTheme(actionPreview) =
+        SakuraCordDeepLinkPresentation.action(for: url)
+    else {
+        Issue.record("Future theme link did not produce the update action")
+        return
+    }
+    #expect(actionPreview == decodedPreview)
+}
+
 @Test func `Adding a gradient color corrects overlapping remembered hues`() {
     var theme = SakuraCordGradientTheme(
         colors: [

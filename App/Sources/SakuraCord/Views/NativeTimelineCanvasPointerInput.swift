@@ -484,8 +484,11 @@ extension NativeTimelineCanvasView {
                         region,
                         message: hit.message
                     )
-                case .sakuraCordDeepLink(.checkForUpdates):
+                case .sakuraCordDeepLink(.checkForUpdates),
+                     .sakuraCordDeepLink(.updateToApplyTheme):
                     actions?.checkForUpdates()
+                case let .sakuraCordDeepLink(.applyTheme(theme)):
+                    actions?.applyTheme(theme)
                 }
             }
             return

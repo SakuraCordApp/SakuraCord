@@ -3,7 +3,7 @@ import Foundation
 import Observation
 import SwiftUI
 
-nonisolated struct SakuraCordThemeColor: Codable, Equatable, Sendable {
+nonisolated struct SakuraCordThemeColor: Codable, Equatable, Hashable, Sendable {
     var hue: Double
     var saturation: Double
 
@@ -111,7 +111,7 @@ nonisolated struct SakuraCordThemeRGB: Equatable, Sendable {
     static let darkWindow = Self(red: 0.085, green: 0.078, blue: 0.098)
 }
 
-nonisolated struct SakuraCordGradientTheme: Codable, Equatable, Sendable {
+nonisolated struct SakuraCordGradientTheme: Codable, Equatable, Hashable, Sendable {
     static let minimumColorCount = 1
     static let maximumColorCount = 5
     static let minimumHueSpacing = 0.075
@@ -563,6 +563,12 @@ final class SakuraCordThemeStore {
     }
 
     func finishInteraction() {
+        commit()
+    }
+
+    func apply(_ theme: SakuraCordGradientTheme) {
+        interactionGeneration &+= 1
+        activeTheme = theme
         commit()
     }
 

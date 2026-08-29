@@ -156,6 +156,7 @@ struct NativeTimelineRowActions {
         [String]
     ) -> Void
     var checkForUpdates: () -> Void
+    var applyTheme: (SakuraCordSharedTheme) -> Void
 
     init(
         loadEarlier: @escaping () -> Void,
@@ -176,7 +177,8 @@ struct NativeTimelineRowActions {
             [String]
         ) -> Void,
         discardFailed: @escaping (Message) -> Void = { _ in },
-        checkForUpdates: @escaping () -> Void = {}
+        checkForUpdates: @escaping () -> Void = {},
+        applyTheme: @escaping (SakuraCordSharedTheme) -> Void = { _ in }
     ) {
         self.loadEarlier = loadEarlier
         self.openMessage = openMessage
@@ -192,6 +194,7 @@ struct NativeTimelineRowActions {
         self.openThread = openThread
         self.submitComponent = submitComponent
         self.checkForUpdates = checkForUpdates
+        self.applyTheme = applyTheme
     }
 }
 
@@ -490,6 +493,7 @@ struct NativeTimelineRowLayout {
         let symbolBackgroundFrame: CGRect
         let symbolFrame: CGRect
         let titleFrame: CGRect
+        let paletteFrames: [CGRect]
         let buttonFrame: CGRect
     }
 

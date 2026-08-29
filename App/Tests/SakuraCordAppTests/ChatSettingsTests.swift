@@ -163,6 +163,8 @@ import Testing
         model: model
     )
     #expect(layout.sakuraCordDeepLinkRegion?.action == .checkForUpdates)
+    #expect(layout.sakuraCordDeepLinkRegion?.action.title == "Update SakuraCord")
+    #expect(layout.sakuraCordDeepLinkRegion?.action.buttonTitle == "Check for Updates")
     #expect(layout.embedRegions.isEmpty)
 
     var settings = model.chatSettings
@@ -186,6 +188,73 @@ import Testing
             in: "http://sakuracord.app/settings/update"
         ) == nil
     )
+}
+
+@MainActor
+@Test func `SakuraCord theme links replace Discord previews with native theme actions`() throws {
+    let sharedTheme = SakuraCordSharedTheme(
+        appearance: .dark,
+        theme: SakuraCordGradientTheme(
+            colors: [
+                .init(hue: 0.02, saturation: 0.70),
+                .init(hue: 0.34, saturation: 0.72),
+                .init(hue: 0.67, saturation: 0.74),
+            ],
+            intensity: 0.84,
+            brightness: 0.76
+        )
+    )
+    let url = try SakuraCordThemeShareCodec.shareURL(for: sharedTheme)
+    let message = Message(
+        id: MessageID(rawValue: 67),
+        channelID: ChannelID(rawValue: 68),
+        author: User(
+            id: UserID(rawValue: 69),
+            username: "fixture",
+            displayName: "Fixture"
+        ),
+        content: "Try [this theme](\(url.absoluteString)).",
+        embeds: [
+            MessageEmbed(
+                title: "SakuraCord Settings Deeplink",
+                type: "rich",
+                description: "Open it in SakuraCord to use the linked setting.",
+                url: url
+            ),
+        ]
+    )
+    let row = MessageRowPresentation(
+        message: message,
+        startsGroup: true,
+        startsDay: false,
+        replyPreview: nil,
+        isReplyAvailable: false
+    )
+    guard case let .applyTheme(decodedTheme)? = row.sakuraCordDeepLink?.action else {
+        Issue.record("Theme link did not produce an apply action")
+        return
+    }
+    #expect(decodedTheme.appearance == .dark)
+    #expect(decodedTheme.theme.activeColorCount == 3)
+    #expect(MessageEmbedPresentation.visibleEmbeds(for: message).isEmpty)
+
+    let item = NativeMessageTimelineItem.message(
+        row,
+        isUnreadBoundary: false,
+        isHighlighted: false
+    )
+    let model = AppModel(launchMode: .offlineTesting)
+    let layout = NativeTimelineRowLayout.make(
+        item: item,
+        width: 900,
+        model: model
+    )
+    let region = try #require(layout.sakuraCordDeepLinkRegion)
+    #expect(region.action == .applyTheme(decodedTheme))
+    #expect(region.action.buttonTitle == "Apply Theme")
+    #expect(region.paletteFrames.count == 3)
+    #expect(region.buttonFrame.height == NativeTimelineComponentButtonMetrics.height)
+    #expect(layout.embedRegions.isEmpty)
 }
 
 @MainActor

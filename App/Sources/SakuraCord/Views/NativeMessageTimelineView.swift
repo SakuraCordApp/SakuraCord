@@ -992,6 +992,13 @@ extension NativeMessageTimelineCoordinator {
                 checkForUpdates: {
                     (NSApp.delegate as? AppDelegate)?
                         .updateController.checkForUpdates()
+                },
+                applyTheme: { [weak model = parent.model] sharedTheme in
+                    SakuraCordThemeStore.shared.apply(sharedTheme.theme)
+                    guard let model else { return }
+                    var appearance = model.appearanceSettings
+                    appearance.colorScheme = sharedTheme.appearance
+                    model.applyAppearanceSettings(appearance)
                 }
             )
         }

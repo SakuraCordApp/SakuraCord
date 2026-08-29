@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-nonisolated enum AppColorScheme: String, CaseIterable, Identifiable, Sendable {
+nonisolated enum AppColorScheme: String, CaseIterable, Hashable, Identifiable, Sendable {
     case system
     case light
     case dark

@@ -1149,10 +1149,12 @@ extension NativeTimelineRowPainter {
         isButtonHovered: Bool,
         buttonPressProgress: CGFloat
     ) {
-        let accent = NSColor.sakuraCordAccentColor
+        let colors = sakuraCordDeepLinkColors(for: region.action)
+        let accent = colors.first ?? NSColor.sakuraCordAccentColor
+        let cardCornerRadius = ChatChromeMetrics.composerCornerRadius
         let shape = NSBezierPath(
             concentricRoundedRect: region.cardFrame,
-            cornerRadius: 17
+            cornerRadius: cardCornerRadius
         )
 
         NSGraphicsContext.saveGraphicsState()
@@ -1165,23 +1167,16 @@ extension NativeTimelineRowPainter {
         shape.fill()
         NSGraphicsContext.restoreGraphicsState()
 
-        NSGraphicsContext.saveGraphicsState()
-        shape.addClip()
+        sakuraCordGradient(colors)?.draw(in: shape, angle: 0)
         NativeTimelineSemanticColor.opacity(
             .controlBackgroundColor,
             0.94
         ).setFill()
-        region.cardFrame.fill()
-        NSGraphicsContext.restoreGraphicsState()
-
-        accent.withAlphaComponent(0.42).setStroke()
-        let border = NSBezierPath(
+        NSBezierPath(
             concentricRoundedRect:
-                region.cardFrame.insetBy(dx: 0.5, dy: 0.5),
-            cornerRadius: 16.5
-        )
-        border.lineWidth = 1
-        border.stroke()
+                region.cardFrame.insetBy(dx: 1, dy: 1),
+            cornerRadius: cardCornerRadius - 1
+        ).fill()
 
         accent.withAlphaComponent(0.16).setFill()
         NSBezierPath(
@@ -1202,11 +1197,23 @@ extension NativeTimelineRowPainter {
             lineBreakMode: .byTruncatingTail
         )
 
+        for (frame, color) in zip(region.paletteFrames, colors) {
+            color.setFill()
+            NSBezierPath(ovalIn: frame).fill()
+            NativeTimelineSemanticColor.opacity(
+                .controlBackgroundColor,
+                0.92
+            ).setStroke()
+            let outline = NSBezierPath(ovalIn: frame.insetBy(dx: 0.5, dy: 0.5))
+            outline.lineWidth = 1
+            outline.stroke()
+        }
+
         sakuraCordDeepLinkButton(
             region,
             isHovered: isButtonHovered,
             pressProgress: buttonPressProgress,
-            accent: accent
+            colors: colors
         )
     }
 
@@ -1214,7 +1221,7 @@ extension NativeTimelineRowPainter {
         _ region: NativeTimelineRowLayout.SakuraCordDeepLinkRegion,
         isHovered: Bool,
         pressProgress: CGFloat,
-        accent: NSColor
+        colors: [NSColor]
     ) {
         let pressProgress = min(max(pressProgress, 0), 1)
         let scale = NativeTimelineComponentButtonVisualState.scale(
@@ -1224,10 +1231,9 @@ extension NativeTimelineRowPainter {
             isHovered: isHovered,
             pressProgress: pressProgress
         )
-        let buttonColor = adjustedBrightness(
-            accent,
-            amount: brightness
-        )
+        let buttonColors = colors.map {
+            adjustedBrightness($0, amount: brightness)
+        }
         NSGraphicsContext.saveGraphicsState()
         if abs(scale - 1) > 0.0001 {
             let transform = NSAffineTransform()
@@ -1242,11 +1248,13 @@ extension NativeTimelineRowPainter {
             )
             transform.concat()
         }
-        buttonColor.setFill()
-        NSBezierPath(
+        let buttonPath = NSBezierPath(
             concentricRoundedRect: region.buttonFrame,
-            cornerRadius: 6
-        ).fill()
+            cornerRadius: region.buttonFrame.height / 2
+        )
+        sakuraCordGradient(buttonColors)?.draw(in: buttonPath, angle: 0)
+        NSColor.black.withAlphaComponent(0.12).setFill()
+        buttonPath.fill()
         adjustedBrightness(
             .white,
             amount: brightness
@@ -1259,7 +1267,7 @@ extension NativeTimelineRowPainter {
         let buttonBorder = NSBezierPath(
             concentricRoundedRect:
                 region.buttonFrame.insetBy(dx: 0.5, dy: 0.5),
-            cornerRadius: 5.5
+            cornerRadius: region.buttonFrame.height / 2 - 0.5
         )
         buttonBorder.lineWidth = 1
         buttonBorder.stroke()
@@ -1275,6 +1283,26 @@ extension NativeTimelineRowPainter {
             lineBreakMode: .byTruncatingTail
         )
         NSGraphicsContext.restoreGraphicsState()
+    }
+
+    static func sakuraCordDeepLinkColors(
+        for action: SakuraCordDeepLinkAction
+    ) -> [NSColor] {
+        guard let preview = action.themePreview else {
+            return [.sakuraCordAccentColor]
+        }
+        let appearance = NSAppearance.currentDrawing()
+            .bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? SakuraCordThemeAppearance.dark
+            : .light
+        return preview.theme.activeColors.map {
+            NSColor(preview.theme.renderedRGB($0, for: appearance))
+        }
+    }
+
+    static func sakuraCordGradient(_ colors: [NSColor]) -> NSGradient? {
+        guard let first = colors.first else { return nil }
+        return NSGradient(colors: colors.count == 1 ? [first, first] : colors)
     }
 
 }
