@@ -1459,6 +1459,82 @@ private func appendETFBinary(_ value: String, to data: inout Data) {
     #expect(update.partial == true)
 }
 
+@Test func `partial frecency settings replace changed fields and preserve the rest`() {
+    func field(_ number: Int, payload: Data) -> Data {
+        Data(encodeProtoVarint(UInt64(number << 3 | 2)))
+            + Data(encodeProtoVarint(UInt64(payload.count)))
+            + payload
+    }
+    func favorites(_ keys: [String]) -> Data {
+        field(5, payload: keys.reduce(into: Data()) { payload, key in
+            payload.append(field(1, payload: Data(key.utf8)))
+        })
+    }
+
+    let retained = field(2, payload: Data([0x10, 0x01]))
+    let current = retained + favorites(["old"])
+    let patch = favorites(["new"])
+
+    #expect(
+        DiscordSettingsProto.mergingPartialFrecencySettings(
+            patch,
+            into: current
+        ) == retained + patch
+    )
+}
+
+@Test func `frecency gateway updates publish live emoji favorites`() async throws {
+    func field(_ number: Int, payload: Data) -> Data {
+        Data(encodeProtoVarint(UInt64(number << 3 | 2)))
+            + Data(encodeProtoVarint(UInt64(payload.count)))
+            + payload
+    }
+    func favorites(_ keys: [String]) -> Data {
+        field(5, payload: keys.reduce(into: Data()) { payload, key in
+            payload.append(field(1, payload: Data(key.utf8)))
+        })
+    }
+    func dispatchBody(_ proto: Data, partial: Bool) -> JSONValue {
+        .object([
+            "settings": .object([
+                "type": .number(2),
+                "proto": .string(proto.base64EncodedString()),
+            ]),
+            "partial": .bool(partial),
+        ])
+    }
+
+    let provider = DiscordRESTProvider(
+        credentials: TestCredentialStore(),
+        handle: CredentialHandle(accountID: "300"),
+        session: URLSession(configuration: .ephemeral),
+        installationID: "server-issued-installation"
+    )
+    let stream = await provider.eventStream()
+    var iterator = stream.makeAsyncIterator()
+
+    await provider.handleGatewayDispatch(
+        name: "USER_SETTINGS_PROTO_UPDATE",
+        body: dispatchBody(favorites(["old"]), partial: false)
+    )
+    guard case let .emojiUserSettingsChanged(initial)? = await iterator.next() else {
+        Issue.record("Expected the initial emoji settings event")
+        return
+    }
+    #expect(initial.favoriteKeys == ["old"])
+
+    await provider.handleGatewayDispatch(
+        name: "USER_SETTINGS_PROTO_UPDATE",
+        body: dispatchBody(favorites(["new"]), partial: true)
+    )
+    guard case let .emojiUserSettingsChanged(updated)? = await iterator.next() else {
+        Issue.record("Expected the partial emoji settings event")
+        return
+    }
+    #expect(updated.favoriteKeys == ["new"])
+    #expect(try await provider.emojiUserSettings().favoriteKeys == ["new"])
+}
+
 @Test func `lossy lists keep valid objects when discord adds partial variants`() throws {
     struct Item: Decodable, Equatable { var required: String }
     let data = Data(#"[{"required":"one"},{"new_shape":true},{"required":"two"}]"#.utf8)

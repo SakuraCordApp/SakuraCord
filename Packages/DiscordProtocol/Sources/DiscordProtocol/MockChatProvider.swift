@@ -12,6 +12,7 @@ public actor MockChatProvider: ChatProvider {
     private var profilesByUser: [UserID: UserProfile]
     private var privateCallsByChannel: [ChannelID: PrivateCall] = [:]
     private var favoriteGIFValues: [GIFSearchResult] = []
+    private var favoriteEmojiKeys: [String]?
     private var continuation: AsyncStream<ClientEvent>.Continuation?
     private var nextMessageID: UInt64
     public private(set) var typingRequests: [ChannelID] = []
@@ -202,7 +203,7 @@ public actor MockChatProvider: ChatProvider {
 
     public func emojiUserSettings() async throws -> EmojiUserSettings {
         EmojiUserSettings(
-            favoriteKeys: [
+            favoriteKeys: favoriteEmojiKeys ?? [
                 "custom:900000000000000201", "white_check_mark", "x", "neutral_face",
                 "broken_heart", "hot_face",
                 "smiling_face_with_3_hearts", "cry", "fire", "thumbsup", "sob",
@@ -220,6 +221,19 @@ public actor MockChatProvider: ChatProvider {
                 }
             )
         )
+    }
+
+    public func setEmojiFavorite(
+        _ key: String,
+        isFavorite: Bool
+    ) async throws -> EmojiUserSettings {
+        var settings = try await emojiUserSettings()
+        settings.favoriteKeys.removeAll { $0 == key }
+        if isFavorite {
+            settings.favoriteKeys.append(key)
+        }
+        favoriteEmojiKeys = settings.favoriteKeys
+        return settings
     }
 
     public func acknowledge(

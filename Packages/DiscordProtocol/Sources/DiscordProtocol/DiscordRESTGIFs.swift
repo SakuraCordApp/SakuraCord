@@ -120,11 +120,11 @@ public extension DiscordRESTProvider {
     func setGIFFavorite(_ gif: GIFSearchResult, isFavorite: Bool) async throws
         -> [GIFSearchResult]
     {
-        guard !isMutatingGIFFavorite else {
-            throw ChatProviderError.invalidRequest("A GIF favorite update is already in progress.")
+        guard !isMutatingFrecencyFavorite else {
+            throw ChatProviderError.invalidRequest("A favorite update is already in progress.")
         }
-        isMutatingGIFFavorite = true
-        defer { isMutatingGIFFavorite = false }
+        isMutatingFrecencyFavorite = true
+        defer { isMutatingFrecencyFavorite = false }
 
         let current = try await frecencySettingsProto()
         let update = try DiscordSettingsProto.updatingGIFFavorite(
@@ -140,6 +140,61 @@ public extension DiscordRESTProvider {
         cachedFrecencySettingsProto = update.data
         cachedGIFFavorites = update.favorites
         return update.favorites
+    }
+
+    func setEmojiFavorite(_ key: String, isFavorite: Bool) async throws -> EmojiUserSettings {
+        guard !isMutatingFrecencyFavorite else {
+            throw ChatProviderError.invalidRequest("A favorite update is already in progress.")
+        }
+        isMutatingFrecencyFavorite = true
+        defer { isMutatingFrecencyFavorite = false }
+
+        let current = try await frecencySettingsProto()
+        let update = try DiscordSettingsProto.updatingEmojiFavorite(
+            in: current,
+            key: key,
+            isFavorite: isFavorite
+        )
+        try await requestEmpty(
+            "/users/@me/settings-proto/2",
+            method: "PATCH",
+            body: ["settings": .string(update.data.base64EncodedString())]
+        )
+        cachedFrecencySettingsProto = update.data
+        cachedEmojiUserSettings = update.settings
+        return update.settings
+    }
+
+    func applyFrecencySettingsProtoUpdate(
+        _ encoded: String,
+        isPartial: Bool
+    ) async {
+        guard let patch = Data(base64Encoded: encoded) else { return }
+
+        let updated: Data
+        if isPartial {
+            let current: Data
+            do {
+                current = try await frecencySettingsProto()
+            } catch {
+                gatewayLogger.error(
+                    "Could not load frecency settings for a partial Gateway update: \(error.localizedDescription, privacy: .public)"
+                )
+                return
+            }
+            updated = DiscordSettingsProto.mergingPartialFrecencySettings(
+                patch,
+                into: current
+            )
+        } else {
+            updated = patch
+        }
+
+        cachedFrecencySettingsProto = updated
+        let emojiSettings = DiscordSettingsProto.emojiSettings(from: updated)
+        cachedEmojiUserSettings = emojiSettings
+        cachedGIFFavorites = DiscordSettingsProto.gifFavorites(from: updated)
+        continuation?.yield(.emojiUserSettingsChanged(emojiSettings))
     }
 
     internal func frecencySettingsProto() async throws -> Data {

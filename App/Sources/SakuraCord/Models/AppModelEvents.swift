@@ -277,6 +277,11 @@ extension AppModel {
         case .notificationSettingsChanged(let settings):
             applyNotificationSettings(settings)
             refreshUnreadPresentation()
+        case .emojiUserSettingsChanged(let settings):
+            applyDiscordEmojiSettings(settings)
+            didAttemptDiscordEmojiSettings = true
+            hasLoadedDiscordEmojiSettings = true
+            forwardSearchSourceRevision &+= 1
         case .typing(let channelID, let user):
             typingState.receive(
                 channelID: channelID,

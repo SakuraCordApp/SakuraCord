@@ -53,6 +53,9 @@ nonisolated enum PerformanceBenchmarkInitialGuildPolicy {
 
 extension AppModel {
     static func loadEmojiRecents(usageCounts: [String: Int]) -> [String] {
+        UserDefaults.standard.removeObject(
+            forKey: "dev.sakuracord.favorite-emojis"
+        )
         if let stored = UserDefaults.standard.stringArray(
             forKey: "dev.sakuracord.emoji-recents"
         ) {
@@ -1661,13 +1664,7 @@ extension AppModel {
         let settings = try? await session.provider.emojiUserSettings()
         guard isCurrentAccountSession(session) else { return }
         if let settings {
-            discordFavoriteEmojiKeys = settings.favoriteKeys
-            discordFrequentlyUsedEmojiKeys = settings.frequentlyUsedKeys
-            discordEmojiUsageScores = settings.usageScores
-            discordGuildAndChannelUsageScores = settings.guildAndChannelUsageScores
-            discordSyncedGuildAndChannelUsageScores = settings.guildAndChannelUsageScores
-            discordGuildAndChannelUsage = settings.guildAndChannelUsage
-            discordGuildAndChannelUsageOrder = settings.guildAndChannelUsageOrder
+            applyDiscordEmojiSettings(settings)
         }
         // Destination discovery is local once bootstrap state is available.
         // A failed or timed-out settings enrichment must not leave Forward on
@@ -1676,6 +1673,16 @@ extension AppModel {
         hasLoadedDiscordEmojiSettings = true
         applyPersistedDiscordFrecencyUsageDeltas()
         forwardSearchSourceRevision &+= 1
+    }
+
+    func applyDiscordEmojiSettings(_ settings: EmojiUserSettings) {
+        discordFavoriteEmojiKeys = settings.favoriteKeys
+        discordFrequentlyUsedEmojiKeys = settings.frequentlyUsedKeys
+        discordEmojiUsageScores = settings.usageScores
+        discordGuildAndChannelUsageScores = settings.guildAndChannelUsageScores
+        discordSyncedGuildAndChannelUsageScores = settings.guildAndChannelUsageScores
+        discordGuildAndChannelUsage = settings.guildAndChannelUsage
+        discordGuildAndChannelUsageOrder = settings.guildAndChannelUsageOrder
     }
 
     func recordEmojiUse(_ key: String) {
@@ -1706,15 +1713,25 @@ extension AppModel {
         }
     }
 
-    func toggleFavoriteEmoji(_ key: String) {
-        if favoriteEmojiKeys.contains(key) {
-            favoriteEmojiKeys.remove(key)
-        } else {
-            favoriteEmojiKeys.insert(key)
-        }
-        if persistsEmojiPreferences {
-            UserDefaults.standard.set(
-                Array(favoriteEmojiKeys), forKey: "dev.sakuracord.favorite-emojis")
+    @discardableResult
+    func setEmojiFavorite(
+        discordKey: String,
+        isFavorite: Bool
+    ) async -> Bool {
+        let session = accountSession()
+        do {
+            let settings = try await session.provider.setEmojiFavorite(
+                discordKey,
+                isFavorite: isFavorite
+            )
+            guard isCurrentAccountSession(session) else { return false }
+            applyDiscordEmojiSettings(settings)
+            didAttemptDiscordEmojiSettings = true
+            hasLoadedDiscordEmojiSettings = true
+            forwardSearchSourceRevision &+= 1
+            return true
+        } catch {
+            return false
         }
     }
 

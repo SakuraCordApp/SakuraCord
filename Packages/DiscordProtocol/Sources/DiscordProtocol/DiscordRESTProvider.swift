@@ -192,7 +192,7 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var frecencySettingsTask: Task<Data, Error>?
     var cachedGIFPickerLanding: GIFPickerLanding?
     var cachedGIFFavorites: [GIFSearchResult]?
-    var isMutatingGIFFavorite = false
+    var isMutatingFrecencyFavorite = false
     var cachedReactionReactors: [ReactionReactorCacheKey: [ReactionReactor]] = [:]
     var gatewayOpcodeRateLimitDates: [Int: Date] = [:]
     var reactionReactorCacheOrder: [ReactionReactorCacheKey] = []

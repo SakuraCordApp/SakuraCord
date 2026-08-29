@@ -735,7 +735,6 @@ private struct InlineMessageEditor: View {
             customEmojis: model.orderedCustomEmojis,
             customValue: model.composerText(for:),
             customSource: { model.serverRailGuildsByID[$0.guildID]?.name },
-            favoriteKeys: model.favoriteEmojiKeys,
             discordFavoriteKeys: Set(model.discordFavoriteEmojiKeys),
             usageCounts: model.emojiUsageCounts,
             discordUsageScores: model.discordEmojiUsageScores,

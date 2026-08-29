@@ -708,7 +708,6 @@ struct ComposerView: View {
             customEmojis: model.orderedCustomEmojis,
             customValue: model.composerText(for:),
             customSource: { model.serverRailGuildsByID[$0.guildID]?.name },
-            favoriteKeys: model.favoriteEmojiKeys,
             discordFavoriteKeys: Set(model.discordFavoriteEmojiKeys),
             usageCounts: model.emojiUsageCounts,
             discordUsageScores: model.discordEmojiUsageScores,
@@ -1734,7 +1733,6 @@ enum ColonAutocompleteSuggestionFactory {
         customEmojis: [DiscordEmoji],
         customValue: (DiscordEmoji) -> String,
         customSource: (DiscordEmoji) -> String? = { _ in nil },
-        favoriteKeys: Set<String> = [],
         discordFavoriteKeys: Set<String> = [],
         usageCounts: [String: Int] = [:],
         discordUsageScores: [String: Int] = [:],
@@ -1798,9 +1796,9 @@ enum ColonAutocompleteSuggestionFactory {
             ?? !discordUsageScores.isEmpty
         let boundaryExpression = DiscordEmojiAutocompleteRanking.boundaryExpression(query: query)
         let ranked = values.map { suggestion in
-            let isFavorite = usesDiscordSettings
-                ? suggestion.discordUsageKeys.contains(where: discordFavoriteKeys.contains)
-                : favoriteKeys.contains(suggestion.usageKey)
+            let isFavorite = suggestion.discordUsageKeys.contains(
+                where: discordFavoriteKeys.contains
+            )
             let frecency = usesDiscordSettings
                 ? suggestion.discordUsageKeys.compactMap { discordUsageScores[$0] }.max()
                 : nil

@@ -41,6 +41,7 @@ public protocol ChatProvider: Sendable {
     func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile
     func emojis(in guildID: GuildID) async throws -> [DiscordEmoji]
     func emojiUserSettings() async throws -> EmojiUserSettings
+    func setEmojiFavorite(_ key: String, isFavorite: Bool) async throws -> EmojiUserSettings
     func currentStatus() async -> PresenceStatus
     func updateStatus(_ status: PresenceStatus) async throws
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws -> MessagePage
@@ -490,6 +491,12 @@ public extension ChatProvider {
 
     func emojiUserSettings() async throws -> EmojiUserSettings {
         EmojiUserSettings()
+    }
+
+    func setEmojiFavorite(_ key: String, isFavorite: Bool) async throws -> EmojiUserSettings {
+        throw ChatProviderError.invalidRequest(
+            "Emoji favorite updates are unavailable for this provider."
+        )
     }
 
     func sendTyping(in channelID: ChannelID) async throws {}

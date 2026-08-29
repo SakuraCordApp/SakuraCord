@@ -12,6 +12,7 @@ public enum ClientEvent: Equatable, Sendable {
     case readStateChanged(ChannelReadState)
     case notificationModeChanged(usesNewNotifications: Bool)
     case notificationSettingsChanged(GuildNotificationSettings)
+    case emojiUserSettingsChanged(EmojiUserSettings)
     case typing(channelID: ChannelID, user: User)
     case channelsChanged(guildID: GuildID?, channels: [Channel])
     case forumPostsChanged(channelID: ChannelID, posts: [ForumPost])

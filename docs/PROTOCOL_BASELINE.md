@@ -188,6 +188,15 @@ schema, with no GIF media fetch. The pinned Swiftcord v1 and DiscordKit
 revisions still have no GIF picker or media path. Those absences provide no
 alternative origin, header, retry, or fallback behavior to copy.
 
+The emoji-picker favourite and context-menu paths were statically re-audited
+on 29 August 2026 against clean public web build 603738 and production asset
+`web.e3526df05a0a7718.js` (SHA-256
+`8bc467463c6546ee99bae959e4ae614fe4df5b7ae4fdb0d79eacdb149553eb31`).
+First-party module `554375` adds and removes ordered `favoriteEmojis` values
+through the Frecency settings manager with a 250-item ceiling, while picker
+context-menu module `233503` exposes the native-copy, custom-ID, and custom
+image-link actions.
+
 The native sign-in preflight was re-audited on 7 August 2026 against production
 asset `web.3cd0f98a15f63be2.js` (SHA-256
 `a77974b18a92b7d5452d4138b0b276f380ac498fd7fefa1b9aa7e183ace0f4f0`).
@@ -481,7 +490,7 @@ and retained as evidence.
 | `GET /collectibles-products/{product}` | At most one cache-miss read for a profile effect returned by the profile response; query contains the current `locale`. | Current first-party route; P−, S−. The obsolete `/user-profile-effects` fallback was removed. |
 | `GET /guilds/{guild}/emojis` | Stale/missing Gateway and disk-cache fallback; no body, coalesced. | Public emoji semantics and all three client references. |
 | `GET /users/@me/settings-proto/2` | Explicit emoji- or GIF-favourites-settings cache miss; no body, coalesced for the provider session. | Current first-party and Paicord's generated Frecency settings schema; Swiftcord has the versioned settings-proto path but no GIF picker. |
-| `PATCH /users/@me/settings-proto/2` | One explicit GIF favourite add or remove; JSON contains only `settings`, whose value is the complete updated base64 Frecency proto. The favourite map key is the canonical GIF URL. Its value contains format (`IMAGE = 1`, `VIDEO = 2`), source URL, width, height, and monotonically increasing order; display order is descending order. The declared format is preserved on reads, including for extensionless CDN sources. Unrelated and unknown top-level proto fields are preserved. | Current first-party action and generated Paicord schema; Swiftcord v1 has no GIF favourite mutation. |
+| `PATCH /users/@me/settings-proto/2` | One explicit emoji or GIF favourite add or remove; JSON contains only `settings`, whose value is the complete updated base64 Frecency proto. Emoji favourites are the ordered, deduplicated repeated strings in top-level field 5, capped by the first-party client at 250. The GIF favourite map key is the canonical GIF URL. Its value contains format (`IMAGE = 1`, `VIDEO = 2`), source URL, width, height, and monotonically increasing order; display order is descending order. The declared format is preserved on reads, including for extensionless CDN sources. Unrelated and unknown top-level proto fields are preserved. | Current first-party actions and generated Paicord schema; Swiftcord v1 has no corresponding favourite mutation. |
 | `GET /gifs/trending?locale={locale}&media_format=webm` | Opening the GIF picker; one cacheable landing read returning the current base categories in server order and their preview media. | Current first-party route and clean-client request; P−, S−. |
 | `GET /gifs/trending-gifs?media_format=webm&locale={locale}` | Explicit Trending GIFs selection; no body. The returned order is preserved. | Current first-party route and clean-client request; P−, S−. |
 | `GET /gifs/search?q={query}&media_format=webm&locale={locale}` | Nonempty picker search after the current 250 ms debounce; no speculative or paginated follow-up. The live default response is 50 results and its order is preserved. | Current first-party route/action and clean-client `hello` request; P−, S−. |
@@ -777,6 +786,13 @@ exception dispatches.
   locally, and a rejected member request completes its pending continuation
   with an error. SakuraCord does not replay, retry early, or speculate about a
   replacement Gateway request.
+- `USER_SETTINGS_PROTO_UPDATE` type 2 reconciles emoji favourites immediately.
+  A full event replaces the cached Frecency-and-Favourites proto. A partial
+  event replaces only the top-level fields present in its proto and preserves
+  every omitted and unknown field before publishing the decoded account emoji
+  settings. This matches the first-party store's `mergePartial` path in public
+  web asset `web.e3526df05a0a7718.js`, rechecked on 29 August 2026, and creates
+  no follow-up request once the settings cache is loaded.
 - Sticker, soundboard, scheduled-event and exception, Stage, poll-vote,
   integration, webhook, AutoMod, entitlement, and subscription dispatches have
   no production state consumer. They are deliberately ignored after sanitized

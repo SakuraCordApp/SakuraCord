@@ -478,7 +478,6 @@ final class AppModel {
     }
     var loadingEmojiGuildIDs: Set<GuildID> = []
     var emojiLoadErrorsByGuild: [GuildID: String] = [:]
-    var favoriteEmojiKeys: Set<String>
     var emojiUsageCounts: [String: Int]
     var emojiRecentKeys: [String]
     var discordFavoriteEmojiKeys: [String] = []
@@ -1286,10 +1285,6 @@ final class AppModel {
             try? SakuraCordDatabase(accountID: accountID)
         }
         persistsEmojiPreferences = launchMode == .normal
-        favoriteEmojiKeys =
-            launchMode == .normal
-                ? Set(UserDefaults.standard.stringArray(forKey: "dev.sakuracord.favorite-emojis") ?? [])
-                : []
         let initialEmojiUsageCounts =
             launchMode == .normal
                 ? UserDefaults.standard.dictionary(forKey: "dev.sakuracord.emoji-usage")

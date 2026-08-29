@@ -960,6 +960,18 @@ extension NativeTimelineCanvasView {
                 )
             }
         )
+        let gif = NativeTimelineGIFContextMenuPlan.result(
+            in: row.message,
+            layout: layouts[index],
+            at: localPoint
+        )
+        if interactionMode.allowsMediaContextMenu,
+           let gif
+        {
+            return GIFContextMenuBuilder.make(
+                actions: gifContextMenuActions(for: gif)
+            )
+        }
         if interactionMode.allowsMediaContextMenu,
            let imageItem
         {
@@ -1124,6 +1136,27 @@ extension NativeTimelineCanvasView {
             },
             openLink: {
                 MediaViewerActionService.openInBrowser(item.url)
+            }
+        )
+    }
+
+    func gifContextMenuActions(
+        for gif: GIFSearchResult
+    ) -> GIFContextMenuActions {
+        let isFavorite = model?.favoriteGIFs.contains(where: {
+            $0.url == gif.url
+        }) == true
+        return GIFContextMenuActions(
+            isFavorite: isFavorite,
+            isFavoriteMutationPending: model?.gifFavoriteMutationURL != nil,
+            toggleFavorite: { [weak self] in
+                self?.model?.setGIFFavorite(
+                    gif,
+                    isFavorite: !isFavorite
+                )
+            },
+            copyMediaLink: {
+                MediaViewerActionService.copyText(gif.url.absoluteString)
             }
         )
     }

@@ -76,8 +76,13 @@ struct EmojiPickerButton: View {
             interaction.select(cell)
         }
         .help(cell.item.shortcode)
-        .contextMenu {
-            Button(isFavorite ? "Remove from Favorites" : "Add to Favorites", action: toggleFavorite)
+        .overlay {
+            EmojiPickerContextMenuBridge(
+                item: cell.item,
+                skinTone: skinTone,
+                isFavorite: isFavorite,
+                toggleFavorite: toggleFavorite
+            )
         }
     }
 }
@@ -997,6 +1002,10 @@ struct EmojiPickerView: View {
         .onChange(of: skinToneRawValue) { _, _ in
             requestSearchFocus()
         }
+        .onChange(of: model.discordFavoriteEmojiKeys) { _, _ in
+            document.synchronize(with: model, useCase: useCase)
+            interaction.synchronize(with: document.selectableCells)
+        }
         .onDisappear {
             visibleGuildLoadTask?.cancel()
             visibleGuildLoadTask = nil
@@ -1062,9 +1071,15 @@ struct EmojiPickerView: View {
     }
 
     private func toggleFavorite(_ item: EmojiPickerItem) {
-        model.toggleFavoriteEmoji(item.usageKey)
-        document.synchronize(with: model, useCase: useCase)
-        interaction.synchronize(with: document.selectableCells)
+        let isFavorite = document.isFavorite(item)
+        Task { @MainActor in
+            guard await model.setEmojiFavorite(
+                discordKey: item.discordKey,
+                isFavorite: !isFavorite
+            ) else { return }
+            document.synchronize(with: model, useCase: useCase)
+            interaction.synchronize(with: document.selectableCells)
+        }
     }
 
     private func retry(_ guildID: GuildID) {
@@ -1480,7 +1495,6 @@ final class EmojiPickerDocumentStore {
     private var emojisByGuild: [GuildID: [DiscordEmoji]] = [:]
     private var loadingGuilds: Set<GuildID> = []
     private var errorsByGuild: [GuildID: String] = [:]
-    private var localFavorites: Set<String> = []
     private var localUsage: [String: Int] = [:]
     private var localRecents: [String] = []
     private var discordFavorites: [String] = []
@@ -1526,7 +1540,6 @@ final class EmojiPickerDocumentStore {
         let errorsByGuild = model.emojiLoadErrorsByGuild.filter {
             visibleGuildIDs.contains($0.key)
         }
-        let localFavorites = model.favoriteEmojiKeys
         let localUsage = model.emojiUsageCounts
         let localRecents = model.emojiRecentKeys
         let discordFavorites = model.discordFavoriteEmojiKeys
@@ -1536,7 +1549,6 @@ final class EmojiPickerDocumentStore {
             || self.emojisByGuild != emojisByGuild
             || self.loadingGuilds != loadingGuilds
             || self.errorsByGuild != errorsByGuild
-            || self.localFavorites != localFavorites
             || self.localUsage != localUsage
             || self.localRecents != localRecents
             || self.discordFavorites != discordFavorites
@@ -1548,7 +1560,6 @@ final class EmojiPickerDocumentStore {
         self.emojisByGuild = emojisByGuild
         self.loadingGuilds = loadingGuilds
         self.errorsByGuild = errorsByGuild
-        self.localFavorites = localFavorites
         self.localUsage = localUsage
         self.localRecents = localRecents
         self.discordFavorites = discordFavorites
@@ -1582,8 +1593,7 @@ final class EmojiPickerDocumentStore {
     }
 
     func isFavorite(_ item: EmojiPickerItem) -> Bool {
-        localFavorites.contains(item.usageKey)
-            || !item.discordKeys.isDisjoint(with: discordFavoriteCandidates)
+        !item.discordKeys.isDisjoint(with: discordFavoriteCandidates)
     }
 
     private func rebuild() {
@@ -1613,13 +1623,7 @@ final class EmojiPickerDocumentStore {
         }
 
         let allItems = allItems()
-        var favoriteItems = orderedItems(for: discordFavorites, in: allItems)
-        var favoriteItemIDs = Set(favoriteItems.map(\.id))
-        favoriteItems.append(
-            contentsOf: allItems.filter {
-                localFavorites.contains($0.usageKey) && favoriteItemIDs.insert($0.id).inserted
-            }
-        )
+        let favoriteItems = orderedItems(for: discordFavorites, in: allItems)
         let frequentItems: [EmojiPickerItem]
         if discordFrequentlyUsed.isEmpty {
             frequentItems = Array(
@@ -1791,11 +1795,6 @@ final class EmojiPickerDocumentStore {
         var keys = Set(discordFavorites)
         keys.formUnion(discordFrequentlyUsed)
         keys.formUnion(discordUsage.keys)
-        keys.formUnion(
-            localFavorites.compactMap { key in
-                key.hasPrefix("custom:") ? String(key.dropFirst("custom:".count)) : nil
-            }
-        )
         keys.formUnion(
             localUsage.keys.compactMap { key in
                 key.hasPrefix("custom:") ? String(key.dropFirst("custom:".count)) : nil

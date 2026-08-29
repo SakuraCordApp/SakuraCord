@@ -1007,13 +1007,27 @@ import Testing
         query: "sc",
         customEmojis: [custom],
         customValue: (\.messageToken),
-        favoriteKeys: ["custom:catscared:900"],
+        discordFavoriteKeys: ["900"],
         usageCounts: ["unicode:🙀": 10_000]
     )
 
     #expect(suggestions.first?.detail == ":catscared:")
     let native = suggestions.filter { $0.customEmoji == nil }
     #expect(native.first?.detail == ":scales:")
+}
+
+@MainActor
+@Test func `live emoji settings event replaces account favorites`() {
+    let model = AppModel(launchMode: .offlineTesting)
+    model.discordFavoriteEmojiKeys = ["old"]
+    model.hasLoadedDiscordEmojiSettings = false
+
+    model.consumeImmediately(.emojiUserSettingsChanged(EmojiUserSettings(
+        favoriteKeys: ["new"]
+    )))
+
+    #expect(model.discordFavoriteEmojiKeys == ["new"])
+    #expect(model.hasLoadedDiscordEmojiSettings)
 }
 
 @MainActor

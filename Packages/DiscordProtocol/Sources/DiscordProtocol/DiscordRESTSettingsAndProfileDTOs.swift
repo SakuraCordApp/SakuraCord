@@ -174,6 +174,30 @@ enum DiscordSettingsProto {
         return (updated, gifFavorites(from: updated))
     }
 
+    static func updatingEmojiFavorite(
+        in data: Data,
+        key: String,
+        isFavorite: Bool
+    ) throws -> (data: Data, settings: EmojiUserSettings) {
+        var favorites = emojiSettings(from: data).favoriteKeys
+        favorites.removeAll { $0 == key }
+        if isFavorite {
+            guard favorites.count < 250 else {
+                throw ChatProviderError.invalidRequest(
+                    "Discord's emoji favorites limit has been reached."
+                )
+            }
+            favorites.append(key)
+        }
+
+        var payload = Data()
+        for favorite in favorites {
+            payload.append(protoStringField(1, favorite))
+        }
+        let updated = replacingLengthDelimitedField(5, in: data, with: payload)
+        return (updated, emojiSettings(from: updated))
+    }
+
     private struct StoredGIFFavorite {
         var key: String
         var format: UInt64

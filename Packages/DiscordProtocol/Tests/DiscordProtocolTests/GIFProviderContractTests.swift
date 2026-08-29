@@ -78,6 +78,31 @@ struct GIFProviderContractTests {
         #expect(DiscordSettingsProto.gifFavorites(from: addedProto).map(\.url) == [gif.url])
     }
 
+    @Test func `emoji favourites use one full frecency proto patch per action`() async throws {
+        GIFURLProtocol.reset()
+        let provider = makeProvider()
+
+        let initial = try await provider.emojiUserSettings()
+        let added = try await provider.setEmojiFavorite("wave", isFavorite: true)
+        let removed = try await provider.setEmojiFavorite("wave", isFavorite: false)
+
+        #expect(initial.favoriteKeys.isEmpty)
+        #expect(added.favoriteKeys == ["wave"])
+        #expect(removed.favoriteKeys.isEmpty)
+        #expect(GIFURLProtocol.requests.filter {
+            $0.path == "/api/v9/users/@me/settings-proto/2" && $0.method == "GET"
+        }.count == 1)
+        let patches = GIFURLProtocol.requests.filter { $0.method == "PATCH" }
+        #expect(patches.count == 2)
+        #expect(patches.allSatisfy {
+            $0.path == "/api/v9/users/@me/settings-proto/2"
+                && $0.body?.keys.sorted() == ["settings"]
+        })
+        let addedBase64 = try #require(patches.first?.body?["settings"] as? String)
+        let addedProto = try #require(Data(base64Encoded: addedBase64))
+        #expect(DiscordSettingsProto.emojiSettings(from: addedProto).favoriteKeys == ["wave"])
+    }
+
     @Test func `persisted Tenor video favourites use native GIF previews`() throws {
         let webM = try #require(URL(
             string: "https://media.tenor.com/a%20b/AAAPs/favorite.WEBM?size=2"

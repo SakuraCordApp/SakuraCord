@@ -164,6 +164,9 @@ final class GIFPickerNativeGridCoordinator: NSObject,
             else { return }
             self.parent.toggleFavorite(self.parent.results[index])
         }
+        collectionView.contextMenuAtIndex = { [weak self] index in
+            self?.contextMenu(at: index)
+        }
 
         let scrollView = GIFPickerGridScrollView()
         scrollView.documentView = collectionView
@@ -201,6 +204,7 @@ final class GIFPickerNativeGridCoordinator: NSObject,
         if let collectionView = collectionView as? GIFPickerCollectionView {
             collectionView.chooseAtIndex = nil
             collectionView.toggleFavoriteAtIndex = nil
+            collectionView.contextMenuAtIndex = nil
         }
         collectionView?.dataSource = nil
         collectionView = nil
@@ -254,6 +258,24 @@ final class GIFPickerNativeGridCoordinator: NSObject,
             }
         )
     }
+
+    private func contextMenu(at index: Int) -> NSMenu? {
+        guard parent.results.indices.contains(index) else { return nil }
+        let gif = parent.results[index]
+        let isFavorite = parent.favorites.contains(gif.url)
+        return GIFContextMenuBuilder.make(actions: GIFContextMenuActions(
+            isFavorite: isFavorite,
+            isFavoriteMutationPending: parent.mutatingURL != nil,
+            toggleFavorite: { [weak self] in
+                self?.parent.toggleFavorite(gif)
+            },
+            copyMediaLink: {
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                pasteboard.setString(gif.url.absoluteString, forType: .string)
+            }
+        ))
+    }
 }
 
 @MainActor
@@ -270,6 +292,7 @@ private final class GIFPickerCollectionView: NSCollectionView {
 
     var chooseAtIndex: ((Int) -> Void)?
     var toggleFavoriteAtIndex: ((Int) -> Void)?
+    var contextMenuAtIndex: ((Int) -> NSMenu?)?
     private var pressedTarget: PressTarget?
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -307,12 +330,15 @@ private final class GIFPickerCollectionView: NSCollectionView {
         }
     }
 
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let point = convert(event.locationInWindow, from: nil)
+        guard let index = itemIndex(at: point) else { return nil }
+        return contextMenuAtIndex?(index)
+    }
+
     private func pressTarget(at point: CGPoint) -> PressTarget? {
-        let probe = CGRect(origin: point, size: CGSize(width: 1, height: 1))
-        guard let attribute = collectionViewLayout?
-            .layoutAttributesForElements(in: probe)
-            .first(where: { $0.frame.contains(point) }),
-            let indexPath = attribute.indexPath
+        guard let attribute = itemLayoutAttributes(at: point),
+              let indexPath = attribute.indexPath
         else { return nil }
         let localPoint = CGPoint(
             x: point.x - attribute.frame.minX,
@@ -328,6 +354,19 @@ private final class GIFPickerCollectionView: NSCollectionView {
             index: indexPath.item,
             action: favoriteFrame.contains(localPoint) ? .favorite : .choose
         )
+    }
+
+    private func itemIndex(at point: CGPoint) -> Int? {
+        itemLayoutAttributes(at: point)?.indexPath?.item
+    }
+
+    private func itemLayoutAttributes(
+        at point: CGPoint
+    ) -> NSCollectionViewLayoutAttributes? {
+        let probe = CGRect(origin: point, size: CGSize(width: 1, height: 1))
+        return collectionViewLayout?
+            .layoutAttributesForElements(in: probe)
+            .first(where: { $0.frame.contains(point) })
     }
 }
 
