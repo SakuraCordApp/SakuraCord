@@ -3,114 +3,6 @@ import Foundation
 import Observation
 import SwiftUI
 
-nonisolated enum SakuraCordThemePreset: String, CaseIterable, Codable, Identifiable, Sendable {
-    case system
-    case velvetDusk
-    case polarBloom
-    case sunsetSoda
-    case blueHour
-    case wildMint
-    case rosewater
-    case solarFlare
-    case deepLagoon
-    case custom
-
-    var id: Self { self }
-
-    var title: LocalizedStringResource {
-        switch self {
-        case .system: LocalizedStringResource("System", bundle: #bundle)
-        case .velvetDusk: LocalizedStringResource("Velvet Dusk", bundle: #bundle)
-        case .polarBloom: LocalizedStringResource("Polar Bloom", bundle: #bundle)
-        case .sunsetSoda: LocalizedStringResource("Sunset Soda", bundle: #bundle)
-        case .blueHour: LocalizedStringResource("Blue Hour", bundle: #bundle)
-        case .wildMint: LocalizedStringResource("Wild Mint", bundle: #bundle)
-        case .rosewater: LocalizedStringResource("Rosewater", bundle: #bundle)
-        case .solarFlare: LocalizedStringResource("Solar Flare", bundle: #bundle)
-        case .deepLagoon: LocalizedStringResource("Deep Lagoon", bundle: #bundle)
-        case .custom: LocalizedStringResource("Custom", bundle: #bundle)
-        }
-    }
-
-    var systemImage: String? {
-        self == .system ? "circle.lefthalf.filled" : nil
-    }
-
-    var usesSystemAppearance: Bool {
-        self == .system
-    }
-
-    var presetTheme: SakuraCordGradientTheme? {
-        switch self {
-        case .system:
-            SakuraCordGradientTheme(
-                first: .init(hue: 0.91, saturation: 0.72),
-                second: .init(hue: 0.63, saturation: 0.70),
-                intensity: 0.62,
-                brightness: 1
-            )
-        case .velvetDusk:
-            SakuraCordGradientTheme(
-                first: .init(hue: 0.72, saturation: 0.77),
-                second: .init(hue: 0.89, saturation: 0.66),
-                intensity: 0.69,
-                brightness: 1
-            )
-        case .polarBloom:
-            SakuraCordGradientTheme(
-                first: .init(hue: 0.48, saturation: 0.74),
-                second: .init(hue: 0.39, saturation: 0.62),
-                intensity: 0.58,
-                brightness: 1
-            )
-        case .sunsetSoda:
-            SakuraCordGradientTheme(
-                first: .init(hue: 0.04, saturation: 0.82),
-                second: .init(hue: 0.96, saturation: 0.67),
-                intensity: 0.72,
-                brightness: 1
-            )
-        case .blueHour:
-            SakuraCordGradientTheme(
-                first: .init(hue: 0.56, saturation: 0.78),
-                second: .init(hue: 0.67, saturation: 0.62),
-                intensity: 0.61,
-                brightness: 1
-            )
-        case .wildMint:
-            SakuraCordGradientTheme(
-                first: .init(hue: 0.34, saturation: 0.72),
-                second: .init(hue: 0.43, saturation: 0.65),
-                intensity: 0.64,
-                brightness: 1
-            )
-        case .rosewater:
-            SakuraCordGradientTheme(
-                first: .init(hue: 0.94, saturation: 0.68),
-                second: .init(hue: 0.86, saturation: 0.48),
-                intensity: 0.56,
-                brightness: 1
-            )
-        case .solarFlare:
-            SakuraCordGradientTheme(
-                first: .init(hue: 0.075, saturation: 0.86),
-                second: .init(hue: 0.995, saturation: 0.73),
-                intensity: 0.74,
-                brightness: 1
-            )
-        case .deepLagoon:
-            SakuraCordGradientTheme(
-                first: .init(hue: 0.48, saturation: 0.84),
-                second: .init(hue: 0.57, saturation: 0.72),
-                intensity: 0.68,
-                brightness: 1
-            )
-        case .custom:
-            nil
-        }
-    }
-}
-
 nonisolated struct SakuraCordThemeColor: Codable, Equatable, Sendable {
     var hue: Double
     var saturation: Double
@@ -220,7 +112,7 @@ nonisolated struct SakuraCordThemeRGB: Equatable, Sendable {
 }
 
 nonisolated struct SakuraCordGradientTheme: Codable, Equatable, Sendable {
-    static let defaultCustom = SakuraCordGradientTheme(
+    static let defaultTheme = SakuraCordGradientTheme(
         first: .init(hue: 0.97, saturation: 0.72),
         second: .init(hue: 0.34, saturation: 0.70),
         intensity: 0.62,
@@ -428,16 +320,6 @@ nonisolated struct SakuraCordGradientTheme: Codable, Equatable, Sendable {
 
 }
 
-nonisolated struct SakuraCordThemeSettingsSnapshot: Equatable, Sendable {
-    static let defaults = Self(
-        selectedPreset: .system,
-        customTheme: .defaultCustom
-    )
-
-    var selectedPreset: SakuraCordThemePreset
-    var customTheme: SakuraCordGradientTheme
-}
-
 @MainActor
 final class SakuraCordThemeSettingsStore {
     static let shared = SakuraCordThemeSettingsStore()
@@ -448,40 +330,17 @@ final class SakuraCordThemeSettingsStore {
         self.preferences = preferences
     }
 
-    func load() -> SakuraCordThemeSettingsSnapshot {
-        let selectedPreset: SakuraCordThemePreset
-        if case let .string(rawValue) = preferences.value(for: .gradientTheme),
-           let stored = SakuraCordThemePreset(rawValue: rawValue)
-        {
-            selectedPreset = stored
-        } else {
-            selectedPreset = .system
-        }
-
-        let customTheme: SakuraCordGradientTheme
-        if case let .string(rawValue) = preferences.value(for: .customGradientTheme),
+    func load() -> SakuraCordGradientTheme {
+        if case let .string(rawValue) = preferences.value(for: .themeDesigner),
            let stored = SakuraCordGradientTheme(storageValue: rawValue)
         {
-            customTheme = stored
-        } else {
-            customTheme = .defaultCustom
+            return stored
         }
-        return Self.snapshot(selectedPreset: selectedPreset, customTheme: customTheme)
+        return .defaultTheme
     }
 
-    func save(_ value: SakuraCordThemeSettingsSnapshot) {
-        preferences.set(.string(value.selectedPreset.rawValue), for: .gradientTheme)
-        preferences.set(.string(value.customTheme.storageValue), for: .customGradientTheme)
-    }
-
-    private static func snapshot(
-        selectedPreset: SakuraCordThemePreset,
-        customTheme: SakuraCordGradientTheme
-    ) -> SakuraCordThemeSettingsSnapshot {
-        SakuraCordThemeSettingsSnapshot(
-            selectedPreset: selectedPreset,
-            customTheme: customTheme
-        )
+    func save(_ theme: SakuraCordGradientTheme) {
+        preferences.set(.string(theme.storageValue), for: .themeDesigner)
     }
 }
 
@@ -492,21 +351,16 @@ final class SakuraCordThemeStore {
     static let randomizationDurationSeconds = 0.22
     static let randomizationDuration: Duration = .seconds(randomizationDurationSeconds)
 
-    private(set) var selectedPreset: SakuraCordThemePreset
     private(set) var activeTheme: SakuraCordGradientTheme
     private(set) var committedTheme: SakuraCordGradientTheme
 
-    private(set) var customTheme: SakuraCordGradientTheme
     @ObservationIgnored private let persistence: SakuraCordThemeSettingsStore
     @ObservationIgnored private var deferredPersistenceTask: Task<Void, Never>?
     @ObservationIgnored private var interactionGeneration: UInt64 = 0
 
     init(persistence: SakuraCordThemeSettingsStore = .shared) {
         self.persistence = persistence
-        let stored = persistence.load()
-        selectedPreset = stored.selectedPreset
-        customTheme = stored.customTheme
-        let initial = stored.selectedPreset.presetTheme ?? stored.customTheme
+        let initial = persistence.load()
         activeTheme = initial
         committedTheme = initial
     }
@@ -515,35 +369,24 @@ final class SakuraCordThemeStore {
         deferredPersistenceTask?.cancel()
     }
 
-    var usesSystemAppearance: Bool {
-        selectedPreset.usesSystemAppearance
-    }
-
     var usesSystemSurface: Bool {
-        usesSystemAppearance || activeTheme.intensity == 0
-    }
-
-    func select(_ preset: SakuraCordThemePreset) {
-        interactionGeneration &+= 1
-        selectedPreset = preset
-        activeTheme = preset.presetTheme ?? customTheme
-        commit()
+        activeTheme.intensity == 0
     }
 
     func setFirstHue(_ hue: Double) {
-        editCustom { $0.first.hue = Self.normalizedHue(hue) }
+        editTheme { $0.first.hue = Self.normalizedHue(hue) }
     }
 
     func setSecondHue(_ hue: Double) {
-        editCustom { $0.second.hue = Self.normalizedHue(hue) }
+        editTheme { $0.second.hue = Self.normalizedHue(hue) }
     }
 
     func setIntensity(_ intensity: Double) {
-        editCustom { $0.intensity = intensity.clamped(to: 0 ... 1) }
+        editTheme { $0.intensity = intensity.clamped(to: 0 ... 1) }
     }
 
     func setBrightness(_ brightness: Double) {
-        editCustom { $0.brightness = brightness.clamped(to: 0 ... 1) }
+        editTheme { $0.brightness = brightness.clamped(to: 0 ... 1) }
     }
 
     func finishInteraction() {
@@ -569,10 +412,8 @@ final class SakuraCordThemeStore {
         interactionGeneration &+= 1
         let generation = interactionGeneration
         let target = randomizedTheme()
-        selectedPreset = .custom
         if reduceMotion {
             activeTheme = target
-            customTheme = target
             commit()
             return
         }
@@ -589,20 +430,15 @@ final class SakuraCordThemeStore {
             let linearProgress = (elapsedSeconds / durationSeconds).clamped(to: 0 ... 1)
             let easedProgress = 1 - pow(1 - linearProgress, 3)
             activeTheme = source.interpolated(to: target, progress: easedProgress)
-            customTheme = activeTheme
             if linearProgress >= 1 { break }
             try? await clock.sleep(for: .milliseconds(8))
         }
         guard !Task.isCancelled, interactionGeneration == generation else { return }
         activeTheme = target
-        customTheme = target
         commit()
     }
 
     func accentNSColor() -> NSColor {
-        if usesSystemAppearance {
-            return Self.systemAccentNSColor
-        }
         let theme = committedTheme
         return NSColor(name: nil) { appearance in
             let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
@@ -622,9 +458,6 @@ final class SakuraCordThemeStore {
             green: Double((colorHex >> 8) & 0xFF) / 255,
             blue: Double(colorHex & 0xFF) / 255
         )
-        if usesSystemAppearance {
-            return NSColor(source)
-        }
         let theme = committedTheme
         return NSColor(name: nil) { appearance in
             let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
@@ -634,24 +467,6 @@ final class SakuraCordThemeStore {
     }
 
     func textSelectionNSColor() -> NSColor {
-        if usesSystemAppearance {
-            return NSColor(name: nil) { appearance in
-                let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                return isDark
-                    ? NSColor(
-                        srgbRed: 89.0 / 255,
-                        green: 93.0 / 255,
-                        blue: 135.0 / 255,
-                        alpha: 1
-                    )
-                    : NSColor(
-                        srgbRed: 205.0 / 255,
-                        green: 209.0 / 255,
-                        blue: 251.0 / 255,
-                        alpha: 1
-                    )
-            }
-        }
         return NSColor(name: nil) { appearance in
             var result = NSColor.selectedTextBackgroundColor
             appearance.performAsCurrentDrawingAppearance {
@@ -667,16 +482,11 @@ final class SakuraCordThemeStore {
         }
     }
 
-    private func editCustom(_ edit: (inout SakuraCordGradientTheme) -> Void) {
+    private func editTheme(_ edit: (inout SakuraCordGradientTheme) -> Void) {
         interactionGeneration &+= 1
-        if selectedPreset != .custom {
-            selectedPreset = .custom
-            customTheme = activeTheme
-        }
         var edited = activeTheme
         edit(&edited)
         activeTheme = edited
-        customTheme = edited
         schedulePersistence()
     }
 
@@ -697,12 +507,7 @@ final class SakuraCordThemeStore {
     }
 
     private func save() {
-        persistence.save(
-            SakuraCordThemeSettingsSnapshot(
-                selectedPreset: selectedPreset,
-                customTheme: customTheme
-            )
-        )
+        persistence.save(activeTheme)
     }
 
     private static func normalizedHue(_ hue: Double) -> Double {
@@ -715,23 +520,6 @@ final class SakuraCordThemeStore {
         return min(distance, 1 - distance)
     }
 
-    private static var systemAccentNSColor: NSColor {
-        let blurple = NSColor(
-            srgbRed: 0x58 / 255,
-            green: 0x65 / 255,
-            blue: 0xF2 / 255,
-            alpha: 1
-        )
-        return NSColor(name: nil) { appearance in
-            var result = blurple
-            appearance.performAsCurrentDrawingAppearance {
-                result = NSTintConfiguration(preferredColor: blurple)
-                    .equivalentContentTintColor
-                    ?? blurple
-            }
-            return result
-        }
-    }
 }
 
 extension Notification.Name {

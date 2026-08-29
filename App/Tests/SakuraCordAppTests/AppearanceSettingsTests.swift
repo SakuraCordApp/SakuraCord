@@ -23,7 +23,10 @@ import Testing
     let themeStore = SakuraCordThemeStore(
         persistence: SakuraCordThemeSettingsStore(preferences: preferences)
     )
-    themeStore.select(.sunsetSoda)
+    themeStore.setFirstHue(0.04)
+    themeStore.setSecondHue(0.96)
+    themeStore.setIntensity(0.72)
+    themeStore.finishInteraction()
     let effectiveAccent = themeStore.accentNSColor()
     var resolvedComponents: [NSColor] = []
     for appearanceName in [
@@ -48,61 +51,17 @@ import Testing
 }
 
 @MainActor
-@Test func `System theme restores native surfaces and legacy Blurple color behavior`() throws {
+@Test func `Zero intensity uses the native system surface`() {
     let preferences = SettingsPreferenceStore(defaults: InMemoryPreferences())
     let themeStore = SakuraCordThemeStore(
         persistence: SakuraCordThemeSettingsStore(preferences: preferences)
     )
 
-    #expect(themeStore.selectedPreset == .system)
-    #expect(themeStore.usesSystemAppearance)
-
-    let blurple = NSColor(
-        srgbRed: 0x58 / 255,
-        green: 0x65 / 255,
-        blue: 0xF2 / 255,
-        alpha: 1
-    )
-    let accent = themeStore.accentNSColor()
-    let role = themeStore.roleNSColor(for: 0xA5_50_A7)
-    for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
-        let appearance = try #require(NSAppearance(named: appearanceName))
-        var expectedAccent: NSColor?
-        var actualAccent: NSColor?
-        var actualRole: NSColor?
-        appearance.performAsCurrentDrawingAppearance {
-            expectedAccent = NSTintConfiguration(preferredColor: blurple)
-                .equivalentContentTintColor?
-                .usingColorSpace(.sRGB)
-                ?? blurple
-            actualAccent = accent.usingColorSpace(.sRGB)
-            actualRole = role.usingColorSpace(.sRGB)
-        }
-
-        let expected = try #require(expectedAccent)
-        let resolvedAccent = try #require(actualAccent)
-        let resolvedRole = try #require(actualRole)
-        #expect(abs(resolvedAccent.redComponent - expected.redComponent) < 0.0001)
-        #expect(abs(resolvedAccent.greenComponent - expected.greenComponent) < 0.0001)
-        #expect(abs(resolvedAccent.blueComponent - expected.blueComponent) < 0.0001)
-        #expect(abs(resolvedRole.redComponent - 0xA5 / 255) < 0.0001)
-        #expect(abs(resolvedRole.greenComponent - 0x50 / 255) < 0.0001)
-        #expect(abs(resolvedRole.blueComponent - 0xA7 / 255) < 0.0001)
-    }
-
-    themeStore.select(.blueHour)
-    #expect(!themeStore.usesSystemAppearance)
     #expect(!themeStore.usesSystemSurface)
     themeStore.setIntensity(0)
-    #expect(themeStore.selectedPreset == .custom)
-    #expect(!themeStore.usesSystemAppearance)
     #expect(themeStore.usesSystemSurface)
     themeStore.setIntensity(0.01)
-    #expect(!themeStore.usesSystemAppearance)
     #expect(!themeStore.usesSystemSurface)
-    themeStore.select(.system)
-    #expect(themeStore.usesSystemAppearance)
-    #expect(themeStore.usesSystemSurface)
 }
 
 @MainActor
@@ -135,68 +94,12 @@ import Testing
 }
 
 @MainActor
-@Test func `Every preset synchronizes controls and any edit creates Custom`() throws {
-    let preferences = SettingsPreferenceStore(defaults: InMemoryPreferences())
-    let themeStore = SakuraCordThemeStore(
-        persistence: SakuraCordThemeSettingsStore(preferences: preferences)
-    )
-
-    for preset in SakuraCordThemePreset.allCases where preset != .custom {
-        let expected = try #require(preset.presetTheme)
-        themeStore.select(preset)
-        #expect(themeStore.selectedPreset == preset)
-        #expect(themeStore.activeTheme == expected)
-        #expect(themeStore.activeTheme.brightness == 1)
-
-        themeStore.setFirstHue(expected.first.hue + 0.1)
-        #expect(themeStore.selectedPreset == .custom)
-        #expect(themeStore.activeTheme.first.hue != expected.first.hue)
-        themeStore.finishInteraction()
-    }
-
-    let setters: [(SakuraCordThemeStore) -> Void] = [
-        { $0.setFirstHue(0.11) },
-        { $0.setSecondHue(0.22) },
-        { $0.setIntensity(0.33) },
-        { $0.setBrightness(0.44) },
-    ]
-    for setter in setters {
-        themeStore.select(.solarFlare)
-        setter(themeStore)
-        #expect(themeStore.selectedPreset == .custom)
-        themeStore.finishInteraction()
-    }
-}
-
-@MainActor
-@Test func `Editing System starts Custom from a vivid editor seed`() throws {
-    let preferences = SettingsPreferenceStore(defaults: InMemoryPreferences())
-    let themeStore = SakuraCordThemeStore(
-        persistence: SakuraCordThemeSettingsStore(preferences: preferences)
-    )
-    let systemSeed = try #require(SakuraCordThemePreset.system.presetTheme)
-
-    #expect(systemSeed.first.saturation >= 0.65)
-    #expect(systemSeed.second.saturation >= 0.65)
-    #expect(systemSeed.intensity >= 0.5)
-
-    themeStore.select(.system)
-    themeStore.setFirstHue(0.25)
-
-    #expect(themeStore.selectedPreset == .custom)
-    #expect(themeStore.activeTheme.first.saturation == systemSeed.first.saturation)
-    #expect(themeStore.activeTheme.second.saturation == systemSeed.second.saturation)
-    #expect(themeStore.activeTheme.intensity == systemSeed.intensity)
-}
-
-@MainActor
-@Test func `Single Custom preset persists all controls across store recreation`() {
+@Test func `Theme designer persists all controls across store recreation`() {
     let defaults = InMemoryPreferences()
     let preferences = SettingsPreferenceStore(defaults: defaults)
     let persistence = SakuraCordThemeSettingsStore(preferences: preferences)
     let themeStore = SakuraCordThemeStore(persistence: persistence)
 
-    themeStore.select(.blueHour)
     themeStore.setFirstHue(0.01)
     themeStore.setSecondHue(0.99)
     themeStore.setIntensity(1)
@@ -204,27 +107,27 @@ import Testing
     themeStore.finishInteraction()
     let expected = themeStore.activeTheme
 
-    themeStore.select(.wildMint)
-    themeStore.select(.custom)
-    #expect(themeStore.activeTheme == expected)
-
     let restored = SakuraCordThemeStore(persistence: persistence)
-    #expect(restored.selectedPreset == .custom)
     #expect(restored.activeTheme == expected)
+
+    let export = preferences.export(scope: .appWide, page: .appearance)
+    #expect(
+        export.values[SettingsControlID.themeDesigner.rawValue]
+            == .string(expected.storageValue)
+    )
 }
 
 @MainActor
 @Test func `Invalid persisted theme values fall back safely`() {
     let preferences = SettingsPreferenceStore(defaults: InMemoryPreferences())
-    preferences.set(.string("removed-theme"), for: .gradientTheme)
-    preferences.set(.string("not,a,theme"), for: .customGradientTheme)
+    preferences.set(.string("not,a,theme"), for: .themeDesigner)
 
-    let snapshot = SakuraCordThemeSettingsStore(preferences: preferences).load()
-    #expect(snapshot == .defaults)
+    let theme = SakuraCordThemeSettingsStore(preferences: preferences).load()
+    #expect(theme == .defaultTheme)
 }
 
 @MainActor
-@Test func `Randomise is immediate with Reduce Motion and commits Custom`() async {
+@Test func `Randomise is immediate with Reduce Motion and commits the theme`() async {
     let preferences = SettingsPreferenceStore(defaults: InMemoryPreferences())
     let themeStore = SakuraCordThemeStore(
         persistence: SakuraCordThemeSettingsStore(preferences: preferences)
@@ -235,7 +138,6 @@ import Testing
 
     await themeStore.randomize(reduceMotion: true)
 
-    #expect(themeStore.selectedPreset == .custom)
     #expect(themeStore.activeTheme == themeStore.committedTheme)
     #expect(themeStore.activeTheme != original)
     #expect(themeStore.activeTheme.brightness == original.brightness)
@@ -255,7 +157,6 @@ import Testing
     let task = Task { await themeStore.randomize(reduceMotion: false) }
     try? await Task.sleep(for: .milliseconds(60))
 
-    #expect(themeStore.selectedPreset == .custom)
     #expect(themeStore.activeTheme != original)
     #expect(themeStore.committedTheme == original)
     #expect(themeStore.activeTheme.brightness == original.brightness)
@@ -267,7 +168,7 @@ import Testing
 }
 
 @MainActor
-@Test func `Preset selection wins over an in flight Randomise transition`() async throws {
+@Test func `Manual editing wins over an in flight Randomise transition`() async throws {
     let preferences = SettingsPreferenceStore(defaults: InMemoryPreferences())
     let themeStore = SakuraCordThemeStore(
         persistence: SakuraCordThemeSettingsStore(preferences: preferences)
@@ -275,17 +176,17 @@ import Testing
     let task = Task { await themeStore.randomize(reduceMotion: false) }
     try await Task.sleep(for: .milliseconds(60))
 
-    themeStore.select(.blueHour)
+    themeStore.setFirstHue(0.42)
+    themeStore.setSecondHue(0.84)
+    themeStore.finishInteraction()
+    let expected = themeStore.activeTheme
     await task.value
 
-    let expected = try #require(SakuraCordThemePreset.blueHour.presetTheme)
-    #expect(themeStore.selectedPreset == .blueHour)
     #expect(themeStore.activeTheme == expected)
     #expect(themeStore.committedTheme == expected)
 }
 
-@Test func `All presets and extreme Custom values preserve readable adaptive contrast`() {
-    let presets = SakuraCordThemePreset.allCases.compactMap(\.presetTheme)
+@Test func `Extreme theme values preserve readable adaptive contrast`() {
     let extremes = [
         SakuraCordGradientTheme(
             first: .init(hue: 0, saturation: 0),
@@ -299,10 +200,10 @@ import Testing
             intensity: 1,
             brightness: 1
         ),
-        SakuraCordGradientTheme.defaultCustom,
+        SakuraCordGradientTheme.defaultTheme,
     ]
 
-    for theme in presets + extremes {
+    for theme in extremes {
         for appearance in [SakuraCordThemeAppearance.light, .dark] {
             let blendOpacity = theme.backgroundBlendOpacity(for: appearance)
             #expect(blendOpacity >= 0)

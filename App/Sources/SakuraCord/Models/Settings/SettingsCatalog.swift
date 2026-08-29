@@ -241,8 +241,7 @@ nonisolated extension SettingsControlID {
     static let confirmQuitActiveWork = Self(rawValue: "general.confirm-quit-active-work")
     static let confirmDiscardComposer = Self(rawValue: "general.confirm-discard-composer")
     static let appColorScheme = Self(rawValue: "appearance.color-scheme")
-    static let gradientTheme = Self(rawValue: "appearance.gradient-theme")
-    static let customGradientTheme = Self(rawValue: "appearance.custom-gradient-theme")
+    static let themeDesigner = Self(rawValue: "appearance.theme-designer")
     static let composerBarAppearance = Self(rawValue: "appearance.composer-bar")
     static let messageDensity = Self(rawValue: "interface.message-density")
     static let sidebarDensity = Self(rawValue: "interface.sidebar-density")
@@ -654,12 +653,12 @@ private nonisolated extension SettingsCatalog {
             scope: .appWideLocal
         ),
         control(
-            .gradientTheme,
+            .themeDesigner,
             page: .appearance,
             section: .appearanceTheme,
-            label: "Gradient theme",
-            help: "Choose a preset or shape one persistent custom gradient with color, intensity, and brightness controls.",
-            keywords: ["gradient", "theme", "preset", "custom", "color", "intensity", "brightness", "randomise"],
+            label: "Theme Designer",
+            help: "Create a theme with color, intensity, brightness, and randomisation controls.",
+            keywords: ["gradient", "theme", "designer", "color", "intensity", "brightness", "randomise"],
             scope: .appWideLocal
         ),
         control(

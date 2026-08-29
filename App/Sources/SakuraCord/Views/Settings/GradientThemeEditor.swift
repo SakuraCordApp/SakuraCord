@@ -6,154 +6,10 @@ struct GradientThemeEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            GradientThemePresetGrid(themeStore: themeStore)
-            Divider()
             GradientThemeEditorHeader(themeStore: themeStore)
             GradientThemeControls(themeStore: themeStore)
         }
         .padding(.vertical, 6)
-    }
-}
-
-private struct GradientThemePresetGrid: View {
-    let themeStore: SakuraCordThemeStore
-    private let columns = Array(
-        repeating: GridItem(.flexible(minimum: 86), spacing: 10),
-        count: 5
-    )
-
-    var body: some View {
-        LazyVGrid(columns: columns, spacing: 10) {
-            ForEach(SakuraCordThemePreset.allCases) { preset in
-                GradientThemePresetCard(preset: preset, themeStore: themeStore)
-            }
-        }
-    }
-}
-
-private struct GradientThemePresetCard: View {
-    let preset: SakuraCordThemePreset
-    let themeStore: SakuraCordThemeStore
-
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
-
-    var body: some View {
-        let isSelected = themeStore.selectedPreset == preset
-        let theme = preset == .custom
-            ? themeStore.customTheme
-            : (preset.presetTheme ?? .defaultCustom)
-        let previewTheme = SakuraCordGradientTheme(
-            first: theme.first,
-            second: theme.second,
-            intensity: 1,
-            brightness: 1
-        )
-
-        Button {
-            themeStore.select(preset)
-        } label: {
-            ZStack(alignment: .bottomLeading) {
-                GradientThemePreview(
-                    theme: previewTheme,
-                    usesSystemAppearance: preset.usesSystemAppearance,
-                    colorScheme: colorScheme,
-                    increasesContrast: colorSchemeContrast == .increased
-                )
-
-                if let systemImage = preset.systemImage {
-                    Image(systemName: systemImage)
-                        .font(.title3.weight(.medium))
-                        .foregroundStyle(.primary.opacity(0.72))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding(.bottom, 13)
-                }
-
-                Text(preset.title)
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.78)
-                    .padding(10)
-
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.primary)
-                        .frame(width: 25, height: 25)
-                        .glassEffect(
-                            .regular.tint(SakuraCordAccentColor.color.opacity(0.34)),
-                            in: Circle()
-                        )
-                        .padding(7)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                }
-            }
-            .aspectRatio(1.22, contentMode: .fit)
-            .contentShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 15, style: .continuous)
-                    .stroke(
-                        isSelected ? Color.primary.opacity(0.82) : Color.primary.opacity(0.14),
-                        lineWidth: isSelected ? 2.5 : 1
-                    )
-            }
-            .shadow(
-                color: isSelected ? SakuraCordAccentColor.color.opacity(0.42) : .clear,
-                radius: 12
-            )
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(preset.title)
-        .accessibilityValue(isSelected ? "Selected" : "")
-    }
-}
-
-private struct GradientThemePreview: View {
-    let theme: SakuraCordGradientTheme
-    let usesSystemAppearance: Bool
-    let colorScheme: ColorScheme
-    let increasesContrast: Bool
-
-    var body: some View {
-        if usesSystemAppearance {
-            Color(nsColor: .windowBackgroundColor)
-                .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-        } else {
-            GradientThemePreviewBackground(
-                theme: theme,
-                colorScheme: colorScheme,
-                increasesContrast: increasesContrast
-            )
-        }
-    }
-}
-
-private struct GradientThemePreviewBackground: View {
-    let theme: SakuraCordGradientTheme
-    let colorScheme: ColorScheme
-    let increasesContrast: Bool
-
-    var body: some View {
-        let appearance: SakuraCordThemeAppearance = colorScheme == .dark ? .dark : .light
-        let colors = theme.backgroundColors(for: colorScheme)
-        let opacity = theme.backgroundBlendOpacity(for: appearance)
-            * (increasesContrast ? 0.78 : 1)
-
-        ZStack {
-            Color(nsColor: .windowBackgroundColor)
-            theme.surfaceTargetColor(for: colorScheme)
-                .opacity(theme.intensityProgress)
-            LinearGradient(
-                colors: [
-                    colors.first.opacity(opacity),
-                    colors.second.opacity(opacity * 0.86),
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
     }
 }
 
@@ -165,9 +21,9 @@ private struct GradientThemeEditorHeader: View {
         let colors = themeStore.activeTheme.colors(for: colorScheme)
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("Color Splat", bundle: #bundle)
+                Text("Theme Designer", bundle: #bundle)
                     .font(.title3.weight(.semibold))
-                Text("Shape a blend that feels like yours.", bundle: #bundle)
+                Text("Create your perfect theme.", bundle: #bundle)
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }

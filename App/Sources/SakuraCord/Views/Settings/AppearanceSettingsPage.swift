@@ -29,7 +29,7 @@ struct AppearanceSettingsPage: View {
                 .settingsControlAnchor(.appColorScheme, state: state)
 
                 GradientThemeEditor(themeStore: .shared)
-                    .settingsControlAnchor(.gradientTheme, state: state)
+                    .settingsControlAnchor(.themeDesigner, state: state)
             } header: {
                 Text("Theme", bundle: #bundle)
             }
