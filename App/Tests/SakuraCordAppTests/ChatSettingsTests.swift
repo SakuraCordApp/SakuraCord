@@ -119,6 +119,76 @@ import Testing
 }
 
 @MainActor
+@Test func `SakuraCord update links replace Discord previews with native actions`() throws {
+    let url = try #require(
+        URL(string: "https://sakuracord.app/settings/update")
+    )
+    let message = Message(
+        id: MessageID(rawValue: 64),
+        channelID: ChannelID(rawValue: 65),
+        author: User(
+            id: UserID(rawValue: 66),
+            username: "fixture",
+            displayName: "Fixture"
+        ),
+        content: "Try [the updater](\(url.absoluteString)).",
+        embeds: [
+            MessageEmbed(
+                title: "Check for Updates in SakuraCord",
+                type: "rich",
+                description: "This is a SakuraCord settings deeplink.",
+                url: url
+            ),
+        ]
+    )
+    let row = MessageRowPresentation(
+        message: message,
+        startsGroup: true,
+        startsDay: false,
+        replyPreview: nil,
+        isReplyAvailable: false
+    )
+    #expect(row.sakuraCordDeepLink?.action == .checkForUpdates)
+    #expect(MessageEmbedPresentation.visibleEmbeds(for: message).isEmpty)
+
+    let item = NativeMessageTimelineItem.message(
+        row,
+        isUnreadBoundary: false,
+        isHighlighted: false
+    )
+    let model = AppModel(launchMode: .offlineTesting)
+    let layout = NativeTimelineRowLayout.make(
+        item: item,
+        width: 900,
+        model: model
+    )
+    #expect(layout.sakuraCordDeepLinkRegion?.action == .checkForUpdates)
+    #expect(layout.embedRegions.isEmpty)
+
+    var settings = model.chatSettings
+    settings.showsAutomaticLinkPreviews = false
+    model.applyChatSettings(settings, persists: false)
+    let hidden = NativeTimelineRowLayout.make(
+        item: item,
+        width: 900,
+        model: model
+    )
+    #expect(hidden.sakuraCordDeepLinkRegion == nil)
+    #expect(hidden.attributedContent?.string.contains("the updater") == true)
+
+    #expect(
+        SakuraCordDeepLinkPresentation.first(
+            in: "https://sakuracord.app.evil/settings/update"
+        ) == nil
+    )
+    #expect(
+        SakuraCordDeepLinkPresentation.first(
+            in: "http://sakuracord.app/settings/update"
+        ) == nil
+    )
+}
+
+@MainActor
 @Test func `spoiler reveal policy supports modifier assisted and always modes`() {
     #expect(ChatSpoilerRevealMode.click.permitsReveal(modifierFlags: []))
     #expect(!ChatSpoilerRevealMode.optionClick.permitsReveal(modifierFlags: []))

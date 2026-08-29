@@ -178,6 +178,7 @@ final class MessageRowPresentation: Identifiable, Equatable, Sendable {
     let replyPreview: MessageReplyPreview?
     let isReplyAvailable: Bool
     let textPlan: NativeTimelineTextPlan
+    let sakuraCordDeepLink: SakuraCordDeepLink?
     let searchContext: MessageSearchRowContext?
 
     nonisolated var identity: MessageRowIdentity {
@@ -203,6 +204,9 @@ final class MessageRowPresentation: Identifiable, Equatable, Sendable {
         self.replyPreview = replyPreview
         self.isReplyAvailable = isReplyAvailable
         self.textPlan = textPlan ?? NativeTimelineTextPlan.make(for: message)
+        sakuraCordDeepLink = SakuraCordDeepLinkPresentation.first(
+            in: message.content
+        )
         self.searchContext = searchContext
     }
 
@@ -219,6 +223,7 @@ final class MessageRowPresentation: Identifiable, Equatable, Sendable {
             && lhs.replyPreview == rhs.replyPreview
             && lhs.isReplyAvailable == rhs.isReplyAvailable
             && lhs.textPlan == rhs.textPlan
+            && lhs.sakuraCordDeepLink == rhs.sakuraCordDeepLink
             && lhs.searchContext == rhs.searchContext
     }
 }

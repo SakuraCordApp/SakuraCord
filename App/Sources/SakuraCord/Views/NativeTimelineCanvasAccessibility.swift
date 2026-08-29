@@ -632,6 +632,12 @@ extension NativeTimelineCanvasView {
             rowIndex: rowIndex,
             parent: element
         )
+        appendSakuraCordDeepLinkAccessibility(
+            to: &children,
+            layout: layout,
+            rowIndex: rowIndex,
+            parent: element
+        )
         appendComponentAccessibility(
             to: &children,
             message: message,
@@ -916,6 +922,39 @@ extension NativeTimelineCanvasView {
                 })
             }
         }
+    }
+
+    func appendSakuraCordDeepLinkAccessibility(
+        to children: inout [Any],
+        layout: NativeTimelineRowLayout,
+        rowIndex: Int,
+        parent: NSAccessibilityElement
+    ) {
+        guard let region = layout.sakuraCordDeepLinkRegion else { return }
+        let group = accessibilityElement(
+            role: .group,
+            label: "SakuraCord deeplink, \(region.action.title)",
+            frame: accessibilityChildFrame(
+                region.cardFrame,
+                rowIndex: rowIndex
+            ),
+            parent: parent
+        )
+        let button = accessibilityElement(
+            role: .button,
+            label: region.action.buttonTitle,
+            help: "Checks SakuraCord's signed update feed",
+            frame: accessibilityChildFrame(
+                region.buttonFrame,
+                rowIndex: rowIndex
+            ),
+            parent: group
+        ) { [weak self] in
+            self?.actions?.checkForUpdates()
+            return self?.actions != nil
+        }
+        group.setAccessibilityChildren([button])
+        children.append(group)
     }
 
     var componentAccessibilityAppendOperation:

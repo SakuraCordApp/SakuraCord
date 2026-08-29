@@ -133,10 +133,24 @@ final class NativeTimelineCanvasView: NSView {
     }
 
     struct ComponentButtonPointerHit {
+        enum Kind {
+            case component(NativeTimelineComponentLayout.ButtonRegion)
+            case sakuraCordDeepLink(SakuraCordDeepLinkAction)
+
+            var isDisabled: Bool {
+                switch self {
+                case let .component(region):
+                    region.isDisabled
+                case .sakuraCordDeepLink:
+                    false
+                }
+            }
+        }
+
         let target: NativeTimelineComponentButtonTarget
         let rowIndex: Int
         let message: Message
-        let region: NativeTimelineComponentLayout.ButtonRegion
+        let kind: Kind
         let frame: CGRect
     }
 

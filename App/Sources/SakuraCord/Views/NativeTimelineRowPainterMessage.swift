@@ -551,6 +551,20 @@ extension NativeTimelineRowPainter {
                 }
             }
         }
+        if let region = layout.sakuraCordDeepLinkRegion {
+            let target = NativeTimelineComponentButtonTarget(
+                messageID: message.id,
+                componentID: region.action.componentID
+            )
+            sakuraCordDeepLinkCard(
+                region,
+                isButtonHovered: hoveredComponentButton == target,
+                buttonPressProgress:
+                    pressedComponentButton == target
+                        ? componentButtonPressProgress
+                        : 0
+            )
+        }
         for (layoutIndex, componentLayout) in
             layout.componentLayouts.enumerated()
         {
@@ -1128,6 +1142,139 @@ extension NativeTimelineRowPainter {
         )
         border.lineWidth = 1
         border.stroke()
+    }
+
+    static func sakuraCordDeepLinkCard(
+        _ region: NativeTimelineRowLayout.SakuraCordDeepLinkRegion,
+        isButtonHovered: Bool,
+        buttonPressProgress: CGFloat
+    ) {
+        let accent = NSColor.sakuraCordAccentColor
+        let shape = NSBezierPath(
+            concentricRoundedRect: region.cardFrame,
+            cornerRadius: 17
+        )
+
+        NSGraphicsContext.saveGraphicsState()
+        let glow = NSShadow()
+        glow.shadowColor = accent.withAlphaComponent(0.28)
+        glow.shadowBlurRadius = 13
+        glow.shadowOffset = .zero
+        glow.set()
+        accent.withAlphaComponent(0.20).setFill()
+        shape.fill()
+        NSGraphicsContext.restoreGraphicsState()
+
+        NSGraphicsContext.saveGraphicsState()
+        shape.addClip()
+        NativeTimelineSemanticColor.opacity(
+            .controlBackgroundColor,
+            0.94
+        ).setFill()
+        region.cardFrame.fill()
+        NSGraphicsContext.restoreGraphicsState()
+
+        accent.withAlphaComponent(0.42).setStroke()
+        let border = NSBezierPath(
+            concentricRoundedRect:
+                region.cardFrame.insetBy(dx: 0.5, dy: 0.5),
+            cornerRadius: 16.5
+        )
+        border.lineWidth = 1
+        border.stroke()
+
+        accent.withAlphaComponent(0.16).setFill()
+        NSBezierPath(
+            ovalIn: region.symbolBackgroundFrame
+        ).fill()
+        systemSymbol(
+            region.action.systemImage,
+            in: region.symbolFrame,
+            color: accent,
+            inset: 2,
+            weight: .semibold
+        )
+        text(
+            region.action.title,
+            in: region.titleFrame,
+            font: .systemFont(ofSize: 14, weight: .semibold),
+            color: .labelColor,
+            lineBreakMode: .byTruncatingTail
+        )
+
+        sakuraCordDeepLinkButton(
+            region,
+            isHovered: isButtonHovered,
+            pressProgress: buttonPressProgress,
+            accent: accent
+        )
+    }
+
+    static func sakuraCordDeepLinkButton(
+        _ region: NativeTimelineRowLayout.SakuraCordDeepLinkRegion,
+        isHovered: Bool,
+        pressProgress: CGFloat,
+        accent: NSColor
+    ) {
+        let pressProgress = min(max(pressProgress, 0), 1)
+        let scale = NativeTimelineComponentButtonVisualState.scale(
+            pressProgress: pressProgress
+        )
+        let brightness = NativeTimelineComponentButtonVisualState.brightness(
+            isHovered: isHovered,
+            pressProgress: pressProgress
+        )
+        let buttonColor = adjustedBrightness(
+            accent,
+            amount: brightness
+        )
+        NSGraphicsContext.saveGraphicsState()
+        if abs(scale - 1) > 0.0001 {
+            let transform = NSAffineTransform()
+            transform.translateX(
+                by: region.buttonFrame.midX,
+                yBy: region.buttonFrame.midY
+            )
+            transform.scaleX(by: scale, yBy: scale)
+            transform.translateX(
+                by: -region.buttonFrame.midX,
+                yBy: -region.buttonFrame.midY
+            )
+            transform.concat()
+        }
+        buttonColor.setFill()
+        NSBezierPath(
+            concentricRoundedRect: region.buttonFrame,
+            cornerRadius: 6
+        ).fill()
+        adjustedBrightness(
+            .white,
+            amount: brightness
+        ).withAlphaComponent(
+            NativeTimelineComponentButtonVisualState.borderAlpha(
+                isHovered: isHovered,
+                isEnabled: true
+            )
+        ).setStroke()
+        let buttonBorder = NSBezierPath(
+            concentricRoundedRect:
+                region.buttonFrame.insetBy(dx: 0.5, dy: 0.5),
+            cornerRadius: 5.5
+        )
+        buttonBorder.lineWidth = 1
+        buttonBorder.stroke()
+        text(
+            region.action.buttonTitle,
+            in: region.buttonFrame,
+            font: NativeTimelineComponentButtonMetrics.font,
+            color: adjustedBrightness(
+                .white,
+                amount: brightness
+            ),
+            alignment: .center,
+            lineBreakMode: .byTruncatingTail
+        )
+        NSGraphicsContext.restoreGraphicsState()
     }
 
 }

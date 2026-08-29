@@ -97,6 +97,14 @@ extension NativeTimelineCanvasView {
                         cursor: .pointingHand
                     )
                 }
+                if let frame = layouts[index]
+                    .sakuraCordDeepLinkRegion?.buttonFrame
+                {
+                    addCursorRect(
+                        frame.offsetBy(dx: 0, dy: rowOrigin),
+                        cursor: .pointingHand
+                    )
+                }
                 installForwardedSourceCursor(at: index, rowOrigin: rowOrigin)
             }
             index += 1
@@ -326,7 +334,7 @@ extension NativeTimelineCanvasView {
             return
         }
         if let hit = componentButtonPointerHit(at: point),
-           !hit.region.isDisabled
+           !hit.kind.isDisabled
         {
             setHoveredComponentButton(hit.target)
             pressedComponentButton = hit.target
@@ -470,10 +478,15 @@ extension NativeTimelineCanvasView {
                 released: hit?.target
             ), let hit
             {
-                _ = activateComponentButton(
-                    hit.region,
-                    message: hit.message
-                )
+                switch hit.kind {
+                case let .component(region):
+                    _ = activateComponentButton(
+                        region,
+                        message: hit.message
+                    )
+                case .sakuraCordDeepLink(.checkForUpdates):
+                    actions?.checkForUpdates()
+                }
             }
             return
         }
@@ -1353,6 +1366,23 @@ extension NativeTimelineCanvasView {
             x: point.x,
             y: point.y - rowOrigin
         )
+        if let region = layouts[index].sakuraCordDeepLinkRegion,
+           region.buttonFrame.contains(local)
+        {
+            return ComponentButtonPointerHit(
+                target: NativeTimelineComponentButtonTarget(
+                    messageID: row.id,
+                    componentID: region.action.componentID
+                ),
+                rowIndex: index,
+                message: row.message,
+                kind: .sakuraCordDeepLink(region.action),
+                frame: region.buttonFrame.offsetBy(
+                    dx: 0,
+                    dy: rowOrigin
+                )
+            )
+        }
         for layout in layouts[index].componentLayouts {
             if layout.containers.contains(where: { container in
                 guard container.isSpoiler,
@@ -1376,7 +1406,7 @@ extension NativeTimelineCanvasView {
                     ),
                     rowIndex: index,
                     message: row.message,
-                    region: region,
+                    kind: .component(region),
                     frame: region.frame.offsetBy(
                         dx: 0,
                         dy: rowOrigin

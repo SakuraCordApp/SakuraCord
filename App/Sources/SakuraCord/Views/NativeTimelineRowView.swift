@@ -155,6 +155,7 @@ struct NativeTimelineRowActions {
         ComponentInteractionKind,
         [String]
     ) -> Void
+    var checkForUpdates: () -> Void
 
     init(
         loadEarlier: @escaping () -> Void,
@@ -174,7 +175,8 @@ struct NativeTimelineRowActions {
             ComponentInteractionKind,
             [String]
         ) -> Void,
-        discardFailed: @escaping (Message) -> Void = { _ in }
+        discardFailed: @escaping (Message) -> Void = { _ in },
+        checkForUpdates: @escaping () -> Void = {}
     ) {
         self.loadEarlier = loadEarlier
         self.openMessage = openMessage
@@ -189,6 +191,7 @@ struct NativeTimelineRowActions {
         self.react = react
         self.openThread = openThread
         self.submitComponent = submitComponent
+        self.checkForUpdates = checkForUpdates
     }
 }
 
@@ -480,6 +483,16 @@ struct NativeTimelineRowLayout {
         let accentColor: UInt32?
     }
 
+    struct SakuraCordDeepLinkRegion {
+        let action: SakuraCordDeepLinkAction
+        let frame: CGRect
+        let cardFrame: CGRect
+        let symbolBackgroundFrame: CGRect
+        let symbolFrame: CGRect
+        let titleFrame: CGRect
+        let buttonFrame: CGRect
+    }
+
     let height: CGFloat
     let loaderLayout: NativeTimelineLoaderLayout?
     let beginningLayout: NativeTimelineBeginningLayout?
@@ -509,6 +522,7 @@ struct NativeTimelineRowLayout {
     let attachmentRegions: [AttachmentRegion]
     let embedFrames: [CGRect]
     let embedRegions: [EmbedRegion]
+    let sakuraCordDeepLinkRegion: SakuraCordDeepLinkRegion?
     let componentFrames: [CGRect]
     let componentLayouts: [NativeTimelineComponentLayout]
     let stickerFrames: [CGRect]
@@ -591,6 +605,7 @@ struct NativeTimelineRowLayout {
             attachmentRegions: [],
             embedFrames: [],
             embedRegions: [],
+            sakuraCordDeepLinkRegion: nil,
             componentFrames: [],
             componentLayouts: [],
             stickerFrames: [],
@@ -985,6 +1000,22 @@ struct NativeTimelineRowLayout {
         }
 
         var embedRegions: [EmbedRegion] = []
+        var sakuraCordDeepLinkRegion: SakuraCordDeepLinkRegion?
+        if !usesComponentsV2,
+           chatSettings.expandsEmbedsByDefault,
+           chatSettings.showsAutomaticLinkPreviews,
+           let deepLink = row.sakuraCordDeepLink
+        {
+            let deepLinkY = verticalOffset + (hasRichContent ? 8 : 0)
+            let region = NativeTimelineSakuraCordDeepLinkLayout.make(
+                deepLink,
+                origin: CGPoint(x: contentX, y: deepLinkY),
+                maximumWidth: inlineMediaMaximumWidth
+            )
+            sakuraCordDeepLinkRegion = region
+            verticalOffset = region.frame.maxY
+            hasRichContent = true
+        }
         if !usesComponentsV2, chatSettings.expandsEmbedsByDefault {
             let visibleEmbeds =
                 MessageEmbedPresentation.visibleEmbeds(
@@ -1252,6 +1283,7 @@ struct NativeTimelineRowLayout {
             attachmentRegions: attachmentRegions,
             embedFrames: embedFrames,
             embedRegions: embedRegions,
+            sakuraCordDeepLinkRegion: sakuraCordDeepLinkRegion,
             componentFrames: componentFrames,
             componentLayouts: componentLayouts,
             stickerFrames: stickerFrames,

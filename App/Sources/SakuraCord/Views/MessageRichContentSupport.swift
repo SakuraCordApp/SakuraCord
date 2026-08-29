@@ -27,7 +27,16 @@ nonisolated enum MessageEmbedPresentation {
         let linkedEmojiURLs =
             LinkedImagePresentation(content: message.content)
                 .matchedEmojiURLs
+        let sakuraCordDeepLink = SakuraCordDeepLinkPresentation.first(
+            in: message.content
+        )
         return message.embeds.filter { embed in
+            if let url = embed.url,
+               let action = SakuraCordDeepLinkPresentation.action(for: url),
+               action == sakuraCordDeepLink?.action
+            {
+                return false
+            }
             if !showsAutomaticLinkPreviews,
                isAutomaticLinkPreview(embed, messageContent: message.content)
             {

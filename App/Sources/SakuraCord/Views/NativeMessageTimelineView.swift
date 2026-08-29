@@ -988,6 +988,10 @@ extension NativeMessageTimelineCoordinator {
                 },
                 discardFailed: { [weak model = parent.model] message in
                     model?.discardFailedOutgoingMessage(message)
+                },
+                checkForUpdates: {
+                    (NSApp.delegate as? AppDelegate)?
+                        .updateController.checkForUpdates()
                 }
             )
         }
