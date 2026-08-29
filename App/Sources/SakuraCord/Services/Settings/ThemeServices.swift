@@ -12,9 +12,70 @@ nonisolated struct SakuraCordThemeColor: Codable, Equatable, Hashable, Sendable 
         self.saturation = saturation.clamped(to: 0 ... 1)
     }
 
+    init(sRGBRed red: Int, green: Int, blue: Int) {
+        let red = Double(red) / 255
+        let green = Double(green) / 255
+        let blue = Double(blue) / 255
+        let maximumComponent = max(red, green, blue)
+        let minimumComponent = min(red, green, blue)
+        let delta = maximumComponent - minimumComponent
+
+        let hue: Double
+        if delta == 0 {
+            hue = 0
+        } else if maximumComponent == red {
+            hue = ((green - blue) / delta).truncatingRemainder(dividingBy: 6) / 6
+        } else if maximumComponent == green {
+            hue = ((blue - red) / delta + 2) / 6
+        } else {
+            hue = ((red - green) / delta + 4) / 6
+        }
+        self.init(
+            hue: hue,
+            saturation: maximumComponent == 0 ? 0 : delta / maximumComponent
+        )
+    }
+
+    static let discordBlurple = Self(sRGBRed: 0x58, green: 0x65, blue: 0xF2)
+
     private static func normalizedHue(_ hue: Double) -> Double {
         let remainder = hue.truncatingRemainder(dividingBy: 1)
         return remainder < 0 ? remainder + 1 : remainder
+    }
+}
+
+nonisolated enum LegacyAccentColorChoice: String, CaseIterable, Sendable {
+    case blurple
+    case blue
+    case purple
+    case pink
+    case red
+    case orange
+    case yellow
+    case green
+    case gray
+
+    var themeColor: SakuraCordThemeColor {
+        switch self {
+        case .blurple:
+            .discordBlurple
+        case .blue:
+            .init(sRGBRed: 0x00, green: 0x7A, blue: 0xFF)
+        case .purple:
+            .init(sRGBRed: 0x95, green: 0x3D, blue: 0x96)
+        case .pink:
+            .init(sRGBRed: 0xF7, green: 0x4F, blue: 0x9E)
+        case .red:
+            .init(sRGBRed: 0xE0, green: 0x38, blue: 0x3E)
+        case .orange:
+            .init(sRGBRed: 0xF7, green: 0x82, blue: 0x1B)
+        case .yellow:
+            .init(sRGBRed: 0xFF, green: 0xC7, blue: 0x26)
+        case .green:
+            .init(sRGBRed: 0x62, green: 0xBA, blue: 0x46)
+        case .gray:
+            .init(sRGBRed: 0x98, green: 0x98, blue: 0x98)
+        }
     }
 }
 
@@ -117,11 +178,8 @@ nonisolated struct SakuraCordGradientTheme: Codable, Equatable, Hashable, Sendab
     static let minimumHueSpacing = 0.075
 
     static let defaultTheme = SakuraCordGradientTheme(
-        colors: [
-            .init(hue: 0.97, saturation: 0.72),
-            .init(hue: 0.34, saturation: 0.70),
-        ],
-        intensity: 0.62,
+        colors: [.discordBlurple],
+        intensity: 0,
         brightness: 1
     )
 
@@ -498,12 +556,30 @@ final class SakuraCordThemeSettingsStore {
     }
 
     func load() -> SakuraCordGradientTheme {
-        if case let .string(rawValue) = preferences.value(for: .themeDesigner),
-           let stored = SakuraCordGradientTheme(storageValue: rawValue)
-        {
-            return stored
+        if preferences.containsStoredValue(for: .themeDesigner) {
+            if case let .string(rawValue) = preferences.value(for: .themeDesigner),
+               let stored = SakuraCordGradientTheme(storageValue: rawValue)
+            {
+                return stored
+            }
+            return .defaultTheme
         }
-        return .defaultTheme
+
+        let legacyAccent: LegacyAccentColorChoice
+        if case let .string(rawValue) = preferences.value(
+            for: .legacyAccentColorMigration
+        ) {
+            legacyAccent = LegacyAccentColorChoice(rawValue: rawValue) ?? .blurple
+        } else {
+            legacyAccent = .blurple
+        }
+        let migrated = SakuraCordGradientTheme(
+            colors: [legacyAccent.themeColor],
+            intensity: 0,
+            brightness: 1
+        )
+        save(migrated)
+        return migrated
     }
 
     func save(_ theme: SakuraCordGradientTheme) {
@@ -630,7 +706,9 @@ final class SakuraCordThemeStore {
             let themeAppearance: SakuraCordThemeAppearance = isDark ? .dark : .light
             let source = SakuraCordThemeRGB(
                 hue: accentColor.hue,
-                saturation: max(0.54, accentColor.saturation),
+                saturation: accentColor.saturation == 0
+                    ? 0
+                    : max(0.54, accentColor.saturation),
                 brightness: 0.82
             )
             return NSColor(theme.readableForeground(source, for: themeAppearance))

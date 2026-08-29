@@ -241,6 +241,7 @@ nonisolated extension SettingsControlID {
     static let confirmQuitActiveWork = Self(rawValue: "general.confirm-quit-active-work")
     static let confirmDiscardComposer = Self(rawValue: "general.confirm-discard-composer")
     static let appColorScheme = Self(rawValue: "appearance.color-scheme")
+    static let legacyAccentColorMigration = Self(rawValue: "appearance.accent-color")
     static let themeDesigner = Self(rawValue: "appearance.theme-designer")
     static let composerBarAppearance = Self(rawValue: "appearance.composer-bar")
     static let messageDensity = Self(rawValue: "interface.message-density")

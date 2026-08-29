@@ -175,6 +175,13 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             defaultValue: .string(AppColorScheme.system.rawValue)
         ),
         SettingsPreferenceRegistration(
+            id: .legacyAccentColorMigration,
+            page: .appearance,
+            storage: .appWide(key: "settings.appearance.accentColor"),
+            defaultValue: .string(LegacyAccentColorChoice.blurple.rawValue),
+            exports: false
+        ),
+        SettingsPreferenceRegistration(
             id: .themeDesigner,
             page: .appearance,
             storage: .appWide(key: "settings.appearance.customGradientTheme"),
@@ -868,6 +875,19 @@ final class SettingsPreferenceStore {
         case let .accountLocal(key):
             guard let accountID else { return registration.defaultValue }
             return accountValues()[accountID]?[key] ?? registration.defaultValue
+        }
+    }
+
+    func containsStoredValue(
+        for id: SettingsControlID,
+        accountID: String? = nil
+    ) -> Bool {
+        guard let registration = registry.registration(id) else { return false }
+        return switch registration.storage {
+        case let .appWide(key):
+            defaults.object(forKey: key) != nil
+        case let .accountLocal(key):
+            accountID.flatMap { accountValues()[$0]?[key] } != nil
         }
     }
 

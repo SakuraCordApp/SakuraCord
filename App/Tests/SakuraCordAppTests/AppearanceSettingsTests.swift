@@ -57,11 +57,101 @@ import Testing
         persistence: SakuraCordThemeSettingsStore(preferences: preferences)
     )
 
-    #expect(!themeStore.usesSystemSurface)
-    themeStore.setIntensity(0)
     #expect(themeStore.usesSystemSurface)
     themeStore.setIntensity(0.01)
     #expect(!themeStore.usesSystemSurface)
+    themeStore.setIntensity(0)
+    #expect(themeStore.usesSystemSurface)
+}
+
+@MainActor
+@Test(arguments: LegacyAccentColorChoice.allCases)
+func `Public beta accents migrate into native-surface single-color themes`(
+    _ legacyAccent: LegacyAccentColorChoice
+) {
+    let defaults = InMemoryPreferences()
+    defaults.set(
+        legacyAccent.rawValue,
+        forKey: "settings.appearance.accentColor"
+    )
+    let preferences = SettingsPreferenceStore(defaults: defaults)
+    let persistence = SakuraCordThemeSettingsStore(preferences: preferences)
+
+    let migrated = persistence.load()
+
+    #expect(migrated.colors == [legacyAccent.themeColor])
+    #expect(migrated.activeColorCount == 1)
+    #expect(migrated.intensity == 0)
+    #expect(migrated.brightness == 1)
+    #expect(preferences.containsStoredValue(for: .themeDesigner))
+    #expect(persistence.load() == migrated)
+}
+
+@MainActor
+@Test func `Pre-accent releases and new installs start with native-surface Blurple`() {
+    let preferences = SettingsPreferenceStore(defaults: InMemoryPreferences())
+    let persistence = SakuraCordThemeSettingsStore(preferences: preferences)
+
+    let theme = persistence.load()
+
+    #expect(theme == .defaultTheme)
+    #expect(theme.colors == [.discordBlurple])
+    #expect(theme.activeColorCount == 1)
+    #expect(theme.intensity == 0)
+    #expect(theme.brightness == 1)
+    #expect(preferences.containsStoredValue(for: .themeDesigner))
+}
+
+@MainActor
+@Test func `Saved gradient themes take precedence over legacy accents`() {
+    let defaults = InMemoryPreferences()
+    defaults.set(
+        LegacyAccentColorChoice.red.rawValue,
+        forKey: "settings.appearance.accentColor"
+    )
+    let preferences = SettingsPreferenceStore(defaults: defaults)
+    let expected = SakuraCordGradientTheme(
+        colors: [
+            .init(hue: 0.18, saturation: 0.72),
+            .init(hue: 0.61, saturation: 0.81),
+        ],
+        intensity: 0.74,
+        brightness: 0.83
+    )
+    preferences.set(.string(expected.storageValue), for: .themeDesigner)
+
+    let actual = SakuraCordThemeSettingsStore(preferences: preferences).load()
+
+    #expect(actual == expected)
+
+    preferences.reset(scope: .appWide, page: .appearance)
+    let reset = SakuraCordThemeSettingsStore(preferences: preferences).load()
+    #expect(reset == .defaultTheme)
+}
+
+@MainActor
+@Test func `Migrated Graphite remains a neutral accent`() throws {
+    let defaults = InMemoryPreferences()
+    defaults.set(
+        LegacyAccentColorChoice.gray.rawValue,
+        forKey: "settings.appearance.accentColor"
+    )
+    let preferences = SettingsPreferenceStore(defaults: defaults)
+    let themeStore = SakuraCordThemeStore(
+        persistence: SakuraCordThemeSettingsStore(preferences: preferences)
+    )
+    let accent = themeStore.accentNSColor()
+
+    for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
+        let appearance = try #require(NSAppearance(named: appearanceName))
+        var resolved: NSColor?
+        appearance.performAsCurrentDrawingAppearance {
+            resolved = accent.usingColorSpace(.sRGB)
+        }
+        let color = try #require(resolved)
+        #expect(abs(color.redComponent - color.greenComponent) < 0.0001)
+        #expect(abs(color.greenComponent - color.blueComponent) < 0.0001)
+    }
 }
 
 @MainActor
@@ -101,6 +191,7 @@ import Testing
     let themeStore = SakuraCordThemeStore(persistence: persistence)
 
     themeStore.setHue(0.01, at: 0)
+    themeStore.addColor()
     themeStore.setHue(0.99, at: 1)
     themeStore.setIntensity(1)
     themeStore.setBrightness(0)
@@ -237,7 +328,7 @@ import Testing
     }
     let decodedPreview = try #require(preview)
     #expect(decodedPreview.appearance == .light)
-    #expect(decodedPreview.theme.activeColorCount == 2)
+    #expect(decodedPreview.theme.activeColorCount == 1)
 
     let url = try #require(
         URL(string: "https://sakuracord.app/settings/themes/\(token)")
