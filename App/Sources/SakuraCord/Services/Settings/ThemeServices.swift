@@ -74,7 +74,7 @@ nonisolated enum LegacyAccentColorChoice: String, CaseIterable, Sendable {
         case .green:
             .init(sRGBRed: 0x62, green: 0xBA, blue: 0x46)
         case .gray:
-            .init(sRGBRed: 0x98, green: 0x98, blue: 0x98)
+            .discordBlurple
         }
     }
 }
@@ -706,9 +706,7 @@ final class SakuraCordThemeStore {
             let themeAppearance: SakuraCordThemeAppearance = isDark ? .dark : .light
             let source = SakuraCordThemeRGB(
                 hue: accentColor.hue,
-                saturation: accentColor.saturation == 0
-                    ? 0
-                    : max(0.54, accentColor.saturation),
+                saturation: max(0.54, accentColor.saturation),
                 brightness: 0.82
             )
             return NSColor(theme.readableForeground(source, for: themeAppearance))

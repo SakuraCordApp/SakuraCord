@@ -130,28 +130,19 @@ func `Public beta accents migrate into native-surface single-color themes`(
 }
 
 @MainActor
-@Test func `Migrated Graphite remains a neutral accent`() throws {
+@Test func `Legacy Graphite migrates to Blurple`() {
     let defaults = InMemoryPreferences()
     defaults.set(
         LegacyAccentColorChoice.gray.rawValue,
         forKey: "settings.appearance.accentColor"
     )
     let preferences = SettingsPreferenceStore(defaults: defaults)
-    let themeStore = SakuraCordThemeStore(
-        persistence: SakuraCordThemeSettingsStore(preferences: preferences)
-    )
-    let accent = themeStore.accentNSColor()
+    let theme = SakuraCordThemeSettingsStore(preferences: preferences).load()
 
-    for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
-        let appearance = try #require(NSAppearance(named: appearanceName))
-        var resolved: NSColor?
-        appearance.performAsCurrentDrawingAppearance {
-            resolved = accent.usingColorSpace(.sRGB)
-        }
-        let color = try #require(resolved)
-        #expect(abs(color.redComponent - color.greenComponent) < 0.0001)
-        #expect(abs(color.greenComponent - color.blueComponent) < 0.0001)
-    }
+    #expect(theme.colors == [.discordBlurple])
+    #expect(theme.activeColorCount == 1)
+    #expect(theme.intensity == 0)
+    #expect(theme.brightness == 1)
 }
 
 @MainActor
