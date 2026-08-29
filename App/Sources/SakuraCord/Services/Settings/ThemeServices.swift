@@ -194,28 +194,32 @@ nonisolated struct SakuraCordGradientTheme: Codable, Equatable, Sendable {
         let renderedSaturation = appearance == .dark
             ? color.saturation * 0.82
             : color.saturation * 0.58
-        let renderedBrightness: Double
+        return SakuraCordThemeRGB(
+            hue: color.hue,
+            saturation: renderedSaturation,
+            brightness: renderedBrightness(for: appearance)
+        )
+    }
+
+    private func renderedBrightness(
+        for appearance: SakuraCordThemeAppearance
+    ) -> Double {
         if appearance == .dark {
             // Preserve the established mid-point while making zero a real
             // black endpoint and one a real full-brightness endpoint.
             let midpoint = 0.67
-            renderedBrightness = brightness <= 0.5
+            return brightness <= 0.5
                 ? midpoint * brightness / 0.5
                 : midpoint + (1 - midpoint) * (brightness - 0.5) / 0.5
-        } else {
-            // Light appearance keeps a contrast-safe lower bound for dark
-            // labels while still changing the actual gradient luminance.
-            let minimum = 0.72
-            let midpoint = 0.84
-            renderedBrightness = brightness <= 0.5
-                ? minimum + (midpoint - minimum) * brightness / 0.5
-                : midpoint + (1 - midpoint) * (brightness - 0.5) / 0.5
         }
-        return SakuraCordThemeRGB(
-            hue: color.hue,
-            saturation: renderedSaturation,
-            brightness: renderedBrightness
-        )
+
+        // Light appearance keeps a contrast-safe lower bound for dark
+        // labels while still changing the actual gradient luminance.
+        let minimum = 0.72
+        let midpoint = 0.84
+        return brightness <= 0.5
+            ? minimum + (midpoint - minimum) * brightness / 0.5
+            : midpoint + (1 - midpoint) * (brightness - 0.5) / 0.5
     }
 
     private func surfaceTargetRGB(
@@ -260,7 +264,14 @@ nonisolated struct SakuraCordGradientTheme: Codable, Equatable, Sendable {
         for appearance: SakuraCordThemeAppearance
     ) -> SakuraCordThemeRGB {
         guard appearance == .dark else {
-            return renderedRGB(color, for: appearance)
+            // The light surface already softens this source by compositing it
+            // over the near-white window base. Preserve the selected
+            // saturation here so it is not attenuated a second time.
+            return SakuraCordThemeRGB(
+                hue: color.hue,
+                saturation: color.saturation,
+                brightness: renderedBrightness(for: appearance)
+            )
         }
 
         // Dark surfaces use a deep version of the selected color rather
