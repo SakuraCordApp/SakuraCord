@@ -448,6 +448,13 @@ struct SakuraCordAuthenticationCard<Content: View>: View {
 
     var body: some View {
         let colors = SakuraCordThemeStore.shared.activeTheme.colors(for: colorScheme)
+        let firstColor = colors[0]
+        let cardColors = colors.enumerated().map { index, color in
+            let progress = colors.count == 1
+                ? 0
+                : Double(index) / Double(colors.count - 1)
+            return color.opacity(0.20 - 0.04 * progress)
+        }
         VStack(spacing: 18) { content }
             .padding(36)
             .background(
@@ -456,7 +463,7 @@ struct SakuraCordAuthenticationCard<Content: View>: View {
             )
             .background(
                 LinearGradient(
-                    colors: [colors.first.opacity(0.20), colors.second.opacity(0.16)],
+                    colors: cardColors,
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 ),
@@ -466,7 +473,7 @@ struct SakuraCordAuthenticationCard<Content: View>: View {
                 ConcentricRectangle(cornerRadius: 18, style: .continuous)
                     .stroke(
                         LinearGradient(
-                            colors: [colors.first.opacity(0.34), .primary.opacity(0.08)],
+                            colors: [firstColor.opacity(0.34), .primary.opacity(0.08)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
@@ -498,18 +505,20 @@ struct SakuraCordAuthPrimaryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         let theme = SakuraCordThemeStore.shared.committedTheme
-        let firstRGB = SakuraCordThemeRGB(
-            hue: theme.first.hue,
-            saturation: max(0.68, theme.first.saturation),
-            brightness: colorScheme == .dark ? 0.78 : 0.60
-        ).adjustedForContrast(with: .white, toward: .black)
-        let secondRGB = SakuraCordThemeRGB(
-            hue: theme.second.hue,
-            saturation: max(0.64, theme.second.saturation),
-            brightness: colorScheme == .dark ? 0.72 : 0.55
-        ).adjustedForContrast(with: .white, toward: .black)
-        let first = Color(red: firstRGB.red, green: firstRGB.green, blue: firstRGB.blue)
-        let second = Color(red: secondRGB.red, green: secondRGB.green, blue: secondRGB.blue)
+        let colors = theme.activeColors.enumerated().map { index, color in
+            let progress = theme.activeColorCount == 1
+                ? 0
+                : Double(index) / Double(theme.activeColorCount - 1)
+            let rgb = SakuraCordThemeRGB(
+                hue: color.hue,
+                saturation: max(0.68 - 0.04 * progress, color.saturation),
+                brightness: colorScheme == .dark
+                    ? 0.78 - 0.06 * progress
+                    : 0.60 - 0.05 * progress
+            ).adjustedForContrast(with: .white, toward: .black)
+            return Color(red: rgb.red, green: rgb.green, blue: rgb.blue)
+        }
+        let shadowColor = colors[0]
         configuration.label
             .font(.body.weight(.semibold))
             .frame(maxWidth: .infinity)
@@ -518,14 +527,14 @@ struct SakuraCordAuthPrimaryButtonStyle: ButtonStyle {
             .foregroundStyle(.white)
             .background(
                 LinearGradient(
-                    colors: [first, second],
+                    colors: colors,
                     startPoint: .leading,
                     endPoint: .trailing
                 ),
                 in: ConcentricRectangle(cornerRadius: 10, style: .continuous)
             )
             .shadow(
-                color: first.opacity(0.28),
+                color: shadowColor.opacity(0.28),
                 radius: 12,
                 y: 6
             )

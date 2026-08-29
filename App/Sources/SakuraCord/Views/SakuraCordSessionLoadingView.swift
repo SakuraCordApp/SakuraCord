@@ -376,12 +376,15 @@ struct SakuraCordAuroraBackdrop: View {
     var body: some View {
         let theme = SakuraCordThemeStore.shared.activeTheme
         let colors = theme.colors(for: colorScheme)
+        let firstColor = colors[0]
+        let lastColor = colors[colors.count - 1]
+        let middleColor = colors[colors.count / 2]
         ZStack {
             SakuraCordThemeBackground(emphasizesGradient: true)
 
             GeometryReader { geometry in
                 Ellipse()
-                    .fill(colors.first.opacity(colorScheme == .dark ? 0.24 : 0.18))
+                    .fill(firstColor.opacity(colorScheme == .dark ? 0.24 : 0.18))
                     .frame(width: geometry.size.width * 0.72, height: geometry.size.height * 0.68)
                     .blur(radius: 110)
                     .offset(
@@ -390,7 +393,7 @@ struct SakuraCordAuroraBackdrop: View {
                     )
 
                 Ellipse()
-                    .fill(colors.second.opacity(colorScheme == .dark ? 0.18 : 0.14))
+                    .fill(lastColor.opacity(colorScheme == .dark ? 0.18 : 0.14))
                     .frame(width: geometry.size.width * 0.64, height: geometry.size.height * 0.58)
                     .blur(radius: 120)
                     .offset(
@@ -399,7 +402,7 @@ struct SakuraCordAuroraBackdrop: View {
                     )
 
                 Ellipse()
-                    .fill(colors.first.mix(with: colors.second, by: 0.5).opacity(0.10))
+                    .fill(middleColor.mix(with: lastColor, by: 0.5).opacity(0.10))
                     .frame(width: geometry.size.width * 0.48, height: geometry.size.height * 0.48)
                     .blur(radius: 100)
                     .offset(
@@ -437,8 +440,7 @@ struct SakuraCordSakuraPetalField: View {
                     index: index,
                     elapsed: elapsed,
                     canvasSize: size,
-                    firstColor: colors.first,
-                    secondColor: colors.second
+                    colors: colors
                 )
                 context.drawLayer { layer in
                     layer.translateBy(x: petal.position.x, y: petal.position.y)
@@ -482,8 +484,7 @@ private enum SakuraPetal {
         index: Int,
         elapsed: TimeInterval,
         canvasSize: CGSize,
-        firstColor: Color,
-        secondColor: Color
+        colors: [Color]
     ) -> Motion {
         let seed = fraction(sin(Double(index + 1) * 12.9898) * 43_758.5453)
         let secondarySeed = fraction(sin(Double(index + 7) * 78.233) * 19_341.274)
@@ -502,7 +503,7 @@ private enum SakuraPetal {
             rotation: .radians(elapsed * (0.3 + seed * 0.75) + secondarySeed * .pi * 2),
             scale: depth,
             opacity: 0.18 + seed * 0.38,
-            color: index.isMultiple(of: 4) ? secondColor : firstColor
+            color: colors[index % colors.count]
         )
     }
 

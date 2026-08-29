@@ -23,8 +23,8 @@ import Testing
     let themeStore = SakuraCordThemeStore(
         persistence: SakuraCordThemeSettingsStore(preferences: preferences)
     )
-    themeStore.setFirstHue(0.04)
-    themeStore.setSecondHue(0.96)
+    themeStore.setHue(0.04, at: 0)
+    themeStore.setHue(0.96, at: 1)
     themeStore.setIntensity(0.72)
     themeStore.finishInteraction()
     let effectiveAccent = themeStore.accentNSColor()
@@ -100,8 +100,8 @@ import Testing
     let persistence = SakuraCordThemeSettingsStore(preferences: preferences)
     let themeStore = SakuraCordThemeStore(persistence: persistence)
 
-    themeStore.setFirstHue(0.01)
-    themeStore.setSecondHue(0.99)
+    themeStore.setHue(0.01, at: 0)
+    themeStore.setHue(0.99, at: 1)
     themeStore.setIntensity(1)
     themeStore.setBrightness(0)
     themeStore.finishInteraction()
@@ -124,6 +124,122 @@ import Testing
 
     let theme = SakuraCordThemeSettingsStore(preferences: preferences).load()
     #expect(theme == .defaultTheme)
+}
+
+@Test func `Legacy two-color themes migrate into the ordered color model`() throws {
+    let legacy = "0.1,0.65,0.8,0.75,0.9,0.4"
+    let theme = try #require(SakuraCordGradientTheme(storageValue: legacy))
+
+    #expect(theme.activeColorCount == 2)
+    #expect(theme.colors.count == 2)
+    #expect(theme.colors[0] == SakuraCordThemeColor(hue: 0.1, saturation: 0.65))
+    #expect(theme.colors[1] == SakuraCordThemeColor(hue: 0.8, saturation: 0.75))
+    #expect(theme.intensity == 0.9)
+    #expect(theme.brightness == 0.4)
+}
+
+@Test func `Removed gradient colors retain their order across persistence`() throws {
+    let originalColors = [
+        SakuraCordThemeColor(hue: 0.05, saturation: 0.70),
+        SakuraCordThemeColor(hue: 0.25, saturation: 0.72),
+        SakuraCordThemeColor(hue: 0.45, saturation: 0.74),
+        SakuraCordThemeColor(hue: 0.65, saturation: 0.76),
+        SakuraCordThemeColor(hue: 0.85, saturation: 0.78),
+    ]
+    var theme = SakuraCordGradientTheme(
+        colors: originalColors,
+        intensity: 0.8,
+        brightness: 0.9
+    )
+
+    let removedFifth = theme.removeColor()
+    let removedFourth = theme.removeColor()
+    #expect(removedFifth)
+    #expect(removedFourth)
+    #expect(theme.activeColorCount == 3)
+    #expect(Array(theme.activeColors) == Array(originalColors.prefix(3)))
+
+    let restored = try #require(SakuraCordGradientTheme(storageValue: theme.storageValue))
+    #expect(restored == theme)
+
+    var reactivated = restored
+    let addedFourth = reactivated.addColor()
+    #expect(addedFourth)
+    #expect(reactivated.activeColorCount == 4)
+    #expect(reactivated.colors[3] == originalColors[3])
+}
+
+@Test func `Adding a gradient color corrects overlapping remembered hues`() {
+    var theme = SakuraCordGradientTheme(
+        colors: [
+            .init(hue: 0.02, saturation: 0.7),
+            .init(hue: 0.34, saturation: 0.7),
+            .init(hue: 0.35, saturation: 0.8),
+        ],
+        activeColorCount: 2,
+        intensity: 1,
+        brightness: 1
+    )
+
+    let addedThird = theme.addColor()
+    #expect(addedThird)
+    #expect(theme.activeColorCount == 3)
+    for existing in theme.activeColors.dropLast() {
+        #expect(
+            SakuraCordGradientTheme.circularHueDistance(
+                existing.hue,
+                theme.activeColors.last?.hue ?? existing.hue
+            ) >= SakuraCordGradientTheme.minimumHueSpacing
+        )
+    }
+}
+
+@Test func `Gradient color count remains bounded from one through five`() {
+    var theme = SakuraCordGradientTheme.defaultTheme
+
+    while theme.removeColor() {}
+    #expect(theme.activeColorCount == SakuraCordGradientTheme.minimumColorCount)
+    let removedBelowMinimum = theme.removeColor()
+    #expect(!removedBelowMinimum)
+
+    while theme.addColor() {}
+    #expect(theme.activeColorCount == SakuraCordGradientTheme.maximumColorCount)
+    #expect(theme.colors.count == SakuraCordGradientTheme.maximumColorCount)
+    let addedAboveMaximum = theme.addColor()
+    #expect(!addedAboveMaximum)
+}
+
+@MainActor
+@Test func `Randomise preserves one to five colors without handle overlap`() {
+    let preferences = SettingsPreferenceStore(defaults: InMemoryPreferences())
+    let themeStore = SakuraCordThemeStore(
+        persistence: SakuraCordThemeSettingsStore(preferences: preferences)
+    )
+
+    for colorCount in SakuraCordGradientTheme.minimumColorCount ... SakuraCordGradientTheme.maximumColorCount {
+        while themeStore.activeTheme.activeColorCount < colorCount {
+            themeStore.addColor()
+        }
+        while themeStore.activeTheme.activeColorCount > colorCount {
+            themeStore.removeColor()
+        }
+
+        for _ in 0 ..< 20 {
+            let randomized = themeStore.randomizedTheme()
+            #expect(randomized.activeColorCount == colorCount)
+            let colors = Array(randomized.activeColors)
+            for firstIndex in colors.indices {
+                for secondIndex in colors.indices where secondIndex > firstIndex {
+                    #expect(
+                        SakuraCordGradientTheme.circularHueDistance(
+                            colors[firstIndex].hue,
+                            colors[secondIndex].hue
+                        ) >= SakuraCordGradientTheme.minimumHueSpacing
+                    )
+                }
+            }
+        }
+    }
 }
 
 @MainActor
@@ -176,8 +292,8 @@ import Testing
     let task = Task { await themeStore.randomize(reduceMotion: false) }
     try await Task.sleep(for: .milliseconds(60))
 
-    themeStore.setFirstHue(0.42)
-    themeStore.setSecondHue(0.84)
+    themeStore.setHue(0.42, at: 0)
+    themeStore.setHue(0.84, at: 1)
     themeStore.finishInteraction()
     let expected = themeStore.activeTheme
     await task.value
@@ -195,8 +311,13 @@ import Testing
             brightness: 0
         ),
         SakuraCordGradientTheme(
-            first: .init(hue: 0.16, saturation: 1),
-            second: .init(hue: 0.83, saturation: 1),
+            colors: [
+                .init(hue: 0.03, saturation: 1),
+                .init(hue: 0.21, saturation: 1),
+                .init(hue: 0.42, saturation: 1),
+                .init(hue: 0.63, saturation: 1),
+                .init(hue: 0.84, saturation: 1),
+            ],
             intensity: 1,
             brightness: 1
         ),
@@ -213,7 +334,7 @@ import Testing
             for background in theme.backgroundSamples(for: appearance) {
                 #expect(background.contrastRatio(with: label) >= 4.5)
             }
-            for color in [theme.first, theme.second] {
+            for color in theme.activeColors {
                 let background = theme.backgroundTintRGB(color, for: appearance)
                     .composited(
                         over: base,

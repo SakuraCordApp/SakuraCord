@@ -15,10 +15,8 @@ struct GradientThemeEditor: View {
 
 private struct GradientThemeEditorHeader: View {
     let themeStore: SakuraCordThemeStore
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        let colors = themeStore.activeTheme.colors(for: colorScheme)
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Theme Designer", bundle: #bundle)
@@ -28,19 +26,69 @@ private struct GradientThemeEditorHeader: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 16)
-            Capsule()
-                .fill(
-                    LinearGradient(
-                        colors: [colors.first, colors.second],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .frame(width: 130, height: 42)
-                .overlay {
-                    Capsule().stroke(.primary.opacity(0.15), lineWidth: 1)
-                }
+            ThemeColorCountControls(themeStore: themeStore)
         }
+    }
+}
+
+private struct ThemeColorCountControls: View {
+    let themeStore: SakuraCordThemeStore
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let colorCount = themeStore.activeTheme.activeColorCount
+        GlassEffectContainer(spacing: 8) {
+            HStack(spacing: 8) {
+                ThemeColorCountButton(
+                    systemImage: "minus",
+                    label: "Remove gradient color",
+                    isDisabled: colorCount == SakuraCordGradientTheme.minimumColorCount
+                ) {
+                    withAnimation(reduceMotion ? nil : .themeControlResponse) {
+                        themeStore.removeColor()
+                    }
+                }
+                ThemeColorCountButton(
+                    systemImage: "plus",
+                    label: "Add gradient color",
+                    isDisabled: colorCount == SakuraCordGradientTheme.maximumColorCount
+                ) {
+                    withAnimation(reduceMotion ? nil : .themeControlResponse) {
+                        themeStore.addColor()
+                    }
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Gradient colors")
+        .accessibilityValue("\(colorCount)")
+    }
+}
+
+private struct ThemeColorCountButton: View {
+    let systemImage: String
+    let label: LocalizedStringKey
+    let isDisabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(Color(nsColor: .labelColor))
+                .frame(
+                    width: ThemePickerGeometry.colorCountButtonDiameter,
+                    height: ThemePickerGeometry.colorCountButtonDiameter
+                )
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: Circle())
+        .contentShape(Circle())
+        .disabled(isDisabled)
+        .opacity(isDisabled ? 0.42 : 1)
+        .accessibilityLabel(label)
     }
 }
 
@@ -52,7 +100,7 @@ private struct GradientThemeControls: View {
             HStack(alignment: .center, spacing: 0) {
                 CircularBrightnessControl(themeStore: themeStore)
                     .frame(maxWidth: .infinity)
-                DualHuePicker(themeStore: themeStore)
+                GradientHuePicker(themeStore: themeStore)
                     .frame(
                         width: ThemePickerGeometry.diameter,
                         height: ThemePickerGeometry.diameter
@@ -66,7 +114,7 @@ private struct GradientThemeControls: View {
     }
 }
 
-private struct DualHuePicker: View {
+private struct GradientHuePicker: View {
     let themeStore: SakuraCordThemeStore
 
     var body: some View {
@@ -104,16 +152,14 @@ private struct DualHuePicker: View {
                     lineWidth: ThemePickerGeometry.ringWidth
                 )
 
-            ThemeHueHandle(
-                hue: theme.first.hue,
-                setter: themeStore.setFirstHue,
-                finishInteraction: themeStore.finishInteraction
-            )
-            ThemeHueHandle(
-                hue: theme.second.hue,
-                setter: themeStore.setSecondHue,
-                finishInteraction: themeStore.finishInteraction
-            )
+            ForEach(theme.activeColors.indices, id: \.self) { index in
+                ThemeHueHandle(
+                    hue: theme.colors[index].hue,
+                    order: theme.activeColorCount == 1 ? nil : index + 1,
+                    setter: { themeStore.setHue($0, at: index) },
+                    finishInteraction: themeStore.finishInteraction
+                )
+            }
 
             // Keep the intensity control above every hue-handle hit target.
             // Its central interaction region must never lose a drag to the ring.
@@ -124,7 +170,7 @@ private struct DualHuePicker: View {
                 )
         }
         .frame(width: ThemePickerGeometry.diameter, height: ThemePickerGeometry.diameter)
-        .coordinateSpace(.named("dual-hue-picker"))
+        .coordinateSpace(.named("gradient-hue-picker"))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Gradient color picker")
     }
@@ -132,6 +178,7 @@ private struct DualHuePicker: View {
 
 private struct ThemeHueHandle: View {
     let hue: Double
+    let order: Int?
     let setter: (Double) -> Void
     let finishInteraction: () -> Void
 
@@ -139,43 +186,44 @@ private struct ThemeHueHandle: View {
 
     var body: some View {
         ZStack {
-            Circle()
-                .fill(.clear)
-                .frame(
-                    width: ThemePickerGeometry.hueHandleSize,
-                    height: ThemePickerGeometry.hueHandleSize
-                )
-                .glassEffect(.clear.interactive(), in: Circle())
-                .overlay {
-                    Circle().stroke(.primary.opacity(0.52), lineWidth: 1)
+            if let order {
+                Text(order, format: .number)
+                    .font(.body.weight(.bold).monospacedDigit())
+            }
+        }
+        .foregroundStyle(.white)
+        .frame(
+            width: ThemePickerGeometry.hueHandleSize,
+            height: ThemePickerGeometry.hueHandleSize
+        )
+        .contentShape(Circle())
+        .glassEffect(.clear.interactive(), in: Circle())
+        .frame(
+            width: ThemePickerGeometry.hueHandleHitSize,
+            height: ThemePickerGeometry.hueHandleHitSize
+        )
+        .contentShape(Circle())
+        // `position`, unlike `offset`, moves layout and hit testing together.
+        .position(ThemePickerGeometry.hueHandleCenter(for: hue))
+        .gesture(
+            DragGesture(minimumDistance: 0, coordinateSpace: .named("gradient-hue-picker"))
+                .onChanged { value in
+                    let newHue = ThemePickerGeometry.hue(at: value.location)
+                    updateHaptics(for: newHue)
+                    setter(newHue)
                 }
-            }
-            .frame(
-                width: ThemePickerGeometry.hueHandleHitSize,
-                height: ThemePickerGeometry.hueHandleHitSize
-            )
-            .contentShape(Circle())
-            // `position`, unlike `offset`, moves layout and hit testing together.
-            .position(ThemePickerGeometry.hueHandleCenter(for: hue))
-            .gesture(
-                DragGesture(minimumDistance: 0, coordinateSpace: .named("dual-hue-picker"))
-                    .onChanged { value in
-                        let newHue = ThemePickerGeometry.hue(at: value.location)
-                        updateHaptics(for: newHue)
-                        setter(newHue)
-                    }
-                    .onEnded { _ in
-                        lastHapticStep = nil
-                        finishInteraction()
-                    }
-            )
-            .accessibilityLabel("Gradient color")
-            .accessibilityValue("Hue \(Int((hue * 360).rounded())) degrees")
-            .accessibilityAdjustableAction { direction in
-                let step = direction == .increment ? 1.0 / 72 : -1.0 / 72
-                setter(hue + step)
-                finishInteraction()
-            }
+                .onEnded { _ in
+                    lastHapticStep = nil
+                    finishInteraction()
+                }
+        )
+        .accessibilityLabel(order.map { "Gradient color \($0)" } ?? "Gradient color")
+        .accessibilityValue("Hue \(Int((hue * 360).rounded())) degrees")
+        .accessibilityAdjustableAction { direction in
+            let step = direction == .increment ? 1.0 / 72 : -1.0 / 72
+            setter(hue + step)
+            finishInteraction()
+        }
     }
 
     private func updateHaptics(for value: Double) {
@@ -200,13 +248,14 @@ private struct ThemeIntensityControl: View {
     var body: some View {
         let theme = themeStore.activeTheme
         let colors = theme.colors(for: colorScheme)
+        let trackColors = colors + Array(colors.prefix(1))
         let handleY = ThemePickerGeometry.intensityHandleCenterY(for: theme.intensity)
 
         ZStack {
             IntensityTrackShape()
                 .fill(
                     LinearGradient(
-                        colors: [colors.first, colors.second, colors.first],
+                        colors: trackColors,
                         startPoint: .top,
                         endPoint: .bottom
                     )
@@ -515,6 +564,7 @@ private struct ThemeRandomizeButton: View {
 
 nonisolated enum ThemePickerGeometry {
     static let diameter: CGFloat = 270
+    static let colorCountButtonDiameter: CGFloat = 42
     static let ringWidth: CGFloat = 25
     static let ringGlowLineWidth: CGFloat = 3
     static let ringGlowRadius: CGFloat = 4

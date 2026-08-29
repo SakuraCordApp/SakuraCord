@@ -112,17 +112,40 @@ nonisolated struct SakuraCordThemeRGB: Equatable, Sendable {
 }
 
 nonisolated struct SakuraCordGradientTheme: Codable, Equatable, Sendable {
+    static let minimumColorCount = 1
+    static let maximumColorCount = 5
+    static let minimumHueSpacing = 0.075
+
     static let defaultTheme = SakuraCordGradientTheme(
-        first: .init(hue: 0.97, saturation: 0.72),
-        second: .init(hue: 0.34, saturation: 0.70),
+        colors: [
+            .init(hue: 0.97, saturation: 0.72),
+            .init(hue: 0.34, saturation: 0.70),
+        ],
         intensity: 0.62,
         brightness: 1
     )
 
-    var first: SakuraCordThemeColor
-    var second: SakuraCordThemeColor
+    private(set) var colors: [SakuraCordThemeColor]
+    private(set) var activeColorCount: Int
     var intensity: Double
     var brightness: Double
+
+    init(
+        colors: [SakuraCordThemeColor],
+        activeColorCount: Int? = nil,
+        intensity: Double,
+        brightness: Double
+    ) {
+        precondition(!colors.isEmpty)
+        let storedColors = Array(colors.prefix(Self.maximumColorCount))
+        self.colors = storedColors
+        self.activeColorCount = min(
+            max(activeColorCount ?? storedColors.count, Self.minimumColorCount),
+            storedColors.count
+        )
+        self.intensity = intensity.clamped(to: 0 ... 1)
+        self.brightness = brightness.clamped(to: 0 ... 1)
+    }
 
     init(
         first: SakuraCordThemeColor,
@@ -130,31 +153,79 @@ nonisolated struct SakuraCordGradientTheme: Codable, Equatable, Sendable {
         intensity: Double,
         brightness: Double
     ) {
-        self.first = first
-        self.second = second
-        self.intensity = intensity.clamped(to: 0 ... 1)
-        self.brightness = brightness.clamped(to: 0 ... 1)
+        self.init(
+            colors: [first, second],
+            intensity: intensity,
+            brightness: brightness
+        )
+    }
+
+    var activeColors: ArraySlice<SakuraCordThemeColor> {
+        colors.prefix(activeColorCount)
     }
 
     var storageValue: String {
-        [
-            first.hue,
-            first.saturation,
-            second.hue,
-            second.saturation,
-            intensity,
-            brightness,
+        var components = [
+            "v2",
+            String(activeColorCount),
+            String(intensity),
+            String(brightness),
         ]
-        .map { String($0) }
-        .joined(separator: ",")
+        for color in colors {
+            components.append(String(color.hue))
+            components.append(String(color.saturation))
+        }
+        return components.joined(separator: ",")
     }
 
     init?(storageValue: String) {
-        let values = storageValue.split(separator: ",").compactMap { Double($0) }
-        guard values.count == 6, values.allSatisfy(\.isFinite) else { return nil }
+        let components = storageValue.split(separator: ",")
+        if components.first == "v2" {
+            guard components.count >= 6,
+                  components.count.isMultiple(of: 2),
+                  let activeColorCount = Int(components[1]),
+                  let intensity = Double(components[2]),
+                  let brightness = Double(components[3]),
+                  intensity.isFinite,
+                  brightness.isFinite
+            else { return nil }
+
+            let colorValues = components.dropFirst(4).compactMap { Double($0) }
+            let colorCount = colorValues.count / 2
+            guard colorValues.count == components.count - 4,
+                  colorValues.allSatisfy(\.isFinite),
+                  colorCount >= Self.minimumColorCount,
+                  colorCount <= Self.maximumColorCount,
+                  activeColorCount >= Self.minimumColorCount,
+                  activeColorCount <= colorCount
+            else { return nil }
+
+            let colors = stride(from: 0, to: colorValues.count, by: 2).map {
+                SakuraCordThemeColor(
+                    hue: colorValues[$0],
+                    saturation: colorValues[$0 + 1]
+                )
+            }
+            self.init(
+                colors: colors,
+                activeColorCount: activeColorCount,
+                intensity: intensity,
+                brightness: brightness
+            )
+            return
+        }
+
+        // Migrate the original two-color comma-separated representation.
+        let values = components.compactMap { Double($0) }
+        guard values.count == 6,
+              values.count == components.count,
+              values.allSatisfy(\.isFinite)
+        else { return nil }
         self.init(
-            first: .init(hue: values[0], saturation: values[1]),
-            second: .init(hue: values[2], saturation: values[3]),
+            colors: [
+                .init(hue: values[0], saturation: values[1]),
+                .init(hue: values[2], saturation: values[3]),
+            ],
             intensity: values[4],
             brightness: values[5]
         )
@@ -162,18 +233,97 @@ nonisolated struct SakuraCordGradientTheme: Codable, Equatable, Sendable {
 
     func interpolated(to target: Self, progress: Double) -> Self {
         let progress = progress.clamped(to: 0 ... 1)
+        let interpolatedColors = target.colors.enumerated().map { index, targetColor in
+            let sourceColor = colors.indices.contains(index) ? colors[index] : targetColor
+            return SakuraCordThemeColor(
+                hue: Self.interpolatedHue(
+                    from: sourceColor.hue,
+                    to: targetColor.hue,
+                    progress: progress
+                ),
+                saturation: sourceColor.saturation.interpolated(
+                    to: targetColor.saturation,
+                    progress: progress
+                )
+            )
+        }
         return Self(
-            first: .init(
-                hue: Self.interpolatedHue(from: first.hue, to: target.first.hue, progress: progress),
-                saturation: first.saturation.interpolated(to: target.first.saturation, progress: progress)
-            ),
-            second: .init(
-                hue: Self.interpolatedHue(from: second.hue, to: target.second.hue, progress: progress),
-                saturation: second.saturation.interpolated(to: target.second.saturation, progress: progress)
-            ),
+            colors: interpolatedColors,
+            activeColorCount: target.activeColorCount,
             intensity: intensity.interpolated(to: target.intensity, progress: progress),
             brightness: brightness.interpolated(to: target.brightness, progress: progress)
         )
+    }
+
+    mutating func setHue(_ hue: Double, at index: Int) {
+        guard activeColors.indices.contains(index) else { return }
+        colors[index].hue = Self.normalizedHue(hue)
+    }
+
+    @discardableResult
+    mutating func addColor() -> Bool {
+        guard activeColorCount < Self.maximumColorCount else { return false }
+        let newIndex = activeColorCount
+        let existingHues = activeColors.map(\.hue)
+        let suggestedHue = Self.hueInLargestGap(between: existingHues)
+
+        if colors.indices.contains(newIndex) {
+            if existingHues.contains(where: {
+                Self.circularHueDistance($0, colors[newIndex].hue) < Self.minimumHueSpacing
+            }) {
+                colors[newIndex].hue = suggestedHue
+            }
+        } else {
+            let averageSaturation = activeColors.reduce(0) { $0 + $1.saturation }
+                / Double(activeColorCount)
+            colors.append(
+                SakuraCordThemeColor(
+                    hue: suggestedHue,
+                    saturation: averageSaturation
+                )
+            )
+        }
+        activeColorCount += 1
+        return true
+    }
+
+    @discardableResult
+    mutating func removeColor() -> Bool {
+        guard activeColorCount > Self.minimumColorCount else { return false }
+        activeColorCount -= 1
+        return true
+    }
+
+    static func circularHueDistance(_ first: Double, _ second: Double) -> Double {
+        let distance = abs(normalizedHue(first) - normalizedHue(second))
+        return min(distance, 1 - distance)
+    }
+
+    private static func hueInLargestGap<S: Sequence>(between hues: S) -> Double
+        where S.Element == Double
+    {
+        let sortedHues = hues.map(normalizedHue).sorted()
+        guard !sortedHues.isEmpty else { return 0 }
+
+        var largestGapStart = sortedHues[0]
+        var largestGap = 0.0
+        for index in sortedHues.indices {
+            let start = sortedHues[index]
+            let end = index == sortedHues.index(before: sortedHues.endIndex)
+                ? sortedHues[0] + 1
+                : sortedHues[sortedHues.index(after: index)]
+            let gap = end - start
+            if gap > largestGap {
+                largestGap = gap
+                largestGapStart = start
+            }
+        }
+        return normalizedHue(largestGapStart + largestGap / 2)
+    }
+
+    private static func normalizedHue(_ hue: Double) -> Double {
+        let remainder = hue.truncatingRemainder(dividingBy: 1)
+        return remainder < 0 ? remainder + 1 : remainder
     }
 
     private static func interpolatedHue(from start: Double, to end: Double, progress: Double) -> Double {
@@ -290,18 +440,24 @@ nonisolated struct SakuraCordGradientTheme: Codable, Equatable, Sendable {
     func backgroundSamples(for appearance: SakuraCordThemeAppearance) -> [SakuraCordThemeRGB] {
         let base = surfaceBaseRGB(for: appearance)
         let opacity = backgroundBlendOpacity(for: appearance)
-        let firstBackground = backgroundTintRGB(first, for: appearance)
-            .composited(over: base, opacity: opacity)
-        let secondBackground = backgroundTintRGB(second, for: appearance)
-            .composited(over: base, opacity: opacity * 0.86)
-        let radialTint = backgroundTintRGB(second, for: appearance)
+        let linearSamples = activeColors.enumerated().map { index, color in
+            backgroundTintRGB(color, for: appearance).composited(
+                over: base,
+                opacity: opacity * stopOpacityScale(at: index)
+            )
+        }
+        guard let radialColor = activeColors.last else { return [base] }
+        let radialTint = backgroundTintRGB(radialColor, for: appearance)
         let radialOpacity = opacity * 0.48
-        return [
-            firstBackground,
-            secondBackground,
-            radialTint.composited(over: firstBackground, opacity: radialOpacity),
-            radialTint.composited(over: secondBackground, opacity: radialOpacity),
-        ]
+        return linearSamples + linearSamples.map {
+            radialTint.composited(over: $0, opacity: radialOpacity)
+        }
+    }
+
+    func stopOpacityScale(at index: Int) -> Double {
+        guard activeColorCount > 1 else { return 1 }
+        let progress = Double(index) / Double(activeColorCount - 1)
+        return 1 - 0.14 * progress
     }
 
     func readableForeground(
@@ -384,12 +540,18 @@ final class SakuraCordThemeStore {
         activeTheme.intensity == 0
     }
 
-    func setFirstHue(_ hue: Double) {
-        editTheme { $0.first.hue = Self.normalizedHue(hue) }
+    func setHue(_ hue: Double, at index: Int) {
+        editTheme { $0.setHue(hue, at: index) }
     }
 
-    func setSecondHue(_ hue: Double) {
-        editTheme { $0.second.hue = Self.normalizedHue(hue) }
+    func addColor() {
+        editTheme { $0.addColor() }
+        commit()
+    }
+
+    func removeColor() {
+        editTheme { $0.removeColor() }
+        commit()
     }
 
     func setIntensity(_ intensity: Double) {
@@ -406,14 +568,19 @@ final class SakuraCordThemeStore {
 
     func randomizedTheme() -> SakuraCordGradientTheme {
         let brightness = activeTheme.brightness
-        let firstHue = Double.random(in: 0 ..< 1)
-        var secondHue = Double.random(in: 0 ..< 1)
-        if Self.circularDistance(firstHue, secondHue) < 0.06 {
-            secondHue = Self.normalizedHue(firstHue + Double.random(in: 0.06 ... 0.18))
+        var colors = activeTheme.colors
+        let randomizedHues = Self.randomizedSeparatedHues(
+            count: activeTheme.activeColorCount
+        )
+        for index in 0 ..< activeTheme.activeColorCount {
+            colors[index] = SakuraCordThemeColor(
+                hue: randomizedHues[index],
+                saturation: .random(in: 0.60 ... 0.90)
+            )
         }
         return SakuraCordGradientTheme(
-            first: .init(hue: firstHue, saturation: .random(in: 0.62 ... 0.90)),
-            second: .init(hue: secondHue, saturation: .random(in: 0.58 ... 0.86)),
+            colors: colors,
+            activeColorCount: activeTheme.activeColorCount,
             intensity: .random(in: 0.60 ... 1),
             brightness: brightness
         )
@@ -451,12 +618,13 @@ final class SakuraCordThemeStore {
 
     func accentNSColor() -> NSColor {
         let theme = committedTheme
+        let accentColor = theme.activeColors.first ?? SakuraCordGradientTheme.defaultTheme.colors[0]
         return NSColor(name: nil) { appearance in
             let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             let themeAppearance: SakuraCordThemeAppearance = isDark ? .dark : .light
             let source = SakuraCordThemeRGB(
-                hue: theme.first.hue,
-                saturation: max(0.54, theme.first.saturation),
+                hue: accentColor.hue,
+                saturation: max(0.54, accentColor.saturation),
                 brightness: 0.82
             )
             return NSColor(theme.readableForeground(source, for: themeAppearance))
@@ -521,14 +689,22 @@ final class SakuraCordThemeStore {
         persistence.save(activeTheme)
     }
 
-    private static func normalizedHue(_ hue: Double) -> Double {
-        let remainder = hue.truncatingRemainder(dividingBy: 1)
-        return remainder < 0 ? remainder + 1 : remainder
-    }
-
-    private static func circularDistance(_ first: Double, _ second: Double) -> Double {
-        let distance = abs(first - second)
-        return min(distance, 1 - distance)
+    private static func randomizedSeparatedHues(count: Int) -> [Double] {
+        guard count > 1 else { return [Double.random(in: 0 ..< 1)] }
+        let spacing = 1 / Double(count)
+        let jitterLimit = max(
+            0,
+            (spacing - SakuraCordGradientTheme.minimumHueSpacing) * 0.40
+        )
+        let phase = Double.random(in: 0 ..< 1)
+        var hues = (0 ..< count).map { index in
+            let jitter = Double.random(in: -jitterLimit ... jitterLimit)
+            let hue = phase + Double(index) * spacing + jitter
+            let remainder = hue.truncatingRemainder(dividingBy: 1)
+            return remainder < 0 ? remainder + 1 : remainder
+        }
+        hues.shuffle()
+        return hues
     }
 
 }
@@ -541,29 +717,27 @@ extension Notification.Name {
 
 extension SakuraCordGradientTheme {
     @MainActor
-    func colors(for colorScheme: ColorScheme) -> (first: Color, second: Color) {
+    func colors(for colorScheme: ColorScheme) -> [Color] {
         // Interface color cues stay vivid while brightness remains exclusive
         // to the resulting theme surface.
         let interfaceTheme = SakuraCordGradientTheme(
-            first: first,
-            second: second,
+            colors: colors,
+            activeColorCount: activeColorCount,
             intensity: intensity,
             brightness: 1
         )
-        let firstColor = interfaceTheme.renderedColor(first, for: colorScheme)
-        let secondColor = interfaceTheme.renderedColor(second, for: colorScheme)
-        return (firstColor, secondColor)
+        return interfaceTheme.activeColors.map {
+            interfaceTheme.renderedColor($0, for: colorScheme)
+        }
     }
 
     @MainActor
-    func backgroundColors(for colorScheme: ColorScheme) -> (first: Color, second: Color) {
+    func backgroundColors(for colorScheme: ColorScheme) -> [Color] {
         let appearance: SakuraCordThemeAppearance = colorScheme == .dark ? .dark : .light
-        let firstRGB = backgroundTintRGB(first, for: appearance)
-        let secondRGB = backgroundTintRGB(second, for: appearance)
-        return (
-            Color(red: firstRGB.red, green: firstRGB.green, blue: firstRGB.blue),
-            Color(red: secondRGB.red, green: secondRGB.green, blue: secondRGB.blue)
-        )
+        return activeColors.map {
+            let rgb = backgroundTintRGB($0, for: appearance)
+            return Color(red: rgb.red, green: rgb.green, blue: rgb.blue)
+        }
     }
 
     @MainActor
@@ -632,6 +806,10 @@ private struct SakuraCordGradientBackground: View {
             maximumOpacity,
             theme.backgroundBlendOpacity(for: appearance) * contrastScale * emphasis
         )
+        let linearColors = colors.enumerated().map { index, color in
+            color.opacity(opacity * theme.stopOpacityScale(at: index))
+        }
+        let radialColor = colors.last ?? .clear
 
         ZStack {
             Color(nsColor: .windowBackgroundColor)
@@ -639,16 +817,13 @@ private struct SakuraCordGradientBackground: View {
                 .opacity(theme.intensityProgress)
 
             LinearGradient(
-                colors: [
-                    colors.first.opacity(opacity),
-                    colors.second.opacity(opacity * 0.86),
-                ],
+                colors: linearColors,
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
 
             RadialGradient(
-                colors: [colors.second.opacity(opacity * 0.48), .clear],
+                colors: [radialColor.opacity(opacity * 0.48), .clear],
                 center: .bottomTrailing,
                 startRadius: 24,
                 endRadius: 720
