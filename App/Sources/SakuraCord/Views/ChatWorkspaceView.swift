@@ -202,7 +202,7 @@ private struct ChatWorkspaceSupplementaryContent: View {
         case .messageSearch:
             if toolbarSearchFieldMetrics.isValid {
                 MessageSearchPanelView(model: model)
-                    .frame(width: toolbarSearchFieldMetrics.panelWidth)
+                    .frame(width: ChatChromeMetrics.memberListWidth)
                     .frame(maxHeight: .infinity)
             }
         }
