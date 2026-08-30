@@ -1163,6 +1163,7 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
     public var replyPreview: MessageReplyPreview?
     public var attachments: [Attachment]
     public var reactions: [Reaction]
+    public var isPinned: Bool
     public var nonce: String?
     public var outboxState: OutboxState
     public var type: DiscordMessageType
@@ -1198,6 +1199,7 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
         replyPreview: MessageReplyPreview? = nil,
         attachments: [Attachment] = [],
         reactions: [Reaction] = [],
+        isPinned: Bool = false,
         nonce: String? = nil,
         outboxState: OutboxState = .confirmed,
         type: DiscordMessageType = .default,
@@ -1232,6 +1234,7 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
         self.replyPreview = replyPreview
         self.attachments = attachments
         self.reactions = reactions
+        self.isPinned = isPinned
         self.nonce = nonce
         self.outboxState = outboxState
         self.type = type
@@ -1259,7 +1262,7 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case id, channelID, author, guildMember, content, timestamp, editedTimestamp, replyTo,
              replyPreview
-        case attachments, reactions, nonce, outboxState, type, flags, applicationID, application
+        case attachments, reactions, isPinned, nonce, outboxState, type, flags, applicationID, application
         case interactionMetadata, guildID
         case embeds, components, stickers, thread, mentionedUsers, mentionedRoleIDs, mentionsEveryone
         case call, hasPoll, hasActivity, hasSharedClientTheme, hasActivityInstance
@@ -1279,6 +1282,7 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
         replyPreview = try values.decodeIfPresent(MessageReplyPreview.self, forKey: .replyPreview)
         attachments = try values.decodeIfPresent([Attachment].self, forKey: .attachments) ?? []
         reactions = try values.decodeIfPresent([Reaction].self, forKey: .reactions) ?? []
+        isPinned = try values.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
         nonce = try values.decodeIfPresent(String.self, forKey: .nonce)
         outboxState =
             try values.decodeIfPresent(OutboxState.self, forKey: .outboxState) ?? .confirmed

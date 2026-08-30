@@ -938,7 +938,16 @@ extension NativeMessageTimelineCoordinator {
                 loadEarlier: parent.loadEarlier,
                 openMessage: parent.conversation.activatesMessageOnClick
                     ? { [weak model = parent.model] message in
-                        model?.navigateToSearchResult(message)
+                        guard let model else { return }
+                        switch parent.conversation {
+                        case .search:
+                            model.navigateToSearchResult(message)
+                        case .pins:
+                            model.dismissPinnedMessages()
+                            model.navigateToPinnedResult(message)
+                        case .channel, .thread:
+                            break
+                        }
                     }
                     : nil,
                 openReply: parent.openReply,
@@ -967,6 +976,9 @@ extension NativeMessageTimelineCoordinator {
                 delete: { [weak model = parent.model] message in
                     guard let model else { return }
                     Task { await model.delete(message) }
+                },
+                togglePin: { [weak model = parent.model] message in
+                    model?.togglePinnedState(for: message)
                 },
                 react: { [weak model = parent.model] emoji, message in
                     guard let model else { return }

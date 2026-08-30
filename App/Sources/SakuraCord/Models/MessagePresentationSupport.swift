@@ -1,3 +1,4 @@
+import AppKit
 import CoreText
 import DiscordProtocol
 import Foundation
@@ -71,7 +72,8 @@ struct NativeTimelineTextPlan: Equatable, Sendable {
     nonisolated static func make(
         for message: Message,
         currentUserID: UserID? = nil,
-        showsAutomaticLinkPreviews: Bool = true
+        showsAutomaticLinkPreviews: Bool = true,
+        systemActorColor: NSColor? = nil
     ) -> Self {
         let baseFontSize: CGFloat =
             if message.type.hasGeneratedContent {
@@ -119,7 +121,8 @@ struct NativeTimelineTextPlan: Equatable, Sendable {
                 SystemMessagePresentation.attributedLabel(
                     for: message,
                     currentUserID: currentUserID,
-                    baseFontSize: baseFontSize
+                    baseFontSize: baseFontSize,
+                    actorColor: systemActorColor
                 )
             )
         } else if let prepared, prepared.tokens.isEmpty {
@@ -180,6 +183,7 @@ final class MessageRowPresentation: Identifiable, Equatable, Sendable {
     let textPlan: NativeTimelineTextPlan
     let sakuraCordDeepLinks: [SakuraCordDeepLink]
     let searchContext: MessageSearchRowContext?
+    let pinnedAt: Date?
 
     nonisolated var identity: MessageRowIdentity {
         MessageRowIdentity(message)
@@ -196,7 +200,8 @@ final class MessageRowPresentation: Identifiable, Equatable, Sendable {
         replyPreview: MessageReplyPreview?,
         isReplyAvailable: Bool,
         textPlan: NativeTimelineTextPlan? = nil,
-        searchContext: MessageSearchRowContext? = nil
+        searchContext: MessageSearchRowContext? = nil,
+        pinnedAt: Date? = nil
     ) {
         self.message = message
         self.startsGroup = startsGroup
@@ -208,6 +213,7 @@ final class MessageRowPresentation: Identifiable, Equatable, Sendable {
             in: message.content
         )
         self.searchContext = searchContext
+        self.pinnedAt = pinnedAt
     }
 
     nonisolated static func == (
@@ -225,6 +231,51 @@ final class MessageRowPresentation: Identifiable, Equatable, Sendable {
             && lhs.textPlan == rhs.textPlan
             && lhs.sakuraCordDeepLinks == rhs.sakuraCordDeepLinks
             && lhs.searchContext == rhs.searchContext
+            && lhs.pinnedAt == rhs.pinnedAt
+    }
+}
+
+nonisolated enum PinnedMessagePresentation {
+    static func reusingRows(
+        oldItems: [PinnedMessage],
+        oldRows: [MessageRowPresentation],
+        for newItems: [PinnedMessage]
+    ) -> [MessageRowPresentation] {
+        if newItems.count >= oldItems.count,
+           newItems.starts(with: oldItems)
+        {
+            return oldRows + rows(
+                for: Array(newItems.dropFirst(oldItems.count))
+            )
+        }
+        let oldPresentationsByID = Dictionary(
+            uniqueKeysWithValues: zip(oldItems, oldRows).map {
+                ($0.id, (item: $0, row: $1))
+            }
+        )
+        return newItems.map { item in
+            if let existing = oldPresentationsByID[item.id],
+               existing.item == item
+            {
+                return existing.row
+            }
+            return row(for: item)
+        }
+    }
+
+    static func rows(for items: [PinnedMessage]) -> [MessageRowPresentation] {
+        items.map(row(for:))
+    }
+
+    static func row(for item: PinnedMessage) -> MessageRowPresentation {
+        MessageRowPresentation(
+            message: item.message,
+            startsGroup: true,
+            startsDay: false,
+            replyPreview: item.message.replyPreview,
+            isReplyAvailable: item.message.replyPreview != nil,
+            pinnedAt: item.pinnedAt
+        )
     }
 }
 

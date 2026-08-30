@@ -652,12 +652,43 @@ private struct ChatRootView: View {
                 }
                 .visibilityPriority(.high)
             }
+
+            if let pinsChannelID = model.activePinsChannelID {
+                if hasToolbarActionBeforePins {
+                    ToolbarSpacer(.fixed)
+                }
+
+                ToolbarItem {
+                    Button {
+                        if model.pinnedMessages.isPresented {
+                            model.dismissPinnedMessages()
+                        } else {
+                            model.presentPinnedMessages(channelID: pinsChannelID)
+                        }
+                    } label: {
+                        Label("Pinned Messages", systemImage: "pin.fill")
+                    }
+                    .help("Pinned Messages")
+                    .popover(
+                        isPresented: Binding(
+                            get: { model.pinnedMessages.isPresented },
+                            set: { presented in
+                                if !presented { model.dismissPinnedMessages() }
+                            }
+                        ),
+                        arrowEdge: .bottom
+                    ) {
+                        PinnedMessagesPopoverView(model: model)
+                    }
+                }
+                .visibilityPriority(.high)
+            }
         }
 
         if model.isSwitchingAccounts
             || (!hasOpenSupplementaryToolbarConversation && selectedVoiceChannel == nil)
         {
-            if !model.isSwitchingAccounts, selectedPrivateChannel != nil {
+            if !model.isSwitchingAccounts, hasToolbarActionBeforeInspector {
                 ToolbarSpacer(.fixed)
             }
 
@@ -679,6 +710,9 @@ private struct ChatRootView: View {
                 }
             }
             .visibilityPriority(.high)
+
+            ToolbarSpacer(.fixed)
+                .contentMarginsRemoved(true)
         }
     }
 
@@ -839,6 +873,16 @@ private struct ChatRootView: View {
     private var selectedVoiceChannel: Channel? {
         guard model.selectedChannel?.kind == .voice else { return nil }
         return model.selectedChannel
+    }
+
+    private var hasToolbarActionBeforePins: Bool {
+        selectedPrivateChannel != nil
+            || (selectedVoiceChannel != nil && !model.isVoiceChatOpen)
+    }
+
+    private var hasToolbarActionBeforeInspector: Bool {
+        selectedPrivateChannel != nil
+            || model.activePinsChannelID != nil
     }
 
     private var supplementaryToolbarPresentation: SupplementaryToolbarPresentation? {

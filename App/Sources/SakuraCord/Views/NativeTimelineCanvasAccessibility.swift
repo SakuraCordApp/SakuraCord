@@ -1260,12 +1260,12 @@ extension NativeTimelineCanvasView {
         rowIndex: Int
     ) -> [NSAccessibilityCustomAction] {
         let message = row.message
-        let canEdit =
-            message.author.id == model?.snapshot?.currentUser.id
-        if messageInteractionContext == .searchResult {
+        let canEdit = message.author.id == model?.snapshot?.currentUser.id
+        if messageInteractionContext == .searchResult || messageInteractionContext == .pinnedResult {
             return accessibilitySearchResultActions(
                 for: message,
-                canDelete: canEdit
+                canDelete: canEdit,
+                includesMarkUnread: messageInteractionContext == .searchResult
             )
         }
         var result: [NSAccessibilityCustomAction] = []
@@ -1327,6 +1327,9 @@ extension NativeTimelineCanvasView {
                 return true
             })
         }
+        if let pinAction = pinAccessibilityAction(for: message) {
+            result.append(pinAction)
+        }
         result.append(NSAccessibilityCustomAction(
             name: "Copy Text"
         ) {
@@ -1359,7 +1362,8 @@ extension NativeTimelineCanvasView {
 
     private func accessibilitySearchResultActions(
         for message: Message,
-        canDelete: Bool
+        canDelete: Bool,
+        includesMarkUnread: Bool
     ) -> [NSAccessibilityCustomAction] {
         var result = [
             NSAccessibilityCustomAction(name: "Jump to Message") { [weak self] in
@@ -1368,10 +1372,6 @@ extension NativeTimelineCanvasView {
                 }
                 openMessage(message)
                 return true
-            },
-            NSAccessibilityCustomAction(name: "Mark Unread") { [weak self] in
-                self?.actions?.markUnread(message)
-                return self != nil
             },
             NSAccessibilityCustomAction(name: "Copy Text") {
                 Self.copyText(message.content)
@@ -1383,6 +1383,15 @@ extension NativeTimelineCanvasView {
                 return true
             },
         ]
+        if includesMarkUnread {
+            result.insert(NSAccessibilityCustomAction(name: "Mark Unread") { [weak self] in
+                self?.actions?.markUnread(message)
+                return self != nil
+            }, at: 1)
+        }
+        if let pinAction = pinAccessibilityAction(for: message) {
+            result.insert(pinAction, at: min(2, result.count))
+        }
         result.append(contentsOf: [
             NSAccessibilityCustomAction(name: "Copy Message ID") {
                 Self.copyText(message.id.description)
@@ -1402,6 +1411,18 @@ extension NativeTimelineCanvasView {
             })
         }
         return result
+    }
+
+    private func pinAccessibilityAction(
+        for message: Message
+    ) -> NSAccessibilityCustomAction? {
+        guard model?.canManagePins(for: message) == true else { return nil }
+        return NSAccessibilityCustomAction(
+            name: message.isPinned ? "Unpin Message" : "Pin Message"
+        ) { [weak self] in
+            self?.actions?.togglePin(message)
+            return self != nil
+        }
     }
 
     func accessibilityMessageText(_ message: Message) -> String {

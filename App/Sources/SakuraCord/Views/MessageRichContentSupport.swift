@@ -101,16 +101,34 @@ nonisolated enum MessageEmbedPresentation {
 }
 
 nonisolated enum SystemMessagePresentation {
+    enum Action: Equatable, Sendable {
+        case profile(UserID)
+        case message(guildID: GuildID?, channelID: ChannelID, messageID: MessageID)
+        case pins(ChannelID)
+
+        var url: URL {
+            switch self {
+            case .profile(let userID):
+                URL(string: "sakuracord-action://profile/\(userID)")!
+            case let .message(guildID, channelID, messageID):
+                URL(string: "sakuracord-action://message/\(guildID?.description ?? "@me")/\(channelID)/\(messageID)")!
+            case .pins(let channelID):
+                URL(string: "sakuracord-action://pins/\(channelID)")!
+            }
+        }
+    }
+
     struct TextRun: Equatable, Sendable {
         let text: String
         let isEmphasized: Bool
+        let action: Action?
 
-        static func emphasized(_ text: String) -> Self {
-            Self(text: text, isEmphasized: true)
+        static func emphasized(_ text: String, action: Action? = nil) -> Self {
+            Self(text: text, isEmphasized: true, action: action)
         }
 
         static func secondary(_ text: String) -> Self {
-            Self(text: text, isEmphasized: false)
+            Self(text: text, isEmphasized: false, action: nil)
         }
     }
 
@@ -126,25 +144,26 @@ nonisolated enum SystemMessagePresentation {
     static func attributedLabel(
         for message: Message,
         currentUserID: UserID? = nil,
-        baseFontSize: CGFloat
+        baseFontSize: CGFloat,
+        actorColor: NSColor? = nil
     ) -> NSAttributedString {
         let value = NSMutableAttributedString()
         for run in textRuns(for: message, currentUserID: currentUserID) {
-            value.append(
-                NSAttributedString(
-                    string: run.text,
-                    attributes: [
+            var attributes: [NSAttributedString.Key: Any] = [
                         .font: NSFont.systemFont(
                             ofSize: baseFontSize,
                             weight: run.isEmphasized ? .semibold : .regular
                         ),
-                        .foregroundColor:
-                            run.isEmphasized
-                            ? NSColor.labelColor
-                            : NSColor.secondaryLabelColor,
-                    ]
-                )
-            )
+                        .foregroundColor: run.action == .profile(message.author.id)
+                            ? actorColor ?? NSColor.labelColor
+                            : run.isEmphasized
+                                ? NSColor.labelColor
+                                : NSColor.secondaryLabelColor,
+            ]
+            if let action = run.action {
+                attributes[.link] = action.url
+            }
+            value.append(NSAttributedString(string: run.text, attributes: attributes))
         }
         return value
     }
@@ -182,48 +201,61 @@ nonisolated enum SystemMessagePresentation {
     ) -> [TextRun] {
         switch message.type {
         case .recipientAdd:
-            let recipient = message.mentionedUsers.first?.displayName ?? "someone"
+            let recipientUser = message.mentionedUsers.first
+            let recipient = recipientUser?.displayName ?? "someone"
             return [
-                .emphasized(author),
+                actorRun(message),
                 .secondary(" added "),
-                .emphasized(recipient),
+                .emphasized(recipient, action: recipientUser.map { .profile($0.id) }),
                 .secondary(" to the group."),
             ]
         case .recipientRemove:
-            let recipient = message.mentionedUsers.first?.displayName ?? "someone"
+            let recipientUser = message.mentionedUsers.first
+            let recipient = recipientUser?.displayName ?? "someone"
             return [
-                .emphasized(author),
+                actorRun(message),
                 .secondary(" removed "),
-                .emphasized(recipient),
+                .emphasized(recipient, action: recipientUser.map { .profile($0.id) }),
                 .secondary(" from the group."),
             ]
         case .channelNameChange:
             if message.content.isEmpty {
                 return [
-                    .emphasized(author),
+                    actorRun(message),
                     .secondary(" changed the group name."),
                 ]
             }
             return [
-                .emphasized(author),
+                actorRun(message),
                 .secondary(" changed the group name to "),
                 .emphasized(message.content),
                 .secondary("."),
             ]
         case .channelIconChange:
             return [
-                .emphasized(author),
+                actorRun(message),
                 .secondary(" changed the group icon."),
             ]
         case .channelPinnedMessage:
+            let target = message.messageReference?.messageID.map {
+                Action.message(
+                    guildID: message.messageReference?.guildID ?? message.guildID,
+                    channelID: message.messageReference?.channelID ?? message.channelID,
+                    messageID: $0
+                )
+            }
             return [
-                .emphasized(author),
-                .secondary(" pinned a message to this channel."),
+                actorRun(message),
+                .secondary(" pinned "),
+                .emphasized("a message", action: target),
+                .secondary(" to this channel. "),
+                .emphasized("See all pinned messages", action: .pins(message.channelID)),
+                .secondary("."),
             ]
         case .userJoin:
             return [
                 .secondary("Yay you made it, "),
-                .emphasized(author),
+                actorRun(message),
                 .secondary("!"),
             ]
         default:
@@ -238,7 +270,7 @@ nonisolated enum SystemMessagePresentation {
     ) -> [TextRun] {
         guard let endedAt = message.call?.endedAt else {
             return [
-                .emphasized(author),
+                actorRun(message),
                 .secondary(" started a call."),
             ]
         }
@@ -246,12 +278,12 @@ nonisolated enum SystemMessagePresentation {
         if isMissedCall(message, currentUserID: currentUserID) {
             return [
                 .secondary("You missed a call from "),
-                .emphasized(author),
+                actorRun(message),
                 .secondary(" that lasted \(duration)."),
             ]
         }
         return [
-            .emphasized(author),
+            actorRun(message),
             .secondary(" started a call that lasted \(duration)."),
         ]
     }
@@ -262,24 +294,24 @@ nonisolated enum SystemMessagePresentation {
     ) -> [TextRun] {
         switch message.type {
         case .guildBoost:
-            return [.emphasized(author), .secondary(" boosted the server!")]
+            return [actorRun(message), .secondary(" boosted the server!")]
         case .guildBoostTier1:
             return [
-                .emphasized(author),
+                actorRun(message),
                 .secondary(" boosted the server to "),
                 .emphasized("Level 1"),
                 .secondary("!"),
             ]
         case .guildBoostTier2:
             return [
-                .emphasized(author),
+                actorRun(message),
                 .secondary(" boosted the server to "),
                 .emphasized("Level 2"),
                 .secondary("!"),
             ]
         case .guildBoostTier3:
             return [
-                .emphasized(author),
+                actorRun(message),
                 .secondary(" boosted the server to "),
                 .emphasized("Level 3"),
                 .secondary("!"),
@@ -296,12 +328,12 @@ nonisolated enum SystemMessagePresentation {
         switch message.type {
         case .channelFollowAdd:
             return [
-                .emphasized(author),
+                actorRun(message),
                 .secondary(" added a followed channel."),
             ]
         case .threadCreated:
             return [
-                .emphasized(author),
+                actorRun(message),
                 .secondary(" started a thread: "),
                 .emphasized(message.content.isEmpty ? "Thread" : message.content),
             ]
@@ -312,11 +344,11 @@ nonisolated enum SystemMessagePresentation {
                 )
             ]
         case .stageStart:
-            return [.emphasized(author), .secondary(" started a Stage.")]
+            return [actorRun(message), .secondary(" started a Stage.")]
         case .stageEnd:
-            return [.emphasized(author), .secondary(" ended the Stage.")]
+            return [actorRun(message), .secondary(" ended the Stage.")]
         case .stageSpeaker:
-            return [.emphasized(author), .secondary(" is now a speaker.")]
+            return [actorRun(message), .secondary(" is now a speaker.")]
         case .stageTopic:
             if message.content.isEmpty {
                 return [.secondary("The Stage topic changed.")]
@@ -328,6 +360,13 @@ nonisolated enum SystemMessagePresentation {
         default:
             return []
         }
+    }
+
+    private static func actorRun(_ message: Message) -> TextRun {
+        .emphasized(
+            message.author.displayName,
+            action: .profile(message.author.id)
+        )
     }
 
     static func systemImage(

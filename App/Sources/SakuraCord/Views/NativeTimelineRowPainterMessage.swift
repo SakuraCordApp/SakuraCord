@@ -180,6 +180,16 @@ extension NativeTimelineRowPainter {
                 lineBreakMode: .byClipping
             )
         }
+        if let pinnedAt = row.pinnedAt,
+           let frame = layout.pinnedAtFrame
+        {
+            text(
+                "Pinned \(pinnedAt.formatted(date: .abbreviated, time: .shortened))",
+                in: frame,
+                font: .preferredFont(forTextStyle: .caption1),
+                color: .secondaryLabelColor
+            )
+        }
         if let frame = layout.editedFrame {
             text(
                 "(edited)",

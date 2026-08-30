@@ -318,6 +318,7 @@ extension AppModel {
         isLoadingLater = false
         hasMoreLaterMessages = false
         messageCache = [:]
+        pinnedMessages.clear(notifying: self)
         messageCacheOrder = []
         messageRowCache = [:]
         messageRowCacheOrder = []

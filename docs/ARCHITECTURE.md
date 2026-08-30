@@ -35,6 +35,9 @@ Launch state is explicit:
 - `--offline`, `--offline-long-server-list`, and
   `--offline-forum-performance` construct deterministic fixture providers and
   an in-memory database with Discord networking disabled.
+- `--offline-pins-performance-autoscroll` opens a deterministic 5,000-message
+  paginated pin fixture through the production pin state and shared native
+  timeline, using the existing display-link scroll benchmark and signposts.
 - A normal launch restores a real account session, presents native sign-in, or
   reports a connection failure. It never falls back to mock data. The complete
   chat layout remains a data-free skeleton until the live Gateway bootstrap is
@@ -171,6 +174,15 @@ as production performance evidence.
 History responses and Gateway events decode into the same domain message
 model. Updates merge only fields present in the event. `MessageRendering`
 parses message content; it does not own a competing message-row view.
+
+Pinned-message pages and mutation serialization belong to account-scoped
+`AppModel` session state. Typed page and message-pin values live in
+`SakuraCordModels`; `ChatProvider` owns the paginated read and Pin/Unpin
+boundary; `DiscordRESTProvider` and `MockChatProvider` implement it. The pins
+popover supplies `.pins(channelID)` rows to `NativeMessageTimelineView`, so it
+reuses normal rich rendering, menus, accessibility, and exact-message
+navigation without inheriting history acknowledgement, unread, composer, or
+sidebar ownership.
 
 Every rendered conversation surface—guild text and announcement channels,
 direct and group direct messages, voice-channel chat, regular threads, and

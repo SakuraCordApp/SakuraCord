@@ -1,7 +1,7 @@
 # Discord production protocol baseline
 
-Last repository audit: 23 August 2026, in a working tree based on SakuraCord
-commit `0f2c7fdb`.
+Last repository audit: 30 August 2026, in a working tree based on SakuraCord
+commit `369357e`.
 
 This document describes SakuraCord's durable network contract and the dated
 evidence behind it. It is not a claim that Discord's undocumented
@@ -41,6 +41,46 @@ No token, cookie, authorization header, message body, personal payload,
 fingerprint, installation identifier, or unsanitized traffic is stored in this
 repository. Treat every build number and observed payload as a dated snapshot,
 not current official behavior.
+
+Pinned messages were re-audited on 30 August 2026 in a renamed clean official
+Discord desktop `0.0.408` with Chromium 148 and CDP attached before the main
+Gateway resumed. The bounded study used 26 numbered disposable messages in
+`#general` on the private test server, then removed those messages and every
+generated pin announcement. Opening pins issued
+`GET /api/v9/channels/<CHANNEL_ID>/messages/pins?limit=25`; the full first page
+returned HTTP 200 with 25 `items`, `has_more:true`, and descending `pinned_at`
+values. Loading the next page issued the same route with
+`before=<LAST_PINNED_AT>&limit=25` and returned the one remaining item with
+`has_more:false`. The messages had deliberately different creation and pin
+orders, and the UI and response both followed newest pin time rather than
+message creation time. The final empty read returned `items:[]` and
+`has_more:false`.
+
+The unprivileged test account could send and delete its own messages but its
+central message menu omitted Pin Message. The server-owner account exposed Pin
+Message, and a pinned row exposed dedicated Jump and Unpin actions. Each
+confirmed pin sent one empty-body
+`PUT /api/v9/channels/<CHANNEL_ID>/messages/pins/<MESSAGE_ID>` and received HTTP
+204; unpin used the corresponding empty-body `DELETE` and also received HTTP
+204. Neither request carried an audit-log reason. The desktop Gateway negotiated
+`encoding=etf`, version 9, and `compress=zstd-stream`. A pin produced an ordinary
+`MESSAGE_UPDATE` with `pinned:true`, a `CHANNEL_PINS_UPDATE` with the newest pin
+timestamp, and a type-6 pin-announcement `MESSAGE_CREATE`; their relative arrival
+order was not stable across samples. Unpin produced `MESSAGE_UPDATE` with
+`pinned:false` and `CHANNEL_PINS_UPDATE`; removing the final pin supplied a null
+last-pin timestamp and did not create a system message. Deleting a still-pinned
+message produced only `MESSAGE_DELETE` in the observed channel and no
+`CHANNEL_PINS_UPDATE`.
+
+No credential, cookie, authorization value, account, guild, channel, message
+identifier, message content, or raw Gateway/response payload was retained. The
+1–50 documented limit and `VIEW_CHANNEL`/`READ_MESSAGE_HISTORY` read behavior
+were cross-checked against Discord's current public message documentation; the
+dedicated `PIN_MESSAGES` mutation permission and deletion exception were
+cross-checked against the current permission, change-log, and Gateway
+documentation. The pinned Paicord and Swiftcord v1 sources contain only
+historical pin state/action fragments and were not used to override the current
+paginated route.
 
 Message search was re-audited on 14 August 2026 with sanitized CDP capture in a
 fresh, cache-disabled, authenticated, renamed official Discord desktop `0.0.407`.
@@ -495,6 +535,8 @@ and retained as evidence.
 | `GET /gifs/trending-gifs?media_format=webm&locale={locale}` | Explicit Trending GIFs selection; no body. The returned order is preserved. | Current first-party route and clean-client request; P−, S−. |
 | `GET /gifs/search?q={query}&media_format=webm&locale={locale}` | Nonempty picker search after the current 250 ms debounce; no speculative or paginated follow-up. The live default response is 50 results and its order is preserved. | Current first-party route/action and clean-client `hello` request; P−, S−. |
 | `GET /channels/{channel}/messages` | Visible history only; guild history requires effective `VIEW_CHANNEL` and `READ_MESSAGE_HISTORY`, and voice-channel history additionally requires `CONNECT`. The current clean client uses `limit=10` for a newly selected uncached channel, which SakuraCord matches once per channel per uninterrupted Gateway connection. A dispatched newest-page read is allowed to finish and populate the session stores after a later selection supersedes its presentation; rapid navigation does not abort those reads. Reopening a loaded newest-backed channel restores its bounded session-memory page and sends no history request. After a Gateway gap, the retained page is presented immediately but its completeness marker is invalidated; returning to Ready refreshes the selected page once and later reopened pages refresh once on selection. Distant navigation uses `around={message}&limit=50` as a replacement window; its older and newer edges paginate independently with `before={oldest}&limit=20` and `after={newest}&limit=20`. A historical window is not cached as though it were newest-backed. No body. | Public message semantics and `before`/`after`/`around` pagination, current first-party permission/message paths and stale-connection refresh, and Paicord's permission-checked channel store. Swiftcord v1 checks `VIEW_CHANNEL` before presentation but otherwise supplies only a historical unguarded/refetching history path. Paicord retains a per-channel in-memory store and uses a historical 50-message initial page. The current first-party cache behavior and connection-generation invalidation take precedence. |
+| `GET /channels/{channel}/messages/pins` | Opening or paginating native pins; `limit=25` and optional ISO-8601 `before` equal to the last returned `pinned_at`. Response items carry `pinned_at` plus the complete message and are presented newest-pin first. Reads require `VIEW_CHANNEL`; without `READ_MESSAGE_HISTORY` Discord returns no pins. Safe-read cancellation, one confirmed transport recovery, central rate limiting, diagnostics, and session ownership match history reads. | Sanitized clean desktop empty, 25-item, and one-item second-page requests on 30 August 2026 plus current public message and permission documentation for the 1–50 limit and access behavior. |
+| `PUT` or `DELETE /channels/{channel}/messages/pins/{message}` | One explicit Pin or Unpin action, empty body, guarded by effective `PIN_MESSAGES` (`1 << 51`). The local message and open pins surface update optimistically; one mutation per message is in flight, later conflicting intent waits for it, definite 4xx failure rolls back, and ambiguous failure is not replayed. | Sanitized clean desktop PUT/DELETE requests and HTTP 204 responses on 30 August 2026, current public message endpoint, and 23 February 2026 permission change log. Live Gateway samples corroborated `pinned:true`/`false`, channel-pin invalidation, null final-pin timestamp, and independent pinned-message deletion. |
 | `GET /guilds/{guild}/messages/search` | One explicit server search on Return, filter/sort application, or page selection. Optional repeated `author_id`, `channel_id`, `mentions`, `has`, and `author_type`; optional `pinned`, date snowflakes, and trimmed `content`; then exact sort and 25-step offset fields. No `limit` query item. Nested groups select their `hit` message and retain context for shared timeline rendering and exact-result navigation. | Sanitized authenticated clean-client CDP matrix on 14 August 2026; P−, S−. |
 | `POST /users/@me/messages/search/tabs` | One explicit DM search with `tabs.messages`, `limit:25`, 25-step `offset`, exact sort/filter fields, and `track_exact_total_hits:true`. Optional top-level `channel_ids` scopes the same endpoint to one or more DMs; omitting it searches all DMs. Returned channel metadata is merged before exact-result navigation. | Sanitized authenticated clean-client CDP matrix on 14 August 2026; P−, S−. |
 | `GET /channels/{thread}` | One unknown-thread deep-link resolution; no body. | Public channel semantics and all three references. |
@@ -776,7 +818,10 @@ exception dispatches.
   message projections without a REST probe.
 - `MESSAGE_DELETE_BULK` removes every named loaded message and publishes the
   same per-message deletion boundary as a single delete.
-  `CHANNEL_PINS_UPDATE`, `THREAD_MEMBERS_UPDATE`,
+  `CHANNEL_PINS_UPDATE` carries the channel and optional last-pin timestamp; it
+  invalidates only that channel's pin page, and an open matching page performs
+  one paginated-pin refresh. It is not a substitute for `MESSAGE_DELETE`, which
+  independently removes a deleted pinned row. `THREAD_MEMBERS_UPDATE`,
   `VOICE_CHANNEL_STATUS_UPDATE`, and `VOICE_CHANNEL_START_TIME_UPDATE` update
   their cached channel or thread fields in place. Voice start times accept the
   documented Unix-seconds representation; ISO timestamps remain a lossless
@@ -942,6 +987,13 @@ implementation records.
   across an unloaded range. Gateway arrivals remain outside a historical
   window until forward pagination reaches them or the user returns to the
   newest window.
+- Pin pages remain account- and channel-scoped session memory. The `pinned`
+  field is retained through history, search, complete Gateway messages, and
+  omitted-field partial updates. A `CHANNEL_PINS_UPDATE` invalidates only its
+  named channel and refreshes an open matching pin page once. A Gateway message
+  update reconciles an optimistic mutation without applying it twice.
+  `MESSAGE_DELETE` removes the deleted item directly because Discord explicitly
+  does not send `CHANNEL_PINS_UPDATE` when a pinned message is deleted.
 
 ### Rich messages, reactions, and emoji
 

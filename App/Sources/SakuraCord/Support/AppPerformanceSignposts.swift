@@ -25,6 +25,11 @@ enum AppPerformanceSignposts {
     private static var messageSearchRequestInterval: OSSignpostIntervalState?
     private static var messageSearchPaginationInterval: OSSignpostIntervalState?
     private static var messageSearchScrollInterval: OSSignpostIntervalState?
+    private static var pinnedMessagesOpenInterval: OSSignpostIntervalState?
+    private static var pinnedMessagesCloseInterval: OSSignpostIntervalState?
+    private static var pinnedMessagesRequestInterval: OSSignpostIntervalState?
+    private static var pinnedMessagesPaginationInterval: OSSignpostIntervalState?
+    private static var pinnedMessagesScrollInterval: OSSignpostIntervalState?
     private static var resourceWindowStartNanoseconds: UInt64?
 
     static func beginStartup() {
@@ -206,6 +211,74 @@ enum AppPerformanceSignposts {
         messageSearchOpenInterval = signposter.beginInterval(
             "MessageSearchOpenToFirstFrame"
         )
+    }
+
+    static func beginPinnedMessagesOpen() {
+        if let current = pinnedMessagesOpenInterval {
+            signposter.endInterval("PinnedMessagesOpenToFirstFrame", current)
+        }
+        pinnedMessagesOpenInterval = signposter.beginInterval(
+            "PinnedMessagesOpenToFirstFrame"
+        )
+    }
+
+    static func reportPinnedMessagesPanelReady() {
+        guard let current = pinnedMessagesOpenInterval else { return }
+        signposter.endInterval("PinnedMessagesOpenToFirstFrame", current)
+        pinnedMessagesOpenInterval = nil
+    }
+
+    static func beginPinnedMessagesClose() {
+        if let current = pinnedMessagesCloseInterval {
+            signposter.endInterval("PinnedMessagesClose", current)
+        }
+        pinnedMessagesCloseInterval = signposter.beginInterval("PinnedMessagesClose")
+    }
+
+    static func reportPinnedMessagesClosed() {
+        guard let current = pinnedMessagesCloseInterval else { return }
+        signposter.endInterval("PinnedMessagesClose", current)
+        pinnedMessagesCloseInterval = nil
+    }
+
+    static func beginPinnedMessagesRequest(isPagination: Bool) {
+        if isPagination {
+            if let current = pinnedMessagesPaginationInterval {
+                signposter.endInterval("PinnedMessagesPaginationToResults", current)
+            }
+            pinnedMessagesPaginationInterval = signposter.beginInterval(
+                "PinnedMessagesPaginationToResults"
+            )
+        } else {
+            if let current = pinnedMessagesRequestInterval {
+                signposter.endInterval("PinnedMessagesRequestToResults", current)
+            }
+            pinnedMessagesRequestInterval = signposter.beginInterval(
+                "PinnedMessagesRequestToResults"
+            )
+        }
+    }
+
+    static func endPinnedMessagesRequest(isPagination: Bool) {
+        if isPagination, let current = pinnedMessagesPaginationInterval {
+            signposter.endInterval("PinnedMessagesPaginationToResults", current)
+            pinnedMessagesPaginationInterval = nil
+            return
+        }
+        guard !isPagination, let current = pinnedMessagesRequestInterval else { return }
+        signposter.endInterval("PinnedMessagesRequestToResults", current)
+        pinnedMessagesRequestInterval = nil
+    }
+
+    static func beginPinnedMessagesScroll() {
+        guard pinnedMessagesScrollInterval == nil else { return }
+        pinnedMessagesScrollInterval = signposter.beginInterval("PinnedMessagesUserScroll")
+    }
+
+    static func endPinnedMessagesScroll() {
+        guard let current = pinnedMessagesScrollInterval else { return }
+        signposter.endInterval("PinnedMessagesUserScroll", current)
+        pinnedMessagesScrollInterval = nil
     }
 
     static func reportMessageSearchPanelReady() {

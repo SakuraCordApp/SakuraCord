@@ -20,9 +20,11 @@ nonisolated enum ChatChromeMetrics {
     static let composerMinimumCornerRadius: CGFloat = 12
     static let channelListTopPadding: CGFloat = 10
     static let memberListWidth: CGFloat = 280
-    /// Upper bound before live toolbar geometry reserves adjacent controls.
+    /// Native toolbar search keeps its own outer item margin. An eight-point
+    /// field inset centers the visible glass inside the fixed inspector pane.
+    static let toolbarPaneEdgeInset: CGFloat = 8
     static let toolbarSearchMaximumFieldWidth: CGFloat =
-        memberListWidth - (composerWindowInset * 2)
+        memberListWidth - (toolbarPaneEdgeInset * 2)
     static let emojiPickerWidth: CGFloat = 520
     static let pickerSearchHeaderHeight: CGFloat = 48
     static let pickerSearchHeaderInset: CGFloat = 15

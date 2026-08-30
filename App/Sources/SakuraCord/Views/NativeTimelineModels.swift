@@ -144,10 +144,13 @@ enum NativeTimelineConversation: Hashable {
     case channel(ChannelID?)
     case thread(ChannelID?)
     case search
+    case pins(ChannelID)
 
     var id: ChannelID? {
         switch self {
         case let .channel(id), let .thread(id):
+            id
+        case .pins(let id):
             id
         case .search:
             nil
@@ -155,15 +158,16 @@ enum NativeTimelineConversation: Hashable {
     }
 
     var supportsReply: Bool {
-        self != .search
+        self != .search && !isPins
     }
 
     var activatesMessageOnClick: Bool {
-        self == .search
+        self == .search || isPins
     }
 
     var messageInteractionContext: NativeTimelineMessageInteractionContext {
-        self == .search ? .searchResult : .conversation
+        if self == .search { return .searchResult }
+        return isPins ? .pinnedResult : .conversation
     }
 
     var loaderKind: NativeTimelineLoaderKind {
@@ -174,6 +178,8 @@ enum NativeTimelineConversation: Hashable {
             .replies
         case .search:
             .messages
+        case .pins:
+            .pins
         }
     }
 
@@ -186,6 +192,8 @@ enum NativeTimelineConversation: Hashable {
             model.threadMessageRows
         case .search:
             model.messageSearch.rows
+        case .pins:
+            model.pinnedMessages.rows
         }
     }
 
@@ -198,6 +206,8 @@ enum NativeTimelineConversation: Hashable {
             model.threadMessageRowsRevision
         case .search:
             model.messageSearch.rowsRevision
+        case .pins:
+            model.pinnedMessages.rowsRevision
         }
     }
 
@@ -208,7 +218,7 @@ enum NativeTimelineConversation: Hashable {
             model.messageRowsUpdateHint
         case .thread:
             model.threadMessageRowsUpdateHint
-        case .search:
+        case .search, .pins:
             nil
         }
     }
@@ -222,18 +232,27 @@ enum NativeTimelineConversation: Hashable {
             model.threadMessageRowsUpdateJournal
         case .search:
             model.messageSearch.rowsUpdateJournal
+        case .pins:
+            model.pinnedMessages.rowsUpdateJournal
         }
+    }
+
+    private var isPins: Bool {
+        if case .pins = self { return true }
+        return false
     }
 }
 
 nonisolated enum NativeTimelineMessageInteractionContext: Equatable {
     case conversation
     case searchResult
+    case pinnedResult
 }
 
 nonisolated enum NativeTimelineLoaderKind: Equatable {
     case messages
     case replies
+    case pins
 
     var loadingLabel: String {
         switch self {
@@ -241,6 +260,8 @@ nonisolated enum NativeTimelineLoaderKind: Equatable {
             "Loading earlier messages…"
         case .replies:
             "Loading earlier replies…"
+        case .pins:
+            "Loading more pinned messages…"
         }
     }
 }

@@ -1790,6 +1790,7 @@ extension DiscordRESTProvider {
                 cachedChannels[nil] = channels
                 continuation?.yield(.channelsChanged(guildID: nil, channels: channels))
             }
+            continuation?.yield(.channelPinsInvalidated(channelID: channelID))
         case "GUILD_MEMBER_LIST_UPDATE":
             guard let update = try? JSONDecoder().decode(GuildMemberListUpdateDTO.self, from: data),
                   let guildID = GuildID(update.guildID)

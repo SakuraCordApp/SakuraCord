@@ -29,6 +29,7 @@ contacting Discord:
 | `./script/build_and_run.sh --offline-long-server-list` | Extended server rail |
 | `./script/build_and_run.sh --offline-forum-performance` | Large forum |
 | `./script/build_and_run.sh --offline-chat-performance` | Large native timeline |
+| `./script/build_and_run.sh --offline-pins-performance-autoscroll` | Paginated 5,000-message pins timeline benchmark |
 | `./script/build_and_run.sh --offline-incoming-private-call` | Incoming direct-message call |
 
 Use `./script/build_and_run.sh run` to launch the normal app and restore an

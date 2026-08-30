@@ -243,11 +243,16 @@ extension AppModel {
         case .messageCreated(var message):
             consumeMessageCreated(&message, preparedTextPlan: preparedTextPlan)
         case .messageUpdated(let incoming):
-            consumeMessageUpdated(incoming, preparedTextPlan: preparedTextPlan)
+            let reconciled = applyingPendingPinIntent(to: incoming)
+            consumeMessageUpdated(reconciled, preparedTextPlan: preparedTextPlan)
+            reconcilePinnedMessage(reconciled)
         case .messageReactionUpdated(let update):
             applyReactionUpdate(update)
         case .messageDeleted(let channelID, let messageID):
             consumeMessageDeleted(channelID: channelID, messageID: messageID)
+            removeDeletedPinnedMessage(channelID: channelID, messageID: messageID)
+        case .channelPinsInvalidated(let channelID):
+            invalidatePinnedMessages(in: channelID)
         case .readStateSnapshot(let states, let version):
             consumeReadStateSnapshot(states, version: version)
         case .readStateChanged(let state):

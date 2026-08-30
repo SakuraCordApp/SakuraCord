@@ -1013,6 +1013,8 @@ extension NativeTimelineCanvasView {
             canRetry: row.message.outboxState == .failed,
             canReply: actions.reply != nil,
             canForward: actions.forward != nil && model?.canForward(row.message) == true,
+            canPin: model?.canManagePins(for: row.message) == true,
+            isPinned: row.message.isPinned,
             context: messageInteractionContext
         ) {
             guard case let .action(
@@ -1061,6 +1063,28 @@ extension NativeTimelineCanvasView {
         actions: NativeTimelineRowActions
     ) -> () -> Void {
         switch action {
+        case .pinMessage, .unpinMessage:
+            return { actions.togglePin(row.message) }
+        default:
+            return nonPinMessageMenuHandler(
+                action: action,
+                row: row,
+                index: index,
+                actions: actions
+            )
+        }
+    }
+
+    private func nonPinMessageMenuHandler(
+        action: NativeTimelineMessageMenuAction,
+        row: MessageRowPresentation,
+        index: Int,
+        actions: NativeTimelineRowActions
+    ) -> () -> Void {
+        if let copyHandler = copyMessageMenuHandler(action: action, row: row) {
+            return copyHandler
+        }
+        return switch action {
         case .jumpToMessage:
             { actions.openMessage?(row.message) }
         case .retrySending:
@@ -1081,6 +1105,18 @@ extension NativeTimelineCanvasView {
             { actions.markUnread(row.message) }
         case .editMessage:
             { [weak self] in self?.beginEditing(row: row, at: index) }
+        case .deleteMessage, .discardFailedMessage:
+            deletionMenuHandler(action: action, message: row.message)
+        default:
+            {}
+        }
+    }
+
+    private func copyMessageMenuHandler(
+        action: NativeTimelineMessageMenuAction,
+        row: MessageRowPresentation
+    ) -> (() -> Void)? {
+        switch action {
         case .copyText:
             { Self.copyText(row.message.content) }
         case .copyLink:
@@ -1092,8 +1128,8 @@ extension NativeTimelineCanvasView {
             { Self.copyText(row.message.id.description) }
         case .copyAuthorID:
             { Self.copyText(row.message.author.id.description) }
-        case .deleteMessage, .discardFailedMessage:
-            deletionMenuHandler(action: action, message: row.message)
+        default:
+            nil
         }
     }
 

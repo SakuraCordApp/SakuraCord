@@ -47,6 +47,12 @@ usage() {
 #       fixture. Set SAKURACORD_PERFORMANCE_ACCOUNT_ID to a stored debug account
 #       ID to compare accounts; otherwise the most recently selected account is
 #       used. Defaults: 35 seconds.
+#   offline-pins-scroll [seconds]
+#       Relaunch the packaged offline pins fixture and run the same deterministic
+#       20-second display-link workload through a 5,000-message pinned timeline.
+#       Captures popover open, paginated loading, rendering, and scrolling without
+#       credentials, network access, acknowledgements, or account mutations.
+#       Defaults: 35 seconds.
 #   authenticated-member-list-scroll [seconds]
 #       Relaunch the authenticated debug app and run the same deterministic
 #       20-second display-link workload through the native member list. The
@@ -562,7 +568,7 @@ record_launch() (
     notification="dev.sakuracord.performance.trace-started.$$.${RANDOM}"
     mkdir -p "$output"
     case "$scenario" in
-        authenticated-scroll) resource_window_name="MessageTimelineAutoScrollBenchmark" ;;
+        authenticated-scroll|offline-pins-scroll) resource_window_name="MessageTimelineAutoScrollBenchmark" ;;
         authenticated-member-list-scroll) resource_window_name="MemberListAutoScrollBenchmark" ;;
         authenticated-gesture-scroll) resource_window_name="AuthenticatedGestureScrollBenchmark" ;;
         authenticated-loading-scroll-overlap) resource_window_name="AuthenticatedLoadingScrollOverlapBenchmark" ;;
@@ -740,6 +746,7 @@ record_launch() (
     fi
     kill -CONT "$pid"
     if [[ ( "$scenario" == "authenticated-scroll" \
+            || "$scenario" == "offline-pins-scroll" \
             || "$scenario" == "authenticated-member-list-scroll" \
             || "$scenario" == "authenticated-gesture-scroll" \
             || "$scenario" == "authenticated-loading-scroll-overlap" \
@@ -769,6 +776,7 @@ record_launch() (
     trace_pid=""
     (( trace_status == 0 )) || exit "$trace_status"
     if [[ ( "$scenario" == "authenticated-scroll" \
+            || "$scenario" == "offline-pins-scroll" \
             || "$scenario" == "authenticated-member-list-scroll" \
             || "$scenario" == "authenticated-gesture-scroll" \
             || "$scenario" == "authenticated-loading-scroll-overlap" \
@@ -818,6 +826,11 @@ record_startup() {
 record_authenticated_scroll() {
     record_launch authenticated-scroll "$1" \
         --debug-authenticated-chat-performance-autoscroll
+}
+
+record_offline_pins_scroll() {
+    record_launch offline-pins-scroll "$1" \
+        --offline-pins-performance-autoscroll
 }
 
 record_authenticated_member_list_scroll() {
@@ -884,7 +897,7 @@ summarize_recording() {
         awk -F '\t' '$1 == "scenario" { print $2 }' "$output/metadata.tsv"
     )"
     case "$scenario" in
-        authenticated-scroll)
+        authenticated-scroll|offline-pins-scroll)
             profile_interval="MessageTimelineAutoScrollBenchmark"
             ;;
         authenticated-member-list-scroll)
@@ -947,6 +960,7 @@ summarize_recording() {
             --limit 50 \
             >"$output/measurement-outline-list-time-profile.txt"
         if [[ ( "$scenario" == "authenticated-scroll" \
+                || "$scenario" == "offline-pins-scroll" \
                 || "$scenario" == "authenticated-member-list-scroll" ) \
               && -s "$output/benchmark-result.tsv" \
               && -n "$(awk -F '\t' '$1 == "delayed_tick_samples_offset_ms_interval_ms" { print $2 }' "$output/benchmark-result.tsv")" ]]; then
@@ -1305,6 +1319,7 @@ delayed_frame_profile_sampled_ms = time_profile_sampled_milliseconds.call(
 )
 scroll_benchmark = [
   "authenticated-scroll",
+  "offline-pins-scroll",
   "authenticated-member-list-scroll",
 ].include?(scenario)
 navigation_benchmark = scenario == "authenticated-navigation"
@@ -1355,7 +1370,7 @@ navigation_static_decode_overlap_ms = 0.0
 navigation_static_decode_overlap_maximum_ms = 0.0
 loading_scroll_overlap_metrics = {}
 measurement_interval = case scenario
-                       when "authenticated-scroll"
+                       when "authenticated-scroll", "offline-pins-scroll"
                          "MessageTimelineAutoScrollBenchmark"
                        when "authenticated-member-list-scroll"
                          "MemberListAutoScrollBenchmark"
@@ -2369,6 +2384,9 @@ case "$command" in
         ;;
     authenticated-scroll)
         record_authenticated_scroll "${2:-35}"
+        ;;
+    offline-pins-scroll)
+        record_offline_pins_scroll "${2:-35}"
         ;;
     authenticated-member-list-scroll)
         record_authenticated_member_list_scroll "${2:-70}"

@@ -15,6 +15,7 @@ struct MessageUpdateDTO: Decodable {
     var mentionRoles: [String]?
     var mentionEveryone: Bool?
     var flags: UInt64?
+    var pinned: Bool?
     var type: Int?
     var application: MessageDTO.ApplicationDTO?
     var interaction: MessageDTO.InteractionDTO?
@@ -26,7 +27,7 @@ struct MessageUpdateDTO: Decodable {
         case content
         case editedTimestamp = "edited_timestamp"
         case attachments
-        case embeds, components, stickers, thread, flags, type, mentions, application, interaction
+        case embeds, components, stickers, thread, flags, pinned, type, mentions, application, interaction
         case mentionRoles = "mention_roles"
         case mentionEveryone = "mention_everyone"
         case interactionMetadata = "interaction_metadata"
@@ -61,6 +62,9 @@ struct MessageUpdateDTO: Decodable {
         }
         if let flags {
             message.flags = MessageFlags(rawValue: flags)
+        }
+        if let pinned {
+            message.isPinned = pinned
         }
         if let type {
             message.type = DiscordMessageType(rawValue: type)

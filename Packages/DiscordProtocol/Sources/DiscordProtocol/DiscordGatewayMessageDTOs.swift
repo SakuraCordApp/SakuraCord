@@ -394,6 +394,7 @@ struct MessageDTO: Decodable {
     var editedTimestamp: String?
     var attachments: LossyList<AttachmentDTO>?
     var reactions: LossyList<ReactionDTO>?
+    var pinned: Bool?
     var nonce: StringOrIntegerDTO?
     var messageReference: ReferenceDTO?
     var messageSnapshots: LossyList<SnapshotDTO>?
@@ -424,7 +425,7 @@ struct MessageDTO: Decodable {
         case channelID = "channel_id"
         case author, member, content, timestamp
         case editedTimestamp = "edited_timestamp"
-        case attachments, reactions, nonce
+        case attachments, reactions, pinned, nonce
         case messageReference = "message_reference"
         case messageSnapshots = "message_snapshots"
         case referencedMessage = "referenced_message"
@@ -490,6 +491,7 @@ struct MessageDTO: Decodable {
             attachments: forwardedSnapshot?.attachments
                 ?? attachments?.elements.compactMap { try? $0.domain() } ?? [],
             reactions: reactions?.elements.map(\.domain) ?? [],
+            isPinned: pinned ?? false,
             nonce: nonce?.value,
             // Action eligibility uses the wrapper's metadata while the
             // presentation fields above render its immutable snapshot.
@@ -789,5 +791,9 @@ enum DiscordDate {
             return try? fractionalFormat.parse(value)
         }
         return try? wholeSecondFormat.parse(value)
+    }
+
+    static func format(_ value: Date) -> String {
+        value.formatted(fractionalFormat)
     }
 }

@@ -190,6 +190,8 @@ nonisolated enum NativeTimelineMessageMenuAction: Equatable {
     case forward
     case markUnread
     case editMessage
+    case pinMessage
+    case unpinMessage
     case copyText
     case copyLink
     case copyMessageID
@@ -218,12 +220,45 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
         canRetry: Bool,
         canReply: Bool,
         canForward: Bool = false,
+        canPin: Bool = false,
+        isPinned: Bool = false,
         context: NativeTimelineMessageInteractionContext = .conversation
     ) -> [NativeTimelineMessageMenuEntry] {
         if context == .searchResult {
-            return searchResultEntries(canDelete: canEdit)
+            return resultEntries(
+                canDelete: canEdit,
+                canPin: canPin,
+                isPinned: isPinned,
+                includesMarkUnread: true
+            )
+        }
+        if context == .pinnedResult {
+            return resultEntries(
+                canDelete: canEdit,
+                canPin: canPin,
+                isPinned: true,
+                includesMarkUnread: false
+            )
         }
 
+        return conversationEntries(
+            canEdit: canEdit,
+            canRetry: canRetry,
+            canReply: canReply,
+            canForward: canForward,
+            canPin: canPin,
+            isPinned: isPinned
+        )
+    }
+
+    private static func conversationEntries(
+        canEdit: Bool,
+        canRetry: Bool,
+        canReply: Bool,
+        canForward: Bool,
+        canPin: Bool,
+        isPinned: Bool
+    ) -> [NativeTimelineMessageMenuEntry] {
         if canRetry {
             return [
                 .action(
@@ -274,6 +309,13 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
                 systemImage: "pencil"
             ))
         }
+        if canPin {
+            result.append(.action(
+                isPinned ? .unpinMessage : .pinMessage,
+                title: isPinned ? "Unpin Message" : "Pin Message",
+                systemImage: isPinned ? "pin.slash" : "pin"
+            ))
+        }
         result.append(.action(
             .markUnread,
             title: "Mark Unread",
@@ -307,8 +349,11 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
         return result
     }
 
-    private static func searchResultEntries(
-        canDelete: Bool
+    private static func resultEntries(
+        canDelete: Bool,
+        canPin: Bool,
+        isPinned: Bool,
+        includesMarkUnread: Bool
     ) -> [NativeTimelineMessageMenuEntry] {
         var result: [NativeTimelineMessageMenuEntry] = [
             .action(
@@ -317,12 +362,23 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
                 systemImage: NativeTimelineSearchResultPresentation
                     .jumpToMessageSystemImage
             ),
-            .action(
+        ]
+        if includesMarkUnread {
+            result.append(.action(
                 .markUnread,
                 title: "Mark Unread",
                 systemImage: "envelope.badge"
-            ),
-            .separator,
+            ))
+        }
+        if canPin {
+            result.append(.action(
+                isPinned ? .unpinMessage : .pinMessage,
+                title: isPinned ? "Unpin Message" : "Pin Message",
+                systemImage: isPinned ? "pin.slash" : "pin"
+            ))
+        }
+        result.append(.separator)
+        result.append(contentsOf: [
             .action(
                 .copyText,
                 title: "Copy Text",
@@ -343,7 +399,7 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
                 title: "Copy Message Author ID",
                 systemImage: "number.square.fill"
             ),
-        ]
+        ])
         if canDelete {
             result.append(contentsOf: [
                 .separator,

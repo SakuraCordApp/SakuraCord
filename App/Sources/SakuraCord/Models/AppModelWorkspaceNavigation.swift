@@ -648,7 +648,7 @@ extension AppModel {
         )
     }
 
-    private func messageSearchChannelsByID(
+    func messageSearchChannelsByID(
         additionalChannels: [Channel]
     ) -> [ChannelID: Channel] {
         var channels = Dictionary(
@@ -682,6 +682,28 @@ extension AppModel {
         navigateToMessageSearchResult(result, messageID: message.id)
     }
 
+    func navigateToPinnedResult(_ message: Message) {
+        navigateToMessageResult(
+            source: message,
+            messageID: message.id,
+            initialMessages: message.channelID == openThread?.id ? [message] : nil,
+            isKnownThread: message.channelID == openThread?.id
+        )
+    }
+
+    func navigateToPinnedReply(_ messageID: MessageID) {
+        guard let source = pinnedMessages.items.first(where: {
+            $0.message.replyTo == messageID
+        })?.message else { return }
+        let isKnownThread = source.channelID == openThread?.id
+        navigateToMessageResult(
+            source: source,
+            messageID: messageID,
+            initialMessages: isKnownThread ? [source] : nil,
+            isKnownThread: isKnownThread
+        )
+    }
+
     func navigateToSearchReply(_ messageID: MessageID) {
         guard let result = messageSearch.page?.results.first(where: {
             $0.hit.replyTo == messageID
@@ -694,19 +716,32 @@ extension AppModel {
         _ result: MessageSearchResult,
         messageID: MessageID
     ) {
-        let source = result.hit
-        let guildID = source.guildID
-            ?? snapshot?.channels.first(where: { $0.id == source.channelID })?.guildID
         let isGuildThreadResult = messageSearch.submittedQuery?.scope.guildID != nil
             && messageSearch.page?.channels.contains(where: {
-                $0.id == source.channelID
+                $0.id == result.hit.channelID
             }) == true
-        if isGuildThreadResult {
+        navigateToMessageResult(
+            source: result.hit,
+            messageID: messageID,
+            initialMessages: result.messages,
+            isKnownThread: isGuildThreadResult
+        )
+    }
+
+    private func navigateToMessageResult(
+        source: Message,
+        messageID: MessageID,
+        initialMessages: [Message]?,
+        isKnownThread: Bool
+    ) {
+        let guildID = source.guildID
+            ?? snapshot?.channels.first(where: { $0.id == source.channelID })?.guildID
+        if isKnownThread {
             navigate(
                 to: guildID,
                 linkedChannelID: source.channelID,
                 messageID: messageID,
-                initialMessages: result.messages
+                initialMessages: initialMessages ?? [source]
             )
         } else {
             navigate(

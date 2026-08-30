@@ -8,6 +8,7 @@ public enum ClientEvent: Equatable, Sendable {
     case messageUpdated(Message)
     case messageReactionUpdated(MessageReactionUpdate)
     case messageDeleted(channelID: ChannelID, messageID: MessageID)
+    case channelPinsInvalidated(channelID: ChannelID)
     case readStateSnapshot([ChannelReadState], version: Int? = nil)
     case readStateChanged(ChannelReadState)
     case notificationModeChanged(usesNewNotifications: Bool)

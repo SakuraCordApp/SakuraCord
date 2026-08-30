@@ -10,6 +10,7 @@ struct SakuraCordApp: App {
     @State private var model: AppModel
     private let opensForumPerformanceFixture: Bool
     private let opensChatPerformanceFixture: Bool
+    private let opensPinsPerformanceFixture: Bool
     private let runsChatLiveArrivalStress: Bool
     private let runsAuthenticatedNavigationBenchmark: Bool
     private let runsAuthenticatedAccountSwitchBenchmark: Bool
@@ -41,6 +42,7 @@ struct SakuraCordApp: App {
         let configuration = AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments)
         opensForumPerformanceFixture = configuration.includesForumPerformanceFixture
         opensChatPerformanceFixture = configuration.includesChatPerformanceFixture
+        opensPinsPerformanceFixture = configuration.includesPinsPerformanceFixture
         runsChatLiveArrivalStress = configuration.runsChatLiveArrivalStress
         runsAuthenticatedNavigationBenchmark =
             configuration.runsAuthenticatedNavigationBenchmark
@@ -71,6 +73,7 @@ struct SakuraCordApp: App {
                 includesLongServerList: configuration.includesLongServerList,
                 forumPostCount: configuration.includesForumPerformanceFixture ? 5_000 : nil,
                 timelineMessageCount: configuration.includesChatPerformanceFixture ? 5_000 : nil,
+                pinnedMessageCount: configuration.includesPinsPerformanceFixture ? 5_000 : nil,
                 timelineIncludesAnimatedMedia:
                     configuration.includesChatMediaPerformanceFixture,
                 includesIncomingPrivateCall:
@@ -157,6 +160,12 @@ struct SakuraCordApp: App {
                         model.selectedChannelID = ChannelID(rawValue: 220)
                     } else if opensChatPerformanceFixture {
                         model.selectedChannelID = ChannelID(rawValue: 210)
+                    }
+                    if opensPinsPerformanceFixture {
+                        await model.channelLoadTask?.value
+                        model.presentPinnedMessages(channelID: ChannelID(rawValue: 210))
+                        await model.pinnedMessages.loadTask?.value
+                        await model.preparePinnedMessagesPerformanceBenchmark()
                     }
                     if runsChatLiveArrivalStress {
                         await NativeTimelinePerformanceBenchmarkGate.shared

@@ -29,6 +29,7 @@ nonisolated enum DiscordPermissionBits {
     static let useExternalStickers: UInt64 = 1 << 37
     static let sendMessagesInThreads: UInt64 = 1 << 38
     static let sendVoiceMessages: UInt64 = 1 << 46
+    static let pinMessages: UInt64 = 1 << 51
     static let bypassSlowmode: UInt64 = 1 << 52
 }
 

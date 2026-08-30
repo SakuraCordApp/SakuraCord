@@ -56,6 +56,16 @@ public protocol ChatProvider: Sendable {
         limit: Int
     ) async throws -> MessagePage
     func searchMessages(_ query: MessageSearchQuery) async throws -> MessageSearchPage
+    func pinnedMessages(
+        in channelID: ChannelID,
+        before: Date?,
+        limit: Int
+    ) async throws -> PinnedMessagePage
+    func setMessagePinned(
+        _ isPinned: Bool,
+        messageID: MessageID,
+        channelID: ChannelID
+    ) async throws
     func forumPosts(in channelID: ChannelID, query: ForumPostQuery) async throws -> ForumPostPage
     func forumPost(threadID: ChannelID) async throws -> ForumPost
     func createForumPost(
@@ -218,6 +228,22 @@ public protocol PendingCredentialChatProvider: ChatProvider {
 
 public extension ChatProvider {
     func prepareAuthentication() async throws {}
+
+    func pinnedMessages(
+        in _: ChannelID,
+        before _: Date?,
+        limit _: Int
+    ) async throws -> PinnedMessagePage {
+        throw ChatProviderError.unauthenticated
+    }
+
+    func setMessagePinned(
+        _: Bool,
+        messageID _: MessageID,
+        channelID _: ChannelID
+    ) async throws {
+        throw ChatProviderError.unauthenticated
+    }
 
     func updateClientAppState(isFocused: Bool) async {}
 

@@ -146,6 +146,7 @@ struct NativeTimelineRowActions {
     var edit: (Message, String) -> Void
     var markUnread: (Message) -> Void
     var delete: (Message) -> Void
+    var togglePin: (Message) -> Void
     var discardFailed: (Message) -> Void
     var react: (String, Message) -> Void
     var openThread: (MessageThreadSummary) -> Void
@@ -168,6 +169,7 @@ struct NativeTimelineRowActions {
         edit: @escaping (Message, String) -> Void,
         markUnread: @escaping (Message) -> Void,
         delete: @escaping (Message) -> Void,
+        togglePin: @escaping (Message) -> Void = { _ in },
         react: @escaping (String, Message) -> Void,
         openThread: @escaping (MessageThreadSummary) -> Void,
         submitComponent: @escaping (
@@ -189,6 +191,7 @@ struct NativeTimelineRowActions {
         self.edit = edit
         self.markUnread = markUnread
         self.delete = delete
+        self.togglePin = togglePin
         self.discardFailed = discardFailed
         self.react = react
         self.openThread = openThread
@@ -392,36 +395,6 @@ enum NativeTimelineReactionFonts {
 }
 
 struct NativeTimelineRowLayout {
-    struct SearchSectionRegion {
-        let frame: CGRect
-        let iconFrame: CGRect
-        let titleFrame: CGRect
-        let subtitleFrame: CGRect?
-    }
-
-    struct ForwardedSourceRegion {
-        let frame: CGRect
-        let label: String
-        let iconURL: URL?
-        let channelID: ChannelID
-        let guildID: GuildID?
-        let messageID: MessageID?
-        let timestamp: Date
-    }
-
-    struct CommandInvocationRegion {
-        let frame: CGRect
-        let connectorFrame: CGRect
-        let avatarFrame: CGRect?
-        let fallbackAvatarFrame: CGRect?
-        let profileFrame: CGRect
-        let userFrame: CGRect
-        let usedFrame: CGRect
-        let pillFrame: CGRect
-        let commandSymbolFrame: CGRect
-        let commandFrame: CGRect
-    }
-
     struct EphemeralRegion {
         let frame: CGRect
         let eyeFrame: CGRect
@@ -536,6 +509,7 @@ struct NativeTimelineRowLayout {
     let addReactionFrame: CGRect?
     let ephemeralRegion: EphemeralRegion?
     let failedFrame: CGRect?
+    let pinnedAtFrame: CGRect?
 
     static func make(
         item: NativeMessageTimelineItem,
@@ -618,7 +592,8 @@ struct NativeTimelineRowLayout {
             reactionRegions: [],
             addReactionFrame: nil,
             ephemeralRegion: nil,
-            failedFrame: nil
+            failedFrame: nil,
+            pinnedAtFrame: nil
         )
     }
 
@@ -901,11 +876,22 @@ struct NativeTimelineRowLayout {
             contentWidth,
             chatSettings.inlineMediaSize.maximumWidth
         )
+        let systemActorColor = model?.authorPresentation(for: message).roleColorHex
+            .flatMap { value -> NSColor? in
+                guard value != 0 else { return nil }
+                return NSColor(
+                    red: CGFloat((value >> 16) & 0xFF) / 255,
+                    green: CGFloat((value >> 8) & 0xFF) / 255,
+                    blue: CGFloat(value & 0xFF) / 255,
+                    alpha: 1
+                )
+            }
         let textPlan =
-            if message.type == .call {
+            if message.type.hasGeneratedContent {
                 NativeTimelineTextPlan.make(
                     for: message,
-                    currentUserID: model?.snapshot?.currentUser.id
+                    currentUserID: model?.snapshot?.currentUser.id,
+                    systemActorColor: systemActorColor
                 )
             } else if !chatSettings.showsAutomaticLinkPreviews
                 || !chatSettings.expandsEmbedsByDefault
@@ -1226,6 +1212,20 @@ struct NativeTimelineRowLayout {
             verticalOffset += 14
         }
 
+        var pinnedAtFrame: CGRect?
+        if row.pinnedAt != nil {
+            if hasRichContent || !presentedReactions.isEmpty || ephemeralRegion != nil {
+                verticalOffset += 6
+            }
+            pinnedAtFrame = CGRect(
+                x: contentX,
+                y: verticalOffset,
+                width: contentWidth,
+                height: 16
+            )
+            verticalOffset += 16
+        }
+
         let visibleContentMaxY = max(
             verticalOffset,
             avatarFrame?.maxY ?? 0,
@@ -1296,7 +1296,8 @@ struct NativeTimelineRowLayout {
             reactionRegions: reactionRegions,
             addReactionFrame: addReactionFrame,
             ephemeralRegion: ephemeralRegion,
-            failedFrame: failedFrame
+            failedFrame: failedFrame,
+            pinnedAtFrame: pinnedAtFrame
         )
         }
     }
@@ -1651,4 +1652,36 @@ struct NativeTimelineRowLayout {
         return ceil(CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil)))
     }
 
+}
+
+extension NativeTimelineRowLayout {
+    struct SearchSectionRegion {
+        let frame: CGRect
+        let iconFrame: CGRect
+        let titleFrame: CGRect
+        let subtitleFrame: CGRect?
+    }
+
+    struct ForwardedSourceRegion {
+        let frame: CGRect
+        let label: String
+        let iconURL: URL?
+        let channelID: ChannelID
+        let guildID: GuildID?
+        let messageID: MessageID?
+        let timestamp: Date
+    }
+
+    struct CommandInvocationRegion {
+        let frame: CGRect
+        let connectorFrame: CGRect
+        let avatarFrame: CGRect?
+        let fallbackAvatarFrame: CGRect?
+        let profileFrame: CGRect
+        let userFrame: CGRect
+        let usedFrame: CGRect
+        let pillFrame: CGRect
+        let commandSymbolFrame: CGRect
+        let commandFrame: CGRect
+    }
 }

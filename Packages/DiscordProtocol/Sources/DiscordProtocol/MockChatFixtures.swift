@@ -402,7 +402,7 @@ private struct MockFixtureAssembly {
         let labCategoryID = ChannelID(rawValue: 290)
         let labVoiceCategoryID = ChannelID(rawValue: 291)
         let textPermissions: UInt64 = (1 << 10) | (1 << 11) | (1 << 16) | (1 << 20)
-            | (1 << 34) | (1 << 38)
+            | (1 << 34) | (1 << 38) | (1 << 51)
         let auroraIcon = demoAsset("guild-aurora")
         let nativeLabIcon = demoAsset("guild-native-lab")
         let animatedFixture = animatedDemoAsset()

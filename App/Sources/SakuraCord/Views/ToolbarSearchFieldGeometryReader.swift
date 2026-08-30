@@ -525,7 +525,6 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
             }
             guard
                   let contentView = window.contentView,
-                  let searchToolbarItem,
                   let searchField = ToolbarSearchFieldLocator.searchField(in: window),
                   searchField.window === window
             else { return false }
@@ -568,20 +567,8 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
                 installMainMenuPatches()
             }
 
-            var fieldRect = searchField.convert(searchField.bounds, to: nil)
+            let fieldRect = searchField.convert(searchField.bounds, to: nil)
             let contentRect = contentView.convert(contentView.bounds, to: nil)
-            if let alignedWidth = alignedSearchFieldWidth(
-                fieldRect: fieldRect,
-                contentRect: contentRect,
-                in: window
-            ), updateSearchToolbarItemSizing(
-                searchToolbarItem,
-                width: alignedWidth
-            ) {
-                window.contentView?.superview?.layoutSubtreeIfNeeded()
-                return false
-            }
-            fieldRect = searchField.convert(searchField.bounds, to: nil)
             let metrics = ToolbarSearchFieldMetrics(
                 fieldWidth: fieldRect.width,
                 trailingInset: max(0, contentRect.maxX - fieldRect.maxX)
@@ -650,51 +637,6 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
             item.preferredWidthForSearchField = width
             appliedPreferredSearchFieldWidth = width
             return true
-        }
-
-        private func alignedSearchFieldWidth(
-            fieldRect: CGRect,
-            contentRect: CGRect,
-            in window: NSWindow
-        ) -> CGFloat? {
-            guard let toolbar = window.toolbar,
-                  let searchItemIndex = toolbar.items.firstIndex(where: {
-                      $0 === searchToolbarItem
-                  }),
-                  let leadingItemRect = toolbar.items[..<searchItemIndex]
-                    .reversed()
-                    .lazy
-                    .compactMap({ self.toolbarItemRect($0, in: window) })
-                    .first(where: {
-                        let gap = fieldRect.minX - $0.maxX
-                        return gap >= 0 && gap <= 24 && $0.width <= 64
-                    })
-            else { return nil }
-
-            let trailingInset = max(0, contentRect.maxX - fieldRect.maxX)
-            let memberAreaLeadingEdge =
-                contentRect.maxX - ChatChromeMetrics.memberListWidth
-            let currentLeadingInset =
-                leadingItemRect.minX - memberAreaLeadingEdge
-            let alignedWidth =
-                fieldRect.width + currentLeadingInset - trailingInset
-            return min(
-                ChatChromeMetrics.toolbarSearchMaximumFieldWidth,
-                max(120, alignedWidth)
-            )
-        }
-
-        private func toolbarItemRect(
-            _ item: NSToolbarItem,
-            in window: NSWindow
-        ) -> CGRect? {
-            guard !item.isHidden,
-                  let view = item.view,
-                  view.window === window,
-                  !view.isHidden,
-                  view.bounds.width > 0
-            else { return nil }
-            return view.convert(view.bounds, to: nil)
         }
 
         private func restoreSearchToolbarItemVisibility() {

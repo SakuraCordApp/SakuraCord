@@ -1636,6 +1636,13 @@ import UserNotifications
     #expect(chatMediaAutoScroll.includesChatMediaPerformanceFixture)
     #expect(chatMediaAutoScroll.runsChatPerformanceAutoScroll)
     #expect(!chatMediaAutoScroll.runsChatLiveArrivalStress)
+    let pinsAutoScroll = AppLaunchConfiguration(
+        arguments: ["SakuraCord", "--offline-pins-performance-autoscroll"]
+    )
+    #expect(pinsAutoScroll.mode == .offlineTesting)
+    #expect(pinsAutoScroll.includesPinsPerformanceFixture)
+    #expect(pinsAutoScroll.includesChatPerformanceFixture)
+    #expect(pinsAutoScroll.runsPinsPerformanceAutoScroll)
     let authenticatedAutoScroll = AppLaunchConfiguration(
         arguments: [
             "SakuraCord",

@@ -1486,6 +1486,46 @@ extension AppModel {
         return presentProfile(for: member, destination: .contextual)
     }
 
+    func showSystemMessageProfile(userID: UserID) {
+        if let member = membersByID[userID] {
+            presentProfile(for: member, destination: .contextual)
+            return
+        }
+        let user = (messages + threadMessages).lazy.compactMap { message -> User? in
+            if message.author.id == userID { return message.author }
+            return message.mentionedUsers.first { $0.id == userID }
+        }.first
+            ?? pinnedMessages.items.lazy.compactMap { item -> User? in
+                if item.message.author.id == userID { return item.message.author }
+                return item.message.mentionedUsers.first { $0.id == userID }
+            }.first
+            ?? messageSearch.page?.results.lazy.compactMap { result -> User? in
+                result.messages.lazy.compactMap { message -> User? in
+                    if message.author.id == userID { return message.author }
+                    return message.mentionedUsers.first { $0.id == userID }
+                }.first
+            }.first
+        if let user { _ = showProfile(for: user) }
+    }
+
+    func navigateToSystemMessageTarget(
+        guildID: GuildID?,
+        channelID: ChannelID,
+        messageID: MessageID
+    ) {
+        let isRootChannel = snapshot?.channels.contains { $0.id == channelID } == true
+            || visibleChannels.contains { $0.id == channelID }
+        if isRootChannel {
+            navigate(to: guildID, channelID: channelID, messageID: messageID)
+        } else {
+            navigate(
+                to: guildID,
+                linkedChannelID: channelID,
+                messageID: messageID
+            )
+        }
+    }
+
     func showInspectorProfile(for user: User) {
         isInspectorProfilePresented = true
         let member =
