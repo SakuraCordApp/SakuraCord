@@ -43,14 +43,15 @@ nonisolated enum SakuraCordThemeShareCodec {
         }
 
         let theme = sharedTheme.theme
+        let sharedColors = theme.activeColors
         let flags = sharedTheme.appearance.shareCode
-            | (UInt8(theme.activeColorCount - 1) << 2)
-            | (UInt8(theme.colors.count - 1) << 5)
+            | (UInt8(sharedColors.count - 1) << 2)
+            | (UInt8(sharedColors.count - 1) << 5)
 
         var bytes = [transportVersion, minimumReaderVersion, flags]
         bytes.append(contentsOf: encodedUnitScalar(theme.intensity))
         bytes.append(contentsOf: encodedUnitScalar(theme.brightness))
-        for color in theme.colors {
+        for color in sharedColors {
             bytes.append(contentsOf: encodedUnitScalar(color.hue))
             bytes.append(contentsOf: encodedUnitScalar(color.saturation))
         }

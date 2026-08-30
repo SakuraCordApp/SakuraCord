@@ -251,7 +251,7 @@ func `Public beta accents migrate into native-surface single-color themes`(
     #expect(reactivated.colors[3] == originalColors[3])
 }
 
-@Test func `Theme share links are compact deterministic and preserve ordered controls`() throws {
+@Test func `Theme share links are compact deterministic and omit inactive colors`() throws {
     let sharedTheme = SakuraCordSharedTheme(
         appearance: .dark,
         theme: SakuraCordGradientTheme(
@@ -269,8 +269,8 @@ func `Public beta accents migrate into native-surface single-color themes`(
     )
 
     let token = try SakuraCordThemeShareCodec.token(for: sharedTheme)
-    #expect(token == "AQGKz_VpjwzNszNAALhRczO9cKZmwo_Zmcet62c")
-    #expect(token.count == 39)
+    #expect(token == "AQFKz_VpjwzNszNAALhRczO9cEn9")
+    #expect(token.count == 28)
     #expect(token.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" })
 
     let url = try SakuraCordThemeShareCodec.shareURL(for: sharedTheme)
@@ -282,18 +282,30 @@ func `Public beta accents migrate into native-surface single-color themes`(
     }
     #expect(decoded.appearance == .dark)
     #expect(decoded.theme.activeColorCount == 3)
-    #expect(decoded.theme.colors.count == 5)
+    #expect(decoded.theme.colors.count == 3)
     let tolerance = 1.0 / 65_535
     #expect(abs(decoded.theme.intensity - sharedTheme.theme.intensity) <= tolerance)
     #expect(abs(decoded.theme.brightness - sharedTheme.theme.brightness) <= tolerance)
     for (decodedColor, sourceColor) in zip(
         decoded.theme.colors,
-        sharedTheme.theme.colors
+        sharedTheme.theme.activeColors
     ) {
         #expect(abs(decodedColor.hue - sourceColor.hue) <= tolerance)
         #expect(abs(decodedColor.saturation - sourceColor.saturation) <= tolerance)
     }
     #expect(try SakuraCordThemeShareCodec.token(for: decoded) == token)
+
+    let previousTokenWithInactiveColors =
+        "AQGKz_VpjwzNszNAALhRczO9cKZmwo_Zmcet62c"
+    guard case let .current(previouslyDecoded) = SakuraCordThemeShareCodec.decode(
+        previousTokenWithInactiveColors
+    ) else {
+        Issue.record("Previous theme token did not decode")
+        return
+    }
+    #expect(previouslyDecoded.theme.activeColorCount == 3)
+    #expect(previouslyDecoded.theme.colors.count == 5)
+    #expect(try SakuraCordThemeShareCodec.token(for: previouslyDecoded) == token)
 
     var corrupted = token
     let corruptionIndex = corrupted.index(corrupted.startIndex, offsetBy: 8)
