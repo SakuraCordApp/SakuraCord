@@ -165,6 +165,15 @@ enum NativeTimelineConversation: Hashable {
         self == .search || isPins
     }
 
+    nonisolated var alignsUnderfilledContentToTop: Bool {
+        switch self {
+        case .search, .pins:
+            true
+        case .channel, .thread:
+            false
+        }
+    }
+
     var messageInteractionContext: NativeTimelineMessageInteractionContext {
         if self == .search { return .searchResult }
         return isPins ? .pinnedResult : .conversation

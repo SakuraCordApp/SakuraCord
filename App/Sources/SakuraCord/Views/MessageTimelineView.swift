@@ -204,6 +204,7 @@ struct MessageTimelineView: View {
         }
         .onExitCommand {
             guard !model.consumeEscapeForMediaViewer() else { return }
+            guard !model.consumeEscapeForPinnedMessages() else { return }
             guard !model.consumeEscapeForUnfocusedMessageSearch() else { return }
             guard !model.consumeEscapeForReply(in: .channel) else { return }
             guard !model.consumeEscapeForComposerAttachments(in: .channel) else { return }

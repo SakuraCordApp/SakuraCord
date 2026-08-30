@@ -190,7 +190,10 @@ final class MessageRowPresentation: Identifiable, Equatable, Sendable {
     }
 
     var replyMessageID: MessageID? {
-        message.replyTo ?? replyPreview?.messageID
+        guard MessageReplyPresentationPolicy.showsPreview(for: message) else {
+            return nil
+        }
+        return message.replyTo ?? replyPreview?.messageID
     }
 
     nonisolated init(
@@ -206,8 +209,13 @@ final class MessageRowPresentation: Identifiable, Equatable, Sendable {
         self.message = message
         self.startsGroup = startsGroup
         self.startsDay = startsDay
-        self.replyPreview = replyPreview
-        self.isReplyAvailable = isReplyAvailable
+        if MessageReplyPresentationPolicy.showsPreview(for: message) {
+            self.replyPreview = replyPreview
+            self.isReplyAvailable = isReplyAvailable
+        } else {
+            self.replyPreview = nil
+            self.isReplyAvailable = false
+        }
         self.textPlan = textPlan ?? NativeTimelineTextPlan.make(for: message)
         sakuraCordDeepLinks = SakuraCordDeepLinkPresentation.all(
             in: message.content
@@ -232,6 +240,16 @@ final class MessageRowPresentation: Identifiable, Equatable, Sendable {
             && lhs.sakuraCordDeepLinks == rhs.sakuraCordDeepLinks
             && lhs.searchContext == rhs.searchContext
             && lhs.pinnedAt == rhs.pinnedAt
+    }
+}
+
+nonisolated enum MessageReplyPresentationPolicy {
+    static func allowsReplyAction(for message: Message) -> Bool {
+        !message.type.hasGeneratedContent || message.type == .userJoin
+    }
+
+    static func showsPreview(for message: Message) -> Bool {
+        message.type != .channelPinnedMessage
     }
 }
 

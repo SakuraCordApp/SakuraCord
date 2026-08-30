@@ -217,6 +217,7 @@ nonisolated enum NativeTimelineMessageMenuEntry: Equatable {
 nonisolated enum NativeTimelineMessageMenuPolicy {
     static func entries(
         canEdit: Bool,
+        canDelete: Bool,
         canRetry: Bool,
         canReply: Bool,
         canForward: Bool = false,
@@ -226,7 +227,7 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
     ) -> [NativeTimelineMessageMenuEntry] {
         if context == .searchResult {
             return resultEntries(
-                canDelete: canEdit,
+                canDelete: canDelete,
                 canPin: canPin,
                 isPinned: isPinned,
                 includesMarkUnread: true
@@ -234,7 +235,7 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
         }
         if context == .pinnedResult {
             return resultEntries(
-                canDelete: canEdit,
+                canDelete: canDelete,
                 canPin: canPin,
                 isPinned: true,
                 includesMarkUnread: false
@@ -243,6 +244,7 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
 
         return conversationEntries(
             canEdit: canEdit,
+            canDelete: canDelete,
             canRetry: canRetry,
             canReply: canReply,
             canForward: canForward,
@@ -253,6 +255,7 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
 
     private static func conversationEntries(
         canEdit: Bool,
+        canDelete: Bool,
         canRetry: Bool,
         canReply: Bool,
         canForward: Bool,
@@ -337,7 +340,7 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
             title: "Copy Message ID",
             systemImage: "number.square.fill"
         ))
-        if canEdit {
+        if canDelete {
             result.append(.separator)
             result.append(.action(
                 .deleteMessage,
@@ -939,6 +942,23 @@ nonisolated enum NativeTimelinePointerActivationPolicy {
         released: T?
     ) -> Bool {
         pressed != nil && pressed == released
+    }
+}
+
+nonisolated enum NativeTimelineResultActivationPolicy {
+    static func frame(
+        for context: NativeTimelineMessageInteractionContext,
+        searchCardFrame: CGRect?,
+        highlightFrame: CGRect?
+    ) -> CGRect? {
+        switch context {
+        case .searchResult:
+            searchCardFrame
+        case .pinnedResult:
+            highlightFrame
+        case .conversation:
+            nil
+        }
     }
 }
 

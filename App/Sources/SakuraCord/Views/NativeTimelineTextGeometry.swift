@@ -48,6 +48,8 @@ enum NativeTimelineTextGeometry {
 }
 
 enum NativeTimelineLinkAppearance {
+    static let hoverUnderlineStyle = NSUnderlineStyle.single.rawValue
+
     static func applyHover(
         to value: NSMutableAttributedString,
         characterIndex: Int?
@@ -65,7 +67,7 @@ enum NativeTimelineLinkAppearance {
         else { return }
         value.addAttribute(
             .underlineStyle,
-            value: NSUnderlineStyle.single.rawValue,
+            value: hoverUnderlineStyle,
             range: linkRange
         )
     }

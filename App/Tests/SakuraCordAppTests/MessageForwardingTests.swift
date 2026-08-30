@@ -1399,6 +1399,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
 @Test func `forward menu action is capability gated beside reply`() {
     let entries = NativeTimelineMessageMenuPolicy.entries(
         canEdit: false,
+        canDelete: false,
         canRetry: false,
         canReply: true,
         canForward: true

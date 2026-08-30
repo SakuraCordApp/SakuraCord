@@ -14,6 +14,7 @@ struct NativeTimelineMessageDrawInput {
     let model: AppModel?
     let isHovered: Bool
     let showsCompactTimestamp: Bool
+    let isAuthorHovered: Bool
     let hoveredMention: NativeTimelineMentionHover?
     let hoveredTextLink: NativeTimelineTextLinkHover?
     let hoveredTextSpoiler: NativeTimelineTextSpoilerHover?
@@ -40,6 +41,7 @@ extension NativeTimelineRowPainter {
             let layout = input.layout
             let model = input.model
             let showsCompactTimestamp = input.showsCompactTimestamp
+            let isAuthorHovered = input.isAuthorHovered
             let hoveredMention = input.hoveredMention
             let hoveredTextLink = input.hoveredTextLink
             let hoveredTextSpoiler = input.hoveredTextSpoiler
@@ -133,7 +135,8 @@ extension NativeTimelineRowPainter {
                     ? .sakuraCordAccentColor
                     : model?.interfaceSettings.showsRoleColors == false
                     ? .labelColor
-                    : roleColor(author?.roleColorHex) ?? .labelColor
+                    : roleColor(author?.roleColorHex) ?? .labelColor,
+                isInteractiveHovered: isAuthorHovered
             )
         }
         if let frame = layout.botBadgeFrame {

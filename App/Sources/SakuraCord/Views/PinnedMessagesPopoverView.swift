@@ -23,9 +23,16 @@ struct PinnedMessagesPopoverView: View {
 
             Divider()
 
-            content(pins)
+            GeometryReader { proxy in
+                content(pins)
+                    .frame(
+                        width: proxy.size.width,
+                        height: proxy.size.height
+                    )
+            }
         }
         .frame(width: 440, height: 560)
+        .onExitCommand { model.dismissPinnedMessages() }
         .onAppear { AppPerformanceSignposts.reportPinnedMessagesPanelReady() }
         .onDisappear {
             AppPerformanceSignposts.reportPinnedMessagesClosed()

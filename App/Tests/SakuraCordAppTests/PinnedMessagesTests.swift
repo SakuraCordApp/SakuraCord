@@ -15,6 +15,7 @@ import Testing
 @Test func `message menu gates pin actions and pinned results omit unread behavior`() {
     let ordinary = NativeTimelineMessageMenuPolicy.entries(
         canEdit: false,
+        canDelete: false,
         canRetry: false,
         canReply: true,
         canPin: true,
@@ -28,6 +29,7 @@ import Testing
 
     let pinned = NativeTimelineMessageMenuPolicy.entries(
         canEdit: false,
+        canDelete: false,
         canRetry: false,
         canReply: false,
         canPin: true,
@@ -49,6 +51,78 @@ import Testing
         title: "Mark Unread",
         systemImage: "envelope.badge"
     )))
+}
+
+@MainActor
+@Test func `pin announcements suppress reply presentation and actions`() {
+    let author = User(
+        id: UserID(rawValue: 1),
+        username: "actor",
+        displayName: "Actor"
+    )
+    let preview = MessageReplyPreview(
+        messageID: MessageID(rawValue: 40),
+        author: author,
+        content: "Pinned target"
+    )
+    let message = Message(
+        id: MessageID(rawValue: 10),
+        channelID: ChannelID(rawValue: 20),
+        author: author,
+        content: "",
+        replyTo: preview.messageID,
+        replyPreview: preview,
+        type: .channelPinnedMessage
+    )
+    let row = MessageRowPresentation(
+        message: message,
+        startsGroup: true,
+        startsDay: true,
+        replyPreview: preview,
+        isReplyAvailable: true
+    )
+
+    #expect(row.replyPreview == nil)
+    #expect(row.replyMessageID == nil)
+    #expect(!row.isReplyAvailable)
+    #expect(!MessageReplyPresentationPolicy.allowsReplyAction(for: message))
+
+    let layout = NativeTimelineRowLayout.make(
+        item: .message(
+            row,
+            isUnreadBoundary: false,
+            isHighlighted: false
+        ),
+        width: 600
+    )
+    #expect(layout.replyFrame == nil)
+}
+
+@Test func `welcome messages alone retain system message reply actions`() {
+    let author = User(
+        id: UserID(rawValue: 1),
+        username: "actor",
+        displayName: "Actor"
+    )
+    func message(type: DiscordMessageType) -> Message {
+        Message(
+            id: MessageID(rawValue: UInt64(type.rawValue + 100)),
+            channelID: ChannelID(rawValue: 20),
+            author: author,
+            content: "",
+            type: type
+        )
+    }
+
+    #expect(MessageReplyPresentationPolicy.allowsReplyAction(
+        for: message(type: .userJoin)
+    ))
+    #expect(!MessageReplyPresentationPolicy.allowsReplyAction(
+        for: message(type: .channelPinnedMessage)
+    ))
+    #expect(!MessageReplyPresentationPolicy.allowsReplyAction(
+        for: message(type: .recipientAdd)
+    ))
 }
 
 @MainActor
@@ -176,6 +250,36 @@ func `interactive system message families share actor tint and profile link`(
     ))
     #expect(model.contextualProfilePresentation?.member.id == target.author.id)
 
+    let sourceOnlyAuthor = User(
+        id: UserID(rawValue: 987_654),
+        username: "source-only",
+        displayName: "Source Only"
+    )
+    let sourceOnlyMessage = Message(
+        id: MessageID(rawValue: 987_655),
+        channelID: directMessage.id,
+        author: sourceOnlyAuthor,
+        content: "",
+        type: .userJoin
+    )
+    #expect(MessageLinkActivator.activate(
+        SystemMessagePresentation.Action.profile(sourceOnlyAuthor.id).url,
+        model: model,
+        sourceMessage: sourceOnlyMessage
+    ))
+    #expect(model.contextualProfilePresentation?.member.id == sourceOnlyAuthor.id)
+
+    var presentedUser: User?
+    model.dismissContextualProfile()
+    #expect(MessageLinkActivator.activate(
+        SystemMessagePresentation.Action.profile(sourceOnlyAuthor.id).url,
+        model: model,
+        sourceMessage: sourceOnlyMessage,
+        presentSystemProfile: { presentedUser = $0 }
+    ))
+    #expect(presentedUser == sourceOnlyAuthor)
+    #expect(model.contextualProfilePresentation == nil)
+
     #expect(MessageLinkActivator.activate(
         SystemMessagePresentation.Action.pins(directMessage.id).url,
         model: model
@@ -208,6 +312,61 @@ func `interactive system message families share actor tint and profile link`(
         model.pinnedMessages.isPresented
             && model.pinnedMessages.channelID == guildChannel.id
     })
+}
+
+@MainActor
+@Test func `generated message deletion requires effective manage messages permission`() {
+    let currentUser = User(
+        id: UserID(rawValue: 1), username: "current", displayName: "Current"
+    )
+    let actor = User(
+        id: UserID(rawValue: 2), username: "actor", displayName: "Actor"
+    )
+    let guildID = GuildID(rawValue: 10)
+    let permissions = DiscordPermissionBits.viewChannel
+        | DiscordPermissionBits.readMessageHistory
+        | DiscordPermissionBits.manageMessages
+    let guild = Guild(
+        id: guildID,
+        name: "Moderation",
+        currentUserPermissions: permissions
+    )
+    let allowed = Channel(
+        id: ChannelID(rawValue: 20), guildID: guildID, name: "allowed"
+    )
+    let denied = Channel(
+        id: ChannelID(rawValue: 21),
+        guildID: guildID,
+        name: "denied",
+        permissionOverwrites: [ChannelPermissionOverwrite(
+            id: guildID.description,
+            type: 0,
+            deny: DiscordPermissionBits.manageMessages
+        )]
+    )
+    let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+    model.snapshot = BootstrapSnapshot(
+        currentUser: currentUser,
+        guilds: [guild],
+        channels: [allowed, denied],
+        members: []
+    )
+    model.visibleChannels = [allowed, denied]
+    model.serverRailGuildsByID = [guildID: guild]
+
+    func announcement(in channel: Channel) -> Message {
+        Message(
+            id: MessageID(rawValue: channel.id.rawValue + 100),
+            channelID: channel.id,
+            author: actor,
+            content: "",
+            type: .channelPinnedMessage,
+            guildID: guildID
+        )
+    }
+
+    #expect(model.canDeleteMessage(announcement(in: allowed)))
+    #expect(!model.canDeleteMessage(announcement(in: denied)))
 }
 
 @MainActor
@@ -389,6 +548,17 @@ func `interactive system message families share actor tint and profile link`(
 }
 
 @MainActor
+@Test func `pins consume Escape only while presented`() {
+    let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+    #expect(!model.consumeEscapeForPinnedMessages())
+
+    model.pinnedMessages.isPresented = true
+
+    #expect(model.consumeEscapeForPinnedMessages())
+    #expect(!model.pinnedMessages.isPresented)
+}
+
+@MainActor
 @Test func `direct message pin mutation updates optimistically and records one provider request`() async throws {
     let provider = MockChatProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
@@ -532,6 +702,70 @@ private func eventuallyPinned(
     #expect(Set(first.items.map(\.id)).isDisjoint(with: second.items.map(\.id)))
     #expect((first.items.last?.pinnedAt ?? .distantPast)
         > (second.items.first?.pinnedAt ?? .distantFuture))
+}
+
+@MainActor
+@Test func `pins popover loads all 250 messages in 25 message pages`() async throws {
+    let provider = MockChatProvider(
+        timelineMessageCount: 250,
+        pinnedMessageCount: 250
+    )
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let channelID = ChannelID(rawValue: 210)
+    model.navigate(to: channelID)
+    #expect(await eventuallyPinned { model.selectedChannelID == channelID })
+    await model.channelLoadTask?.value
+
+    model.presentPinnedMessages()
+    await model.pinnedMessages.loadTask?.value
+
+    #expect(model.pinnedMessages.items.count == 25)
+    #expect(model.pinnedMessages.hasMore)
+    for expectedCount in stride(from: 50, through: 250, by: 25) {
+        model.loadMorePinnedMessages()
+        await model.pinnedMessages.loadTask?.value
+        #expect(model.pinnedMessages.items.count == expectedCount)
+    }
+
+    #expect(!model.pinnedMessages.hasMore)
+    #expect(Set(model.pinnedMessages.items.map(\.id)).count == 250)
+    #expect(model.pinnedMessages.items.map(\.pinnedAt) ==
+        model.pinnedMessages.items.map(\.pinnedAt).sorted(by: >))
+}
+
+@Test func `pins and search top align underfilled timeline content`() {
+    #expect(NativeTimelineConversation.search.alignsUnderfilledContentToTop)
+    #expect(NativeTimelineConversation.pins(
+        ChannelID(rawValue: 10)
+    ).alignsUnderfilledContentToTop)
+    #expect(!NativeTimelineConversation.channel(
+        ChannelID(rawValue: 10)
+    ).alignsUnderfilledContentToTop)
+    #expect(!NativeTimelineConversation.thread(
+        ChannelID(rawValue: 10)
+    ).alignsUnderfilledContentToTop)
+}
+
+@Test func `pinned row activation uses its complete message highlight`() {
+    let searchCard = CGRect(x: 4, y: 5, width: 300, height: 80)
+    let highlight = CGRect(x: 0, y: 3, width: 400, height: 90)
+
+    #expect(NativeTimelineResultActivationPolicy.frame(
+        for: .searchResult,
+        searchCardFrame: searchCard,
+        highlightFrame: highlight
+    ) == searchCard)
+    #expect(NativeTimelineResultActivationPolicy.frame(
+        for: .pinnedResult,
+        searchCardFrame: nil,
+        highlightFrame: highlight
+    ) == highlight)
+    #expect(NativeTimelineResultActivationPolicy.frame(
+        for: .conversation,
+        searchCardFrame: nil,
+        highlightFrame: highlight
+    ) == nil)
 }
 
 @MainActor

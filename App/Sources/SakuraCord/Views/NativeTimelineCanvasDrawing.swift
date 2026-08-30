@@ -328,11 +328,8 @@ extension NativeTimelineCanvasView {
         for overlay in animatedMediaOverlays.values {
             overlay.setPlaybackSuppressed(true)
         }
-        // Setting the flag only prevents future installation. Existing
-        // in-visible-rect areas otherwise remain registered, so AppKit walks
-        // and hit-tests the moving timeline under a stationary pointer on
-        // every scroll transaction even though no hover can be presented.
-        // Tear them and their cursor regions down immediately.
+        // Remove existing tracking areas too so AppKit does not hit-test the
+        // moving timeline under a stationary pointer during scrolling.
         updateTrackingAreas()
         window?.invalidateCursorRects(for: self)
         cancelReactionCountAnimations()
@@ -806,6 +803,7 @@ extension NativeTimelineCanvasView {
                 if hoveredRow == index
                     || presentsMediaViewerHighlight
                     || hoveredCompactTimestampRow == index
+                    || hoveredAuthorMessageID == item.messageID
                     || hoveredMention?.itemIdentifier
                         == item.identifier
                     || hoveredTextLink?.itemIdentifier
@@ -835,6 +833,7 @@ extension NativeTimelineCanvasView {
                                 || presentsMediaViewerHighlight,
                         showsCompactTimestamp:
                             hoveredCompactTimestampRow == index,
+                        isAuthorHovered: hoveredAuthorMessageID == item.messageID,
                         hoveredMention:
                             hoveredMention?.itemIdentifier
                                 == item.identifier

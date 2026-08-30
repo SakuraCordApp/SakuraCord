@@ -106,8 +106,24 @@ extension AppModel {
         return canManagePins(in: message.channelID)
     }
 
+    func canDeleteMessage(_ message: Message) -> Bool {
+        guard message.outboxState == .confirmed else { return false }
+        if !message.type.hasGeneratedContent,
+           message.author.id == snapshot?.currentUser.id
+        {
+            return true
+        }
+        guard let context = messagePermissionContext(for: message.channelID),
+              context.channel.guildID != nil,
+              let permissions = effectiveMessagePermissions(in: context.channel)
+        else { return false }
+        return permissions & DiscordPermissionBits.viewChannel != 0
+            && permissions & DiscordPermissionBits.readMessageHistory != 0
+            && permissions & DiscordPermissionBits.manageMessages != 0
+    }
+
     private func canManagePins(in channelID: ChannelID) -> Bool {
-        guard let context = pinPermissionContext(for: channelID) else { return false }
+        guard let context = messagePermissionContext(for: channelID) else { return false }
         let channel = context.channel
         if channel.guildID == nil {
             return !channel.isOfficialSystemDirectMessage
@@ -115,17 +131,17 @@ extension AppModel {
         guard context.isThread || selectedChannelSupportsPins(channel) else {
             return false
         }
-        return effectivePinPermissions(in: channel).map { permissions in
+        return effectiveMessagePermissions(in: channel).map { permissions in
             permissions & DiscordPermissionBits.viewChannel != 0
                 && permissions & DiscordPermissionBits.readMessageHistory != 0
                 && permissions & DiscordPermissionBits.pinMessages != 0
         } ?? false
     }
 
-    private func pinPermissionContext(
+    private func messagePermissionContext(
         for channelID: ChannelID
     ) -> (channel: Channel, isThread: Bool)? {
-        if let channel = rootPinChannel(channelID) {
+        if let channel = rootMessageChannel(channelID) {
             return (channel, false)
         }
         if openThread?.id == channelID, let selectedChannel {
@@ -134,11 +150,11 @@ extension AppModel {
         let parentID = snapshot?.threads.first(where: { $0.id == channelID })?.parentID
             ?? snapshot?.activeJoinedThreads.first(where: { $0.id == channelID })?.parentID
             ?? messageSearch.page?.channels.first(where: { $0.id == channelID })?.categoryID
-        guard let parentID, let parent = rootPinChannel(parentID) else { return nil }
+        guard let parentID, let parent = rootMessageChannel(parentID) else { return nil }
         return (parent, true)
     }
 
-    private func rootPinChannel(_ channelID: ChannelID) -> Channel? {
+    private func rootMessageChannel(_ channelID: ChannelID) -> Channel? {
         snapshot?.channels.first(where: { $0.id == channelID })
             ?? visibleChannels.first(where: { $0.id == channelID })
     }
@@ -152,7 +168,7 @@ extension AppModel {
         }
     }
 
-    private func effectivePinPermissions(in channel: Channel) -> UInt64? {
+    private func effectiveMessagePermissions(in channel: Channel) -> UInt64? {
         guard let guildID = channel.guildID,
               let basis = conversationPermissionBasis(for: guildID)
         else { return channel.guildID == nil ? .max : nil }
@@ -182,7 +198,7 @@ extension AppModel {
             presentPinnedMessages(channelID: channelID)
             return
         }
-        if rootPinChannel(channelID) != nil {
+        if rootMessageChannel(channelID) != nil {
             navigate(to: channelID)
         } else {
             let guildID = snapshot?.threads.first(where: { $0.id == channelID })?.guildID
@@ -201,6 +217,13 @@ extension AppModel {
             else { return }
             presentPinnedMessages(channelID: channelID)
         }
+    }
+
+    @discardableResult
+    func consumeEscapeForPinnedMessages() -> Bool {
+        guard pinnedMessages.isPresented else { return false }
+        dismissPinnedMessages()
+        return true
     }
 
     private func canReadPins(in channelID: ChannelID) -> Bool {

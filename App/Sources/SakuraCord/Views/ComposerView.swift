@@ -423,6 +423,7 @@ struct ComposerView: View {
 
     private func handleEscapeCommand() {
         guard !model.consumeEscapeForMediaViewer() else { return }
+        guard !model.consumeEscapeForPinnedMessages() else { return }
         guard !model.consumeEscapeForUnfocusedMessageSearch() else { return }
         if model.consumeEscapeForReply(in: conversation) {
             return

@@ -1433,8 +1433,10 @@ struct NativeTimelineActionCapsuleOverlay: View {
     let model: AppModel
     let message: Message
     let canEdit: Bool
+    let canDelete: Bool
     @ObservedObject var state: NativeTimelineActionCapsuleState
     let jumpToMessage: (() -> Void)?
+    let unpinMessage: (() -> Void)?
     let retry: (() -> Void)?
     let edit: () -> Void
     let reply: (() -> Void)?
@@ -1455,12 +1457,20 @@ struct NativeTimelineActionCapsuleOverlay: View {
                         help: "Jump to Message",
                         action: jumpToMessage
                     )
+                    if let unpinMessage {
+                        HoverActionButton(
+                            systemImage: "pin.slash",
+                            help: "Unpin Message",
+                            action: unpinMessage
+                        )
+                    }
                 }
             } else {
                 MessageActionCapsule(
                     model: model,
                     message: message,
                     canEdit: canEdit,
+                    canDelete: canDelete,
                     isReactionPickerPresented: $state.isReactionPickerPresented,
                     isDeleteConfirmationPresented:
                         $state.isDeleteConfirmationPresented,

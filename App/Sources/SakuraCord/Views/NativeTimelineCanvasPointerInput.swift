@@ -180,6 +180,9 @@ extension NativeTimelineCanvasView {
         setHoveredCompactTimestampRow(
             compactTimestampRowIndex(at: point)
         )
+        setHoveredAuthorMessageID(
+            authorNamePointerHit(at: point)
+        )
         setHoveredMention(
             mentionPointerHit(at: point)
         )
@@ -213,6 +216,7 @@ extension NativeTimelineCanvasView {
         setHoveredCompactTimestampRow(
             compactTimestampRowIndex(at: point)
         )
+        setHoveredAuthorMessageID(authorNamePointerHit(at: point))
         setHoveredMention(mentionPointerHit(at: point))
         setHoveredTextLink(textLinkPointerHit(at: point))
         setHoveredTextSpoiler(textSpoilerPointerHit(at: point))
@@ -250,6 +254,14 @@ extension NativeTimelineCanvasView {
                hoveredCompactTimestampRow == index
             {
                 setHoveredCompactTimestampRow(nil)
+            }
+            if let index = event.trackingArea?.userInfo?[
+                "nativeTimelineRowIndex"
+            ] as? Int,
+               items.indices.contains(index),
+               items[index].messageID == hoveredAuthorMessageID
+            {
+                setHoveredAuthorMessageID(nil)
             }
             if let index = event.trackingArea?.userInfo?[
                 "nativeTimelineRowIndex"
@@ -306,6 +318,7 @@ extension NativeTimelineCanvasView {
         }
         if kind == "canvas" {
             setHoveredCompactTimestampRow(nil)
+            setHoveredAuthorMessageID(nil)
             setHoveredMention(nil)
             setHoveredTextLink(nil)
             setHoveredTextSpoiler(nil)
@@ -966,6 +979,11 @@ extension NativeTimelineCanvasView {
                 ? compactTimestampRowIndex(at: point)
                 : nil
         )
+        setHoveredAuthorMessageID(
+            visibleRect.contains(point)
+                ? authorNamePointerHit(at: point)
+                : nil
+        )
         setHoveredMention(
             visibleRect.contains(point)
                 ? mentionPointerHit(at: point)
@@ -1027,6 +1045,22 @@ extension NativeTimelineCanvasView {
             )
         }
         return nil
+    }
+
+    func authorNamePointerHit(at point: CGPoint) -> MessageID? {
+        guard let index = rowIndex(at: point.y),
+              items.indices.contains(index),
+              layouts.indices.contains(index),
+              case let .message(row, _, _) = items[index],
+              row.startsGroup,
+              !row.message.type.hasGeneratedContent,
+              let authorFrame = layouts[index].authorFrame
+        else { return nil }
+        let local = CGPoint(
+            x: point.x,
+            y: point.y - displayedRowOrigin(at: index)
+        )
+        return authorFrame.contains(local) ? row.message.id : nil
     }
 
     func textLinkPointerHit(
@@ -1339,7 +1373,11 @@ extension NativeTimelineCanvasView {
             return .thread(message.id, thread.id)
         }
         if actions?.openMessage != nil,
-           layout.searchCardFrame?.contains(local) == true
+           NativeTimelineResultActivationPolicy.frame(
+               for: messageInteractionContext,
+               searchCardFrame: layout.searchCardFrame,
+               highlightFrame: layout.highlightFrame
+           )?.contains(local) == true
         {
             return .message(message.id)
         }

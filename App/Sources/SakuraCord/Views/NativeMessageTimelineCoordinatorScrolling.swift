@@ -1108,7 +1108,7 @@ extension NativeMessageTimelineCoordinator {
         }
 
         func contentOriginY(viewportHeight: CGFloat) -> CGFloat {
-            let topInset = if parent.conversation == .search {
+            let topInset = if parent.conversation.alignsUnderfilledContentToTop {
                 ChatDetailLayoutPolicy.timelineTopPadding
             } else {
                 NativeMessageTimelineLayoutPolicy.shortContentTopInset(

@@ -34,9 +34,17 @@ extension NativeTimelineRowPainter {
     }
 
     static var textDrawOperation:
-        @MainActor (String, CGRect, NSFont, NSColor, NSTextAlignment, NSLineBreakMode) -> Void
+        @MainActor (
+            String,
+            CGRect,
+            NSFont,
+            NSColor,
+            NSTextAlignment,
+            NSLineBreakMode,
+            Bool
+        ) -> Void
     {
-        { value, frame, font, color, alignment, lineBreakMode in
+        { value, frame, font, color, alignment, lineBreakMode, isInteractiveHovered in
         guard frame.width > 0, frame.height > 0 else { return }
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         var textAlignment: CTTextAlignment = switch alignment {
@@ -75,14 +83,19 @@ extension NativeTimelineRowPainter {
         // `fontName` turns system fonts into `.SFNS-*` names, which
         // CoreText explicitly rejects and may substitute with Times New Roman.
         let coreFont = font as CTFont
+        var attributes: [CFString: Any] = [
+            kCTFontAttributeName: coreFont,
+            kCTForegroundColorAttributeName: color.cgColor,
+            kCTParagraphStyleAttributeName: paragraph,
+        ]
+        if isInteractiveHovered {
+            attributes[kCTUnderlineStyleAttributeName] =
+                NativeTimelineLinkAppearance.hoverUnderlineStyle
+        }
         let attributed = CFAttributedStringCreate(
             nil,
             value as CFString,
-            [
-                kCTFontAttributeName: coreFont,
-                kCTForegroundColorAttributeName: color.cgColor,
-                kCTParagraphStyleAttributeName: paragraph,
-            ] as CFDictionary
+            attributes as CFDictionary
         )!
         let sourceLine = CTLineCreateWithAttributedString(attributed)
         let sourceWidth = CGFloat(CTLineGetTypographicBounds(
@@ -177,9 +190,18 @@ extension NativeTimelineRowPainter {
         font: NSFont,
         color: NSColor,
         alignment: NSTextAlignment = .left,
-        lineBreakMode: NSLineBreakMode = .byTruncatingTail
+        lineBreakMode: NSLineBreakMode = .byTruncatingTail,
+        isInteractiveHovered: Bool = false
     ) {
-        textDrawOperation(value, frame, font, color, alignment, lineBreakMode)
+        textDrawOperation(
+            value,
+            frame,
+            font,
+            color,
+            alignment,
+            lineBreakMode,
+            isInteractiveHovered
+        )
     }
 
     static func attributedText(

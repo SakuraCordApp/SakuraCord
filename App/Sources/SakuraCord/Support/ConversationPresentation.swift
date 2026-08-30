@@ -21,6 +21,7 @@ nonisolated enum DiscordPermissionBits {
     static let administrator: UInt64 = 1 << 3
     static let viewChannel: UInt64 = 1 << 10
     static let sendMessages: UInt64 = 1 << 11
+    static let manageMessages: UInt64 = 1 << 13
     static let embedLinks: UInt64 = 1 << 14
     static let attachFiles: UInt64 = 1 << 15
     static let readMessageHistory: UInt64 = 1 << 16

@@ -21,6 +21,18 @@ extension NativeTimelineCanvasView {
         }
     }
 
+    func setHoveredAuthorMessageID(_ value: MessageID?) {
+        guard hoveredAuthorMessageID != value else { return }
+        let old = hoveredAuthorMessageID
+        hoveredAuthorMessageID = value
+        for messageID in [old, value].compactMap({ $0 }) {
+            guard let index = items.firstIndex(where: {
+                $0.messageID == messageID
+            }) else { continue }
+            setNeedsDisplay(rowFrame(at: index))
+        }
+    }
+
     func setHoveredMention(
         _ value: NativeTimelineMentionHover?
     ) {
@@ -273,15 +285,28 @@ extension NativeTimelineCanvasView {
             }
         }
         let canEdit = row.message.author.id == model.snapshot?.currentUser.id
+            && MessageReplyPresentationPolicy.allowsReplyAction(
+                for: row.message
+            )
+        let canDelete = model.canDeleteMessage(row.message)
         let jumpToMessage = actions.openMessage.map { openMessage in
             { openMessage(row.message) }
+        }
+        let unpinMessage: (() -> Void)? = if messageInteractionContext == .pinnedResult,
+                                            model.canManagePins(for: row.message)
+        {
+            { actions.togglePin(row.message) }
+        } else {
+            nil
         }
         let retry = row.message.outboxState == .failed
             ? { actions.retry(row.message) }
             : nil
-        let reply = actions.reply.map { reply in
+        let reply = MessageReplyPresentationPolicy.allowsReplyAction(
+            for: row.message
+        ) ? actions.reply.map { reply in
             { reply(row.message) }
-        }
+        } : nil
         let forward = model.canForward(row.message)
             ? actions.forward.map { forward in
                 { forward(row.message) }
@@ -294,8 +319,10 @@ extension NativeTimelineCanvasView {
             model: model,
             message: row.message,
             canEdit: canEdit,
+            canDelete: canDelete,
             state: state,
             jumpToMessage: jumpToMessage,
+            unpinMessage: unpinMessage,
             retry: retry,
             edit: { [weak self] in
                 self?.beginEditing(row: row, at: index)
@@ -331,9 +358,10 @@ extension NativeTimelineCanvasView {
                 + (retry == nil ? 0 : 1)
                 + (reply == nil ? 0 : 1)
                 + (forward == nil ? 0 : 1)
-                + (canEdit ? 2 : 0)
+                + (canEdit ? 1 : 0)
+                + (canDelete ? 1 : 0)
                 + (openThread == nil ? 0 : 1))
-            : 1
+            : 1 + (unpinMessage == nil ? 0 : 1)
         actionCapsuleSize = HoverActionPillMetrics.size(
             controlCount: controlCount,
             enlarged: model.accessibilitySettings.enlargesMessageActionTargets

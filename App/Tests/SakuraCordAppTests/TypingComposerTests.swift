@@ -1948,6 +1948,7 @@ private func downArrowKeyEvent(
     #expect(
         NativeTimelineMessageMenuPolicy.entries(
             canEdit: true,
+            canDelete: true,
             canRetry: true,
             canReply: true,
             canForward: true

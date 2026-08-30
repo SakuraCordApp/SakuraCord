@@ -509,7 +509,46 @@ extension NativeTimelineCanvasView {
             pointerHit.hit,
             message: message,
             rowIdentifier: rowIdentifier,
-            region: pointerHit.region
+            region: pointerHit.region,
+            profileAnchor: textLinkAnchorFrame(
+                for: pointerHit,
+                in: layout,
+                rowIdentifier: rowIdentifier
+            )
+        )
+    }
+
+    func textLinkAnchorFrame(
+        for pointerHit: TextPointerHit,
+        in layout: NativeTimelineRowLayout,
+        rowIdentifier: NativeMessageTimelineItem.Identifier
+    ) -> CGRect? {
+        guard let index = items.firstIndex(where: {
+            $0.identifier == rowIdentifier
+        }),
+            let textRegion = linkPointerTextRegions(
+                for: items[index],
+                layout: layout
+            ).first(where: { $0.region == pointerHit.region }),
+            pointerHit.hit.characterIndex >= 0,
+            pointerHit.hit.characterIndex < textRegion.value.length
+        else { return nil }
+        var linkRange = NSRange(location: 0, length: 0)
+        guard textRegion.value.attribute(
+            .link,
+            at: pointerHit.hit.characterIndex,
+            effectiveRange: &linkRange
+        ) != nil,
+            let localFrame = NativeTimelineTextHitTester.rangeFrame(
+                value: textRegion.value,
+                framesetter: textRegion.framesetter,
+                frame: textRegion.frame,
+                range: linkRange
+            )
+        else { return nil }
+        return localFrame.offsetBy(
+            dx: 0,
+            dy: displayedRowOrigin(at: index)
         )
     }
 
@@ -582,7 +621,8 @@ extension NativeTimelineCanvasView {
         _ hit: NativeTimelineTextHit,
         message: Message,
         rowIdentifier: NativeMessageTimelineItem.Identifier,
-        region: NativeTimelineTextRegion
+        region: NativeTimelineTextRegion,
+        profileAnchor: CGRect? = nil
     ) -> Bool {
         if let spoilerRange = hit.spoilerRange,
            let key = textSpoilerRevealKey(
@@ -613,7 +653,17 @@ extension NativeTimelineCanvasView {
             return true
         }
         guard let url = hit.url else { return false }
-        return MessageLinkActivator.activate(url, model: model)
+        let presentSystemProfile: ((User) -> Void)? = profileAnchor.map { anchor in
+            { [weak self] user in
+                self?.showMessageProfile(for: user, anchor: anchor)
+            }
+        }
+        return MessageLinkActivator.activate(
+            url,
+            model: model,
+            sourceMessage: message,
+            presentSystemProfile: presentSystemProfile
+        )
     }
 
     func revealTextSpoiler(
@@ -1005,13 +1055,21 @@ extension NativeTimelineCanvasView {
         ) else { return nil }
         let canEdit =
             row.message.author.id == model?.snapshot?.currentUser.id
+                && MessageReplyPresentationPolicy.allowsReplyAction(
+                    for: row.message
+                )
+        let canDelete = model?.canDeleteMessage(row.message) == true
         let menu = NSMenu()
         menu.autoenablesItems = false
         var insertedFailedMediaActions = false
         for entry in NativeTimelineMessageMenuPolicy.entries(
             canEdit: canEdit,
+            canDelete: canDelete,
             canRetry: row.message.outboxState == .failed,
-            canReply: actions.reply != nil,
+            canReply: actions.reply != nil
+                && MessageReplyPresentationPolicy.allowsReplyAction(
+                    for: row.message
+                ),
             canForward: actions.forward != nil && model?.canForward(row.message) == true,
             canPin: model?.canManagePins(for: row.message) == true,
             isPinned: row.message.isPinned,

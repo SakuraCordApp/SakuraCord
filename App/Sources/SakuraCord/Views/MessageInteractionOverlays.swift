@@ -358,6 +358,7 @@ struct MessageActionCapsule: View {
     let model: AppModel
     let message: Message
     let canEdit: Bool
+    let canDelete: Bool
     @Binding var isReactionPickerPresented: Bool
     @Binding var isDeleteConfirmationPresented: Bool
     let retry: (() -> Void)?
@@ -421,7 +422,7 @@ struct MessageActionCapsule: View {
                         systemImage: "bubble.left.and.bubble.right", help: "Open thread", action: openThread
                     )
                 }
-                if canEdit {
+                if canDelete {
                     HoverActionButton(
                         systemImage: "trash",
                         help: "Delete message",

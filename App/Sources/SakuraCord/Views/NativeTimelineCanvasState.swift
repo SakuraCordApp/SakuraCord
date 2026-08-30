@@ -43,6 +43,7 @@ final class NativeTimelinePointerState {
 
     var hoveredRow: Int?
     var hoveredCompactTimestampRow: Int?
+    var hoveredAuthorMessageID: MessageID?
     var hoveredMention: NativeTimelineMentionHover?
     var hoveredTextLink: NativeTimelineTextLinkHover?
     var hoveredTextSpoiler: NativeTimelineTextSpoilerHover?
@@ -81,6 +82,7 @@ final class NativeTimelinePointerState {
         )
         hoveredRow = nil
         hoveredCompactTimestampRow = nil
+        hoveredAuthorMessageID = nil
         hoveredMention = nil
         hoveredTextLink = nil
         hoveredTextSpoiler = nil
@@ -119,6 +121,7 @@ final class NativeTimelinePointerState {
     var hasHoverOrPressTargets: Bool {
         hoveredRow != nil
             || hoveredCompactTimestampRow != nil
+            || hoveredAuthorMessageID != nil
             || hoveredMention != nil
             || hoveredTextLink != nil
             || hoveredTextSpoiler != nil
@@ -241,6 +244,11 @@ extension NativeTimelineCanvasView {
     var hoveredCompactTimestampRow: Int? {
         get { pointer.hoveredCompactTimestampRow }
         set { pointer.hoveredCompactTimestampRow = newValue }
+    }
+
+    var hoveredAuthorMessageID: MessageID? {
+        get { pointer.hoveredAuthorMessageID }
+        set { pointer.hoveredAuthorMessageID = newValue }
     }
 
     var hoveredMention: NativeTimelineMentionHover? {

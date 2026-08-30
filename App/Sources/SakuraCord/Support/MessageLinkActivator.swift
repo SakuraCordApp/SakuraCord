@@ -4,10 +4,26 @@ import SakuraCordModels
 
 @MainActor
 enum MessageLinkActivator {
+    static func accessibilityHelp(for url: URL, label: String) -> String {
+        guard let action = SystemMessageLinkAction(url: url) else {
+            return "Open link"
+        }
+        return switch action {
+        case .profile:
+            "View \(label)'s profile"
+        case .message:
+            "Jump to message"
+        case .pins:
+            "See all pinned messages"
+        }
+    }
+
     static func activate(
         _ url: URL,
         model: AppModel?,
+        sourceMessage: Message? = nil,
         displayedText: String? = nil,
+        presentSystemProfile: ((User) -> Void)? = nil,
         customHandler: (URL) -> Bool = { _ in false },
         confirmExternal: (ExternalLinkSafetyAssessment) -> Void = {
             ExternalLinkConfirmationPresenter.shared.present($0)
@@ -16,7 +32,19 @@ enum MessageLinkActivator {
         if let action = SystemMessageLinkAction(url: url), let model {
             switch action {
             case .profile(let userID):
-                model.showSystemMessageProfile(userID: userID)
+                if let presentSystemProfile,
+                   let user = model.systemMessageUser(
+                       userID: userID,
+                       sourceMessage: sourceMessage
+                   )
+                {
+                    presentSystemProfile(user)
+                } else {
+                    model.showSystemMessageProfile(
+                        userID: userID,
+                        sourceMessage: sourceMessage
+                    )
+                }
             case let .message(guildID, channelID, messageID):
                 model.navigateToSystemMessageTarget(
                     guildID: guildID,
@@ -54,6 +82,36 @@ enum MessageLinkActivator {
             }
         }
         return true
+    }
+}
+
+extension AppModel {
+    func systemMessageUser(
+        userID: UserID,
+        sourceMessage: Message? = nil
+    ) -> User? {
+        if let member = membersByID[userID] {
+            return member.user
+        }
+        let sourceUser = sourceMessage.flatMap { message -> User? in
+            if message.author.id == userID { return message.author }
+            return message.mentionedUsers.first { $0.id == userID }
+        }
+        return sourceUser
+            ?? (messages + threadMessages).lazy.compactMap { message -> User? in
+                if message.author.id == userID { return message.author }
+                return message.mentionedUsers.first { $0.id == userID }
+            }.first
+            ?? pinnedMessages.items.lazy.compactMap { item -> User? in
+                if item.message.author.id == userID { return item.message.author }
+                return item.message.mentionedUsers.first { $0.id == userID }
+            }.first
+            ?? messageSearch.page?.results.lazy.compactMap { result -> User? in
+                result.messages.lazy.compactMap { message -> User? in
+                    if message.author.id == userID { return message.author }
+                    return message.mentionedUsers.first { $0.id == userID }
+                }.first
+            }.first
     }
 }
 
