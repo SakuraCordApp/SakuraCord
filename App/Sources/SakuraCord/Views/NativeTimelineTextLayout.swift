@@ -504,6 +504,8 @@ enum NativeTimelineEmbedLayout {
         let attachments: [Attachment]
         let origin: CGPoint
         let maximumWidth: CGFloat
+        let integratesWithBubble: Bool
+        let drawsTopSeparator: Bool
 
         var region: NativeTimelineRowLayout.EmbedRegion? {
         switch MessageEmbedPresentation.kind(for: embed) {
@@ -529,11 +531,12 @@ enum NativeTimelineEmbedLayout {
                 mediaURL: url,
                 mediaIsVideo: embed.video != nil,
                 mediaAutoplaysInline: embed.type?.lowercased() == "gifv",
-                accentColor: nil
+                accentColor: nil,
+                drawsTopSeparator: false
             )
         case .card:
-            let cardPadding: CGFloat = 12
-            let stripeWidth: CGFloat = 4
+            let cardPadding: CGFloat = integratesWithBubble ? 0 : 12
+            let stripeWidth: CGFloat = integratesWithBubble ? 0 : 4
             let innerChrome = stripeWidth + cardPadding * 2
             let maximumContentWidth = max(80, maximumWidth - innerChrome)
 
@@ -610,7 +613,9 @@ enum NativeTimelineEmbedLayout {
             // thumbnail. SwiftUI applies its 12-point spacing on both sides
             // of that spacer even when the spacer collapses to zero.
             let thumbnailAllowance: CGFloat =
-                thumbnailSize > 0 ? thumbnailSize + 24 : 0
+                thumbnailSize > 0
+                    ? thumbnailSize + (integratesWithBubble ? 12 : 24)
+                    : 0
 
             let naturalTextWidth = textColumnIdealWidth(
                 author: author,
@@ -641,10 +646,12 @@ enum NativeTimelineEmbedLayout {
                 naturalFooterWidth,
                 92
             )
-            let width = min(
-                maximumWidth,
-                max(120, ceil(naturalContentWidth + innerChrome))
-            )
+            let width = integratesWithBubble
+                ? maximumWidth
+                : min(
+                    maximumWidth,
+                    max(120, ceil(naturalContentWidth + innerChrome))
+                )
             let contentX = origin.x + stripeWidth + cardPadding
             let contentWidth = max(80, width - innerChrome)
             let textWidth = max(40, contentWidth - thumbnailAllowance)
@@ -847,11 +854,13 @@ enum NativeTimelineEmbedLayout {
                 x: origin.x,
                 y: origin.y,
                 width: width,
-                height: max(58, cardHeight)
+                height: max(integratesWithBubble ? 18 : 58, cardHeight)
             )
             return .init(
                 embedID: embed.id,
-                kind: .card,
+                kind: integratesWithBubble
+                    ? .bubbleIntegratedCard
+                    : .card,
                 frame: frame,
                 textRegions: textRegions,
                 imageRegions: imageRegions,
@@ -859,7 +868,9 @@ enum NativeTimelineEmbedLayout {
                 mediaURL: mediaURL,
                 mediaIsVideo: embed.video != nil,
                 mediaAutoplaysInline: false,
-                accentColor: embed.color
+                accentColor: embed.color,
+                drawsTopSeparator:
+                    integratesWithBubble && drawsTopSeparator
             )
         }
         }
@@ -980,7 +991,9 @@ enum NativeTimelineEmbedLayout {
         model: AppModel?,
         attachments: [Attachment],
         origin: CGPoint,
-        maximumWidth: CGFloat
+        maximumWidth: CGFloat,
+        integratesWithBubble: Bool = false,
+        drawsTopSeparator: Bool = false
     ) -> NativeTimelineRowLayout.EmbedRegion? {
         Builder(
             embed: embed,
@@ -988,7 +1001,9 @@ enum NativeTimelineEmbedLayout {
             model: model,
             attachments: attachments,
             origin: origin,
-            maximumWidth: maximumWidth
+            maximumWidth: maximumWidth,
+            integratesWithBubble: integratesWithBubble,
+            drawsTopSeparator: drawsTopSeparator
         ).region
     }
 

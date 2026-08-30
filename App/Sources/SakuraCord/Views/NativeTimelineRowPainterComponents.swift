@@ -348,6 +348,7 @@ enum NativeTimelineSystemSymbolCache {
 
 struct NativeTimelineComponentsDrawInput {
     let layout: NativeTimelineComponentLayout
+    let bubbleRegion: NativeTimelineBubbleRegion?
     let model: AppModel?
     let messageID: MessageID
     let itemIdentifier: NativeMessageTimelineItem.Identifier
@@ -365,6 +366,20 @@ struct NativeTimelineComponentsDrawInput {
 }
 
 extension NativeTimelineRowPainter {
+    private struct BubbleIntegratedSectionGeometry {
+        let frame: CGRect
+        let cornerRadius: CGFloat
+        let ownsTopEdge: Bool
+        let ownsBottomEdge: Bool
+
+        var path: NSBezierPath {
+            NSBezierPath(
+                concentricRoundedRect: frame,
+                cornerRadius: cornerRadius
+            )
+        }
+    }
+
     static func schedulePostFirstFrameSymbolPrewarm(
         appearance: NSAppearance
     ) {
@@ -378,6 +393,7 @@ extension NativeTimelineRowPainter {
     {
         { input in
             let layout = input.layout
+            let bubbleRegion = input.bubbleRegion
             let model = input.model
             let messageID = input.messageID
             let itemIdentifier = input.itemIdentifier
@@ -430,15 +446,30 @@ extension NativeTimelineRowPainter {
             if !isHidden, isInsideHiddenContainer(container.frame) {
                 continue
             }
-            componentContainer(
-                container.frame,
-                accentColor: container.accentColor
-            )
+            switch container.chrome {
+            case .bubbleSection:
+                if let bubbleRegion {
+                    bubbleIntegratedSection(
+                        container.chromeFrame,
+                        bubbleRegion: bubbleRegion,
+                        accentColor: container.accentColor,
+                        drawsTopSeparator:
+                            layout.drawsTopSeparator
+                                || container.chromeFrame.minY
+                                    > layout.frame.minY + 0.5,
+                        drawsNeutralRail: false
+                    )
+                }
+            case .card:
+                componentContainer(
+                    container.frame,
+                    accentColor: container.accentColor
+                )
+            }
             if isHidden {
                 spoilerConcealedBase(
                     in: container.frame,
-                    cornerRadius:
-                        DiscordRichMessageMetrics.cardCornerRadius
+                    cornerRadius: container.cornerRadius
                 )
             }
         }
@@ -590,7 +621,14 @@ extension NativeTimelineRowPainter {
                 )
                 continue
             }
-            componentFile(region)
+            componentFile(
+                region,
+                cornerRadius: bubbleConcentricCornerRadius(
+                    for: region.frame,
+                    in: bubbleRegion,
+                    fallback: DiscordRichMessageMetrics.cardCornerRadius
+                )
+            )
         }
         for region in layout.buttons
         where !isInsideHiddenContainer(region.frame) {
@@ -604,7 +642,12 @@ extension NativeTimelineRowPainter {
                 pressProgress:
                     pressedComponentButton == target
                         ? componentButtonPressProgress
-                        : 0
+                        : 0,
+                cornerRadius: bubbleConcentricCornerRadius(
+                    for: region.frame,
+                    in: bubbleRegion,
+                    fallback: 6
+                )
             )
         }
         for region in layout.selects
@@ -614,7 +657,14 @@ extension NativeTimelineRowPainter {
                 componentID: region.componentID
             )
             if target != activeComponentChoiceTarget {
-                componentSelect(region)
+                componentSelect(
+                    region,
+                    cornerRadius: bubbleConcentricCornerRadius(
+                        for: region.frame,
+                        in: bubbleRegion,
+                        fallback: 11
+                    )
+                )
             }
         }
         for region in layout.unsupported
@@ -652,11 +702,12 @@ extension NativeTimelineRowPainter {
 
     static func componentContainer(
         _ frame: CGRect,
-        accentColor: UInt32?
+        accentColor: UInt32?,
+        cornerRadius: CGFloat = DiscordRichMessageMetrics.cardCornerRadius
     ) {
         let shape = NSBezierPath(
             concentricRoundedRect: frame,
-            cornerRadius: DiscordRichMessageMetrics.cardCornerRadius
+            cornerRadius: cornerRadius
         )
         NSGraphicsContext.saveGraphicsState()
         shape.addClip()
@@ -676,10 +727,154 @@ extension NativeTimelineRowPainter {
         NSColor.labelColor.withAlphaComponent(0.13).setStroke()
         let border = NSBezierPath(
             concentricRoundedRect: frame.insetBy(dx: 0.5, dy: 0.5),
-            cornerRadius: DiscordRichMessageMetrics.cardCornerRadius - 0.5
+            cornerRadius: max(0, cornerRadius - 0.5)
         )
         border.lineWidth = 1
         border.stroke()
+    }
+
+    static func bubbleIntegratedSection(
+        _ frame: CGRect,
+        bubbleRegion: NativeTimelineBubbleRegion,
+        accentColor: UInt32?,
+        drawsTopSeparator: Bool,
+        drawsNeutralRail: Bool
+    ) {
+        let geometry = bubbleIntegratedSectionGeometry(
+            frame,
+            bubbleRegion: bubbleRegion
+        )
+        if let railColor = roleColor(accentColor)
+            ?? (drawsNeutralRail
+                ? NSColor.secondaryLabelColor.withAlphaComponent(0.52)
+                : nil)
+        {
+            NSGraphicsContext.saveGraphicsState()
+            NativeTimelineBubbleDrawing.bodyPath(for: bubbleRegion).addClip()
+            geometry.path.addClip()
+            railColor.setFill()
+            CGRect(
+                x: geometry.frame.minX,
+                y: geometry.frame.minY,
+                width: 4,
+                height: geometry.frame.height
+            ).fill()
+            NSGraphicsContext.restoreGraphicsState()
+            if geometry.ownsBottomEdge,
+               bubbleRegion.showsTail,
+               let accentColor = roleColor(accentColor)
+            {
+                accentColor.setFill()
+                NativeTimelineBubbleDrawing.tailPath(for: bubbleRegion).fill()
+            }
+        }
+
+        if drawsTopSeparator {
+            NSGraphicsContext.saveGraphicsState()
+            NativeTimelineBubbleDrawing.bodyPath(for: bubbleRegion).addClip()
+            NSBezierPath(rect: CGRect(
+                x: geometry.frame.minX - 1,
+                y: geometry.frame.minY - 1,
+                width: geometry.frame.width + 2,
+                height: geometry.cornerRadius + 2
+            )).addClip()
+            NSColor.separatorColor.withAlphaComponent(0.28).setStroke()
+            let separator = geometry.path
+            separator.lineWidth = 0.75
+            separator.stroke()
+            NSGraphicsContext.restoreGraphicsState()
+        }
+    }
+
+    static func bubbleIntegratedSectionsTint(
+        _ frames: [CGRect],
+        bubbleRegion: NativeTimelineBubbleRegion
+    ) {
+        let frames = frames
+            .filter { !$0.isEmpty }
+            .sorted { $0.minY < $1.minY }
+        guard var currentGroup = frames.first else { return }
+
+        var groups: [CGRect] = []
+        for frame in frames.dropFirst() {
+            if frame.minY - currentGroup.maxY <= 9 {
+                currentGroup = currentGroup.union(frame)
+            } else {
+                groups.append(currentGroup)
+                currentGroup = frame
+            }
+        }
+        groups.append(currentGroup)
+
+        for group in groups {
+            let geometry = bubbleIntegratedSectionGeometry(
+                group,
+                bubbleRegion: bubbleRegion
+            )
+            bubbleIntegratedSectionTintColor.setFill()
+            geometry.path.fill()
+        }
+    }
+
+    private static let bubbleIntegratedSectionTintColor = NSColor(
+        name: nil
+    ) { appearance in
+        switch appearance.bestMatch(from: [.darkAqua, .aqua]) {
+        case .darkAqua:
+            NSColor.black.withAlphaComponent(0.12)
+        default:
+            NSColor.black.withAlphaComponent(0.055)
+        }
+    }
+
+    private static func bubbleIntegratedSectionGeometry(
+        _ frame: CGRect,
+        bubbleRegion: NativeTimelineBubbleRegion
+    ) -> BubbleIntegratedSectionGeometry {
+        let bubbleFrame = bubbleRegion.frame
+        let ownsTopEdge = frame.minY - bubbleFrame.minY <= 8.5
+        let ownsBottomEdge = bubbleFrame.maxY - frame.maxY <= 8.5
+        let sectionMinY = ownsTopEdge
+            ? bubbleFrame.minY
+            : max(bubbleFrame.minY, frame.minY - 4.5)
+        let sectionMaxY = ownsBottomEdge
+            ? bubbleFrame.maxY
+            : min(bubbleFrame.maxY, frame.maxY + 4.5)
+        let sectionFrame = CGRect(
+            x: bubbleFrame.minX,
+            y: sectionMinY,
+            width: bubbleFrame.width,
+            height: max(1, sectionMaxY - sectionMinY)
+        )
+        return BubbleIntegratedSectionGeometry(
+            frame: sectionFrame,
+            cornerRadius: min(
+                NativeTimelineBubbleDrawing.cornerRadius,
+                sectionFrame.height / 2
+            ),
+            ownsTopEdge: ownsTopEdge,
+            ownsBottomEdge: ownsBottomEdge
+        )
+    }
+
+    static func bubbleConcentricCornerRadius(
+        for frame: CGRect,
+        in bubbleRegion: NativeTimelineBubbleRegion?,
+        fallback: CGFloat
+    ) -> CGFloat {
+        guard let bubbleRegion else { return fallback }
+        let outer = bubbleRegion.frame
+        let insets = [
+            frame.minX - outer.minX,
+            outer.maxX - frame.maxX,
+            frame.minY - outer.minY,
+            outer.maxY - frame.maxY,
+        ].filter { $0 >= 0 }
+        guard let nearestInset = insets.min() else { return fallback }
+        return min(
+            frame.height / 2,
+            max(4, NativeTimelineBubbleDrawing.cornerRadius - nearestInset)
+        )
     }
 
     static func spoilerConcealedBase(
@@ -919,9 +1114,14 @@ extension NativeTimelineRowPainter {
     }
 
     static var componentButtonDrawOperation:
-        @MainActor (NativeTimelineComponentLayout.ButtonRegion, Bool, CGFloat) -> Void
+        @MainActor (
+            NativeTimelineComponentLayout.ButtonRegion,
+            Bool,
+            CGFloat,
+            CGFloat
+        ) -> Void
     {
-        { region, isHovered, pressProgress in
+        { region, isHovered, pressProgress, cornerRadius in
         let pressProgress = min(max(pressProgress, 0), 1)
         let scale = NativeTimelineComponentButtonVisualState.scale(
             pressProgress: pressProgress
@@ -959,7 +1159,7 @@ extension NativeTimelineRowPainter {
         background.withAlphaComponent(opacity).setFill()
         NSBezierPath(
             concentricRoundedRect: region.frame,
-            cornerRadius: 6
+            cornerRadius: cornerRadius
         ).fill()
         adjustedBrightness(
             .white,
@@ -972,7 +1172,7 @@ extension NativeTimelineRowPainter {
         ).setStroke()
         let border = NSBezierPath(
             concentricRoundedRect: region.frame.insetBy(dx: 0.5, dy: 0.5),
-            cornerRadius: 5.5
+            cornerRadius: max(0, cornerRadius - 0.5)
         )
         border.lineWidth = 1
         border.stroke()
@@ -1047,9 +1247,15 @@ extension NativeTimelineRowPainter {
     static func componentButton(
         _ region: NativeTimelineComponentLayout.ButtonRegion,
         isHovered: Bool,
-        pressProgress: CGFloat
+        pressProgress: CGFloat,
+        cornerRadius: CGFloat = 6
     ) {
-        componentButtonDrawOperation(region, isHovered, pressProgress)
+        componentButtonDrawOperation(
+            region,
+            isHovered,
+            pressProgress,
+            cornerRadius
+        )
     }
 
     static func adjustedBrightness(
@@ -1068,18 +1274,19 @@ extension NativeTimelineRowPainter {
     }
 
     static func componentSelect(
-        _ region: NativeTimelineComponentLayout.SelectRegion
+        _ region: NativeTimelineComponentLayout.SelectRegion,
+        cornerRadius: CGFloat = 11
     ) {
         let opacity: CGFloat = region.isDisabled ? 0.65 : 1
         NSColor.labelColor.withAlphaComponent(0.075 * opacity).setFill()
         NSBezierPath(
             concentricRoundedRect: region.frame,
-            cornerRadius: 11
+            cornerRadius: cornerRadius
         ).fill()
         NSColor.labelColor.withAlphaComponent(0.10 * opacity).setStroke()
         let border = NSBezierPath(
             concentricRoundedRect: region.frame.insetBy(dx: 0.5, dy: 0.5),
-            cornerRadius: 10.5
+            cornerRadius: max(0, cornerRadius - 0.5)
         )
         border.lineWidth = 1
         border.stroke()
@@ -1185,9 +1392,14 @@ extension NativeTimelineRowPainter {
     }
 
     static func componentFile(
-        _ region: NativeTimelineComponentLayout.FileRegion
+        _ region: NativeTimelineComponentLayout.FileRegion,
+        cornerRadius: CGFloat = DiscordRichMessageMetrics.cardCornerRadius
     ) {
-        componentContainer(region.frame, accentColor: nil)
+        componentContainer(
+            region.frame,
+            accentColor: nil,
+            cornerRadius: cornerRadius
+        )
         systemSymbol(
             "doc.fill",
             in: CGRect(

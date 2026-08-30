@@ -59,6 +59,23 @@ extension NativeTimelineRowPainter {
             let spoilerRevealStore = input.spoilerRevealStore
             let reactionCountTransitions = input.reactionCountTransitions
         let message = row.message
+        if let bubbleRegion = layout.bubbleRegion {
+            let integratedSectionFrames = layout.embedRegions.compactMap {
+                $0.kind == .bubbleIntegratedCard
+                    ? $0.frame
+                    : nil
+            } + layout.componentLayouts.flatMap { componentLayout in
+                componentLayout.containers.compactMap { container in
+                    container.chrome == .bubbleSection
+                        ? container.chromeFrame
+                        : nil
+                }
+            }
+            bubbleIntegratedSectionsTint(
+                integratedSectionFrames,
+                bubbleRegion: bubbleRegion
+            )
+        }
         if let context = row.searchContext,
            let region = layout.searchSectionRegion
         {
@@ -442,6 +459,16 @@ extension NativeTimelineRowPainter {
         for region in layout.embedRegions {
             if region.kind == .card {
                 embedCard(region.frame, accentColor: region.accentColor)
+            } else if region.kind == .bubbleIntegratedCard,
+                      let bubbleRegion = layout.bubbleRegion
+            {
+                bubbleIntegratedSection(
+                    region.frame,
+                    bubbleRegion: bubbleRegion,
+                    accentColor: region.accentColor,
+                    drawsTopSeparator: region.drawsTopSeparator,
+                    drawsNeutralRail: true
+                )
             }
             for (textIndex, textRegion) in
                 region.textRegions.enumerated()
@@ -582,6 +609,7 @@ extension NativeTimelineRowPainter {
         {
             drawComponents(.init(
                 layout: componentLayout,
+                bubbleRegion: layout.bubbleRegion,
                 model: model,
                 messageID: message.id,
                 itemIdentifier: .message(row.identity),

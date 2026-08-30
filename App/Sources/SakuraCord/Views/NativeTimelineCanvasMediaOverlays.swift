@@ -1099,8 +1099,7 @@ extension NativeTimelineCanvasView {
                     append(
                         key,
                         frame: container.frame,
-                        cornerRadius:
-                            DiscordRichMessageMetrics.cardCornerRadius,
+                        cornerRadius: container.cornerRadius,
                         rowOrigin: rowOrigin
                     )
                 }

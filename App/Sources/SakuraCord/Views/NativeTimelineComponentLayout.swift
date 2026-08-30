@@ -37,10 +37,18 @@ enum NativeTimelineComponentSelectPolicy {
 
 struct NativeTimelineComponentLayout {
     struct ContainerRegion {
+        enum Chrome: Equatable {
+            case bubbleSection
+            case card
+        }
+
         let frame: CGRect
+        let chromeFrame: CGRect
         let componentID: String
         let accentColor: UInt32?
         let isSpoiler: Bool
+        let chrome: Chrome
+        let cornerRadius: CGFloat
     }
 
     struct TextRegion {
@@ -125,21 +133,33 @@ struct NativeTimelineComponentLayout {
     let files: [FileRegion]
     let separators: [SeparatorRegion]
     let unsupported: [UnsupportedRegion]
+    let drawsTopSeparator: Bool
 
     static func make(
         message: Message,
         model: AppModel?,
         origin: CGPoint,
-        maximumWidth: CGFloat
+        maximumWidth: CGFloat,
+        integratesWithBubble: Bool = false,
+        drawsTopSeparator: Bool = false
     ) -> Self? {
         guard !message.components.isEmpty else { return nil }
-        var nodes = message.components.map {
-            NodeBuilder.node(
-                for: $0,
-                message: message,
-                model: model,
-                maximumWidth: maximumWidth
-            )
+        var nodes = message.components.map { component in
+            if integratesWithBubble {
+                NodeBuilder.bubbleRootNode(
+                    for: component,
+                    message: message,
+                    model: model,
+                    maximumWidth: maximumWidth
+                )
+            } else {
+                NodeBuilder.node(
+                    for: component,
+                    message: message,
+                    model: model,
+                    maximumWidth: maximumWidth
+                )
+            }
         }
         if let error = model?.componentError(for: message.id) {
             let errorBox = NodeBuilder.plainText(
@@ -182,9 +202,27 @@ struct NativeTimelineComponentLayout {
 
         let root = NodeBuilder.vertical(nodes, spacing: 8)
             .offsetBy(dx: origin.x, dy: origin.y)
+        let expandsSingleBubbleContainer =
+            integratesWithBubble
+                && !drawsTopSeparator
+                && message.components.count == 1
+        let containers = root.containers.map { container in
+            guard expandsSingleBubbleContainer,
+                  container.chrome == .bubbleSection
+            else { return container }
+            return .init(
+                frame: container.frame.insetBy(dx: -12, dy: -8),
+                chromeFrame: container.chromeFrame,
+                componentID: container.componentID,
+                accentColor: container.accentColor,
+                isSpoiler: container.isSpoiler,
+                chrome: container.chrome,
+                cornerRadius: NativeTimelineBubbleDrawing.cornerRadius
+            )
+        }
         return Self(
             frame: CGRect(origin: origin, size: root.size),
-            containers: root.containers,
+            containers: containers,
             textRegions: root.textRegions,
             buttons: root.buttons,
             selects: root.selects,
@@ -192,7 +230,9 @@ struct NativeTimelineComponentLayout {
             media: root.media,
             files: root.files,
             separators: root.separators,
-            unsupported: root.unsupported
+            unsupported: root.unsupported,
+            drawsTopSeparator:
+                integratesWithBubble && drawsTopSeparator
         )
     }
 }
@@ -214,9 +254,12 @@ private struct Node {
         result.containers = containers.map {
             .init(
                 frame: $0.frame.offsetBy(dx: dx, dy: dy),
+                chromeFrame: $0.chromeFrame.offsetBy(dx: dx, dy: dy),
                 componentID: $0.componentID,
                 accentColor: $0.accentColor,
-                isSpoiler: $0.isSpoiler
+                isSpoiler: $0.isSpoiler,
+                chrome: $0.chrome,
+                cornerRadius: $0.cornerRadius
             )
         }
         result.textRegions = textRegions.map {
@@ -332,7 +375,8 @@ private enum NodeBuilder {
         for component: MessageComponent,
         message: Message,
         model: AppModel?,
-        maximumWidth: CGFloat
+        maximumWidth: CGFloat,
+        inBubble: Bool = false
     ) -> Node {
         let maximumWidth = max(1, maximumWidth)
         switch component {
@@ -341,7 +385,8 @@ private enum NodeBuilder {
                 for: component,
                 message: message,
                 model: model,
-                maximumWidth: maximumWidth
+                maximumWidth: maximumWidth,
+                inBubble: inBubble
             )
 
         case .button:
@@ -357,7 +402,8 @@ private enum NodeBuilder {
                 for: component,
                 message: message,
                 model: model,
-                maximumWidth: maximumWidth
+                maximumWidth: maximumWidth,
+                inBubble: inBubble
             )
 
         case .section:
@@ -365,7 +411,8 @@ private enum NodeBuilder {
                 for: component,
                 message: message,
                 model: model,
-                maximumWidth: maximumWidth
+                maximumWidth: maximumWidth,
+                inBubble: inBubble
             )
 
         case let .textDisplay(id, content):
@@ -415,7 +462,8 @@ private enum NodeBuilder {
             return mediaNode(
                 for: component,
                 message: message,
-                maximumWidth: maximumWidth
+                maximumWidth: maximumWidth,
+                inBubble: inBubble
             )
 
         case .separator, .container:
@@ -423,7 +471,8 @@ private enum NodeBuilder {
                 for: component,
                 message: message,
                 model: model,
-                maximumWidth: maximumWidth
+                maximumWidth: maximumWidth,
+                inBubble: inBubble
             )
 
         case let .unsupported(_, type, rawLabel):
@@ -432,6 +481,57 @@ private enum NodeBuilder {
                 maximumWidth: maximumWidth
             )
         }
+    }
+
+    static func bubbleRootNode(
+        for component: MessageComponent,
+        message: Message,
+        model: AppModel?,
+        maximumWidth: CGFloat
+    ) -> Node {
+        guard case let .container(id, accent, spoiler, children) = component
+        else {
+            return node(
+                for: component,
+                message: message,
+                model: model,
+                maximumWidth: maximumWidth,
+                inBubble: true
+            )
+        }
+        let content = vertical(
+            children.map {
+                node(
+                    for: $0,
+                    message: message,
+                    model: model,
+                    maximumWidth: maximumWidth,
+                    inBubble: true
+                )
+            },
+            spacing: 7
+        )
+        let size = CGSize(
+            width: maximumWidth,
+            height: max(1, content.size.height)
+        )
+        var result = Node(
+            size: size,
+            containers: [
+                .init(
+                    frame: CGRect(origin: .zero, size: size),
+                    chromeFrame: CGRect(origin: .zero, size: size),
+                    componentID: id,
+                    accentColor: accent,
+                    isSpoiler: spoiler,
+                    chrome: .bubbleSection,
+                    cornerRadius:
+                        DiscordRichMessageMetrics.cardCornerRadius
+                )
+            ]
+        )
+        result.merge(content, at: .zero)
+        return result
     }
 
     private static func textNode(
@@ -472,7 +572,8 @@ private enum NodeBuilder {
         for component: MessageComponent,
         message: Message,
         model: AppModel?,
-        maximumWidth: CGFloat
+        maximumWidth: CGFloat,
+        inBubble: Bool
     ) -> Node {
         switch component {
         case let .actionRow(_, children):
@@ -488,7 +589,8 @@ private enum NodeBuilder {
                     for: child,
                     message: message,
                     model: model,
-                    maximumWidth: remaining
+                    maximumWidth: remaining,
+                    inBubble: inBubble
                 )
                 result.merge(childNode, at: CGPoint(x: horizontalOffset, y: 0))
                 horizontalOffset += childNode.size.width
@@ -509,7 +611,8 @@ private enum NodeBuilder {
         for component: MessageComponent,
         message: Message,
         model: AppModel?,
-        maximumWidth: CGFloat
+        maximumWidth: CGFloat,
+        inBubble: Bool
     ) -> Node {
         switch component {
         case let .select(
@@ -530,10 +633,12 @@ private enum NodeBuilder {
                     withAttributes: [.font: font]
                 ).width
             )
-            let width = min(
-                maximumWidth,
-                max(372, min(420, labelWidth + 76))
-            )
+            let width = inBubble
+                ? maximumWidth
+                : min(
+                    maximumWidth,
+                    max(372, min(420, labelWidth + 76))
+                )
             let selectedOptions = model?.componentSelection(
                 messageID: message.id,
                 customID: customID
@@ -590,7 +695,8 @@ private enum NodeBuilder {
         for component: MessageComponent,
         message: Message,
         model: AppModel?,
-        maximumWidth: CGFloat
+        maximumWidth: CGFloat,
+        inBubble: Bool
     ) -> Node {
         switch component {
         case let .section(_, children, accessory):
@@ -601,7 +707,8 @@ private enum NodeBuilder {
                             for: $0,
                             message: message,
                             model: model,
-                            maximumWidth: maximumWidth
+                            maximumWidth: maximumWidth,
+                            inBubble: inBubble
                         )
                     },
                     spacing: 8
@@ -611,7 +718,8 @@ private enum NodeBuilder {
                 for: accessory,
                 message: message,
                 model: model,
-                maximumWidth: min(180, maximumWidth)
+                maximumWidth: min(180, maximumWidth),
+                inBubble: inBubble
             )
             let leftWidth = max(
                 1,
@@ -623,7 +731,8 @@ private enum NodeBuilder {
                         for: $0,
                         message: message,
                         model: model,
-                        maximumWidth: leftWidth
+                        maximumWidth: leftWidth,
+                        inBubble: inBubble
                     )
                 },
                 spacing: 8
@@ -731,7 +840,8 @@ private enum NodeBuilder {
     private static func mediaNode(
         for component: MessageComponent,
         message: Message,
-        maximumWidth: CGFloat
+        maximumWidth: CGFloat,
+        inBubble: Bool
     ) -> Node {
         switch component {
         case let .mediaGallery(_, items):
@@ -798,7 +908,9 @@ private enum NodeBuilder {
                     withAttributes: [.font: titleFont]
                 ).width
             ) + 96
-            let width = min(maximumWidth, max(220, naturalWidth))
+            let width = inBubble
+                ? maximumWidth
+                : min(maximumWidth, max(220, naturalWidth))
             let height: CGFloat =
                 item.description?.isEmpty == false ? 62 : 48
             return Node(
@@ -829,7 +941,8 @@ private enum NodeBuilder {
         for component: MessageComponent,
         message: Message,
         model: AppModel?,
-        maximumWidth: CGFloat
+        maximumWidth: CGFloat,
+        inBubble: Bool
     ) -> Node {
         switch component {
         case let .separator(_, divider, spacing):
@@ -863,7 +976,8 @@ private enum NodeBuilder {
                         for: $0,
                         message: message,
                         model: model,
-                        maximumWidth: maximumContentWidth
+                        maximumWidth: maximumContentWidth,
+                        inBubble: inBubble
                     )
                 },
                 spacing: 7
@@ -882,7 +996,8 @@ private enum NodeBuilder {
                         for: $0,
                         message: message,
                         model: model,
-                        maximumWidth: contentWidth
+                        maximumWidth: contentWidth,
+                        inBubble: inBubble
                     )
                 },
                 spacing: 7
@@ -898,9 +1013,18 @@ private enum NodeBuilder {
                             width: width,
                             height: height
                         ),
+                        chromeFrame: CGRect(
+                            x: 0,
+                            y: 0,
+                            width: width,
+                            height: height
+                        ),
                         componentID: id,
                         accentColor: accent,
-                        isSpoiler: spoiler
+                        isSpoiler: spoiler,
+                        chrome: .card,
+                        cornerRadius:
+                            DiscordRichMessageMetrics.cardCornerRadius
                     )
                 ]
             )

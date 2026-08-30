@@ -251,7 +251,7 @@ enum NativeTimelineBubbleDrawing {
         return path
     }
 
-    private static func bodyPath(
+    static func bodyPath(
         for region: NativeTimelineBubbleRegion
     ) -> NSBezierPath {
         NSBezierPath(
@@ -260,7 +260,7 @@ enum NativeTimelineBubbleDrawing {
         )
     }
 
-    private static func tailPath(
+    static func tailPath(
         for region: NativeTimelineBubbleRegion
     ) -> NSBezierPath {
         let path = NSBezierPath()

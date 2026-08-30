@@ -430,6 +430,7 @@ struct NativeTimelineRowLayout {
     struct EmbedRegion {
         enum Kind: Equatable {
             case bareMedia
+            case bubbleIntegratedCard
             case card
         }
 
@@ -457,6 +458,7 @@ struct NativeTimelineRowLayout {
         let mediaIsVideo: Bool
         let mediaAutoplaysInline: Bool
         let accentColor: UInt32?
+        let drawsTopSeparator: Bool
     }
 
     struct SakuraCordDeepLinkRegion {
@@ -995,7 +997,9 @@ struct NativeTimelineRowLayout {
                     model: model,
                     attachments: message.attachments,
                     origin: CGPoint(x: contentX, y: embedY),
-                    maximumWidth: inlineMediaMaximumWidth
+                    maximumWidth: inlineMediaMaximumWidth,
+                    integratesWithBubble: usesBubbles,
+                    drawsTopSeparator: usesBubbles && hasRichContent
                 ) else { continue }
                 embedRegions.append(region)
                 verticalOffset = region.frame.maxY
@@ -1010,7 +1014,9 @@ struct NativeTimelineRowLayout {
             message: message,
             model: model,
             origin: CGPoint(x: contentX, y: componentY),
-            maximumWidth: inlineMediaMaximumWidth
+            maximumWidth: inlineMediaMaximumWidth,
+            integratesWithBubble: usesBubbles,
+            drawsTopSeparator: usesBubbles && hasRichContent
         ) {
             componentLayouts.append(componentLayout)
             verticalOffset = componentLayout.frame.maxY
