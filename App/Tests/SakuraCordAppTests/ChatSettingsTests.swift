@@ -148,7 +148,7 @@ import Testing
         replyPreview: nil,
         isReplyAvailable: false
     )
-    #expect(row.sakuraCordDeepLink?.action == .checkForUpdates)
+    #expect(row.sakuraCordDeepLinks.map(\.action) == [.checkForUpdates])
     #expect(MessageEmbedPresentation.visibleEmbeds(for: message).isEmpty)
 
     let item = NativeMessageTimelineItem.message(
@@ -162,9 +162,9 @@ import Testing
         width: 900,
         model: model
     )
-    #expect(layout.sakuraCordDeepLinkRegion?.action == .checkForUpdates)
-    #expect(layout.sakuraCordDeepLinkRegion?.action.title == "Update SakuraCord")
-    #expect(layout.sakuraCordDeepLinkRegion?.action.buttonTitle == "Check for Updates")
+    #expect(layout.sakuraCordDeepLinkRegions.first?.action == .checkForUpdates)
+    #expect(layout.sakuraCordDeepLinkRegions.first?.action.title == "Update SakuraCord")
+    #expect(layout.sakuraCordDeepLinkRegions.first?.action.buttonTitle == "Check for Updates")
     #expect(layout.embedRegions.isEmpty)
 
     var settings = model.chatSettings
@@ -175,18 +175,18 @@ import Testing
         width: 900,
         model: model
     )
-    #expect(hidden.sakuraCordDeepLinkRegion == nil)
+    #expect(hidden.sakuraCordDeepLinkRegions.isEmpty)
     #expect(hidden.attributedContent?.string.contains("the updater") == true)
 
     #expect(
-        SakuraCordDeepLinkPresentation.first(
+        SakuraCordDeepLinkPresentation.all(
             in: "https://sakuracord.app.evil/settings/update"
-        ) == nil
+        ).isEmpty
     )
     #expect(
-        SakuraCordDeepLinkPresentation.first(
+        SakuraCordDeepLinkPresentation.all(
             in: "http://sakuracord.app/settings/update"
-        ) == nil
+        ).isEmpty
     )
 }
 
@@ -230,7 +230,7 @@ import Testing
         replyPreview: nil,
         isReplyAvailable: false
     )
-    guard case let .applyTheme(decodedTheme)? = row.sakuraCordDeepLink?.action else {
+    guard case let .applyTheme(decodedTheme)? = row.sakuraCordDeepLinks.first?.action else {
         Issue.record("Theme link did not produce an apply action")
         return
     }
@@ -249,12 +249,100 @@ import Testing
         width: 900,
         model: model
     )
-    let region = try #require(layout.sakuraCordDeepLinkRegion)
+    let region = try #require(layout.sakuraCordDeepLinkRegions.first)
     #expect(region.action == .applyTheme(decodedTheme))
     #expect(region.action.buttonTitle == "Apply Theme")
     #expect(region.paletteFrames.count == 3)
     #expect(region.buttonFrame.height == NativeTimelineComponentButtonMetrics.height)
     #expect(layout.embedRegions.isEmpty)
+}
+
+@MainActor
+@Test func `Multiple SakuraCord links render ordered independent native cards`() throws {
+    let firstThemeURL = try SakuraCordThemeShareCodec.shareURL(for: .init(
+        appearance: .dark,
+        theme: .defaultTheme
+    ))
+    let secondThemeURL = try SakuraCordThemeShareCodec.shareURL(for: .init(
+        appearance: .light,
+        theme: SakuraCordGradientTheme(
+            colors: [
+                .init(hue: 0.12, saturation: 0.75),
+                .init(hue: 0.58, saturation: 0.82),
+            ],
+            intensity: 0.72,
+            brightness: 0.88
+        )
+    ))
+    let updateURL = try #require(
+        URL(string: "https://sakuracord.app/settings/update")
+    )
+    let urls = [firstThemeURL, updateURL, secondThemeURL]
+    let message = Message(
+        id: MessageID(rawValue: 70),
+        channelID: ChannelID(rawValue: 71),
+        author: User(
+            id: UserID(rawValue: 72),
+            username: "fixture",
+            displayName: "Fixture"
+        ),
+        content: urls.map(\.absoluteString).joined(separator: "\n"),
+        embeds: urls.map { url in
+            MessageEmbed(
+                title: "SakuraCord Settings Deeplink",
+                type: "rich",
+                description: "Open it in SakuraCord to use the linked setting.",
+                url: url
+            )
+        }
+    )
+    let row = MessageRowPresentation(
+        message: message,
+        startsGroup: true,
+        startsDay: false,
+        replyPreview: nil,
+        isReplyAvailable: false
+    )
+
+    #expect(row.sakuraCordDeepLinks.map(\.url) == urls)
+    #expect(row.sakuraCordDeepLinks.count == 3)
+    #expect(MessageEmbedPresentation.visibleEmbeds(for: message).isEmpty)
+
+    let layout = NativeTimelineRowLayout.make(
+        item: .message(
+            row,
+            isUnreadBoundary: false,
+            isHighlighted: false
+        ),
+        width: 900,
+        model: AppModel(launchMode: .offlineTesting)
+    )
+    let regions = layout.sakuraCordDeepLinkRegions
+    try #require(regions.count == 3)
+    #expect(regions[0].action.title == "Apply Theme")
+    #expect(regions[1].action == .checkForUpdates)
+    #expect(regions[2].action.title == "Apply Theme")
+    #expect(Set(regions.map(\.componentID)).count == 3)
+    #expect(regions[0].frame.maxY < regions[1].frame.minY)
+    #expect(regions[1].frame.maxY < regions[2].frame.minY)
+    #expect(layout.embedRegions.isEmpty)
+
+    for maximumWidth: CGFloat in [280, 360, 560] {
+        for (index, deepLink) in row.sakuraCordDeepLinks.enumerated() {
+            let region = NativeTimelineSakuraCordDeepLinkLayout.make(
+                deepLink,
+                componentIndex: index,
+                origin: .zero,
+                maximumWidth: maximumWidth
+            )
+            #expect(!region.titleFrame.intersects(region.buttonFrame))
+            #expect(!region.symbolBackgroundFrame.intersects(region.buttonFrame))
+            #expect(region.paletteFrames.allSatisfy {
+                !$0.intersects(region.buttonFrame)
+            })
+            #expect(region.cardFrame.contains(region.buttonFrame))
+        }
+    }
 }
 
 @MainActor

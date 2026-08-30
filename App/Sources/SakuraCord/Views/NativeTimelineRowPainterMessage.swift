@@ -551,10 +551,10 @@ extension NativeTimelineRowPainter {
                 }
             }
         }
-        if let region = layout.sakuraCordDeepLinkRegion {
+        for region in layout.sakuraCordDeepLinkRegions {
             let target = NativeTimelineComponentButtonTarget(
                 messageID: message.id,
-                componentID: region.action.componentID
+                componentID: region.componentID
             )
             sakuraCordDeepLinkCard(
                 region,

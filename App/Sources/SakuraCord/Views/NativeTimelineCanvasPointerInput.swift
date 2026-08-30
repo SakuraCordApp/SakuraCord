@@ -97,11 +97,9 @@ extension NativeTimelineCanvasView {
                         cursor: .pointingHand
                     )
                 }
-                if let frame = layouts[index]
-                    .sakuraCordDeepLinkRegion?.buttonFrame
-                {
+                for region in layouts[index].sakuraCordDeepLinkRegions {
                     addCursorRect(
-                        frame.offsetBy(dx: 0, dy: rowOrigin),
+                        region.buttonFrame.offsetBy(dx: 0, dy: rowOrigin),
                         cursor: .pointingHand
                     )
                 }
@@ -1369,13 +1367,13 @@ extension NativeTimelineCanvasView {
             x: point.x,
             y: point.y - rowOrigin
         )
-        if let region = layouts[index].sakuraCordDeepLinkRegion,
-           region.buttonFrame.contains(local)
-        {
+        if let region = layouts[index].sakuraCordDeepLinkRegions.first(
+            where: { $0.buttonFrame.contains(local) }
+        ) {
             return ComponentButtonPointerHit(
                 target: NativeTimelineComponentButtonTarget(
                     messageID: row.id,
-                    componentID: region.action.componentID
+                    componentID: region.componentID
                 ),
                 rowIndex: index,
                 message: row.message,

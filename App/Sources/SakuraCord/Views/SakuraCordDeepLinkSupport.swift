@@ -93,17 +93,16 @@ nonisolated enum SakuraCordDeepLinkPresentation {
     private static let trailingPunctuation =
         CharacterSet(charactersIn: ".,;:!?")
 
-    static func first(in content: String) -> SakuraCordDeepLink? {
-        for rawCandidate in content.components(separatedBy: tokenSeparators) {
+    static func all(in content: String) -> [SakuraCordDeepLink] {
+        content.components(separatedBy: tokenSeparators).compactMap { rawCandidate in
             let candidate = rawCandidate.trimmingCharacters(
                 in: trailingPunctuation
             )
             guard let url = URL(string: candidate),
                   let action = action(for: url)
-            else { continue }
+            else { return nil }
             return SakuraCordDeepLink(url: url, action: action)
         }
-        return nil
     }
 
     static func action(for url: URL) -> SakuraCordDeepLinkAction? {
@@ -141,26 +140,65 @@ nonisolated enum SakuraCordDeepLinkPresentation {
 }
 
 enum NativeTimelineSakuraCordDeepLinkLayout {
+    private static let maximumWidth: CGFloat = 560
+    private static let preferredButtonWidth: CGFloat = 196
+    private static let horizontalInset: CGFloat = 14
+    private static let symbolSize: CGFloat = 32
+    private static let itemSpacing: CGFloat = 11
+    private static let compactRowSpacing: CGFloat = 10
+    private static let titleFont = NSFont.systemFont(
+        ofSize: 14,
+        weight: .semibold
+    )
+
     static func make(
         _ deepLink: SakuraCordDeepLink,
+        componentIndex: Int,
         origin: CGPoint,
         maximumWidth: CGFloat
     ) -> NativeTimelineRowLayout.SakuraCordDeepLinkRegion {
         let hasPalette = deepLink.action.themePreview != nil
+        let width = min(Self.maximumWidth, maximumWidth)
+        let cardWidth = max(1, width - 12)
+        let titleXOffset = horizontalInset + symbolSize + itemSpacing
+        let regularHorizontalSpace = max(
+            1,
+            cardWidth - titleXOffset - itemSpacing - horizontalInset
+        )
+        let titleWidth = measuredWidth(
+            deepLink.action.title,
+            font: titleFont
+        )
+        let minimumButtonWidth = minimumButtonWidth(
+            for: deepLink.action.buttonTitle
+        )
+        let usesCompactLayout = regularHorizontalSpace
+            < titleWidth + minimumButtonWidth
+        let compactHeaderHeight: CGFloat = hasPalette ? 38 : symbolSize
+        let cardHeight: CGFloat = usesCompactLayout
+            ? horizontalInset
+                + compactHeaderHeight
+                + compactRowSpacing
+                + NativeTimelineComponentButtonMetrics.height
+                + horizontalInset
+            : hasPalette ? 74 : 56
         let frame = CGRect(
             origin: origin,
             size: CGSize(
-                width: min(560, maximumWidth),
-                height: hasPalette ? 86 : 68
+                width: width,
+                height: cardHeight + 12
             )
         )
         let cardFrame = frame.insetBy(dx: 6, dy: 6)
-        let leading = cardFrame.minX + 14
+        let leading = cardFrame.minX + horizontalInset
+        let headerTop = cardFrame.minY + horizontalInset
         let symbolBackgroundFrame = CGRect(
             x: leading,
-            y: cardFrame.midY - 16,
-            width: 32,
-            height: 32
+            y: usesCompactLayout
+                ? headerTop + (compactHeaderHeight - symbolSize) / 2
+                : cardFrame.midY - symbolSize / 2,
+            width: symbolSize,
+            height: symbolSize
         )
         let symbolFrame = CGRect(
             x: symbolBackgroundFrame.midX - 11,
@@ -168,23 +206,26 @@ enum NativeTimelineSakuraCordDeepLinkLayout {
             width: 22,
             height: 22
         )
-        let trailing: CGFloat = 14
-        let titleX = symbolBackgroundFrame.maxX + 11
-        let maximumButtonWidth = max(
-            1,
-            cardFrame.maxX - titleX - 11 - trailing
-        )
-        let buttonWidth = min(196, maximumButtonWidth)
-        let buttonFrame = CGRect(
-            x: cardFrame.maxX - trailing - buttonWidth,
-            y: cardFrame.midY - 16,
-            width: buttonWidth,
-            height: NativeTimelineComponentButtonMetrics.height
+        let titleX = symbolBackgroundFrame.maxX + itemSpacing
+        let buttonFrame = buttonFrame(
+            usesCompactLayout: usesCompactLayout,
+            cardFrame: cardFrame,
+            headerTop: headerTop,
+            compactHeaderHeight: compactHeaderHeight,
+            regularHorizontalSpace: regularHorizontalSpace,
+            minimumButtonWidth: minimumButtonWidth,
+            titleWidth: titleWidth
         )
         let titleFrame = CGRect(
             x: titleX,
-            y: cardFrame.midY - (hasPalette ? 18 : 10),
-            width: max(1, buttonFrame.minX - titleX - 11),
+            y: usesCompactLayout
+                ? headerTop + (hasPalette ? 0 : 6)
+                : cardFrame.midY - (hasPalette ? 18 : 10),
+            width: max(
+                1,
+                (usesCompactLayout ? cardFrame.maxX - horizontalInset : buttonFrame.minX - itemSpacing)
+                    - titleX
+            ),
             height: 20
         )
         let paletteFrames: [CGRect]
@@ -194,7 +235,9 @@ enum NativeTimelineSakuraCordDeepLinkLayout {
             paletteFrames = preview.theme.activeColors.indices.map { index in
                 CGRect(
                     x: titleX + CGFloat(index) * step,
-                    y: cardFrame.midY + 6,
+                    y: usesCompactLayout
+                        ? headerTop + 23
+                        : cardFrame.midY + 6,
                     width: diameter,
                     height: diameter
                 )
@@ -204,6 +247,7 @@ enum NativeTimelineSakuraCordDeepLinkLayout {
         }
         return .init(
             action: deepLink.action,
+            componentID: "\(deepLink.action.componentID)-\(componentIndex)",
             frame: frame,
             cardFrame: cardFrame,
             symbolBackgroundFrame: symbolBackgroundFrame,
@@ -211,6 +255,50 @@ enum NativeTimelineSakuraCordDeepLinkLayout {
             titleFrame: titleFrame,
             paletteFrames: paletteFrames,
             buttonFrame: buttonFrame
+        )
+    }
+
+    private static func measuredWidth(_ value: String, font: NSFont) -> CGFloat {
+        ceil((value as NSString).size(withAttributes: [.font: font]).width)
+    }
+
+    private static func minimumButtonWidth(for title: String) -> CGFloat {
+        min(
+            preferredButtonWidth,
+            measuredWidth(
+                title,
+                font: NativeTimelineComponentButtonMetrics.font
+            ) + 30
+        )
+    }
+
+    private static func buttonFrame(
+        usesCompactLayout: Bool,
+        cardFrame: CGRect,
+        headerTop: CGFloat,
+        compactHeaderHeight: CGFloat,
+        regularHorizontalSpace: CGFloat,
+        minimumButtonWidth: CGFloat,
+        titleWidth: CGFloat
+    ) -> CGRect {
+        if usesCompactLayout {
+            return CGRect(
+                x: cardFrame.minX + horizontalInset,
+                y: headerTop + compactHeaderHeight + compactRowSpacing,
+                width: max(1, cardFrame.width - horizontalInset * 2),
+                height: NativeTimelineComponentButtonMetrics.height
+            )
+        }
+        let width = min(
+            preferredButtonWidth,
+            max(minimumButtonWidth, regularHorizontalSpace - titleWidth)
+        )
+        return CGRect(
+            x: cardFrame.maxX - horizontalInset - width,
+            y: cardFrame.midY
+                - NativeTimelineComponentButtonMetrics.height / 2,
+            width: width,
+            height: NativeTimelineComponentButtonMetrics.height
         )
     }
 }

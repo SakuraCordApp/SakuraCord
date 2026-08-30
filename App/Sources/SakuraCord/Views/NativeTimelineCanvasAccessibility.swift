@@ -930,37 +930,38 @@ extension NativeTimelineCanvasView {
         rowIndex: Int,
         parent: NSAccessibilityElement
     ) {
-        guard let region = layout.sakuraCordDeepLinkRegion else { return }
-        let group = accessibilityElement(
-            role: .group,
-            label: "SakuraCord deeplink, \(region.action.title)",
-            frame: accessibilityChildFrame(
-                region.cardFrame,
-                rowIndex: rowIndex
-            ),
-            parent: parent
-        )
-        let button = accessibilityElement(
-            role: .button,
-            label: region.action.buttonTitle,
-            help: region.action.accessibilityHelp,
-            frame: accessibilityChildFrame(
-                region.buttonFrame,
-                rowIndex: rowIndex
-            ),
-            parent: group
-        ) { [weak self] in
-            guard let actions = self?.actions else { return false }
-            switch region.action {
-            case .checkForUpdates, .updateToApplyTheme:
-                actions.checkForUpdates()
-            case let .applyTheme(theme):
-                actions.applyTheme(theme)
+        for region in layout.sakuraCordDeepLinkRegions {
+            let group = accessibilityElement(
+                role: .group,
+                label: "SakuraCord deeplink, \(region.action.title)",
+                frame: accessibilityChildFrame(
+                    region.cardFrame,
+                    rowIndex: rowIndex
+                ),
+                parent: parent
+            )
+            let button = accessibilityElement(
+                role: .button,
+                label: region.action.buttonTitle,
+                help: region.action.accessibilityHelp,
+                frame: accessibilityChildFrame(
+                    region.buttonFrame,
+                    rowIndex: rowIndex
+                ),
+                parent: group
+            ) { [weak self] in
+                guard let actions = self?.actions else { return false }
+                switch region.action {
+                case .checkForUpdates, .updateToApplyTheme:
+                    actions.checkForUpdates()
+                case let .applyTheme(theme):
+                    actions.applyTheme(theme)
+                }
+                return true
             }
-            return true
+            group.setAccessibilityChildren([button])
+            children.append(group)
         }
-        group.setAccessibilityChildren([button])
-        children.append(group)
     }
 
     var componentAccessibilityAppendOperation:

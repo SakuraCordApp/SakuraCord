@@ -27,13 +27,14 @@ nonisolated enum MessageEmbedPresentation {
         let linkedEmojiURLs =
             LinkedImagePresentation(content: message.content)
                 .matchedEmojiURLs
-        let sakuraCordDeepLink = SakuraCordDeepLinkPresentation.first(
-            in: message.content
+        let sakuraCordDeepLinkActions = Set(
+            SakuraCordDeepLinkPresentation.all(in: message.content)
+                .map(\.action)
         )
         return message.embeds.filter { embed in
             if let url = embed.url,
                let action = SakuraCordDeepLinkPresentation.action(for: url),
-               action == sakuraCordDeepLink?.action
+               sakuraCordDeepLinkActions.contains(action)
             {
                 return false
             }

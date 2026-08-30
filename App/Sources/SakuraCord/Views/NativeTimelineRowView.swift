@@ -488,6 +488,7 @@ struct NativeTimelineRowLayout {
 
     struct SakuraCordDeepLinkRegion {
         let action: SakuraCordDeepLinkAction
+        let componentID: String
         let frame: CGRect
         let cardFrame: CGRect
         let symbolBackgroundFrame: CGRect
@@ -526,7 +527,7 @@ struct NativeTimelineRowLayout {
     let attachmentRegions: [AttachmentRegion]
     let embedFrames: [CGRect]
     let embedRegions: [EmbedRegion]
-    let sakuraCordDeepLinkRegion: SakuraCordDeepLinkRegion?
+    let sakuraCordDeepLinkRegions: [SakuraCordDeepLinkRegion]
     let componentFrames: [CGRect]
     let componentLayouts: [NativeTimelineComponentLayout]
     let stickerFrames: [CGRect]
@@ -609,7 +610,7 @@ struct NativeTimelineRowLayout {
             attachmentRegions: [],
             embedFrames: [],
             embedRegions: [],
-            sakuraCordDeepLinkRegion: nil,
+            sakuraCordDeepLinkRegions: [],
             componentFrames: [],
             componentLayouts: [],
             stickerFrames: [],
@@ -1004,21 +1005,21 @@ struct NativeTimelineRowLayout {
         }
 
         var embedRegions: [EmbedRegion] = []
-        var sakuraCordDeepLinkRegion: SakuraCordDeepLinkRegion?
-        if !usesComponentsV2,
-           chatSettings.expandsEmbedsByDefault,
-           chatSettings.showsAutomaticLinkPreviews,
-           let deepLink = row.sakuraCordDeepLink
-        {
-            let deepLinkY = verticalOffset + (hasRichContent ? 8 : 0)
-            let region = NativeTimelineSakuraCordDeepLinkLayout.make(
-                deepLink,
-                origin: CGPoint(x: contentX, y: deepLinkY),
-                maximumWidth: inlineMediaMaximumWidth
-            )
-            sakuraCordDeepLinkRegion = region
-            verticalOffset = region.frame.maxY
-            hasRichContent = true
+        var sakuraCordDeepLinkRegions: [SakuraCordDeepLinkRegion] = []
+        if !usesComponentsV2, chatSettings.expandsEmbedsByDefault,
+           chatSettings.showsAutomaticLinkPreviews {
+            for (index, deepLink) in row.sakuraCordDeepLinks.enumerated() {
+                let deepLinkY = verticalOffset + (hasRichContent ? 8 : 0)
+                let region = NativeTimelineSakuraCordDeepLinkLayout.make(
+                    deepLink,
+                    componentIndex: index,
+                    origin: CGPoint(x: contentX, y: deepLinkY),
+                    maximumWidth: inlineMediaMaximumWidth
+                )
+                sakuraCordDeepLinkRegions.append(region)
+                verticalOffset = region.frame.maxY
+                hasRichContent = true
+            }
         }
         if !usesComponentsV2, chatSettings.expandsEmbedsByDefault {
             let visibleEmbeds =
@@ -1287,7 +1288,7 @@ struct NativeTimelineRowLayout {
             attachmentRegions: attachmentRegions,
             embedFrames: embedFrames,
             embedRegions: embedRegions,
-            sakuraCordDeepLinkRegion: sakuraCordDeepLinkRegion,
+            sakuraCordDeepLinkRegions: sakuraCordDeepLinkRegions,
             componentFrames: componentFrames,
             componentLayouts: componentLayouts,
             stickerFrames: stickerFrames,
