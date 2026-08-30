@@ -38,6 +38,19 @@ struct AppearanceSettingsPage: View {
             }
 
             Section {
+                LabeledContent("Messages") {
+                    Picker("Messages", selection: $value.messageAppearance) {
+                        ForEach(MessageAppearance.allCases) { appearance in
+                            Text(appearance.title).tag(appearance)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.radioGroup)
+                    .horizontalRadioGroupLayout()
+                    .tint(SakuraCordAccentColor.color)
+                }
+                .settingsControlAnchor(.messageAppearance, state: state)
+
                 LabeledContent("Input bar") {
                     Picker("Input bar", selection: $value.composerBarAppearance) {
                         ForEach(ComposerBarAppearance.allCases) { appearance in
@@ -51,7 +64,7 @@ struct AppearanceSettingsPage: View {
                 }
                 .settingsControlAnchor(.composerBarAppearance, state: state)
             } header: {
-                Text("Message Composer", bundle: #bundle)
+                Text("Messages", bundle: #bundle)
             }
         }
         .task {

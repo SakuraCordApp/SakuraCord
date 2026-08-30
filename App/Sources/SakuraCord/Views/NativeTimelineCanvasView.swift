@@ -477,9 +477,14 @@ enum NativeTimelineRowPainter {
             border.stroke()
         }
 
+        if let bubble = layout.bubbleRegion {
+            NativeTimelineBubbleDrawing.fill(bubble)
+        }
+
         drawHighlight(
             for: item,
             in: layout.highlightFrame,
+            bubbleRegion: layout.bubbleRegion,
             model: model,
             isHovered: isHovered
         )
@@ -545,15 +550,24 @@ enum NativeTimelineRowPainter {
     private static func drawHighlight(
         for item: NativeMessageTimelineItem,
         in frame: CGRect?,
+        bubbleRegion: NativeTimelineBubbleRegion?,
         model: AppModel?,
         isHovered: Bool
     ) {
         guard case let .message(row, _, isHighlighted) = item,
               let frame
         else { return }
+        NSGraphicsContext.saveGraphicsState()
+        if let bubbleRegion {
+            NativeTimelineBubbleDrawing.path(for: bubbleRegion).addClip()
+        }
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        let drawFrame = bubbleRegion.map {
+            NativeTimelineBubbleDrawing.path(for: $0).bounds
+        } ?? frame
         if isHighlighted {
             drawStripedHighlight(
-                in: frame,
+                in: drawFrame,
                 color: .sakuraCordAccentColor,
                 backgroundAlpha: 0.14
             )
@@ -570,7 +584,7 @@ enum NativeTimelineRowPainter {
                 break
             case .failed:
                 drawStripedHighlight(
-                    in: frame,
+                    in: drawFrame,
                     color: .systemRed,
                     backgroundAlpha: 0.12
                 )
@@ -581,10 +595,10 @@ enum NativeTimelineRowPainter {
                     blue: 242 / 255,
                     alpha: 0.10
                 ).setFill()
-                frame.fill()
+                drawFrame.fill()
             case .mention:
                 drawStripedHighlight(
-                    in: frame,
+                    in: drawFrame,
                     color: NSColor(
                         srgbRed: 240 / 255,
                         green: 178 / 255,
@@ -597,7 +611,7 @@ enum NativeTimelineRowPainter {
         }
         if isHovered {
             NSColor.labelColor.withAlphaComponent(0.055).setFill()
-            frame.fill()
+            drawFrame.fill()
         }
     }
 

@@ -476,6 +476,7 @@ struct NativeTimelineRowLayout {
     let beginningLayout: NativeTimelineBeginningLayout?
     let searchSectionRegion: SearchSectionRegion?
     let searchCardFrame: CGRect?
+    let bubbleRegion: NativeTimelineBubbleRegion?
     let highlightFrame: CGRect?
     let daySeparatorFrame: CGRect?
     let unreadSeparatorFrame: CGRect?
@@ -560,6 +561,7 @@ struct NativeTimelineRowLayout {
             beginningLayout: beginningLayout,
             searchSectionRegion: nil,
             searchCardFrame: nil,
+            bubbleRegion: nil,
             highlightFrame: nil,
             daySeparatorFrame: nil,
             unreadSeparatorFrame: nil,
@@ -608,59 +610,58 @@ struct NativeTimelineRowLayout {
         let searchContext = row.searchContext
         let interfaceSettings = model?.interfaceSettings ?? .defaults
         let density = interfaceSettings.messageDensity
+        let bubbleContext = NativeTimelineBubbleLayout.context(
+            for: message,
+            model: model
+        )
+        let usesBubbles = bubbleContext.isEnabled
+        let isOutgoingBubble = bubbleContext.isOutgoing
         let horizontalInset: CGFloat = searchContext == nil
             ? density.horizontalInset
             : 22
         let avatarWidth = density.avatarDiameter
         let columnGap = density.columnGap
-        let ordinaryContentX = horizontalInset + avatarWidth + columnGap
+        let usesComponentsV2 = message.flags.contains(.isComponentsV2)
+        let chatSettings = model?.chatSettings ?? .defaults
+        let unstyledContentPresentation = NativeTimelineTextPresentation.make(
+            row: row,
+            model: model
+        )
+        let contentPresentation = isOutgoingBubble
+            ? NativeTimelineTextPresentation.outgoingBubble(
+                unstyledContentPresentation
+            )
+            : unstyledContentPresentation
+        let preferredBubbleContentWidth =
+            NativeTimelineBubbleLayout.preferredContentWidth(
+                for: message,
+                row: row,
+                content: contentPresentation,
+                availableWidth: width,
+                isEnabled: usesBubbles
+            )
+        let isGenerated = message.type.hasGeneratedContent
+        let bubbleColumn = NativeTimelineBubbleLayout.column(
+            availableWidth: width,
+            horizontalInset: horizontalInset,
+            avatarWidth: avatarWidth,
+            columnGap: columnGap,
+            isGenerated: isGenerated,
+            context: bubbleContext,
+            preferredContentWidth: preferredBubbleContentWidth
+        )
+        let contentX = bubbleColumn.contentX
+        let contentWidth = bubbleColumn.contentWidth
         let ordinaryContentWidth = max(
             80,
-            width - ordinaryContentX - horizontalInset
+            width - contentX - horizontalInset
         )
-        let isGenerated = message.type.hasGeneratedContent
-        let contentX: CGFloat = isGenerated
-            ? horizontalInset + avatarWidth + 20
-            : ordinaryContentX
-        let contentWidth = max(80, width - contentX - horizontalInset)
-        var prefixHeight: CGFloat = 0
-
-        var searchSectionRegion: SearchSectionRegion?
-        if let searchContext, searchContext.showsSectionHeader {
-            let sectionFrame = CGRect(
-                x: 14,
-                y: 8,
-                width: max(1, width - 28),
-                height: searchContext.sectionSubtitle == nil ? 24 : 34
-            )
-            let iconFrame = CGRect(
-                x: sectionFrame.minX,
-                y: sectionFrame.minY + 2,
-                width: 20,
-                height: 20
-            )
-            let titleFrame = CGRect(
-                x: iconFrame.maxX + 7,
-                y: sectionFrame.minY,
-                width: max(1, sectionFrame.maxX - iconFrame.maxX - 7),
-                height: 18
-            )
-            let subtitleFrame = searchContext.sectionSubtitle.map { _ in
-                CGRect(
-                    x: titleFrame.minX,
-                    y: titleFrame.maxY,
-                    width: titleFrame.width,
-                    height: 14
-                )
-            }
-            searchSectionRegion = SearchSectionRegion(
-                frame: sectionFrame,
-                iconFrame: iconFrame,
-                titleFrame: titleFrame,
-                subtitleFrame: subtitleFrame
-            )
-            prefixHeight = sectionFrame.maxY + 4
-        }
+        let searchPrefix = NativeTimelineSearchPrefixLayout.make(
+            context: searchContext,
+            width: width
+        )
+        let searchSectionRegion = searchPrefix.region
+        var prefixHeight = searchPrefix.height
 
         var daySeparatorFrame: CGRect?
         if row.startsDay {
@@ -735,7 +736,10 @@ struct NativeTimelineRowLayout {
         var timestampFrame: CGRect?
         var editedFrame: CGRect?
         var loadingIndicatorFrame: CGRect?
-        if row.startsGroup, !isGenerated {
+        let showsIncomingIdentity = !usesBubbles || bubbleContext.showsAvatar
+        if row.startsGroup, !isGenerated, !isOutgoingBubble,
+           showsIncomingIdentity
+        {
             let author = model.map {
                 $0.authorPresentation(for: message).user
             } ?? message.author
@@ -834,7 +838,7 @@ struct NativeTimelineRowLayout {
                     isCommandResponse: message.type == .chatInputCommand,
                     density: density
                 )
-        } else if !isGenerated {
+        } else if !isGenerated, !isOutgoingBubble, showsIncomingIdentity {
             compactTimestampFrame = CGRect(
                 x: horizontalInset,
                 y: verticalOffset,
@@ -851,6 +855,11 @@ struct NativeTimelineRowLayout {
                 width: 16,
                 height: density.compactContentHeight
             )
+        }
+
+        let bubbleStartY = verticalOffset
+        if usesBubbles {
+            verticalOffset += 8
         }
 
         var forwardedHeaderFrame: CGRect?
@@ -870,47 +879,10 @@ struct NativeTimelineRowLayout {
 
         var contentFrame: CGRect?
         var hasRichContent = false
-        let usesComponentsV2 = message.flags.contains(.isComponentsV2)
-        let chatSettings = model?.chatSettings ?? .defaults
         let inlineMediaMaximumWidth = min(
             contentWidth,
             chatSettings.inlineMediaSize.maximumWidth
         )
-        let systemActorColor = model?.authorPresentation(for: message).roleColorHex
-            .flatMap { value -> NSColor? in
-                guard value != 0 else { return nil }
-                return NSColor(
-                    red: CGFloat((value >> 16) & 0xFF) / 255,
-                    green: CGFloat((value >> 8) & 0xFF) / 255,
-                    blue: CGFloat(value & 0xFF) / 255,
-                    alpha: 1
-                )
-            }
-        let textPlan =
-            if message.type.hasGeneratedContent {
-                NativeTimelineTextPlan.make(
-                    for: message,
-                    currentUserID: model?.snapshot?.currentUser.id,
-                    systemActorColor: systemActorColor
-                )
-            } else if !chatSettings.showsAutomaticLinkPreviews
-                || !chatSettings.expandsEmbedsByDefault
-            {
-                NativeTimelineTextPlan.make(
-                    for: message,
-                    showsAutomaticLinkPreviews: false
-                )
-            } else {
-                row.textPlan
-            }
-        let contentPresentation =
-            usesComponentsV2
-                ? NativeTimelineTextPresentation.empty
-                : NativeTimelineTextPresentation.make(
-                    message: message,
-                    plan: textPlan,
-                    model: model
-                )
         if let attributedContent = contentPresentation.attributedContent {
             let textHeight = NativeTimelineRowLayout.measuredTextHeight(
                 contentPresentation.framesetter,
@@ -1146,6 +1118,21 @@ struct NativeTimelineRowLayout {
             hasRichContent = true
         }
 
+        var bubbleRegion: NativeTimelineBubbleRegion?
+        if usesBubbles, hasRichContent {
+            verticalOffset += 8
+            let region = NativeTimelineBubbleLayout.region(
+                contentX: contentX,
+                contentWidth: contentWidth,
+                minY: bubbleStartY,
+                maxY: verticalOffset,
+                isOutgoing: isOutgoingBubble,
+                showsTail: row.endsGroup
+            )
+            bubbleRegion = region
+            avatarFrame = NativeTimelineBubbleLayout.bottomAlignedAvatarFrame(avatarFrame, to: region)
+        }
+
         var reactionRegions: [ReactionRegion] = []
         var addReactionFrame: CGRect?
         let presentedReactions = MessageReactionPresentation.items(
@@ -1251,11 +1238,14 @@ struct NativeTimelineRowLayout {
                 height: max(0, rowHeight - highlightMinY - searchBottomInset)
             )
         }
-        let highlightFrame = CGRect(
-            x: searchCardFrame?.minX ?? 0,
-            y: highlightMinY,
-            width: searchCardFrame?.width ?? width,
-            height: searchCardFrame?.height ?? max(0, rowHeight - highlightMinY)
+        let highlightFrame = NativeTimelineBubbleLayout.highlightFrame(
+            isEnabled: usesBubbles,
+            bubbleRegion: bubbleRegion,
+            stickerFrames: stickerFrames,
+            searchCardFrame: searchCardFrame,
+            highlightMinY: highlightMinY,
+            rowHeight: rowHeight,
+            width: width
         )
 
         return NativeTimelineRowLayout(
@@ -1264,6 +1254,7 @@ struct NativeTimelineRowLayout {
             beginningLayout: nil,
             searchSectionRegion: searchSectionRegion,
             searchCardFrame: searchCardFrame,
+            bubbleRegion: bubbleRegion,
             highlightFrame: highlightFrame,
             daySeparatorFrame: daySeparatorFrame,
             unreadSeparatorFrame: unreadSeparatorFrame,

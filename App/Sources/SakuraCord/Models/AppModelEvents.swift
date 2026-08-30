@@ -1287,6 +1287,7 @@ extension AppModel {
             messageRows[index] = MessageRowPresentation(
                 message: hydratedMessage,
                 startsGroup: previousRow.startsGroup,
+                endsGroup: previousRow.endsGroup,
                 startsDay: previousRow.startsDay,
                 replyPreview:
                     hydratedMessage.replyPreview
@@ -1590,11 +1591,13 @@ extension AppModel {
     ) {
         guard !appendedMessages.isEmpty else { return }
         let insertionStart = messageRows.count
+        let previousBoundaryRow = messageRows.last
         let preparedRows = preparedRows?.map { row in
             guard let textPlan = preparedTextPlans[row.id] else { return row }
             return MessageRowPresentation(
                 message: row.message,
                 startsGroup: row.startsGroup,
+                endsGroup: row.endsGroup,
                 startsDay: row.startsDay,
                 replyPreview: row.replyPreview,
                 isReplyAvailable: row.isReplyAvailable,
@@ -1618,12 +1621,19 @@ extension AppModel {
                 messageRows[index] = MessageRowPresentation(
                     message: row.message,
                     startsGroup: row.startsGroup,
+                    endsGroup: row.endsGroup,
                     startsDay: row.startsDay,
                     replyPreview: row.replyPreview,
                     isReplyAvailable: row.isReplyAvailable,
                     textPlan: textPlan
                 )
             }
+        }
+        var changedBoundaryMessageIDs = Set<MessageID>()
+        if let previousBoundaryRow,
+           messageRows[insertionStart - 1] != previousBoundaryRow
+        {
+            changedBoundaryMessageIDs.insert(previousBoundaryRow.id)
         }
         messages.append(contentsOf: appendedMessages)
         selectedMessageIDs.formUnion(appendedMessages.lazy.map(\.id))
@@ -1646,7 +1656,8 @@ extension AppModel {
                         insertionStart ..< insertionStart + appendedMessages.count
                 )
             ),
-            insertedMessageIDs: appendedMessages.map(\.id)
+            insertedMessageIDs: appendedMessages.map(\.id),
+            changedMessageIDs: changedBoundaryMessageIDs
         )
     }
 

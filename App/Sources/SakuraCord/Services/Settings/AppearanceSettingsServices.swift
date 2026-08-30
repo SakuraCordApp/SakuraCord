@@ -94,14 +94,32 @@ nonisolated enum ComposerBarAppearance: String, CaseIterable, Identifiable, Send
     }
 }
 
+nonisolated enum MessageAppearance: String, CaseIterable, Identifiable, Sendable {
+    case defaultStyle = "default"
+    case bubbles
+
+    var id: String { rawValue }
+
+    var title: LocalizedStringResource {
+        switch self {
+        case .defaultStyle:
+            LocalizedStringResource("Default", bundle: #bundle)
+        case .bubbles:
+            LocalizedStringResource("Bubbles", bundle: #bundle)
+        }
+    }
+}
+
 nonisolated struct AppearanceSettingsSnapshot: Equatable, Sendable {
     static let defaults = Self(
         colorScheme: .system,
-        composerBarAppearance: .defaultStyle
+        composerBarAppearance: .defaultStyle,
+        messageAppearance: .defaultStyle
     )
 
     var colorScheme: AppColorScheme
     var composerBarAppearance: ComposerBarAppearance
+    var messageAppearance: MessageAppearance
 }
 
 @MainActor
@@ -127,9 +145,16 @@ final class AppearanceSettingsStore {
         } else {
             appearance = .defaultStyle
         }
+        let messageAppearance: MessageAppearance
+        if case let .string(rawValue) = preferences.value(for: .messageAppearance) {
+            messageAppearance = MessageAppearance(rawValue: rawValue) ?? .defaultStyle
+        } else {
+            messageAppearance = .defaultStyle
+        }
         return AppearanceSettingsSnapshot(
             colorScheme: colorScheme,
-            composerBarAppearance: appearance
+            composerBarAppearance: appearance,
+            messageAppearance: messageAppearance
         )
     }
 
@@ -142,6 +167,10 @@ final class AppearanceSettingsStore {
             .string(value.composerBarAppearance.rawValue),
             for: .composerBarAppearance
         )
+        preferences.set(
+            .string(value.messageAppearance.rawValue),
+            for: .messageAppearance
+        )
     }
 }
 
@@ -152,11 +181,13 @@ extension AppModel {
         persists: Bool = true
     ) {
         let colorSchemeChanged = appearanceSettings.colorScheme != value.colorScheme
+        let messageAppearanceChanged =
+            appearanceSettings.messageAppearance != value.messageAppearance
         if colorSchemeChanged {
             AppAppearanceController.shared.apply(value.colorScheme)
         }
         appearanceSettings = value
-        if colorSchemeChanged {
+        if colorSchemeChanged || messageAppearanceChanged {
             timelinePresentationRevision &+= 1
         }
         if persists {

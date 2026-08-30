@@ -848,6 +848,7 @@ extension NativeMessageTimelineCoordinator {
                 resolvedRow = MessageRowPresentation(
                     message: row.message,
                     startsGroup: row.startsGroup,
+                    endsGroup: row.endsGroup,
                     startsDay: startsDay,
                     replyPreview: row.replyPreview,
                     isReplyAvailable: row.isReplyAvailable,

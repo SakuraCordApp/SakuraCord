@@ -393,14 +393,26 @@ extension NativeTimelineCanvasView {
                 })
                 ?? items.firstIndex(where: { $0.messageID == messageID })
         else { return }
-        host.frame = CGRect(
-            x: max(0, bounds.width - 14 - size.width),
-            y: displayedRowOrigin(at: index)
-                + (layouts[index].highlightFrame?.minY ?? 0)
-                - 13,
-            width: size.width,
-            height: size.height
-        )
+        let layout = layouts[index]
+        let origin = displayedRowOrigin(at: index)
+        if let bubble = layout.bubbleRegion {
+            host.frame = CGRect(
+                x: min(
+                    max(8, bubble.frame.maxX - size.width),
+                    max(8, bounds.width - 8 - size.width)
+                ),
+                y: max(0, origin + bubble.frame.minY - size.height + 7),
+                width: size.width,
+                height: size.height
+            )
+        } else {
+            host.frame = CGRect(
+                x: max(0, bounds.width - 14 - size.width),
+                y: origin + (layout.highlightFrame?.minY ?? 0) - 13,
+                width: size.width,
+                height: size.height
+            )
+        }
     }
 
     func removeActionCapsule() {

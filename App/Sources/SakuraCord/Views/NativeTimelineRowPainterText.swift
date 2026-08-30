@@ -292,25 +292,30 @@ extension NativeTimelineRowPainter {
                     .discordMarkdownSpoiler,
                     range: range
                 )
-                revealed.addAttribute(
-                    .foregroundColor,
-                    value: revealed.attribute(
+                let foregroundColor =
+                    value.attribute(
+                        .foregroundColor,
+                        at: range.location,
+                        effectiveRange: nil
+                    ) as? NSColor
+                    ?? (value.attribute(
                         .link,
                         at: range.location,
                         effectiveRange: nil
-                    ) == nil
-                        ? NSColor.labelColor
-                        : NSColor.linkColor,
+                    ) == nil ? NSColor.labelColor : NSColor.linkColor)
+                revealed.addAttribute(
+                    .foregroundColor,
+                    value: foregroundColor,
                     range: range
                 )
                 revealed.addAttribute(
                     .underlineColor,
-                    value: NSColor.labelColor,
+                    value: foregroundColor,
                     range: range
                 )
                 revealed.addAttribute(
                     .strikethroughColor,
-                    value: NSColor.labelColor,
+                    value: foregroundColor,
                     range: range
                 )
             }

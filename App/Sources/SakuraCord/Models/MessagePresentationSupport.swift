@@ -177,6 +177,7 @@ final class MessageRowPresentation: Identifiable, Equatable, Sendable {
 
     let message: Message
     let startsGroup: Bool
+    let endsGroup: Bool
     let startsDay: Bool
     let replyPreview: MessageReplyPreview?
     let isReplyAvailable: Bool
@@ -199,6 +200,7 @@ final class MessageRowPresentation: Identifiable, Equatable, Sendable {
     nonisolated init(
         message: Message,
         startsGroup: Bool,
+        endsGroup: Bool = true,
         startsDay: Bool,
         replyPreview: MessageReplyPreview?,
         isReplyAvailable: Bool,
@@ -208,6 +210,7 @@ final class MessageRowPresentation: Identifiable, Equatable, Sendable {
     ) {
         self.message = message
         self.startsGroup = startsGroup
+        self.endsGroup = endsGroup
         self.startsDay = startsDay
         if MessageReplyPresentationPolicy.showsPreview(for: message) {
             self.replyPreview = replyPreview
@@ -233,6 +236,7 @@ final class MessageRowPresentation: Identifiable, Equatable, Sendable {
         }
         return lhs.message == rhs.message
             && lhs.startsGroup == rhs.startsGroup
+            && lhs.endsGroup == rhs.endsGroup
             && lhs.startsDay == rhs.startsDay
             && lhs.replyPreview == rhs.replyPreview
             && lhs.isReplyAvailable == rhs.isReplyAvailable
@@ -446,10 +450,17 @@ nonisolated enum MessageGrouping {
                 }
                 return message.replyPreview
             }
+        let endsGroup = endsGroup(
+            at: index,
+            in: messages,
+            calendar: calendar,
+            continuationInterval: continuationInterval
+        )
         guard index > 0 else {
             return MessageRowPresentation(
                 message: message,
                 startsGroup: true,
+                endsGroup: endsGroup,
                 startsDay: true,
                 replyPreview: replyPreview,
                 isReplyAvailable:
@@ -467,6 +478,7 @@ nonisolated enum MessageGrouping {
                 calendar: calendar,
                 continuationInterval: continuationInterval
             ),
+            endsGroup: endsGroup,
             startsDay: !calendar.isDate(
                 previous.timestamp,
                 inSameDayAs: message.timestamp
@@ -486,16 +498,26 @@ nonisolated enum MessageGrouping {
     static func appendingRow(
         for message: Message,
         after previous: Message?,
+        before next: Message? = nil,
         replyPreview: MessageReplyPreview?,
         isReplyAvailable: Bool,
         textPlan: NativeTimelineTextPlan? = nil,
         calendar: Calendar = .autoupdatingCurrent,
         continuationInterval: TimeInterval = defaultContinuationInterval
     ) -> MessageRowPresentation {
+        let endsGroup = next.map {
+            !continuesGroup(
+                from: message,
+                to: $0,
+                calendar: calendar,
+                continuationInterval: continuationInterval
+            )
+        } ?? true
         guard let previous else {
             return MessageRowPresentation(
                 message: message,
                 startsGroup: true,
+                endsGroup: endsGroup,
                 startsDay: true,
                 replyPreview: replyPreview,
                 isReplyAvailable: isReplyAvailable,
@@ -510,6 +532,7 @@ nonisolated enum MessageGrouping {
                 calendar: calendar,
                 continuationInterval: continuationInterval
             ),
+            endsGroup: endsGroup,
             startsDay: !calendar.isDate(
                 previous.timestamp,
                 inSameDayAs: message.timestamp
@@ -548,6 +571,9 @@ nonisolated enum MessageGrouping {
                 ?? messages.firstIndex(where: { $0.id == replacement.id })
         {
             affected.insert(index)
+            if messages.indices.contains(index - 1) {
+                affected.insert(index - 1)
+            }
             if messages.indices.contains(index + 1) {
                 affected.insert(index + 1)
             }
@@ -598,6 +624,12 @@ nonisolated enum MessageGrouping {
             rows[index] = MessageRowPresentation(
                 message: message,
                 startsGroup: startsGroup,
+                endsGroup: endsGroup(
+                    at: index,
+                    in: messages,
+                    calendar: calendar,
+                    continuationInterval: continuationInterval
+                ),
                 startsDay: startsDay,
                 replyPreview: replyPreview,
                 isReplyAvailable:
@@ -626,7 +658,7 @@ nonisolated enum MessageGrouping {
         continuationInterval: TimeInterval = defaultContinuationInterval
     ) {
         guard !insertedMessages.isEmpty else { return }
-        let insertedRows =
+        var insertedRows =
             if let preparedInsertedRows,
                preparedInsertedRows.count == insertedMessages.count,
                zip(preparedInsertedRows, insertedMessages).allSatisfy({ pair in
@@ -650,6 +682,12 @@ nonisolated enum MessageGrouping {
             uniqueKeysWithValues: insertedMessages.map { ($0.id, $0) }
         )
         let insertedLast = insertedMessages[insertedMessages.count - 1]
+        connectPrependingRows(
+            &insertedRows,
+            to: existingRows[0].message,
+            calendar: calendar,
+            continuationInterval: continuationInterval
+        )
 
         var affectedExistingIndexes = IndexSet(integer: 0)
         if let existingMessageIndex,
@@ -706,6 +744,7 @@ nonisolated enum MessageGrouping {
                     MessageRowPresentation(
                         message: message,
                         startsGroup: startsGroup,
+                        endsGroup: row.endsGroup,
                         startsDay: startsDay,
                         replyPreview: replyPreview,
                         isReplyAvailable:
@@ -753,6 +792,21 @@ nonisolated enum MessageGrouping {
                 )
             }
 
+        if let lastIndex = existingRows.indices.last,
+           let previousMessage,
+           previousMessage.id == existingRows[lastIndex].message.id
+        {
+            existingRows[lastIndex] = replacingGroupEdges(
+                of: existingRows[lastIndex],
+                endsGroup: !continuesGroup(
+                    from: previousMessage,
+                    to: insertedMessages[insertedMessages.startIndex],
+                    calendar: calendar,
+                    continuationInterval: continuationInterval
+                )
+            )
+        }
+
         for index in insertedMessages.indices {
             let message = insertedMessages[index]
             let prepared = insertedRows[index]
@@ -764,6 +818,9 @@ nonisolated enum MessageGrouping {
             insertedRows[index] = appendingRow(
                 for: message,
                 after: predecessor,
+                before: insertedMessages.indices.contains(index + 1)
+                    ? insertedMessages[index + 1]
+                    : nil,
                 replyPreview:
                     referenced.map(MessageReplyPreview.init(message:))
                         ?? prepared.replyPreview,
@@ -792,6 +849,57 @@ nonisolated enum MessageGrouping {
             && calendar.isDate(previous.timestamp, inSameDayAs: message.timestamp)
     }
 
+    private static func endsGroup(
+        at index: Int,
+        in messages: [Message],
+        calendar: Calendar,
+        continuationInterval: TimeInterval
+    ) -> Bool {
+        guard messages.indices.contains(index + 1) else { return true }
+        return !continuesGroup(
+            from: messages[index],
+            to: messages[index + 1],
+            calendar: calendar,
+            continuationInterval: continuationInterval
+        )
+    }
+
+    private static func replacingGroupEdges(
+        of row: MessageRowPresentation,
+        startsGroup: Bool? = nil,
+        endsGroup: Bool? = nil
+    ) -> MessageRowPresentation {
+        MessageRowPresentation(
+            message: row.message,
+            startsGroup: startsGroup ?? row.startsGroup,
+            endsGroup: endsGroup ?? row.endsGroup,
+            startsDay: row.startsDay,
+            replyPreview: row.replyPreview,
+            isReplyAvailable: row.isReplyAvailable,
+            textPlan: row.textPlan,
+            searchContext: row.searchContext,
+            pinnedAt: row.pinnedAt
+        )
+    }
+
+    private static func connectPrependingRows(
+        _ insertedRows: inout [MessageRowPresentation],
+        to existingFirstMessage: Message,
+        calendar: Calendar,
+        continuationInterval: TimeInterval
+    ) {
+        guard let lastIndex = insertedRows.indices.last else { return }
+        insertedRows[lastIndex] = replacingGroupEdges(
+            of: insertedRows[lastIndex],
+            endsGroup: !continuesGroup(
+                from: insertedRows[lastIndex].message,
+                to: existingFirstMessage,
+                calendar: calendar,
+                continuationInterval: continuationInterval
+            )
+        )
+    }
+
     static func updating(
         existing: [MessageRowPresentation], oldMessages: [Message], newMessages: [Message],
         calendar: Calendar = .autoupdatingCurrent,
@@ -808,24 +916,13 @@ nonisolated enum MessageGrouping {
         if newMessages.count >= oldMessages.count,
            newMessages.prefix(oldMessages.count).elementsEqual(oldMessages)
         {
-            var result = existing
-            let appended = newMessages[oldMessages.count...]
-            let byID =
-                appended.contains(where: { $0.replyTo != nil })
-                    ? Dictionary(uniqueKeysWithValues: newMessages.map { ($0.id, $0) })
-                    : [:]
-            for index in oldMessages.count ..< newMessages.count {
-                result.append(
-                    presentation(
-                        at: index,
-                        in: newMessages,
-                        messagesByID: byID,
-                        calendar: calendar,
-                        continuationInterval: continuationInterval
-                    )
-                )
-            }
-            return result
+            return appendingUpdatedRows(
+                existing: existing,
+                oldMessageCount: oldMessages.count,
+                newMessages: newMessages,
+                calendar: calendar,
+                continuationInterval: continuationInterval
+            )
         }
 
         if newMessages.count > oldMessages.count {
@@ -841,6 +938,15 @@ nonisolated enum MessageGrouping {
                         calendar: calendar,
                         continuationInterval: continuationInterval
                     ) + existing
+                if insertedCount > 0 {
+                    result[insertedCount - 1] = presentation(
+                        at: insertedCount - 1,
+                        in: newMessages,
+                        messagesByID: insertedByID,
+                        calendar: calendar,
+                        continuationInterval: continuationInterval
+                    )
+                }
                 let insertedIDs = Set(insertedMessages.map(\.id))
                 var affected = Set<Int>()
                 for (index, message) in newMessages.enumerated()
@@ -869,6 +975,7 @@ nonisolated enum MessageGrouping {
                             calendar: calendar,
                             continuationInterval: continuationInterval
                         ),
+                        endsGroup: prior.endsGroup,
                         startsDay: !calendar.isDate(
                             newMessages[insertedCount - 1].timestamp,
                             inSameDayAs: message.timestamp
@@ -900,6 +1007,41 @@ nonisolated enum MessageGrouping {
         )
     }
 
+    private static func appendingUpdatedRows(
+        existing: [MessageRowPresentation],
+        oldMessageCount: Int,
+        newMessages: [Message],
+        calendar: Calendar,
+        continuationInterval: TimeInterval
+    ) -> [MessageRowPresentation] {
+        var result = existing
+        let appended = newMessages[oldMessageCount...]
+        let byID = appended.contains(where: { $0.replyTo != nil })
+            ? Dictionary(uniqueKeysWithValues: newMessages.map { ($0.id, $0) })
+            : [:]
+        if !appended.isEmpty, oldMessageCount > 0 {
+            result[oldMessageCount - 1] = replacingGroupEdges(
+                of: result[oldMessageCount - 1],
+                endsGroup: endsGroup(
+                    at: oldMessageCount - 1,
+                    in: newMessages,
+                    calendar: calendar,
+                    continuationInterval: continuationInterval
+                )
+            )
+        }
+        for index in oldMessageCount ..< newMessages.count {
+            result.append(presentation(
+                at: index,
+                in: newMessages,
+                messagesByID: byID,
+                calendar: calendar,
+                continuationInterval: continuationInterval
+            ))
+        }
+        return result
+    }
+
     private static func updatingMatchingMessages(
         existing: [MessageRowPresentation],
         oldMessages: [Message],
@@ -915,6 +1057,9 @@ nonisolated enum MessageGrouping {
         let byID = Dictionary(uniqueKeysWithValues: newMessages.map { ($0.id, $0) })
         let changedIDs = Set(changed.lazy.map { newMessages[$0].id })
         var affected = Set(changed)
+        for index in changed where newMessages.indices.contains(index - 1) {
+            affected.insert(index - 1)
+        }
         for index in changed where newMessages.indices.contains(index + 1) {
             affected.insert(index + 1)
         }
@@ -946,10 +1091,17 @@ nonisolated enum MessageGrouping {
                 MessageReplyPreview(message: $0)
             } ?? message.replyPreview
         }
+        let endsGroup = endsGroup(
+            at: index,
+            in: messages,
+            calendar: calendar,
+            continuationInterval: continuationInterval
+        )
         guard index > 0 else {
             return MessageRowPresentation(
                 message: message,
                 startsGroup: true,
+                endsGroup: endsGroup,
                 startsDay: true,
                 replyPreview: replyPreview,
                 isReplyAvailable: replyPreview.map { messagesByID[$0.messageID] != nil } ?? false
@@ -964,6 +1116,7 @@ nonisolated enum MessageGrouping {
         return MessageRowPresentation(
             message: message,
             startsGroup: !continues,
+            endsGroup: endsGroup,
             startsDay: !calendar.isDate(
                 messages[index - 1].timestamp,
                 inSameDayAs: message.timestamp

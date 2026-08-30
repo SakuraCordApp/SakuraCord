@@ -1417,6 +1417,19 @@ extension NativeMessageTimelineCoordinator {
                 )
             }
             if suffixCount > 0 {
+                let boundaryItemIndex = oldLeadingCount + oldLastIndex
+                guard items.indices.contains(boundaryItemIndex) else {
+                    performanceFallbackReason = "invalid-append-boundary"
+                    return false
+                }
+                replaceItem(
+                    at: boundaryItemIndex,
+                    with: messageItem(
+                        newRows[oldLastIndex],
+                        from: newParent
+                    ),
+                    width: width
+                )
                 let firstInsertedIndex = items.count
                 let insertedItems = newRows.suffix(suffixCount).map {
                     messageItem($0, from: newParent)

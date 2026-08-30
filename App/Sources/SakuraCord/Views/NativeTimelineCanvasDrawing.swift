@@ -690,15 +690,6 @@ extension NativeTimelineCanvasView {
         )
     }
 
-    func drawMessageJumpHighlight(at index: Int) {
-        guard let presentation = messageJumpHighlightPresentation(at: index)
-        else { return }
-        NSColor.sakuraCordAccentColor.withAlphaComponent(
-            0.12 * presentation.opacity
-        ).setFill()
-        presentation.frame.fill()
-    }
-
     func firstVisibleMessage(
         in rect: CGRect,
         preferringVisibleOrigin: Bool = false

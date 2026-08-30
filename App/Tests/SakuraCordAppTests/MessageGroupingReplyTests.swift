@@ -10,6 +10,7 @@ import Testing
     let rows = MessageGrouping.rows(for: [fixture.target, fixture.reply, fixture.followUp])
 
     #expect(rows.map(\.startsGroup) == [true, true, false])
+    #expect(rows.map(\.endsGroup) == [true, false, true])
 }
 
 @MainActor
@@ -39,6 +40,28 @@ import Testing
 
     #expect(updated == MessageGrouping.rows(for: newMessages))
     #expect(updated.map(\.startsGroup) == [true, true, false])
+    #expect(updated.map(\.endsGroup) == [true, false, true])
+}
+
+@MainActor
+@Test func `incremental append replaces the previous group boundary`() throws {
+    let fixture = replyGroupingFixture()
+    var rows = MessageGrouping.rows(for: [fixture.reply])
+    let previousBoundary = try #require(rows.last)
+
+    MessageGrouping.appendRows(
+        for: [fixture.followUp],
+        into: &rows,
+        after: fixture.reply,
+        existingMessage: { id in
+            id == fixture.reply.id ? fixture.reply : nil
+        }
+    )
+
+    #expect(rows.count == 2)
+    #expect(rows[0] !== previousBoundary)
+    #expect(rows.map(\.startsGroup) == [true, false])
+    #expect(rows.map(\.endsGroup) == [false, true])
 }
 
 @MainActor
@@ -55,6 +78,7 @@ import Testing
 
     #expect(updated == MessageGrouping.rows(for: newMessages))
     #expect(updated.map(\.startsGroup) == [true, true, false])
+    #expect(updated.map(\.endsGroup) == [true, false, true])
     #expect(updated[1].replyPreview?.messageID == fixture.target.id)
     #expect(updated[1].replyMessageID == fixture.target.id)
 }

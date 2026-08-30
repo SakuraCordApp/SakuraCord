@@ -21,6 +21,32 @@ enum NativeTimelineTextPresentation {
         let linkedImages: [LinkedImageReference]
     }
 
+    static func outgoingBubble(_ value: Value) -> Value {
+        guard let attributedContent = value.attributedContent else {
+            return value
+        }
+        let resolved = NSMutableAttributedString(
+            attributedString: attributedContent
+        )
+        let range = NSRange(location: 0, length: resolved.length)
+        resolved.addAttribute(.foregroundColor, value: NSColor.white, range: range)
+        resolved.addAttribute(.underlineColor, value: NSColor.white, range: range)
+        resolved.addAttribute(.strikethroughColor, value: NSColor.white, range: range)
+        resolved.enumerateAttribute(.link, in: range) { link, linkRange, _ in
+            guard link != nil else { return }
+            resolved.addAttribute(
+                .underlineStyle,
+                value: NSUnderlineStyle.single.rawValue,
+                range: linkRange
+            )
+        }
+        return Value(
+            attributedContent: resolved,
+            framesetter: CTFramesetterCreateWithAttributedString(resolved),
+            linkedImages: value.linkedImages
+        )
+    }
+
     static var empty: Value {
         Value(
             attributedContent: nil,
@@ -29,6 +55,44 @@ enum NativeTimelineTextPresentation {
             ),
             linkedImages: []
         )
+    }
+
+    static func make(
+        row: MessageRowPresentation,
+        model: AppModel?
+    ) -> Value {
+        let message = row.message
+        guard !message.flags.contains(.isComponentsV2) else {
+            return empty
+        }
+        let chatSettings = model?.chatSettings ?? .defaults
+        let systemActorColor = model?.authorPresentation(for: message)
+            .roleColorHex.flatMap { value -> NSColor? in
+                guard value != 0 else { return nil }
+                return NSColor(
+                    red: CGFloat((value >> 16) & 0xFF) / 255,
+                    green: CGFloat((value >> 8) & 0xFF) / 255,
+                    blue: CGFloat(value & 0xFF) / 255,
+                    alpha: 1
+                )
+            }
+        let plan = if message.type.hasGeneratedContent {
+            NativeTimelineTextPlan.make(
+                for: message,
+                currentUserID: model?.snapshot?.currentUser.id,
+                systemActorColor: systemActorColor
+            )
+        } else if !chatSettings.showsAutomaticLinkPreviews
+            || !chatSettings.expandsEmbedsByDefault
+        {
+            NativeTimelineTextPlan.make(
+                for: message,
+                showsAutomaticLinkPreviews: false
+            )
+        } else {
+            row.textPlan
+        }
+        return make(message: message, plan: plan, model: model)
     }
 
     static func make(
@@ -47,7 +111,9 @@ enum NativeTimelineTextPresentation {
         }
 
         let settings = model?.interfaceSettings ?? .defaults
-        let resolvedBaseFontSize = message.type.hasGeneratedContent
+        let preservesCompactSystemStyle = message.type.hasGeneratedContent
+            && model?.appearanceSettings.messageAppearance != .bubbles
+        let resolvedBaseFontSize = preservesCompactSystemStyle
             ? plan.baseFontSize
             : CGFloat(settings.messageTextSize)
         let underlinesLinks = !message.type.hasGeneratedContent

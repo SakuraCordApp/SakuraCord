@@ -97,7 +97,6 @@ extension NativeTimelineRowPainter {
         if let frame = layout.unreadSeparatorFrame {
             newMessagesSeparator(frame: frame)
         }
-
         let author = model?.authorPresentation(for: message)
         if let frame = layout.avatarFrame {
             let presentedAuthor =

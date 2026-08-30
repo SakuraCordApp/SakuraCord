@@ -244,6 +244,7 @@ nonisolated extension SettingsControlID {
     static let legacyAccentColorMigration = Self(rawValue: "appearance.accent-color")
     static let themeDesigner = Self(rawValue: "appearance.theme-designer")
     static let composerBarAppearance = Self(rawValue: "appearance.composer-bar")
+    static let messageAppearance = Self(rawValue: "appearance.messages")
     static let messageDensity = Self(rawValue: "interface.message-density")
     static let sidebarDensity = Self(rawValue: "interface.sidebar-density")
     static let messageTextSize = Self(rawValue: "interface.message-text-size")
@@ -660,6 +661,15 @@ private nonisolated extension SettingsCatalog {
             label: "Theme Designer",
             help: "Create a theme with color, intensity, brightness, and randomisation controls.",
             keywords: ["gradient", "theme", "designer", "color", "intensity", "brightness", "randomise"],
+            scope: .appWideLocal
+        ),
+        control(
+            .messageAppearance,
+            page: .appearance,
+            section: .appearanceComposer,
+            label: "Messages",
+            help: "Choose SakuraCord's default message layout or conversation bubbles.",
+            keywords: ["messages", "bubbles", "iMessage", "chat", "layout", "default"],
             scope: .appWideLocal
         ),
         control(
