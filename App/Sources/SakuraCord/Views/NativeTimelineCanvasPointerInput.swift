@@ -66,7 +66,6 @@ extension NativeTimelineCanvasView {
                     )
                 }
                 if case let .message(row, _, _) = items[index],
-                   row.startsGroup,
                    !row.message.type.hasGeneratedContent
                 {
                     for frame in
@@ -565,8 +564,7 @@ extension NativeTimelineCanvasView {
             model?.dismissEphemeralMessage(row.message)
             return
         }
-        if row.startsGroup,
-           !row.message.type.hasGeneratedContent,
+        if !row.message.type.hasGeneratedContent,
            let authorFrame =
                NativeTimelineAuthorProfileGeometry.hitFrame(
                    at: local,
@@ -1316,8 +1314,7 @@ extension NativeTimelineCanvasView {
         if layout.ephemeralRegion?.dismissFrame.contains(local) == true {
             return .ephemeralDismiss(message.id)
         }
-        if row.startsGroup,
-           !message.type.hasGeneratedContent,
+        if !message.type.hasGeneratedContent,
            NativeTimelineAuthorProfileGeometry.hitFrame(
                at: local,
                avatarFrame: layout.avatarFrame,

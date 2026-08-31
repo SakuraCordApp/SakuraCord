@@ -37,35 +37,6 @@ struct AppearanceSettingsPage: View {
                 Text("Theme", bundle: #bundle)
             }
 
-            Section {
-                LabeledContent("Messages") {
-                    Picker("Messages", selection: $value.messageAppearance) {
-                        ForEach(MessageAppearance.allCases) { appearance in
-                            Text(appearance.title).tag(appearance)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.radioGroup)
-                    .horizontalRadioGroupLayout()
-                    .tint(SakuraCordAccentColor.color)
-                }
-                .settingsControlAnchor(.messageAppearance, state: state)
-
-                LabeledContent("Input bar") {
-                    Picker("Input bar", selection: $value.composerBarAppearance) {
-                        ForEach(ComposerBarAppearance.allCases) { appearance in
-                            Text(appearance.title).tag(appearance)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.radioGroup)
-                    .horizontalRadioGroupLayout()
-                    .tint(SakuraCordAccentColor.color)
-                }
-                .settingsControlAnchor(.composerBarAppearance, state: state)
-            } header: {
-                Text("Messages", bundle: #bundle)
-            }
         }
         .task {
             value = model.appearanceSettings

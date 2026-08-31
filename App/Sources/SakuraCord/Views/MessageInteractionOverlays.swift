@@ -13,6 +13,7 @@ enum MessageRowLayoutMetrics {
     nonisolated static let commandAuthorContentSpacing: CGFloat = 2
     nonisolated static let messageGroupSeparation: CGFloat = 12
     nonisolated static let visibleHighlightInset: CGFloat = 3
+    nonisolated static let defaultMessageSpacing = visibleHighlightInset * 2
     nonisolated static let replyPreviewIntrinsicTopInset: CGFloat = 3
     nonisolated static let editFooterIntrinsicBottomInset: CGFloat = 3
     nonisolated static let commandInvocationHeight: CGFloat = 20
@@ -24,13 +25,15 @@ enum MessageRowLayoutMetrics {
 
     nonisolated static func highlightInsets(
         hasReplyPreview: Bool,
-        isEditing: Bool
+        isEditing: Bool,
+        messageSpacing: CGFloat = defaultMessageSpacing
     ) -> MessageRowHighlightInsets {
         let intrinsicTopInset = hasReplyPreview ? replyPreviewIntrinsicTopInset : 0
         let intrinsicBottomInset = isEditing ? editFooterIntrinsicBottomInset : 0
+        let edgeSpacing = max(0, messageSpacing) / 2
         return MessageRowHighlightInsets(
-            top: max(0, visibleHighlightInset - intrinsicTopInset),
-            bottom: max(0, visibleHighlightInset - intrinsicBottomInset),
+            top: max(0, edgeSpacing - intrinsicTopInset),
+            bottom: max(0, edgeSpacing - intrinsicBottomInset),
             intrinsicTop: intrinsicTopInset,
             intrinsicBottom: intrinsicBottomInset
         )
@@ -39,14 +42,18 @@ enum MessageRowLayoutMetrics {
     nonisolated static func separation(
         startsGroup: Bool,
         followsTimelineSeparator: Bool = false,
-        highlightTopInset: CGFloat
+        highlightTopInset: CGFloat,
+        messageSpacing: CGFloat = defaultMessageSpacing
     ) -> CGFloat {
         // Date and unread separators already provide the complete visual gap
         // between adjacent messages. Applying the ordinary author-group
         // separation after either one makes the lower half visibly larger
         // than the upper half.
         guard startsGroup, !followsTimelineSeparator else { return 0 }
-        return messageGroupSeparation - highlightTopInset
+        let adjustedSeparation = messageGroupSeparation
+            + messageSpacing
+            - defaultMessageSpacing
+        return max(0, adjustedSeparation - highlightTopInset)
     }
 
     nonisolated static func authorToContentSpacing(isCommandResponse: Bool) -> CGFloat {
@@ -60,13 +67,19 @@ enum MessageRowLayoutMetrics {
         startsGroup: Bool,
         hasReplyPreview: Bool = false,
         isEditing: Bool = false,
-        followsTimelineSeparator: Bool = false
+        followsTimelineSeparator: Bool = false,
+        messageSpacing: CGFloat = defaultMessageSpacing
     ) -> MessageRowLayoutGeometry {
-        let insets = highlightInsets(hasReplyPreview: hasReplyPreview, isEditing: isEditing)
+        let insets = highlightInsets(
+            hasReplyPreview: hasReplyPreview,
+            isEditing: isEditing,
+            messageSpacing: messageSpacing
+        )
         let externalSeparation = separation(
             startsGroup: startsGroup,
             followsTimelineSeparator: followsTimelineSeparator,
-            highlightTopInset: insets.top
+            highlightTopInset: insets.top,
+            messageSpacing: messageSpacing
         )
         let highlightMinY = externalSeparation
         let contentMinY = highlightMinY + insets.top

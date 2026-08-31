@@ -6,6 +6,7 @@ struct InterfaceSettingsPage: View {
     let state: SettingsViewState
 
     @State private var value = InterfaceSettingsSnapshot.defaults
+    @State private var appearanceValue = AppearanceSettingsSnapshot.defaults
     @State private var exportedPreferences: SettingsPreferenceExportFile?
     @State private var isExporting = false
     @State private var confirmsReset = false
@@ -13,6 +14,11 @@ struct InterfaceSettingsPage: View {
 
     var body: some View {
         SettingsPageForm(page: .interface, state: state) {
+            InterfaceMessagesSection(
+                value: $appearanceValue,
+                reset: resetMessageAppearance,
+                state: state
+            )
             InterfaceTimeSection(value: $value, state: state)
             InterfaceVisibilitySection(value: $value, state: state)
             Section {
@@ -32,9 +38,13 @@ struct InterfaceSettingsPage: View {
         }
         .task {
             value = model.interfaceSettings
+            appearanceValue = model.appearanceSettings
         }
         .onChange(of: value) { _, newValue in
             model.applyInterfaceSettings(newValue)
+        }
+        .onChange(of: appearanceValue) { _, newValue in
+            model.applyAppearanceSettings(newValue)
         }
         .confirmationDialog(
             "Reset Interface Settings?",
@@ -76,13 +86,91 @@ struct InterfaceSettingsPage: View {
         isExporting = true
     }
 
+    private func resetMessageAppearance() {
+        appearanceValue.messageAppearance = .defaultStyle
+        appearanceValue.messageSpacing =
+            AppearanceSettingsSnapshot.defaultMessageSpacing
+        appearanceValue.composerBarAppearance = .defaultStyle
+    }
+
     private func resetPreferences() {
         SettingsPreferenceStore.shared.reset(
             scope: .appWide,
             page: .interface
         )
         value = InterfaceSettingsStore.shared.load()
+        appearanceValue = AppearanceSettingsStore.shared.load()
         operationMessage = "Restored Interface settings to their defaults."
+    }
+}
+
+private struct InterfaceMessagesSection: View {
+    @Binding var value: AppearanceSettingsSnapshot
+    let reset: () -> Void
+    let state: SettingsViewState
+
+    private var isUsingDefaults: Bool {
+        value.messageAppearance
+            == AppearanceSettingsSnapshot.defaults.messageAppearance
+            && value.messageSpacing
+                == AppearanceSettingsSnapshot.defaults.messageSpacing
+            && value.composerBarAppearance
+                == AppearanceSettingsSnapshot.defaults.composerBarAppearance
+    }
+
+    var body: some View {
+        Section {
+            LabeledContent("Messages") {
+                Picker("Messages", selection: $value.messageAppearance) {
+                    ForEach(MessageAppearance.allCases) { appearance in
+                        Text(appearance.title).tag(appearance)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.radioGroup)
+                .horizontalRadioGroupLayout()
+                .tint(SakuraCordAccentColor.color)
+            }
+            .settingsControlAnchor(.messageAppearance, state: state)
+
+            LabeledContent("Density") {
+                HStack {
+                    Slider(
+                        value: $value.messageSpacing,
+                        in: AppearanceSettingsSnapshot.messageSpacingRange,
+                        step: 1
+                    )
+                    .tint(SakuraCordAccentColor.color)
+                    .frame(minWidth: 220)
+                    Text("\(Int(value.messageSpacing)) pt")
+                        .monospacedDigit()
+                        .frame(width: 42, alignment: .trailing)
+                }
+            }
+            .accessibilityValue(
+                "\(Int(value.messageSpacing)) points between messages"
+            )
+            .settingsControlAnchor(.messageDensity, state: state)
+
+            LabeledContent("Input bar") {
+                Picker("Input bar", selection: $value.composerBarAppearance) {
+                    ForEach(ComposerBarAppearance.allCases) { appearance in
+                        Text(appearance.title).tag(appearance)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.radioGroup)
+                .horizontalRadioGroupLayout()
+                .tint(SakuraCordAccentColor.color)
+            }
+            .settingsControlAnchor(.composerBarAppearance, state: state)
+
+            Button("Reset to Defaults", action: reset)
+                .disabled(isUsingDefaults)
+                .settingsControlAnchor(.resetMessageAppearance, state: state)
+        } header: {
+            Text("Messages", bundle: #bundle)
+        }
     }
 }
 

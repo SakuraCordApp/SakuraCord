@@ -189,15 +189,23 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
         ),
         SettingsPreferenceRegistration(
             id: .composerBarAppearance,
-            page: .appearance,
+            page: .interface,
             storage: .appWide(key: "settings.appearance.composerBar"),
             defaultValue: .string(ComposerBarAppearance.defaultStyle.rawValue)
         ),
         SettingsPreferenceRegistration(
             id: .messageAppearance,
-            page: .appearance,
+            page: .interface,
             storage: .appWide(key: "settings.appearance.messages"),
             defaultValue: .string(MessageAppearance.defaultStyle.rawValue)
+        ),
+        SettingsPreferenceRegistration(
+            id: .messageDensity,
+            page: .interface,
+            storage: .appWide(key: "settings.appearance.messageDensity"),
+            defaultValue: .double(
+                AppearanceSettingsSnapshot.defaults.messageSpacing
+            )
         ),
         SettingsPreferenceRegistration(
             id: .timestampFormat,

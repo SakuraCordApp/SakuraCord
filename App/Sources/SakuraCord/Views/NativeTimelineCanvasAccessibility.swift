@@ -439,7 +439,9 @@ extension NativeTimelineCanvasView {
                 return true
             })
         }
-        if row.startsGroup, !message.type.hasGeneratedContent {
+        if !message.type.hasGeneratedContent,
+           layout.avatarFrame != nil || layout.authorFrame != nil
+        {
             let help = "View \(author.displayName)'s profile"
             let frames =
                 NativeTimelineAuthorProfileGeometry.hitFrames(

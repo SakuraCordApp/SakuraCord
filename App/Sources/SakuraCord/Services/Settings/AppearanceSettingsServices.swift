@@ -111,15 +111,31 @@ nonisolated enum MessageAppearance: String, CaseIterable, Identifiable, Sendable
 }
 
 nonisolated struct AppearanceSettingsSnapshot: Equatable, Sendable {
+    static let defaultMessageSpacing = 6.0
+    static let messageSpacingRange = 0.0 ... 12.0
+
     static let defaults = Self(
         colorScheme: .system,
         composerBarAppearance: .defaultStyle,
-        messageAppearance: .defaultStyle
+        messageAppearance: .defaultStyle,
+        messageSpacing: defaultMessageSpacing
     )
 
     var colorScheme: AppColorScheme
     var composerBarAppearance: ComposerBarAppearance
     var messageAppearance: MessageAppearance
+    var messageSpacing: Double
+
+    mutating func normalize() {
+        messageSpacing = Self.normalizedMessageSpacing(messageSpacing)
+    }
+
+    static func normalizedMessageSpacing(_ value: Double) -> Double {
+        min(
+            max(value, messageSpacingRange.lowerBound),
+            messageSpacingRange.upperBound
+        )
+    }
 }
 
 @MainActor
@@ -151,11 +167,20 @@ final class AppearanceSettingsStore {
         } else {
             messageAppearance = .defaultStyle
         }
-        return AppearanceSettingsSnapshot(
+        let messageSpacing: Double
+        if case let .double(value) = preferences.value(for: .messageDensity) {
+            messageSpacing = value
+        } else {
+            messageSpacing = AppearanceSettingsSnapshot.defaults.messageSpacing
+        }
+        var value = AppearanceSettingsSnapshot(
             colorScheme: colorScheme,
             composerBarAppearance: appearance,
-            messageAppearance: messageAppearance
+            messageAppearance: messageAppearance,
+            messageSpacing: messageSpacing
         )
+        value.normalize()
+        return value
     }
 
     func save(_ value: AppearanceSettingsSnapshot) {
@@ -171,6 +196,12 @@ final class AppearanceSettingsStore {
             .string(value.messageAppearance.rawValue),
             for: .messageAppearance
         )
+        preferences.set(
+            .double(AppearanceSettingsSnapshot.normalizedMessageSpacing(
+                value.messageSpacing
+            )),
+            for: .messageDensity
+        )
     }
 }
 
@@ -181,13 +212,14 @@ extension AppModel {
         persists: Bool = true
     ) {
         let colorSchemeChanged = appearanceSettings.colorScheme != value.colorScheme
-        let messageAppearanceChanged =
+        let messagePresentationChanged =
             appearanceSettings.messageAppearance != value.messageAppearance
+                || appearanceSettings.messageSpacing != value.messageSpacing
         if colorSchemeChanged {
             AppAppearanceController.shared.apply(value.colorScheme)
         }
         appearanceSettings = value
-        if colorSchemeChanged || messageAppearanceChanged {
+        if colorSchemeChanged || messagePresentationChanged {
             timelinePresentationRevision &+= 1
         }
         if persists {

@@ -173,7 +173,7 @@ nonisolated extension SettingsSectionID {
     static let startupRestoration = Self(rawValue: "startup-restoration")
     static let confirmations = Self(rawValue: "confirmations")
     static let appearanceTheme = Self(rawValue: "appearance-theme")
-    static let appearanceComposer = Self(rawValue: "appearance-composer")
+    static let interfaceMessages = Self(rawValue: "interface-messages")
     static let interfaceTime = Self(rawValue: "interface-time")
     static let interfaceVisibility = Self(rawValue: "interface-visibility")
     static let interfacePreview = Self(rawValue: "interface-preview")
@@ -243,6 +243,8 @@ nonisolated extension SettingsControlID {
     static let themeDesigner = Self(rawValue: "appearance.theme-designer")
     static let composerBarAppearance = Self(rawValue: "appearance.composer-bar")
     static let messageAppearance = Self(rawValue: "appearance.messages")
+    static let messageDensity = Self(rawValue: "appearance.message-density")
+    static let resetMessageAppearance = Self(rawValue: "interface.reset-message-appearance")
     static let timestampFormat = Self(rawValue: "interface.timestamp-format")
     static let timestampSeconds = Self(rawValue: "interface.timestamp-seconds")
     static let groupingInterval = Self(rawValue: "interface.grouping-interval")
@@ -426,12 +428,12 @@ private nonisolated extension SettingsCatalog {
         page(
             .appearance, group: .preferences, title: "Appearance", image: "circle.lefthalf.filled",
             help: "Choose how SakuraCord's interface looks.",
-            keywords: ["appearance", "look", "style", "accent", "color", "theme", "composer", "input bar", "legacy"]
+            keywords: ["appearance", "look", "style", "accent", "color", "theme"]
         ),
         page(
             .interface, group: .preferences, title: "Interface", image: "macwindow",
-            help: "Choose timestamp, grouping, link, member-list, and role presentation.",
-            keywords: ["appearance", "clock", "timestamp", "roles", "member list", "links", "grouping", "message actions"]
+            help: "Choose message appearance, timestamps, grouping, links, member-list, and role presentation.",
+            keywords: ["messages", "bubbles", "density", "composer", "input bar", "clock", "timestamp", "roles", "member list", "links", "grouping", "message actions"]
         ),
         page(
             .chat, group: .preferences, title: "Chat", image: "bubble.left.and.bubble.right",
@@ -658,21 +660,40 @@ private nonisolated extension SettingsCatalog {
         ),
         control(
             .messageAppearance,
-            page: .appearance,
-            section: .appearanceComposer,
+            page: .interface,
+            section: .interfaceMessages,
             label: "Messages",
             help: "Choose SakuraCord's default message layout or conversation bubbles.",
             keywords: ["messages", "bubbles", "iMessage", "chat", "layout", "default"],
             scope: .appWideLocal
         ),
         control(
+            .messageDensity,
+            page: .interface,
+            section: .interfaceMessages,
+            label: "Density",
+            help: "Adjust the vertical spacing between messages.",
+            keywords: ["messages", "density", "spacing", "compact", "comfortable"],
+            scope: .appWideLocal
+        ),
+        control(
             .composerBarAppearance,
-            page: .appearance,
-            section: .appearanceComposer,
+            page: .interface,
+            section: .interfaceMessages,
             label: "Input bar",
             help: "Choose the current split input bar or SakuraCord's legacy unified input bar.",
             keywords: ["composer", "message input", "default", "legacy", "pill"],
             scope: .appWideLocal
+        ),
+        control(
+            .resetMessageAppearance,
+            page: .interface,
+            section: .interfaceMessages,
+            label: "Reset to Defaults",
+            help: "Restore the default message layout, density, and input bar without changing other Interface settings.",
+            keywords: ["messages", "defaults", "restore", "reset", "density", "input bar"],
+            scope: .appWideLocal,
+            reset: .categoryAction
         ),
         control(
             .timestampFormat,

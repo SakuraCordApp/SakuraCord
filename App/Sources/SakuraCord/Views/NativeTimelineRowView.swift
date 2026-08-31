@@ -616,6 +616,7 @@ struct NativeTimelineRowLayout {
         )
         let usesBubbles = bubbleContext.isEnabled
         let isOutgoingBubble = bubbleContext.isOutgoing
+        let messageSpacing = CGFloat(model?.appearanceSettings.messageSpacing ?? AppearanceSettingsSnapshot.defaultMessageSpacing)
         let horizontalInset: CGFloat = searchContext == nil
             ? MessageRowLayoutMetrics.horizontalInset
             : 22
@@ -687,12 +688,14 @@ struct NativeTimelineRowLayout {
 
         let highlightInsets = MessageRowLayoutMetrics.highlightInsets(
             hasReplyPreview: row.replyMessageID != nil,
-            isEditing: false
+            isEditing: false,
+            messageSpacing: messageSpacing
         )
         let externalTopSeparation = MessageRowLayoutMetrics.separation(
             startsGroup: row.startsGroup,
             followsTimelineSeparator: row.startsDay || isUnreadBoundary,
-            highlightTopInset: highlightInsets.top
+            highlightTopInset: highlightInsets.top,
+            messageSpacing: messageSpacing
         )
         let highlightMinY = prefixHeight
             + (searchContext == nil ? externalTopSeparation : 4)
@@ -735,6 +738,16 @@ struct NativeTimelineRowLayout {
         var editedFrame: CGRect?
         var loadingIndicatorFrame: CGRect?
         let showsIncomingIdentity = !usesBubbles || bubbleContext.showsAvatar
+        let showsIncomingAvatar = !isGenerated
+            && !isOutgoingBubble
+            && showsIncomingIdentity
+            && (usesBubbles ? row.endsGroup : row.startsGroup)
+        if showsIncomingAvatar {
+            avatarFrame = CGRect(
+                origin: CGPoint(x: horizontalInset, y: verticalOffset),
+                size: CGSize(width: avatarWidth, height: avatarWidth)
+            )
+        }
         if row.startsGroup, !isGenerated, !isOutgoingBubble,
            showsIncomingIdentity
         {
@@ -748,12 +761,6 @@ struct NativeTimelineRowLayout {
             let authorWidth = min(
                 ordinaryContentWidth,
                 NativeTimelineRowLayout.measuredTextWidth(author.displayName, font: authorFont)
-            )
-            avatarFrame = CGRect(
-                x: horizontalInset,
-                y: verticalOffset,
-                width: avatarWidth,
-                height: avatarWidth
             )
             authorFrame = CGRect(
                 x: contentX,
@@ -835,7 +842,9 @@ struct NativeTimelineRowLayout {
                 + MessageRowLayoutMetrics.authorToContentSpacing(
                     isCommandResponse: message.type == .chatInputCommand
                 )
-        } else if !isGenerated, !isOutgoingBubble, showsIncomingIdentity {
+        } else if !isGenerated, !isOutgoingBubble, showsIncomingIdentity,
+                  !showsIncomingAvatar
+        {
             compactTimestampFrame = CGRect(
                 x: horizontalInset,
                 y: verticalOffset,
@@ -1225,7 +1234,7 @@ struct NativeTimelineRowLayout {
                 visibleContentMaxY + highlightInsets.bottom,
                 highlightMinY
                     + highlightInsets.top
-                    + (row.startsGroup && !isGenerated
+                    + (showsIncomingAvatar
                         ? MessageRowLayoutMetrics.avatarDiameter
                         : MessageRowLayoutMetrics.compactContentHeight)
                     + highlightInsets.bottom

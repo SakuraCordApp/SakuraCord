@@ -156,25 +156,33 @@ func `Public beta accents migrate into native-surface single-color themes`(
     let selected = AppearanceSettingsSnapshot(
         colorScheme: .light,
         composerBarAppearance: .legacy,
-        messageAppearance: .bubbles
+        messageAppearance: .bubbles,
+        messageSpacing: 12
     )
     store.save(selected)
 
     #expect(store.load() == selected)
-    let export = preferences.export(scope: .appWide, page: .appearance)
+    let appearanceExport = preferences.export(scope: .appWide, page: .appearance)
     #expect(
-        export.values[SettingsControlID.appColorScheme.rawValue]
+        appearanceExport.values[SettingsControlID.appColorScheme.rawValue]
             == .string(AppColorScheme.light.rawValue)
     )
+    let interfaceExport = preferences.export(scope: .appWide, page: .interface)
     #expect(
-        export.values[SettingsControlID.composerBarAppearance.rawValue]
+        interfaceExport.values[SettingsControlID.composerBarAppearance.rawValue]
             == .string(ComposerBarAppearance.legacy.rawValue)
     )
     #expect(
-        export.values[SettingsControlID.messageAppearance.rawValue]
+        interfaceExport.values[SettingsControlID.messageAppearance.rawValue]
             == .string(MessageAppearance.bubbles.rawValue)
     )
+    #expect(
+        interfaceExport.values[SettingsControlID.messageDensity.rawValue]
+            == .double(12)
+    )
 
+    preferences.reset(scope: .appWide, page: .interface)
+    #expect(store.load().colorScheme == .light)
     preferences.reset(scope: .appWide, page: .appearance)
     #expect(store.load() == .defaults)
 }

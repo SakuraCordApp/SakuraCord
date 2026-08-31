@@ -242,6 +242,10 @@ import Testing
 @MainActor
 @Test func `Interface catalog exposes every control and required search synonym`() {
     let expected: Set<SettingsControlID> = [
+        .messageAppearance,
+        .messageDensity,
+        .composerBarAppearance,
+        .resetMessageAppearance,
         .timestampFormat,
         .timestampSeconds,
         .groupingInterval,
@@ -266,6 +270,10 @@ import Testing
         ("timestamp", .timestampFormat),
         ("roles", .showRoleColors),
         ("member list", .showMemberList),
+        ("bubbles", .messageAppearance),
+        ("density", .messageDensity),
+        ("input bar", .composerBarAppearance),
+        ("defaults", .resetMessageAppearance),
     ]
     for (term, control) in searchCases {
         state.searchText = term
