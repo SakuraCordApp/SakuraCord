@@ -10,6 +10,7 @@ struct VoiceControlBar<SettingsControl: View>: View {
     @State private var showInputControls = false
     @State private var showOutputControls = false
     @State private var showCameraControls = false
+    @State private var showSoundboard = false
 
     init(model: AppModel, @ViewBuilder settingsControl: () -> SettingsControl) {
         self.model = model
@@ -127,12 +128,26 @@ struct VoiceControlBar<SettingsControl: View>: View {
                 VoiceOutputControls(model: model)
             }
 
+            VoiceSquareButton(
+                systemImage: "waveform",
+                isAlert: false,
+                isDisabled: model.voiceSessionState != .connected
+                    || model.isVoiceDeafened,
+                help: "Open Soundboard"
+            ) { showSoundboard.toggle() }
+            .popover(isPresented: $showSoundboard, arrowEdge: .trailing) {
+                SoundboardPickerView(model: model)
+            }
+
             settingsControl
                 .frame(width: 34, height: 34)
                 .contentShape(ConcentricRectangle(cornerRadius: 8, style: .continuous))
                 .background(Color.primary.opacity(0.045), in: ConcentricRectangle(cornerRadius: 8, style: .continuous))
         }
         .frame(maxWidth: .infinity)
+        .onChange(of: model.isVoiceDeafened) { _, isDeafened in
+            if isDeafened { showSoundboard = false }
+        }
     }
 
     @ViewBuilder private var cameraMenu: some View {
@@ -288,14 +303,30 @@ struct VoiceCallControlDock: View {
     @State private var showOutputControls = false
     @State private var showCameraControls = false
     @State private var showScreenShareControls = false
+    @State private var showSoundboard = false
 
     var body: some View {
         GlassEffectContainer(spacing: 8) {
-            HStack(spacing: 8) {
+            ViewThatFits(in: .horizontal) {
+                controlRow(showsTitles: true)
+                    .fixedSize(horizontal: true, vertical: false)
+                controlRow(showsTitles: false)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .onChange(of: model.isVoiceDeafened) { _, isDeafened in
+            if isDeafened { showSoundboard = false }
+        }
+    }
+
+    private func controlRow(showsTitles: Bool) -> some View {
+        HStack(spacing: 8) {
                 if model.localApplicationStreamKey == nil {
                     CallDockButton(
                         title: "Share Screen",
-                        systemImage: "rectangle.on.rectangle"
+                        systemImage: "rectangle.on.rectangle",
+                        showsTitle: showsTitles
                     ) {
                         Task { await model.presentScreenSharePreview() }
                     }
@@ -307,6 +338,7 @@ struct VoiceCallControlDock: View {
                         isAlert: false,
                         tintColor: Color(hex: 0x5865F2),
                         isDisabled: false,
+                        showsTitle: showsTitles,
                         primaryAction: { Task { await model.stopScreenSharing() } },
                         secondaryAction: { showScreenShareControls.toggle() }
                     )
@@ -322,6 +354,7 @@ struct VoiceCallControlDock: View {
                     tintColor: model.isCameraEnabled ? Color(hex: 0x23A55A) : nil,
                     isDisabled: model.voiceSessionState != .connected
                         && !model.isCameraEnabled,
+                    showsTitle: showsTitles,
                     primaryAction: { Task { await model.toggleCamera() } },
                     secondaryAction: { showCameraControls.toggle() }
                 )
@@ -335,6 +368,7 @@ struct VoiceCallControlDock: View {
                     systemImage: model.isVoiceMuted ? "mic.slash.fill" : "mic.fill",
                     isAlert: model.isVoiceMuted,
                     tintColor: nil,
+                    showsTitle: showsTitles,
                     primaryAction: { Task { await model.toggleVoiceMute() } },
                     secondaryAction: { showInputControls.toggle() }
                 )
@@ -347,6 +381,7 @@ struct VoiceCallControlDock: View {
                     systemImage: model.isVoiceDeafened ? "headphones.slash" : "headphones",
                     isAlert: model.isVoiceDeafened,
                     tintColor: nil,
+                    showsTitle: showsTitles,
                     primaryAction: { Task { await model.toggleVoiceDeafen() } },
                     secondaryAction: { showOutputControls.toggle() }
                 )
@@ -354,26 +389,22 @@ struct VoiceCallControlDock: View {
                     VoiceOutputControls(model: model)
                 }
 
-                Button(role: .destructive) {
-                    Task { await model.leaveVoice() }
-                } label: {
-                    Label("Leave", systemImage: "phone.down.fill")
-                        .font(.callout.weight(.semibold))
-                        .padding(.horizontal, 15)
-                        .frame(height: 40)
-                        .contentShape(Capsule())
+                CallDockButton(
+                    title: "Soundboard",
+                    systemImage: "waveform",
+                    showsTitle: showsTitles
+                ) {
+                    showSoundboard.toggle()
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.white)
-                .glassEffect(
-                    .regular.tint(Color(hex: 0xDA373C)).interactive(),
-                    in: Capsule()
-                )
-                .help("Disconnect")
+                .disabled(model.voiceSessionState != .connected || model.isVoiceDeafened)
+                .popover(isPresented: $showSoundboard, arrowEdge: .bottom) {
+                    SoundboardPickerView(model: model)
+                }
+
+                CallDockLeaveButton(showsTitle: showsTitles) {
+                    Task { await model.leaveVoice() }
+                }
             }
-        }
-        .fixedSize(horizontal: true, vertical: false)
-        .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder private var cameraMenu: some View {
@@ -576,13 +607,21 @@ extension View {
 private struct CallDockButton: View {
     let title: String
     let systemImage: String
+    var showsTitle = true
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Label(title, systemImage: systemImage)
+            Group {
+                if showsTitle {
+                    Label(title, systemImage: systemImage)
+                } else {
+                    Label(title, systemImage: systemImage)
+                        .labelStyle(.iconOnly)
+                }
+            }
                 .font(.callout.weight(.medium))
-                .padding(.horizontal, 14)
+                .padding(.horizontal, showsTitle ? 14 : 13)
                 .frame(height: 40)
                 .contentShape(Capsule())
         }
@@ -598,16 +637,24 @@ private struct CallDockSplitButton: View {
     let isAlert: Bool
     var tintColor: Color?
     var isDisabled = false
+    var showsTitle = true
     let primaryAction: () -> Void
     let secondaryAction: () -> Void
 
     var body: some View {
         HStack(spacing: 0) {
             Button(action: primaryAction) {
-                Label(title, systemImage: systemImage)
+                Group {
+                    if showsTitle {
+                        Label(title, systemImage: systemImage)
+                    } else {
+                        Label(title, systemImage: systemImage)
+                            .labelStyle(.iconOnly)
+                    }
+                }
                     .font(.callout.weight(.medium))
-                    .padding(.leading, 14)
-                    .padding(.trailing, 10)
+                    .padding(.leading, showsTitle ? 14 : 13)
+                    .padding(.trailing, showsTitle ? 10 : 12)
                     .frame(height: 40)
                     .contentShape(Rectangle())
             }
@@ -637,6 +684,35 @@ private struct CallDockSplitButton: View {
 
     private var effectiveTint: Color? {
         tintColor ?? (isAlert ? Color(hex: 0xF23F43) : nil)
+    }
+}
+
+private struct CallDockLeaveButton: View {
+    let showsTitle: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(role: .destructive, action: action) {
+            Group {
+                if showsTitle {
+                    Label("Leave", systemImage: "phone.down.fill")
+                } else {
+                    Label("Leave", systemImage: "phone.down.fill")
+                        .labelStyle(.iconOnly)
+                }
+            }
+            .font(.callout.weight(.semibold))
+            .padding(.horizontal, showsTitle ? 15 : 14)
+            .frame(height: 40)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.white)
+        .glassEffect(
+            .regular.tint(Color(hex: 0xDA373C)).interactive(),
+            in: Capsule()
+        )
+        .help("Disconnect")
     }
 }
 

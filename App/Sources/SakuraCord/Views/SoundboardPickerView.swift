@@ -1,0 +1,495 @@
+import AppKit
+import SakuraCordModels
+import SwiftUI
+
+private enum SoundboardSection: Hashable, Identifiable {
+    case favorites
+    case frequent
+    case defaults
+    case guild(GuildID)
+    case search
+
+    var id: String {
+        switch self {
+        case .favorites: "favorites"
+        case .frequent: "frequent"
+        case .defaults: "defaults"
+        case .guild(let id): "guild:\(id)"
+        case .search: "search"
+        }
+    }
+}
+
+private struct SoundboardPickerSection {
+    let id: SoundboardSection
+    let title: String
+    let sounds: [SoundboardSound]
+}
+
+struct SoundboardPickerView: View {
+    let model: AppModel
+    @State private var query = ""
+    @State private var searchIsFocused = false
+    @State private var visibleSection: SoundboardSection = .favorites
+
+    var body: some View {
+        VStack(spacing: 0) {
+            EmojiPickerSearchField(
+                text: $query,
+                isFocused: $searchIsFocused,
+                placeholder: "Search sounds"
+            )
+            Divider()
+            if let error = model.soundboardErrorMessage,
+               !model.allSoundboardSounds.isEmpty
+            {
+                soundboardErrorBanner(error)
+                Divider()
+            }
+            ScrollViewReader { proxy in
+                HStack(spacing: 0) {
+                    sidebar(proxy: proxy)
+                    Divider()
+                    content(proxy: proxy)
+                }
+            }
+        }
+        .frame(width: ChatChromeMetrics.emojiPickerWidth, height: 420)
+        .task {
+            searchIsFocused = true
+            await model.loadSoundboard()
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Soundboard")
+    }
+
+    private func soundboardErrorBanner(_ error: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(Color(hex: 0xF0B232))
+            Text(error)
+                .font(.caption)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                model.soundboardErrorMessage = nil
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption.weight(.semibold))
+                    .frame(width: 22, height: 22)
+            }
+            .buttonStyle(.plain)
+            .help("Dismiss Error")
+            .accessibilityLabel("Dismiss soundboard error")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(Color(hex: 0xF0B232).opacity(0.1))
+    }
+
+    private func sidebar(proxy: ScrollViewProxy) -> some View {
+        ScrollView {
+            LazyVStack(spacing: 2) {
+                    bookmark(.favorites, help: "Favorites", systemImage: "star.fill", proxy: proxy)
+                    bookmark(.frequent, help: "Frequently Used", systemImage: "clock.fill", proxy: proxy)
+                    bookmark(.defaults, help: "Discord Sounds", systemImage: "waveform", proxy: proxy)
+                    if !guilds.isEmpty {
+                        Divider().frame(width: 28).padding(.vertical, 2)
+                    }
+                    ForEach(guilds) { guild in
+                        PickerSectionBookmark(
+                            section: SoundboardSection.guild(guild.id),
+                            visibleSection: visibleSection,
+                            help: guild.name,
+                            jump: { section in jump(to: section, proxy: proxy) },
+                            content: { EmojiGuildBookmarkIcon(guild: guild) }
+                        )
+                    }
+            }
+            .padding(.vertical, 4)
+            .frame(maxWidth: .infinity)
+        }
+        .scrollIndicators(.hidden)
+        .frame(width: PickerSectionRailLayout.width)
+    }
+
+    private func bookmark(
+        _ section: SoundboardSection,
+        help: String,
+        systemImage: String,
+        proxy: ScrollViewProxy
+    ) -> some View {
+        PickerSectionBookmark(
+            section: section,
+            visibleSection: visibleSection,
+            help: help,
+            jump: { jump(to: $0, proxy: proxy) },
+            content: {
+                Image(systemName: systemImage).font(.system(size: 16, weight: .semibold))
+            }
+        )
+    }
+
+    private func content(proxy: ScrollViewProxy) -> some View {
+        ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    if model.isLoadingSoundboard, model.allSoundboardSounds.isEmpty {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("Loading sounds…")
+                        }
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 80)
+                    } else if let error = model.soundboardErrorMessage,
+                              model.allSoundboardSounds.isEmpty
+                    {
+                        VStack(spacing: 8) {
+                            Text("Couldn’t load the soundboard.")
+                            Button("Retry") { Task { await model.retrySoundboardLoad() } }
+                                .buttonStyle(.link)
+                        }
+                        .help(error)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 100)
+                    } else {
+                        ForEach(sections, id: \.id) { section in
+                            SoundboardSectionView(
+                                section: section,
+                                model: model
+                            )
+                            .id(section.id.id)
+                            .onAppear { visibleSection = section.id }
+                        }
+                    }
+                }
+                .padding(.vertical, 8)
+                .scrollTargetLayout()
+        }
+        .scrollIndicators(.hidden)
+        .onChange(of: query) { _, value in
+                guard !value.isEmpty else { return }
+                Task { @MainActor in
+                    await Task.yield()
+                    proxy.scrollTo(SoundboardSection.search.id, anchor: .top)
+                }
+        }
+    }
+
+    private var guilds: [Guild] {
+        (model.snapshot?.guilds ?? []).filter {
+            model.soundboardSoundsByGuild[$0.id]?.isEmpty == false
+        }
+    }
+
+    private var sections: [SoundboardPickerSection] {
+        let soundsByID = Dictionary(
+            model.allSoundboardSounds.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !normalizedQuery.isEmpty {
+            let matches = model.allSoundboardSounds.filter { sound in
+                sound.name.localizedStandardContains(normalizedQuery)
+                    || sound.emojiName?.localizedStandardContains(normalizedQuery) == true
+                    || sound.guildID.flatMap { model.serverRailGuildsByID[$0]?.name }
+                        .map { $0.localizedStandardContains(normalizedQuery) } == true
+            }
+            return [SoundboardPickerSection(id: .search, title: "Search Results", sounds: matches)]
+        }
+        var result = [
+            SoundboardPickerSection(
+                id: .favorites,
+                title: "Favorites",
+                sounds: model.soundboardUserSettings.favoriteSoundIDs.compactMap { soundsByID[$0] }
+            ),
+            SoundboardPickerSection(
+                id: .frequent,
+                title: "Frequently Used",
+                sounds: model.soundboardUserSettings.frequentlyUsedSoundIDs.compactMap { soundsByID[$0] }
+            ),
+            SoundboardPickerSection(
+                id: .defaults,
+                title: "Discord Sounds",
+                sounds: model.defaultSoundboardSounds
+            ),
+        ]
+        result += guilds.map { guild in
+            SoundboardPickerSection(
+                id: .guild(guild.id),
+                title: guild.name,
+                sounds: model.soundboardSoundsByGuild[guild.id] ?? []
+            )
+        }
+        return result
+    }
+
+    private func jump(to section: SoundboardSection, proxy: ScrollViewProxy) {
+        visibleSection = section
+        withAnimation(.snappy(duration: 0.2)) {
+            proxy.scrollTo(section.id, anchor: .top)
+        }
+        searchIsFocused = true
+    }
+}
+
+private struct SoundboardSectionView: View {
+    let section: SoundboardPickerSection
+    let model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            EmojiPickerHeader(title: section.title, count: section.sounds.count)
+                .padding(.top, 5)
+            if section.sounds.isEmpty {
+                Text(emptyMessage)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 38)
+            } else {
+                LazyVGrid(
+                    columns: Array(
+                        repeating: GridItem(.flexible(), spacing: 6),
+                        count: 3
+                    ),
+                    spacing: 6
+                ) {
+                    ForEach(section.sounds) { sound in
+                        SoundboardButton(sound: sound, model: model)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.bottom, 6)
+            }
+        }
+    }
+
+    private var emptyMessage: String {
+        section.id == .search ? "No sounds found." : "No sounds here yet."
+    }
+}
+
+private struct SoundboardButton: View {
+    let sound: SoundboardSound
+    let model: AppModel
+    @State private var isHovering = false
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if isHovering {
+                SoundboardActionButton(
+                    systemImage: "speaker.wave.2.fill",
+                    help: "Preview \(sound.name) locally"
+                ) { Task { await model.previewSound(sound) } }
+            }
+
+            Button { Task { await model.playSound(sound) } } label: {
+                HStack(spacing: 7) {
+                    SoundboardEmojiView(sound: sound)
+                    Text(sound.name)
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, isHovering ? 5 : 9)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Play \(sound.name)")
+            .accessibilityLabel("Play \(sound.name)")
+
+            if isHovering {
+                SoundboardActionButton(
+                    systemImage: model.isFavoriteSound(sound) ? "star.fill" : "star",
+                    help: model.isFavoriteSound(sound) ? "Remove from Favorites" : "Favorite"
+                ) { Task { await model.toggleFavoriteSound(sound) } }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 42)
+        .background(
+            Color.primary.opacity(isHovering ? 0.13 : 0.055),
+            in: ConcentricRectangle(cornerRadius: 8, style: .continuous)
+        )
+        .contentShape(ConcentricRectangle(cornerRadius: 8, style: .continuous))
+        .onHover { isHovering = $0 }
+        .overlay {
+            SoundboardContextMenuBridge(
+                isFavorite: model.isFavoriteSound(sound),
+                toggleFavorite: { Task { await model.toggleFavoriteSound(sound) } },
+                download: download,
+                copyID: { MediaViewerActionService.copyText(sound.id) }
+            )
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(sound.name)
+        .accessibilityAction(named: "Preview locally") {
+            Task { await model.previewSound(sound) }
+        }
+        .accessibilityAction(named: model.isFavoriteSound(sound) ? "Remove from Favorites" : "Favorite") {
+            Task { await model.toggleFavoriteSound(sound) }
+        }
+    }
+
+    private func download() {
+        guard let item = RichMediaItem(soundboardSound: sound) else { return }
+        Task { @MainActor in
+            do {
+                _ = try await MediaViewerActionService.save(item)
+            } catch {
+                model.soundboardErrorMessage = error.localizedDescription
+            }
+        }
+    }
+}
+
+private struct SoundboardContextMenuBridge: NSViewRepresentable {
+    let isFavorite: Bool
+    let toggleFavorite: () -> Void
+    let download: () -> Void
+    let copyID: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(from: self) }
+
+    func makeNSView(context: Context) -> MediaImageContextMenuHitView {
+        let view = MediaImageContextMenuHitView()
+        view.menuProvider = { [weak coordinator = context.coordinator] in
+            coordinator?.makeMenu()
+        }
+        return view
+    }
+
+    func updateNSView(
+        _ nsView: MediaImageContextMenuHitView,
+        context: Context
+    ) {
+        context.coordinator.update(from: self)
+    }
+
+    @MainActor
+    final class Coordinator: NSObject {
+        private var isFavorite: Bool
+        private var toggleFavorite: () -> Void
+        private var download: () -> Void
+        private var copyID: () -> Void
+
+        init(from bridge: SoundboardContextMenuBridge) {
+            isFavorite = bridge.isFavorite
+            toggleFavorite = bridge.toggleFavorite
+            download = bridge.download
+            copyID = bridge.copyID
+        }
+
+        func update(from bridge: SoundboardContextMenuBridge) {
+            isFavorite = bridge.isFavorite
+            toggleFavorite = bridge.toggleFavorite
+            download = bridge.download
+            copyID = bridge.copyID
+        }
+
+        func makeMenu() -> NSMenu {
+            let menu = NSMenu()
+            menu.autoenablesItems = false
+            menu.addItem(menuItem(
+                isFavorite ? "Remove from Favorites" : "Favorite",
+                systemImage: isFavorite ? "star" : "star.fill",
+                action: #selector(toggleFavoriteFromMenu)
+            ))
+            menu.addItem(menuItem(
+                "Download Sound",
+                systemImage: "arrow.down.circle",
+                action: #selector(downloadFromMenu)
+            ))
+            menu.addItem(.separator())
+            menu.addItem(menuItem(
+                "Copy Sound ID",
+                systemImage: "number.square.fill",
+                action: #selector(copyIDFromMenu)
+            ))
+            return menu
+        }
+
+        private func menuItem(
+            _ title: String,
+            systemImage: String,
+            action: Selector
+        ) -> NSMenuItem {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            item.isEnabled = true
+            ContextMenuItemSupport.configure(
+                item,
+                title: title,
+                systemImage: systemImage
+            )
+            return item
+        }
+
+        @objc private func toggleFavoriteFromMenu() { toggleFavorite() }
+        @objc private func downloadFromMenu() { download() }
+        @objc private func copyIDFromMenu() { copyID() }
+    }
+}
+
+private struct SoundboardActionButton: View {
+    let systemImage: String
+    let help: String
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 11, weight: .semibold))
+                .frame(width: 28, height: 42)
+                .background(Color.primary.opacity(isHovering ? 0.11 : 0))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .help(help)
+        .accessibilityLabel(help)
+    }
+}
+
+private struct SoundboardEmojiView: View {
+    let sound: SoundboardSound
+
+    var body: some View {
+        Group {
+            if let emojiID = sound.emojiID,
+               let url = URL(string: "https://cdn.discordapp.com/emojis/\(emojiID).webp?size=48&quality=lossless")
+            {
+                StaticEmojiImage(url: url)
+            } else if let emojiName = sound.emojiName, !emojiName.isEmpty {
+                Text(emojiName)
+                    .font(.system(size: 18))
+                    .fixedSize()
+                    .offset(y: -0.5)
+            } else {
+                Image(systemName: "waveform")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 22, height: 22, alignment: .center)
+    }
+}
+
+private extension RichMediaItem {
+    init?(soundboardSound sound: SoundboardSound) {
+        guard let url = sound.mediaURL else { return nil }
+        id = sound.id
+        self.url = url
+        previewURL = nil
+        title = "\(sound.name).ogg"
+        description = nil
+        width = nil
+        height = nil
+        size = 0
+        kind = .audio
+        isSpoiler = false
+        autoplaysInline = false
+    }
+}

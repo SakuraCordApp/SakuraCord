@@ -42,6 +42,12 @@ public protocol ChatProvider: Sendable {
     func emojis(in guildID: GuildID) async throws -> [DiscordEmoji]
     func emojiUserSettings() async throws -> EmojiUserSettings
     func setEmojiFavorite(_ key: String, isFavorite: Bool) async throws -> EmojiUserSettings
+    func defaultSoundboardSounds() async throws -> [SoundboardSound]
+    func soundboardSounds(in guildIDs: [GuildID]) async throws -> [GuildID: [SoundboardSound]]
+    func soundboardUserSettings() async throws -> SoundboardUserSettings
+    func setSoundboardFavorite(_ soundID: String, isFavorite: Bool) async throws
+        -> SoundboardUserSettings
+    func sendSoundboardSound(_ sound: SoundboardSound, in channelID: ChannelID) async throws
     func currentStatus() async -> PresenceStatus
     func updateStatus(_ status: PresenceStatus) async throws
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws -> MessagePage
@@ -525,6 +531,28 @@ public extension ChatProvider {
         )
     }
 
+    func defaultSoundboardSounds() async throws -> [SoundboardSound] {
+        throw ChatProviderError.capabilityDisabled(.soundboard)
+    }
+
+    func soundboardSounds(in guildIDs: [GuildID]) async throws -> [GuildID: [SoundboardSound]] {
+        throw ChatProviderError.capabilityDisabled(.soundboard)
+    }
+
+    func soundboardUserSettings() async throws -> SoundboardUserSettings {
+        SoundboardUserSettings()
+    }
+
+    func setSoundboardFavorite(_ soundID: String, isFavorite: Bool) async throws
+        -> SoundboardUserSettings
+    {
+        throw ChatProviderError.capabilityDisabled(.soundboard)
+    }
+
+    func sendSoundboardSound(_ sound: SoundboardSound, in channelID: ChannelID) async throws {
+        throw ChatProviderError.capabilityDisabled(.soundboard)
+    }
+
     func sendTyping(in channelID: ChannelID) async throws {}
 
     func acknowledge(
@@ -742,6 +770,7 @@ public enum ChatCapability: String, Codable, CaseIterable, Hashable, Sendable {
     case stickers
     case stickerSending
     case messageForwarding
+    case soundboard
 
     public var displayName: String {
         switch self {
@@ -754,6 +783,7 @@ public enum ChatCapability: String, Codable, CaseIterable, Hashable, Sendable {
         case .stickers: "Guild stickers"
         case .stickerSending: "Sticker sending"
         case .messageForwarding: "Message forwarding"
+        case .soundboard: "Soundboard"
         }
     }
 }

@@ -89,3 +89,68 @@ import Testing
     #expect(capturedLevels.withLock { $0.last } == 0)
     encoder.reset()
 }
+
+@Test func `muted voice capture transmits injected sound without microphone audio`() throws {
+    let encoder = try OpusSampleBufferEncoder()
+    let capturedFrames = Mutex<[CapturedOpusFrame]>([])
+    encoder.handler = { frame in capturedFrames.withLock { $0.append(frame) } }
+    encoder.isMuted = true
+    let samples = (0 ..< Int(OpusCodec.frameSamples)).map {
+        Float(sin(Double($0) * 0.09)) * 0.25
+    }
+    let clip = try SoundboardPCMClip(left: samples, right: samples)
+    #expect(encoder.enqueueInjectedAudio(clip, volume: 1))
+
+    let input = try #require(AVAudioPCMBuffer(
+        pcmFormat: OpusCodec.pcmFormat,
+        frameCapacity: OpusCodec.frameSamples
+    ))
+    input.frameLength = OpusCodec.frameSamples
+    for channel in 0 ..< 2 {
+        let channelSamples = try #require(input.floatChannelData?[channel])
+        for index in samples.indices { channelSamples[index] = 0.8 }
+    }
+    encoder.process(input)
+
+    let frame = try #require(capturedFrames.withLock { $0.last })
+    #expect(frame.containsVoice)
+    #expect(!frame.containsMicrophoneVoice)
+    #expect(frame.containsInjectedAudio)
+    let decoded = try OpusCodec().decode(frame.data)
+    let decodedSamples = try #require(decoded.floatChannelData?[0])
+    let peak = (0 ..< Int(decoded.frameLength)).reduce(Float.zero) {
+        max($0, abs(decodedSamples[$1]))
+    }
+    #expect(peak > 0.05)
+    #expect(!encoder.hasActiveInjectedAudio)
+}
+
+@Test func `soundboard mixer overlaps triggers limits samples and stays realtime safe`() throws {
+    let mixer = OutgoingSoundboardMixer()
+    let clip = try SoundboardPCMClip(
+        left: Array(repeating: 0.8, count: 96_000),
+        right: Array(repeating: -0.8, count: 96_000)
+    )
+    for _ in 0 ..< 40 { #expect(mixer.enqueue(clip, volume: 1)) }
+    #expect(mixer.diagnostics.peakConcurrentVoices == 32)
+    var left = Array(repeating: Float(0.7), count: 960)
+    var right = Array(repeating: Float(-0.7), count: 960)
+    let clock = ContinuousClock()
+    let start = clock.now
+    for _ in 0 ..< 100 {
+        left.withUnsafeMutableBufferPointer { leftBuffer in
+            right.withUnsafeMutableBufferPointer { rightBuffer in
+                _ = mixer.mix(
+                    into: leftBuffer.baseAddress!,
+                    rightBuffer.baseAddress!,
+                    count: leftBuffer.count
+                )
+            }
+        }
+    }
+    let elapsed = start.duration(to: clock.now)
+    #expect(left.allSatisfy { (-1 ... 1).contains($0) })
+    #expect(right.allSatisfy { (-1 ... 1).contains($0) })
+    #expect(mixer.diagnostics.mixedFrameCount == 96_000)
+    #expect(elapsed < .seconds(2))
+}

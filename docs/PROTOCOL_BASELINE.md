@@ -1659,6 +1659,63 @@ while the system picker temporarily owns key-window focus. It
 releases picker, stream, preview, audio/video encoders, decoder, and transport
 resources on popup dismissal, stop, failure, source removal, or disconnect.
 
+### Soundboard
+
+The soundboard contract was authenticated and dynamically rechecked against a
+clean first-party desktop client on 31 August 2026. The bounded live actions
+were performed only in the designated private test guild and voice channel.
+Identifiers, credentials, complete settings blobs, and user content are not
+retained in this baseline.
+
+- `GET /soundboard-default-sounds` returns the six Discord defaults. Defaults
+  have no source guild and always use native delivery. Their media, like custom
+  sound media, is read from
+  `https://cdn.discordapp.com/soundboard-sounds/{sound_id}`. Local preview is
+  only a CDN read and emits neither a REST mutation nor a Gateway send.
+- Guild catalogs are requested on the main Gateway with opcode 31 and a
+  bounded, deduplicated `guild_ids` array. Each `SOUNDBOARD_SOUNDS` dispatch is
+  authoritative for its guild. `GUILD_SOUNDBOARD_SOUND_CREATE`, `_UPDATE`, and
+  `_DELETE` reconcile the cached catalog without a REST fallback. Requests
+  time out and fail closed; they are not replayed indefinitely.
+- Native playback performs one
+  `POST /channels/{channel}/send-soundboard-sound`. The JSON body contains
+  `sound_id`, nullable `emoji_id`, nullable `emoji_name`, and
+  `source_guild_id` only for a custom sound. A successful request returns 204.
+  SakuraCord starts local rendering optimistically at click time, in parallel
+  with the native request, and suppresses the matching Gateway echo so it does
+  not play twice. A rejected native request is still reported without stopping
+  local playback that has already begun.
+  Playback requires an active voice connection, `SPEAK` (bit 21),
+  `USE_SOUNDBOARD` (bit 42), and a voice state that is neither server-muted,
+  deafened, nor suppressed. Self-mute does not block a sound and is never
+  changed by playback.
+- Defaults and same-guild custom sounds use native delivery. Cross-guild custom
+  sounds additionally require `USE_EXTERNAL_SOUNDS` (bit 45). Discord's native
+  cross-guild route is used for full Nitro (`premium_type == 2`). When that
+  entitlement is absent, SakuraCord may instead decode the CDN sound once and
+  mix it into the existing outgoing 48 kHz stereo microphone stream. The mixer
+  opens no second input or Voice connection: self-muted microphone samples are
+  zeroed before mixing, while unmuted samples are layered with the sound.
+  Disconnect, engine teardown, or account/session replacement clears every
+  queued voice; decode, route, and transport failures send no unrelated audio.
+- `VOICE_CHANNEL_EFFECT_SEND` publishes sound effects to connected listeners.
+  The observed first-party build also accepted the transitional
+  `VOICE_EFFECT_SEND` name, so both names decode to the same bounded domain
+  event. SakuraCord locally renders known catalog sounds and resolves an
+  uncatalogued valid sound ID through Discord's soundboard CDN. Invalid IDs and
+  unavailable media are ignored safely.
+- Sound favourites share Frecency settings-proto type 2. Top-level field 8
+  contains ordered, deduplicated packed fixed64 sound IDs in nested field 1,
+  capped at 250. One explicit toggle patches the complete updated base64 proto
+  and preserves every unrelated or unknown field. Top-level field 11 contains
+  sound usage/frecency data used for the frequently-used section. A failed
+  favourite mutation rolls presentation back to provider-authoritative state.
+- Local and incoming playback share the selected voice output graph and respect
+  deafen/output routing. Outgoing mixing is isolated to the microphone encoder,
+  permits bounded overlap and repeated triggers, applies a hard sample limiter,
+  and keeps the existing RTP timestamp and speaking lifecycle. Device changes
+  preserve the session-owned mixer; complete voice teardown clears it.
+
 ### Private calls
 
 The private-call contract was authenticated and dynamically rechecked on 22

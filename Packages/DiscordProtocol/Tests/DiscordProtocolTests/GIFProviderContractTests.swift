@@ -103,6 +103,37 @@ struct GIFProviderContractTests {
         #expect(DiscordSettingsProto.emojiSettings(from: addedProto).favoriteKeys == ["wave"])
     }
 
+    @Test func `soundboard defaults native send and favorites use exact contracts`() async throws {
+        GIFURLProtocol.reset()
+        let provider = makeProvider()
+        let defaults = try await provider.defaultSoundboardSounds()
+        let custom = SoundboardSound(
+            id: "9002",
+            name: "Custom",
+            volume: 0.8,
+            emojiID: "7001",
+            guildID: GuildID(rawValue: 123)
+        )
+
+        try await provider.sendSoundboardSound(custom, in: ChannelID(rawValue: 456))
+        let added = try await provider.setSoundboardFavorite("9002", isFavorite: true)
+
+        #expect(defaults.map(\.name) == ["quack", "airhorn"])
+        let send = try #require(GIFURLProtocol.requests.first {
+            $0.path == "/api/v9/channels/456/send-soundboard-sound"
+        })
+        #expect(send.method == "POST")
+        #expect(send.body?["sound_id"] as? String == "9002")
+        #expect(send.body?["emoji_id"] as? String == "7001")
+        #expect(send.body?["emoji_name"] is NSNull)
+        #expect(send.body?["source_guild_id"] as? String == "123")
+        #expect(added.favoriteSoundIDs == ["9002"])
+        let patch = try #require(GIFURLProtocol.requests.last { $0.method == "PATCH" })
+        let settings = try #require(patch.body?["settings"] as? String)
+        let proto = try #require(Data(base64Encoded: settings))
+        #expect(DiscordSettingsProto.soundboardSettings(from: proto).favoriteSoundIDs == ["9002"])
+    }
+
     @Test func `persisted Tenor video favourites use native GIF previews`() throws {
         let webM = try #require(URL(
             string: "https://media.tenor.com/a%20b/AAAPs/favorite.WEBM?size=2"
@@ -209,6 +240,8 @@ private final class GIFURLProtocol: URLProtocol, @unchecked Sendable {
 
         let body: String
         switch request.url?.path {
+        case "/api/v9/soundboard-default-sounds":
+            body = #"[{"sound_id":"1","name":"quack","emoji_name":"🦆"},{"sound_id":"2","name":"airhorn","emoji_name":"🔊"}]"#
         case "/api/v9/gifs/trending":
             body = #"""
             {"categories":[

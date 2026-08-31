@@ -292,6 +292,14 @@ extension AppModel {
         emojisByGuild = [:]
         loadingEmojiGuildIDs = []
         emojiLoadErrorsByGuild = [:]
+        soundboardLoadGeneration &+= 1
+        soundboardLoadTask?.cancel()
+        soundboardLoadTask = nil
+        defaultSoundboardSounds = []
+        soundboardSoundsByGuild = [:]
+        soundboardUserSettings = .init()
+        isLoadingSoundboard = false
+        soundboardErrorMessage = nil
         discordFavoriteEmojiKeys = []
         discordFrequentlyUsedEmojiKeys = []
         discordEmojiUsageScores = [:]

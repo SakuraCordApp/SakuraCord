@@ -276,7 +276,7 @@ enum EmojiPickerGridNavigation {
     }
 }
 
-private struct StaticEmojiImage: View {
+struct StaticEmojiImage: View {
     let url: URL
 
     var body: some View {
@@ -929,9 +929,10 @@ struct EmojiPickerView: View {
         GeometryReader { _ in
             ScrollViewReader { proxy in
                 VStack(alignment: .leading, spacing: 0) {
-                    EmojiSearchField(
+                    EmojiPickerSearchField(
                         text: searchQuery,
-                        isFocused: $searchIsFocused
+                        isFocused: $searchIsFocused,
+                        placeholder: "Search emojis"
                     )
 
                     Divider()
@@ -1229,9 +1230,10 @@ private struct EmojiPickerDocumentList: View {
     }
 }
 
-private struct EmojiSearchField: View {
+struct EmojiPickerSearchField: View {
     @Binding var text: String
     @Binding var isFocused: Bool
+    let placeholder: String
 
     var body: some View {
         HStack(spacing: ChatChromeMetrics.pickerSearchHeaderSpacing) {
@@ -1241,7 +1243,11 @@ private struct EmojiSearchField: View {
                     weight: .medium
                 ))
                 .foregroundStyle(.secondary)
-            EmojiSearchTextField(text: $text, isFocused: $isFocused)
+            PickerSearchTextField(
+                text: $text,
+                isFocused: $isFocused,
+                placeholder: placeholder
+            )
                 .frame(maxWidth: .infinity)
             if !text.isEmpty {
                 Button { text = "" } label: {
@@ -1264,9 +1270,10 @@ private struct EmojiSearchField: View {
     }
 }
 
-private struct EmojiSearchTextField: NSViewRepresentable {
+private struct PickerSearchTextField: NSViewRepresentable {
     @Binding var text: String
     @Binding var isFocused: Bool
+    let placeholder: String
 
     func makeCoordinator() -> Coordinator {
         Coordinator(text: $text, isFocused: $isFocused)
@@ -1275,7 +1282,7 @@ private struct EmojiSearchTextField: NSViewRepresentable {
     func makeNSView(context: Context) -> EmojiSearchNSTextField {
         let textField = EmojiSearchNSTextField()
         textField.delegate = context.coordinator
-        textField.placeholderString = "Search emojis"
+        textField.placeholderString = placeholder
         textField.isBordered = false
         textField.isBezeled = false
         textField.drawsBackground = false
@@ -1288,7 +1295,7 @@ private struct EmojiSearchTextField: NSViewRepresentable {
         textField.contentType = NSTextContentType(rawValue: "dev.sakuracord.emoji-search")
         textField.allowsWritingTools = false
         textField.allowsWritingToolsAffordance = false
-        textField.setAccessibilityLabel("Search emojis")
+        textField.setAccessibilityLabel(placeholder)
         return textField
     }
 
@@ -1343,7 +1350,7 @@ private struct EmojiSearchTextField: NSViewRepresentable {
         private static func configureEditor(from notification: Notification) {
             guard let textField = notification.object as? NSTextField else { return }
             let editor = textField.currentEditor() as? NSTextView
-            EmojiSearchTextField.disableCompletionFeatures(in: editor)
+            PickerSearchTextField.disableCompletionFeatures(in: editor)
             editor?.applySakuraCordTextSelectionAppearance()
         }
     }

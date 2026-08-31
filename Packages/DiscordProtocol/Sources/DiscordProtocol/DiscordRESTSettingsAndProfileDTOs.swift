@@ -322,7 +322,7 @@ enum DiscordSettingsProto {
         return data
     }
 
-    private static func replacingLengthDelimitedField(
+    static func replacingLengthDelimitedField(
         _ fieldNumber: Int,
         in data: Data,
         with payload: Data
@@ -350,7 +350,7 @@ enum DiscordSettingsProto {
         protoLengthDelimitedField(field, Data(value.utf8))
     }
 
-    private static func protoLengthDelimitedField(_ field: Int, _ value: Data) -> Data {
+    static func protoLengthDelimitedField(_ field: Int, _ value: Data) -> Data {
         var data = protoVarint(UInt64(field << 3 | 2))
         data.append(protoVarint(UInt64(value.count)))
         data.append(value)
@@ -506,13 +506,13 @@ enum DiscordSettingsProto {
         return values
     }
 
-    private struct FrecencyEntry {
+    struct FrecencyEntry {
         var key: String
         var score: Int
         var frecency: Int
     }
 
-    private static func stringFrecencyEntries(
+    static func stringFrecencyEntries(
         from data: Data,
         nowMilliseconds: UInt64
     ) -> [FrecencyEntry] {
@@ -691,7 +691,7 @@ enum DiscordSettingsProto {
         return nil
     }
 
-    private static func readFixed64Values(wireType: Int, reader: inout ProtoReader) -> [GuildID] {
+    static func readFixed64Values(wireType: Int, reader: inout ProtoReader) -> [GuildID] {
         if wireType == 1, let value = reader.readFixed64() {
             return [GuildID(rawValue: value)]
         }

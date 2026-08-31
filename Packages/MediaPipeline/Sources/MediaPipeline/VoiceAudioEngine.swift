@@ -9,11 +9,21 @@ private let voiceAudioLogger = Logger(subsystem: "dev.sakuracord.SakuraCord", ca
 public struct CapturedOpusFrame: Sendable {
     public var data: Data
     public var containsVoice: Bool
+    public var containsMicrophoneVoice: Bool
+    public var containsInjectedAudio: Bool
     public var sampleOffset: UInt64
 
-    public init(data: Data, containsVoice: Bool, sampleOffset: UInt64 = 0) {
+    public init(
+        data: Data,
+        containsVoice: Bool,
+        sampleOffset: UInt64 = 0,
+        containsMicrophoneVoice: Bool? = nil,
+        containsInjectedAudio: Bool = false
+    ) {
         self.data = data
         self.containsVoice = containsVoice
+        self.containsMicrophoneVoice = containsMicrophoneVoice ?? containsVoice
+        self.containsInjectedAudio = containsInjectedAudio
         self.sampleOffset = sampleOffset
     }
 }
@@ -53,6 +63,7 @@ public final class VoiceAudioEngine {
     private let codec: OpusCodec
     private let captureEncoder: OpusSampleBufferEncoder
     private var players: [String: AVAudioPlayerNode] = [:]
+    private var localSoundboardPlayers: [UUID: AVAudioPlayerNode] = [:]
     private var participantVolumes: [String: Float] = [:]
     private var captureSessionObservers: [NSObjectProtocol] = []
     private var captureRecoveryTask: Task<Void, Never>?
@@ -145,6 +156,7 @@ public final class VoiceAudioEngine {
         playbackRecoveryTask = nil
         tearDownCaptureGraph()
         tearDownPlaybackGraph()
+        captureEncoder.removeAllInjectedAudio()
         captureEncoder.handler = nil
     }
 
@@ -419,9 +431,15 @@ public final class VoiceAudioEngine {
             playbackEngine.disconnectNodeOutput(player)
             playbackEngine.detach(player)
         }
+        for player in localSoundboardPlayers.values {
+            player.stop()
+            playbackEngine.disconnectNodeOutput(player)
+            playbackEngine.detach(player)
+        }
         playbackEngine.stop()
         playbackEngine.reset()
         players.removeAll()
+        localSoundboardPlayers.removeAll()
     }
 
     public func selectInputDevice(_ deviceID: AudioDeviceID?) async throws {
@@ -556,6 +574,65 @@ public final class VoiceAudioEngine {
         }
     }
 
+    public func playSoundboardClipLocally(
+        _ clip: SoundboardPCMClip,
+        volume: Float = 1
+    ) throws {
+        guard !isDeafened, !isChangingPlaybackRoute else { return }
+        guard playbackEngine.isRunning else {
+            schedulePlaybackRecovery()
+            throw VoiceAudioEngineError.outputUnavailable
+        }
+        let id = UUID()
+        let player = AVAudioPlayerNode()
+        player.volume = min(max(volume, 0), 2)
+        playbackEngine.attach(player)
+        try playbackEngine.connectNode(
+            player,
+            to: playbackEngine.mainMixerNode,
+            format: OpusCodec.pcmFormat
+        )
+        localSoundboardPlayers[id] = player
+        let buffer = try clip.audioBuffer()
+        player.scheduleBuffer(
+            buffer,
+            completionCallbackType: .dataPlayedBack
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.finishLocalSoundboardPlayback(id: id)
+            }
+        }
+        do {
+            try player.playAudio()
+        } catch {
+            finishLocalSoundboardPlayback(id: id)
+            throw error
+        }
+    }
+
+    @discardableResult
+    public func enqueueOutgoingSoundboardClip(
+        _ clip: SoundboardPCMClip,
+        volume: Float = 1
+    ) -> Bool {
+        captureEncoder.enqueueInjectedAudio(clip, volume: volume)
+    }
+
+    public var hasActiveOutgoingSoundboardAudio: Bool {
+        captureEncoder.hasActiveInjectedAudio
+    }
+
+    public func stopOutgoingSoundboardAudio() {
+        captureEncoder.removeAllInjectedAudio()
+    }
+
+    private func finishLocalSoundboardPlayback(id: UUID) {
+        guard let player = localSoundboardPlayers.removeValue(forKey: id) else { return }
+        player.stop()
+        playbackEngine.disconnectNodeOutput(player)
+        playbackEngine.detach(player)
+    }
+
     private func player(for userID: String) throws -> AVAudioPlayerNode {
         if let player = players[userID] {
             return player
@@ -600,6 +677,7 @@ final class OpusSampleBufferEncoder: NSObject,
     private let codec: OpusCodec
     private let activityThreshold: Float
     private let lock = NSLock()
+    private let soundboardMixer = OutgoingSoundboardMixer()
     private var converter: AVAudioConverter?
     private var left: [Float] = []
     private var right: [Float] = []
@@ -670,6 +748,17 @@ final class OpusSampleBufferEncoder: NSObject,
         }
     }
 
+    @discardableResult
+    func enqueueInjectedAudio(_ clip: SoundboardPCMClip, volume: Float) -> Bool {
+        soundboardMixer.enqueue(clip, volume: volume)
+    }
+
+    var hasActiveInjectedAudio: Bool { soundboardMixer.hasActiveAudio }
+
+    func removeAllInjectedAudio() {
+        soundboardMixer.removeAll()
+    }
+
     func process(_ input: AVAudioPCMBuffer) {
         do { try configure(inputFormat: input.format) } catch { return }
         let result: (frames: [CapturedOpusFrame], level: Float) = lock.withLock {
@@ -706,24 +795,32 @@ final class OpusSampleBufferEncoder: NSObject,
                 guard let pcm = AVAudioPCMBuffer(pcmFormat: OpusCodec.pcmFormat, frameCapacity: OpusCodec.frameSamples),
                       let outputChannels = pcm.floatChannelData else { break }
                 pcm.frameLength = OpusCodec.frameSamples
-                var energy: Float = 0
+                var microphoneEnergy: Float = 0
                 for index in 0 ..< frameCount {
                     let bufferedIndex = bufferedSampleOffset + index
                     let leftSample = _isMuted ? 0 : left[bufferedIndex] * _inputVolume
                     let rightSample = _isMuted ? 0 : right[bufferedIndex] * _inputVolume
                     outputChannels[0][index] = leftSample
                     outputChannels[1][index] = rightSample
-                    energy += leftSample * leftSample + rightSample * rightSample
+                    microphoneEnergy += leftSample * leftSample + rightSample * rightSample
                 }
+                let containsInjectedAudio = soundboardMixer.mix(
+                    into: outputChannels[0],
+                    outputChannels[1],
+                    count: frameCount
+                )
                 bufferedSampleOffset += frameCount
                 if let packet = try? codec.encode(pcm) {
                     encodedSampleOffset &+= UInt64(frameCount)
-                    let rms = sqrt(energy / Float(frameCount * 2))
+                    let rms = sqrt(microphoneEnergy / Float(frameCount * 2))
+                    let containsMicrophoneVoice = !_isMuted && rms > activityThreshold
                     maximumLevel = max(maximumLevel, Self.normalizedLevel(rms: rms))
                     output.append(CapturedOpusFrame(
                         data: packet,
-                        containsVoice: !_isMuted && rms > activityThreshold,
-                        sampleOffset: encodedSampleOffset
+                        containsVoice: containsMicrophoneVoice || containsInjectedAudio,
+                        sampleOffset: encodedSampleOffset,
+                        containsMicrophoneVoice: containsMicrophoneVoice,
+                        containsInjectedAudio: containsInjectedAudio
                     ))
                 }
             }

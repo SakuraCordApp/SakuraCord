@@ -15,6 +15,8 @@ public actor MockChatProvider: ChatProvider {
     private var privateCallsByChannel: [ChannelID: PrivateCall] = [:]
     private var favoriteGIFValues: [GIFSearchResult] = []
     private var favoriteEmojiKeys: [String]?
+    private var soundboardSoundsByGuild: [GuildID: [SoundboardSound]] = [:]
+    private var soundboardSettings = SoundboardUserSettings()
     private var continuation: AsyncStream<ClientEvent>.Continuation?
     private var nextMessageID: UInt64
     public private(set) var typingRequests: [ChannelID] = []
@@ -45,6 +47,12 @@ public actor MockChatProvider: ChatProvider {
     }
 
     public private(set) var voiceJoinRequests: [VoiceJoinRequest] = []
+    public struct SoundboardSendRequest: Equatable, Sendable {
+        public var sound: SoundboardSound
+        public var channelID: ChannelID
+    }
+
+    public private(set) var soundboardSendRequests: [SoundboardSendRequest] = []
     public struct AcknowledgementRequest: Equatable, Sendable {
         public var channelID: ChannelID
         public var messageID: MessageID
@@ -118,6 +126,21 @@ public actor MockChatProvider: ChatProvider {
         self.pinMutationFailureStatus = pinMutationFailureStatus
         nextMessageID = UInt64(ClientNonce.make()) ?? 9000
         snapshot = fixture.snapshot
+        for (index, guild) in fixture.snapshot.guilds.enumerated() {
+            soundboardSoundsByGuild[guild.id] = (0 ..< 9).map { soundIndex in
+                SoundboardSound(
+                    id: String(70_000 + index * 100 + soundIndex),
+                    name: ["Cherry Pop", "Rain Bell", "Tiny Drum", "Night Bloom"][soundIndex % 4],
+                    volume: 0.9,
+                    emojiID: soundIndex.isMultiple(of: 2)
+                        ? fixture.snapshot.guilds.first?.id.description
+                        : nil,
+                    emojiName: soundIndex.isMultiple(of: 2) ? "sakura" : "🌸",
+                    guildID: guild.id,
+                    userID: fixture.currentUser.id
+                )
+            }
+        }
         membersByGuild = fixture.membersByGuild
         emojisByGuild = fixture.emojisByGuild
         messagesByChannel = fixture.messagesByChannel
@@ -1053,6 +1076,7 @@ public actor MockChatProvider: ChatProvider {
             || capability == .components || capability == .modals
             || capability == .remoteComponentChoices
             || capability == .slashCommands || capability == .messageForwarding
+            || capability == .soundboard
     }
 
     public func componentChoices(
@@ -1817,6 +1841,55 @@ public extension MockChatProvider {
 }
 
 public extension MockChatProvider {
+    func defaultSoundboardSounds() async throws -> [SoundboardSound] {
+        [
+            SoundboardSound(id: "1", name: "quack", emojiName: "🦆"),
+            SoundboardSound(id: "2", name: "airhorn", emojiName: "🔊"),
+            SoundboardSound(id: "3", name: "cricket", emojiName: "🦗"),
+            SoundboardSound(id: "4", name: "golf clap", emojiName: "👏"),
+            SoundboardSound(id: "5", name: "sad horn", emojiName: "🎺"),
+            SoundboardSound(id: "7", name: "ba dum tss", emojiName: "🥁"),
+        ]
+    }
+
+    func soundboardSounds(
+        in guildIDs: [GuildID]
+    ) async throws -> [GuildID: [SoundboardSound]] {
+        Dictionary(uniqueKeysWithValues: guildIDs.map {
+            ($0, soundboardSoundsByGuild[$0] ?? [])
+        })
+    }
+
+    func soundboardUserSettings() async throws -> SoundboardUserSettings {
+        soundboardSettings
+    }
+
+    func setSoundboardFavorite(
+        _ soundID: String,
+        isFavorite: Bool
+    ) async throws -> SoundboardUserSettings {
+        soundboardSettings.favoriteSoundIDs.removeAll { $0 == soundID }
+        if isFavorite {
+            soundboardSettings.favoriteSoundIDs.append(soundID)
+        }
+        continuation?.yield(.soundboardUserSettingsChanged(soundboardSettings))
+        return soundboardSettings
+    }
+
+    func sendSoundboardSound(
+        _ sound: SoundboardSound,
+        in channelID: ChannelID
+    ) async throws {
+        soundboardSendRequests.append(SoundboardSendRequest(sound: sound, channelID: channelID))
+        continuation?.yield(.voiceChannelEffect(VoiceChannelEffect(
+            channelID: channelID,
+            guildID: snapshot.channels.first(where: { $0.id == channelID })?.guildID,
+            userID: currentUser.id,
+            soundID: sound.id,
+            soundVolume: 1
+        )))
+    }
+
     func pinnedMessages(
         in channelID: ChannelID,
         before: Date?,

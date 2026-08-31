@@ -77,6 +77,13 @@ enum DiscordGatewayPayloadFactory {
         ]
     }
 
+    static func requestSoundboardSounds(guildIDs: [GuildID]) -> [String: Any] {
+        [
+            "op": 31,
+            "d": ["guild_ids": guildIDs.map(\.description)],
+        ]
+    }
+
     static func voiceStateUpdate(
         guildID: GuildID?,
         channelID: ChannelID?,

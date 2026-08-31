@@ -360,7 +360,12 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         if let audioEngine {
             await audioEngine.setMuted(muted)
         }
-        if muted {
+        let soundboardIsPlaying = if let audioEngine {
+            await audioEngine.hasActiveOutgoingSoundboardAudio
+        } else {
+            false
+        }
+        if muted, !soundboardIsPlaying {
             updateLocalVoiceActivity(false)
             trailingSilenceFrames = 0
             if locallySpeaking, let audioSSRC {
@@ -368,6 +373,32 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
                 locallySpeaking = false
             }
         }
+    }
+
+    public func playSoundboardClipLocally(
+        _ clip: SoundboardPCMClip,
+        volume: Float = 1
+    ) async throws {
+        guard state == .connected, let audioEngine else {
+            throw VoiceSessionError.transportUnavailable
+        }
+        try await audioEngine.playSoundboardClipLocally(clip, volume: volume)
+    }
+
+    @discardableResult
+    public func enqueueOutgoingSoundboardClip(
+        _ clip: SoundboardPCMClip,
+        volume: Float = 1
+    ) async throws -> Bool {
+        guard state == .connected, let audioEngine else {
+            throw VoiceSessionError.transportUnavailable
+        }
+        return await audioEngine.enqueueOutgoingSoundboardClip(clip, volume: volume)
+    }
+
+    public func stopOutgoingSoundboardAudio() async {
+        guard let audioEngine else { return }
+        await audioEngine.stopOutgoingSoundboardAudio()
     }
 
     public func setDeafened(_ deafened: Bool) async {
@@ -847,7 +878,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
 
     private func handleCapturedFrame(_ frame: CapturedOpusFrame) async {
         guard state == .connected, audioSSRC != nil else { return }
-        updateLocalVoiceActivity(frame.containsVoice && !configuration.isMuted)
+        updateLocalVoiceActivity(frame.containsVoice)
         if !didLogCapturedAudio {
             didLogCapturedAudio = true
             voiceMediaLogger.info(
@@ -855,7 +886,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
             )
         }
         advanceAudioTimestamp(for: frame)
-        if frame.containsVoice, !configuration.isMuted {
+        if frame.containsVoice {
             trailingSilenceFrames = 0
             if !locallySpeaking, let audioSSRC {
                 try? await gateway.sendSpeaking(flags: 1, ssrc: audioSSRC)

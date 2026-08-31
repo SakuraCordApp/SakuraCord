@@ -194,6 +194,7 @@ extension DiscordRESTProvider {
         cachedApplicationCommandCatalogs = [:]
         cancelPendingInteractionRequests()
         cancelPendingMemberRequests(error: CancellationError())
+        cancelSoundboardRequests()
         requestedHistoryMemberIDs = [:]
         resolvingHistoryMemberIDs = [:]
         voiceNegotiationTimeoutTask?.cancel()
@@ -977,6 +978,42 @@ extension DiscordRESTProvider {
             )
             cachedGuildNotificationSettings[guildID] = settings
             continuation?.yield(.notificationSettingsChanged(settings))
+        case "SOUNDBOARD_SOUNDS":
+            guard let update = try? JSONDecoder().decode(
+                GatewaySoundboardSoundsDTO.self,
+                from: data
+            ) else { return }
+            applySoundboardSounds(update)
+        case "VOICE_CHANNEL_EFFECT_SEND", "VOICE_EFFECT_SEND":
+            let decoded: VoiceChannelEffectDTO
+            do {
+                decoded = try JSONDecoder().decode(
+                    VoiceChannelEffectDTO.self,
+                    from: data
+                )
+            } catch {
+                gatewayLogger.error(
+                    "Voice channel effect could not be decoded; bytes=\(data.count)"
+                )
+                return
+            }
+            guard let effect = decoded.domain else {
+                gatewayLogger.error("Voice channel effect contained invalid identifiers")
+                return
+            }
+            continuation?.yield(.voiceChannelEffect(effect))
+        case "GUILD_SOUNDBOARD_SOUND_CREATE", "GUILD_SOUNDBOARD_SOUND_UPDATE":
+            guard let sound = try? JSONDecoder().decode(
+                GatewaySoundboardSoundEventDTO.self,
+                from: data
+            ).domain else { return }
+            upsertSoundboardSound(sound)
+        case "GUILD_SOUNDBOARD_SOUND_DELETE":
+            guard let deletion = try? JSONDecoder().decode(
+                GatewaySoundboardSoundDeleteDTO.self,
+                from: data
+            ), let guildID = GuildID(deletion.guildID) else { return }
+            deleteSoundboardSound(guildID: guildID, soundID: deletion.soundID)
         case "READY_SUPPLEMENTAL":
             if let supplemental = try? JSONDecoder().decode(
                 GatewayReadyGuildsDTO.self, from: data

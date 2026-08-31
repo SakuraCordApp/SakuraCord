@@ -14,6 +14,7 @@ public enum ClientEvent: Equatable, Sendable {
     case notificationModeChanged(usesNewNotifications: Bool)
     case notificationSettingsChanged(GuildNotificationSettings)
     case emojiUserSettingsChanged(EmojiUserSettings)
+    case soundboardUserSettingsChanged(SoundboardUserSettings)
     case typing(channelID: ChannelID, user: User)
     case channelsChanged(guildID: GuildID?, channels: [Channel])
     case forumPostsChanged(channelID: ChannelID, posts: [ForumPost])
@@ -41,6 +42,8 @@ public enum ClientEvent: Equatable, Sendable {
         upserted: [DiscordEmoji],
         deletedIDs: [String]
     )
+    case soundboardSoundsChanged(guildID: GuildID?, sounds: [SoundboardSound])
+    case voiceChannelEffect(VoiceChannelEffect)
     case voiceStateChanged(VoiceParticipantState)
     case privateCallChanged(PrivateCall)
     case privateCallDeleted(channelID: ChannelID, unavailable: Bool)

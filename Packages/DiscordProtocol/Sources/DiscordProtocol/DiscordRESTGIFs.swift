@@ -192,9 +192,15 @@ public extension DiscordRESTProvider {
 
         cachedFrecencySettingsProto = updated
         let emojiSettings = DiscordSettingsProto.emojiSettings(from: updated)
+        let publishesSoundboardSettings = cachedSoundboardUserSettings != nil
+        let soundboardSettings = DiscordSettingsProto.soundboardSettings(from: updated)
         cachedEmojiUserSettings = emojiSettings
+        cachedSoundboardUserSettings = soundboardSettings
         cachedGIFFavorites = DiscordSettingsProto.gifFavorites(from: updated)
         continuation?.yield(.emojiUserSettingsChanged(emojiSettings))
+        if publishesSoundboardSettings {
+            continuation?.yield(.soundboardUserSettingsChanged(soundboardSettings))
+        }
     }
 
     internal func frecencySettingsProto() async throws -> Data {

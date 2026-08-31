@@ -190,6 +190,11 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var emojiUserSettingsTask: Task<EmojiUserSettings, Error>?
     var cachedFrecencySettingsProto: Data?
     var frecencySettingsTask: Task<Data, Error>?
+    var cachedDefaultSoundboardSounds: [SoundboardSound]?
+    var cachedSoundboardSounds: [GuildID: [SoundboardSound]] = [:]
+    var cachedSoundboardUserSettings: SoundboardUserSettings?
+    var pendingSoundboardRequests: [UUID: PendingSoundboardRequest] = [:]
+    var soundboardRequestTimeoutTasks: [UUID: Task<Void, Never>] = [:]
     var cachedGIFPickerLanding: GIFPickerLanding?
     var cachedGIFFavorites: [GIFSearchResult]?
     var isMutatingFrecencyFavorite = false

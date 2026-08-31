@@ -26,10 +26,13 @@ nonisolated enum DiscordPermissionBits {
     static let attachFiles: UInt64 = 1 << 15
     static let readMessageHistory: UInt64 = 1 << 16
     static let connect: UInt64 = 1 << 20
+    static let speak: UInt64 = 1 << 21
     static let manageThreads: UInt64 = 1 << 34
     static let useExternalStickers: UInt64 = 1 << 37
     static let sendMessagesInThreads: UInt64 = 1 << 38
+    static let useSoundboard: UInt64 = 1 << 42
     static let sendVoiceMessages: UInt64 = 1 << 46
+    static let useExternalSounds: UInt64 = 1 << 45
     static let pinMessages: UInt64 = 1 << 51
     static let bypassSlowmode: UInt64 = 1 << 52
 }

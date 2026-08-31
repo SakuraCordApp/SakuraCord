@@ -417,6 +417,7 @@ final class AppModel {
     var gifErrorMessage: String?
     var gifFavoriteMutationURL: URL?
     var stickersByGuild: [GuildID: [MessageSticker]] = [:]
+    var soundboardState = SoundboardPresentationState()
     var supportedCapabilities: Set<ChatCapability> = []
     var componentInteractionPresentation =
         ComponentInteractionPresentationState()
@@ -1079,6 +1080,8 @@ final class AppModel {
     @ObservationIgnored var gifSearchTask: Task<Void, Never>?
     @ObservationIgnored var gifPickerLoadTask: Task<Void, Never>?
     @ObservationIgnored var gifPickerLoadGeneration: UInt64 = 0
+    @ObservationIgnored var soundboardLoadTask: Task<Void, Never>?
+    @ObservationIgnored var soundboardLoadGeneration: UInt64 = 0
     @ObservationIgnored var commandLoadTask: Task<Void, Never>?
     @ObservationIgnored var commandAutocompleteTask: Task<Void, Never>?
     @ObservationIgnored var commandMemberSearchTask: Task<Void, Never>?

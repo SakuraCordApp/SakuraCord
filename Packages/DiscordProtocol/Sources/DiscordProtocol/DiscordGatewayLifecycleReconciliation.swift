@@ -99,6 +99,13 @@ extension DiscordRESTProvider {
                     "Discord temporarily rate limited the screen-share request."
                 )
             )
+        case 31:
+            let error = ChatProviderError.invalidRequest(
+                "Discord rate limited the Gateway soundboard request."
+            )
+            for requestID in Array(pendingSoundboardRequests.keys) {
+                failSoundboardRequest(requestID, error: error)
+            }
         default:
             break
         }

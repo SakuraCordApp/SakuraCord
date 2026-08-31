@@ -401,6 +401,9 @@ private struct ChatRootView: View {
         .onChange(of: model.selectedChannelID) { _, channelID in
             presentsForumComposer = false
             model.mediaViewerPresentation = nil
+            if model.selectedChannel?.kind == .voice {
+                model.dismissPinnedMessages()
+            }
             AppPerformanceSignposts.expectStartupConversation(channelID)
         }
         .onAppear {
@@ -653,7 +656,7 @@ private struct ChatRootView: View {
                 .visibilityPriority(.high)
             }
 
-            if let pinsChannelID = model.activePinsChannelID {
+            if let pinsChannelID = toolbarPinsChannelID {
                 if hasToolbarActionBeforePins {
                     ToolbarSpacer(.fixed)
                 }
@@ -882,7 +885,12 @@ private struct ChatRootView: View {
 
     private var hasToolbarActionBeforeInspector: Bool {
         selectedPrivateChannel != nil
-            || model.activePinsChannelID != nil
+            || toolbarPinsChannelID != nil
+    }
+
+    private var toolbarPinsChannelID: ChannelID? {
+        guard selectedVoiceChannel == nil else { return nil }
+        return model.activePinsChannelID
     }
 
     private var supplementaryToolbarPresentation: SupplementaryToolbarPresentation? {
