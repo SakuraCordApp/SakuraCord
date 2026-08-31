@@ -1,96 +1,8 @@
 import Foundation
 
-nonisolated enum InterfaceMessageDensity: String, CaseIterable, Identifiable, Sendable {
-    case comfortable
-    case balanced
-    case compact
-
-    var id: String { rawValue }
-
-    var title: LocalizedStringResource {
-        switch self {
-        case .comfortable: LocalizedStringResource("Comfortable", bundle: #bundle)
-        case .balanced: LocalizedStringResource("Balanced", bundle: #bundle)
-        case .compact: LocalizedStringResource("Compact", bundle: #bundle)
-        }
-    }
-
-    var avatarDiameter: CGFloat {
-        switch self {
-        case .comfortable: 38
-        case .balanced: 34
-        case .compact: 30
-        }
-    }
-
-    var horizontalInset: CGFloat {
-        switch self {
-        case .comfortable: 14
-        case .balanced: 12
-        case .compact: 10
-        }
-    }
-
-    var columnGap: CGFloat {
-        switch self {
-        case .comfortable: 12
-        case .balanced: 10
-        case .compact: 8
-        }
-    }
-
-    var groupSeparation: CGFloat {
-        switch self {
-        case .comfortable: 12
-        case .balanced: 8
-        case .compact: 4
-        }
-    }
-
-    var highlightInset: CGFloat {
-        switch self {
-        case .comfortable: 3
-        case .balanced: 2
-        case .compact: 1
-        }
-    }
-
-    var authorToContentSpacing: CGFloat {
-        switch self {
-        case .comfortable: 4
-        case .balanced: 2
-        case .compact: 0
-        }
-    }
-
-    var compactContentHeight: CGFloat {
-        switch self {
-        case .comfortable: 18
-        case .balanced: 17
-        case .compact: 16
-        }
-    }
-}
-
-nonisolated enum InterfaceSidebarDensity: String, CaseIterable, Identifiable, Sendable {
-    case comfortable
-    case compact
-
-    var id: String { rawValue }
-
-    var title: LocalizedStringResource {
-        switch self {
-        case .comfortable: LocalizedStringResource("Comfortable", bundle: #bundle)
-        case .compact: LocalizedStringResource("Compact", bundle: #bundle)
-        }
-    }
-
-    var minimumRowHeight: CGFloat {
-        switch self {
-        case .comfortable: 24
-        case .compact: 19
-        }
-    }
+nonisolated enum InterfaceTypographyMetrics {
+    static let messageTextSize: CGFloat = 15
+    static let interfaceTextSize: CGFloat = 13
 }
 
 nonisolated enum InterfaceTimestampFormat: String, CaseIterable, Identifiable, Sendable {
@@ -124,15 +36,9 @@ nonisolated enum InterfaceMessageActionVisibility: String, CaseIterable, Identif
 }
 
 nonisolated struct InterfaceSettingsSnapshot: Equatable, Sendable {
-    static let messageTextSizeRange = 12.0 ... 22.0
-    static let interfaceTextSizeRange = 11.0 ... 18.0
     static let groupingIntervalRange = 1 ... 30
 
     static let defaults = Self(
-        messageDensity: .comfortable,
-        sidebarDensity: .comfortable,
-        messageTextSize: 15,
-        interfaceTextSize: 13,
         timestampFormat: .system,
         includesTimestampSeconds: false,
         groupingIntervalMinutes: 7,
@@ -143,10 +49,6 @@ nonisolated struct InterfaceSettingsSnapshot: Equatable, Sendable {
         showsRoleColors: true
     )
 
-    var messageDensity: InterfaceMessageDensity
-    var sidebarDensity: InterfaceSidebarDensity
-    var messageTextSize: Double
-    var interfaceTextSize: Double
     var timestampFormat: InterfaceTimestampFormat
     var includesTimestampSeconds: Bool
     var groupingIntervalMinutes: Int
@@ -161,8 +63,6 @@ nonisolated struct InterfaceSettingsSnapshot: Equatable, Sendable {
     }
 
     mutating func normalize() {
-        messageTextSize = messageTextSize.clamped(to: Self.messageTextSizeRange)
-        interfaceTextSize = interfaceTextSize.clamped(to: Self.interfaceTextSizeRange)
         groupingIntervalMinutes = groupingIntervalMinutes.clamped(
             to: Self.groupingIntervalRange
         )
@@ -253,10 +153,6 @@ final class InterfaceSettingsStore {
 
     func load() -> InterfaceSettingsSnapshot {
         var value = InterfaceSettingsSnapshot.defaults
-        value.messageDensity = enumValue(.messageDensity) ?? value.messageDensity
-        value.sidebarDensity = enumValue(.sidebarDensity) ?? value.sidebarDensity
-        value.messageTextSize = doubleValue(.messageTextSize) ?? value.messageTextSize
-        value.interfaceTextSize = doubleValue(.interfaceTextSize) ?? value.interfaceTextSize
         value.timestampFormat = enumValue(.timestampFormat) ?? value.timestampFormat
         value.includesTimestampSeconds = boolValue(.timestampSeconds)
             ?? value.includesTimestampSeconds
@@ -274,10 +170,6 @@ final class InterfaceSettingsStore {
     }
 
     func save(_ value: InterfaceSettingsSnapshot) {
-        preferences.set(.string(value.messageDensity.rawValue), for: .messageDensity)
-        preferences.set(.string(value.sidebarDensity.rawValue), for: .sidebarDensity)
-        preferences.set(.double(value.messageTextSize), for: .messageTextSize)
-        preferences.set(.double(value.interfaceTextSize), for: .interfaceTextSize)
         preferences.set(.string(value.timestampFormat.rawValue), for: .timestampFormat)
         preferences.set(.bool(value.includesTimestampSeconds), for: .timestampSeconds)
         preferences.set(.integer(value.groupingIntervalMinutes), for: .groupingInterval)
@@ -298,11 +190,6 @@ final class InterfaceSettingsStore {
 
     private func integerValue(_ id: SettingsControlID) -> Int? {
         guard case let .integer(value) = preferences.value(for: id) else { return nil }
-        return value
-    }
-
-    private func doubleValue(_ id: SettingsControlID) -> Double? {
-        guard case let .double(value) = preferences.value(for: id) else { return nil }
         return value
     }
 
@@ -327,9 +214,7 @@ extension AppModel {
             value.groupingIntervalMinutes
                 != previousValue.groupingIntervalMinutes
         let timelinePresentationChanged =
-            value.messageDensity != previousValue.messageDensity
-                || value.messageTextSize != previousValue.messageTextSize
-                || value.timestampFormat != previousValue.timestampFormat
+            value.timestampFormat != previousValue.timestampFormat
                 || value.includesTimestampSeconds
                     != previousValue.includesTimestampSeconds
                 || value.underlinesLinks != previousValue.underlinesLinks

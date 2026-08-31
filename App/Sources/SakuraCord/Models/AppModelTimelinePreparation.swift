@@ -47,7 +47,7 @@ extension AppModel {
                 model: self,
                 baseFontSize: row.message.type.hasGeneratedContent
                     ? row.textPlan.baseFontSize
-                    : CGFloat(interfaceSettings.messageTextSize),
+                    : InterfaceTypographyMetrics.messageTextSize,
                 underlinesLinks: !row.message.type.hasGeneratedContent
                     && interfaceSettings.underlinesLinks
             )

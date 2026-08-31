@@ -232,7 +232,7 @@ private struct ChatRootView: View {
                     } else {
                         Text(sidebarDisplayName)
                             .font(.system(
-                                size: model.interfaceSettings.interfaceTextSize + 2,
+                                size: InterfaceTypographyMetrics.interfaceTextSize + 2,
                                 weight: .semibold
                             ))
                             .lineLimit(1)
@@ -533,7 +533,7 @@ private struct ChatRootView: View {
                         title: channel.name,
                         systemImage: channelToolbarSymbol(channel),
                         subtitle: directMessageToolbarSubtitle(for: channel),
-                        textSize: model.interfaceSettings.interfaceTextSize
+                        textSize: InterfaceTypographyMetrics.interfaceTextSize
                     )
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
@@ -542,14 +542,14 @@ private struct ChatRootView: View {
                         title: channel.name,
                         systemImage: channelToolbarSymbol(channel),
                         topic: topic,
-                        textSize: model.interfaceSettings.interfaceTextSize
+                        textSize: InterfaceTypographyMetrics.interfaceTextSize
                     )
                 } else {
                     ConversationToolbarLabel(
                         title: channel.name,
                         systemImage: channelToolbarSymbol(channel),
                         subtitle: nil,
-                        textSize: model.interfaceSettings.interfaceTextSize
+                        textSize: InterfaceTypographyMetrics.interfaceTextSize
                     )
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
@@ -566,7 +566,7 @@ private struct ChatRootView: View {
                             title: presentation.title,
                             systemImage: presentation.systemImage,
                             subtitle: presentation.subtitle,
-                            textSize: model.interfaceSettings.interfaceTextSize
+                            textSize: InterfaceTypographyMetrics.interfaceTextSize
                         )
                         Spacer(minLength: 0)
                     }
@@ -1204,7 +1204,7 @@ private struct ConversationToolbarLabel: View {
     let title: String
     let systemImage: String
     var subtitle: String?
-    let textSize: Double
+    let textSize: CGFloat
 
     var body: some View {
         HStack(spacing: 8) {
@@ -1232,7 +1232,7 @@ private struct ChannelTopicToolbarButton: View {
     let title: String
     let systemImage: String
     let topic: String
-    let textSize: Double
+    let textSize: CGFloat
     @State private var isTopicPresented = false
 
     var body: some View {

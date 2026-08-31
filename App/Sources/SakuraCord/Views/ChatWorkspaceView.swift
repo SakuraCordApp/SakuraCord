@@ -190,7 +190,6 @@ private struct ChatWorkspaceSupplementaryContent: View {
                     dismissProfile: model.dismissInspectorProfile,
                     viewportIdentity: model.selectedChannelID,
                     presentation: NativeMemberListPresentation(
-                        interfaceTextSize: model.interfaceSettings.interfaceTextSize,
                         showsActivityDetails: model.interfaceSettings.showsActivityDetails,
                         showsRoleColors: model.interfaceSettings.showsRoleColors
                     ),

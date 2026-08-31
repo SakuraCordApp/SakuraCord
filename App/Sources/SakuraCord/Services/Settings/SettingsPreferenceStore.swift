@@ -200,30 +200,6 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             defaultValue: .string(MessageAppearance.defaultStyle.rawValue)
         ),
         SettingsPreferenceRegistration(
-            id: .messageDensity,
-            page: .interface,
-            storage: .appWide(key: "settings.interface.messageDensity"),
-            defaultValue: .string(InterfaceMessageDensity.comfortable.rawValue)
-        ),
-        SettingsPreferenceRegistration(
-            id: .sidebarDensity,
-            page: .interface,
-            storage: .appWide(key: "settings.interface.sidebarDensity"),
-            defaultValue: .string(InterfaceSidebarDensity.comfortable.rawValue)
-        ),
-        SettingsPreferenceRegistration(
-            id: .messageTextSize,
-            page: .interface,
-            storage: .appWide(key: "settings.interface.messageTextSize"),
-            defaultValue: .double(15)
-        ),
-        SettingsPreferenceRegistration(
-            id: .interfaceTextSize,
-            page: .interface,
-            storage: .appWide(key: "settings.interface.interfaceTextSize"),
-            defaultValue: .double(13)
-        ),
-        SettingsPreferenceRegistration(
             id: .timestampFormat,
             page: .interface,
             storage: .appWide(key: "settings.interface.timestampFormat"),

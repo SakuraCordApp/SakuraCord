@@ -71,28 +71,23 @@ import Testing
 }
 
 @MainActor
-@Test func `Interface preferences clamp persist export and reset by page`() {
+@Test func `Interface preferences persist export and reset by page`() {
     let defaults = InMemoryPreferences()
     let preferences = SettingsPreferenceStore(defaults: defaults)
     let store = InterfaceSettingsStore(preferences: preferences)
-    preferences.set(.double(100), for: .messageTextSize)
-    preferences.set(.double(1), for: .interfaceTextSize)
     preferences.set(.integer(90), for: .groupingInterval)
 
     var loaded = store.load()
-    #expect(loaded.messageTextSize == 22)
-    #expect(loaded.interfaceTextSize == 11)
     #expect(loaded.groupingIntervalMinutes == 30)
 
-    loaded.messageDensity = .compact
     loaded.timestampFormat = .twentyFourHour
     loaded.showsMemberList = false
     store.save(loaded)
     #expect(store.load() == loaded)
     let export = preferences.export(scope: .appWide, page: .interface)
     #expect(
-        export.values[SettingsControlID.messageDensity.rawValue]
-            == .string(InterfaceMessageDensity.compact.rawValue)
+        export.values[SettingsControlID.timestampFormat.rawValue]
+            == .string(InterfaceTimestampFormat.twentyFourHour.rawValue)
     )
     #expect(export.values[SettingsControlID.launchDestination.rawValue] == nil)
 
@@ -148,9 +143,9 @@ import Testing
     model.applyInterfaceSettings(actions, persists: false)
     #expect(model.timelinePresentationRevision == initialRevision)
 
-    var density = model.interfaceSettings
-    density.messageDensity = .compact
-    model.applyInterfaceSettings(density, persists: false)
+    var links = model.interfaceSettings
+    links.underlinesLinks = true
+    model.applyInterfaceSettings(links, persists: false)
     #expect(model.timelinePresentationRevision > initialRevision)
 
     var memberList = model.interfaceSettings
@@ -160,7 +155,7 @@ import Testing
 }
 
 @MainActor
-@Test func `Interface density and link decoration reach native timeline layout`() throws {
+@Test func `Interface link decoration reaches native timeline layout`() throws {
     let model = AppModel(launchMode: .offlineTesting)
     let message = Message(
         id: MessageID(rawValue: 10),
@@ -186,25 +181,16 @@ import Testing
     )
 
     var settings = InterfaceSettingsSnapshot.defaults
-    model.applyInterfaceSettings(settings, persists: false)
-    let comfortable = NativeTimelineRowLayout.make(
-        item: item,
-        width: 620,
-        model: model
-    )
-    settings.messageDensity = .compact
     settings.underlinesLinks = true
     model.applyInterfaceSettings(settings, persists: false)
-    let compact = NativeTimelineRowLayout.make(
+    let layout = NativeTimelineRowLayout.make(
         item: item,
         width: 620,
         model: model
     )
 
-    #expect(try #require(compact.avatarFrame).width < #require(comfortable.avatarFrame).width)
-    #expect(compact.height < comfortable.height)
     let underline = try #require(
-        compact.attributedContent?.attribute(
+        layout.attributedContent?.attribute(
             .underlineStyle,
             at: 0,
             effectiveRange: nil
@@ -214,7 +200,7 @@ import Testing
 }
 
 @MainActor
-@Test func `Interface member presentation hides activity and respects text size`() throws {
+@Test func `Interface member presentation hides activity`() throws {
     let member = Member(
         user: User(
             id: UserID(rawValue: 20),
@@ -237,7 +223,6 @@ import Testing
     let shown = try #require(NativeMemberListCanvasView.prepareDocument(
         sections: sections,
         presentation: NativeMemberListPresentation(
-            interfaceTextSize: 13,
             showsActivityDetails: true,
             showsRoleColors: true
         )
@@ -245,7 +230,6 @@ import Testing
     let hidden = try #require(NativeMemberListCanvasView.prepareDocument(
         sections: sections,
         presentation: NativeMemberListPresentation(
-            interfaceTextSize: 18,
             showsActivityDetails: false,
             showsRoleColors: false
         )
@@ -253,21 +237,11 @@ import Testing
     let itemID = NativeMemberListCanvasView.ItemID.member(member.id)
     #expect(try #require(shown.preparedText[itemID]).activity != nil)
     #expect(try #require(hidden.preparedText[itemID]).activity == nil)
-    #expect(
-        try #require(hidden.preparedText[itemID]).nameWidth
-            > #require(shown.preparedText[itemID]).nameWidth
-    )
-    #expect(hidden.presentation.interfaceTextSize == 18)
 }
 
 @MainActor
 @Test func `Interface catalog exposes every control and required search synonym`() {
     let expected: Set<SettingsControlID> = [
-        .messageDensity,
-        .sidebarDensity,
-        .messageTextSize,
-        .interfaceTextSize,
-        .resetInterfaceTextSizes,
         .timestampFormat,
         .timestampSeconds,
         .groupingInterval,
@@ -287,14 +261,13 @@ import Testing
     #expect(controls.allSatisfy { $0.scope == .appWideLocal })
 
     let state = SettingsViewState()
-    for (term, control) in [
-        ("compact", SettingsControlID.messageDensity),
-        ("font", .messageTextSize),
+    let searchCases: [(String, SettingsControlID)] = [
         ("clock", .timestampFormat),
         ("timestamp", .timestampFormat),
         ("roles", .showRoleColors),
         ("member list", .showMemberList),
-    ] {
+    ]
+    for (term, control) in searchCases {
         state.searchText = term
         #expect(
             state.searchResults.contains { $0.id == control },

@@ -174,8 +174,6 @@ nonisolated extension SettingsSectionID {
     static let confirmations = Self(rawValue: "confirmations")
     static let appearanceTheme = Self(rawValue: "appearance-theme")
     static let appearanceComposer = Self(rawValue: "appearance-composer")
-    static let interfaceDensity = Self(rawValue: "interface-density")
-    static let interfaceTypography = Self(rawValue: "interface-typography")
     static let interfaceTime = Self(rawValue: "interface-time")
     static let interfaceVisibility = Self(rawValue: "interface-visibility")
     static let interfacePreview = Self(rawValue: "interface-preview")
@@ -245,11 +243,6 @@ nonisolated extension SettingsControlID {
     static let themeDesigner = Self(rawValue: "appearance.theme-designer")
     static let composerBarAppearance = Self(rawValue: "appearance.composer-bar")
     static let messageAppearance = Self(rawValue: "appearance.messages")
-    static let messageDensity = Self(rawValue: "interface.message-density")
-    static let sidebarDensity = Self(rawValue: "interface.sidebar-density")
-    static let messageTextSize = Self(rawValue: "interface.message-text-size")
-    static let interfaceTextSize = Self(rawValue: "interface.interface-text-size")
-    static let resetInterfaceTextSizes = Self(rawValue: "interface.reset-text-sizes")
     static let timestampFormat = Self(rawValue: "interface.timestamp-format")
     static let timestampSeconds = Self(rawValue: "interface.timestamp-seconds")
     static let groupingInterval = Self(rawValue: "interface.grouping-interval")
@@ -437,8 +430,8 @@ private nonisolated extension SettingsCatalog {
         ),
         page(
             .interface, group: .preferences, title: "Interface", image: "macwindow",
-            help: "Adjust the density and readability of SakuraCord without changing its theme.",
-            keywords: ["appearance", "density", "comfortable", "compact", "font", "text size", "clock", "timestamp", "roles", "member list"]
+            help: "Choose timestamp, grouping, link, member-list, and role presentation.",
+            keywords: ["appearance", "clock", "timestamp", "roles", "member list", "links", "grouping", "message actions"]
         ),
         page(
             .chat, group: .preferences, title: "Chat", image: "bubble.left.and.bubble.right",
@@ -680,53 +673,6 @@ private nonisolated extension SettingsCatalog {
             help: "Choose the current split input bar or SakuraCord's legacy unified input bar.",
             keywords: ["composer", "message input", "default", "legacy", "pill"],
             scope: .appWideLocal
-        ),
-        control(
-            .messageDensity,
-            page: .interface,
-            section: .interfaceDensity,
-            label: "Message density",
-            help: "Choose Comfortable, Balanced, or Compact message spacing.",
-            keywords: ["compact", "comfortable", "balanced", "spacing", "cozy"],
-            scope: .appWideLocal
-        ),
-        control(
-            .sidebarDensity,
-            page: .interface,
-            section: .interfaceDensity,
-            label: "Sidebar density",
-            help: "Choose Comfortable or Compact channel-list spacing.",
-            keywords: ["compact", "channel list", "sidebar rows", "spacing"],
-            scope: .appWideLocal
-        ),
-        control(
-            .messageTextSize,
-            page: .interface,
-            section: .interfaceTypography,
-            label: "Message text size",
-            help: "Adjust message text from 12 to 22 points.",
-            keywords: ["font", "chat size", "larger text", "readability"],
-            scope: .appWideLocal
-        ),
-        control(
-            .interfaceTextSize,
-            page: .interface,
-            section: .interfaceTypography,
-            label: "Interface text size",
-            help: "Adjust sidebar, header, and member-list text from 11 to 18 points.",
-            keywords: ["font", "UI size", "sidebar text", "member list"],
-            scope: .appWideLocal
-        ),
-        control(
-            .resetInterfaceTextSizes,
-            page: .interface,
-            section: .interfaceTypography,
-            label: "Reset Text Sizes",
-            help: "Restore message and interface text to their readable defaults.",
-            keywords: ["default font", "restore size"],
-            scope: .appWideLocal,
-            persistence: .notApplicable,
-            reset: .categoryAction
         ),
         control(
             .timestampFormat,

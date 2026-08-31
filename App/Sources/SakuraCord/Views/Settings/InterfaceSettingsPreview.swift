@@ -34,7 +34,7 @@ struct InterfaceSettingsPreview: View {
         HStack(spacing: 7) {
             Image(systemName: "number")
             Text("design-lab", bundle: #bundle)
-                .font(.system(size: value.interfaceTextSize))
+                .font(.system(size: InterfaceTypographyMetrics.interfaceTextSize))
             Spacer()
             Image(systemName: value.showsMemberList ? "person.2.fill" : "person.2")
                 .foregroundStyle(.secondary)
@@ -46,7 +46,10 @@ struct InterfaceSettingsPreview: View {
     private var previewSidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("STUDIO", bundle: #bundle)
-                .font(.system(size: max(10, value.interfaceTextSize - 2), weight: .semibold))
+                .font(.system(
+                    size: max(10, InterfaceTypographyMetrics.interfaceTextSize - 2),
+                    weight: .semibold
+                ))
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 3)
             previewChannel("general", image: "number", selected: false)
@@ -65,11 +68,11 @@ struct InterfaceSettingsPreview: View {
         selected: Bool
     ) -> some View {
         Label(title, systemImage: image)
-            .font(.system(size: value.interfaceTextSize))
+            .font(.system(size: InterfaceTypographyMetrics.interfaceTextSize))
             .lineLimit(1)
             .padding(.horizontal, 7)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: value.sidebarDensity.minimumRowHeight)
+            .frame(height: ChannelSidebarLayoutMetrics.minimumRowHeight)
             .background(
                 selected
                     ? AnyShapeStyle(SakuraCordAccentColor.color.opacity(0.18))
@@ -90,7 +93,7 @@ struct InterfaceSettingsPreview: View {
             )
             previewMessage(
                 name: "Hana",
-                content: AttributedString(localized: "The spacing updates immediately."),
+                content: AttributedString(localized: "The preview updates immediately."),
                 time: laterTime,
                 startsGroup: !groupsRepresentativeMessages,
                 isLink: false,
@@ -98,11 +101,11 @@ struct InterfaceSettingsPreview: View {
             )
             .padding(
                 .top,
-                groupsRepresentativeMessages ? 0 : value.messageDensity.groupSeparation
+                groupsRepresentativeMessages ? 0 : MessageRowLayoutMetrics.messageGroupSeparation
             )
             Spacer(minLength: 0)
         }
-        .padding(value.messageDensity.horizontalInset)
+        .padding(MessageRowLayoutMetrics.horizontalInset)
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
@@ -114,7 +117,7 @@ struct InterfaceSettingsPreview: View {
         isLink: Bool,
         showsActionCapsule: Bool
     ) -> some View {
-        HStack(alignment: .top, spacing: value.messageDensity.columnGap) {
+        HStack(alignment: .top, spacing: MessageRowLayoutMetrics.avatarColumnGap) {
             Group {
                 if startsGroup {
                     Circle()
@@ -131,11 +134,13 @@ struct InterfaceSettingsPreview: View {
                 }
             }
             .frame(
-                width: value.messageDensity.avatarDiameter,
-                height: startsGroup ? value.messageDensity.avatarDiameter : 18
+                width: MessageRowLayoutMetrics.avatarDiameter,
+                height: startsGroup
+                    ? MessageRowLayoutMetrics.avatarDiameter
+                    : MessageRowLayoutMetrics.compactContentHeight
             )
 
-            VStack(alignment: .leading, spacing: value.messageDensity.authorToContentSpacing) {
+            VStack(alignment: .leading, spacing: MessageRowLayoutMetrics.authorContentSpacing) {
                 if startsGroup {
                     HStack(spacing: 6) {
                         Text(name)
@@ -147,7 +152,7 @@ struct InterfaceSettingsPreview: View {
                     }
                 }
                 Text(content)
-                    .font(.system(size: value.messageTextSize))
+                    .font(.system(size: InterfaceTypographyMetrics.messageTextSize))
                     .foregroundStyle(
                         isLink
                             ? Color(nsColor: .linkColor)
@@ -173,7 +178,10 @@ struct InterfaceSettingsPreview: View {
     private var previewMembers: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("ONLINE — 2", bundle: #bundle)
-                .font(.system(size: max(10, value.interfaceTextSize - 2), weight: .semibold))
+                .font(.system(
+                    size: max(10, InterfaceTypographyMetrics.interfaceTextSize - 2),
+                    weight: .semibold
+                ))
                 .foregroundStyle(.secondary)
             previewMember("Hana", activity: "Designing a prototype", color: .purple)
             previewMember("Ren", activity: "Reviewing feedback", color: .primary)
@@ -200,11 +208,16 @@ struct InterfaceSettingsPreview: View {
                 }
             VStack(alignment: .leading, spacing: 0) {
                 Text(name)
-                    .font(.system(size: value.interfaceTextSize, weight: .semibold))
+                    .font(.system(
+                        size: InterfaceTypographyMetrics.interfaceTextSize,
+                        weight: .semibold
+                    ))
                     .foregroundStyle(value.showsRoleColors ? color : .primary)
                 if value.showsActivityDetails {
                     Text(activity)
-                        .font(.system(size: max(10, value.interfaceTextSize - 2)))
+                        .font(.system(
+                            size: max(10, InterfaceTypographyMetrics.interfaceTextSize - 2)
+                        ))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -241,12 +254,7 @@ struct InterfaceSettingsPreview: View {
     }
 
     private var accessibilitySummary: String {
-        let textSizes =
-            "message text \(Int(value.messageTextSize)) points, "
-            + "interface text \(Int(value.interfaceTextSize)) points"
         let memberList = value.showsMemberList ? "shown" : "hidden"
-        return "\(value.messageDensity.rawValue) messages, "
-            + "\(value.sidebarDensity.rawValue) sidebar, \(textSizes), "
-            + "\(value.timestampFormat.rawValue) timestamps, member list \(memberList)"
+        return "\(value.timestampFormat.rawValue) timestamps, member list \(memberList)"
     }
 }

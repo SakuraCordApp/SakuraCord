@@ -2,6 +2,10 @@ import AppKit
 import SakuraCordModels
 import SwiftUI
 
+nonisolated enum ChannelSidebarLayoutMetrics {
+    static let minimumRowHeight: CGFloat = 24
+}
+
 @MainActor
 final class ChannelSidebarSelectionCommitter {
     private enum PendingSelection: Equatable {
@@ -128,9 +132,7 @@ struct ChannelSidebarView: View {
                         checkingChannelIDs: checkingChannelIDs,
                         unreadCategoryIDs: unreadCategoryIDs,
                         selectedChannelID: selection,
-                        bottomContentInset: accountControlHeight,
-                        density: voiceModel.interfaceSettings.sidebarDensity,
-                        interfaceTextSize: voiceModel.interfaceSettings.interfaceTextSize
+                        bottomContentInset: accountControlHeight
                     ),
                     model: voiceModel,
                     selection: deferredGuildSelection
@@ -162,10 +164,10 @@ struct ChannelSidebarView: View {
             }
             .zIndex(1)
         }
-        .font(.system(size: voiceModel.interfaceSettings.interfaceTextSize))
+        .font(.system(size: InterfaceTypographyMetrics.interfaceTextSize))
         .environment(
             \.defaultMinListRowHeight,
-            voiceModel.interfaceSettings.sidebarDensity.minimumRowHeight
+            ChannelSidebarLayoutMetrics.minimumRowHeight
         )
         .overlay {
             SidebarChromeSeparator(
@@ -251,8 +253,6 @@ nonisolated private struct GuildChannelListInput: Equatable, Sendable {
     let unreadCategoryIDs: Set<ChannelID>
     let selectedChannelID: ChannelID?
     let bottomContentInset: CGFloat
-    let density: InterfaceSidebarDensity
-    let interfaceTextSize: Double
 }
 
 private struct GuildChannelList: View, Equatable {
@@ -288,8 +288,8 @@ private struct GuildChannelList: View, Equatable {
             }
         }
         .listStyle(.sidebar)
-        .font(.system(size: input.interfaceTextSize))
-        .environment(\.defaultMinListRowHeight, input.density.minimumRowHeight)
+        .font(.system(size: InterfaceTypographyMetrics.interfaceTextSize))
+        .environment(\.defaultMinListRowHeight, ChannelSidebarLayoutMetrics.minimumRowHeight)
         .scrollContentBackground(.hidden)
         .scrollClipDisabled()
         .padding(.top, ChatChromeMetrics.channelListTopPadding)
@@ -653,7 +653,7 @@ private struct AccountControlView: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(displayName)
                             .font(.system(
-                                size: voiceModel.interfaceSettings.interfaceTextSize,
+                                size: InterfaceTypographyMetrics.interfaceTextSize,
                                 weight: .semibold
                             ))
                             .lineLimit(1)
@@ -661,7 +661,7 @@ private struct AccountControlView: View {
                             .font(.system(
                                 size: max(
                                     10,
-                                    voiceModel.interfaceSettings.interfaceTextSize - 2
+                                    InterfaceTypographyMetrics.interfaceTextSize - 2
                                 )
                             ))
                             .foregroundStyle(.secondary)

@@ -1127,7 +1127,7 @@ private enum NodeBuilder {
                 ?? MentionPresentation.fallback(for: mention)
         }
         let interfaceSettings = model?.interfaceSettings ?? .defaults
-        let baseFontSize = CGFloat(interfaceSettings.messageTextSize)
+        let baseFontSize = InterfaceTypographyMetrics.messageTextSize
         let key = NativeTimelineResolvedTextCache.Key(
             messageID: message.id,
             scope: "component:\(componentID)",

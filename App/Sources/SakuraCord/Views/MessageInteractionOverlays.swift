@@ -4,12 +4,14 @@ import SakuraCordModels
 import SwiftUI
 
 enum MessageRowLayoutMetrics {
+    nonisolated static let horizontalInset: CGFloat = 14
     nonisolated static let avatarDiameter: CGFloat = 38
+    nonisolated static let avatarColumnGap: CGFloat = 12
     nonisolated static let compactContentHeight: CGFloat = 18
     nonisolated static let authorLineHeight: CGFloat = 16
     nonisolated static let authorContentSpacing: CGFloat = 4
     nonisolated static let commandAuthorContentSpacing: CGFloat = 2
-    nonisolated static let firstMessageContentOffset: CGFloat = 12
+    nonisolated static let messageGroupSeparation: CGFloat = 12
     nonisolated static let visibleHighlightInset: CGFloat = 3
     nonisolated static let replyPreviewIntrinsicTopInset: CGFloat = 3
     nonisolated static let editFooterIntrinsicBottomInset: CGFloat = 3
@@ -22,14 +24,13 @@ enum MessageRowLayoutMetrics {
 
     nonisolated static func highlightInsets(
         hasReplyPreview: Bool,
-        isEditing: Bool,
-        density: InterfaceMessageDensity = .comfortable
+        isEditing: Bool
     ) -> MessageRowHighlightInsets {
         let intrinsicTopInset = hasReplyPreview ? replyPreviewIntrinsicTopInset : 0
         let intrinsicBottomInset = isEditing ? editFooterIntrinsicBottomInset : 0
         return MessageRowHighlightInsets(
-            top: max(0, density.highlightInset - intrinsicTopInset),
-            bottom: max(0, density.highlightInset - intrinsicBottomInset),
+            top: max(0, visibleHighlightInset - intrinsicTopInset),
+            bottom: max(0, visibleHighlightInset - intrinsicBottomInset),
             intrinsicTop: intrinsicTopInset,
             intrinsicBottom: intrinsicBottomInset
         )
@@ -38,24 +39,20 @@ enum MessageRowLayoutMetrics {
     nonisolated static func separation(
         startsGroup: Bool,
         followsTimelineSeparator: Bool = false,
-        highlightTopInset: CGFloat,
-        density: InterfaceMessageDensity = .comfortable
+        highlightTopInset: CGFloat
     ) -> CGFloat {
         // Date and unread separators already provide the complete visual gap
         // between adjacent messages. Applying the ordinary author-group
         // separation after either one makes the lower half visibly larger
         // than the upper half.
         guard startsGroup, !followsTimelineSeparator else { return 0 }
-        return density.groupSeparation - highlightTopInset
+        return messageGroupSeparation - highlightTopInset
     }
 
-    nonisolated static func authorToContentSpacing(
-        isCommandResponse: Bool,
-        density: InterfaceMessageDensity = .comfortable
-    ) -> CGFloat {
+    nonisolated static func authorToContentSpacing(isCommandResponse: Bool) -> CGFloat {
         isCommandResponse
             ? commandAuthorContentSpacing
-            : density.authorToContentSpacing
+            : authorContentSpacing
     }
 
     nonisolated static func geometry(

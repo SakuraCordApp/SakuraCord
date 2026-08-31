@@ -23,7 +23,6 @@ nonisolated enum NativeMemberListMetrics {
 }
 
 nonisolated struct NativeMemberListPresentation: Equatable, Sendable {
-    var interfaceTextSize: Double = 13
     var showsActivityDetails = true
     var showsRoleColors = true
 }
@@ -1524,11 +1523,11 @@ final class NativeMemberListCanvasView: NSView {
         cancelsCooperatively: Bool
     ) -> [ItemID: PreparedText]? {
         let nameFont = NSFont.systemFont(
-            ofSize: presentation.interfaceTextSize,
+            ofSize: InterfaceTypographyMetrics.interfaceTextSize,
             weight: .semibold
         )
         let activityFont = NSFont.systemFont(
-            ofSize: max(10, presentation.interfaceTextSize - 1)
+            ofSize: max(10, InterfaceTypographyMetrics.interfaceTextSize - 1)
         )
         var preparedText: [ItemID: PreparedText] = [:]
         preparedText.reserveCapacity(min(
@@ -1677,7 +1676,7 @@ final class NativeMemberListCanvasView: NSView {
     ) {
         let label = "\(section.title) — \(section.totalCount)"
         let font = NSFont.systemFont(
-            ofSize: presentation.interfaceTextSize,
+            ofSize: InterfaceTypographyMetrics.interfaceTextSize,
             weight: .semibold
         )
         let isRoleSection = if case .role = section.id { true } else { false }

@@ -13,12 +13,6 @@ struct InterfaceSettingsPage: View {
 
     var body: some View {
         SettingsPageForm(page: .interface, state: state) {
-            InterfaceDensitySection(value: $value, state: state)
-            InterfaceTypographySection(
-                value: $value,
-                resetTextSizes: resetTextSizes,
-                state: state
-            )
             InterfaceTimeSection(value: $value, state: state)
             InterfaceVisibilitySection(value: $value, state: state)
             Section {
@@ -73,11 +67,6 @@ struct InterfaceSettingsPage: View {
         }
     }
 
-    private func resetTextSizes() {
-        value.messageTextSize = InterfaceSettingsSnapshot.defaults.messageTextSize
-        value.interfaceTextSize = InterfaceSettingsSnapshot.defaults.interfaceTextSize
-    }
-
     private func exportPreferences() {
         let export = SettingsPreferenceStore.shared.export(
             scope: .appWide,
@@ -94,84 +83,6 @@ struct InterfaceSettingsPage: View {
         )
         value = InterfaceSettingsStore.shared.load()
         operationMessage = "Restored Interface settings to their defaults."
-    }
-}
-
-private struct InterfaceDensitySection: View {
-    @Binding var value: InterfaceSettingsSnapshot
-    let state: SettingsViewState
-
-    var body: some View {
-        Section {
-            Picker("Message density", selection: $value.messageDensity) {
-                ForEach(InterfaceMessageDensity.allCases) { density in
-                    Text(density.title).tag(density)
-                }
-            }
-            .pickerStyle(.segmented)
-            .settingsControlAnchor(.messageDensity, state: state)
-
-            Picker("Sidebar density", selection: $value.sidebarDensity) {
-                ForEach(InterfaceSidebarDensity.allCases) { density in
-                    Text(density.title).tag(density)
-                }
-            }
-            .pickerStyle(.segmented)
-            .settingsControlAnchor(.sidebarDensity, state: state)
-        } header: {
-            Text("Density", bundle: #bundle)
-        }
-    }
-}
-
-private struct InterfaceTypographySection: View {
-    @Binding var value: InterfaceSettingsSnapshot
-    let resetTextSizes: () -> Void
-    let state: SettingsViewState
-
-    var body: some View {
-        Section {
-            InterfaceTextSizeSlider(
-                label: "Message text size",
-                value: $value.messageTextSize,
-                range: InterfaceSettingsSnapshot.messageTextSizeRange
-            )
-            .settingsControlAnchor(.messageTextSize, state: state)
-
-            InterfaceTextSizeSlider(
-                label: "Interface text size",
-                value: $value.interfaceTextSize,
-                range: InterfaceSettingsSnapshot.interfaceTextSizeRange
-            )
-            .settingsControlAnchor(.interfaceTextSize, state: state)
-
-            Button("Reset Text Sizes", action: resetTextSizes)
-                .settingsControlAnchor(.resetInterfaceTextSizes, state: state)
-        } header: {
-            Text("Text", bundle: #bundle)
-        } footer: {
-            Text("Text sizes are bounded to keep messages and controls readable.")
-        }
-    }
-}
-
-private struct InterfaceTextSizeSlider: View {
-    let label: LocalizedStringKey
-    @Binding var value: Double
-    let range: ClosedRange<Double>
-
-    var body: some View {
-        LabeledContent(label) {
-            HStack {
-                Slider(value: $value, in: range, step: 1)
-                    .tint(SakuraCordAccentColor.color)
-                    .frame(minWidth: 220)
-                Text("\(Int(value)) pt")
-                    .monospacedDigit()
-                    .frame(width: 42, alignment: .trailing)
-            }
-        }
-        .accessibilityValue("\(Int(value)) points")
     }
 }
 

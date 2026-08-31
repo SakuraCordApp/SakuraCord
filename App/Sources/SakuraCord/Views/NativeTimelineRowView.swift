@@ -610,8 +610,6 @@ struct NativeTimelineRowLayout {
         var layout: NativeTimelineRowLayout {
         let message = row.message
         let searchContext = row.searchContext
-        let interfaceSettings = model?.interfaceSettings ?? .defaults
-        let density = interfaceSettings.messageDensity
         let bubbleContext = NativeTimelineBubbleLayout.context(
             for: message,
             model: model
@@ -619,10 +617,10 @@ struct NativeTimelineRowLayout {
         let usesBubbles = bubbleContext.isEnabled
         let isOutgoingBubble = bubbleContext.isOutgoing
         let horizontalInset: CGFloat = searchContext == nil
-            ? density.horizontalInset
+            ? MessageRowLayoutMetrics.horizontalInset
             : 22
-        let avatarWidth = density.avatarDiameter
-        let columnGap = density.columnGap
+        let avatarWidth = MessageRowLayoutMetrics.avatarDiameter
+        let columnGap = MessageRowLayoutMetrics.avatarColumnGap
         let usesComponentsV2 = message.flags.contains(.isComponentsV2)
         let chatSettings = model?.chatSettings ?? .defaults
         let unstyledContentPresentation = NativeTimelineTextPresentation.make(
@@ -689,14 +687,12 @@ struct NativeTimelineRowLayout {
 
         let highlightInsets = MessageRowLayoutMetrics.highlightInsets(
             hasReplyPreview: row.replyMessageID != nil,
-            isEditing: false,
-            density: density
+            isEditing: false
         )
         let externalTopSeparation = MessageRowLayoutMetrics.separation(
             startsGroup: row.startsGroup,
             followsTimelineSeparator: row.startsDay || isUnreadBoundary,
-            highlightTopInset: highlightInsets.top,
-            density: density
+            highlightTopInset: highlightInsets.top
         )
         let highlightMinY = prefixHeight
             + (searchContext == nil ? externalTopSeparation : 4)
@@ -837,15 +833,14 @@ struct NativeTimelineRowLayout {
             }
             verticalOffset += MessageRowLayoutMetrics.authorLineHeight
                 + MessageRowLayoutMetrics.authorToContentSpacing(
-                    isCommandResponse: message.type == .chatInputCommand,
-                    density: density
+                    isCommandResponse: message.type == .chatInputCommand
                 )
         } else if !isGenerated, !isOutgoingBubble, showsIncomingIdentity {
             compactTimestampFrame = CGRect(
                 x: horizontalInset,
                 y: verticalOffset,
                 width: avatarWidth,
-                height: density.compactContentHeight
+                height: MessageRowLayoutMetrics.compactContentHeight
             )
         }
 
@@ -855,7 +850,7 @@ struct NativeTimelineRowLayout {
                 x: horizontalInset + 36,
                 y: verticalOffset,
                 width: 16,
-                height: density.compactContentHeight
+                height: MessageRowLayoutMetrics.compactContentHeight
             )
         }
 
@@ -1231,8 +1226,8 @@ struct NativeTimelineRowLayout {
                 highlightMinY
                     + highlightInsets.top
                     + (row.startsGroup && !isGenerated
-                        ? density.avatarDiameter
-                        : density.compactContentHeight)
+                        ? MessageRowLayoutMetrics.avatarDiameter
+                        : MessageRowLayoutMetrics.compactContentHeight)
                     + highlightInsets.bottom
             ) + searchBottomInset
         )

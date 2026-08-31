@@ -115,7 +115,7 @@ enum NativeTimelineTextPresentation {
             && model?.appearanceSettings.messageAppearance != .bubbles
         let resolvedBaseFontSize = preservesCompactSystemStyle
             ? plan.baseFontSize
-            : CGFloat(settings.messageTextSize)
+            : InterfaceTypographyMetrics.messageTextSize
         let underlinesLinks = !message.type.hasGeneratedContent
             && settings.underlinesLinks
         if let preparedBox = plan.attributedText,
@@ -1027,7 +1027,7 @@ enum NativeTimelineEmbedLayout {
                 ?? MentionPresentation.fallback(for: mention)
         }
         let interfaceSettings = model?.interfaceSettings ?? .defaults
-        let baseFontSize = CGFloat(interfaceSettings.messageTextSize)
+        let baseFontSize = InterfaceTypographyMetrics.messageTextSize
         let key = NativeTimelineResolvedTextCache.Key(
             messageID: message.id,
             scope: "embed:\(embed.id):\(scope)",
