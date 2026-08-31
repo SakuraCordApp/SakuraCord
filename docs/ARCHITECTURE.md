@@ -59,6 +59,9 @@ alert when a release is available. Sparkle persists the user's automatic-check
 and automatic-download preferences. Installation remains manual by default.
 Sparkle's standard user driver reports no-update and update-cycle failures.
 The Updates settings pane also persists a regular/nightly release-track choice.
+Until the user makes that choice, the selected track matches the installed
+bundle, so a fresh Nightly installation checks the Nightly feed and a fresh
+Regular installation checks the Regular feed.
 `AppUpdateController` supplies the selected signed feed through Sparkle's
 dynamic-feed delegate. Changing tracks immediately requests a silent Sparkle
 information check, or queues one until the current update cycle ends. When that

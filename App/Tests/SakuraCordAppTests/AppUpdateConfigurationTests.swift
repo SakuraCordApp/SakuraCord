@@ -223,18 +223,32 @@ func releaseTrackDowngradePolicyMatchesInstalledTrack() {
 }
 
 @MainActor
-@Test("existing release track preference carries into a new updater controller")
-func existingReleaseTrackPreferenceCarriesForward() {
+@Test("release track defaults to the installed build and preserves an existing choice")
+func releaseTrackDefaultsToInstalledBuildAndPreservesExistingChoice() {
     let defaults = InMemoryPreferences()
-    defaults.set("nightly", forKey: AppUpdateReleaseTrack.preferenceKey)
-    let configuration = AppUpdateConfiguration(
-        infoDictionary: productionUpdateInfo(),
+    var nightlyInfo = productionUpdateInfo()
+    nightlyInfo[AppUpdateConfiguration.releaseTrackInfoKey] = "nightly"
+    nightlyInfo[AppUpdateConfiguration.versionDowngradeInfoKey] = true
+    let nightlyConfiguration = AppUpdateConfiguration(
+        infoDictionary: nightlyInfo,
         bundleIdentifier: AppUpdateConfiguration.canonicalBundleIdentifier
     )
 
-    let controller = AppUpdateController(configuration: configuration, defaults: defaults)
+    let freshController = AppUpdateController(
+        configuration: nightlyConfiguration,
+        defaults: defaults
+    )
 
-    #expect(controller.releaseTrack == .nightly)
+    #expect(freshController.releaseTrack == .nightly)
+    #expect(defaults.string(forKey: AppUpdateReleaseTrack.preferenceKey) == nil)
+
+    defaults.set("regular", forKey: AppUpdateReleaseTrack.preferenceKey)
+    let returningController = AppUpdateController(
+        configuration: nightlyConfiguration,
+        defaults: defaults
+    )
+
+    #expect(returningController.releaseTrack == .regular)
 }
 
 @MainActor

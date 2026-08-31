@@ -238,8 +238,8 @@ nonisolated enum AppUpdateReleaseTrack: String, CaseIterable, Identifiable, Send
         }
     }
 
-    init(storedValue: String?) {
-        self = storedValue.flatMap(Self.init(rawValue:)) ?? .regular
+    init(storedValue: String?, defaultingTo defaultTrack: Self = .regular) {
+        self = storedValue.flatMap(Self.init(rawValue:)) ?? defaultTrack
     }
 
     func feedURL(in configuration: AppUpdateConfiguration) -> URL? {
@@ -303,7 +303,8 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate,
         self.configuration = configuration
         self.defaults = defaults
         let initialReleaseTrack = AppUpdateReleaseTrack(
-            storedValue: defaults.string(forKey: AppUpdateReleaseTrack.preferenceKey)
+            storedValue: defaults.string(forKey: AppUpdateReleaseTrack.preferenceKey),
+            defaultingTo: configuration.installedReleaseTrack
         )
         releaseTrack = initialReleaseTrack
         versionComparator = configuration.installedBuildVersion.map(
