@@ -3,42 +3,24 @@ version = 1
 name = "SakuraCord"
 
 [setup]
-script = "./script/worktree_setup.sh"
-
-[cleanup]
-script = "./script/worktree_cleanup.sh"
+script = "./script/setup.sh"
 
 [[actions]]
-name = "Run Offline"
+name = "Build & Run"
+icon = "run"
+command = "./script/build_and_run.sh"
+
+[[actions]]
+name = "Build & Run Offline"
 icon = "run"
 command = "./script/build_and_run.sh --offline"
 
 [[actions]]
-name = "Run Long Server Fixture"
+name = "Build & Run Release"
 icon = "run"
-command = "./script/build_and_run.sh --offline-long-server-list"
-
-[[actions]]
-name = "Package Isolated App"
-icon = "tool"
-command = "./script/build_and_run.sh package"
-
-[[actions]]
-name = "Show App Identity"
-icon = "tool"
-command = "./script/worktree_runtime.sh"
+command = "./script/build_and_run.sh run-release"
 
 [[actions]]
 name = "Test App"
 icon = "test"
-command = "./script/worktree_test.sh app"
-
-[[actions]]
-name = "Test Protocol"
-icon = "test"
-command = "./script/worktree_test.sh protocol"
-
-[[actions]]
-name = "Test All"
-icon = "test"
-command = "./script/worktree_test.sh all"
+command = "./script/test.sh app"

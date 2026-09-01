@@ -15,7 +15,7 @@ nonisolated enum NativeTimelineMediaMemoryPolicy {
     static let sharedAnimatedImageBytes = 24 * 1_024 * 1_024
     static let displayedAnimatedImageBytes = 16 * 1_024 * 1_024
     static let timelineAnimatedImageBytes = 16 * 1_024 * 1_024
-    static let rowBitmapBytes = 12 * 1_024 * 1_024
+    static let rowBitmapBytes = 32 * 1_024 * 1_024
 
     /// Explicit cost limits for decoded image and row-bitmap caches. This does
     /// not claim to include encoded media data, Lottie objects, decoder
@@ -864,7 +864,13 @@ actor NativeTimelineMediaDecodeScheduler {
             priority: taskPriority
         ) { [decodeOperation] in
             guard !Task.isCancelled else { return nil }
-            let image = decodeOperation(data, maximumPixelDimension)
+            let image = AppPerformanceSignposts.measureSync(
+                acquiredPriority == .visible
+                    ? "TimelineVisibleStaticMediaDecode"
+                    : "TimelinePrefetchStaticMediaDecode"
+            ) {
+                decodeOperation(data, maximumPixelDimension)
+            }
             return Task.isCancelled ? nil : image
         }
         let image = await withTaskCancellationHandler {
@@ -1389,6 +1395,7 @@ struct NativeTimelineActionCapsuleOverlay: View {
     let message: Message
     let canEdit: Bool
     @ObservedObject var state: NativeTimelineActionCapsuleState
+    let jumpToMessage: (() -> Void)?
     let retry: (() -> Void)?
     let edit: () -> Void
     let reply: (() -> Void)?
@@ -1400,34 +1407,113 @@ struct NativeTimelineActionCapsuleOverlay: View {
     let delete: () -> Void
 
     var body: some View {
-        MessageActionCapsule(
-            model: model,
-            message: message,
-            canEdit: canEdit,
-            isReactionPickerPresented: $state.isReactionPickerPresented,
-            isDeleteConfirmationPresented:
-                $state.isDeleteConfirmationPresented,
-            retry: retry,
-            edit: edit,
-            reply: reply,
-            forward: forward,
-            react: react,
-            copy: copy,
-            copyLink: copyLink,
-            openThread: openThread,
-            delete: delete
-        )
+        Group {
+            if let jumpToMessage {
+                HoverActionPill {
+                    HoverActionButton(
+                        systemImage: NativeTimelineSearchResultPresentation
+                            .jumpToMessageSystemImage,
+                        help: "Jump to Message",
+                        action: jumpToMessage
+                    )
+                }
+            } else {
+                MessageActionCapsule(
+                    model: model,
+                    message: message,
+                    canEdit: canEdit,
+                    isReactionPickerPresented: $state.isReactionPickerPresented,
+                    isDeleteConfirmationPresented:
+                        $state.isDeleteConfirmationPresented,
+                    retry: retry,
+                    edit: edit,
+                    reply: reply,
+                    forward: forward,
+                    react: react,
+                    copy: copy,
+                    copyLink: copyLink,
+                    openThread: openThread,
+                    delete: delete
+                )
+            }
+        }
         .fixedSize()
     }
 }
 
+struct MediaViewerTransitionSource {
+    let itemID: String
+    let image: NSImage
+    let frameInWindow: CGRect
+    let visibleFrameInWindow: CGRect
+    let cornerRadius: CGFloat
+    let fillsFrame: Bool
+}
+
 struct NativeTimelineMediaViewerPresentation: Identifiable {
-    let id = UUID()
+    let id: UUID
+    let messageID: MessageID?
     let items: [RichMediaItem]
     let selection: Int
     let authorName: String
     let authorAvatarURL: URL?
     let timestamp: Date
+    let timelinePreviewImages: [String: NSImage]
+    let transitionSource: MediaViewerTransitionSource?
+
+    init(
+        id: UUID = UUID(),
+        messageID: MessageID? = nil,
+        items: [RichMediaItem],
+        selection: Int,
+        authorName: String,
+        authorAvatarURL: URL?,
+        timestamp: Date,
+        timelinePreviewImages: [String: NSImage] = [:],
+        transitionSource: MediaViewerTransitionSource? = nil
+    ) {
+        self.id = id
+        self.messageID = messageID
+        self.items = items
+        self.selection = selection
+        self.authorName = authorName
+        self.authorAvatarURL = authorAvatarURL
+        self.timestamp = timestamp
+        self.timelinePreviewImages = timelinePreviewImages
+        self.transitionSource = transitionSource
+    }
+
+    func withTimelinePreviewImages(
+        _ timelinePreviewImages: [String: NSImage]
+    ) -> Self {
+        Self(
+            id: id,
+            messageID: messageID,
+            items: items,
+            selection: selection,
+            authorName: authorName,
+            authorAvatarURL: authorAvatarURL,
+            timestamp: timestamp,
+            timelinePreviewImages: timelinePreviewImages,
+            transitionSource: transitionSource
+        )
+    }
+
+    func withTransitionSource(
+        _ transitionSource: MediaViewerTransitionSource
+    ) -> Self {
+        Self(
+            id: id,
+            messageID: messageID,
+            items: items,
+            selection: selection,
+            authorName: authorName,
+            authorAvatarURL: authorAvatarURL,
+            timestamp: timestamp,
+            timelinePreviewImages: timelinePreviewImages,
+            transitionSource: transitionSource
+        )
+    }
 }
 
 enum NativeTimelineMediaViewerPlan {
@@ -1565,6 +1651,7 @@ enum NativeTimelineMediaViewerPlan {
             $0.id == selectedID
         }) else { return nil }
         return NativeTimelineMediaViewerPresentation(
+            messageID: message.id,
             items: items,
             selection: selection,
             authorName: message.guildMember?.nickname

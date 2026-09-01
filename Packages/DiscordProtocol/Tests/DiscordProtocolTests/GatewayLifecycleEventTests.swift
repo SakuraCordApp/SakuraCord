@@ -27,6 +27,50 @@ struct GatewayLifecycleEventTests {
         #expect(channel.kind == .forum)
     }
 
+    @Test func `thread-shaped channel dispatch stays out of guild channels`() async {
+        let provider = makeProvider()
+        await provider.receiveGatewayDispatchForTesting(
+            name: "GUILD_CREATE",
+            data: guildCreatePayload(includesUnavailable: false)
+        )
+
+        let threadID = ChannelID(rawValue: 250)
+        await provider.receiveGatewayDispatchForTesting(
+            name: "CHANNEL_UPDATE",
+            data: channel(
+                id: threadID.description,
+                type: 11,
+                name: "Loose forum post",
+                parentID: forumChannelID.description
+            )
+        )
+
+        #expect(await provider.cachedChannelForTesting(channelID: threadID) == nil)
+        #expect(
+            await provider.cachedForumPostForTesting(threadID: threadID)?.thread.parentID
+                == forumChannelID
+        )
+    }
+
+    @Test func `guild channel projection excludes thread records`() throws {
+        let data = Data(
+            #"""
+            [
+              {"id":"201","guild_id":"100","type":15,"name":"forum"},
+              {
+                "id":"250","guild_id":"100","type":11,
+                "name":"Loose forum post","parent_id":"201"
+              }
+            ]
+            """#.utf8
+        )
+        let values = try JSONDecoder().decode([ChannelDTO].self, from: data)
+
+        let channels = try DiscordRESTProvider.domainChannels(values, guildID: guildID)
+
+        #expect(channels.map(\.id) == [forumChannelID])
+    }
+
     @Test func `guild channel role member and user lifecycle reconciles cached state`() async {
         let provider = makeProvider()
         await provider.receiveGatewayDispatchForTesting(
@@ -89,6 +133,10 @@ struct GatewayLifecycleEventTests {
             ])
         )
         #expect(await provider.cachedMembersForTesting(guildID: guildID).first?.user.displayName == "Guild Nick")
+        #expect(
+            await provider.currentQuickSwitcherGuildMemberUserIDs()[guildID]
+                == [UserID(rawValue: 1)]
+        )
 
         await provider.receiveGatewayDispatchForTesting(
             name: "USER_UPDATE",
@@ -98,6 +146,24 @@ struct GatewayLifecycleEventTests {
         let memberAfterUserUpdate = await provider.cachedMembersForTesting(guildID: guildID).first
         #expect(memberAfterUserUpdate?.user.displayName == "Guild Nick")
         #expect(memberAfterUserUpdate?.globalDisplayName == "After")
+
+        await provider.cacheForwardSearchMessageAliases([
+            Message(
+                id: MessageID(rawValue: 500),
+                channelID: textChannelID,
+                author: User(
+                    id: currentUserID,
+                    username: "after",
+                    displayName: "After"
+                ),
+                content: "cached alias",
+                guildID: guildID
+            )
+        ])
+        #expect(
+            await provider.currentUserSearchAliasesByUserID()[currentUserID]
+                == ["Guild Nick"]
+        )
 
         await provider.receiveGatewayDispatchForTesting(
             name: "GUILD_ROLE_DELETE",
@@ -114,6 +180,7 @@ struct GatewayLifecycleEventTests {
             ])
         )
         #expect(await provider.cachedMembersForTesting(guildID: guildID).isEmpty)
+        #expect(await provider.currentQuickSwitcherGuildMemberUserIDs()[guildID]?.isEmpty == true)
     }
 
     @Test func `guild unavailable differs from leaving and create adds a new guild`() async {
@@ -189,6 +256,53 @@ struct GatewayLifecycleEventTests {
         #expect(await provider.memberListGroupsForTesting(
             guildID: guildID, memberListID: "everyone"
         ).map(\.count) == [3])
+
+        await provider.receiveGatewayDispatchForTesting(
+            name: "GUILD_MEMBER_LIST_UPDATE",
+            data: .object([
+                "guild_id": .string("100"),
+                "id": .string("everyone"),
+                "ops": .array([
+                    .object([
+                        "op": .string("UPDATE"),
+                        "index": .number(1),
+                        "item": .object([
+                            "member": .object([
+                                "user": user(
+                                    id: "2",
+                                    username: "updated-member-2",
+                                    globalName: "Updated Member 2"
+                                ),
+                                "roles": .array([]),
+                            ])
+                        ]),
+                    ])
+                ]),
+            ])
+        )
+        #expect(await provider.orderedMemberListIDsForTesting(
+            guildID: guildID, memberListID: "everyone"
+        ) == [UserID(rawValue: 1), UserID(rawValue: 2), UserID(rawValue: 3)])
+        #expect(await provider.cachedMembersForTesting(guildID: guildID)
+            .first(where: { $0.id == UserID(rawValue: 2) })?.user.displayName
+            == "Updated Member 2")
+
+        await provider.receiveGatewayDispatchForTesting(
+            name: "GUILD_MEMBER_LIST_UPDATE",
+            data: .object([
+                "guild_id": .string("100"),
+                "id": .string("everyone"),
+                "ops": .array([
+                    .object(["op": .string("DELETE"), "index": .number(1)])
+                ]),
+            ])
+        )
+        #expect(await provider.orderedMemberListIDsForTesting(
+            guildID: guildID, memberListID: "everyone"
+        ) == [UserID(rawValue: 1), UserID(rawValue: 3)])
+        #expect(await provider.orderedMemberListIDsForTesting(
+            guildID: guildID, memberListID: "restricted"
+        ) == [UserID(rawValue: 1)])
     }
 
     @Test func `desktop ETF numeric permissions guild create adds a new guild`() async {
@@ -403,6 +517,7 @@ struct GatewayLifecycleEventTests {
             data: channel(id: "203", type: 0, name: "created")
         )
         #expect(await provider.cachedChannelForTesting(channelID: createdChannelID)?.name == "created")
+        #expect(await provider.cachedForwardChannelStoreOrder.contains(createdChannelID))
 
         await provider.receiveGatewayDispatchForTesting(
             name: "GUILD_ROLE_CREATE",

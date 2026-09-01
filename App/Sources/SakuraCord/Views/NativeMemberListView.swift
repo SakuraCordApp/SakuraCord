@@ -4,6 +4,10 @@ import OSLog
 import SakuraCordModels
 import SwiftUI
 
+// The canvas keeps painting, overlays, accessibility proxies, and image
+// scheduling together because they reconcile one shared virtual viewport.
+// swiftlint:disable file_length
+
 nonisolated enum NativeMemberListMetrics {
     static let horizontalInset: CGFloat = 8
     static let verticalInset: CGFloat = 10
@@ -151,6 +155,7 @@ struct NativeMemberListView: NSViewRepresentable {
     let customEmojiURLsByID: [String: URL]
     let profilePresentation: ProfilePresentationState?
     let isProfilePresented: Bool
+    let interactionsBlocked: Bool
     let selectMember: (Member) -> Void
     let dismissProfile: () -> Void
     let runsPerformanceAutoScroll: Bool
@@ -170,6 +175,8 @@ struct NativeMemberListView: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
+        (scrollView as? NativeMemberListScrollView)?
+            .inputPerformanceProbe.invalidate()
         coordinator.stop()
         scrollView.documentView = nil
     }
@@ -178,7 +185,45 @@ struct NativeMemberListView: NSViewRepresentable {
 }
 
 @MainActor
+final class NativeMemberListScrollView: NSScrollView {
+    let inputPerformanceProbe = ScrollInputPerformanceProbe(
+        surface: .memberList
+    )
+
+    override func layout() {
+        super.layout()
+        synchronizeCanvasFrame()
+    }
+
+    func synchronizeCanvasFrame() {
+        guard let canvas = documentView as? NativeMemberListCanvasView else { return }
+        let targetSize = NSSize(
+            width: max(0, contentSize.width),
+            height: max(1, canvas.contentHeight)
+        )
+        guard canvas.frame.size != targetSize else { return }
+        canvas.frame.size = targetSize
+        canvas.needsDisplay = true
+        canvas.updateVisibleOverlaysAndPrewarming(force: true)
+    }
+}
+
+@MainActor
 final class NativeMemberListCoordinator: NSObject {
+    nonisolated struct PerformanceLayoutSection: Equatable, Sendable {
+        let id: MemberSection.SectionIdentifier
+        let totalCount: Int
+        let gatewayStartIndex: Int?
+        let isLoadingSkeleton: Bool
+
+        init(_ section: MemberSection) {
+            id = section.id
+            totalCount = section.totalCount
+            gatewayStartIndex = section.gatewayStartIndex
+            isLoadingSkeleton = section.isLoadingSkeleton
+        }
+    }
+
     var parent: NativeMemberListView
     weak var scrollView: NSScrollView?
     weak var canvas: NativeMemberListCanvasView?
@@ -190,8 +235,17 @@ final class NativeMemberListCoordinator: NSObject {
     var pendingViewportRange: ClosedRange<Int>?
     var viewportIdentity: ChannelID?
     var performanceTicker: NativeTimelineDisplayLinkTicker?
+    var performanceStartTask: Task<Void, Never>?
+    var performanceStartGeneration: UInt64 = 0
+    var performanceLayoutSections: [PerformanceLayoutSection]?
     var didStartPerformanceBenchmark = false
     var performanceInterval: OSSignpostIntervalState?
+    var documentPreparationTask: Task<Void, Never>?
+    var requestedSections: [MemberSection]?
+    var documentPreparationGeneration: UInt64 = 0
+    let animatedImageScrollSource = AnimatedImageInteractiveScrollSource.memberList(UUID())
+    var animatedImageScrollRevision: UInt64 = 0
+    var defersAnimatedImageDecoding = false
 
     init(parent: NativeMemberListView) {
         self.parent = parent
@@ -202,7 +256,8 @@ final class NativeMemberListCoordinator: NSObject {
         canvas.selectMember = { [weak self] member in
             self?.parent.selectMember(member)
         }
-        let scrollView = NSScrollView()
+        let scrollView = NativeMemberListScrollView()
+        scrollView.inputPerformanceProbe.install(on: scrollView)
         scrollView.documentView = canvas
         scrollView.drawsBackground = true
         scrollView.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.45)
@@ -241,25 +296,28 @@ final class NativeMemberListCoordinator: NSObject {
         canvas.selectMember = { [weak self] member in
             self?.parent.selectMember(member)
         }
-        canvas.update(
-            sections: parent.sections,
-            customEmojiURLsByID: parent.customEmojiURLsByID,
-            profilePresentation: parent.profilePresentation,
-            isProfilePresented: parent.isProfilePresented,
-            dismissProfile: parent.dismissProfile
-        )
-        let width = max(1, scrollView.contentSize.width)
-        let height = max(1, canvas.contentHeight)
-        if canvas.frame.size != NSSize(width: width, height: height) {
-            canvas.frame = NSRect(x: 0, y: 0, width: width, height: height)
-            canvas.updateVisibleOverlaysAndPrewarming(force: true)
+        canvas.setInteractionsBlocked(parent.interactionsBlocked)
+        AppPerformanceSignposts.measureSync("MemberListCanvasUpdate") {
+            canvas.updatePresentation(
+                customEmojiURLsByID: parent.customEmojiURLsByID,
+                profilePresentation: parent.profilePresentation,
+                isProfilePresented: parent.isProfilePresented,
+                dismissProfile: parent.dismissProfile
+            )
         }
+        requestDocumentUpdate(
+            sections: parent.sections,
+            scrollView: scrollView,
+            canvas: canvas
+        )
+        (scrollView as? NativeMemberListScrollView)?.synchronizeCanvasFrame()
         reportViewport(debounced: false)
         startPerformanceBenchmarkIfReady()
     }
 
     func viewportDidScroll() {
         guard let canvas else { return }
+        reportAnimatedImageScrolling(true)
         canvas.setScrolling(true)
         let clock = ContinuousClock()
         scrollIdleDeadline = clock.now.advanced(by: .milliseconds(180))
@@ -273,6 +331,7 @@ final class NativeMemberListCoordinator: NSObject {
                     guard scrollIdleDeadline <= clock.now else { continue }
                     scrollIdleTask = nil
                     canvas.setScrolling(false)
+                    reportAnimatedImageScrolling(false)
                     return
                 }
             }
@@ -308,14 +367,20 @@ final class NativeMemberListCoordinator: NSObject {
     }
 
     func stop() {
+        documentPreparationTask?.cancel()
+        documentPreparationTask = nil
         scrollIdleTask?.cancel()
         viewportTask?.cancel()
+        performanceStartTask?.cancel()
+        performanceStartTask = nil
+        reportAnimatedImageScrolling(false)
         for observation in observations {
             NotificationCenter.default.removeObserver(observation)
         }
         observations.removeAll()
         canvas?.tearDown()
         if let performanceInterval {
+            endPerformanceScrollIsolation()
             AppPerformanceSignposts.signposter.emitEvent(
                 "MemberListAutoScrollBenchmarkCancelled"
             )
@@ -337,38 +402,200 @@ final class NativeMemberListCoordinator: NSObject {
         performanceInterval = nil
     }
 
+    func requestDocumentUpdate(
+        sections: [MemberSection],
+        scrollView: NSScrollView,
+        canvas: NativeMemberListCanvasView
+    ) {
+        guard requestedSections != sections else { return }
+        if parent.runsPerformanceAutoScroll {
+            let layoutSections = sections.map(PerformanceLayoutSection.init)
+            if performanceLayoutSections != layoutSections {
+                performanceLayoutSections = layoutSections
+                performanceStartGeneration &+= 1
+                performanceStartTask?.cancel()
+                performanceStartTask = nil
+            }
+        }
+        requestedSections = sections
+        documentPreparationGeneration &+= 1
+        let generation = documentPreparationGeneration
+        documentPreparationTask?.cancel()
+        let preparationSnapshot = canvas.preparationSnapshot()
+        let preparationPriority: TaskPriority =
+            canvas.isScrolling || AppScrollWorkGate.isActive
+            ? .background
+            : .userInitiated
+        if preparationPriority == .background {
+            AppPerformanceSignposts.signposter.emitEvent(
+                "MemberListDocumentPreparationDeprioritized"
+            )
+        }
+
+        if sections.isEmpty || sections.allSatisfy(\.isLoadingSkeleton) {
+            documentPreparationTask = nil
+            guard let document = NativeMemberListCanvasView.prepareDocument(
+                sections: sections,
+                reusing: preparationSnapshot
+            ) else { return }
+            applyPreparedDocument(
+                document,
+                generation: generation,
+                scrollView: scrollView,
+                canvas: canvas
+            )
+            return
+        }
+
+        documentPreparationTask = Task { @MainActor [weak self, weak scrollView, weak canvas] in
+            let worker = Task.detached(priority: preparationPriority) {
+                AppPerformanceSignposts.measureSync(
+                    "MemberListDocumentPreparation"
+                ) {
+                    NativeMemberListCanvasView.prepareDocument(
+                        sections: sections,
+                        reusing: preparationSnapshot,
+                        cancelsCooperatively: true
+                    )
+                }
+            }
+            let document = await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: {
+                worker.cancel()
+            }
+            guard let self,
+                  !Task.isCancelled,
+                  self.documentPreparationGeneration == generation,
+                  self.requestedSections == sections,
+                  let document,
+                  let scrollView,
+                  let canvas
+            else { return }
+            self.documentPreparationTask = nil
+            self.applyPreparedDocument(
+                document,
+                generation: generation,
+                scrollView: scrollView,
+                canvas: canvas
+            )
+        }
+    }
+
+    private func applyPreparedDocument(
+        _ document: NativeMemberListCanvasView.PreparedDocument,
+        generation: UInt64,
+        scrollView: NSScrollView,
+        canvas: NativeMemberListCanvasView
+    ) {
+        guard documentPreparationGeneration == generation,
+              requestedSections == document.sections
+        else { return }
+        _ = AppPerformanceSignposts.measureSync("MemberListDocumentPublication") {
+            canvas.applyPreparedDocument(document)
+        }
+        (scrollView as? NativeMemberListScrollView)?.synchronizeCanvasFrame()
+        reportViewport(debounced: false)
+        startPerformanceBenchmarkIfReady()
+    }
+
+    func reportAnimatedImageScrolling(_ isScrolling: Bool) {
+        guard defersAnimatedImageDecoding != isScrolling else { return }
+        defersAnimatedImageDecoding = isScrolling
+        animatedImageScrollRevision &+= 1
+        let source = animatedImageScrollSource
+        let revision = animatedImageScrollRevision
+        Task {
+            await SharedAnimatedImageDecodeScheduler.shared
+                .setInteractiveScrolling(
+                    isScrolling,
+                    source: source,
+                    revision: revision
+                )
+        }
+    }
+
     func startPerformanceBenchmarkIfReady() {
         guard parent.runsPerformanceAutoScroll,
               !didStartPerformanceBenchmark,
+              performanceStartTask == nil,
+              documentPreparationTask == nil,
               let scrollView,
               let canvas,
               canvas.contentHeight
                 >= NativeTimelineBenchmarkScrollPolicy.nominalDistance
                     + scrollView.contentSize.height
         else { return }
-        didStartPerformanceBenchmark = true
+        // Server selection, accessibility inspection by the benchmark driver,
+        // initial range delivery, and member-document preparation are separate
+        // loading paths. Require three seconds with no replacement document,
+        // rather than three seconds after the first tall document, so this idle
+        // scenario never silently turns into a loading-overlap measurement.
+        performanceStartGeneration &+= 1
+        let startGeneration = performanceStartGeneration
+        performanceStartTask = Task { [weak self, weak scrollView, weak canvas] in
+            defer {
+                if let self,
+                   self.performanceStartGeneration == startGeneration
+                {
+                    self.performanceStartTask = nil
+                }
+            }
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled,
+                  let self,
+                  self.performanceStartGeneration == startGeneration,
+                  self.documentPreparationTask == nil,
+                  let scrollView,
+                  let canvas,
+                  canvas.contentHeight
+                    >= NativeTimelineBenchmarkScrollPolicy.nominalDistance
+                        + scrollView.contentSize.height
+            else { return }
+            didStartPerformanceBenchmark = true
+            runPerformanceBenchmark(scrollView: scrollView, canvas: canvas)
+        }
+    }
+
+    func runPerformanceBenchmark(
+        scrollView: NSScrollView,
+        canvas: NativeMemberListCanvasView
+    ) {
         scrollView.contentView.scroll(to: .zero)
         scrollView.reflectScrolledClipView(scrollView.contentView)
-        let interval = AppPerformanceSignposts.signposter.beginInterval(
-            "MemberListAutoScrollBenchmark"
-        )
-        performanceInterval = interval
-        AppPerformanceSignposts.beginResourceWindow(
-            named: "MemberListAutoScrollBenchmark"
-        )
+        let interval = beginPerformanceScrollMeasurement()
         let startedAt = ProcessInfo.processInfo.systemUptime
         var previousTick = startedAt
         var completedDistance: CGFloat = 0
+        var completedTicks = 0
+        var delayedTicks = 0
+        var tickIntervals: [TimeInterval] = []
+        tickIntervals.reserveCapacity(1_500)
+        var delayedTickSamples: [NativeTimelineBenchmarkArtifact.DelayedTick] = []
+        delayedTickSamples.reserveCapacity(64)
+        var maximumTickInterval = 0.0
+        var maximumScrollWork = 0.0
         let ticker = NativeTimelineDisplayLinkTicker()
         performanceTicker = ticker
         ticker.start(on: canvas) { [weak self, weak ticker] in
             guard let self else { return }
             let now = ProcessInfo.processInfo.systemUptime
             let elapsed = now - startedAt
+            let tickInterval = now - previousTick
+            completedTicks += 1
+            tickIntervals.append(tickInterval)
+            maximumTickInterval = max(maximumTickInterval, tickInterval)
+            if tickInterval > 0.033 {
+                delayedTicks += 1
+                delayedTickSamples.append(
+                    .init(offset: now - startedAt, interval: tickInterval)
+                )
+            }
             let delta = NativeTimelineBenchmarkScrollPolicy.distance(
-                tickInterval: now - previousTick
+                tickInterval: tickInterval
             )
             previousTick = now
+            let workStart = ProcessInfo.processInfo.systemUptime
             let previousY = scrollView.contentView.bounds.minY
             let maximumY = max(
                 0,
@@ -378,9 +605,14 @@ final class NativeMemberListCoordinator: NSObject {
             scrollView.contentView.scroll(to: CGPoint(x: 0, y: nextY))
             scrollView.reflectScrolledClipView(scrollView.contentView)
             completedDistance += max(0, nextY - previousY)
+            maximumScrollWork = max(
+                maximumScrollWork,
+                ProcessInfo.processInfo.systemUptime - workStart
+            )
             if elapsed >= NativeTimelineBenchmarkScrollPolicy.duration
                 || nextY >= maximumY - 0.5
             {
+                endPerformanceScrollIsolation()
                 ticker?.stop()
                 performanceTicker = nil
                 let outcome: NativeTimelineBenchmarkFinishOutcome =
@@ -406,7 +638,15 @@ final class NativeMemberListCoordinator: NSObject {
                 NativeTimelineBenchmarkArtifact.write(
                     outcome: outcome,
                     completedDistance: completedDistance,
-                    elapsed: elapsed
+                    elapsed: elapsed,
+                    completedTicks: completedTicks,
+                    delayedTicks: delayedTicks,
+                    tickIntervals: tickIntervals,
+                    delayedTickSamples: delayedTickSamples,
+                    maximumTickInterval: maximumTickInterval,
+                    maximumScrollWork: maximumScrollWork,
+                    historyStarvedTicks: 0,
+                    maximumConsecutiveHistoryStarvedTicks: 0
                 )
                 AppPerformanceSignposts.endResourceWindow(
                     named: "MemberListAutoScrollBenchmark",
@@ -417,18 +657,60 @@ final class NativeMemberListCoordinator: NSObject {
             }
         }
     }
+
+    private func beginPerformanceScrollIsolation() {
+        AppScrollWorkGate.beginActivity()
+    }
+
+    private func beginPerformanceScrollMeasurement() -> OSSignpostIntervalState {
+        let interval = AppPerformanceSignposts.signposter.beginInterval(
+            "MemberListAutoScrollBenchmark"
+        )
+        performanceInterval = interval
+        // Programmatic benchmark motion bypasses AppKit's live-scroll
+        // notifications. Exercise the same loading-isolation gate as a real
+        // trackpad gesture so cross-surface regressions remain observable.
+        beginPerformanceScrollIsolation()
+        AppPerformanceSignposts.beginResourceWindow(
+            named: "MemberListAutoScrollBenchmark"
+        )
+        return interval
+    }
+
+    private func endPerformanceScrollIsolation() {
+        AppScrollWorkGate.endActivity()
+    }
 }
 
 @MainActor
+// swiftlint:disable:next type_body_length
 final class NativeMemberListCanvasView: NSView {
-    enum ItemID: Hashable {
+    nonisolated struct Header: Equatable, Sendable {
+        let id: MemberSection.SectionIdentifier
+        let title: String
+        let colorHex: UInt32?
+        let totalCount: Int
+        let gatewayStartIndex: Int?
+        let isLoadingSkeleton: Bool
+
+        init(_ section: MemberSection) {
+            id = section.id
+            title = section.title
+            colorHex = section.colorHex
+            totalCount = section.totalCount
+            gatewayStartIndex = section.gatewayStartIndex
+            isLoadingSkeleton = section.isLoadingSkeleton
+        }
+    }
+
+    nonisolated enum ItemID: Hashable, Sendable {
         case header(MemberSection.SectionIdentifier)
         case member(UserID)
         case placeholder(Int)
     }
 
-    enum Item: Equatable {
-        case header(MemberSection)
+    nonisolated enum Item: Equatable, Sendable {
+        case header(Header)
         case member(Member, gatewayIndex: Int?)
         case placeholder(gatewayIndex: Int)
 
@@ -456,13 +738,62 @@ final class NativeMemberListCanvasView: NSView {
         }
     }
 
-    struct PreparedText {
+    nonisolated final class PreparedText: @unchecked Sendable {
         let name: CTLine
         let nameTruncationToken: CTLine
         let nameWidth: CGFloat
         let activity: CTLine?
         let activityTruncationToken: CTLine?
         let activityWidth: CGFloat
+
+        init(
+            name: CTLine,
+            nameTruncationToken: CTLine,
+            nameWidth: CGFloat,
+            activity: CTLine?,
+            activityTruncationToken: CTLine?,
+            activityWidth: CGFloat
+        ) {
+            self.name = name
+            self.nameTruncationToken = nameTruncationToken
+            self.nameWidth = nameWidth
+            self.activity = activity
+            self.activityTruncationToken = activityTruncationToken
+            self.activityWidth = activityWidth
+        }
+    }
+
+    nonisolated struct PreparationSnapshot: Sendable {
+        let sections: [MemberSection]
+        let items: [Item]
+        let itemIndexesByID: [ItemID: Int]
+        let origins: [CGFloat]
+        let contentHeight: CGFloat
+        let preparedText: [ItemID: PreparedText]
+        let loadedItemIndexes: [Int]
+    }
+
+    nonisolated struct PreparedDocument: Sendable {
+        let sections: [MemberSection]
+        let items: [Item]
+        let itemIndexesByID: [ItemID: Int]
+        let origins: [CGFloat]
+        let contentHeight: CGFloat
+        let preparedText: [ItemID: PreparedText]
+        let loadedItemIndexes: [Int]
+        let hasLoadingPlaceholders: Bool
+        let stableLayoutChangedIndexes: [Int]?
+    }
+
+    private struct SkeletonDrawingStyle {
+        let phase: Double?
+        let fullOpacityGradient: CGGradient?
+        let secondaryOpacityGradient: CGGradient?
+    }
+
+    private nonisolated struct StableLayoutProjection {
+        let headerIndexes: [Int]
+        let desiredMembersByItemIndex: [Int: Member]
     }
 
     struct ActivityEmojiOverlayID: Hashable {
@@ -473,6 +804,26 @@ final class NativeMemberListCanvasView: NSView {
     struct ActivityEmojiOverlayConfiguration: Equatable {
         let url: URL
         let opacity: CGFloat
+    }
+
+    struct AvatarOverlayPresentation {
+        let id: ItemID
+        let member: Member
+        let index: Int
+    }
+
+    struct ActivityEmojiOverlayPresentation {
+        let id: ActivityEmojiOverlayID
+        let configuration: ActivityEmojiOverlayConfiguration
+        let frame: CGRect
+    }
+
+    nonisolated static func requiresAvatarOverlay(for member: Member) -> Bool {
+        let avatarURL = member.guildAvatarURL ?? member.user.avatarURL
+        return member.user.avatarDecorationURL != nil
+            || avatarURL.map(
+                NativeTimelineAvatarPresentation.shouldDecodeAnimation
+            ) == true
     }
 
     struct GuildTagPresentation {
@@ -492,6 +843,7 @@ final class NativeMemberListCanvasView: NSView {
     var origins: [CGFloat] = []
     var contentHeight: CGFloat = 1
     var preparedText: [ItemID: PreparedText] = [:]
+    var loadedItemIndexes: [Int] = []
     var selectedMemberID: UserID?
     var profilePresentation: ProfilePresentationState?
     var isProfilePresented = false
@@ -499,6 +851,7 @@ final class NativeMemberListCanvasView: NSView {
     var selectMember: (Member) -> Void = { _ in }
     var hoveredIndex: Int?
     var isScrolling = false
+    var interactionsBlocked = false
     var trackingArea: NSTrackingArea?
     var rowOverlay: NSHostingView<AnyView>?
     var rowForegroundOverlay: NativeMemberForegroundOverlayView?
@@ -518,7 +871,6 @@ final class NativeMemberListCanvasView: NSView {
     )
     var avatarOverlays: [ItemID: NSHostingView<AnyView>] = [:]
     var avatarOverlayMembers: [ItemID: Member] = [:]
-    var placeholderOverlays: [ItemID: NSHostingView<AnyView>] = [:]
     var activityEmojiOverlays: [ActivityEmojiOverlayID: NSHostingView<AnyView>] = [:]
     var activityEmojiOverlayConfigurations: [
         ActivityEmojiOverlayID: ActivityEmojiOverlayConfiguration
@@ -526,8 +878,12 @@ final class NativeMemberListCanvasView: NSView {
     var accessibilityRows: [ItemID: NativeMemberAccessibilityProxyView] = [:]
     var imageTasks: [URL: Task<Void, Never>] = [:]
     var imageTaskPriorities: [URL: MediaLoadPriority] = [:]
+    var imageTaskPixelDimensions: [URL: Int] = [:]
     var imageRequestItemIDs: [URL: Set<ItemID>] = [:]
     var images: [URL: CGImage] = [:]
+    var imagePixelDimensions: [URL: Int] = [:]
+    var hasLoadingPlaceholders = false
+    var placeholderShimmerTask: Task<Void, Never>?
     var reconciledVisibleRange: Range<Int>?
     var reconciledViewportWidth: CGFloat?
     var imageLoadPromotion: @Sendable (URL, Int) async -> Void = { url, dimension in
@@ -539,6 +895,11 @@ final class NativeMemberListCanvasView: NSView {
 
     override func updateTrackingAreas() {
         if let trackingArea { removeTrackingArea(trackingArea) }
+        guard !interactionsBlocked else {
+            trackingArea = nil
+            super.updateTrackingAreas()
+            return
+        }
         let options: NSTrackingArea.Options = [
             .activeInKeyWindow, .inVisibleRect, .mouseMoved, .mouseEnteredAndExited,
         ]
@@ -548,14 +909,12 @@ final class NativeMemberListCanvasView: NSView {
         super.updateTrackingAreas()
     }
 
-    func update(
-        sections: [MemberSection],
+    func updatePresentation(
         customEmojiURLsByID: [String: URL] = [:],
         profilePresentation: ProfilePresentationState?,
         isProfilePresented: Bool,
         dismissProfile: @escaping () -> Void
     ) {
-        let previousItems = items
         let previousSelectedMemberID = selectedMemberID
         let previousCustomEmojiURLsByID = self.customEmojiURLsByID
         self.customEmojiURLsByID = customEmojiURLsByID
@@ -565,10 +924,6 @@ final class NativeMemberListCanvasView: NSView {
         selectedMemberID = isProfilePresented
             ? profilePresentation?.member.id
             : nil
-        let documentChanged = updateDocumentIfNeeded(
-            sections: sections,
-            previousItems: previousItems
-        )
         if previousCustomEmojiURLsByID != customEmojiURLsByID {
             needsDisplay = true
         }
@@ -579,8 +934,23 @@ final class NativeMemberListCanvasView: NSView {
             setNeedsDisplay(itemRect(at: index))
         }
         updateVisibleOverlaysAndPrewarming(
-            force: documentChanged || previousCustomEmojiURLsByID != customEmojiURLsByID
+            force: previousCustomEmojiURLsByID != customEmojiURLsByID
         )
+    }
+
+    func setInteractionsBlocked(_ blocked: Bool) {
+        guard interactionsBlocked != blocked else { return }
+        interactionsBlocked = blocked
+        if blocked {
+            if let old = hoveredIndex {
+                hoveredIndex = nil
+                setNeedsDisplay(itemRect(at: old))
+            }
+            removeRowOverlay()
+            profilePopoverCoordinator.close()
+        }
+        updateTrackingAreas()
+        window?.invalidateCursorRects(for: self)
     }
 
     @discardableResult
@@ -589,14 +959,25 @@ final class NativeMemberListCanvasView: NSView {
         previousItems: [Item]? = nil
     ) -> Bool {
         guard sections != presentedSections else { return false }
-        let previousItems = previousItems ?? items
-        presentedSections = sections
-        items = Self.makeItems(sections: sections)
-        itemIndexesByID.removeAll(keepingCapacity: true)
-        itemIndexesByID.reserveCapacity(items.count)
-        for index in items.indices {
-            itemIndexesByID[items[index].id] = index
+        guard let document = Self.prepareDocument(
+            sections: sections,
+            reusing: preparationSnapshot()
+        ) else {
+            return false
         }
+        return applyPreparedDocument(document, previousItems: previousItems)
+    }
+
+    @discardableResult
+    func applyPreparedDocument(
+        _ document: PreparedDocument,
+        previousItems suppliedPreviousItems: [Item]? = nil
+    ) -> Bool {
+        guard document.sections != presentedSections else { return false }
+        let previousItems = suppliedPreviousItems ?? items
+        presentedSections = document.sections
+        items = document.items
+        itemIndexesByID = document.itemIndexesByID
         if let hoveredIndex,
            !items.indices.contains(hoveredIndex) ||
            !previousItems.indices.contains(hoveredIndex) ||
@@ -604,16 +985,56 @@ final class NativeMemberListCanvasView: NSView {
         {
             self.hoveredIndex = nil
         }
-        rebuildOrigins()
-        prepareRows()
-        if previousItems.count == items.count {
-            for index in items.indices where items[index] != previousItems[index] {
+        origins = document.origins
+        contentHeight = document.contentHeight
+        invalidateIntrinsicContentSize()
+        preparedText = document.preparedText
+        loadedItemIndexes = document.loadedItemIndexes
+        let placeholderStateChanged = hasLoadingPlaceholders
+            != document.hasLoadingPlaceholders
+        hasLoadingPlaceholders = document.hasLoadingPlaceholders
+        if placeholderStateChanged {
+            if hasLoadingPlaceholders {
+                AppPerformanceSignposts.signposter.emitEvent(
+                    "MemberListNativePlaceholderRenderingStarted"
+                )
+            } else {
+                AppPerformanceSignposts.signposter.emitEvent(
+                    "MemberListNativePlaceholderRenderingEnded"
+                )
+            }
+        }
+        reconcilePlaceholderShimmer()
+        if let changedIndexes = document.stableLayoutChangedIndexes {
+            for index in changedIndexes where items.indices.contains(index) {
                 setNeedsDisplay(itemRect(at: index))
             }
         } else {
+            // Structural section changes can shift every subsequent row. Asking
+            // AppKit to invalidate the document is constant-time and drawing is
+            // still clipped to exposed regions. Comparing every row here merely
+            // moves an O(member count) pass back onto the main thread.
             needsDisplay = true
         }
-        reconciledVisibleRange = nil
+        if let changedIndexes = document.stableLayoutChangedIndexes {
+            let visible = itemRange(
+                intersecting: enclosingScrollView?.documentVisibleRect ?? .zero
+            )
+            let prewarm = max(
+                0,
+                visible.lowerBound - NativeMemberListMetrics.prewarmItemCount
+            ) ..< min(
+                items.count,
+                visible.upperBound + NativeMemberListMetrics.prewarmItemCount
+            )
+            let changesPrewarmedContent = changedIndexes.contains {
+                prewarm.contains($0)
+            }
+            updateVisibleOverlaysAndPrewarming(force: changesPrewarmedContent)
+        } else {
+            reconciledVisibleRange = nil
+            updateVisibleOverlaysAndPrewarming(force: true)
+        }
         return true
     }
 
@@ -637,11 +1058,331 @@ final class NativeMemberListCanvasView: NSView {
         return indexes.sorted()
     }
 
-    static func makeItems(sections: [MemberSection]) -> [Item] {
+    nonisolated static func prepareDocument(
+        sections: [MemberSection],
+        reusing preparationSnapshot: PreparationSnapshot? = nil,
+        cancelsCooperatively: Bool = false
+    ) -> PreparedDocument? {
+        if let preparationSnapshot {
+            let stableDocument = AppPerformanceSignposts.measureSync(
+                "MemberListStableLayoutPreparation"
+            ) {
+                prepareStableLayoutDocument(
+                    sections: sections,
+                    reusing: preparationSnapshot,
+                    cancelsCooperatively: cancelsCooperatively
+                )
+            }
+            if let stableDocument { return stableDocument }
+        }
+        guard let items = makeItems(
+            sections: sections,
+            cancelsCooperatively: cancelsCooperatively
+        ) else { return nil }
+        var itemIndexesByID: [ItemID: Int] = [:]
+        itemIndexesByID.reserveCapacity(items.count)
+        var origins: [CGFloat] = []
+        origins.reserveCapacity(items.count)
+        var cursorY = NativeMemberListMetrics.verticalInset
+        for index in items.indices {
+            if cancelsCooperatively,
+               index.isMultiple(of: 128),
+               Task.isCancelled
+            {
+                return nil
+            }
+            itemIndexesByID[items[index].id] = index
+            origins.append(cursorY)
+            cursorY += items[index].height
+        }
+        let preparedText = AppPerformanceSignposts.measureSync(
+            "MemberListTextPreparation"
+        ) {
+            prepareText(
+                for: items,
+                reusing: preparationSnapshot,
+                cancelsCooperatively: cancelsCooperatively
+            )
+        }
+        guard let preparedText else { return nil }
+        return PreparedDocument(
+            sections: sections,
+            items: items,
+            itemIndexesByID: itemIndexesByID,
+            origins: origins,
+            contentHeight: cursorY + NativeMemberListMetrics.verticalInset,
+            preparedText: preparedText,
+            loadedItemIndexes: items.indices.filter {
+                if case .member = items[$0] { true } else { false }
+            },
+            hasLoadingPlaceholders: items.contains {
+                switch $0 {
+                case .header(let header): header.isLoadingSkeleton
+                case .placeholder: true
+                case .member: false
+                }
+            },
+            stableLayoutChangedIndexes: nil
+        )
+    }
+
+    private nonisolated static func prepareStableLayoutDocument(
+        sections: [MemberSection],
+        reusing snapshot: PreparationSnapshot,
+        cancelsCooperatively: Bool
+    ) -> PreparedDocument? {
+        guard let projection = stableLayoutProjection(
+            sections: sections,
+            snapshot: snapshot,
+            cancelsCooperatively: cancelsCooperatively
+        ), let replacements = stableLayoutReplacements(
+            sections: sections,
+            snapshot: snapshot,
+            projection: projection,
+            cancelsCooperatively: cancelsCooperatively
+        ) else { return nil }
+        let changedIndexes = replacements.keys.sorted()
+        guard let replacementText = prepareText(
+            for: changedIndexes.compactMap { replacements[$0] },
+            reusing: nil,
+            cancelsCooperatively: cancelsCooperatively
+        ) else { return nil }
+        return applyingStableLayoutReplacements(
+            replacements,
+            replacementText: replacementText,
+            changedIndexes: changedIndexes,
+            sections: sections,
+            snapshot: snapshot,
+            loadedItemIndexes: projection.desiredMembersByItemIndex.keys.sorted()
+        )
+    }
+
+    private nonisolated static func stableLayoutProjection(
+        sections: [MemberSection],
+        snapshot: PreparationSnapshot,
+        cancelsCooperatively: Bool
+    ) -> StableLayoutProjection? {
+        guard hasStableSectionLayout(sections, snapshot: snapshot) else {
+            return nil
+        }
+        var desiredMembersByItemIndex: [Int: Member] = [:]
+        desiredMembersByItemIndex.reserveCapacity(
+            sections.reduce(0) { $0 + min($1.members.count, $1.totalCount) }
+        )
+        var headerIndexes: [Int] = []
+        headerIndexes.reserveCapacity(sections.count)
+        var itemCursor = 0
+        for (sectionOffset, section) in sections.enumerated() {
+            if cancelsCooperatively,
+               sectionOffset.isMultiple(of: 8),
+               Task.isCancelled
+            {
+                return nil
+            }
+            guard snapshot.items.indices.contains(itemCursor),
+                  let gatewayStartIndex = section.gatewayStartIndex
+            else { return nil }
+            headerIndexes.append(itemCursor)
+            guard section.totalCount > 0 else {
+                itemCursor += 1
+                continue
+            }
+            let gatewayRange = (gatewayStartIndex + 1)
+                ... (gatewayStartIndex + section.totalCount)
+            var indexedGatewayIndexes: Set<Int> = []
+            var inferredMembers: [Member] = []
+            for member in section.members.prefix(max(0, section.totalCount)) {
+                guard let gatewayIndex = member.memberListIndex,
+                      gatewayRange.contains(gatewayIndex)
+                else {
+                    inferredMembers.append(member)
+                    continue
+                }
+                guard indexedGatewayIndexes.insert(gatewayIndex).inserted else {
+                    continue
+                }
+                let itemIndex = itemCursor + 1
+                    + gatewayIndex - gatewayRange.lowerBound
+                desiredMembersByItemIndex[itemIndex] = member
+            }
+            var inferredGatewayIndex = gatewayRange.lowerBound
+            for member in inferredMembers {
+                while inferredGatewayIndex <= gatewayRange.upperBound,
+                      indexedGatewayIndexes.contains(inferredGatewayIndex)
+                {
+                    if cancelsCooperatively,
+                       inferredGatewayIndex.isMultiple(of: 128),
+                       Task.isCancelled
+                    {
+                        return nil
+                    }
+                    inferredGatewayIndex += 1
+                }
+                guard inferredGatewayIndex <= gatewayRange.upperBound else {
+                    break
+                }
+                let itemIndex = itemCursor + 1
+                    + inferredGatewayIndex - gatewayRange.lowerBound
+                desiredMembersByItemIndex[itemIndex] = member
+                inferredGatewayIndex += 1
+            }
+            itemCursor += section.totalCount + 1
+        }
+        guard itemCursor == snapshot.items.count else {
+            AppPerformanceSignposts.signposter.emitEvent(
+                "MemberListStableLayoutItemCountMismatch"
+            )
+            return nil
+        }
+        return StableLayoutProjection(
+            headerIndexes: headerIndexes,
+            desiredMembersByItemIndex: desiredMembersByItemIndex
+        )
+    }
+
+    private nonisolated static func hasStableSectionLayout(
+        _ sections: [MemberSection],
+        snapshot: PreparationSnapshot
+    ) -> Bool {
+        guard sections.count == snapshot.sections.count else {
+            AppPerformanceSignposts.signposter.emitEvent(
+                "MemberListStableLayoutSectionCountMismatch"
+            )
+            return false
+        }
+        for (current, previous) in zip(sections, snapshot.sections) {
+            guard current.id == previous.id else {
+                AppPerformanceSignposts.signposter.emitEvent(
+                    "MemberListStableLayoutSectionIdentityMismatch"
+                )
+                return false
+            }
+            guard current.totalCount == previous.totalCount else {
+                AppPerformanceSignposts.signposter.emitEvent(
+                    "MemberListStableLayoutSectionTotalMismatch"
+                )
+                return false
+            }
+            guard current.gatewayStartIndex == previous.gatewayStartIndex else {
+                AppPerformanceSignposts.signposter.emitEvent(
+                    "MemberListStableLayoutGatewayStartMismatch"
+                )
+                return false
+            }
+        }
+        return true
+    }
+
+    private nonisolated static func stableLayoutReplacements(
+        sections: [MemberSection],
+        snapshot: PreparationSnapshot,
+        projection: StableLayoutProjection,
+        cancelsCooperatively: Bool
+    ) -> [Int: Item]? {
+        var candidateIndexes = Set(snapshot.loadedItemIndexes)
+        candidateIndexes.formUnion(projection.desiredMembersByItemIndex.keys)
+        candidateIndexes.formUnion(projection.headerIndexes)
+        let sortedCandidates = candidateIndexes.sorted()
+        var replacementItemsByIndex: [Int: Item] = [:]
+        replacementItemsByIndex.reserveCapacity(sortedCandidates.count)
+        var sectionOffset = 0
+        var nextHeaderOffset = 0
+        for index in sortedCandidates {
+            if cancelsCooperatively,
+               index.isMultiple(of: 128),
+               Task.isCancelled
+            {
+                return nil
+            }
+            let desiredItem: Item
+            if nextHeaderOffset < projection.headerIndexes.count,
+               projection.headerIndexes[nextHeaderOffset] == index
+            {
+                desiredItem = .header(Header(sections[nextHeaderOffset]))
+                nextHeaderOffset += 1
+            } else if let member = projection.desiredMembersByItemIndex[index] {
+                desiredItem = .member(
+                    member,
+                    gatewayIndex: member.memberListIndex
+                )
+            } else {
+                while sectionOffset + 1 < projection.headerIndexes.count,
+                      index > projection.headerIndexes[sectionOffset + 1]
+                {
+                    sectionOffset += 1
+                }
+                guard let gatewayStartIndex = sections[sectionOffset]
+                    .gatewayStartIndex
+                else { return nil }
+                let gatewayIndex = gatewayStartIndex
+                    + index - projection.headerIndexes[sectionOffset]
+                desiredItem = .placeholder(gatewayIndex: gatewayIndex)
+            }
+            guard snapshot.items[index] != desiredItem else { continue }
+            replacementItemsByIndex[index] = desiredItem
+        }
+        return replacementItemsByIndex
+    }
+
+    private nonisolated static func applyingStableLayoutReplacements(
+        _ replacements: [Int: Item],
+        replacementText: [ItemID: PreparedText],
+        changedIndexes: [Int],
+        sections: [MemberSection],
+        snapshot: PreparationSnapshot,
+        loadedItemIndexes: [Int]
+    ) -> PreparedDocument {
+        var items = snapshot.items
+        var itemIndexesByID = snapshot.itemIndexesByID
+        var preparedText = snapshot.preparedText
+        for index in changedIndexes {
+            guard let replacement = replacements[index] else {
+                continue
+            }
+            let previousID = items[index].id
+            if itemIndexesByID[previousID] == index {
+                itemIndexesByID[previousID] = nil
+                preparedText[previousID] = nil
+            }
+            items[index] = replacement
+            itemIndexesByID[replacement.id] = index
+            if let prepared = replacementText[replacement.id] {
+                preparedText[replacement.id] = prepared
+            }
+        }
+        return PreparedDocument(
+            sections: sections,
+            items: items,
+            itemIndexesByID: itemIndexesByID,
+            origins: snapshot.origins,
+            contentHeight: snapshot.contentHeight,
+            preparedText: preparedText,
+            loadedItemIndexes: loadedItemIndexes,
+            hasLoadingPlaceholders: items.contains {
+                switch $0 {
+                case .header(let header): header.isLoadingSkeleton
+                case .placeholder: true
+                case .member: false
+                }
+            },
+            stableLayoutChangedIndexes: changedIndexes
+        )
+    }
+
+    private nonisolated static func makeItems(
+        sections: [MemberSection],
+        cancelsCooperatively: Bool
+    ) -> [Item]? {
         var result: [Item] = []
         result.reserveCapacity(sections.reduce(0) { $0 + $1.totalCount + 1 })
-        for section in sections {
-            result.append(.header(section))
+        for (sectionOffset, section) in sections.enumerated() {
+            if cancelsCooperatively,
+               sectionOffset.isMultiple(of: 8),
+               Task.isCancelled
+            {
+                return nil
+            }
+            result.append(.header(Header(section)))
             let visibleMembers = section.members.prefix(max(0, section.totalCount))
             guard let sectionStart = section.gatewayStartIndex else {
                 result.append(contentsOf: visibleMembers.map { member in
@@ -664,6 +1405,12 @@ final class NativeMemberListCanvasView: NSView {
             }
             var inferredIndex = inferredMembers.startIndex
             for gatewayIndex in gatewayRange {
+                if cancelsCooperatively,
+                   gatewayIndex.isMultiple(of: 128),
+                   Task.isCancelled
+                {
+                    return nil
+                }
                 if let member = indexedMembers[gatewayIndex] {
                     result.append(.member(member, gatewayIndex: gatewayIndex))
                 } else if inferredIndex < inferredMembers.endIndex {
@@ -679,31 +1426,55 @@ final class NativeMemberListCanvasView: NSView {
         return result
     }
 
-    func rebuildOrigins() {
-        origins.removeAll(keepingCapacity: true)
-        origins.reserveCapacity(items.count)
-        var cursorY = NativeMemberListMetrics.verticalInset
-        for item in items {
-            origins.append(cursorY)
-            cursorY += item.height
-        }
-        contentHeight = cursorY + NativeMemberListMetrics.verticalInset
-        invalidateIntrinsicContentSize()
-    }
-
     override var intrinsicContentSize: NSSize {
         NSSize(width: NSView.noIntrinsicMetric, height: contentHeight)
     }
 
-    func prepareRows() {
+    func preparationSnapshot() -> PreparationSnapshot {
+        PreparationSnapshot(
+            sections: presentedSections,
+            items: items,
+            itemIndexesByID: itemIndexesByID,
+            origins: origins,
+            contentHeight: contentHeight,
+            preparedText: preparedText,
+            loadedItemIndexes: loadedItemIndexes
+        )
+    }
+
+    private nonisolated static func prepareText(
+        for items: [Item],
+        reusing preparationSnapshot: PreparationSnapshot?,
+        cancelsCooperatively: Bool
+    ) -> [ItemID: PreparedText]? {
         let nameFont = NSFont.systemFont(
             ofSize: NSFont.preferredFont(forTextStyle: .body).pointSize,
             weight: .semibold
         )
         let activityFont = NSFont.systemFont(ofSize: 12)
-        var prepared: [ItemID: PreparedText] = [:]
-        for item in items {
+        var preparedText: [ItemID: PreparedText] = [:]
+        preparedText.reserveCapacity(min(
+            items.count,
+            (preparationSnapshot?.preparedText.count ?? 0) + 128
+        ))
+        for index in items.indices {
+            if cancelsCooperatively,
+               index.isMultiple(of: 16),
+               Task.isCancelled
+            {
+                return nil
+            }
+            let item = items[index]
             guard case .member(let member, _) = item else { continue }
+            if let previousIndex = preparationSnapshot?.itemIndexesByID[item.id],
+               let previousItems = preparationSnapshot?.items,
+               previousItems.indices.contains(previousIndex),
+               previousItems[previousIndex] == item,
+               let existing = preparationSnapshot?.preparedText[item.id]
+            {
+                preparedText[item.id] = existing
+                continue
+            }
             let nameColor = MessageAuthorPresentation.topRoleColor(in: member.roles)
                 .map(Self.color(hex:)) ?? .labelColor
             let alpha: CGFloat = member.isOnline ? 1 : 0.55
@@ -727,7 +1498,7 @@ final class NativeMemberListCanvasView: NSView {
                     color: Self.memberActivityColor.withAlphaComponent(alpha)
                 )
             }
-            prepared[item.id] = PreparedText(
+            preparedText[item.id] = PreparedText(
                 name: name,
                 nameTruncationToken: Self.line(
                     "…",
@@ -742,41 +1513,256 @@ final class NativeMemberListCanvasView: NSView {
                 } ?? 0
             )
         }
-        preparedText = prepared
+        return preparedText
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        guard let context = NSGraphicsContext.current?.cgContext else { return }
-        let range = itemRange(intersecting: dirtyRect)
-        for index in range {
-            draw(item: items[index], at: index, context: context)
+        AppPerformanceSignposts.measureSync("MemberListCanvasDraw") {
+            guard let context = NSGraphicsContext.current?.cgContext else {
+                return
+            }
+            let range = itemRange(intersecting: dirtyRect)
+            let drawsPlaceholders = range.contains {
+                switch items[$0] {
+                case .header(let header): header.isLoadingSkeleton
+                case .placeholder: true
+                case .member: false
+                }
+            }
+            let style = drawsPlaceholders ? skeletonDrawingStyle() : nil
+            if drawsPlaceholders {
+                AppPerformanceSignposts.measureSync(
+                    "MemberListPlaceholderCanvasDraw"
+                ) {
+                    drawItems(in: range, context: context, skeletonStyle: style)
+                }
+            } else {
+                drawItems(in: range, context: context, skeletonStyle: nil)
+            }
         }
     }
 
-    func draw(item: Item, at index: Int, context: CGContext) {
+    private func drawItems(
+        in range: Range<Int>,
+        context: CGContext,
+        skeletonStyle: SkeletonDrawingStyle?
+    ) {
+        for index in range {
+            draw(
+                item: items[index],
+                at: index,
+                context: context,
+                skeletonStyle: skeletonStyle
+            )
+        }
+    }
+
+    private func draw(
+        item: Item,
+        at index: Int,
+        context: CGContext,
+        skeletonStyle: SkeletonDrawingStyle?
+    ) {
         switch item {
         case .header(let section):
-            if !section.isLoadingSkeleton {
-                let label = "\(section.title) — \(section.totalCount)"
-                let font = NSFont.systemFont(
-                    ofSize: NSFont.preferredFont(forTextStyle: .body).pointSize,
-                    weight: .semibold
+            if section.isLoadingSkeleton, let skeletonStyle {
+                drawSkeletonHeader(
+                    at: index,
+                    context: context,
+                    style: skeletonStyle
                 )
-                let color = section.colorHex.map(Self.color(hex:)) ?? .secondaryLabelColor
-                Self.draw(
-                    line: Self.line(label, font: font, color: color),
-                    at: CGPoint(
-                        x: NativeMemberListMetrics.horizontalInset + 10,
-                        y: origins[index] + 12
-                    ),
-                    context: context
-                )
+                return
             }
+            drawSectionHeader(section, at: index, context: context)
         case .placeholder:
-            break
+            guard let skeletonStyle else { return }
+            drawSkeletonMember(
+                at: index,
+                context: context,
+                style: skeletonStyle
+            )
         case .member(let member, _):
             drawMember(member, at: index, context: context)
         }
+    }
+
+    private func drawSectionHeader(
+        _ section: Header,
+        at index: Int,
+        context: CGContext
+    ) {
+        let label = "\(section.title) — \(section.totalCount)"
+        let font = NSFont.systemFont(
+            ofSize: NSFont.preferredFont(forTextStyle: .body).pointSize,
+            weight: .semibold
+        )
+        let color = section.colorHex.map(Self.color(hex:))
+            ?? .secondaryLabelColor
+        Self.draw(
+            line: Self.line(label, font: font, color: color),
+            at: CGPoint(
+                x: NativeMemberListMetrics.horizontalInset + 10,
+                y: origins[index] + 12
+            ),
+            context: context
+        )
+    }
+
+    private func skeletonDrawingStyle() -> SkeletonDrawingStyle {
+        let reducesMotion = NSWorkspace.shared
+            .accessibilityDisplayShouldReduceMotion
+        return SkeletonDrawingStyle(
+            phase: reducesMotion ? nil : SkeletonShimmerStyle.phase(at: Date()),
+            fullOpacityGradient: reducesMotion
+                ? nil : skeletonGradient(opacity: 1),
+            secondaryOpacityGradient: reducesMotion
+                ? nil : skeletonGradient(opacity: 0.7)
+        )
+    }
+
+    private func skeletonGradient(opacity: CGFloat) -> CGGradient? {
+        CGGradient(
+            colorsSpace: CGColorSpaceCreateDeviceRGB(),
+            colors: [
+                NSColor.labelColor.withAlphaComponent(0).cgColor,
+                NSColor.labelColor.withAlphaComponent(0.18 * opacity).cgColor,
+                NSColor.labelColor.withAlphaComponent(0.92 * opacity).cgColor,
+                NSColor.labelColor.withAlphaComponent(0.18 * opacity).cgColor,
+                NSColor.labelColor.withAlphaComponent(0).cgColor,
+            ] as CFArray,
+            locations: [0, 0.25, 0.5, 0.75, 1]
+        )
+    }
+
+    private func drawSkeletonHeader(
+        at index: Int,
+        context: CGContext,
+        style: SkeletonDrawingStyle
+    ) {
+        drawSkeletonShape(
+            in: CGRect(
+                x: NativeMemberListMetrics.horizontalInset + 10,
+                y: origins[index]
+                    + (NativeMemberListMetrics.sectionHeaderHeight - 10) / 2,
+                width: 96,
+                height: 10
+            ),
+            radius: 5,
+            opacity: 1,
+            context: context,
+            style: style
+        )
+    }
+
+    private func drawSkeletonMember(
+        at index: Int,
+        context: CGContext,
+        style: SkeletonDrawingStyle
+    ) {
+        let row = paintedRowRect(at: index)
+        let contentX = row.minX + 4
+        let container = CGRect(
+            x: contentX,
+            y: row.minY
+                + (row.height - NativeMemberListMetrics.avatarContainerSize) / 2,
+            width: NativeMemberListMetrics.avatarContainerSize,
+            height: NativeMemberListMetrics.avatarContainerSize
+        )
+        let avatar = CGRect(
+            x: container.midX - NativeMemberListMetrics.avatarSize / 2,
+            y: container.midY - NativeMemberListMetrics.avatarSize / 2,
+            width: NativeMemberListMetrics.avatarSize,
+            height: NativeMemberListMetrics.avatarSize
+        )
+        let presence = CGRect(
+            x: avatar.minX + NativeMemberListMetrics.avatarSize - 10,
+            y: avatar.minY + NativeMemberListMetrics.avatarSize - 10,
+            width: 11,
+            height: 11
+        )
+        drawSkeletonShape(
+            in: avatar,
+            radius: NativeMemberListMetrics.avatarSize / 2,
+            opacity: 1,
+            context: context,
+            style: style
+        )
+        drawSkeletonShape(
+            in: presence,
+            radius: 5.5,
+            opacity: 1,
+            context: context,
+            style: style
+        )
+
+        let textX = contentX
+            + NativeMemberListMetrics.avatarContainerSize + 8
+        drawSkeletonShape(
+            in: CGRect(x: textX, y: row.minY + 6, width: 104, height: 10),
+            radius: 5,
+            opacity: 1,
+            context: context,
+            style: style
+        )
+        drawSkeletonShape(
+            in: CGRect(x: textX, y: row.minY + 25, width: 138, height: 8),
+            radius: 4,
+            opacity: 0.7,
+            context: context,
+            style: style
+        )
+
+        context.saveGState()
+        context.setStrokeColor(NSColor.controlBackgroundColor.cgColor)
+        context.setLineWidth(2)
+        context.strokeEllipse(in: presence.insetBy(dx: 1, dy: 1))
+        context.restoreGState()
+    }
+
+    private func drawSkeletonShape(
+        in rect: CGRect,
+        radius: CGFloat,
+        opacity: CGFloat,
+        context: CGContext,
+        style: SkeletonDrawingStyle
+    ) {
+        let path = CGPath(
+            roundedRect: rect,
+            cornerWidth: radius,
+            cornerHeight: radius,
+            transform: nil
+        )
+        context.saveGState()
+        context.addPath(path)
+        context.setFillColor(
+            NSColor.white.withAlphaComponent(0.09 * opacity).cgColor
+        )
+        context.fillPath()
+        guard let phase = style.phase,
+              let gradient = opacity == 1
+                ? style.fullOpacityGradient
+                : style.secondaryOpacityGradient
+        else {
+            context.restoreGState()
+            return
+        }
+        context.addPath(path)
+        context.clip()
+        let width = max(rect.width, 1)
+        let startX = rect.minX
+            + width
+                * (
+                    SkeletonShimmerStyle.startingOffsetFraction
+                        + SkeletonShimmerStyle.travelFraction * phase
+                )
+        let bandWidth = width * SkeletonShimmerStyle.bandWidthFraction
+        context.drawLinearGradient(
+            gradient,
+            start: CGPoint(x: startX, y: rect.midY),
+            end: CGPoint(x: startX + bandWidth, y: rect.midY),
+            options: []
+        )
+        context.restoreGState()
     }
 
     func drawMember(_ member: Member, at index: Int, context: CGContext) {
@@ -818,7 +1804,12 @@ final class NativeMemberListCanvasView: NSView {
                 context.setAlpha(1)
             }
             context.restoreGState()
-            requestImageIfNeeded(url: nameplate.staticURL, index: index, priority: .visible)
+            requestImageIfNeeded(
+                url: nameplate.staticURL,
+                index: index,
+                priority: .visible,
+                maximumPixelDimension: 512
+            )
             if isSelected {
                 Self.fillRounded(row, color: .labelColor.withAlphaComponent(0.07), context: context)
             }
@@ -835,6 +1826,8 @@ final class NativeMemberListCanvasView: NSView {
         context.saveGState()
         context.clip(to: row)
         defer { context.restoreGState() }
+
+        drawMemberAvatar(member, at: index, context: context)
 
         let textX = row.minX + 4 + NativeMemberListMetrics.avatarContainerSize + 8
         let nameY = member.activityText?.isEmpty == false ? row.minY + 5 : row.minY + 13
@@ -901,9 +1894,188 @@ final class NativeMemberListCanvasView: NSView {
                         context: context
                     )
                 } else {
-                    requestImageIfNeeded(url: url, index: index, priority: .visible)
+                    requestImageIfNeeded(
+                        url: url,
+                        index: index,
+                        priority: .visible,
+                        maximumPixelDimension: 64
+                    )
                 }
             }
+        }
+    }
+
+    func drawMemberAvatar(
+        _ member: Member,
+        at index: Int,
+        context: CGContext
+    ) {
+        let container = CGRect(
+            x: NativeMemberListMetrics.horizontalInset + 4,
+            y: origins[index] + 1
+                + (NativeMemberListMetrics.paintedRowHeight
+                    - NativeMemberListMetrics.avatarContainerSize) / 2,
+            width: NativeMemberListMetrics.avatarContainerSize,
+            height: NativeMemberListMetrics.avatarContainerSize
+        )
+        let avatar = CGRect(
+            x: container.midX - NativeMemberListMetrics.avatarSize / 2,
+            y: container.midY - NativeMemberListMetrics.avatarSize / 2,
+            width: NativeMemberListMetrics.avatarSize,
+            height: NativeMemberListMetrics.avatarSize
+        )
+        let opacity: CGFloat = member.isOnline ? 1 : 0.55
+        context.saveGState()
+        context.setAlpha(opacity)
+
+        let avatarURL = member.guildAvatarURL ?? member.user.avatarURL
+        context.saveGState()
+        context.addEllipse(in: avatar)
+        context.clip()
+        if let avatarURL, let image = images[avatarURL] {
+            Self.draw(
+                image: image,
+                in: avatar,
+                context: context,
+                fills: true
+            )
+        } else {
+            drawAvatarFallback(
+                name: member.user.displayName,
+                in: avatar,
+                context: context
+            )
+        }
+        context.restoreGState()
+        requestImageIfNeeded(
+            url: avatarURL,
+            index: index,
+            priority: .visible,
+            maximumPixelDimension: 96
+        )
+
+        if let decorationURL = member.user.avatarDecorationURL {
+            if let decoration = images[decorationURL] {
+                let decorationSize = NativeMemberListMetrics.avatarSize * 1.22
+                Self.draw(
+                    image: decoration,
+                    aspectFitIn: CGRect(
+                        x: container.midX - decorationSize / 2,
+                        y: container.midY - decorationSize / 2,
+                        width: decorationSize,
+                        height: decorationSize
+                    ),
+                    context: context
+                )
+            }
+            requestImageIfNeeded(
+                url: decorationURL,
+                index: index,
+                priority: .visible,
+                maximumPixelDimension: 96
+            )
+        }
+
+        drawPresenceIndicator(
+            member.status,
+            in: CGRect(
+                x: container.maxX - 10,
+                y: container.maxY - 10,
+                width: 11,
+                height: 11
+            ),
+            context: context
+        )
+        context.restoreGState()
+    }
+
+    func drawAvatarFallback(
+        name: String,
+        in rect: CGRect,
+        context: CGContext
+    ) {
+        let accent = NSColor.controlAccentColor
+        let gradient = CGGradient(
+            colorsSpace: CGColorSpaceCreateDeviceRGB(),
+            colors: [
+                accent.blended(withFraction: 0.18, of: .white)?.cgColor
+                    ?? accent.cgColor,
+                accent.blended(withFraction: 0.16, of: .black)?.cgColor
+                    ?? accent.cgColor,
+            ] as CFArray,
+            locations: [0, 1]
+        )
+        if let gradient {
+            context.drawLinearGradient(
+                gradient,
+                start: CGPoint(x: rect.minX, y: rect.minY),
+                end: CGPoint(x: rect.maxX, y: rect.maxY),
+                options: []
+            )
+        } else {
+            context.setFillColor(accent.cgColor)
+            context.fill(rect)
+        }
+        guard let initial = name.first.map({ String($0).uppercased() }) else {
+            return
+        }
+        let line = Self.line(
+            initial,
+            font: .systemFont(
+                ofSize: NativeMemberListMetrics.avatarSize * 0.42,
+                weight: .semibold
+            ),
+            color: .white
+        )
+        let bounds = CTLineGetBoundsWithOptions(line, [.useGlyphPathBounds])
+        Self.draw(
+            line: line,
+            at: CGPoint(
+                x: rect.midX - bounds.width / 2 - bounds.minX,
+                y: rect.midY - bounds.height / 2 - bounds.minY
+            ),
+            context: context
+        )
+    }
+
+    func drawPresenceIndicator(
+        _ status: PresenceStatus,
+        in rect: CGRect,
+        context: CGContext
+    ) {
+        let color: NSColor = switch status {
+        case .online: Self.color(hex: 0x23A55A)
+        case .idle: Self.color(hex: 0xF0B232)
+        case .dnd: Self.color(hex: 0xF23F43)
+        case .invisible, .offline: Self.color(hex: 0x80848E)
+        }
+        context.setFillColor(color.cgColor)
+        context.fillEllipse(in: rect)
+        context.setStrokeColor(NSColor.controlBackgroundColor.cgColor)
+        context.setLineWidth(2)
+        context.strokeEllipse(in: rect.insetBy(dx: 1, dy: 1))
+        if status == .dnd {
+            let bar = CGRect(
+                x: rect.midX - rect.width * 0.275,
+                y: rect.midY - 1,
+                width: rect.width * 0.55,
+                height: 2
+            )
+            Self.fillRounded(
+                bar,
+                radius: 1,
+                color: .white,
+                context: context
+            )
+        } else if status == .idle {
+            let size = rect.width * 0.62
+            context.setFillColor(NSColor.controlBackgroundColor.cgColor)
+            context.fillEllipse(in: CGRect(
+                x: rect.midX - size / 2 - rect.width * 0.18,
+                y: rect.midY - size / 2 - rect.height * 0.18,
+                width: size,
+                height: size
+            ))
         }
     }
 
@@ -959,7 +2131,12 @@ final class NativeMemberListCanvasView: NSView {
             context: context
         )
         if let badgeURL = identity.badgeURL {
-            requestImageIfNeeded(url: badgeURL, index: itemIndex, priority: .visible)
+            requestImageIfNeeded(
+                url: badgeURL,
+                index: itemIndex,
+                priority: .visible,
+                maximumPixelDimension: 32
+            )
         }
     }
 
@@ -1026,7 +2203,7 @@ final class NativeMemberListCanvasView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        guard !isScrolling else { return }
+        guard !isScrolling, !interactionsBlocked else { return }
         let newIndex = index(at: convert(event.locationInWindow, from: nil))
         guard newIndex != hoveredIndex else { return }
         let old = hoveredIndex
@@ -1044,7 +2221,8 @@ final class NativeMemberListCanvasView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        guard let index = index(at: convert(event.locationInWindow, from: nil)),
+        guard !interactionsBlocked,
+              let index = index(at: convert(event.locationInWindow, from: nil)),
               case .member(let member, _) = items[index]
         else { return }
         selectMember(member)
@@ -1081,7 +2259,6 @@ final class NativeMemberListCanvasView: NSView {
         let prewarmLower = max(0, visible.lowerBound - NativeMemberListMetrics.prewarmItemCount)
         let prewarmUpper = min(items.count, visible.upperBound + NativeMemberListMetrics.prewarmItemCount)
         let prewarmRange = prewarmLower ..< prewarmUpper
-        installPlaceholderOverlays(in: visible)
         installAvatarOverlays(in: visible)
         installActivityEmojiOverlays(in: visible)
         installAccessibilityRows(in: visible)
@@ -1089,61 +2266,88 @@ final class NativeMemberListCanvasView: NSView {
         return true
     }
 
-    func installPlaceholderOverlays(in range: Range<Int>) {
-        var visibleIDs: Set<ItemID> = []
-        for index in range {
-            let rootView: AnyView
-            let frame: CGRect
-            switch items[index] {
-            case .header(let section) where section.isLoadingSkeleton:
-                rootView = AnyView(
-                    SkeletonShimmerTimeline {
-                        MemberListSkeletonHeader()
-                    }
-                )
-                frame = itemRect(at: index)
-            case .placeholder:
-                rootView = AnyView(
-                    SkeletonShimmerTimeline {
-                        MemberListSkeletonRow()
-                    }
-                )
-                frame = paintedRowRect(at: index)
-            default:
-                continue
+    private func reconcilePlaceholderShimmer() {
+        placeholderShimmerTask?.cancel()
+        placeholderShimmerTask = nil
+        guard hasLoadingPlaceholders,
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        else { return }
+        placeholderShimmerTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(
+                        for: .seconds(
+                            SkeletonShimmerStyle.minimumFrameInterval
+                        )
+                    )
+                } catch {
+                    return
+                }
+                guard let self, self.hasLoadingPlaceholders else { return }
+                if let rect = self.visiblePlaceholderInvalidationRect() {
+                    self.setNeedsDisplay(rect)
+                }
             }
-
-            let id = items[index].id
-            visibleIDs.insert(id)
-            let host = placeholderOverlays[id] ?? {
-                let value = NSHostingView(rootView: rootView)
-                value.sizingOptions = []
-                value.wantsLayer = true
-                addSubview(value)
-                placeholderOverlays[id] = value
-                return value
-            }()
-            host.frame = frame
-            host.layer?.zPosition = 11
-            host.setAccessibilityHidden(true)
-        }
-        for (id, host) in placeholderOverlays where !visibleIDs.contains(id) {
-            host.removeFromSuperview()
-            placeholderOverlays[id] = nil
         }
     }
 
-    func installAvatarOverlays(in range: Range<Int>) {
-        var visibleIDs: Set<ItemID> = []
+    private func visiblePlaceholderInvalidationRect() -> CGRect? {
+        guard let visibleRect = enclosingScrollView?.documentVisibleRect
+        else { return nil }
+        let range = itemRange(intersecting: visibleRect)
+        var result: CGRect?
         for index in range {
-            guard case .member(let member, _) = items[index] else { continue }
-            let id = items[index].id
-            visibleIDs.insert(id)
+            let placeholderRect: CGRect? = switch items[index] {
+            case .header(let header) where header.isLoadingSkeleton:
+                itemRect(at: index)
+            case .placeholder:
+                paintedRowRect(at: index)
+            default:
+                nil
+            }
+            guard let placeholderRect else { continue }
+            result = result.map { $0.union(placeholderRect) }
+                ?? placeholderRect
+        }
+        return result
+    }
+
+    func installAvatarOverlays(in range: Range<Int>) {
+        let visibleMembers: [AvatarOverlayPresentation] = range
+            .compactMap { index in
+                guard case .member(let member, _) = items[index],
+                      Self.requiresAvatarOverlay(for: member)
+                else {
+                    return nil
+                }
+                return AvatarOverlayPresentation(
+                    id: items[index].id,
+                    member: member,
+                    index: index
+                )
+            }
+        let visibleIDs = Set(visibleMembers.map(\.id))
+        var reusableHosts: [NSHostingView<AnyView>] = []
+        for id in Array(avatarOverlays.keys) where !visibleIDs.contains(id) {
+            guard let host = avatarOverlays.removeValue(forKey: id) else {
+                continue
+            }
+            avatarOverlayMembers[id] = nil
+            reusableHosts.append(host)
+        }
+
+        for presentation in visibleMembers {
+            let id = presentation.id
+            let member = presentation.member
+            let index = presentation.index
             let host = avatarOverlays[id] ?? {
-                let value = NSHostingView(rootView: AnyView(EmptyView()))
+                let value = reusableHosts.popLast()
+                    ?? NSHostingView(rootView: AnyView(EmptyView()))
                 value.sizingOptions = []
                 value.wantsLayer = true
-                addSubview(value)
+                if value.superview == nil {
+                    addSubview(value)
+                }
                 avatarOverlays[id] = value
                 return value
             }()
@@ -1157,22 +2361,28 @@ final class NativeMemberListCanvasView: NSView {
             }
             host.frame = CGRect(
                 x: NativeMemberListMetrics.horizontalInset + 4,
-                y: origins[index] + 1 + (NativeMemberListMetrics.paintedRowHeight - NativeMemberListMetrics.avatarContainerSize) / 2,
+                y: origins[index] + 1
+                    + (NativeMemberListMetrics.paintedRowHeight
+                        - NativeMemberListMetrics.avatarContainerSize) / 2,
                 width: NativeMemberListMetrics.avatarContainerSize,
                 height: NativeMemberListMetrics.avatarContainerSize
             )
             host.layer?.zPosition = 11
             host.setAccessibilityHidden(true)
         }
-        for (id, host) in avatarOverlays where !visibleIDs.contains(id) {
+        for host in reusableHosts {
             host.removeFromSuperview()
-            avatarOverlays[id] = nil
-            avatarOverlayMembers[id] = nil
         }
     }
 
+    func removeAvatarOverlays() {
+        for host in avatarOverlays.values { host.removeFromSuperview() }
+        avatarOverlays.removeAll(keepingCapacity: true)
+        avatarOverlayMembers.removeAll(keepingCapacity: true)
+    }
+
     func installActivityEmojiOverlays(in range: Range<Int>) {
-        var visibleIDs: Set<ActivityEmojiOverlayID> = []
+        var visibleOverlays: [ActivityEmojiOverlayPresentation] = []
         var overlayCount = 0
         for index in range {
             guard overlayCount < NativeMemberListMetrics.maximumVisibleAnimatedEmojiCount,
@@ -1202,40 +2412,67 @@ final class NativeMemberListCanvasView: NSView {
                     itemID: items[index].id,
                     ordinal: ordinal
                 )
-                visibleIDs.insert(id)
-                let host = activityEmojiOverlays[id] ?? {
-                    let value = NSHostingView(rootView: AnyView(EmptyView()))
-                    value.sizingOptions = []
-                    value.wantsLayer = true
-                    addSubview(value)
-                    activityEmojiOverlays[id] = value
-                    return value
-                }()
                 let configuration = ActivityEmojiOverlayConfiguration(
                     url: url,
                     opacity: member.isOnline ? 1 : 0.55
                 )
-                if activityEmojiOverlayConfigurations[id] != configuration {
-                    host.rootView = AnyView(
-                        AnimatedRemoteImage(
-                            url: url,
-                            maximumPixelDimension: 64
-                        )
-                        .opacity(configuration.opacity)
-                        .allowsHitTesting(false)
-                    )
-                    activityEmojiOverlayConfigurations[id] = configuration
-                }
-                host.frame = region.frame
-                host.layer?.zPosition = 11
-                host.setAccessibilityHidden(true)
+                visibleOverlays.append(ActivityEmojiOverlayPresentation(
+                    id: id,
+                    configuration: configuration,
+                    frame: region.frame
+                ))
             }
         }
-        for (id, host) in activityEmojiOverlays where !visibleIDs.contains(id) {
-            host.removeFromSuperview()
-            activityEmojiOverlays[id] = nil
+
+        let visibleIDs = Set(visibleOverlays.map(\.id))
+        var reusableHosts: [NSHostingView<AnyView>] = []
+        for id in Array(activityEmojiOverlays.keys)
+            where !visibleIDs.contains(id)
+        {
+            guard let host = activityEmojiOverlays.removeValue(forKey: id)
+            else { continue }
             activityEmojiOverlayConfigurations[id] = nil
+            reusableHosts.append(host)
         }
+
+        for presentation in visibleOverlays {
+            let id = presentation.id
+            let configuration = presentation.configuration
+            let host = activityEmojiOverlays[id] ?? {
+                let value = reusableHosts.popLast()
+                    ?? NSHostingView(rootView: AnyView(EmptyView()))
+                value.sizingOptions = []
+                value.wantsLayer = true
+                if value.superview == nil {
+                    addSubview(value)
+                }
+                activityEmojiOverlays[id] = value
+                return value
+            }()
+            if activityEmojiOverlayConfigurations[id] != configuration {
+                host.rootView = AnyView(
+                    AnimatedRemoteImage(
+                        url: configuration.url,
+                        maximumPixelDimension: 64
+                    )
+                    .opacity(configuration.opacity)
+                    .allowsHitTesting(false)
+                )
+                activityEmojiOverlayConfigurations[id] = configuration
+            }
+            host.frame = presentation.frame
+            host.layer?.zPosition = 11
+            host.setAccessibilityHidden(true)
+        }
+        for host in reusableHosts {
+            host.removeFromSuperview()
+        }
+    }
+
+    func removeActivityEmojiOverlays() {
+        for host in activityEmojiOverlays.values { host.removeFromSuperview() }
+        activityEmojiOverlays.removeAll(keepingCapacity: true)
+        activityEmojiOverlayConfigurations.removeAll(keepingCapacity: true)
     }
 
     func installAccessibilityRows(in range: Range<Int>) {
@@ -1381,22 +2618,40 @@ final class NativeMemberListCanvasView: NSView {
         var wanted: Set<URL> = []
         for index in range {
             guard case .member(let member, _) = items[index] else { continue }
-            let urls = [
-                member.guildAvatarURL ?? member.user.avatarURL,
-                member.user.avatarDecorationURL,
-                member.user.nameplate?.staticURL,
-                member.user.primaryGuild?.badgeURL,
-            ].compactMap(\.self) + NativeMemberActivityPresentation.references(
+            var requests: [(url: URL, maximumPixelDimension: Int)] = []
+            if let url = member.guildAvatarURL ?? member.user.avatarURL {
+                requests.append((url, 96))
+            }
+            if let url = member.user.avatarDecorationURL {
+                requests.append((url, 96))
+            }
+            if let url = member.user.nameplate?.staticURL {
+                requests.append((url, 512))
+            }
+            if let url = member.user.primaryGuild?.badgeURL {
+                requests.append((url, 32))
+            }
+            requests.append(contentsOf: NativeMemberActivityPresentation.references(
                 in: member.activityText
-            ).compactMap(activityEmojiURL)
-            wanted.formUnion(urls)
+            ).compactMap(activityEmojiURL).map {
+                (url: $0, maximumPixelDimension: 64)
+            })
+            wanted.formUnion(requests.map(\.url))
             let priority: MediaLoadPriority = visible.contains(index) ? .visible : .prefetch
-            for url in urls { requestImageIfNeeded(url: url, index: index, priority: priority) }
+            for request in requests {
+                requestImageIfNeeded(
+                    url: request.url,
+                    index: index,
+                    priority: priority,
+                    maximumPixelDimension: request.maximumPixelDimension
+                )
+            }
         }
         for (url, task) in imageTasks where !wanted.contains(url) {
             task.cancel()
             imageTasks[url] = nil
             imageTaskPriorities[url] = nil
+            imageTaskPixelDimensions[url] = nil
             imageRequestItemIDs[url] = nil
         }
         // The shared loader owns the bounded decoded cache. Retaining every
@@ -1404,40 +2659,61 @@ final class NativeMemberListCanvasView: NSView {
         // that budget, so the canvas keeps only its visible/prewarmed window.
         for url in images.keys.filter({ !wanted.contains($0) }) {
             images[url] = nil
+            imagePixelDimensions[url] = nil
         }
     }
 
-    func requestImageIfNeeded(url: URL?, index: Int, priority: MediaLoadPriority) {
+    func requestImageIfNeeded(
+        url: URL?,
+        index: Int,
+        priority: MediaLoadPriority,
+        maximumPixelDimension: Int
+    ) {
         guard let url,
               items.indices.contains(index),
-              images[url] == nil
+              imagePixelDimensions[url, default: 0]
+                < maximumPixelDimension
         else { return }
         imageRequestItemIDs[url, default: []].insert(items[index].id)
+        if let task = imageTasks[url],
+           imageTaskPixelDimensions[url, default: 0]
+            < maximumPixelDimension
+        {
+            task.cancel()
+            imageTasks[url] = nil
+            imageTaskPriorities[url] = nil
+            imageTaskPixelDimensions[url] = nil
+        }
         guard imageTasks[url] == nil else {
             guard priority == .visible,
                   imageTaskPriorities[url] == .prefetch
             else { return }
             imageTaskPriorities[url] = .visible
+            let pixelDimension = imageTaskPixelDimensions[url]
+                ?? maximumPixelDimension
             let imageLoadPromotion = imageLoadPromotion
             Task {
-                await imageLoadPromotion(url, 512)
+                await imageLoadPromotion(url, pixelDimension)
             }
             return
         }
         imageTaskPriorities[url] = priority
+        imageTaskPixelDimensions[url] = maximumPixelDimension
         imageTasks[url] = Task { [weak self] in
             let image = await SharedDecodedImageLoader.shared.image(
                 for: url,
-                maximumPixelDimension: 512,
+                maximumPixelDimension: maximumPixelDimension,
                 priority: priority
             )
             guard !Task.isCancelled, let self else { return }
             imageTasks[url] = nil
             imageTaskPriorities[url] = nil
+            imageTaskPixelDimensions[url] = nil
             let requestedItemIDs = imageRequestItemIDs.removeValue(forKey: url)
                 ?? []
             guard let image else { return }
             images[url] = image
+            imagePixelDimensions[url] = maximumPixelDimension
             for itemID in requestedItemIDs {
                 guard let requestedIndex = itemIndexesByID[itemID] else { continue }
                 setNeedsDisplay(itemRect(at: requestedIndex))
@@ -1454,27 +2730,33 @@ final class NativeMemberListCanvasView: NSView {
     }
 
     func tearDown() {
+        placeholderShimmerTask?.cancel()
+        placeholderShimmerTask = nil
         for task in imageTasks.values { task.cancel() }
         imageTasks.removeAll()
         imageTaskPriorities.removeAll()
+        imageTaskPixelDimensions.removeAll()
         imageRequestItemIDs.removeAll()
+        imagePixelDimensions.removeAll()
         reconciledVisibleRange = nil
         reconciledViewportWidth = nil
         removeRowOverlay()
         removeProfileAnchor(immediately: true)
-        for host in placeholderOverlays.values { host.removeFromSuperview() }
         for host in avatarOverlays.values { host.removeFromSuperview() }
         for host in activityEmojiOverlays.values { host.removeFromSuperview() }
         avatarOverlayMembers.removeAll()
         activityEmojiOverlayConfigurations.removeAll()
         for proxy in accessibilityRows.values { proxy.removeFromSuperview() }
-        placeholderOverlays.removeAll()
         avatarOverlays.removeAll()
         activityEmojiOverlays.removeAll()
         accessibilityRows.removeAll()
     }
 
-    static func line(_ text: String, font: NSFont, color: NSColor) -> CTLine {
+    nonisolated static func line(
+        _ text: String,
+        font: NSFont,
+        color: NSColor
+    ) -> CTLine {
         CTLineCreateWithAttributedString(NSAttributedString(
             string: text,
             attributes: [.font: font, .foregroundColor: color]
@@ -1509,7 +2791,7 @@ final class NativeMemberListCanvasView: NSView {
         return truncated
     }
 
-    static let memberActivityColor = NSColor(
+    nonisolated static let memberActivityColor = NSColor(
         srgbRed: 122 / 255,
         green: 123 / 255,
         blue: 131 / 255,
@@ -1572,7 +2854,7 @@ final class NativeMemberListCanvasView: NSView {
         )
     }
 
-    static func color(hex: UInt32) -> NSColor {
+    nonisolated static func color(hex: UInt32) -> NSColor {
         NSColor(
             srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
             green: CGFloat((hex >> 8) & 0xFF) / 255,

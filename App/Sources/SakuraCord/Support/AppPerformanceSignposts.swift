@@ -4,7 +4,7 @@ import OSLog
 import SakuraCordModels
 
 enum AppPerformanceSignposts {
-    static let signposter = OSSignposter(
+    nonisolated static let signposter = OSSignposter(
         subsystem: "dev.sakuracord.SakuraCord",
         category: "PointsOfInterest"
     )
@@ -14,6 +14,17 @@ enum AppPerformanceSignposts {
         StartupPresentationReadiness()
     private static var conversationNavigationInterval:
         (channelID: ChannelID, state: OSSignpostIntervalState)?
+    private static var navigationHistoryReadyChannelID: ChannelID?
+    private static var conversationFirstFrameWaiters:
+        [ChannelID: [CheckedContinuation<Void, Never>]] = [:]
+    private static var guildActivationDepth = 0
+    private static var quickSwitcherOpenInterval: OSSignpostIntervalState?
+    private static var quickSwitcherQueryInterval: OSSignpostIntervalState?
+    private static var quickSwitcherCloseInterval: OSSignpostIntervalState?
+    private static var messageSearchOpenInterval: OSSignpostIntervalState?
+    private static var messageSearchRequestInterval: OSSignpostIntervalState?
+    private static var messageSearchPaginationInterval: OSSignpostIntervalState?
+    private static var messageSearchScrollInterval: OSSignpostIntervalState?
     private static var resourceWindowStartNanoseconds: UInt64?
 
     static func beginStartup() {
@@ -56,6 +67,7 @@ enum AppPerformanceSignposts {
                 current.state
             )
             signposter.emitEvent("ConversationNavigationSuperseded")
+            resumeConversationFirstFrameWaiters(for: current.channelID)
         }
         conversationNavigationInterval = (
             channelID,
@@ -63,6 +75,7 @@ enum AppPerformanceSignposts {
                 "ConversationNavigationToFirstFrame"
             )
         )
+        navigationHistoryReadyChannelID = nil
     }
 
     static func ensureConversationNavigation(to channelID: ChannelID) {
@@ -72,9 +85,11 @@ enum AppPerformanceSignposts {
         beginConversationNavigation(to: channelID)
     }
 
+    @discardableResult
     static func reportConversationFirstFrame(
         channelID: ChannelID
-    ) {
+    ) -> Bool {
+        var completedPresentation = false
         if startupInterval != nil,
            startupPresentationReadiness.reportFramePresented(
             channelID: channelID
@@ -82,16 +97,27 @@ enum AppPerformanceSignposts {
         {
             signposter.emitEvent("StartupConversationFramePresented")
             finishStartupPresentation()
+            completedPresentation = true
         }
         guard let current = conversationNavigationInterval,
-              current.channelID == channelID
-        else { return }
+              current.channelID == channelID,
+              navigationHistoryReadyChannelID == channelID
+        else { return completedPresentation }
         signposter.emitEvent("ConversationFirstFrameDrawn")
         signposter.endInterval(
             "ConversationNavigationToFirstFrame",
             current.state
         )
         conversationNavigationInterval = nil
+        navigationHistoryReadyChannelID = nil
+        resumeConversationFirstFrameWaiters(for: channelID)
+        return true
+    }
+
+    static func reportConversationHistoryReady(channelID: ChannelID) {
+        guard conversationNavigationInterval?.channelID == channelID else { return }
+        navigationHistoryReadyChannelID = channelID
+        signposter.emitEvent("ConversationHistoryReady")
     }
 
     static func cancelConversationNavigation() {
@@ -101,6 +127,153 @@ enum AppPerformanceSignposts {
             current.state
         )
         conversationNavigationInterval = nil
+        navigationHistoryReadyChannelID = nil
+        resumeConversationFirstFrameWaiters(for: current.channelID)
+    }
+
+    static func waitForConversationFirstFrame(channelID: ChannelID) async {
+        guard conversationNavigationInterval?.channelID == channelID else { return }
+        await withCheckedContinuation { continuation in
+            conversationFirstFrameWaiters[channelID, default: []].append(continuation)
+        }
+    }
+
+    static var isConversationPresentationWorkActive: Bool {
+        conversationNavigationInterval != nil || guildActivationDepth > 0
+    }
+
+    static func beginGuildActivationWork() {
+        guildActivationDepth += 1
+    }
+
+    static func endGuildActivationWork() {
+        guildActivationDepth = max(0, guildActivationDepth - 1)
+    }
+
+    private static func resumeConversationFirstFrameWaiters(for channelID: ChannelID) {
+        let waiters = conversationFirstFrameWaiters.removeValue(forKey: channelID) ?? []
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+
+    static func beginQuickSwitcherOpen() {
+        if let current = quickSwitcherOpenInterval {
+            signposter.endInterval("QuickSwitcherOpenToFirstFrame", current)
+        }
+        quickSwitcherOpenInterval = signposter.beginInterval(
+            "QuickSwitcherOpenToFirstFrame"
+        )
+    }
+
+    static func beginQuickSwitcherQuery() {
+        if let current = quickSwitcherQueryInterval {
+            signposter.endInterval("QuickSwitcherQueryToFirstFrame", current)
+        }
+        quickSwitcherQueryInterval = signposter.beginInterval(
+            "QuickSwitcherQueryToFirstFrame"
+        )
+    }
+
+    static func reportQuickSwitcherFirstFrame() {
+        if let current = quickSwitcherOpenInterval {
+            signposter.endInterval("QuickSwitcherOpenToFirstFrame", current)
+            quickSwitcherOpenInterval = nil
+        }
+        if let current = quickSwitcherQueryInterval {
+            signposter.endInterval("QuickSwitcherQueryToFirstFrame", current)
+            quickSwitcherQueryInterval = nil
+        }
+    }
+
+    static func beginQuickSwitcherClose() {
+        if let current = quickSwitcherCloseInterval {
+            signposter.endInterval("QuickSwitcherClose", current)
+        }
+        quickSwitcherCloseInterval = signposter.beginInterval("QuickSwitcherClose")
+    }
+
+    static func reportQuickSwitcherClosed() {
+        guard let current = quickSwitcherCloseInterval else { return }
+        signposter.endInterval("QuickSwitcherClose", current)
+        quickSwitcherCloseInterval = nil
+    }
+
+    static func beginMessageSearchOpen() {
+        if let current = messageSearchOpenInterval {
+            signposter.endInterval("MessageSearchOpenToFirstFrame", current)
+        }
+        messageSearchOpenInterval = signposter.beginInterval(
+            "MessageSearchOpenToFirstFrame"
+        )
+    }
+
+    static func reportMessageSearchPanelReady() {
+        guard let current = messageSearchOpenInterval else { return }
+        signposter.endInterval("MessageSearchOpenToFirstFrame", current)
+        messageSearchOpenInterval = nil
+    }
+
+    static func beginMessageSearchRequest() {
+        if let current = messageSearchRequestInterval {
+            signposter.endInterval("MessageSearchRequestToResults", current)
+        }
+        messageSearchRequestInterval = signposter.beginInterval(
+            "MessageSearchRequestToResults"
+        )
+    }
+
+    static func reportMessageSearchResultsReady() {
+        guard let current = messageSearchRequestInterval else { return }
+        signposter.endInterval("MessageSearchRequestToResults", current)
+        messageSearchRequestInterval = nil
+        signposter.emitEvent("MessageSearchResultsReady")
+    }
+
+    static func cancelMessageSearchRequest() {
+        guard let current = messageSearchRequestInterval else { return }
+        signposter.endInterval("MessageSearchRequestToResults", current)
+        messageSearchRequestInterval = nil
+    }
+
+    static func beginMessageSearchPagination() {
+        if let current = messageSearchPaginationInterval {
+            signposter.endInterval("MessageSearchPaginationToResults", current)
+        }
+        messageSearchPaginationInterval = signposter.beginInterval(
+            "MessageSearchPaginationToResults"
+        )
+    }
+
+    static func reportMessageSearchPaginationReady() {
+        guard let current = messageSearchPaginationInterval else { return }
+        signposter.endInterval("MessageSearchPaginationToResults", current)
+        messageSearchPaginationInterval = nil
+        signposter.emitEvent("MessageSearchPaginationReady")
+    }
+
+    static func cancelMessageSearchPagination() {
+        guard let current = messageSearchPaginationInterval else { return }
+        signposter.endInterval("MessageSearchPaginationToResults", current)
+        messageSearchPaginationInterval = nil
+    }
+
+    static func beginMessageSearchScroll() {
+        if let current = messageSearchScrollInterval {
+            signposter.endInterval("MessageSearchUserScroll", current)
+            endResourceWindow(named: "MessageSearchScrollBenchmark")
+        }
+        beginResourceWindow(named: "MessageSearchScrollBenchmark")
+        messageSearchScrollInterval = signposter.beginInterval(
+            "MessageSearchUserScroll"
+        )
+    }
+
+    static func endMessageSearchScroll() {
+        guard let current = messageSearchScrollInterval else { return }
+        signposter.endInterval("MessageSearchUserScroll", current)
+        messageSearchScrollInterval = nil
+        endResourceWindow(named: "MessageSearchScrollBenchmark")
     }
 
     static func beginResourceWindow(named name: String) {
@@ -163,16 +336,22 @@ enum AppPerformanceSignposts {
         _ name: StaticString,
         operation: () async throws -> T
     ) async rethrows -> T {
-        let interval = signposter.beginInterval(name)
+        let interval = signposter.beginInterval(
+            name,
+            id: signposter.makeSignpostID()
+        )
         defer { signposter.endInterval(name, interval) }
         return try await operation()
     }
 
-    static func measureSync<T>(
+    nonisolated static func measureSync<T>(
         _ name: StaticString,
         operation: () throws -> T
     ) rethrows -> T {
-        let interval = signposter.beginInterval(name)
+        let interval = signposter.beginInterval(
+            name,
+            id: signposter.makeSignpostID()
+        )
         defer { signposter.endInterval(name, interval) }
         return try operation()
     }

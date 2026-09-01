@@ -57,7 +57,7 @@ extension NSAttributedString.Key {
     )
 }
 
-final class NativeTimelineMentionBox: NSObject {
+nonisolated final class NativeTimelineMentionBox: NSObject {
     let presentation: MentionPresentation
 
     init(_ presentation: MentionPresentation) {
@@ -129,6 +129,7 @@ nonisolated enum NativeTimelineRunDelegate {
 
 struct NativeTimelineRowActions {
     var loadEarlier: () -> Void
+    var openMessage: ((Message) -> Void)?
     var openReply: (MessageID) -> Void
     var reply: ((Message) -> Void)?
     var forward: ((Message) -> Void)?
@@ -147,6 +148,7 @@ struct NativeTimelineRowActions {
 
     init(
         loadEarlier: @escaping () -> Void,
+        openMessage: ((Message) -> Void)? = nil,
         openReply: @escaping (MessageID) -> Void,
         reply: ((Message) -> Void)?,
         forward: ((Message) -> Void)? = nil,
@@ -164,6 +166,7 @@ struct NativeTimelineRowActions {
         ) -> Void
     ) {
         self.loadEarlier = loadEarlier
+        self.openMessage = openMessage
         self.openReply = openReply
         self.reply = reply
         self.forward = forward
@@ -342,7 +345,42 @@ struct NativeTimelineLoaderLayout {
     }
 }
 
+@MainActor
+enum NativeTimelineReactionFonts {
+    private static var cachedCount: (pointSize: CGFloat, font: NSFont)?
+
+    static var count: NSFont {
+        let pointSize = NSFont.preferredFont(forTextStyle: .caption1).pointSize
+        if let cachedCount, cachedCount.pointSize == pointSize {
+            return cachedCount.font
+        }
+        let font = AppPerformanceSignposts.measureSync(
+            "TimelineReactionCountFontCacheMiss"
+        ) {
+            NSFont.monospacedDigitSystemFont(
+                ofSize: pointSize,
+                weight: .semibold
+            )
+        }
+        cachedCount = (pointSize, font)
+        return font
+    }
+
+    static let overflow = AppPerformanceSignposts.measureSync(
+        "TimelineReactionOverflowFontCacheMiss"
+    ) {
+        NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .bold)
+    }
+}
+
 struct NativeTimelineRowLayout {
+    struct SearchSectionRegion {
+        let frame: CGRect
+        let iconFrame: CGRect
+        let titleFrame: CGRect
+        let subtitleFrame: CGRect?
+    }
+
     struct ForwardedSourceRegion {
         let frame: CGRect
         let label: String
@@ -433,6 +471,8 @@ struct NativeTimelineRowLayout {
     let height: CGFloat
     let loaderLayout: NativeTimelineLoaderLayout?
     let beginningLayout: NativeTimelineBeginningLayout?
+    let searchSectionRegion: SearchSectionRegion?
+    let searchCardFrame: CGRect?
     let highlightFrame: CGRect?
     let daySeparatorFrame: CGRect?
     let unreadSeparatorFrame: CGRect?
@@ -444,6 +484,7 @@ struct NativeTimelineRowLayout {
     let editedFrame: CGRect?
     let loadingIndicatorFrame: CGRect?
     let replyFrame: CGRect?
+    let replyContentFrame: CGRect?
     let commandInvocationRegion: CommandInvocationRegion?
     let systemIconFrame: CGRect?
     let contentFrame: CGRect?
@@ -512,6 +553,8 @@ struct NativeTimelineRowLayout {
             height: height,
             loaderLayout: loaderLayout,
             beginningLayout: beginningLayout,
+            searchSectionRegion: nil,
+            searchCardFrame: nil,
             highlightFrame: nil,
             daySeparatorFrame: nil,
             unreadSeparatorFrame: nil,
@@ -523,6 +566,7 @@ struct NativeTimelineRowLayout {
             editedFrame: nil,
             loadingIndicatorFrame: loadingIndicatorFrame,
             replyFrame: nil,
+            replyContentFrame: nil,
             commandInvocationRegion: nil,
             systemIconFrame: nil,
             contentFrame: nil,
@@ -554,7 +598,8 @@ struct NativeTimelineRowLayout {
 
         var layout: NativeTimelineRowLayout {
         let message = row.message
-        let horizontalInset: CGFloat = 14
+        let searchContext = row.searchContext
+        let horizontalInset: CGFloat = searchContext == nil ? 14 : 22
         let avatarWidth: CGFloat = 38
         let columnGap: CGFloat = 12
         let ordinaryContentX = horizontalInset + avatarWidth + columnGap
@@ -566,6 +611,43 @@ struct NativeTimelineRowLayout {
         let contentX: CGFloat = isGenerated ? horizontalInset + 58 : ordinaryContentX
         let contentWidth = max(80, width - contentX - horizontalInset)
         var prefixHeight: CGFloat = 0
+
+        var searchSectionRegion: SearchSectionRegion?
+        if let searchContext, searchContext.showsSectionHeader {
+            let sectionFrame = CGRect(
+                x: 14,
+                y: 8,
+                width: max(1, width - 28),
+                height: searchContext.sectionSubtitle == nil ? 24 : 34
+            )
+            let iconFrame = CGRect(
+                x: sectionFrame.minX,
+                y: sectionFrame.minY + 2,
+                width: 20,
+                height: 20
+            )
+            let titleFrame = CGRect(
+                x: iconFrame.maxX + 7,
+                y: sectionFrame.minY,
+                width: max(1, sectionFrame.maxX - iconFrame.maxX - 7),
+                height: 18
+            )
+            let subtitleFrame = searchContext.sectionSubtitle.map { _ in
+                CGRect(
+                    x: titleFrame.minX,
+                    y: titleFrame.maxY,
+                    width: titleFrame.width,
+                    height: 14
+                )
+            }
+            searchSectionRegion = SearchSectionRegion(
+                frame: sectionFrame,
+                iconFrame: iconFrame,
+                titleFrame: titleFrame,
+                subtitleFrame: subtitleFrame
+            )
+            prefixHeight = sectionFrame.maxY + 4
+        }
 
         var daySeparatorFrame: CGRect?
         if row.startsDay {
@@ -590,7 +672,7 @@ struct NativeTimelineRowLayout {
         }
 
         let highlightInsets = MessageRowLayoutMetrics.highlightInsets(
-            hasReplyPreview: row.replyPreview != nil,
+            hasReplyPreview: row.replyMessageID != nil,
             isEditing: false
         )
         let externalTopSeparation = MessageRowLayoutMetrics.separation(
@@ -598,16 +680,25 @@ struct NativeTimelineRowLayout {
             followsTimelineSeparator: row.startsDay || isUnreadBoundary,
             highlightTopInset: highlightInsets.top
         )
-        let highlightMinY = prefixHeight + externalTopSeparation
+        let highlightMinY = prefixHeight
+            + (searchContext == nil ? externalTopSeparation : 4)
         var verticalOffset = highlightMinY + highlightInsets.top
 
         var replyFrame: CGRect?
-        if row.replyPreview != nil {
-            replyFrame = CGRect(
+        var replyContentFrame: CGRect?
+        if row.replyMessageID != nil {
+            let frame = CGRect(
                 x: horizontalInset,
                 y: verticalOffset,
                 width: width - horizontalInset * 2,
                 height: 20
+            )
+            replyFrame = frame
+            replyContentFrame = CGRect(
+                x: contentX,
+                y: frame.minY,
+                width: max(0, frame.maxX - contentX),
+                height: frame.height
             )
             verticalOffset += 20
         }
@@ -1060,6 +1151,7 @@ struct NativeTimelineRowLayout {
             avatarFrame?.maxY ?? 0,
             authorFrame?.maxY ?? 0
         )
+        let searchBottomInset: CGFloat = searchContext == nil ? 0 : 8
         let rowHeight = ceil(
             max(
                 visibleContentMaxY + highlightInsets.bottom,
@@ -1069,19 +1161,29 @@ struct NativeTimelineRowLayout {
                         ? MessageRowLayoutMetrics.avatarDiameter
                         : MessageRowLayoutMetrics.compactContentHeight)
                     + highlightInsets.bottom
-            )
+            ) + searchBottomInset
         )
+        let searchCardFrame = searchContext.map { _ in
+            CGRect(
+                x: 0,
+                y: highlightMinY,
+                width: width,
+                height: max(0, rowHeight - highlightMinY - searchBottomInset)
+            )
+        }
         let highlightFrame = CGRect(
-            x: 0,
+            x: searchCardFrame?.minX ?? 0,
             y: highlightMinY,
-            width: width,
-            height: max(0, rowHeight - highlightMinY)
+            width: searchCardFrame?.width ?? width,
+            height: searchCardFrame?.height ?? max(0, rowHeight - highlightMinY)
         )
 
         return NativeTimelineRowLayout(
             height: rowHeight,
             loaderLayout: nil,
             beginningLayout: nil,
+            searchSectionRegion: searchSectionRegion,
+            searchCardFrame: searchCardFrame,
             highlightFrame: highlightFrame,
             daySeparatorFrame: daySeparatorFrame,
             unreadSeparatorFrame: unreadSeparatorFrame,
@@ -1093,6 +1195,7 @@ struct NativeTimelineRowLayout {
             editedFrame: editedFrame,
             loadingIndicatorFrame: loadingIndicatorFrame,
             replyFrame: replyFrame,
+            replyContentFrame: replyContentFrame,
             commandInvocationRegion: commandInvocationRegion,
             systemIconFrame: systemIconFrame,
             contentFrame: contentFrame,
@@ -1328,12 +1431,7 @@ struct NativeTimelineRowLayout {
         if reaction.count > 0 {
             width += 4 + measuredTextWidth(
                 String(reaction.count),
-                font: .monospacedDigitSystemFont(
-                    ofSize: NSFont.preferredFont(
-                        forTextStyle: .caption1
-                    ).pointSize,
-                    weight: .semibold
-                )
+                font: NativeTimelineReactionFonts.count
             )
         }
         if !plan.isEmpty {
@@ -1357,10 +1455,7 @@ struct NativeTimelineRowLayout {
             MessageReactionMetrics.avatarSize,
             measuredTextWidth(
                 "+\(plan.overflowCount)",
-                font: .monospacedDigitSystemFont(
-                    ofSize: 10,
-                    weight: .bold
-                )
+                font: NativeTimelineReactionFonts.overflow
             )
         )
         return avatarsWidth
@@ -1386,12 +1481,7 @@ struct NativeTimelineRowLayout {
             horizontalOffset += 4
             let countWidth = measuredTextWidth(
                 String(reaction.count),
-                font: .monospacedDigitSystemFont(
-                    ofSize: NSFont.preferredFont(
-                        forTextStyle: .caption1
-                    ).pointSize,
-                    weight: .semibold
-                )
+                font: NativeTimelineReactionFonts.count
             )
             countFrame = CGRect(
                 x: horizontalOffset,

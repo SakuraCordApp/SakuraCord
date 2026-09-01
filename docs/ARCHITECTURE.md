@@ -44,13 +44,22 @@ observable models so it does not invalidate the complete app tree.
 `AppUpdateController` owns Sparkle's `SPUStandardUpdaterController` for the
 application lifetime. It starts only when the canonical release bundle contains
 the complete production update configuration. Source, debug, ad-hoc developer,
-offline, and linked-worktree builds omit that configuration, make no update
-request, and leave the native **Check for Updates…** controls disabled.
+and offline builds omit that configuration, make no update request, and leave
+the native **Check for Updates…** controls disabled.
 Production checks the signed feed every six hours while the app is running, or
 after launch when a check is overdue, and presents Sparkle's standard update
 alert when a release is available. Sparkle persists the user's automatic-check
 and automatic-download preferences. Installation remains manual by default.
 Sparkle's standard user driver reports no-update and update-cycle failures.
+The General settings pane also persists a regular/nightly release-track choice.
+`AppUpdateController` supplies the selected signed feed through Sparkle's
+dynamic-feed delegate. Changing tracks immediately requests a silent Sparkle
+information check, or queues one until the current update cycle ends. When that
+probe finds an update, the controller asks Sparkle to present its normal update
+alert; an up-to-date result remains silent. Returning to
+the regular track selects the stable feed immediately; Sparkle offers the next
+regular release whose shared workflow build number is newer than the installed
+nightly build rather than performing an unsupported downgrade.
 
 ## Discord boundary
 
@@ -66,10 +75,18 @@ Within the production provider:
   scheduling, caches, capability gates, upload coordination, safety stops, and
   domain-event decoding.
 - REST and Gateway share one `DiscordClientMetadata` source and one provider
-  lifetime. A session-wide safety stop cancels both without affecting unrelated
-  app networking.
+  lifetime, but production gives them separate provider-owned `URLSession`
+  connection pools. A confirmed REST transport timeout can therefore replace
+  only the stalled pool without interrupting Gateway heartbeats. Safe reads may
+  retry once on the replacement; mutations are never replayed after an
+  ambiguous failure. A session-wide safety stop still cancels both without
+  affecting unrelated app networking.
 - Every authenticated REST route uses the central transport. Views and feature
   helpers do not create one-off authenticated `URLSession` paths.
+- Production Gateway ETF is parsed directly from the decompressed bounded byte
+  buffer into a JSON-compatible value tree. Dispatch DTOs decode directly from
+  that tree, avoiding a second JSON serialization/parser pass while retaining
+  the same typed validation and event ordering.
 - `CatboxAttachmentUploader` is a separate unauthenticated app service used
   only after an explicit choice in the oversized-attachment warning. It never
   receives Discord credentials or sends a Discord message; its validated HTTPS
@@ -129,6 +146,20 @@ workspace, message, read, member, and Gateway state is session-memory only. A
 database migration drops the obsolete tables from earlier builds while
 preserving drafts. Normal and offline runs use separate storage behavior.
 
+Startup and account switching publish READY-derived read state in one atomic
+Main Actor update after building it off-main. Once the initial channel is known,
+the app starts its read-only newest-history request concurrently with the
+remaining navigation projection and consumes that single in-flight task when
+the channel loader starts. This prefetch is process-only coordination: it is
+cancelled on account/session reset and never persists messages across launches.
+
+Authenticated performance launch modes retain detailed signposts and exact
+resource windows for startup, account switching, DM/server/channel navigation,
+older-history pagination, timeline/member scrolling, parsing, state commits,
+and rendering. They use real credentials and network data while suppressing
+acknowledgements and other account mutations; offline fixtures are not accepted
+as production performance evidence.
+
 ## Message and media flow
 
 History responses and Gateway events decode into the same domain message
@@ -143,6 +174,20 @@ headers, pagination, permissions, composers, and thread/forum state remain
 outside that shared row engine. SwiftUI/AppKit hosting inside the timeline is
 bounded to interaction surfaces that need native controls, including editing,
 media playback, menus, pickers, and component interactions.
+
+The channel member inspector likewise uses one virtualized AppKit/Core Text
+canvas. Its bounded visible-row overlays remain mounted and animated during
+live scrolling so avatars, decorations, presence, and activity emoji preserve
+their normal presentation. As rows enter and leave the viewport, their hosting
+views are recycled rather than allocated and destroyed. Cached canvas frames
+remain underneath as a zero-gap presentation while optional new animated-frame
+expansion is deferred until motion ends. The animation decode scheduler tracks
+timeline and member-list gestures independently, so one surface ending a
+gesture cannot reopen the decode lane while another is still moving. Canvas
+image requests use presentation-sized pixel budgets (96-pixel
+avatars/decorations, 64-pixel emoji, and 32-pixel guild badges), while full-row
+nameplates retain their 512-pixel budget. All decoded state remains in bounded
+process-memory caches and is discarded at process exit.
 
 `MediaPipeline` owns public-media caching and the complete native voice/video
 stack. `DaveKit` is an implementation dependency of `MediaPipeline`; the app
@@ -160,7 +205,7 @@ work, not an implemented architecture claim.
 
 ## Packaging
 
-`script/build_and_run.sh` builds the SwiftPM product, assembles the `.app`,
+`script/build_and_run.sh` builds the debug or release SwiftPM product, assembles the `.app`,
 compiles the selected Icon Composer source with `actool`, embeds frameworks and
 resource bundles, copies the complete third-party notices into the app's
 otherwise hidden `Contents/Resources/THIRD_PARTY_NOTICES.md`, and ad-hoc signs
@@ -176,8 +221,9 @@ signature, builds the DMG, verifies the image, and writes its SHA-256 digest.
 Developer ID signing and notarization are not currently part of the release
 workflow.
 
-Tag releases enable the canonical Sparkle configuration, generate a signed
-`appcast.xml` from the same `SakuraCord.vX.Y.Z.dmg`, and validate the feed signature,
+Stable and `vX.Y.Z-Beta-N` tag releases enable the canonical Sparkle
+configuration, generate a signed `appcast.xml` from the same tag-specific DMG,
+and validate the feed signature,
 archive signature, bundle metadata, and nested code signatures before staging
 both files on a draft GitHub Release and publishing them together. The workflow
 refuses to replace assets on an already published tag. Sparkle signing keys
@@ -189,6 +235,24 @@ for the GitHub Release and signed appcast, derives the Discord embed title from
 the tag, posts the pre-made embed description with a generated role mention
 and release button, and stores public copy/delivery checkpoint assets for
 idempotent repair runs.
+The source branches maintain `main` as an ancestor of `nightly`. A dedicated
+main-push workflow fast-forwards nightly when it has no independent commits.
+When the branches have diverged, it creates a normal merge, runs the complete
+CI suite against that merged tree, and pushes only after validation. Conflicts
+or rejected non-fast-forward pushes stop without rewriting either branch.
+Workflow-authenticated pushes do not recursively trigger another CI run; an
+exact fast-forward is already covered by the triggering main run, while a new
+merge commit is explicitly validated before publication. Release validation
+also requires every stable or beta tag commit to be reachable from nightly.
+Nightly beta tags must point to commits on the `nightly` source branch, use
+human-facing `vX.Y.Z Beta N` release and Discord titles, and use tag-specific
+`SakuraCord-vX.Y.Z-Beta-N.dmg` assets. They run the same validation and
+packaging job, publish as GitHub prereleases, and select their dedicated
+Discord channel and role. Only after a
+nightly prerelease's assets are publicly re-downloaded and compared does the
+workflow atomically update the signed appcast on the generated `nightly-feed`
+branch. The application reads that feed from
+`https://raw.githubusercontent.com/SakuraCordApp/SakuraCord/nightly-feed/appcast.xml`.
 If a maintainer edits the GitHub Release body after publication, a
 release-edit workflow downloads the unchanged DMG,
 preserves its build number, regenerates and verifies the signed appcast with the

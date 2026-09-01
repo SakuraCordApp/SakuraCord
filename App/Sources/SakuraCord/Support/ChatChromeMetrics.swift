@@ -11,7 +11,7 @@ nonisolated enum ChatChromeMetrics {
     /// Only a fallback for layouts where the composer isn't adjacent to a
     /// rounded container corner. macOS resolves the actual aligned radius.
     static let composerMinimumCornerRadius: CGFloat = 12
-    static let channelListTopPadding: CGFloat = 12
+    static let channelListTopPadding: CGFloat = 10
     static let memberListWidth: CGFloat = 280
     static let emojiPickerWidth: CGFloat = 520
 }

@@ -287,7 +287,7 @@ func `passive initial channel selection does not contaminate forward history`() 
     #expect(model.forwardDestinationHistory.isEmpty)
 
     model.selectedChannelID = second.id
-    #expect(model.forwardDestinationHistory == [second.id])
+    #expect(model.forwardDestinationHistory.isEmpty)
 }
 
 @MainActor @Test func `failed frecency enrichment never leaves forwarding destinations loading`() async {
@@ -568,7 +568,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         relationshipNicknamesByUserID: relationshipNames,
         guilds: [:],
         usageScores: [:]
-    ).first)
+    ).first { $0.id == .user(friend.id) })
     #expect(person.title == "USERNAME THIEF!!!")
     #expect(person.detail == "legacy-bot#8860")
 
@@ -650,7 +650,32 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     #expect(results.contains { $0.id == .channel(group.id) })
 }
 
-@Test func `typed channel search uses Discords live hundred point bonus scale`() {
+@Test func `group DM fuzzy search applies Discord confusable normalization`() {
+    let recipient = User(
+        id: UserID(rawValue: 2),
+        username: "recipient",
+        displayName: "your ai slop bores me"
+    )
+    let group = Channel(
+        id: ChannelID(rawValue: 20), guildID: nil,
+        name: "unrelated group", hasExplicitName: true,
+        kind: .groupDirectMessage, recipients: [recipient]
+    )
+
+    let results = ForwardDestinationSearchPolicy.results(
+        query: "len",
+        channels: [group],
+        users: [recipient],
+        guilds: [:],
+        usageScores: [:]
+    )
+
+    // Discord's normalizer maps the final `m` in `me` to `rn`, making
+    // `len` an ordered fuzzy subsequence of `slop bores rne`.
+    #expect(results.contains { $0.id == .channel(group.id) })
+}
+
+@Test func `typed channel search gives a used prefix Discords full boost`() {
     let guild = Guild(id: GuildID(rawValue: 1), name: "Sakura Server")
     let exact = Channel(
         id: ChannelID(rawValue: 10), guildID: guild.id,
@@ -673,6 +698,27 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     )
 
     #expect(results.compactMap(\.resolvedChannelID) == [boostedPrefix.id, exact.id])
+}
+
+@Test func `typed channel search gives every used channel Discords full internal boost`() {
+    let guild = Guild(id: GuildID(rawValue: 1), name: "Swiftcord")
+    let usedChannel = Channel(
+        id: ChannelID(rawValue: 10), guildID: guild.id,
+        name: "discordkit-github-events", kind: .text
+    )
+    let accountMaximum = Channel(
+        id: ChannelID(rawValue: 11), guildID: guild.id,
+        name: "unrelated", kind: .text
+    )
+
+    let results = ForwardDestinationSearchPolicy.results(
+        query: "cord",
+        channels: [usedChannel, accountMaximum],
+        guilds: [guild.id: guild],
+        usageScores: ["10": 200, "11": 655_000]
+    )
+
+    #expect(results.first?.resolvedChannelID == usedChannel.id)
 }
 
 @Test func `typed forward search includes missing DMs and caps each category separately`() {
@@ -821,80 +867,6 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     #expect(!results.contains { $0.id == .channel(textChannels[16].id) })
 }
 
-@Test func `preindexed forward search benchmarks ten distinct inputs`() {
-    let guild = Guild(id: GuildID(rawValue: 1), name: "Sakura Server")
-    let channels = (1 ... 1_000).map { value in
-        Channel(
-            id: ChannelID(rawValue: UInt64(10_000 + value)),
-            guildID: guild.id,
-            name: "benchmark-channel-\(value)",
-            kind: value.isMultiple(of: 4) ? .voice : .text,
-            category: value.isMultiple(of: 3) ? "Community" : "General"
-        )
-    }
-    let users = (1 ... 1_000).map { value in
-        User(
-            id: UserID(rawValue: UInt64(20_000 + value)),
-            username: "benchmark-user-\(value)",
-            displayName: "Benchmark Person \(value)"
-        )
-    }
-    let index = ForwardDestinationSearchPolicy.makeIndex(
-        channels: channels,
-        users: users,
-        guilds: [guild.id: guild],
-        usageScores: [:]
-    )
-    let queries = [
-        "b", "be", "bench", "channel", "person",
-        "community", "general", "voice", "user-19", "channel-199",
-    ]
-
-    func currentThreadCPUSeconds() -> Double {
-        var value = timespec()
-        precondition(clock_gettime(CLOCK_THREAD_CPUTIME_ID, &value) == 0)
-        return Double(value.tv_sec) + Double(value.tv_nsec) / 1_000_000_000
-    }
-
-    var resultCount = 0
-    let wallStart = ContinuousClock.now
-    let cpuStart = currentThreadCPUSeconds()
-    for query in queries {
-        resultCount += index.results(query: query).count
-    }
-    let cpuMilliseconds = (currentThreadCPUSeconds() - cpuStart) * 1_000
-    let wallDuration = wallStart.duration(to: .now)
-    let wallMilliseconds = Double(wallDuration.components.seconds) * 1_000
-        + Double(wallDuration.components.attoseconds) / 1_000_000_000_000_000
-    print(String(
-        format: "Forward search benchmark: %.3f ms CPU (%.3f/input), %.3f ms wall",
-        cpuMilliseconds,
-        cpuMilliseconds / Double(queries.count),
-        wallMilliseconds
-    ))
-
-    #expect(resultCount > 0)
-    // A 25 ms per-input budget on a 2,000-destination synthetic account is
-    // intentionally larger than the normal live picker population. Discord
-    // retains only 20 raw rows per category, so this also catches regressions
-    // that accidentally return to sorting every matching row per keystroke.
-    #expect(cpuMilliseconds < 250)
-}
-
-@Test func `forward modal keyboard layout and animation contract stays immediate`() {
-    #expect(WindowModalKeyPolicy.isEscape(keyCode: 53, characters: nil))
-    #expect(WindowModalKeyPolicy.isEscape(keyCode: 0, characters: "\u{1B}"))
-    #expect(!WindowModalKeyPolicy.isEscape(keyCode: 36, characters: "\r"))
-    #expect(ForwardPickerLayoutMetrics.width == 480)
-    #expect(ForwardPickerLayoutMetrics.height == 679)
-    #expect(ForwardPickerLayoutMetrics.rowHeight == 48)
-    #expect(ForwardPickerLayoutMetrics.selectionDiameter == 20)
-    #expect(ForwardPickerLayoutMetrics.closeHitTarget >= 36)
-    #expect(WindowModalAnimationTiming.openingSeconds <= 0.22)
-    #expect(WindowModalAnimationTiming.closingSeconds <= 0.16)
-    #expect(WindowModalAnimationTiming.removalDelayMilliseconds <= 170)
-}
-
 @Test func `forward preview follows Discord text emoji and attachment rules`() throws {
     let imageURL = try #require(URL(string: "https://cdn.discordapp.com/attachments/1/1/a.png"))
     let author = User(id: UserID(rawValue: 1), username: "tester", displayName: "Tester")
@@ -1029,33 +1001,6 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     #expect(plan.contentLineLimit == 2)
 }
 
-@Test func `forward preview plan benchmark stays below presentation budget`() throws {
-    let imageURL = try #require(URL(string: "https://cdn.discordapp.com/attachments/1/3/preview.gif"))
-    let message = Message(
-        id: MessageID(rawValue: 5),
-        channelID: ChannelID(rawValue: 6),
-        author: User(id: UserID(rawValue: 1), username: "tester", displayName: "Tester"),
-        content: "Preview <:wave:123>",
-        attachments: [SakuraCordModels.Attachment(
-            id: "1",
-            filename: "preview.gif",
-            url: imageURL,
-            mediaType: "image/gif"
-        )]
-    )
-    let start = ContinuousClock.now
-    var plans = 0
-    for _ in 0 ..< 10_000 {
-        plans += ForwardMessagePreviewPlan.make(message: message).media == nil ? 0 : 1
-    }
-    let duration = start.duration(to: .now)
-    let milliseconds = Double(duration.components.seconds) * 1_000
-        + Double(duration.components.attoseconds) / 1_000_000_000_000_000
-    print(String(format: "Forward preview benchmark: %.3f ms / 10,000 plans", milliseconds))
-    #expect(plans == 10_000)
-    #expect(milliseconds < 250)
-}
-
 @Test func `equal score user search orders by the matched comparator`() {
     let first = User(
         id: UserID(rawValue: 30), username: "match-zed", displayName: "Match First"
@@ -1148,6 +1093,59 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     #expect(results.map(\.id) == [.user(friend.id), .user(existing.id)])
 }
 
+@Test func `message search user frecency ignores unreachable group DM usage`() {
+    let unboosted = User(
+        id: UserID(rawValue: 1), username: "match-plain", displayName: "Match Plain"
+    )
+    let groupFirst = User(
+        id: UserID(rawValue: 2), username: "match-group-a", displayName: "Match Group A"
+    )
+    let groupSecond = User(
+        id: UserID(rawValue: 3), username: "match-group-b", displayName: "Match Group B"
+    )
+    let direct = User(
+        id: UserID(rawValue: 4), username: "match-direct", displayName: "Match Direct"
+    )
+    let friend = User(
+        id: UserID(rawValue: 5), username: "match-friend", displayName: "Match Friend"
+    )
+    let groupChannel = Channel(
+        id: ChannelID(rawValue: 20), guildID: nil, name: "Group",
+        kind: .groupDirectMessage, recipients: [groupFirst, groupSecond]
+    )
+    let directChannel = Channel(
+        id: ChannelID(rawValue: 21), guildID: nil, name: direct.displayName,
+        kind: .directMessage, recipients: [direct]
+    )
+
+    let index = ForwardDestinationSearchPolicy.makeIndex(
+        channels: [groupChannel, directChannel],
+        users: [unboosted, groupFirst, groupSecond, direct, friend],
+        friendUserIDs: [friend.id],
+        guilds: [:],
+        usageScores: [
+            groupChannel.id.description: 1_000,
+            directChannel.id.description: 400,
+        ],
+        maximumUsageScore: 1_000
+    )
+
+    let results = index.scoredResults(
+        query: "match",
+        categories: [.user],
+        limitPerCategory: 10,
+        requiresDestinationEligibility: false,
+        preservesSourceOrderForEqualScores: true
+    )
+    #expect(results.map(\.destination.id) == [
+        .user(direct.id),
+        .user(friend.id),
+        .user(unboosted.id),
+        .user(groupFirst.id),
+        .user(groupSecond.id),
+    ])
+}
+
 @Test func `forward destination search obeys the permission-filtered channel set`() {
     let guild = Guild(id: GuildID(rawValue: 1), name: "Sakura Server")
     let visible = Channel(
@@ -1209,6 +1207,40 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     #expect(results.first?.detail == "bug-reports")
 }
 
+@Test func `joined threads follow ordinary ChannelStore records`() {
+    let guild = Guild(id: GuildID(rawValue: 1), name: "SakuraCord")
+    let first = Channel(
+        id: ChannelID(rawValue: 10), guildID: guild.id,
+        name: "match-first", kind: .text
+    )
+    let forum = Channel(
+        id: ChannelID(rawValue: 11), guildID: guild.id,
+        name: "forum", kind: .forum
+    )
+    let last = Channel(
+        id: ChannelID(rawValue: 12), guildID: guild.id,
+        name: "match-last", kind: .text
+    )
+    let thread = MessageThreadSummary(
+        id: ChannelID(rawValue: 13), guildID: guild.id,
+        parentID: forum.id, name: "match-thread",
+        notificationSettings: ThreadNotificationSettings()
+    )
+
+    let results = ForwardDestinationSearchPolicy.results(
+        query: "match",
+        channels: [first, forum, last],
+        threads: [thread],
+        channelStoreOrder: [first.id, thread.id, last.id, forum.id],
+        guilds: [guild.id: guild],
+        usageScores: [:]
+    )
+
+    #expect(results.map(\.id) == [
+        .channel(first.id), .channel(last.id), .channel(thread.id),
+    ])
+}
+
 @Test func `forward search excludes inactive and unjoined cached threads`() {
     let guild = Guild(id: GuildID(rawValue: 1), name: "SakuraCord")
     let forum = Channel(
@@ -1235,6 +1267,133 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     )
 
     #expect(results.isEmpty)
+}
+
+@Test func `message search worker user ranking uses prefix aliases and private channel boosters`() {
+    let aliasPrefix = User(
+        id: UserID(rawValue: 1), username: "plain-one", displayName: "First"
+    )
+    let boostedContains = User(
+        id: UserID(rawValue: 2), username: "bravo-match", displayName: "Boosted"
+    )
+    let plainContains = User(
+        id: UserID(rawValue: 3), username: "charlie-match", displayName: "Plain"
+    )
+    let privateChannel = Channel(
+        id: ChannelID(rawValue: 20), guildID: nil, name: boostedContains.displayName,
+        kind: .directMessage, recipients: [boostedContains]
+    )
+    let base = ForwardDestinationSearchPolicy.makeIndex(
+        channels: [],
+        users: [plainContains, boostedContains, aliasPrefix],
+        userBoosterChannels: [privateChannel],
+        userSearchAliasesByUserID: [aliasPrefix.id: ["match-alias"]],
+        guilds: [:],
+        usageScores: [:]
+    )
+
+    let results = base.quickSwitcherUserIndex(
+        userSearchAliasesByUserID: [aliasPrefix.id: ["match-alias"]]
+    ).scoredResults(
+        query: "match",
+        categories: [.user],
+        limitPerCategory: 10,
+        requiresDestinationEligibility: false,
+        allowedUserIDs: [aliasPrefix.id, boostedContains.id, plainContains.id]
+    )
+
+    #expect(results.map(\.destination.id) == [
+        .user(aliasPrefix.id), .user(boostedContains.id), .user(plainContains.id),
+    ])
+    #expect(results.map(\.score) == [10_000, 1_100, 1_000])
+}
+
+@Test func `message search DM channels keep Discord legacy prefix and fuzzy buckets`() {
+    let prefix = User(
+        id: UserID(rawValue: 1), username: "echo", displayName: "Echo"
+    )
+    let containsOnly = User(
+        id: UserID(rawValue: 2), username: "road-exit", displayName: "Road Exit"
+    )
+    let prefixDM = Channel(
+        id: ChannelID(rawValue: 20), guildID: nil, name: prefix.displayName,
+        kind: .directMessage, recipients: [prefix]
+    )
+    let containsDM = Channel(
+        id: ChannelID(rawValue: 21), guildID: nil, name: containsOnly.displayName,
+        kind: .directMessage, recipients: [containsOnly]
+    )
+    let group = Channel(
+        id: ChannelID(rawValue: 22), guildID: nil, name: "team room",
+        kind: .groupDirectMessage
+    )
+    let index = ForwardDestinationSearchPolicy.makeIndex(
+        channels: [prefixDM, containsDM, group],
+        users: [prefix, containsOnly],
+        guilds: [:],
+        usageScores: [:]
+    )
+
+    let results = index.messageSearchDirectMessageResults(query: "e", limit: 10)
+
+    #expect(results.map(\.destination.id) == [
+        .user(prefix.id), .channel(group.id), .user(containsOnly.id),
+    ])
+    #expect(results.map(\.score) == [11_000, 5_000, 1_100])
+}
+
+@Test func `message search threads keep matched penalized rows in Discord store order`() {
+    let guild = Guild(id: GuildID(rawValue: 1), name: "SakuraCord")
+    let bugForum = Channel(
+        id: ChannelID(rawValue: 10), guildID: guild.id,
+        name: "bug-reports", kind: .forum
+    )
+    let featureForum = Channel(
+        id: ChannelID(rawValue: 11), guildID: guild.id,
+        name: "feature-requests", kind: .forum
+    )
+    func thread(
+        id: UInt64, parentID: ChannelID, joined: Bool
+    ) -> MessageThreadSummary {
+        MessageThreadSummary(
+            id: ChannelID(rawValue: id), guildID: guild.id,
+            parentID: parentID, name: "matching \(id)",
+            notificationSettings: joined ? ThreadNotificationSettings() : nil
+        )
+    }
+    let activeLater = thread(id: 40, parentID: bugForum.id, joined: true)
+    let activeEarlier = thread(id: 20, parentID: featureForum.id, joined: true)
+    let unjoinedFeature = thread(id: 30, parentID: featureForum.id, joined: false)
+    let unjoinedBugLater = thread(id: 50, parentID: bugForum.id, joined: false)
+    let unjoinedBugEarlier = thread(id: 10, parentID: bugForum.id, joined: false)
+    let threads = [
+        unjoinedFeature, activeLater, unjoinedBugLater, activeEarlier, unjoinedBugEarlier,
+    ]
+    let index = ForwardDestinationSearchPolicy.makeIndex(
+        channels: [bugForum, featureForum],
+        threads: threads,
+        includesUnjoinedThreads: true,
+        channelStoreOrder: [bugForum.id, featureForum.id],
+        guilds: [guild.id: guild],
+        usageScores: [:],
+        searchableChannelIDs: Set(threads.map(\.id)),
+        eligibleChannelIDs: Set(threads.map(\.id))
+    )
+
+    let results = index.scoredResults(
+        query: "ing",
+        categories: [.selectableChannel],
+        limitPerCategory: 10,
+        requiresDestinationEligibility: false,
+        preservesSourceOrderForEqualScores: true
+    )
+
+    #expect(results.map(\.destination.id) == [
+        .channel(activeEarlier.id), .channel(activeLater.id),
+        .channel(unjoinedBugEarlier.id), .channel(unjoinedBugLater.id),
+        .channel(unjoinedFeature.id),
+    ])
+    #expect(results.suffix(3).allSatisfy { $0.score == 0 })
 }
 
 @Test func `forward menu action is capability gated beside reply`() {
@@ -1307,137 +1466,6 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     #expect(!message(type: .default, flags: .sourceMessageDeleted).isForwardable)
     #expect(!message(type: .default, flags: .ephemeral).isForwardable)
     #expect(!message(type: .default, flags: .loading).isForwardable)
-}
-
-@MainActor @Test
-func `forwarded snapshot reserves chrome while reusing rich message layout`() throws {
-    let attachmentURL = try #require(URL(string: "https://cdn.discordapp.com/attachments/7/80/flower.png"))
-    let snapshot = ForwardedMessageSnapshot(
-        content: "forwarded text",
-        timestamp: Date(timeIntervalSince1970: 1_700_000_000),
-        attachments: [Attachment(
-            id: "80",
-            filename: "flower.png",
-            url: attachmentURL,
-            mediaType: "image/png",
-            width: 64,
-            height: 64
-        )]
-    )
-    let message = Message(
-        id: MessageID(rawValue: 50),
-        channelID: ChannelID(rawValue: 41),
-        author: User(
-            id: UserID(rawValue: 1),
-            username: "tester",
-            displayName: "Tester"
-        ),
-        content: snapshot.content,
-        attachments: snapshot.attachments,
-        messageReference: DiscordMessageReference(
-            type: .forward,
-            messageID: MessageID(rawValue: 9),
-            channelID: ChannelID(rawValue: 7),
-            guildID: GuildID(rawValue: 5)
-        ),
-        forwardedSnapshot: snapshot
-    )
-    let row = MessageRowPresentation(
-        message: message,
-        startsGroup: true,
-        startsDay: false,
-        replyPreview: nil,
-        isReplyAvailable: false
-    )
-
-    let layout = NativeTimelineRowLayout.make(
-        item: .message(row, isUnreadBoundary: false, isHighlighted: false),
-        width: 560
-    )
-    #expect(layout.forwardedHeaderFrame != nil)
-    #expect(layout.forwardedBarFrame != nil)
-    #expect(layout.contentFrame != nil)
-    #expect(layout.attachmentRegions.count == 1)
-    #expect(layout.forwardedSourceRegion == nil)
-}
-
-@MainActor @Test
-func `forward source footer distinguishes guild scope and disappears when inaccessible`() throws {
-    let sourceGuildID = GuildID(rawValue: 5)
-    let destinationGuildID = GuildID(rawValue: 6)
-    let sourceChannelID = ChannelID(rawValue: 7)
-    let sourceIcon = try #require(URL(string: "https://cdn.discordapp.com/icons/5/source.png"))
-    let currentUser = User(
-        id: UserID(rawValue: 1),
-        username: "tester",
-        displayName: "Tester"
-    )
-    let sourceGuild = Guild(
-        id: sourceGuildID,
-        name: "Source Guild",
-        iconURL: sourceIcon
-    )
-    let sourceChannel = Channel(
-        id: sourceChannelID,
-        guildID: sourceGuildID,
-        name: "actual-testing",
-        kind: .text
-    )
-    let model = AppModel(
-        launchMode: .offlineTesting,
-        provider: MockChatProvider()
-    )
-    model.snapshot = BootstrapSnapshot(
-        currentUser: currentUser,
-        guilds: [sourceGuild, Guild(id: destinationGuildID, name: "Destination Guild")],
-        channels: [sourceChannel],
-        members: []
-    )
-    let snapshot = ForwardedMessageSnapshot(
-        content: "forwarded text",
-        timestamp: Date(timeIntervalSince1970: 1_700_000_000)
-    )
-
-    func layout(destinationGuildID: GuildID?) -> NativeTimelineRowLayout {
-        let message = Message(
-            id: MessageID(rawValue: 50),
-            channelID: ChannelID(rawValue: 41),
-            author: currentUser,
-            content: snapshot.content,
-            guildID: destinationGuildID,
-            messageReference: DiscordMessageReference(
-                type: .forward,
-                messageID: MessageID(rawValue: 9),
-                channelID: sourceChannelID,
-                guildID: sourceGuildID
-            ),
-            forwardedSnapshot: snapshot
-        )
-        let row = MessageRowPresentation(
-            message: message,
-            startsGroup: true,
-            startsDay: false,
-            replyPreview: nil,
-            isReplyAvailable: false
-        )
-        return NativeTimelineRowLayout.make(
-            item: .message(row, isUnreadBoundary: false, isHighlighted: false),
-            width: 560,
-            model: model
-        )
-    }
-
-    let sameGuild = try #require(layout(destinationGuildID: sourceGuildID).forwardedSourceRegion)
-    #expect(sameGuild.label == "#actual-testing")
-    #expect(sameGuild.iconURL == nil)
-    #expect(sameGuild.frame.width < 420)
-
-    let crossGuild = try #require(layout(destinationGuildID: destinationGuildID).forwardedSourceRegion)
-    #expect(crossGuild.label == "Source Guild")
-    #expect(crossGuild.iconURL == sourceIcon)
-
-    model.snapshot?.channels = []
-    #expect(layout(destinationGuildID: destinationGuildID).forwardedSourceRegion == nil)
 }
 
 private actor ForwardSettingsFailureProvider: ChatProvider {

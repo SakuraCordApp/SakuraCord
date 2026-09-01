@@ -42,6 +42,14 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var typingHadBody = false
     nonisolated(unsafe) static var typingSuperProperties: String?
     nonisolated(unsafe) static var messageRequestCount = 0
+    nonisolated(unsafe) static var messageHistoryQueryItems: [[String]] = []
+    nonisolated(unsafe) static var messageSearchRequestCount = 0
+    nonisolated(unsafe) static var messageSearchQueries: [[String: String]] = []
+    nonisolated(unsafe) static var messageSearchQueryItems: [[String]] = []
+    nonisolated(unsafe) static var messageSearchMethods: [String] = []
+    nonisolated(unsafe) static var messageSearchPaths: [String] = []
+    nonisolated(unsafe) static var messageSearchBodies: [[String: Any]] = []
+    nonisolated(unsafe) static var messageSearchStatuses: [Int] = []
     nonisolated(unsafe) static var messageMethod: String?
     nonisolated(unsafe) static var messagePath: String?
     nonisolated(unsafe) static var sentMessageBody: [String: Any]?
@@ -132,6 +140,14 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
         typingHadBody = false
         typingSuperProperties = nil
         messageRequestCount = 0
+        messageHistoryQueryItems = []
+        messageSearchRequestCount = 0
+        messageSearchQueries = []
+        messageSearchQueryItems = []
+        messageSearchMethods = []
+        messageSearchPaths = []
+        messageSearchBodies = []
+        messageSearchStatuses = []
         messageMethod = nil
         messagePath = nil
         sentMessageBody = nil
@@ -488,6 +504,12 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
             RateLimitURLProtocol.messageSuperProperties = request.value(forHTTPHeaderField: "X-Super-Properties")
             RateLimitURLProtocol.messageUserAgent = request.value(forHTTPHeaderField: "User-Agent")
             if request.httpMethod == "GET" {
+                RateLimitURLProtocol.messageHistoryQueryItems.append(
+                    URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+                        .queryItems?
+                        .map { "\($0.name)=\($0.value ?? "")" }
+                        ?? []
+                )
                 status = 200
                 json = #"""
                 [{
@@ -550,6 +572,84 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
                 "author":{"id":"1","username":"tester","global_name":"Tester","avatar":null},
                 "content":\#(encodedContent),"timestamp":"2026-07-11T20:00:00.000Z",
                 "edited_timestamp":null,"attachments":[],"reactions":[]}
+                """#
+            }
+        case "/api/v9/guilds/100/messages/search",
+             "/api/v9/users/@me/messages/search/tabs":
+            RateLimitURLProtocol.messageSearchRequestCount += 1
+            let queryItems = URLComponents(
+                url: request.url!,
+                resolvingAgainstBaseURL: false
+            )?.queryItems ?? []
+            RateLimitURLProtocol.messageSearchQueries.append(
+                queryItems.reduce(into: [:]) { values, item in
+                    values[item.name] = item.value
+                }
+            )
+            RateLimitURLProtocol.messageSearchQueryItems.append(
+                queryItems.map { "\($0.name)=\($0.value ?? "")" }
+            )
+            RateLimitURLProtocol.messageSearchMethods.append(request.httpMethod ?? "")
+            RateLimitURLProtocol.messageSearchPaths.append(path)
+            if let body = RateLimitURLProtocol.requestBody(request),
+               let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any]
+            {
+                RateLimitURLProtocol.messageSearchBodies.append(object)
+            }
+            let index = RateLimitURLProtocol.messageSearchRequestCount - 1
+            status = RateLimitURLProtocol.messageSearchStatuses.indices.contains(index)
+                ? RateLimitURLProtocol.messageSearchStatuses[index]
+                : 200
+            if status == 202 {
+                json = #"{"message":"Index not yet available","code":110000,"retry_after":0}"#
+            } else if path == "/api/v9/users/@me/messages/search/tabs" {
+                json = #"""
+                {
+                  "analytics_id":"test",
+                  "doing_deep_historical_index":false,
+                  "tabs":{"messages":{
+                    "total_results":1,
+                    "time_spent_ms":12,
+                    "cursor":{"timestamp":"0","type":"BEFORE"},
+                    "channels":[{
+                      "id":"200","type":1,"last_message_id":"351","flags":0,
+                      "recipients":[{"id":"4","username":"maya","global_name":"Maya","avatar":null}]
+                    }],
+                    "messages":[[{
+                      "id":"351","channel_id":"200","hit":true,
+                      "author":{"id":"4","username":"maya","global_name":"Maya","avatar":null},
+                      "content":"searchable sakura message",
+                      "timestamp":"2026-08-12T19:00:00.000Z",
+                      "edited_timestamp":null,"attachments":[],"mentions":[]
+                    }]]
+                  }}
+                }
+                """#
+            } else {
+                json = #"""
+                {
+                  "total_results":1,
+                  "doing_deep_historical_index":false,
+                  "messages":[[{
+                    "id":"351",
+                    "channel_id":"200",
+                    "guild_id":"100",
+                    "hit":true,
+                    "author":{"id":"4","username":"maya","global_name":"Maya","avatar":null},
+                    "content":"searchable sakura message",
+                    "timestamp":"2026-08-12T19:00:00.000Z",
+                    "edited_timestamp":null,
+                    "attachments":[],
+                    "mentions":[]
+                  }]],
+                  "threads":[{
+                    "id":"300",
+                    "guild_id":"100",
+                    "parent_id":"200",
+                    "type":11,
+                    "name":"Search result thread"
+                  }]
+                }
                 """#
             }
         default:

@@ -10,9 +10,11 @@ planned work and progress belong in the canonical roadmap service.
 | --- | --- |
 | [Architecture](ARCHITECTURE.md) | Package ownership, runtime boundaries, persistence, plugins, and packaging. |
 | [Protocol baseline](PROTOCOL_BASELINE.md) | Current SakuraCord network contracts, safety rules, capability gates, and dated protocol evidence. |
+| [Testing](TESTING.md) | Criteria for committed automated tests, test design, and verification without new tests. |
+| [Development](DEVELOPMENT.md) | Local setup, launch modes, credentials, commands, and validation. |
+| [Releasing](RELEASING.md) | Versioned release workflow, service setup, signing limitations, and recovery. |
 | [GitHub release notes style](RELEASE_NOTES_STYLE.md) | Evidence, layout, wording, and review rules for detailed GitHub release notes. |
 | [Discord release announcement style](DISCORD_RELEASE_ANNOUNCEMENTS_STYLE.md) | Concise user-facing announcement structure and generated Discord framing. |
-| [Linked worktrees](PARALLEL_WORKTREES.md) | Conditional isolation workflow for actual linked Codex worktrees and concurrent writers. |
 | [Third-party notices](THIRD_PARTY_NOTICES.md) | Attribution and license notices that must remain with the repository. |
 
 The root [README](../README.md) is the public project entry point.
@@ -41,7 +43,8 @@ Before a change is considered ready to push, run:
 
 That command is the pinned SwiftFormat and SwiftLint path shared by local
 development, both Git hooks, and CI. Pre-commit validates the exact staged
-index snapshot; pre-push independently validates the committed ref tips.
+index snapshot; pre-push independently validates the committed ref tips. See
+the [development guide](DEVELOPMENT.md) for launch modes and broader validation.
 
 ## Roadmap
 

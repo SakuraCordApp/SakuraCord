@@ -18,6 +18,18 @@ struct ConversationRefreshJournal {
 }
 
 extension AppModel {
+    func joinablePrivateCall(in channelID: ChannelID) -> PrivateCall? {
+        guard let call = privateCall(in: channelID) else { return nil }
+        if !call.ongoingRings.isEmpty {
+            return call
+        }
+        guard let voiceStates = call.voiceStates else {
+            // A partial CALL_UPDATE cannot prove that the call is empty.
+            return call
+        }
+        return voiceStates.isEmpty ? nil : call
+    }
+
     func beginConversationRefresh(in channelID: ChannelID) -> UInt64 {
         conversationRefreshJournalRevision &+= 1
         let revision = conversationRefreshJournalRevision
@@ -380,6 +392,7 @@ extension AppModel {
             await SharedAnimatedImageDecodeScheduler.shared
                 .setInteractiveScrolling(
                     isScrollingNow,
+                    source: .timeline,
                     revision: revision
                 )
         }
@@ -407,6 +420,7 @@ extension AppModel {
             await SharedAnimatedImageDecodeScheduler.shared
                 .setInteractiveScrolling(
                     false,
+                    source: .timeline,
                     revision: revision
                 )
         }
@@ -658,6 +672,7 @@ extension AppModel {
                 generation: voiceGeneration,
                 channelID: channel.id
             ) else { return }
+            watchAvailableDirectMessageStreamsAutomatically()
             soundPlayer.play(.userJoin)
         } catch {
             guard isCurrentVoiceOperation(
@@ -717,7 +732,7 @@ extension AppModel {
         generation: UInt64
     ) async {
         let session = accountSession()
-        if privateCall(in: channel.id) != nil {
+        if joinablePrivateCall(in: channel.id) != nil {
             await joinPrivateCall(
                 in: channel,
                 withVideo: withVideo,
@@ -1049,6 +1064,7 @@ extension AppModel {
         voiceMigrationTask = nil
         voiceEventTask?.cancel()
         voiceEventTask = nil
+        await teardownApplicationStreams(account: account, notifyDiscord: true)
         await departingSession?.disconnect()
         guard isCurrentAccountSession(account),
               voiceMigrationGeneration == voiceGeneration,
@@ -1218,44 +1234,8 @@ extension AppModel {
         await voiceSession?.setOutputVolume(outputVolume)
     }
 
-    func selectInputDevice(_ device: AudioDeviceInfo?) async {
-        UserDefaults.standard.set(device?.uid, forKey: "voiceInputDeviceUID")
-        let account = accountSession()
-        let generation = voiceMigrationGeneration
-        let session = voiceSession
-        do { try await session?.selectInputDevice(device?.id) } catch {
-            guard isCurrentVoiceOperation(
-                account,
-                generation: generation,
-                voiceSession: session
-            ) else { return }
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    func selectOutputDevice(_ device: AudioDeviceInfo?) async {
-        UserDefaults.standard.set(device?.uid, forKey: "voiceOutputDeviceUID")
-        let account = accountSession()
-        let generation = voiceMigrationGeneration
-        let session = voiceSession
-        do { try await session?.selectOutputDevice(device?.id) } catch {
-            guard isCurrentVoiceOperation(
-                account,
-                generation: generation,
-                voiceSession: session
-            ) else { return }
-            errorMessage = error.localizedDescription
-        }
-    }
-
     func updateParticipantVolume(_ value: Float, userID: String) async {
         await voiceSession?.setParticipantVolume(value, userID: userID)
-    }
-
-    func refreshMediaDevices() async {
-        mediaDevices = await Task.detached(priority: .userInitiated) {
-            MediaDeviceCatalog.snapshot()
-        }.value
     }
 
     func publishVoiceState() async {
@@ -1287,47 +1267,6 @@ extension AppModel {
             else { return }
             voiceErrorMessage = error.localizedDescription
         }
-    }
-
-    func selectedAudioDeviceID(defaultsKey: String, devices: [AudioDeviceInfo])
-        -> AudioDeviceID?
-    {
-        guard let uid = UserDefaults.standard.string(forKey: defaultsKey) else { return nil }
-        return devices.first(where: { $0.uid == uid })?.id
-    }
-
-    func currentVoiceConfiguration() -> VoiceSessionConfiguration {
-        let outputDeviceID = selectedAudioDeviceID(
-            defaultsKey: "voiceOutputDeviceUID",
-            devices: mediaDevices.audioOutputs
-        )
-        return VoiceSessionConfiguration(
-            inputDeviceID: resolvedInputDeviceID(),
-            outputDeviceID: outputDeviceID,
-            inputVolume: inputVolume,
-            outputVolume: outputVolume,
-            isMuted: isVoiceMuted,
-            isDeafened: isVoiceDeafened,
-            cameraUniqueID: UserDefaults.standard.string(forKey: "voiceCameraUID")
-        )
-    }
-
-    func resolvedInputDeviceID() -> AudioDeviceID? {
-        if let storedUID = UserDefaults.standard.string(forKey: "voiceInputDeviceUID"),
-           !storedUID.isEmpty
-        {
-            return mediaDevices.audioInputs.first(where: { $0.uid == storedUID })?.id
-        }
-
-        let defaultInput = mediaDevices.audioInputs.first(where: \.isDefault)
-        // Automatic capture must not inherit a Bluetooth call route or a
-        // silent virtual/aggregate device. Explicit selections remain honored.
-        if defaultInput?.isBluetooth == true || defaultInput?.isVirtual == true,
-           let builtIn = mediaDevices.audioInputs.first(where: \.isBuiltIn)
-        {
-            return builtIn.id
-        }
-        return nil
     }
 
     func startVoiceSession(
@@ -1478,6 +1417,9 @@ extension AppModel {
         switch event {
         case .stateChanged(let state):
             voiceSessionState = state
+            if state == .connected {
+                watchAvailableDirectMessageStreamsAutomatically()
+            }
         case .latencyUpdated(let milliseconds):
             voiceLatencyMilliseconds = milliseconds
         case .participantChanged(let participant):
@@ -1817,6 +1759,7 @@ extension AppModel {
 
     func isChannelNotificationMutationPending(_ channelID: ChannelID) -> Bool {
         channelNotificationMutationTasks[channelID] != nil
+            || categoryCollapseMutationTasks[channelID] != nil
     }
 
     func guildNotificationSettings(for guild: Guild) -> GuildNotificationSettings {
@@ -1872,6 +1815,7 @@ extension AppModel {
 
     func reportMainWindowActive(_ isActive: Bool) {
         mainWindowIsActive = isActive
+        updateApplicationStreamWindowActivity(isActive)
         let session = accountSession()
         let precedingUpdate = clientAppStateUpdateTask
         clientAppStateUpdateTask = Task {
@@ -1957,6 +1901,9 @@ extension AppModel {
 
     func reportConversationHistoryLoaded(channelID: ChannelID) {
         guard channelID == selectedChannelID || channelID == openThread?.id else { return }
+        AppPerformanceSignposts.reportConversationHistoryReady(
+            channelID: channelID
+        )
         AppPerformanceSignposts.reportStartupConversationHistoryReady(
             channelID: channelID
         )

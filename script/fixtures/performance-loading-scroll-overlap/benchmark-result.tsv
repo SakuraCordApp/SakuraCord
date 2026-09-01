@@ -1,0 +1,6 @@
+outcome	completed
+target	Google Labs
+surface	timeline
+display_maximum_frames_per_second	60
+initial_message_count	10
+message_count	100

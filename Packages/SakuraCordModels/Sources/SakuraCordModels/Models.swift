@@ -260,37 +260,6 @@ public struct ChannelNotificationOverride: Codable, Hashable, Sendable {
     }
 }
 
-public struct GuildNotificationSettings: Codable, Hashable, Sendable {
-    public var guildID: GuildID?
-    public var messageNotifications: MessageNotificationLevel
-    public var isMuted: Bool
-    public var muteConfiguration: DiscordMuteConfiguration?
-    public var suppressEveryone: Bool
-    public var suppressRoles: Bool
-    public var flags: UInt64
-    public var channelOverrides: [ChannelNotificationOverride]
-
-    public init(
-        guildID: GuildID?,
-        messageNotifications: MessageNotificationLevel = .onlyMentions,
-        isMuted: Bool = false,
-        muteConfiguration: DiscordMuteConfiguration? = nil,
-        suppressEveryone: Bool = false,
-        suppressRoles: Bool = false,
-        flags: UInt64 = 0,
-        channelOverrides: [ChannelNotificationOverride] = []
-    ) {
-        self.guildID = guildID
-        self.messageNotifications = messageNotifications
-        self.isMuted = isMuted
-        self.muteConfiguration = muteConfiguration
-        self.suppressEveryone = suppressEveryone
-        self.suppressRoles = suppressRoles
-        self.flags = flags
-        self.channelOverrides = channelOverrides
-    }
-}
-
 public struct ChannelReadState: Codable, Hashable, Sendable {
     public var channelID: ChannelID
     public var lastAcknowledgedMessageID: MessageID?
@@ -1382,6 +1351,9 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
     public var globalDisplayName: String?
     public var activityText: String?
     public var customStatus: String?
+    /// Discord's membership-screening state. A pending member does not have
+    /// normal guild channel access even when role IDs are already present.
+    public var isPending: Bool?
     /// Absolute row index in Discord's virtualized guild member list. This is
     /// absent for DMs, fallback stores, and member lookups that are not backed
     /// by a `GUILD_MEMBER_LIST_UPDATE` range.
@@ -1405,6 +1377,7 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
         globalDisplayName: String? = nil,
         activityText: String? = nil,
         customStatus: String? = nil,
+        isPending: Bool? = nil,
         memberListIndex: Int? = nil
     ) {
         self.user = user
@@ -1420,6 +1393,7 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
         self.globalDisplayName = globalDisplayName
         self.activityText = activityText
         self.customStatus = customStatus
+        self.isPending = isPending
         self.memberListIndex = memberListIndex
     }
 
@@ -1437,6 +1411,7 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
         globalDisplayName: String? = nil,
         activityText: String? = nil,
         customStatus: String? = nil,
+        isPending: Bool? = nil,
         memberListIndex: Int? = nil
     ) {
         self.user = user
@@ -1452,6 +1427,7 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
         self.globalDisplayName = globalDisplayName
         self.activityText = activityText
         self.customStatus = customStatus
+        self.isPending = isPending
         self.memberListIndex = memberListIndex
     }
 
@@ -1727,11 +1703,19 @@ public enum GuildRailItem: Codable, Equatable, Hashable, Sendable, Identifiable 
 public struct BootstrapSnapshot: Codable, Equatable, Sendable {
     public var currentUser: User
     public var knownUsers: [User]
+    public var quickSwitcherUserIDs: [UserID]
+    public var messageSearchUsers: [User]
+    public var messageSearchUserBoosterChannelIDs: Set<ChannelID>
     public var friendUserIDs: Set<UserID>
+    public var blockedOrIgnoredUserIDs: Set<UserID>
     public var relationshipNicknamesByUserID: [UserID: String]
     public var userSearchAliasesByUserID: [UserID: [String]]
+    public var quickSwitcherGuildMemberUserIDs: [GuildID: [UserID]]
+    public var quickSwitcherJoinedGuildMemberUserIDs: [GuildID: [UserID]]
+    public var quickSwitcherGuildMemberAliases: [GuildID: [UserID: String]]
     public var guilds: [Guild]
     public var guildRailItems: [GuildRailItem]
+    public var forwardGuildStoreOrder: [GuildID]
     public var channels: [Channel]
     public var forwardChannelStoreOrder: [ChannelID]
     public var threads: [MessageThreadSummary]
@@ -1744,11 +1728,19 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
     public init(
         currentUser: User,
         knownUsers: [User] = [],
+        quickSwitcherUserIDs: [UserID]? = nil,
+        messageSearchUsers: [User]? = nil,
+        messageSearchUserBoosterChannelIDs: Set<ChannelID>? = nil,
         friendUserIDs: Set<UserID> = [],
+        blockedOrIgnoredUserIDs: Set<UserID> = [],
         relationshipNicknamesByUserID: [UserID: String] = [:],
         userSearchAliasesByUserID: [UserID: [String]] = [:],
+        quickSwitcherGuildMemberUserIDs: [GuildID: [UserID]] = [:],
+        quickSwitcherJoinedGuildMemberUserIDs: [GuildID: [UserID]] = [:],
+        quickSwitcherGuildMemberAliases: [GuildID: [UserID: String]] = [:],
         guilds: [Guild],
         guildRailItems: [GuildRailItem]? = nil,
+        forwardGuildStoreOrder: [GuildID]? = nil,
         channels: [Channel],
         forwardChannelStoreOrder: [ChannelID]? = nil,
         threads: [MessageThreadSummary] = [],
@@ -1760,11 +1752,20 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
     ) {
         self.currentUser = currentUser
         self.knownUsers = knownUsers
+        self.quickSwitcherUserIDs = quickSwitcherUserIDs ?? knownUsers.map(\.id)
+        self.messageSearchUsers = messageSearchUsers ?? knownUsers
+        self.messageSearchUserBoosterChannelIDs = messageSearchUserBoosterChannelIDs
+            ?? Set(channels.lazy.filter { $0.kind == .directMessage }.map(\.id))
         self.friendUserIDs = friendUserIDs
+        self.blockedOrIgnoredUserIDs = blockedOrIgnoredUserIDs
         self.relationshipNicknamesByUserID = relationshipNicknamesByUserID
         self.userSearchAliasesByUserID = userSearchAliasesByUserID
+        self.quickSwitcherGuildMemberUserIDs = quickSwitcherGuildMemberUserIDs
+        self.quickSwitcherJoinedGuildMemberUserIDs = quickSwitcherJoinedGuildMemberUserIDs
+        self.quickSwitcherGuildMemberAliases = quickSwitcherGuildMemberAliases
         self.guilds = guilds
         self.guildRailItems = guildRailItems ?? guilds.map { .guild($0.id) }
+        self.forwardGuildStoreOrder = forwardGuildStoreOrder ?? guilds.map(\.id)
         self.channels = channels
         self.forwardChannelStoreOrder = forwardChannelStoreOrder ?? channels.map(\.id)
         self.threads = threads
@@ -1776,9 +1777,16 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case currentUser, knownUsers, friendUserIDs, relationshipNicknamesByUserID
+        case currentUser, knownUsers, quickSwitcherUserIDs, messageSearchUsers
+        case messageSearchUserBoosterChannelIDs, friendUserIDs
+        case blockedOrIgnoredUserIDs
+        case relationshipNicknamesByUserID
         case userSearchAliasesByUserID
-        case guilds, guildRailItems, channels, forwardChannelStoreOrder
+        case quickSwitcherGuildMemberUserIDs
+        case quickSwitcherJoinedGuildMemberUserIDs
+        case quickSwitcherGuildMemberAliases
+        case guilds, guildRailItems, forwardGuildStoreOrder
+        case channels, forwardChannelStoreOrder
         case threads, activeJoinedThreads
         case members, readStates
         case notificationSettings, usesNewNotifications
@@ -1788,7 +1796,22 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         currentUser = try container.decode(User.self, forKey: .currentUser)
         knownUsers = try container.decodeIfPresent([User].self, forKey: .knownUsers) ?? []
+        quickSwitcherUserIDs = try container.decodeIfPresent(
+            [UserID].self,
+            forKey: .quickSwitcherUserIDs
+        ) ?? knownUsers.map(\.id)
+        messageSearchUsers = try container.decodeIfPresent(
+            [User].self,
+            forKey: .messageSearchUsers
+        ) ?? knownUsers
+        let decodedSearchBoosterIDs = try container.decodeIfPresent(
+            Set<ChannelID>.self, forKey: .messageSearchUserBoosterChannelIDs
+        )
+        messageSearchUserBoosterChannelIDs = decodedSearchBoosterIDs ?? []
         friendUserIDs = try container.decodeIfPresent(Set<UserID>.self, forKey: .friendUserIDs) ?? []
+        blockedOrIgnoredUserIDs = try container.decodeIfPresent(
+            Set<UserID>.self, forKey: .blockedOrIgnoredUserIDs
+        ) ?? []
         relationshipNicknamesByUserID =
             try container.decodeIfPresent(
                 [UserID: String].self, forKey: .relationshipNicknamesByUserID
@@ -1797,11 +1820,33 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
             try container.decodeIfPresent(
                 [UserID: [String]].self, forKey: .userSearchAliasesByUserID
             ) ?? [:]
+        quickSwitcherGuildMemberUserIDs =
+            try container.decodeIfPresent(
+                [GuildID: [UserID]].self, forKey: .quickSwitcherGuildMemberUserIDs
+            ) ?? [:]
+        quickSwitcherJoinedGuildMemberUserIDs =
+            try container.decodeIfPresent(
+                [GuildID: [UserID]].self,
+                forKey: .quickSwitcherJoinedGuildMemberUserIDs
+            ) ?? [:]
+        quickSwitcherGuildMemberAliases =
+            try container.decodeIfPresent(
+                [GuildID: [UserID: String]].self,
+                forKey: .quickSwitcherGuildMemberAliases
+            ) ?? [:]
         guilds = try container.decode([Guild].self, forKey: .guilds)
         guildRailItems =
             try container.decodeIfPresent([GuildRailItem].self, forKey: .guildRailItems)
                 ?? guilds.map { .guild($0.id) }
+        forwardGuildStoreOrder =
+            try container.decodeIfPresent([GuildID].self, forKey: .forwardGuildStoreOrder)
+                ?? guilds.map(\.id)
         channels = try container.decode([Channel].self, forKey: .channels)
+        if decodedSearchBoosterIDs == nil {
+            messageSearchUserBoosterChannelIDs = Set(
+                channels.lazy.filter { $0.kind == .directMessage }.map(\.id)
+            )
+        }
         forwardChannelStoreOrder =
             try container.decodeIfPresent(
                 [ChannelID].self, forKey: .forwardChannelStoreOrder
@@ -1825,13 +1870,33 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(currentUser, forKey: .currentUser)
         try container.encode(knownUsers, forKey: .knownUsers)
+        try container.encode(quickSwitcherUserIDs, forKey: .quickSwitcherUserIDs)
+        try container.encode(messageSearchUsers, forKey: .messageSearchUsers)
+        try container.encode(
+            messageSearchUserBoosterChannelIDs,
+            forKey: .messageSearchUserBoosterChannelIDs
+        )
         try container.encode(friendUserIDs, forKey: .friendUserIDs)
+        try container.encode(blockedOrIgnoredUserIDs, forKey: .blockedOrIgnoredUserIDs)
         try container.encode(
             relationshipNicknamesByUserID, forKey: .relationshipNicknamesByUserID
         )
         try container.encode(userSearchAliasesByUserID, forKey: .userSearchAliasesByUserID)
+        try container.encode(
+            quickSwitcherGuildMemberUserIDs,
+            forKey: .quickSwitcherGuildMemberUserIDs
+        )
+        try container.encode(
+            quickSwitcherJoinedGuildMemberUserIDs,
+            forKey: .quickSwitcherJoinedGuildMemberUserIDs
+        )
+        try container.encode(
+            quickSwitcherGuildMemberAliases,
+            forKey: .quickSwitcherGuildMemberAliases
+        )
         try container.encode(guilds, forKey: .guilds)
         try container.encode(guildRailItems, forKey: .guildRailItems)
+        try container.encode(forwardGuildStoreOrder, forKey: .forwardGuildStoreOrder)
         try container.encode(channels, forKey: .channels)
         try container.encode(forwardChannelStoreOrder, forKey: .forwardChannelStoreOrder)
         try container.encode(threads, forKey: .threads)
@@ -1843,22 +1908,13 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
     }
 }
 
-public struct MessagePage: Codable, Equatable, Sendable {
-    public var messages: [Message]
-    public var hasMoreBefore: Bool
-
-    public init(messages: [Message], hasMoreBefore: Bool) {
-        self.messages = messages
-        self.hasMoreBefore = hasMoreBefore
-    }
-}
-
 public struct SendMessageDraft: Equatable, Sendable {
     public static let maximumAttachmentCount = 10
 
     public var channelID: ChannelID
     public var content: String
     public var replyTo: MessageID?
+    public var mentionsRepliedUser: Bool
     public var attachments: [ForumPostAttachment]
     public var attachmentURLs: [URL] {
         get { attachments.map(\.url) }
@@ -1869,6 +1925,7 @@ public struct SendMessageDraft: Equatable, Sendable {
 
     public init(
         channelID: ChannelID, content: String, replyTo: MessageID? = nil,
+        mentionsRepliedUser: Bool = true,
         attachmentURLs: [URL] = [],
         attachments: [ForumPostAttachment]? = nil,
         nonce: String = ClientNonce.make(), stickerIDs: [String] = []
@@ -1876,6 +1933,7 @@ public struct SendMessageDraft: Equatable, Sendable {
         self.channelID = channelID
         self.content = content
         self.replyTo = replyTo
+        self.mentionsRepliedUser = mentionsRepliedUser
         self.attachments =
             attachments ?? attachmentURLs.map { ForumPostAttachment(url: $0) }
         self.nonce = nonce
@@ -1908,89 +1966,5 @@ public struct VoiceConnectionInfo: Equatable, Sendable {
         self.sessionID = sessionID
         self.token = token
         self.endpoint = endpoint
-    }
-}
-
-public struct VoiceParticipantState: Equatable, Sendable {
-    public var userID: UserID
-    public var channelID: ChannelID?
-    public var guildID: GuildID?
-    public var sessionID: String
-    public var isMuted: Bool
-    public var isDeafened: Bool
-    public var isSelfMuted: Bool
-    public var isSelfDeafened: Bool
-    public var isSuppressed: Bool
-    public var isStreaming: Bool
-    public var isVideoEnabled: Bool
-
-    public init(
-        userID: UserID,
-        channelID: ChannelID?,
-        guildID: GuildID?,
-        sessionID: String,
-        isMuted: Bool = false,
-        isDeafened: Bool = false,
-        isSelfMuted: Bool = false,
-        isSelfDeafened: Bool = false,
-        isSuppressed: Bool = false,
-        isStreaming: Bool = false,
-        isVideoEnabled: Bool = false
-    ) {
-        self.userID = userID
-        self.channelID = channelID
-        self.guildID = guildID
-        self.sessionID = sessionID
-        self.isMuted = isMuted
-        self.isDeafened = isDeafened
-        self.isSelfMuted = isSelfMuted
-        self.isSelfDeafened = isSelfDeafened
-        self.isSuppressed = isSuppressed
-        self.isStreaming = isStreaming
-        self.isVideoEnabled = isVideoEnabled
-    }
-}
-
-public struct PrivateCallRing: Equatable, Hashable, Sendable {
-    public var recipientID: UserID
-    public var senderID: UserID
-
-    public init(recipientID: UserID, senderID: UserID) {
-        self.recipientID = recipientID
-        self.senderID = senderID
-    }
-}
-
-/// Discord's app-wide state for an active direct-message or group-DM call.
-///
-/// `voiceStates` is nil on partial CALL_UPDATE payloads. Callers should retain
-/// the last complete participant snapshot until individual VOICE_STATE_UPDATE
-/// events reconcile it.
-public struct PrivateCall: Equatable, Sendable {
-    public var channelID: ChannelID
-    public var messageID: MessageID?
-    public var region: String?
-    public var ongoingRings: [PrivateCallRing]
-    public var voiceStates: [VoiceParticipantState]?
-    public var isUnavailable: Bool
-
-    public init(
-        channelID: ChannelID,
-        messageID: MessageID? = nil,
-        region: String? = nil,
-        ongoingRings: [PrivateCallRing] = [],
-        voiceStates: [VoiceParticipantState]? = nil,
-        isUnavailable: Bool = false
-    ) {
-        self.channelID = channelID
-        self.messageID = messageID
-        self.region = region
-        self.ongoingRings = ongoingRings
-        self.voiceStates = voiceStates
-        self.isUnavailable = isUnavailable
-    }
-
-    public func isRinging(_ userID: UserID) -> Bool {
-        ongoingRings.contains { $0.recipientID == userID }
     }
 }

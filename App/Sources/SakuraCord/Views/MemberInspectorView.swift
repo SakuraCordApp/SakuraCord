@@ -63,6 +63,7 @@ struct MemberInspectorView: View {
     let customEmojiURLsByID: [String: URL]
     let profilePresentation: ProfilePresentationState?
     let isProfilePresented: Bool
+    let interactionsBlocked: Bool
     let selectMember: (Member) -> Void
     let dismissProfile: () -> Void
     let viewportIdentity: ChannelID?
@@ -73,6 +74,7 @@ struct MemberInspectorView: View {
         customEmojiURLsByID: [String: URL] = [:],
         profilePresentation: ProfilePresentationState?,
         isProfilePresented: Bool,
+        interactionsBlocked: Bool = false,
         selectMember: @escaping (Member) -> Void,
         dismissProfile: @escaping () -> Void,
         viewportIdentity: ChannelID? = nil,
@@ -82,6 +84,7 @@ struct MemberInspectorView: View {
         self.customEmojiURLsByID = customEmojiURLsByID
         self.profilePresentation = profilePresentation
         self.isProfilePresented = isProfilePresented
+        self.interactionsBlocked = interactionsBlocked
         self.selectMember = selectMember
         self.dismissProfile = dismissProfile
         self.viewportIdentity = viewportIdentity
@@ -94,6 +97,7 @@ struct MemberInspectorView: View {
             customEmojiURLsByID: customEmojiURLsByID,
             profilePresentation: profilePresentation,
             isProfilePresented: isProfilePresented,
+            interactionsBlocked: interactionsBlocked,
             selectMember: selectMember,
             dismissProfile: dismissProfile,
             runsPerformanceAutoScroll: runsPerformanceAutoScroll,
@@ -143,8 +147,8 @@ struct MemberListLoadingSkeleton: View {
     }
 }
 
-struct MemberSection: Identifiable, Equatable {
-    enum SectionIdentifier: Hashable {
+nonisolated struct MemberSection: Identifiable, Equatable, Sendable {
+    nonisolated enum SectionIdentifier: Hashable, Sendable {
         case role(name: String, position: Int)
         case online
         case offline
@@ -283,9 +287,17 @@ struct MemberSection: Identifiable, Equatable {
         roles: [GuildRole]
     ) -> [MemberSection] {
         let rolesByID = Dictionary(uniqueKeysWithValues: roles.map { ($0.id, $0) })
-        let membersByGroup = Dictionary(grouping: members) { member in
+        let inferredMembersByGroup = Dictionary(grouping: members.lazy.filter {
+            $0.memberListIndex == nil
+        }) { member in
             member.roleID?.description ?? (member.isOnline ? "online" : "offline")
         }
+        let indexedMembers = members.lazy.compactMap { member -> (Int, Member)? in
+            member.memberListIndex.map { ($0, member) }
+        }.sorted { lhs, rhs in
+            lhs.0 < rhs.0
+        }
+        var indexedMemberCursor = 0
         var startIndex = 0
         var sections: [MemberSection] = []
         sections.reserveCapacity(groups.count)
@@ -296,18 +308,26 @@ struct MemberSection: Identifiable, Equatable {
             } else {
                 nil
             }
-            let indexedMembers = members
-                .filter { member in
-                    guard let memberRange else { return false }
-                    return member.memberListIndex.map(memberRange.contains) == true
+            var membersInRange: [Member] = []
+            if let memberRange {
+                while indexedMemberCursor < indexedMembers.count,
+                      indexedMembers[indexedMemberCursor].0 < memberRange.lowerBound
+                {
+                    indexedMemberCursor += 1
                 }
-                .sorted {
-                    ($0.memberListIndex ?? .max) < ($1.memberListIndex ?? .max)
+                let rangeStart = indexedMemberCursor
+                while indexedMemberCursor < indexedMembers.count,
+                      indexedMembers[indexedMemberCursor].0 <= memberRange.upperBound
+                {
+                    indexedMemberCursor += 1
                 }
-            let inferredMembers = (membersByGroup[group.id] ?? []).filter {
-                $0.memberListIndex == nil
+                membersInRange.reserveCapacity(indexedMemberCursor - rangeStart)
+                membersInRange.append(contentsOf: indexedMembers[
+                    rangeStart ..< indexedMemberCursor
+                ].map(\.1))
             }
-            let loadedMembers = indexedMembers + inferredMembers
+            let loadedMembers = membersInRange
+                + (inferredMembersByGroup[group.id] ?? [])
             if group.id == "online" || group.id == "offline" {
                 sections.append(MemberSection(
                     id: group.id == "online" ? .online : .offline,
@@ -475,6 +495,7 @@ struct DecoratedAvatarView: View {
     let avatarURL: URL?
     let decorationURL: URL?
     let size: CGFloat
+    var animatesDecoration = true
 
     var body: some View {
         ZStack {
@@ -482,6 +503,7 @@ struct DecoratedAvatarView: View {
             if let decorationURL {
                 AnimatedRemoteImage(
                     url: decorationURL,
+                    animates: animatesDecoration,
                     maximumPixelDimension: decorationPixelDimension
                 )
                     .frame(width: size * 1.22, height: size * 1.22)

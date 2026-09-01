@@ -102,17 +102,22 @@ nonisolated enum TimelineInitialPositionPolicy {
     }
 }
 
-nonisolated enum TimelineEarlierHistoryLoadingPolicy {
+nonisolated enum TimelineHistoryDirection: CaseIterable, Sendable {
+    case earlier
+    case later
+}
+
+nonisolated enum TimelineHistoryLoadingPolicy {
     static func shouldLoad(
-        isNearTop: Bool,
+        isNearBoundary: Bool,
         contentFitsViewport: Bool,
         allowsAutomaticLoading: Bool,
         hasMoreMessages: Bool,
         isLoading: Bool,
-        hasUnresolvedUnreadBoundary: Bool,
+        requiresUserScrollIntent: Bool,
         hasUserScrollIntent: Bool
     ) -> Bool {
-        guard isNearTop,
+        guard isNearBoundary,
               allowsAutomaticLoading,
               hasMoreMessages,
               !isLoading
@@ -120,12 +125,12 @@ nonisolated enum TimelineEarlierHistoryLoadingPolicy {
             return false
         }
         return contentFitsViewport
-            || !hasUnresolvedUnreadBoundary
+            || !requiresUserScrollIntent
             || hasUserScrollIntent
     }
 }
 
-nonisolated enum TimelineEarlierHistoryScrollIntentPolicy {
+nonisolated enum TimelineHistoryScrollIntentPolicy {
     static func shouldRetain(
         hasIntent: Bool,
         isGestureActive: Bool,
@@ -138,16 +143,27 @@ nonisolated enum TimelineEarlierHistoryScrollIntentPolicy {
 enum NativeTimelineConversation: Hashable {
     case channel(ChannelID?)
     case thread(ChannelID?)
+    case search
 
     var id: ChannelID? {
         switch self {
         case let .channel(id), let .thread(id):
             id
+        case .search:
+            nil
         }
     }
 
     var supportsReply: Bool {
-        true
+        self != .search
+    }
+
+    var activatesMessageOnClick: Bool {
+        self == .search
+    }
+
+    var messageInteractionContext: NativeTimelineMessageInteractionContext {
+        self == .search ? .searchResult : .conversation
     }
 
     var loaderKind: NativeTimelineLoaderKind {
@@ -156,6 +172,8 @@ enum NativeTimelineConversation: Hashable {
             .messages
         case .thread:
             .replies
+        case .search:
+            .messages
         }
     }
 
@@ -166,6 +184,8 @@ enum NativeTimelineConversation: Hashable {
             model.messageRows
         case .thread:
             model.threadMessageRows
+        case .search:
+            model.messageSearch.rows
         }
     }
 
@@ -176,6 +196,8 @@ enum NativeTimelineConversation: Hashable {
             model.messageRowsRevision
         case .thread:
             model.threadMessageRowsRevision
+        case .search:
+            model.messageSearch.rowsRevision
         }
     }
 
@@ -186,6 +208,8 @@ enum NativeTimelineConversation: Hashable {
             model.messageRowsUpdateHint
         case .thread:
             model.threadMessageRowsUpdateHint
+        case .search:
+            nil
         }
     }
 
@@ -196,8 +220,15 @@ enum NativeTimelineConversation: Hashable {
             model.messageRowsUpdateJournal
         case .thread:
             model.threadMessageRowsUpdateJournal
+        case .search:
+            model.messageSearch.rowsUpdateJournal
         }
     }
+}
+
+nonisolated enum NativeTimelineMessageInteractionContext: Equatable {
+    case conversation
+    case searchResult
 }
 
 nonisolated enum NativeTimelineLoaderKind: Equatable {
@@ -357,14 +388,36 @@ enum NativeMessageTimelineItem: Equatable {
 
 nonisolated enum NativeTimelineAutomaticHistoryPolicy {
     static func shouldReevaluateAfterUpdate(
-        wasLoadingEarlier: Bool,
-        isLoadingEarlier: Bool,
+        wasLoading: Bool,
+        isLoading: Bool,
         previousRowCount: Int,
         currentRowCount: Int
     ) -> Bool {
-        wasLoadingEarlier
-            && !isLoadingEarlier
+        wasLoading
+            && !isLoading
             && currentRowCount > previousRowCount
+    }
+
+}
+
+nonisolated enum NativeTimelineMessageJumpHighlightPolicy {
+    static let holdDuration: TimeInterval = 0.3
+    static let fadeDuration: TimeInterval = 1.2
+    static let totalDuration = holdDuration + fadeDuration
+
+    static func opacity(
+        elapsed: TimeInterval,
+        reducesMotion: Bool = false
+    ) -> CGFloat {
+        let elapsed = max(0, elapsed)
+        guard elapsed < totalDuration else { return 0 }
+        guard !reducesMotion, elapsed > holdDuration else { return 1 }
+        let progress = min(
+            1,
+            (elapsed - holdDuration) / fadeDuration
+        )
+        let easedProgress = progress * progress * (3 - 2 * progress)
+        return CGFloat(1 - easedProgress)
     }
 }
 
@@ -454,12 +507,50 @@ enum NativeTimelineBenchmarkFinishSequence {
     }
 }
 
+nonisolated struct NativeTimelineRenderTelemetry: Equatable, Sendable {
+    let canvasDrawCount: Int
+    let canvasDrawTotalDuration: TimeInterval
+    let canvasDrawMaximumDuration: TimeInterval
+    let rowRasterCount: Int
+    let rowRasterTotalDuration: TimeInterval
+    let rowRasterMaximumDuration: TimeInterval
+    let rowRasterMaximumHeight: CGFloat
+    let rowBitmapCacheHitCount: Int
+    let liveScrollDirectPaintCount: Int
+
+    var canvasDrawAverageDuration: TimeInterval {
+        canvasDrawCount > 0
+            ? canvasDrawTotalDuration / Double(canvasDrawCount)
+            : 0
+    }
+
+    var rowRasterAverageDuration: TimeInterval {
+        rowRasterCount > 0
+            ? rowRasterTotalDuration / Double(rowRasterCount)
+            : 0
+    }
+}
+
 @MainActor
 enum NativeTimelineBenchmarkArtifact {
+    struct DelayedTick {
+        let offset: TimeInterval
+        let interval: TimeInterval
+    }
+
     static func write(
         outcome: NativeTimelineBenchmarkFinishOutcome,
         completedDistance: CGFloat,
-        elapsed: TimeInterval
+        elapsed: TimeInterval,
+        completedTicks: Int? = nil,
+        delayedTicks: Int? = nil,
+        tickIntervals: [TimeInterval]? = nil,
+        delayedTickSamples: [DelayedTick]? = nil,
+        maximumTickInterval: TimeInterval? = nil,
+        maximumScrollWork: TimeInterval? = nil,
+        historyStarvedTicks: Int? = nil,
+        maximumConsecutiveHistoryStarvedTicks: Int? = nil,
+        renderTelemetry: NativeTimelineRenderTelemetry? = nil
     ) {
         guard let path = ProcessInfo.processInfo.environment[
             "SAKURACORD_PERFORMANCE_RESULT_PATH"
@@ -472,7 +563,7 @@ enum NativeTimelineBenchmarkArtifact {
         )
         let duration = NativeTimelineBenchmarkScrollPolicy.duration
         let overshoot = max(0, elapsed - duration)
-        let contents = """
+        var contents = """
         outcome\t\(outcome.rawValue)
         elapsed_seconds\t\(elapsed)
         nominal_duration_seconds\t\(duration)
@@ -483,11 +574,79 @@ enum NativeTimelineBenchmarkArtifact {
         spatial_quality_ratio\t\(quality)
 
         """
+        if let completedTicks,
+           let delayedTicks,
+           let tickIntervals,
+           let delayedTickSamples,
+           let maximumTickInterval,
+           let maximumScrollWork,
+           let historyStarvedTicks,
+           let maximumConsecutiveHistoryStarvedTicks
+        {
+            let sortedTickIntervals = tickIntervals.sorted()
+            let medianTickInterval = percentile(
+                sortedTickIntervals,
+                percentile: 0.50
+            )
+            let p95TickInterval = percentile(
+                sortedTickIntervals,
+                percentile: 0.95
+            )
+            let p99TickInterval = percentile(
+                sortedTickIntervals,
+                percentile: 0.99
+            )
+            let delayedTickRate = completedTicks > 0
+                ? Double(delayedTicks) / Double(completedTicks)
+                : 0
+            let delayedTickSampleText = delayedTickSamples.map { sample in
+                "\(sample.offset * 1_000):\(sample.interval * 1_000)"
+            }.joined(separator: ",")
+            contents += """
+            completed_ticks\t\(completedTicks)
+            delayed_ticks_over_33ms\t\(delayedTicks)
+            delayed_tick_rate\t\(delayedTickRate)
+            median_tick_interval_ms\t\(medianTickInterval * 1_000)
+            p95_tick_interval_ms\t\(p95TickInterval * 1_000)
+            p99_tick_interval_ms\t\(p99TickInterval * 1_000)
+            maximum_tick_interval_ms\t\(maximumTickInterval * 1_000)
+            delayed_tick_samples_offset_ms_interval_ms\t\(delayedTickSampleText)
+            maximum_scroll_work_ms\t\(maximumScrollWork * 1_000)
+            history_starved_ticks\t\(historyStarvedTicks)
+            maximum_consecutive_history_starved_ticks\t\(maximumConsecutiveHistoryStarvedTicks)
+
+            """
+        }
+        if let renderTelemetry {
+            contents += """
+            canvas_draw_count\t\(renderTelemetry.canvasDrawCount)
+            canvas_draw_total_ms\t\(renderTelemetry.canvasDrawTotalDuration * 1_000)
+            canvas_draw_average_ms\t\(renderTelemetry.canvasDrawAverageDuration * 1_000)
+            canvas_draw_maximum_ms\t\(renderTelemetry.canvasDrawMaximumDuration * 1_000)
+            row_raster_count\t\(renderTelemetry.rowRasterCount)
+            row_raster_total_ms\t\(renderTelemetry.rowRasterTotalDuration * 1_000)
+            row_raster_average_ms\t\(renderTelemetry.rowRasterAverageDuration * 1_000)
+            row_raster_maximum_ms\t\(renderTelemetry.rowRasterMaximumDuration * 1_000)
+            row_raster_maximum_height_points\t\(renderTelemetry.rowRasterMaximumHeight)
+            row_bitmap_cache_hit_count\t\(renderTelemetry.rowBitmapCacheHitCount)
+            live_scroll_direct_paint_count\t\(renderTelemetry.liveScrollDirectPaintCount)
+
+            """
+        }
         try? contents.write(
             to: URL(fileURLWithPath: path),
             atomically: true,
             encoding: .utf8
         )
+    }
+
+    private static func percentile(
+        _ sortedValues: [TimeInterval],
+        percentile: Double
+    ) -> TimeInterval {
+        guard !sortedValues.isEmpty else { return 0 }
+        let rank = Int(ceil(percentile * Double(sortedValues.count)))
+        return sortedValues[min(max(rank - 1, 0), sortedValues.count - 1)]
     }
 }
 
@@ -532,29 +691,29 @@ nonisolated enum NativeTimelineEarlierLoaderPolicy {
 }
 
 nonisolated enum NativeMessageTimelineLayoutPolicy {
-    struct LeadingHistoryReserveUpdate: Equatable {
+    struct HistoryReserveUpdate: Equatable {
         let reserve: CGFloat
         let grew: Bool
     }
 
-    static func consumingLeadingHistoryReserve(
+    static func consumingHistoryReserve(
         _ currentReserve: CGFloat,
-        prependedHeight: CGFloat,
+        materializedHeight: CGFloat,
         chunk: CGFloat
-    ) -> LeadingHistoryReserveUpdate {
+    ) -> HistoryReserveUpdate {
         let currentReserve = max(0, currentReserve)
-        let prependedHeight = max(0, prependedHeight)
+        let materializedHeight = max(0, materializedHeight)
         let chunk = max(1, chunk)
-        guard prependedHeight > 0 else {
-            return LeadingHistoryReserveUpdate(
+        guard materializedHeight > 0 else {
+            return HistoryReserveUpdate(
                 reserve: currentReserve,
                 grew: false
             )
         }
-        let remainingReserve = currentReserve - prependedHeight
+        let remainingReserve = currentReserve - materializedHeight
         let minimumReserve = chunk / 2
         if remainingReserve >= minimumReserve {
-            return LeadingHistoryReserveUpdate(
+            return HistoryReserveUpdate(
                 reserve: remainingReserve,
                 grew: false
             )
@@ -569,7 +728,7 @@ nonisolated enum NativeMessageTimelineLayoutPolicy {
             1,
             ceil((minimumReserve - remainingReserve) / chunk)
         )
-        return LeadingHistoryReserveUpdate(
+        return HistoryReserveUpdate(
             reserve:
                 remainingReserve
                 + addedChunks * chunk,
@@ -608,14 +767,35 @@ nonisolated enum NativeMessageTimelineLayoutPolicy {
         )
     }
 
+    static func provisionalHistoryMaximumY(
+        materializedMaximumY: CGFloat,
+        reserve: CGFloat,
+        viewportHeight: CGFloat,
+        bottomInset: CGFloat,
+        allowsProvisionalHistory: Bool
+    ) -> CGFloat {
+        let materializedDocumentHeight =
+            materializedMaximumY + max(0, bottomInset)
+        let provisionalDepth = allowsProvisionalHistory
+            ? provisionalHistoryDepth(
+                reserve: reserve,
+                viewportHeight: viewportHeight
+            )
+            : 0
+        return max(
+            0,
+            materializedDocumentHeight + provisionalDepth - viewportHeight
+        )
+    }
+
     static func showsHistorySkeleton(
         hasMoreMessages: Bool,
-        isLoadingEarlier: Bool,
+        isLoading: Bool,
         followsMaterializedHistoryBoundary: Bool
     ) -> Bool {
         hasMoreMessages
             && (
-                isLoadingEarlier
+                isLoading
                     || followsMaterializedHistoryBoundary
             )
     }

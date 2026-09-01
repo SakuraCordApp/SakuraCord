@@ -67,15 +67,16 @@ public struct MediaDeviceSnapshot: Equatable, Sendable {
 
 public enum MediaDeviceCatalog {
     public static func snapshot() -> MediaDeviceSnapshot {
-        let devices = allAudioDeviceIDs()
-        let defaultInput = defaultDevice(selector: kAudioHardwarePropertyDefaultInputDevice)
-        let defaultOutput = defaultDevice(selector: kAudioHardwarePropertyDefaultOutputDevice)
+        let system = AudioHardwareSystem.shared
+        let devices = (try? system.devices) ?? []
+        let defaultInput = try? system.defaultInputDevice?.id
+        let defaultOutput = try? system.defaultOutputDevice?.id
         let inputs = devices.compactMap { device -> AudioDeviceInfo? in
-            guard channelCount(device: device, scope: kAudioDevicePropertyScopeInput) > 0 else { return nil }
+            guard channelCount(try? device.inputStreamConfiguration) > 0 else { return nil }
             return info(for: device, defaultDevice: defaultInput)
         }
         let outputs = devices.compactMap { device -> AudioDeviceInfo? in
-            guard channelCount(device: device, scope: kAudioDevicePropertyScopeOutput) > 0 else { return nil }
+            guard channelCount(try? device.outputStreamConfiguration) > 0 else { return nil }
             return info(for: device, defaultDevice: defaultOutput)
         }
         let cameraTypes: [AVCaptureDevice.DeviceType] = [
@@ -102,7 +103,10 @@ public enum MediaDeviceCatalog {
 
     static func audioCaptureDevice(deviceID: AudioDeviceID?) -> AVCaptureDevice? {
         guard let deviceID else { return AVCaptureDevice.default(for: .audio) }
-        guard let uid = stringProperty(device: deviceID, selector: kAudioDevicePropertyDeviceUID) else {
+        guard let uid = stringProperty(
+            deviceID: deviceID,
+            selector: kAudioDevicePropertyDeviceUID
+        ) else {
             return nil
         }
         return AVCaptureDevice(uniqueID: uid)
@@ -120,6 +124,10 @@ public enum MediaDeviceCatalog {
         }
     }
 
+    public static func defaultOutputDeviceID() -> AudioDeviceID? {
+        try? AudioHardwareSystem.shared.defaultOutputDevice?.id
+    }
+
     private static func select(_ deviceID: AudioDeviceID, on audioUnit: AudioUnit?) throws(MediaDeviceError) {
         guard let audioUnit else { throw MediaDeviceError.audioUnitUnavailable }
         var value = deviceID
@@ -134,65 +142,39 @@ public enum MediaDeviceCatalog {
         guard status == noErr else { throw MediaDeviceError.coreAudio(status) }
     }
 
-    private static func allAudioDeviceIDs() -> [AudioDeviceID] {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDevices,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var size: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr else {
-            return []
-        }
-        var values = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
-        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &values) == noErr else {
-            return []
-        }
-        return values
+    private static func channelCount(_ buffers: [AudioBuffer]?) -> Int {
+        buffers?.reduce(0) { $0 + Int($1.mNumberChannels) } ?? 0
     }
 
-    private static func defaultDevice(selector: AudioObjectPropertySelector) -> AudioDeviceID? {
-        var address = AudioObjectPropertyAddress(
-            mSelector: selector,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var value = AudioDeviceID(0)
-        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
-        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &value) == noErr else {
-            return nil
-        }
-        return value
-    }
-
-    private static func channelCount(device: AudioDeviceID, scope: AudioObjectPropertyScope) -> Int {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyStreamConfiguration,
-            mScope: scope,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var size: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(device, &address, 0, nil, &size) == noErr, size > 0 else { return 0 }
-        let storage = UnsafeMutableRawPointer.allocate(byteCount: Int(size), alignment: MemoryLayout<AudioBufferList>.alignment)
-        defer { storage.deallocate() }
-        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, storage) == noErr else { return 0 }
-        let list = UnsafeMutableAudioBufferListPointer(storage.assumingMemoryBound(to: AudioBufferList.self))
-        return list.reduce(0) { $0 + Int($1.mNumberChannels) }
-    }
-
-    private static func info(for device: AudioDeviceID, defaultDevice: AudioDeviceID?) -> AudioDeviceInfo? {
-        guard let name = stringProperty(device: device, selector: kAudioObjectPropertyName),
-              let uid = stringProperty(device: device, selector: kAudioDevicePropertyDeviceUID) else { return nil }
+    private static func info(
+        for device: AudioHardwareDevice,
+        defaultDevice: AudioDeviceID?
+    ) -> AudioDeviceInfo? {
+        guard (try? device.isHidden) != true,
+              let name = try? device.name,
+              let uid = stringProperty(
+                  deviceID: device.id,
+                  selector: kAudioDevicePropertyDeviceUID
+              ) else { return nil }
         return AudioDeviceInfo(
-            id: device,
+            id: device.id,
             uid: uid,
             name: name,
-            isDefault: device == defaultDevice,
-            transportType: integerProperty(device: device, selector: kAudioDevicePropertyTransportType) ?? 0
+            isDefault: device.id == defaultDevice,
+            transportType: integerProperty(
+                deviceID: device.id,
+                selector: kAudioDevicePropertyTransportType
+            ) ?? 0
         )
     }
 
-    private static func stringProperty(device: AudioDeviceID, selector: AudioObjectPropertySelector) -> String? {
+    /// The Swift Core Audio hardware API does not expose device UIDs or transport
+    /// types as typed properties. Keep these raw reads isolated to metadata that
+    /// is required for stable persistence and useful route descriptions.
+    private static func stringProperty(
+        deviceID: AudioDeviceID,
+        selector: AudioObjectPropertySelector
+    ) -> String? {
         var address = AudioObjectPropertyAddress(
             mSelector: selector,
             mScope: kAudioObjectPropertyScopeGlobal,
@@ -200,12 +182,12 @@ public enum MediaDeviceCatalog {
         )
         var value: Unmanaged<CFString>?
         var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
-        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &value) == noErr else { return nil }
+        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &value) == noErr else { return nil }
         return value?.takeUnretainedValue() as String?
     }
 
     private static func integerProperty(
-        device: AudioDeviceID,
+        deviceID: AudioDeviceID,
         selector: AudioObjectPropertySelector
     ) -> UInt32? {
         var address = AudioObjectPropertyAddress(
@@ -215,7 +197,7 @@ public enum MediaDeviceCatalog {
         )
         var value: UInt32 = 0
         var size = UInt32(MemoryLayout<UInt32>.size)
-        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &value) == noErr else {
+        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &value) == noErr else {
             return nil
         }
         return value
@@ -229,7 +211,105 @@ public enum MediaDeviceCatalog {
     }
 }
 
+/// Observes the Core Audio system object so device menus and active voice
+/// sessions can react to hot-plug, Bluetooth route, and default-device changes.
+public final class MediaDeviceMonitor: @unchecked Sendable {
+    public typealias Handler = @Sendable (MediaDeviceSnapshot) -> Void
+
+    private final class ListenerOwner: PropertyListenerDelegate, @unchecked Sendable {
+        weak var monitor: MediaDeviceMonitor?
+
+        func propertiesChanged(properties _: [AudioObjectPropertyAddress]) {
+            monitor?.scheduleRefresh()
+        }
+    }
+
+    private static let observedAddresses = [
+        AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        ),
+        AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        ),
+        AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+    ]
+
+    private let queue = DispatchQueue(
+        label: "app.sakuracord.media-device-monitor",
+        qos: .userInitiated
+    )
+    private let handler: Handler
+    private let system = AudioHardwareSystem(id: AudioObjectID(kAudioObjectSystemObject))
+    private let listenerOwner = ListenerOwner()
+    private var isRegistered = false
+    private var pendingRefresh: DispatchWorkItem?
+
+    public init(handler: @escaping Handler) {
+        self.handler = handler
+        listenerOwner.monitor = self
+        system.delegates = [listenerOwner]
+        do {
+            try system.addListener(
+                forProperties: Self.observedAddresses,
+                dispatchQueue: queue
+            )
+            isRegistered = true
+        } catch {
+            system.delegates = []
+        }
+        queue.async { [weak self] in
+            self?.deliverSnapshot()
+        }
+    }
+
+    deinit {
+        listenerOwner.monitor = nil
+        if isRegistered {
+            try? system.removeListener(
+                forProperties: Self.observedAddresses,
+                dispatchQueue: queue
+            )
+        }
+        system.delegates = []
+    }
+
+    private func scheduleRefresh() {
+        dispatchPrecondition(condition: .onQueue(queue))
+        pendingRefresh?.cancel()
+        let refresh = DispatchWorkItem { [weak self] in
+            self?.deliverSnapshot()
+        }
+        pendingRefresh = refresh
+        queue.asyncAfter(deadline: .now() + .milliseconds(150), execute: refresh)
+    }
+
+    private func deliverSnapshot() {
+        dispatchPrecondition(condition: .onQueue(queue))
+        pendingRefresh = nil
+        handler(MediaDeviceCatalog.snapshot())
+    }
+}
+
 public enum MediaDeviceError: Error, Equatable {
     case audioUnitUnavailable
     case coreAudio(OSStatus)
+}
+
+extension MediaDeviceError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .audioUnitUnavailable:
+            "The audio output is not ready for device switching."
+        case let .coreAudio(status):
+            "Core Audio could not use that device (error \(status))."
+        }
+    }
 }

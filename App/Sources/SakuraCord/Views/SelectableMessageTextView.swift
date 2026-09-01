@@ -1,9 +1,11 @@
 import AppKit
 import MessageRendering
+import OSLog
 import SakuraCordModels
 import SwiftUI
+import Synchronization
 
-enum MentionTarget: Hashable {
+nonisolated enum MentionTarget: Hashable, Sendable {
     case unresolved
     case user(UserID)
     case role(RoleID)
@@ -12,7 +14,7 @@ enum MentionTarget: Hashable {
     case message(guildID: GuildID?, channelID: ChannelID, messageID: MessageID)
 }
 
-struct MentionPresentation: Hashable, Identifiable {
+nonisolated struct MentionPresentation: Hashable, Identifiable, Sendable {
     let rawToken: String
     let label: String
     let target: MentionTarget
@@ -280,6 +282,19 @@ private struct RichMessageRenderSignature: Equatable {
 }
 
 nonisolated enum RichMessageAttributedText {
+    private struct PreparedCacheState: Sendable {
+        var values: [String: Prepared] = [:]
+        var insertionOrder: [String] = []
+        var evictionIndex = 0
+    }
+
+    private static let maximumPreparedCacheEntries = 2_048
+    private static let preparedCache = Mutex(PreparedCacheState())
+    private static let performanceSignposter = OSSignposter(
+        subsystem: "dev.sakuracord.SakuraCord",
+        category: "PointsOfInterest"
+    )
+
     enum InlineToken: Hashable, Sendable {
         case customEmoji(RenderedEmoji)
         case mention(RenderedMention)
@@ -292,6 +307,16 @@ nonisolated enum RichMessageAttributedText {
     }
 
     nonisolated static func prepare(source: String) -> Prepared {
+        if let cached = preparedCache.withLock({ $0.values[source] }) {
+            return cached
+        }
+        let signpost = performanceSignposter.beginInterval(
+            "RichTextParse",
+            id: performanceSignposter.makeSignpostID()
+        )
+        defer {
+            performanceSignposter.endInterval("RichTextParse", signpost)
+        }
         let document = MessageDocument(source: source)
         var transformed = ""
         var tokens: [InlineToken] = []
@@ -308,11 +333,32 @@ nonisolated enum RichMessageAttributedText {
                 tokens.append(.mention(mention))
             }
         }
-        return Prepared(
+        let prepared = Prepared(
             markdownPlan: DiscordMarkdown.appKitPlan(transformed),
             tokens: tokens,
             isEmojiOnly: document.isEmojiOnly
         )
+        return preparedCache.withLock { state in
+            if let existing = state.values[source] {
+                return existing
+            }
+            state.values[source] = prepared
+            state.insertionOrder.append(source)
+            while state.values.count > maximumPreparedCacheEntries,
+                  state.evictionIndex < state.insertionOrder.count
+            {
+                let evicted = state.insertionOrder[state.evictionIndex]
+                state.evictionIndex += 1
+                state.values[evicted] = nil
+            }
+            if state.evictionIndex > 1_024,
+               state.evictionIndex * 2 > state.insertionOrder.count
+            {
+                state.insertionOrder.removeFirst(state.evictionIndex)
+                state.evictionIndex = 0
+            }
+            return prepared
+        }
     }
 
     @MainActor

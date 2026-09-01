@@ -122,9 +122,7 @@ nonisolated enum MessageRowPersistentHighlight: Equatable {
         if message.flags.contains(.ephemeral) {
             return .ephemeral
         }
-        guard let currentUserID,
-              message.author.id != currentUserID
-        else {
+        guard let currentUserID else {
             return .none
         }
         if message.mentionedUsers.contains(where: {
@@ -287,6 +285,14 @@ enum MessageActionVisibilityPolicy {
     }
 }
 
+enum MessageDeleteConfirmationPolicy {
+    static func isBypassed(
+        by modifierFlags: NSEvent.ModifierFlags
+    ) -> Bool {
+        modifierFlags.contains(.shift)
+    }
+}
+
 struct MessageActionCapsule: View {
     let model: AppModel
     let message: Message
@@ -353,7 +359,13 @@ struct MessageActionCapsule: View {
                     help: "Delete message",
                     role: .destructive
                 ) {
-                    isDeleteConfirmationPresented = true
+                    if MessageDeleteConfirmationPolicy.isBypassed(
+                        by: NSEvent.modifierFlags
+                    ) {
+                        delete()
+                    } else {
+                        isDeleteConfirmationPresented = true
+                    }
                 }
             }
         }
@@ -469,8 +481,14 @@ enum ReactionActionMenuPresentation {
     case toolbar
     case inline
 
-    var width: CGFloat { self == .toolbar ? 28 : 30 }
-    var height: CGFloat { self == .toolbar ? 28 : MessageReactionMetrics.pillHeight }
+    var width: CGFloat {
+        self == .toolbar ? HoverActionPillMetrics.controlDiameter : 30
+    }
+    var height: CGFloat {
+        self == .toolbar
+            ? HoverActionPillMetrics.controlDiameter
+            : MessageReactionMetrics.pillHeight
+    }
     var cornerRadius: CGFloat { self == .toolbar ? 14 : 9 }
     var popoverEdge: NSRectEdge {
         StableReactionPickerAnchorPolicy.preferredEdge(isInline: self == .inline)

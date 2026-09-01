@@ -77,6 +77,8 @@ enum NativeTimelineUnreadSeparatorMetrics {
 }
 
 enum NativeTimelineReplyMetrics {
+    static let horizontalSpacing: CGFloat = 5
+
     static var authorFont: NSFont {
         .systemFont(
             ofSize: NSFont.preferredFont(
@@ -181,6 +183,7 @@ enum NativeTimelineCompactTimestampMetrics {
 }
 
 nonisolated enum NativeTimelineMessageMenuAction: Equatable {
+    case jumpToMessage
     case retrySending
     case addReaction
     case reply
@@ -190,7 +193,12 @@ nonisolated enum NativeTimelineMessageMenuAction: Equatable {
     case copyText
     case copyLink
     case copyMessageID
+    case copyAuthorID
     case deleteMessage
+}
+
+nonisolated enum NativeTimelineSearchResultPresentation {
+    static let jumpToMessageSystemImage = "arrow.forward.to.line"
 }
 
 nonisolated enum NativeTimelineMessageMenuEntry: Equatable {
@@ -208,8 +216,13 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
         canEdit: Bool,
         canRetry: Bool,
         canReply: Bool,
-        canForward: Bool = false
+        canForward: Bool = false,
+        context: NativeTimelineMessageInteractionContext = .conversation
     ) -> [NativeTimelineMessageMenuEntry] {
+        if context == .searchResult {
+            return searchResultEntries(canDelete: canEdit)
+        }
+
         var result: [NativeTimelineMessageMenuEntry] = []
         if canRetry {
             result.append(.action(
@@ -274,6 +287,57 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
                 systemImage: "trash",
                 isDestructive: true
             ))
+        }
+        return result
+    }
+
+    private static func searchResultEntries(
+        canDelete: Bool
+    ) -> [NativeTimelineMessageMenuEntry] {
+        var result: [NativeTimelineMessageMenuEntry] = [
+            .action(
+                .jumpToMessage,
+                title: "Jump to Message",
+                systemImage: NativeTimelineSearchResultPresentation
+                    .jumpToMessageSystemImage
+            ),
+            .action(
+                .markUnread,
+                title: "Mark Unread",
+                systemImage: "envelope.badge"
+            ),
+            .separator,
+            .action(
+                .copyText,
+                title: "Copy Text",
+                systemImage: "doc.on.doc"
+            ),
+            .action(
+                .copyLink,
+                title: "Copy Link",
+                systemImage: "link"
+            ),
+            .action(
+                .copyMessageID,
+                title: "Copy Message ID",
+                systemImage: "number.square.fill"
+            ),
+            .action(
+                .copyAuthorID,
+                title: "Copy Message Author ID",
+                systemImage: "number.square.fill"
+            ),
+        ]
+        if canDelete {
+            result.append(contentsOf: [
+                .separator,
+                .action(
+                    .deleteMessage,
+                    title: "Delete Message",
+                    systemImage: "trash",
+                    isDestructive: true
+                ),
+            ])
         }
         return result
     }
@@ -454,6 +518,17 @@ final class NativeTimelineSpoilerRevealStore {
                 }
                 .map(\.rangeLocation)
         )
+    }
+
+    func reset() {
+        let messageIDs = Set(revealedMedia.lazy.map(\.messageID))
+            .union(revealedText.lazy.map(\.messageID))
+        guard !messageIDs.isEmpty else { return }
+        revealedMedia.removeAll(keepingCapacity: true)
+        revealedText.removeAll(keepingCapacity: true)
+        for messageID in messageIDs {
+            notifyObservers(messageID: messageID)
+        }
     }
 
     func observe(
@@ -701,6 +776,7 @@ nonisolated enum TimelineButtonActivationPolicy {
 
 nonisolated enum NativeTimelinePointerActivationTarget: Hashable {
     case loader
+    case message(MessageID)
     case componentReveal(MessageID, String)
     case componentImage(MessageID, String)
     case componentMedia(MessageID, String)
@@ -735,7 +811,7 @@ nonisolated enum NativeTimelinePointerActivationTarget: Hashable {
 
     var supportsTextSelection: Bool {
         switch self {
-        case .textMention, .textURL:
+        case .message, .textMention, .textURL:
             true
         default:
             false
@@ -786,10 +862,10 @@ nonisolated enum NativeTimelineAvatarPresentation {
         )
     }
 
-    static func replyAvatarFrame(in replyFrame: CGRect) -> CGRect {
+    static func replyAvatarFrame(in replyContentFrame: CGRect) -> CGRect {
         CGRect(
-            x: replyFrame.minX + 35,
-            y: replyFrame.minY + 3,
+            x: replyContentFrame.minX,
+            y: replyContentFrame.minY + 3,
             width: 14,
             height: 14
         )
@@ -814,9 +890,22 @@ nonisolated enum NativeTimelineAvatarPresentation {
 nonisolated enum NativeTimelineScrollingRenderPolicy {
     static func usesDirectPainter(
         isScrolling: Bool,
-        hasCachedBitmap: Bool
+        hasCachedBitmap: Bool,
+        estimatedBitmapCost: Int,
+        cacheCostLimit: Int
     ) -> Bool {
-        isScrolling && !hasCachedBitmap
+        isScrolling
+            && !hasCachedBitmap
+            && estimatedBitmapCost > cacheCostLimit / 2
+    }
+}
+
+nonisolated enum NativeTimelineShortContentRedrawPolicy {
+    static func redrawsSynchronously(
+        conversationChanged: Bool,
+        appendedAtTail: Bool
+    ) -> Bool {
+        appendedAtTail && !conversationChanged
     }
 }
 
@@ -999,10 +1088,12 @@ final class NativeTimelineLoadingIndicator: NSView {
 
 @MainActor
 final class NativeTimelineInlineVideoOverlay: NSView {
-    let player = AVQueuePlayer()
-    let playerLayer = AVPlayerLayer()
+    var player: AVQueuePlayer?
+    var playerLayer: AVPlayerLayer?
     var looper: AVPlayerLooper?
     var url: URL?
+    var requestedPlayback = false
+    var preparationTask: Task<Void, Never>?
 
     override var isFlipped: Bool { true }
 
@@ -1016,20 +1107,6 @@ final class NativeTimelineInlineVideoOverlay: NSView {
             .secondaryLabelColor,
             0.10
         ).cgColor
-        playerLayer.videoGravity = .resizeAspectFill
-        playerLayer.player = player
-        playerLayer.actions = [
-            "bounds": NSNull(),
-            "position": NSNull(),
-        ]
-        playerLayer.autoresizingMask = [
-            .layerWidthSizable,
-            .layerHeightSizable,
-        ]
-        layer?.addSublayer(playerLayer)
-        synchronizePlayerLayerFrame()
-        player.isMuted = true
-        player.automaticallyWaitsToMinimizeStalling = false
     }
 
     @available(*, unavailable)
@@ -1050,6 +1127,7 @@ final class NativeTimelineInlineVideoOverlay: NSView {
     }
 
     func synchronizePlayerLayerFrame() {
+        guard let playerLayer else { return }
         // AVPlayerLayer otherwise implicitly animates bounds/position changes.
         // During the transition, the canvas' rounded loading placeholder shows
         // through below the shorter presentation layer as a gray footer.
@@ -1063,32 +1141,109 @@ final class NativeTimelineInlineVideoOverlay: NSView {
         if self.url != url {
             stop()
             self.url = url
-            looper = AVPlayerLooper(
-                player: player,
-                templateItem: AVPlayerItem(url: url)
-            )
+            requestedPlayback = plays
+            schedulePreparation(for: url)
+            return
         }
-        if plays {
+        requestedPlayback = plays
+        if plays, let player, looper != nil {
             player.playImmediately(atRate: 1)
         } else {
-            player.pause()
+            player?.pause()
+        }
+    }
+
+    private func schedulePreparation(for url: URL) {
+        preparationTask = Task { @MainActor [weak self] in
+            let interval = AppPerformanceSignposts.signposter.beginInterval(
+                "TimelineInlineVideoPreparation"
+            )
+            defer {
+                AppPerformanceSignposts.signposter.endInterval(
+                    "TimelineInlineVideoPreparation",
+                    interval
+                )
+            }
+            await Task.yield()
+            guard let self,
+                  !Task.isCancelled,
+                  self.url == url
+            else { return }
+            let player = AppPerformanceSignposts.measureSync(
+                "TimelineInlineVideoPlayerCreation"
+            ) {
+                let player = AVQueuePlayer()
+                player.isMuted = true
+                player.automaticallyWaitsToMinimizeStalling = false
+                return player
+            }
+            self.player = player
+
+            await Task.yield()
+            guard !Task.isCancelled, self.url == url else { return }
+            let playerLayer = AppPerformanceSignposts.measureSync(
+                "TimelineInlineVideoLayerCreation"
+            ) {
+                let playerLayer = AVPlayerLayer(player: player)
+                playerLayer.videoGravity = .resizeAspectFill
+                playerLayer.actions = [
+                    "bounds": NSNull(),
+                    "position": NSNull(),
+                ]
+                playerLayer.autoresizingMask = [
+                    .layerWidthSizable,
+                    .layerHeightSizable,
+                ]
+                return playerLayer
+            }
+            self.playerLayer = playerLayer
+            self.layer?.addSublayer(playerLayer)
+            self.synchronizePlayerLayerFrame()
+
+            await Task.yield()
+            guard !Task.isCancelled, self.url == url else { return }
+            let item = AppPerformanceSignposts.measureSync(
+                "TimelineInlineVideoItemCreation"
+            ) {
+                AVPlayerItem(url: url)
+            }
+
+            await Task.yield()
+            guard !Task.isCancelled, self.url == url else { return }
+            self.looper = AppPerformanceSignposts.measureSync(
+                "TimelineInlineVideoLooperCreation"
+            ) {
+                AVPlayerLooper(player: player, templateItem: item)
+            }
+            self.preparationTask = nil
+            if self.requestedPlayback {
+                player.playImmediately(atRate: 1)
+            }
         }
     }
 
     func stop() {
-        player.pause()
-        player.removeAllItems()
+        preparationTask?.cancel()
+        preparationTask = nil
+        player?.pause()
+        player?.removeAllItems()
         looper = nil
+        playerLayer?.removeFromSuperlayer()
+        playerLayer = nil
+        player = nil
         url = nil
+        requestedPlayback = false
     }
 
     func pauseForScroll() {
-        player.pause()
+        requestedPlayback = false
+        player?.pause()
     }
 
     deinit {
-        player.pause()
-        player.removeAllItems()
+        preparationTask?.cancel()
+        player?.pause()
+        player?.removeAllItems()
     }
 }
 
@@ -1625,9 +1780,7 @@ final class NativeTimelineAnimatedMediaOverlay: NSView {
         imageClipView.frame = mediaFrame
         imageClipView.alphaValue = opacity
         imageClipView.layer?.cornerRadius = cornerRadius
-        if #available(macOS 13.0, *) {
-            imageClipView.layer?.cornerCurve = .continuous
-        }
+        imageClipView.layer?.cornerCurve = .continuous
         imageView.display(
             image,
             animates: true,

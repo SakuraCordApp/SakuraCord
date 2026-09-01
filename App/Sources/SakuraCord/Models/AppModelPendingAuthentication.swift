@@ -94,6 +94,7 @@ extension AppModel {
                 await nextProvider.disconnect()
                 return false
             }
+            credentialHandlesByAccountID[handle.accountID] = handle
             database = AppPerformanceSignposts.measureSync("AccountDatabaseOpen") {
                 AccountID(handle.accountID).flatMap(accountDatabaseFactory)
             }

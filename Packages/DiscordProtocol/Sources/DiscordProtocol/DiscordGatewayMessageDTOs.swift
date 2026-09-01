@@ -418,6 +418,7 @@ struct MessageDTO: Decodable {
     var activity: JSONValue?
     var sharedClientTheme: JSONValue?
     var activityInstance: JSONValue?
+    var hit: Bool?
     enum CodingKeys: String, CodingKey {
         case id
         case channelID = "channel_id"
@@ -434,7 +435,7 @@ struct MessageDTO: Decodable {
         case interactionMetadata = "interaction_metadata"
         case guildID = "guild_id"
         case stickerItems = "sticker_items"
-        case call, poll, activity
+        case call, poll, activity, hit
         case sharedClientTheme = "shared_client_theme"
         case activityInstance = "activity_instance"
     }

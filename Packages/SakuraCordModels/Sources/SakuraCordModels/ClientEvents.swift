@@ -25,7 +25,12 @@ public enum ClientEvent: Equatable, Sendable {
     )
     case privateMembersChanged([Member])
     case knownUsersChanged([User])
+    case quickSwitcherUserIDsChanged([UserID])
+    case messageSearchUsersChanged([User])
     case userSearchAliasesChanged([UserID: [String]])
+    case quickSwitcherGuildMemberUserIDsChanged([GuildID: [UserID]])
+    case quickSwitcherJoinedMemberIDsChanged([GuildID: [UserID]])
+    case quickSwitcherGuildMemberAliasesChanged([GuildID: [UserID: String]])
     case currentUserRolesChanged(guildID: GuildID, roleIDs: [RoleID])
     case currentUserRolesSnapshot([GuildID: [RoleID]])
     case currentUserMemberFlagsChanged(guildID: GuildID, flags: UInt64)
@@ -42,6 +47,18 @@ public enum ClientEvent: Equatable, Sendable {
     /// A nil value means Discord deallocated the current voice server and the
     /// client must wait for a replacement allocation before reconnecting.
     case voiceServerChanged(VoiceConnectionInfo?)
+    case applicationStreamChanged(ApplicationStream)
+    case applicationStreamDeleted(
+        key: ApplicationStreamKey,
+        unavailable: Bool,
+        reason: String?
+    )
+    /// A nil value means the stream RTC allocation was removed. The stream
+    /// itself may remain available while Discord allocates a replacement.
+    case applicationStreamServerChanged(
+        key: ApplicationStreamKey,
+        connection: ApplicationStreamConnectionInfo?
+    )
     case snapshotChanged(BootstrapSnapshot)
     case guildChanged(Guild)
     case guildLayoutChanged(guilds: [Guild], railItems: [GuildRailItem])

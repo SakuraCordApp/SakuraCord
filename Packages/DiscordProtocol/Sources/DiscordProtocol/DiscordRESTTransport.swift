@@ -46,15 +46,47 @@ extension DiscordRESTProvider {
         pending.continuation.resume(throwing: error)
     }
 
-    func decodedMemberListMembers(guildID: GuildID, memberListID: String) -> [Member] {
+    func decodedMemberListMembers(
+        guildID: GuildID,
+        memberListID: String,
+        restrictingTo changedUserIDs: Set<UserID>? = nil
+    ) -> [Member] {
+        if changedUserIDs?.isEmpty == true {
+            discordPerformanceSignposter.emitEvent(
+                "GatewayMemberListDomainDecodeSkipped"
+            )
+            return []
+        }
+        let roleCatalogBuild = discordPerformanceSignposter.beginInterval(
+            "GatewayMemberListRoleCatalogBuild",
+            id: discordPerformanceSignposter.makeSignpostID()
+        )
+        let guildRoles = cachedGuildRoles[guildID] ?? []
+        let guildRoleCatalog = GuildMemberRoleCatalog(guildRoles)
+        discordPerformanceSignposter.endInterval(
+            "GatewayMemberListRoleCatalogBuild", roleCatalogBuild
+        )
+
+        let domainDecode = discordPerformanceSignposter.beginInterval(
+            "GatewayMemberListDomainDecode",
+            id: discordPerformanceSignposter.makeSignpostID()
+        )
+        defer {
+            discordPerformanceSignposter.endInterval(
+                "GatewayMemberListDomainDecode", domainDecode
+            )
+        }
         var seen = Set<UserID>()
         return (cachedMemberListItems[guildID]?[memberListID] ?? []).enumerated().compactMap { index, item -> Member? in
             guard let memberDTO = item?.member,
+                  let userID = UserID(memberDTO.user.id),
+                  changedUserIDs?.contains(userID) != false,
                   var member = try? memberDTO.domain(
                       currentUserID: currentUser?.id,
                       currentStatus: presenceStatus,
                       presence: item?.presence,
-                      guildRoles: cachedGuildRoles[guildID] ?? [],
+                      guildRoles: guildRoles,
+                      guildRoleCatalog: guildRoleCatalog,
                       guildID: guildID
                   ),
                   seen.insert(member.id).inserted
@@ -64,21 +96,70 @@ extension DiscordRESTProvider {
         }
     }
 
-    func orderedMemberListMembers(guildID: GuildID, memberListID: String? = nil) -> [Member]? {
+    func orderedMemberListMembers(
+        guildID: GuildID,
+        memberListID: String? = nil
+    ) -> [Member]? {
         guard let memberListID = memberListID ?? selectedMemberListID[guildID],
-              cachedMemberListItems[guildID]?[memberListID] != nil
+              let memberListItems = cachedMemberListItems[guildID]?[memberListID]
         else { return nil }
-        let cachedByID = Dictionary(
+        let ordering = discordPerformanceSignposter.beginInterval(
+            "GatewayMemberListOrdering",
+            id: discordPerformanceSignposter.makeSignpostID()
+        )
+        defer {
+            discordPerformanceSignposter.endInterval(
+                "GatewayMemberListOrdering", ordering
+            )
+        }
+        var membersByID = Dictionary(
             (cachedMembers[guildID] ?? []).map { ($0.id, $0) },
             uniquingKeysWith: { _, newer in newer }
         )
-        return decodedMemberListMembers(guildID: guildID, memberListID: memberListID).map { indexedMember in
-            guard var cached = cachedByID[indexedMember.id] else {
-                return indexedMember
-            }
-            cached.memberListIndex = indexedMember.memberListIndex
-            return cached
+        var seen = Set<UserID>()
+        let orderedIDs = memberListItems.enumerated().compactMap { index, item -> (UserID, Int)? in
+            guard let rawUserID = item?.member?.user.id,
+                  let userID = UserID(rawUserID),
+                  seen.insert(userID).inserted
+            else { return nil }
+            return (userID, index)
         }
+        let missingUserIDs = Set(orderedIDs.lazy.map(\.0)).subtracting(
+            membersByID.keys
+        )
+        if !missingUserIDs.isEmpty {
+            for member in decodedMemberListMembers(
+                guildID: guildID,
+                memberListID: memberListID,
+                restrictingTo: missingUserIDs
+            ) {
+                membersByID[member.id] = member
+            }
+        }
+        return orderedIDs.compactMap { userID, index in
+            guard var member = membersByID[userID] else { return nil }
+            member.memberListIndex = index
+            return member
+        }
+    }
+
+    static func memberListChangedUserIDs(
+        in operations: [GuildMemberListUpdateDTO.Operation]
+    ) -> Set<UserID> {
+        var userIDs = Set<UserID>()
+        for operation in operations {
+            if let items = operation.items {
+                userIDs.formUnion(items.compactMap { item in
+                    item.member.flatMap { UserID($0.user.id) }
+                })
+            }
+            if let item = operation.item,
+               let userID = item.member.flatMap({ UserID($0.user.id) })
+            {
+                userIDs.insert(userID)
+            }
+        }
+        return userIDs
     }
 
     static var memberListOperationApplication:
@@ -159,6 +240,9 @@ extension DiscordRESTProvider {
         body: [String: JSONValue]? = nil,
         headers: [String: String] = [:]
     ) async throws -> Response {
+        let isMessageHistoryRequest = method == "GET"
+            && path.hasPrefix("/channels/")
+            && path.hasSuffix("/messages")
         let (data, response) = try await perform(
             path, method: method, query: query, body: body, headers: headers
         )
@@ -173,6 +257,19 @@ extension DiscordRESTProvider {
             )
         }
         do {
+            let decodeName: StaticString = isMessageHistoryRequest
+                ? "MessageHistoryResponseDecode"
+                : "RESTResponseDecode"
+            let decode = discordPerformanceSignposter.beginInterval(
+                decodeName,
+                id: discordPerformanceSignposter.makeSignpostID()
+            )
+            defer {
+                discordPerformanceSignposter.endInterval(
+                    decodeName,
+                    decode
+                )
+            }
             return try JSONDecoder().decode(Response.self, from: data)
         } catch {
             let route = Self.routeTemplate(method: method, path: path)
@@ -220,11 +317,21 @@ extension DiscordRESTProvider {
             )
         }
 
-        let routeKey = "\(method) \(path)"
-        let maximumAttempts = requestedMaximumAttempts ?? (method == "GET" ? 2 : 1)
+        let routeKey = Self.rateLimitRouteKey(method: method, path: path)
+        let majorParameter = Self.rateLimitMajorParameter(path: path)
+        let requestRateLimitKey = "\(routeKey) [\(majorParameter)]"
+        let isMessageHistoryRequest = method == "GET"
+            && path.hasPrefix("/channels/")
+            && path.hasSuffix("/messages")
+        let canRetryAsRead = Self.canRetryAsRead(method: method, path: path)
+        let maximumAttempts = requestedMaximumAttempts ?? (canRetryAsRead ? 2 : 1)
         for attempt in 0 ..< maximumAttempts {
-            try await reserveConservativeRequestSlot(routeKey: routeKey)
-
+            let scheduling = isMessageHistoryRequest
+                ? discordPerformanceSignposter.beginInterval(
+                    "MessageHistoryRequestScheduling",
+                    id: discordPerformanceSignposter.makeSignpostID()
+                )
+                : nil
             guard var components = URLComponents(
                 string:
                 "https://discord.com/api/v\(DiscordProductionBaseline.august2026.apiVersion)\(path)"
@@ -258,6 +365,20 @@ extension DiscordRESTProvider {
                 request.httpBody = try JSONEncoder().encode(JSONValue.object(body))
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             }
+            let rateLimitReservation: RESTRateLimitReservation
+            do {
+                rateLimitReservation = try await reserveRateLimitSlot(
+                    routeKey: requestRateLimitKey
+                )
+            } catch {
+                if let scheduling {
+                    discordPerformanceSignposter.endInterval(
+                        "MessageHistoryRequestScheduling",
+                        scheduling
+                    )
+                }
+                throw error
+            }
             let requestAttempt = attempt + 1
             apiDiagnostics.recordHTTPRequest(
                 method: method,
@@ -269,9 +390,31 @@ extension DiscordRESTProvider {
             let requestStarted = ContinuousClock.now
             let data: Data
             let rawResponse: URLResponse
+            let requestSession = restSession
+            let requestSessionGeneration = restSessionGeneration
+            if let scheduling {
+                discordPerformanceSignposter.endInterval(
+                    "MessageHistoryRequestScheduling",
+                    scheduling
+                )
+            }
             do {
-                (data, rawResponse) = try await session.data(for: request)
+                let networkName: StaticString = isMessageHistoryRequest
+                    ? "MessageHistoryNetworkAttempt"
+                    : "RESTNetworkAttempt"
+                let network = discordPerformanceSignposter.beginInterval(
+                    networkName,
+                    id: discordPerformanceSignposter.makeSignpostID()
+                )
+                defer {
+                    discordPerformanceSignposter.endInterval(
+                        networkName,
+                        network
+                    )
+                }
+                (data, rawResponse) = try await requestSession.data(for: request)
             } catch {
+                finishRateLimitReservation(rateLimitReservation)
                 apiDiagnostics.recordHTTPFailure(
                     method: method,
                     path: path,
@@ -279,9 +422,20 @@ extension DiscordRESTProvider {
                     duration: requestStarted.duration(to: .now),
                     error: error
                 )
+                let canRetryOnCurrentSession = recoverRESTSessionIfNeeded(
+                    after: error,
+                    requestGeneration: requestSessionGeneration
+                )
+                if canRetryAsRead,
+                   attempt + 1 < maximumAttempts,
+                   canRetryOnCurrentSession
+                {
+                    continue
+                }
                 throw error
             }
             guard let response = rawResponse as? HTTPURLResponse else {
+                finishRateLimitReservation(rateLimitReservation)
                 let error = ChatProviderError.invalidRequest(
                     "Discord returned an invalid HTTP response."
                 )
@@ -302,20 +456,40 @@ extension DiscordRESTProvider {
                 body: data,
                 duration: requestStarted.duration(to: .now)
             )
+            recordRateLimitState(
+                response: response,
+                routeKey: requestRateLimitKey,
+                majorParameter: majorParameter
+            )
+            finishRateLimitReservation(rateLimitReservation)
 
             if response.statusCode == 429 {
                 let retryAfter = Self.retryAfter(from: data, response: response)
                 let retryDate = Date.now.addingTimeInterval(retryAfter)
                 if Self.isGlobalRateLimit(data: data, response: response) {
                     globalRateLimitDate = retryDate
+                } else if let bucketKey = rateLimitBucketKeyByRoute[
+                    requestRateLimitKey
+                ] {
+                    var state = rateLimitBuckets[bucketKey]
+                        ?? RESTRateLimitBucketState(
+                            limit: nil,
+                            remaining: nil,
+                            resetDate: retryDate,
+                            resetInterval: retryAfter
+                        )
+                    state.remaining = 0
+                    state.resetDate = max(state.resetDate, retryDate)
+                    state.resetInterval = max(
+                        state.resetInterval ?? 0,
+                        retryAfter
+                    )
+                    rateLimitBuckets[bucketKey] = state
                 } else {
-                    routeRateLimitDates[routeKey] = retryDate
+                    routeRateLimitDates[requestRateLimitKey] = retryDate
                 }
-                // Pause every authenticated route as the conservative response to
-                // any 429. Mutations never retry automatically; GETs retry once.
-                globalRateLimitDate = max(globalRateLimitDate, retryDate)
                 gatewayLogger.error(
-                    "Discord returned 429; all REST traffic paused for \(retryAfter, privacy: .public) seconds"
+                    "Discord returned 429; affected REST traffic paused for \(retryAfter, privacy: .public) seconds"
                 )
                 if attempt + 1 >= maximumAttempts {
                     return (data, response)
@@ -368,15 +542,6 @@ extension DiscordRESTProvider {
             } else if (200 ..< 300).contains(response.statusCode) {
                 unexpectedNotFoundCounts[route] = nil
             }
-            if response.value(forHTTPHeaderField: "X-RateLimit-Remaining") == "0",
-               let reset = response.value(forHTTPHeaderField: "X-RateLimit-Reset-After").flatMap(
-                   Double.init
-               )
-            {
-                routeRateLimitDates[routeKey] = .now.addingTimeInterval(max(0, reset))
-            } else {
-                routeRateLimitDates[routeKey] = nil
-            }
             return (data, response)
         }
         throw ChatProviderError.invalidRequest("Discord rate limiting did not recover.")
@@ -395,25 +560,240 @@ extension DiscordRESTProvider {
             path, method, query, body, headers, requestedMaximumAttempts
         )
     }
-    func reserveConservativeRequestSlot(routeKey: String) async throws {
-        guard !requestSafetyCircuitIsOpen else {
-            throw ChatProviderError.invalidRequest(
-                "Discord networking is stopped for this session.")
+    @discardableResult
+    func reserveRateLimitSlot(
+        routeKey: String
+    ) async throws -> RESTRateLimitReservation {
+        while true {
+            try Task.checkCancellation()
+            guard !requestSafetyCircuitIsOpen else {
+                throw ChatProviderError.invalidRequest(
+                    "Discord networking is stopped for this session."
+                )
+            }
+            let now = Date.now
+            let routeDate = routeRateLimitDates[routeKey] ?? .distantPast
+            var scheduledDate = max(now, max(globalRateLimitDate, routeDate))
+            if let bucketKey = rateLimitBucketKeyByRoute[routeKey],
+               var bucket = rateLimitBuckets[bucketKey]
+            {
+                if bucket.resetDate <= now {
+                    bucket.remaining = bucket.limit
+                    if let resetInterval = bucket.resetInterval {
+                        bucket.resetDate = now.addingTimeInterval(
+                            resetInterval
+                        )
+                    }
+                    rateLimitBuckets[bucketKey] = bucket
+                }
+                if bucket.remaining == 0 {
+                    scheduledDate = max(scheduledDate, bucket.resetDate)
+                }
+            }
+            let delay = scheduledDate.timeIntervalSince(now)
+            if delay > 0 {
+                try await Task.sleep(for: .seconds(delay))
+                continue
+            }
+            if rateLimitBucketKeyByRoute[routeKey] == nil,
+               !rateLimitRoutesWithoutBuckets.contains(routeKey)
+            {
+                if rateLimitDiscoveryTokenByRoute[routeKey] != nil {
+                    await waitForRateLimitDiscovery(routeKey: routeKey)
+                    try Task.checkCancellation()
+                    continue
+                }
+                let token = UUID()
+                rateLimitDiscoveryTokenByRoute[routeKey] = token
+                return RESTRateLimitReservation(
+                    routeKey: routeKey,
+                    discoveryToken: token
+                )
+            }
+            if let bucketKey = rateLimitBucketKeyByRoute[routeKey],
+               var bucket = rateLimitBuckets[bucketKey],
+               let remaining = bucket.remaining,
+               remaining > 0
+            {
+                // Reserve before leaving the actor so concurrent requests in a
+                // learned bucket cannot all consume the same remaining slot.
+                bucket.remaining = remaining - 1
+                rateLimitBuckets[bucketKey] = bucket
+            }
+            return RESTRateLimitReservation(
+                routeKey: routeKey,
+                discoveryToken: nil
+            )
         }
+    }
+
+    func waitForRateLimitDiscovery(routeKey: String) async {
+        let waiterID = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled else {
+                    continuation.resume()
+                    return
+                }
+                rateLimitDiscoveryWaitersByRoute[routeKey, default: [:]][waiterID]
+                    = continuation
+            }
+        } onCancel: {
+            Task {
+                await self.cancelRateLimitDiscoveryWaiter(
+                    routeKey: routeKey,
+                    waiterID: waiterID
+                )
+            }
+        }
+    }
+
+    func cancelRateLimitDiscoveryWaiter(
+        routeKey: String,
+        waiterID: UUID
+    ) {
+        guard let waiter = rateLimitDiscoveryWaitersByRoute[routeKey]?
+            .removeValue(forKey: waiterID)
+        else { return }
+        if rateLimitDiscoveryWaitersByRoute[routeKey]?.isEmpty == true {
+            rateLimitDiscoveryWaitersByRoute[routeKey] = nil
+        }
+        waiter.resume()
+    }
+
+    func finishRateLimitReservation(
+        _ reservation: RESTRateLimitReservation
+    ) {
+        guard let token = reservation.discoveryToken,
+              rateLimitDiscoveryTokenByRoute[reservation.routeKey] == token
+        else { return }
+        rateLimitDiscoveryTokenByRoute[reservation.routeKey] = nil
+        let waiters = rateLimitDiscoveryWaitersByRoute.removeValue(
+            forKey: reservation.routeKey
+        ) ?? [:]
+        for waiter in waiters.values {
+            waiter.resume()
+        }
+    }
+
+    func recordRateLimitState(
+        response: HTTPURLResponse,
+        routeKey: String,
+        majorParameter: String
+    ) {
+        guard let identifier = response.value(
+            forHTTPHeaderField: "X-RateLimit-Bucket"
+        ) else {
+            if response.value(forHTTPHeaderField: "X-RateLimit-Remaining") == "0",
+               let reset = response.value(
+                forHTTPHeaderField: "X-RateLimit-Reset-After"
+               ).flatMap(Double.init)
+            {
+                routeRateLimitDates[routeKey] = Date.now.addingTimeInterval(
+                    max(0, reset)
+                )
+            } else if response.statusCode != 429 {
+                routeRateLimitDates[routeKey] = nil
+                if (200 ..< 300).contains(response.statusCode) {
+                    // A successful response without a bucket header
+                    // establishes that this route does not need further
+                    // discovery serialization. Keep failures unknown so only
+                    // one request probes the route again.
+                    rateLimitRoutesWithoutBuckets.insert(routeKey)
+                }
+            }
+            return
+        }
+        rateLimitRoutesWithoutBuckets.remove(routeKey)
+        let key = RESTRateLimitBucketKey(
+            identifier: identifier,
+            majorParameter: majorParameter
+        )
+        rateLimitBucketKeyByRoute[routeKey] = key
+        routeRateLimitDates[routeKey] = nil
+
         let now = Date.now
-        let routeDate = routeRateLimitDates[routeKey] ?? .distantPast
-        let scheduledDate = max(max(now, nextRequestSlotDate), max(globalRateLimitDate, routeDate))
-        // Reserve before suspension so actor reentrancy cannot wake several calls
-        // into the same instant. Two authenticated REST calls/second is the ceiling.
-        nextRequestSlotDate = scheduledDate.addingTimeInterval(0.5)
-        let delay = scheduledDate.timeIntervalSince(now)
-        if delay > 0 {
-            try await Task.sleep(for: .seconds(delay))
+        let limit = response.value(
+            forHTTPHeaderField: "X-RateLimit-Limit"
+        ).flatMap(Int.init)
+        let remaining = response.value(
+            forHTTPHeaderField: "X-RateLimit-Remaining"
+        ).flatMap(Int.init)
+        let resetAfter = response.value(
+            forHTTPHeaderField: "X-RateLimit-Reset-After"
+        ).flatMap(Double.init)
+        let resetDate = resetAfter.map {
+            now.addingTimeInterval(max(0, $0))
+        } ?? rateLimitBuckets[key]?.resetDate ?? .distantPast
+
+        if let existing = rateLimitBuckets[key],
+           existing.resetDate > now,
+           abs(existing.resetDate.timeIntervalSince(resetDate)) < 0.250
+        {
+            let conservativeRemaining: Int?
+            switch (existing.remaining, remaining) {
+            case let (.some(current), .some(server)):
+                conservativeRemaining = min(current, server)
+            case let (.some(current), .none):
+                conservativeRemaining = current
+            case let (.none, .some(server)):
+                conservativeRemaining = server
+            case (.none, .none):
+                conservativeRemaining = nil
+            }
+            rateLimitBuckets[key] = RESTRateLimitBucketState(
+                limit: limit ?? existing.limit,
+                remaining: conservativeRemaining,
+                resetDate: max(existing.resetDate, resetDate),
+                resetInterval: resetAfter ?? existing.resetInterval
+            )
+        } else {
+            rateLimitBuckets[key] = RESTRateLimitBucketState(
+                limit: limit,
+                remaining: remaining,
+                resetDate: resetDate,
+                resetInterval: resetAfter
+            )
         }
-        guard !requestSafetyCircuitIsOpen else {
-            throw ChatProviderError.invalidRequest(
-                "Discord networking is stopped for this session.")
+    }
+
+    /// A cancelled HTTP/3 stream can occasionally leave every subsequent REST
+    /// task on the reused URLSession waiting until its request timeout. Rotate
+    /// only an app-owned REST session after that timeout. The Gateway uses a
+    /// separate production session, so recovery cannot interrupt heartbeats.
+    ///
+    /// Reads already running on the retired generation may retry once. Writes
+    /// never retry because a timeout does not prove that Discord rejected the
+    /// mutation before applying it.
+    func recoverRESTSessionIfNeeded(
+        after error: any Error,
+        requestGeneration: Int
+    ) -> Bool {
+        guard !Task.isCancelled else { return false }
+        if requestGeneration != restSessionGeneration {
+            return true
         }
+        guard let restSessionConfiguration,
+              Self.isRESTSessionStall(error)
+        else { return false }
+
+        let stalledSession = restSession
+        restSession = URLSession(configuration: restSessionConfiguration)
+        restSessionGeneration &+= 1
+        stalledSession.invalidateAndCancel()
+        gatewayLogger.error(
+            "Discord REST session timed out; replaced stalled transport generation \(requestGeneration, privacy: .public)"
+        )
+        return true
+    }
+
+    static func isRESTSessionStall(_ error: any Error) -> Bool {
+        (error as? URLError)?.code == .timedOut
+    }
+
+    static func canRetryAsRead(method: String, path: String) -> Bool {
+        method == "GET"
+            || (method == "POST" && path == "/users/@me/messages/search/tabs")
     }
 
     func openSafetyCircuit(status: Int, discordCode: Int?, route: String) async {
@@ -434,7 +814,7 @@ extension DiscordRESTProvider {
         // The provider owns a dedicated URLSession in production. Cancel every
         // outstanding REST/upload/socket task so a request already suspended at
         // the actor boundary cannot continue after a stop signal.
-        session.getAllTasks { tasks in
+        restSession.getAllTasks { tasks in
             for task in tasks {
                 task.cancel()
             }
@@ -515,6 +895,44 @@ extension DiscordRESTProvider {
             return String(segment)
         }
         return "\(method) \(segments.joined(separator: "/"))"
+    }
+
+    static func rateLimitRouteKey(method: String, path: String) -> String {
+        var segments = path.split(
+            separator: "/",
+            omittingEmptySubsequences: false
+        ).map(String.init)
+        for index in segments.indices where segments[index] == "webhooks" {
+            let tokenIndex = index + 2
+            if segments.indices.contains(tokenIndex) {
+                segments[tokenIndex] = "{token}"
+            }
+        }
+        return routeTemplate(
+            method: method,
+            path: segments.joined(separator: "/")
+        )
+    }
+
+    static func rateLimitMajorParameter(path: String) -> String {
+        let segments = path.split(separator: "/").map(String.init)
+        for resource in ["channels", "guilds"] {
+            guard let index = segments.firstIndex(of: resource),
+                  segments.indices.contains(index + 1)
+            else { continue }
+            return "\(resource):\(segments[index + 1])"
+        }
+        if let index = segments.firstIndex(of: "webhooks"),
+           segments.indices.contains(index + 1)
+        {
+            var hasher = Hasher()
+            hasher.combine(segments[index + 1])
+            if segments.indices.contains(index + 2) {
+                hasher.combine(segments[index + 2])
+            }
+            return "webhooks:\(hasher.finalize())"
+        }
+        return "none"
     }
 
     func authorizationToken() async throws -> String {

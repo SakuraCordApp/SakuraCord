@@ -251,7 +251,7 @@ private struct PrivateCallActionDock: View {
                     PrivateCallGlassButton(
                         title: "Join Call",
                         systemImage: "phone.fill",
-                        tint: Color(hex: 0x23A55A),
+                        tint: Color.accentColor,
                         action: join
                     )
                 }

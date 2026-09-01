@@ -1,12 +1,49 @@
+import Observation
 import SakuraCordModels
 import SwiftUI
 
+/// Keeps rail observation out of the workspace root. Timeline, member-list,
+/// composer, and loading publications can invalidate `ChatRootView` without
+/// rebuilding or comparing every server row.
+struct ServerRailContainer: View {
+    let model: AppModel
+
+    var body: some View {
+        ServerRailView(
+            items: model.serverRailPresentation.items,
+            home: model.serverRailPresentation.home,
+            selectHome: { model.selectGuild(nil) },
+            selectGuild: model.selectGuild,
+            contextMenuActions: ServerRailContextMenuActions(
+                markRead: model.markGuildRead,
+                mute: { guild, duration in
+                    model.setGuildMute(
+                        true,
+                        until: duration.endDate(),
+                        for: guild
+                    )
+                },
+                unmute: { guild in
+                    model.setGuildMute(false, until: nil, for: guild)
+                },
+                setNotificationLevel: { guild, level in
+                    model.setGuildNotificationLevel(level, for: guild)
+                },
+                setNotificationToggle: { guild, toggle, isEnabled in
+                    model.setGuildNotificationToggle(
+                        toggle,
+                        isEnabled: isEnabled,
+                        for: guild
+                    )
+                }
+            )
+        )
+    }
+}
+
 struct ServerRailView: View {
-    let guildsByID: [GuildID: Guild]
-    let items: [GuildRailItem]
-    let selectedGuildID: GuildID?
-    let homeIsUnread: Bool
-    let homeMentionCount: Int
+    let items: [ServerRailPresentationItem]
+    let home: ServerRailHomeEntry
     let selectHome: () -> Void
     let selectGuild: (GuildID?) -> Void
     let contextMenuActions: ServerRailContextMenuActions
@@ -14,11 +51,12 @@ struct ServerRailView: View {
 
     var body: some View {
         ScrollView {
+            // Expanded folders make rail rows variable-height. Lazy layout
+            // corrects its content estimate while reverse-scrolling, which
+            // disrupts AppKit's elastic rebound at the top boundary.
             VStack(spacing: 10) {
                 HomeRailButton(
-                    isSelected: selectedGuildID == nil,
-                    isUnread: homeIsUnread,
-                    mentionCount: homeMentionCount,
+                    home: home,
                     action: selectHome
                 )
 
@@ -27,8 +65,6 @@ struct ServerRailView: View {
                 ForEach(items) { item in
                     ServerRailItemView(
                         item: item,
-                        guildsByID: guildsByID,
-                        selectedGuildID: selectedGuildID,
                         selectGuild: selectGuild,
                         contextMenuActions: contextMenuActions,
                         folderExpansionChanged: {
@@ -41,6 +77,11 @@ struct ServerRailView: View {
             .animation(ServerRailAnimations.folderExpansion, value: folderLayoutRevision)
         }
         .scrollIndicators(.hidden)
+        .background {
+            ScrollInputPerformanceProbeAttachment(surface: .serverList)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
         .frame(width: ChatChromeMetrics.serverRailWidth)
         .overlayPreferenceValue(ServerRailHoverPreferenceKey.self) { hoverItem in
             GeometryReader { proxy in
@@ -59,18 +100,15 @@ struct ServerRailView: View {
 }
 
 struct ServerRailContextMenuActions {
-    let settings: (Guild) -> GuildNotificationSettings
-    let isMutationPending: (GuildID) -> Bool
     let markRead: (GuildID) -> Void
     let mute: (Guild, ChannelMuteDuration) -> Void
     let unmute: (Guild) -> Void
     let setNotificationLevel: (Guild, MessageNotificationLevel) -> Void
+    let setNotificationToggle: (Guild, GuildNotificationToggle, Bool) -> Void
 }
 
 private struct ServerRailItemView: View {
-    let item: GuildRailItem
-    let guildsByID: [GuildID: Guild]
-    let selectedGuildID: GuildID?
+    let item: ServerRailPresentationItem
     let selectGuild: (GuildID?) -> Void
     let contextMenuActions: ServerRailContextMenuActions
     let folderExpansionChanged: () -> Void
@@ -78,25 +116,37 @@ private struct ServerRailItemView: View {
     var body: some View {
         VStack(spacing: 0) {
             switch item {
-            case let .guild(id):
-                if let guild = guildsByID[id] {
-                    GuildRailButton(
-                        guild: guild,
-                        isSelected: selectedGuildID == guild.id,
-                        contextMenuActions: contextMenuActions
-                    ) {
-                        selectGuild(guild.id)
-                    }
-                }
-            case let .folder(folder):
+            case .guild(let entry):
+                ServerRailGuildItemView(
+                    entry: entry,
+                    selectGuild: selectGuild,
+                    contextMenuActions: contextMenuActions
+                )
+            case .folder(let entry):
                 ServerFolderRailView(
-                    folder: folder,
-                    guildsByID: guildsByID,
-                    selectedGuildID: selectedGuildID,
+                    entry: entry,
                     selectGuild: selectGuild,
                     contextMenuActions: contextMenuActions,
                     expansionChanged: folderExpansionChanged
                 )
+            }
+        }
+    }
+}
+
+struct ServerRailGuildItemView: View {
+    let entry: ServerRailGuildEntry
+    let selectGuild: (GuildID?) -> Void
+    let contextMenuActions: ServerRailContextMenuActions
+
+    var body: some View {
+        if let presentation = entry.presentation {
+            GuildRailButton(
+                presentation: presentation,
+                isSelected: entry.isSelected,
+                contextMenuActions: contextMenuActions
+            ) {
+                selectGuild(entry.id)
             }
         }
     }
@@ -107,13 +157,14 @@ enum ServerRailAnimations {
 }
 
 struct GuildRailButton: View {
-    let guild: Guild
+    let presentation: ServerRailGuildPresentation
     let isSelected: Bool
     let contextMenuActions: ServerRailContextMenuActions
     let action: () -> Void
     @State private var isHovering = false
 
     var body: some View {
+        let guild = presentation.guild
         let displayName = guild.name.isEmpty ? "Unnamed Server" : guild.name
 
         HStack(spacing: 5) {
@@ -146,13 +197,21 @@ struct GuildRailButton: View {
             .overlay {
                 ServerContextMenuBridge(
                     isUnread: guild.unreadCount > 0,
-                    isMutationPending: contextMenuActions.isMutationPending(guild.id),
-                    notificationSettings: contextMenuActions.settings(guild),
+                    isMutationPending:
+                        presentation.isNotificationMutationPending,
+                    notificationSettings: presentation.notificationSettings,
                     markRead: { contextMenuActions.markRead(guild.id) },
                     mute: { contextMenuActions.mute(guild, $0) },
                     unmute: { contextMenuActions.unmute(guild) },
                     setNotificationLevel: {
                         contextMenuActions.setNotificationLevel(guild, $0)
+                    },
+                    setNotificationToggle: { toggle, isEnabled in
+                        contextMenuActions.setNotificationToggle(
+                            guild,
+                            toggle,
+                            isEnabled
+                        )
                     },
                     copyServerID: {
                         ChannelContextMenuValue.copy(guild.id.description)
@@ -208,27 +267,25 @@ struct ServerRailHoverPreferenceKey: PreferenceKey {
 }
 
 private struct HomeRailButton: View {
-    let isSelected: Bool
-    let isUnread: Bool
-    let mentionCount: Int
+    let home: ServerRailHomeEntry
     let action: () -> Void
     @State private var isHovering = false
 
     var body: some View {
         HStack(spacing: 5) {
             ServerRailSelectionIndicator(
-                isSelected: isSelected,
+                isSelected: home.isSelected,
                 isHovering: isHovering,
-                hasNotification: isUnread
+                hasNotification: home.isUnread
             )
             Button(action: action) {
                 Image(systemName: "message.fill")
                     .font(.title2)
                     .frame(width: 44, height: 44)
-                    .background(isSelected ? Color.accentColor : Color.secondary.opacity(0.16), in: ConcentricRectangle(cornerRadius: 14, style: .continuous))
+                    .background(home.isSelected ? Color.accentColor : Color.secondary.opacity(0.16), in: ConcentricRectangle(cornerRadius: 14, style: .continuous))
                     .overlay(alignment: .bottomTrailing) {
-                        if mentionCount > 0 {
-                            Text(mentionCount, format: .number)
+                        if home.mentionCount > 0 {
+                            Text(home.mentionCount, format: .number)
                                 .font(.system(size: 10, weight: .bold))
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 5)
@@ -241,9 +298,9 @@ private struct HomeRailButton: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Direct Messages")
             .accessibilityValue(
-                mentionCount > 0
-                    ? "\(mentionCount) unread mentions"
-                    : (isUnread ? "Unread" : "")
+                home.mentionCount > 0
+                    ? "\(home.mentionCount) unread mentions"
+                    : (home.isUnread ? "Unread" : "")
             )
         }
         .frame(width: ChatChromeMetrics.serverRailWidth, height: 46, alignment: .leading)

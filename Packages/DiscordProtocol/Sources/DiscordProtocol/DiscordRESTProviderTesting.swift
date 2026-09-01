@@ -31,6 +31,20 @@ import SakuraCordModels
             }
         }
 
+        func seedGuildChannelForTesting(_ channel: Channel) {
+            guard let guildID = channel.guildID else { return }
+            cachedChannels[guildID, default: []].removeAll {
+                $0.id == channel.id
+            }
+            cachedChannels[guildID, default: []].append(channel)
+        }
+
+        func rateLimitDiscoveryWaiterCountForTesting(
+            routeKey: String
+        ) -> Int {
+            rateLimitDiscoveryWaitersByRoute[routeKey]?.count ?? 0
+        }
+
         func activeForumCatalogueQueriesForTesting(channelID: ChannelID) -> [ForumPostQuery] {
             forumCatalogueTasks.keys.compactMap {
                 $0.channelID == channelID ? $0.query : nil
@@ -50,10 +64,7 @@ import SakuraCordModels
         }
 
         func receiveGatewayDispatchForTesting(name: String, data: JSONValue) async {
-            guard let encoded = try? JSONEncoder().encode(data),
-                  let body = try? JSONSerialization.jsonObject(with: encoded)
-            else { return }
-            await handleGatewayDispatch(name: name, body: body)
+            await handleGatewayDispatch(name: name, body: data)
         }
 
         func cachedChannelForTesting(channelID: ChannelID) -> Channel? {

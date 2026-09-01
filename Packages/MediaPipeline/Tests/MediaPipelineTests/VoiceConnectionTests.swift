@@ -23,3 +23,31 @@ import Testing
     #expect(response.count == 74)
     #expect(VoiceIPDiscovery.parseResponse(response) == VoiceDiscoveredAddress(ip: "203.0.113.9", port: 50000))
 }
+
+@Test func `video datagram pacing limits each network submission`() {
+    let sizes = Array(repeating: 1_200, count: 10)
+    let plan = RTPDatagramPacingPlan.make(
+        datagramSizes: sizes,
+        bitsPerSecond: 9_000_000
+    )
+
+    #expect(plan.ranges == [0 ..< 4, 4 ..< 8, 8 ..< 10])
+    #expect(plan.ranges.flatMap(Array.init) == Array(sizes.indices))
+    #expect(plan.ranges.allSatisfy { range in
+        range.reduce(0) { $0 + sizes[$1] } <= 5_625
+    })
+}
+
+@Test func `video pacing drains packet overhead faster than encoded media arrives`() {
+    let datagramSizes = Array(repeating: 1_200, count: 10)
+    let wireRate = RTPDatagramPacingPlan.wireBitsPerSecond(
+        mediaBitsPerSecond: 9_000_000,
+        mediaByteCount: 11_000,
+        datagramSizes: datagramSizes
+    )
+
+    #expect(wireRate == 10_799_999)
+    let mediaDuration = Double(11_000 * 8) / 9_000_000
+    let wireDuration = Double(datagramSizes.reduce(0, +) * 8) / Double(wireRate)
+    #expect(wireDuration < mediaDuration)
+}

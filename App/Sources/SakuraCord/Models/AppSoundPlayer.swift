@@ -11,6 +11,10 @@ nonisolated enum AppSoundEffect: String, CaseIterable, Sendable {
     case disconnect
     case message = "message1"
     case mute
+    case streamEnded = "stream_ended"
+    case streamStarted = "stream_started"
+    case streamUserJoined = "stream_user_joined"
+    case streamUserLeft = "stream_user_left"
     case undeafen
     case unmute
     case userJoin = "user_join"
@@ -100,6 +104,11 @@ nonisolated enum VoiceStateSoundPolicy {
 
         let wasPresent = previous?.channelID == activeChannelID
         let isPresent = current.channelID == activeChannelID
+        let wasStreaming = wasPresent && previous?.isStreaming == true
+        let isStreaming = isPresent && current.isStreaming
+        if wasStreaming != isStreaming {
+            return [isStreaming ? .streamStarted : .streamEnded]
+        }
         if !wasPresent, isPresent {
             return [.userJoin]
         }

@@ -13,15 +13,16 @@ func productionUpdateMetadataEnablesCanonicalBundle() {
 
     #expect(configuration.isEnabled)
     #expect(configuration.feedURL == AppUpdateConfiguration.expectedFeedURL)
+    #expect(configuration.nightlyFeedURL == AppUpdateConfiguration.expectedNightlyFeedURL)
     #expect(configuration.publicEdKey == validPublicKey)
     #expect(AppUpdateConfiguration.scheduledCheckInterval == 21_600)
 }
 
-@Test("linked-worktree and developer bundles cannot enable production updates")
+@Test("noncanonical developer bundles cannot enable production updates")
 func noncanonicalBundlesCannotEnableUpdates() {
     let configuration = AppUpdateConfiguration(
         infoDictionary: productionUpdateInfo(),
-        bundleIdentifier: "dev.sakuracord.SakuraCord.worktree.example"
+        bundleIdentifier: "dev.example.SakuraCord"
     )
 
     #expect(!configuration.isEnabled)
@@ -31,6 +32,7 @@ func noncanonicalBundlesCannotEnableUpdates() {
     "update configuration fails closed when release metadata is incomplete",
     arguments: [
         AppUpdateConfiguration.enabledInfoKey,
+        AppUpdateConfiguration.nightlyFeedInfoKey,
         "SUFeedURL",
         "SUPublicEDKey",
         "SUEnableAutomaticChecks",
@@ -60,6 +62,9 @@ func invalidUpdateTrustMetadataIsDisabled() {
     wrongFeed["SUFeedURL"] = "https://example.invalid/appcast.xml"
     var malformedKey = productionUpdateInfo()
     malformedKey["SUPublicEDKey"] = "not-a-key"
+    var wrongNightlyFeed = productionUpdateInfo()
+    wrongNightlyFeed[AppUpdateConfiguration.nightlyFeedInfoKey] =
+        "https://example.invalid/nightly.xml"
     var wrongInterval = productionUpdateInfo()
     wrongInterval["SUScheduledCheckInterval"] = 60 * 60
     var automaticChecksDisabled = productionUpdateInfo()
@@ -78,6 +83,10 @@ func invalidUpdateTrustMetadataIsDisabled() {
         bundleIdentifier: AppUpdateConfiguration.canonicalBundleIdentifier
     ).isEnabled)
     #expect(!AppUpdateConfiguration(
+        infoDictionary: wrongNightlyFeed,
+        bundleIdentifier: AppUpdateConfiguration.canonicalBundleIdentifier
+    ).isEnabled)
+    #expect(!AppUpdateConfiguration(
         infoDictionary: wrongInterval,
         bundleIdentifier: AppUpdateConfiguration.canonicalBundleIdentifier
     ).isEnabled)
@@ -93,6 +102,42 @@ func invalidUpdateTrustMetadataIsDisabled() {
         infoDictionary: automaticInstallOptInDisabled,
         bundleIdentifier: AppUpdateConfiguration.canonicalBundleIdentifier
     ).isEnabled)
+}
+
+@Test("release track preference defaults safely and selects its signed feed")
+func releaseTrackPreferenceAndFeedSelection() {
+    let configuration = AppUpdateConfiguration(
+        infoDictionary: productionUpdateInfo(),
+        bundleIdentifier: AppUpdateConfiguration.canonicalBundleIdentifier
+    )
+
+    #expect(AppUpdateReleaseTrack(storedValue: nil) == .regular)
+    #expect(AppUpdateReleaseTrack(storedValue: "unknown") == .regular)
+    #expect(AppUpdateReleaseTrack(storedValue: "nightly") == .nightly)
+    #expect(AppUpdateReleaseTrack.regular.feedURL(in: configuration) == configuration.feedURL)
+    #expect(
+        AppUpdateReleaseTrack.nightly.feedURL(in: configuration)
+            == configuration.nightlyFeedURL
+    )
+}
+
+@MainActor
+@Test("release track changes persist before the updater starts")
+func releaseTrackChangesPersist() {
+    let defaults = InMemoryPreferences()
+    let configuration = AppUpdateConfiguration(
+        infoDictionary: productionUpdateInfo(),
+        bundleIdentifier: AppUpdateConfiguration.canonicalBundleIdentifier
+    )
+    let controller = AppUpdateController(configuration: configuration, defaults: defaults)
+
+    controller.setReleaseTrack(.nightly)
+    #expect(controller.releaseTrack == .nightly)
+    #expect(defaults.string(forKey: AppUpdateReleaseTrack.preferenceKey) == "nightly")
+
+    controller.setReleaseTrack(.regular)
+    #expect(controller.releaseTrack == .regular)
+    #expect(defaults.string(forKey: AppUpdateReleaseTrack.preferenceKey) == "regular")
 }
 
 @MainActor
@@ -119,6 +164,8 @@ func disabledUpdaterLifecycleStaysInert() {
 private func productionUpdateInfo() -> [String: Any] {
     [
         AppUpdateConfiguration.enabledInfoKey: true,
+        AppUpdateConfiguration.nightlyFeedInfoKey:
+            AppUpdateConfiguration.expectedNightlyFeedURL.absoluteString,
         "SUFeedURL": AppUpdateConfiguration.expectedFeedURL.absoluteString,
         "SUPublicEDKey": validPublicKey,
         "SUEnableAutomaticChecks": true,

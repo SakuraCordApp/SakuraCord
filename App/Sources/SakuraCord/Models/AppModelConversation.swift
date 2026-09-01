@@ -12,6 +12,10 @@ import SakuraCordPersistence
 import UniformTypeIdentifiers
 import UserNotifications
 
+// Conversation mutation, pagination, and composer operations intentionally
+// share the same account-session extension so cancellation guards stay local.
+// swiftlint:disable file_length
+
 extension AppModel {
     func removeForumPost(_ postID: ChannelID) {
         guard let index = forumCatalogueIndexByID.removeValue(forKey: postID) else { return }
@@ -39,7 +43,10 @@ extension AppModel {
         let generation = channelLoadGeneration
         messageLoadError = nil
         messageLoadErrorIsEarlierPage = false
+        messageLoadErrorIsLaterPage = false
         isLoadingEarlier = false
+        isLoadingLater = false
+        hasMoreLaterMessages = false
         hasCompletedInitialMessageLoad = false
         stopLocalTyping(clearThrottle: true)
         replyingTo = nil
@@ -51,6 +58,7 @@ extension AppModel {
             replaceSelectedMessages(with: [])
             draft = ""
             hasMoreMessages = false
+            hasMoreLaterMessages = false
             isLoadingMessages = false
             hasCompletedInitialMessageLoad = true
             return
@@ -64,6 +72,7 @@ extension AppModel {
         )
         let cachedBoundary = hasMoreCache[channelID]
         hasMoreMessages = cachedBoundary ?? false
+        hasMoreLaterMessages = false
         if cachedBoundary != nil {
             isLoadingMessages = false
             hasCompletedInitialMessageLoad = true
@@ -105,7 +114,9 @@ extension AppModel {
         let generation = channelLoadGeneration
         messageLoadError = nil
         messageLoadErrorIsEarlierPage = false
+        messageLoadErrorIsLaterPage = false
         isLoadingEarlier = false
+        isLoadingLater = false
         let preservesLoadedHistory = !messages.isEmpty
             && messages.allSatisfy { $0.channelID == channelID }
         isLoadingMessages = !preservesLoadedHistory
@@ -121,6 +132,7 @@ extension AppModel {
         }
     }
 
+    // swiftlint:disable:next function_body_length
     func loadSelectedChannel(
         _ channelID: ChannelID,
         generation: Int,
@@ -145,7 +157,11 @@ extension AppModel {
                 revision: refreshRevision
             )
         }
-        async let storedDraft = storedDraft(in: channelID, account: account)
+        async let storedDraft = AppPerformanceSignposts.measure(
+            "ConversationDraftLoad"
+        ) {
+            await storedDraft(in: channelID, account: account)
+        }
         // Discord lets already-dispatched history reads finish when the user
         // switches channels. Besides retaining the response in MessageStore,
         // this also lets UserStore learn authors for account-wide picker
@@ -153,11 +169,20 @@ extension AppModel {
         // and discard only its stale UI result below. This avoids repeatedly
         // cancelling URLSession HTTP/3 streams during fast navigation, which
         // can leave the reused connection stalled on macOS.
-        let freshPageTask = Task {
-            try await account.provider.messages(
-                in: channelID,
-                before: nil,
-                limit: 10
+        let freshPageTask: Task<MessagePage, any Error>
+        if let prefetch = bootstrapHistoryPrefetch,
+           prefetch.accountGeneration == account.generation,
+           prefetch.accountRevision == account.installedRevision,
+           prefetch.channelID == channelID
+        {
+            bootstrapHistoryPrefetch = nil
+            freshPageTask = prefetch.task
+        } else {
+            bootstrapHistoryPrefetch?.task.cancel()
+            bootstrapHistoryPrefetch = nil
+            freshPageTask = makeHistoryRequestTask(
+                channelID: channelID,
+                account: account
             )
         }
 
@@ -174,39 +199,102 @@ extension AppModel {
             guard isCurrentAccountSession(account),
                   isCurrentLoad(channelID, generation: generation)
             else { return }
+            if !page.resolvedMembers.isEmpty {
+                let indexed = mergedMemberStore(with: page.resolvedMembers)
+                if membersByID != indexed {
+                    membersByID = indexed
+                }
+            }
             let initialMutations = conversationRefreshMutations(
                 in: channelID,
                 revision: refreshRevision
             )
-            let refreshedMessages = Self.applyingConversationRefreshMutations(
+            let initialRefreshedMessages = Self.applyingConversationRefreshMutations(
                 initialMutations,
                 to: page.messages
             )
-            let merged = Self.reconcilingNewestPage(
-                current: messages,
-                fresh: refreshedMessages,
+            let initialReconciliationCurrent = hasMoreLaterMessages
+                ? messages.filter { $0.outboxState != .confirmed }
+                : messages
+            let initiallyMerged = Self.reconcilingNewestPage(
+                current: initialReconciliationCurrent,
+                fresh: initialRefreshedMessages,
                 hasMoreBefore: page.hasMoreBefore,
                 authoritativeOldestMessageID: page.messages.map(\.id).min()
             )
-            if merged != messages {
-                replaceSelectedMessages(with: merged)
-            }
-            reportStartupContentReady(channelID)
-            await resolveSelectedHistoryMembers(
-                channelID: channelID,
-                generation: generation,
-                session: account
-            )
+            let preparedRows: [MessageRowPresentation]? =
+                if initiallyMerged != messages {
+                    await AppPerformanceSignposts.measure(
+                        "ConversationRowPreprocessing"
+                    ) {
+                        await prepareTimelineRows(
+                            for: initiallyMerged,
+                            priority: .userInitiated
+                        )
+                    }
+                } else {
+                    nil
+                }
             guard isCurrentAccountSession(account),
                   isCurrentLoad(channelID, generation: generation)
             else { return }
-            try await finishSelectedChannelLoad(
-                channelID: channelID,
-                freshMessages: page.messages,
-                refreshRevision: refreshRevision,
-                hasMoreBefore: page.hasMoreBefore,
-                session: account
-            )
+            AppPerformanceSignposts.measureSync("ConversationInitialCommit") {
+                let initialMutations = conversationRefreshMutations(
+                    in: channelID,
+                    revision: refreshRevision
+                )
+                let refreshedMessages = Self.applyingConversationRefreshMutations(
+                    initialMutations,
+                    to: page.messages
+                )
+                let reconciliationCurrent = hasMoreLaterMessages
+                    ? messages.filter { $0.outboxState != .confirmed }
+                    : messages
+                let merged = Self.reconcilingNewestPage(
+                    current: reconciliationCurrent,
+                    fresh: refreshedMessages,
+                    hasMoreBefore: page.hasMoreBefore,
+                    authoritativeOldestMessageID: page.messages.map(\.id).min()
+                )
+                if merged != messages {
+                    replaceSelectedMessages(
+                        with: merged,
+                        preparedRows: preparedRows
+                    )
+                }
+            }
+            reportStartupContentReady(channelID)
+            let freshMessageIDs = Set(page.messages.map(\.id))
+            let needsSupplementalMemberResolution =
+                !page.hasCompleteMemberResolution
+                || messages.contains { !freshMessageIDs.contains($0.id) }
+            guard isCurrentAccountSession(account),
+                  isCurrentLoad(channelID, generation: generation)
+            else { return }
+            try await AppPerformanceSignposts.measure(
+                "ConversationFinalize"
+            ) {
+                try await finishSelectedChannelLoad(
+                    channelID: channelID,
+                    freshMessages: page.messages,
+                    refreshRevision: refreshRevision,
+                    hasMoreBefore: page.hasMoreBefore,
+                    session: account
+                )
+            }
+            if needsSupplementalMemberResolution {
+                startAccountChildTask(account: account) { model, account in
+                    await AppPerformanceSignposts.measure(
+                        "ConversationMemberResolution"
+                    ) {
+                        await model.resolveSelectedHistoryMembers(
+                            channelID: channelID,
+                            generation: generation,
+                            session: account
+                        )
+                    }
+                }
+            }
         } catch is CancellationError {
             return
         } catch {
@@ -217,6 +305,52 @@ extension AppModel {
                 account: account
             )
         }
+    }
+
+    func beginBootstrapHistoryPrefetch(
+        channelID: ChannelID,
+        account: AppModelAccountSession
+    ) {
+        bootstrapHistoryPrefetch?.task.cancel()
+        bootstrapHistoryPrefetch = BootstrapHistoryPrefetch(
+            accountGeneration: account.generation,
+            accountRevision: account.installedRevision,
+            channelID: channelID,
+            task: makeHistoryRequestTask(channelID: channelID, account: account)
+        )
+    }
+
+    func makeHistoryRequestTask(
+        channelID: ChannelID,
+        account: AppModelAccountSession
+    ) -> Task<MessagePage, any Error> {
+        let provider = account.provider
+        return Task.detached(priority: .userInitiated) {
+            try await Self.requestInitialHistory(
+                provider: provider,
+                channelID: channelID
+            )
+        }
+    }
+
+    nonisolated static func requestInitialHistory(
+        provider: any ChatProvider,
+        channelID: ChannelID
+    ) async throws -> MessagePage {
+        let interval = AppPerformanceSignposts.signposter.beginInterval(
+            "ConversationHistoryRequest",
+            id: AppPerformanceSignposts.signposter.makeSignpostID()
+        )
+        defer {
+            AppPerformanceSignposts.signposter.endInterval(
+                "ConversationHistoryRequest", interval
+            )
+        }
+        return try await provider.messagesForImmediatePresentation(
+            in: channelID,
+            anchoredAt: .newest,
+            limit: 10
+        )
     }
 
     private func handleSelectedChannelLoadFailure(
@@ -239,6 +373,9 @@ extension AppModel {
         acceptsEmpty: Bool = false
     ) {
         guard acceptsEmpty || !messages.isEmpty else { return }
+        AppPerformanceSignposts.reportConversationHistoryReady(
+            channelID: channelID
+        )
         AppPerformanceSignposts.reportStartupConversationHistoryReady(
             channelID: channelID
         )
@@ -260,8 +397,11 @@ extension AppModel {
             mutations,
             to: freshMessages
         )
+        let reconciliationCurrent = hasMoreLaterMessages
+            ? messages.filter { $0.outboxState != .confirmed }
+            : messages
         let reconciledMessages = Self.reconcilingNewestPage(
-            current: messages,
+            current: reconciliationCurrent,
             fresh: refreshedMessages,
             hasMoreBefore: hasMoreBefore,
             authoritativeOldestMessageID: freshMessages.map(\.id).min()
@@ -270,9 +410,11 @@ extension AppModel {
             replaceSelectedMessages(with: reconciledMessages)
         }
         hasMoreMessages = hasMoreBefore
+        hasMoreLaterMessages = false
         hasMoreCache[channelID] = hasMoreBefore
         messageLoadError = nil
         messageLoadErrorIsEarlierPage = false
+        messageLoadErrorIsLaterPage = false
         isLoadingMessages = false
         hasCompletedInitialMessageLoad = true
         readState.observeLoadedMessages(channelID: channelID, messages: messages)
@@ -314,7 +456,9 @@ extension AppModel {
             let changedUserIDs = TimelineMemberPresentationImpact.changedUserIDs(
                 from: previousMembersByID,
                 to: indexed,
-                guildRoles: guildRoles
+                guildRoles: guildRoles,
+                candidates: TimelineMemberPresentationImpact
+                    .referencedUserIDs(in: messages)
             )
             let affectedMessageIDs = TimelineMemberPresentationImpact
                 .affectedMessageIDs(
@@ -348,72 +492,72 @@ extension AppModel {
         }
     }
 
-    func loadEarlier(account: AppModelAccountSession? = nil) async {
+    @discardableResult
+    func loadNewestMessageWindow(account: AppModelAccountSession? = nil) async -> Bool {
         let session = account ?? accountSession()
-        guard !Task.isCancelled, isCurrentAccountSession(session) else { return }
-        guard let channelID = selectedChannelID, let first = messages.first, hasMoreMessages,
-              !isLoadingEarlier
-        else { return }
-        messageLoadError = nil
-        messageLoadErrorIsEarlierPage = false
-        isLoadingEarlier = true
+        guard !Task.isCancelled,
+              isCurrentAccountSession(session),
+              let channelID = selectedChannelID
+        else { return false }
+        if !hasMoreLaterMessages {
+            requestNewestMessagePresentation(channelID: channelID)
+            return true
+        }
+        isLoadingMessages = true
         defer {
             if isCurrentAccountSession(session), selectedChannelID == channelID {
-                isLoadingEarlier = false
+                isLoadingMessages = false
             }
         }
+        messageLoadError = nil
+        messageLoadErrorIsEarlierPage = false
+        messageLoadErrorIsLaterPage = false
         do {
             let page = try await session.provider.messages(
                 in: channelID,
-                before: first.id,
+                anchoredAt: .newest,
                 limit: 50
             )
             guard !Task.isCancelled,
                   isCurrentAccountSession(session),
                   selectedChannelID == channelID
-            else { return }
-            let reconcileStart = ProcessInfo.processInfo.systemUptime
-            let earlier = page.messages.filter {
-                !selectedMessageIDs.contains($0.id)
-            }
-            let filterEnd = ProcessInfo.processInfo.systemUptime
-            if !earlier.isEmpty {
-                guard await prependSelectedMessages(
-                    earlier,
-                    channelID: channelID
-                ) else { return }
-            }
-            let prependEnd = ProcessInfo.processInfo.systemUptime
+            else { return false }
+            replaceSelectedMessages(with: page.messages)
             hasMoreMessages = page.hasMoreBefore
+            hasMoreLaterMessages = false
             hasMoreCache[channelID] = page.hasMoreBefore
-            messageLoadError = nil
-            messageLoadErrorIsEarlierPage = false
-            let stateEnd = ProcessInfo.processInfo.systemUptime
-            if runsChatPerformanceBenchmark {
-                let milliseconds = (stateEnd - reconcileStart) * 1_000
-                if milliseconds >= 4 {
-                    NSLog(
-                        "SakuraCord history phases: filter %.2f ms; prepend %.2f ms; state %.2f ms (%d rows)",
-                        (filterEnd - reconcileStart) * 1_000,
-                        (prependEnd - filterEnd) * 1_000,
-                        (stateEnd - prependEnd) * 1_000,
-                        messages.count
-                    )
-                }
-            }
+            requestNewestMessagePresentation(channelID: channelID)
+            return true
         } catch is CancellationError {
-            return
+            return false
         } catch {
             guard isCurrentAccountSession(session),
                   selectedChannelID == channelID
-            else { return }
+            else { return false }
             messageLoadError = error.localizedDescription
-            messageLoadErrorIsEarlierPage = true
+            return false
         }
+    }
+
+    private func requestNewestMessagePresentation(channelID: ChannelID) {
+        conversationNewestRequestID &+= 1
+        conversationNewestRequest = ConversationNewestRequest(
+            requestID: conversationNewestRequestID,
+            channelID: channelID
+        )
     }
 
     func retryMessageLoad() {
         guard selectedChannelID != nil else { return }
+        if messageLoadErrorIsLaterPage {
+            messageLoadError = nil
+            messageLoadErrorIsLaterPage = false
+            let account = accountSession()
+            startAccountChildTask(account: account) { model, account in
+                await model.loadLater(account: account)
+            }
+            return
+        }
         if messageLoadErrorIsEarlierPage {
             messageLoadError = nil
             messageLoadErrorIsEarlierPage = false
@@ -430,9 +574,11 @@ extension AppModel {
         let destination: MessageComposerDestination
         if message.channelID == selectedChannelID {
             replyingTo = message
+            replyMentionsAuthor = true
             destination = .channel
         } else if message.channelID == openThread?.id {
             threadReplyingTo = message
+            threadReplyMentionsAuthor = true
             destination = .thread
         } else {
             return
@@ -441,6 +587,47 @@ extension AppModel {
             name: .sakuracordFocusComposer,
             object: destination
         )
+    }
+
+    @discardableResult
+    func navigateReplySelection(
+        in destination: MessageComposerDestination,
+        direction: MessageReplyNavigationDirection
+    ) -> Bool {
+        let availableMessages: [Message]
+        let currentReply: Message?
+        switch destination {
+        case .channel:
+            availableMessages = messages
+            currentReply = replyingTo
+        case .thread:
+            availableMessages = threadMessages
+            currentReply = threadReplyingTo
+        }
+        guard !availableMessages.isEmpty else { return false }
+
+        let nextIndex: Int
+        if let currentReply,
+           let currentIndex = availableMessages.firstIndex(where: { $0.id == currentReply.id })
+        {
+            switch direction {
+            case .older:
+                nextIndex = currentIndex > availableMessages.startIndex
+                    ? availableMessages.index(before: currentIndex)
+                    : currentIndex
+            case .newer:
+                nextIndex = currentIndex < availableMessages.index(before: availableMessages.endIndex)
+                    ? availableMessages.index(after: currentIndex)
+                    : currentIndex
+            }
+        } else {
+            nextIndex = availableMessages.index(before: availableMessages.endIndex)
+        }
+        if currentReply?.id == availableMessages[nextIndex].id {
+            return true
+        }
+        reply(to: availableMessages[nextIndex])
+        return true
     }
 
     func cancelReply(in destination: MessageComposerDestination = .channel) {
@@ -454,6 +641,31 @@ extension AppModel {
             name: .sakuracordFocusComposer,
             object: destination
         )
+    }
+
+    @discardableResult
+    func consumeEscapeForReply(
+        in destination: MessageComposerDestination
+    ) -> Bool {
+        let hasReply = switch destination {
+        case .channel: replyingTo != nil
+        case .thread: threadReplyingTo != nil
+        }
+        guard hasReply else { return false }
+        cancelReply(in: destination)
+        return true
+    }
+
+    func setReplyMentionsAuthor(
+        _ mentionsAuthor: Bool,
+        in destination: MessageComposerDestination
+    ) {
+        switch destination {
+        case .channel:
+            replyMentionsAuthor = mentionsAuthor
+        case .thread:
+            threadReplyMentionsAuthor = mentionsAuthor
+        }
     }
 
     func open(_ thread: MessageThreadSummary) {
@@ -736,9 +948,11 @@ extension AppModel {
         guard !content.isEmpty || !attachments.isEmpty else { return false }
         guard validateAttachmentCount(attachments) else { return false }
         let replyTo = threadReplyingTo?.id
+        let mentionsRepliedUser = threadReplyMentionsAuthor
         return await sendThreadMessage(
             content: content,
             replyTo: replyTo,
+            mentionsRepliedUser: mentionsRepliedUser,
             attachments: attachments,
             thread: thread,
             clearsComposer: true
@@ -749,6 +963,7 @@ extension AppModel {
     func sendThreadMessage(
         content: String,
         replyTo: MessageID? = nil,
+        mentionsRepliedUser: Bool = true,
         attachments: [ForumPostAttachment],
         thread: MessageThreadSummary,
         clearsComposer: Bool
@@ -757,6 +972,7 @@ extension AppModel {
             channelID: thread.id,
             content: content,
             replyTo: replyTo,
+            mentionsRepliedUser: mentionsRepliedUser,
             attachments: attachments
         )
         threadErrorMessage = nil
@@ -795,6 +1011,10 @@ extension AppModel {
             scheduleLocalTyping(for: value)
         }
         guard let channelID = selectedChannelID else { return }
+        quickSwitcherDraftChannelIDs.removeAll { $0 == channelID }
+        if !value.isEmpty {
+            quickSwitcherDraftChannelIDs.insert(channelID, at: 0)
+        }
         let session = accountSession()
         Task { [weak self] in
             guard let self, self.isCurrentAccountSession(session) else { return }
@@ -1489,7 +1709,11 @@ extension AppModel {
         let content = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !content.isEmpty || !attachments.isEmpty else { return false }
         guard validateAttachmentCount(attachments) else { return false }
+        if hasMoreLaterMessages {
+            guard await loadNewestMessageWindow() else { return false }
+        }
         let replyTo = replyingTo?.id
+        let mentionsRepliedUser = replyMentionsAuthor
         let replyPreview = replyingTo.map {
             MessageReplyPreview(message: $0)
         }
@@ -1497,6 +1721,7 @@ extension AppModel {
             channelID: channelID,
             content: content,
             replyTo: replyTo,
+            mentionsRepliedUser: mentionsRepliedUser,
             replyPreview: replyPreview,
             attachments: attachments,
             clearsComposer: true
@@ -1508,12 +1733,17 @@ extension AppModel {
         channelID: ChannelID,
         content: String,
         replyTo: MessageID?,
+        mentionsRepliedUser: Bool = true,
         replyPreview: MessageReplyPreview?,
         attachments: [ForumPostAttachment],
         clearsComposer: Bool
     ) async -> Bool {
         let outgoing = SendMessageDraft(
-            channelID: channelID, content: content, replyTo: replyTo, attachments: attachments
+            channelID: channelID,
+            content: content,
+            replyTo: replyTo,
+            mentionsRepliedUser: mentionsRepliedUser,
+            attachments: attachments
         )
         if clearsComposer {
             stopLocalTyping(clearThrottle: true)
@@ -1663,6 +1893,26 @@ extension AppModel {
 
     func clearComposerAttachments(for destination: MessageComposerDestination) {
         setComposerAttachments([], for: destination)
+    }
+
+    @discardableResult
+    func consumeEscapeForComposerAttachments(
+        in destination: MessageComposerDestination
+    ) -> Bool {
+        guard !composerAttachments(for: destination).isEmpty else { return false }
+        clearComposerAttachments(for: destination)
+        return true
+    }
+
+    @discardableResult
+    func consumeEscapeForSupplementaryConversation() -> Bool {
+        if openThread != nil {
+            closeThread()
+            return true
+        }
+        guard isVoiceChatOpen else { return false }
+        closeVoiceChat()
+        return true
     }
 
     func restoreComposerAttachments(

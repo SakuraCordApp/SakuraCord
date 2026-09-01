@@ -315,6 +315,44 @@ private func verifyAnimatedAndCommandFixtures(
     #expect(emitted.allSatisfy { !$0.content.isEmpty && $0.channelID == channelID })
 }
 
+@Test func `mock message history pages remain contiguous around a distant target`() async throws {
+    let provider = MockChatProvider(timelineMessageCount: 500)
+    _ = try await provider.bootstrap()
+    let channelID = ChannelID(rawValue: 210)
+    let targetID = MessageID(rawValue: 5_000_100)
+
+    let around = try await provider.messages(
+        in: channelID,
+        anchoredAt: .around(targetID),
+        limit: 50
+    )
+    #expect(around.messages.map(\.id) == (75 ... 124).map {
+        MessageID(rawValue: 5_000_000 + UInt64($0))
+    })
+    #expect(around.hasMoreBefore)
+    #expect(around.hasMoreAfter)
+
+    let earlier = try await provider.messages(
+        in: channelID,
+        anchoredAt: .before(try #require(around.messages.first).id),
+        limit: 20
+    )
+    #expect(earlier.messages.map(\.id) == (55 ... 74).map {
+        MessageID(rawValue: 5_000_000 + UInt64($0))
+    })
+    #expect(earlier.hasMoreBefore)
+
+    let later = try await provider.messages(
+        in: channelID,
+        anchoredAt: .after(try #require(around.messages.last).id),
+        limit: 20
+    )
+    #expect(later.messages.map(\.id) == (125 ... 144).map {
+        MessageID(rawValue: 5_000_000 + UInt64($0))
+    })
+    #expect(later.hasMoreAfter)
+}
+
 @Test func `mock timeline mutation stress emits deterministic updates and deletes`() async throws {
     enum MutationEvent: Equatable {
         case updated(MessageID, String)

@@ -17,8 +17,35 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--end", type=float, default=float("inf"), help="exclusive trace time")
     parser.add_argument("--limit", type=int, default=25)
     parser.add_argument("--app-only", action="store_true")
+    parser.add_argument(
+        "--contains",
+        help=(
+            "only include samples whose complete stack contains this "
+            "case-insensitive regular expression"
+        ),
+    )
     parser.add_argument("--signposts", help="xctrace signpost XML export")
     parser.add_argument("--interval", help="use the outer bounds of this signpost interval")
+    parser.add_argument(
+        "--interval-selection",
+        choices=("only", "first", "last", "longest"),
+        default="only",
+        help="select an occurrence when an interval repeats",
+    )
+    parser.add_argument(
+        "--delayed-ticks",
+        metavar="BENCHMARK_RESULT",
+        help=(
+            "restrict samples to the frame interval preceding each delayed "
+            "tick in a benchmark-result TSV; requires --signposts and --interval"
+        ),
+    )
+    parser.add_argument(
+        "--delayed-window-padding-ms",
+        type=float,
+        default=4.0,
+        help="padding before and after each delayed frame interval (default: 4 ms)",
+    )
     return parser.parse_args()
 
 
@@ -42,7 +69,7 @@ def print_table(title: str, values: dict[tuple[str, str], float], limit: int) ->
 
 
 def signpost_interval_bounds(
-    path: str, interval_name: str, process_query: str
+    path: str, interval_name: str, process_query: str, selection: str
 ) -> tuple[float, float]:
     displays: collections.defaultdict[str, dict[str, str]] = collections.defaultdict(dict)
     raw_values: collections.defaultdict[str, dict[str, str]] = collections.defaultdict(dict)
@@ -133,23 +160,98 @@ def signpost_interval_bounds(
             if time >= start:
                 intervals.append((start, time))
         row.clear()
-    if len(intervals) != 1:
+    if not intervals:
         raise SystemExit(
-            f"Expected exactly one {interval_name} interval for process "
-            f"{process_query}; found {len(intervals)}"
+            f"No {interval_name} intervals found for process {process_query}"
         )
-    return intervals[0]
+    if selection == "only":
+        if len(intervals) != 1:
+            raise SystemExit(
+                f"Expected exactly one {interval_name} interval for process "
+                f"{process_query}; found {len(intervals)}; choose "
+                "--interval-selection"
+            )
+        return intervals[0]
+    if selection == "first":
+        return intervals[0]
+    if selection == "last":
+        return intervals[-1]
+    return max(intervals, key=lambda bounds: bounds[1] - bounds[0])
+
+
+def delayed_tick_windows(
+    path: str, interval_start: float, padding_milliseconds: float
+) -> list[tuple[float, float]]:
+    if padding_milliseconds < 0:
+        raise SystemExit("--delayed-window-padding-ms cannot be negative")
+    values: dict[str, str] = {}
+    with open(path, encoding="utf-8") as result:
+        for line in result:
+            key, separator, value = line.rstrip("\n").partition("\t")
+            if separator:
+                values[key] = value
+    raw_samples = values.get("delayed_tick_samples_offset_ms_interval_ms")
+    if raw_samples is None:
+        raise SystemExit(
+            "Benchmark result has no delayed tick sample distribution"
+        )
+    windows: list[tuple[float, float]] = []
+    for raw_sample in raw_samples.split(","):
+        if not raw_sample:
+            continue
+        raw_offset, separator, raw_interval = raw_sample.partition(":")
+        if not separator:
+            raise SystemExit(f"Invalid delayed tick sample: {raw_sample}")
+        try:
+            offset_milliseconds = float(raw_offset)
+            interval_milliseconds = float(raw_interval)
+        except ValueError as error:
+            raise SystemExit(f"Invalid delayed tick sample: {raw_sample}") from error
+        if offset_milliseconds < 0 or interval_milliseconds <= 0:
+            raise SystemExit(f"Invalid delayed tick sample: {raw_sample}")
+        start = interval_start + max(
+            0.0,
+            offset_milliseconds - interval_milliseconds - padding_milliseconds,
+        ) / 1_000.0
+        end = interval_start + (
+            offset_milliseconds + padding_milliseconds
+        ) / 1_000.0
+        windows.append((start, end))
+    if not windows:
+        return []
+    merged: list[tuple[float, float]] = []
+    for start, end in sorted(windows):
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return merged
 
 
 def main() -> None:
     args = parse_args()
+    selected_windows: list[tuple[float, float]] | None = None
     if args.interval:
         if not args.signposts:
             raise SystemExit("--interval requires --signposts")
         args.start, args.end = signpost_interval_bounds(
-            args.signposts, args.interval, args.process
+            args.signposts,
+            args.interval,
+            args.process,
+            args.interval_selection,
+        )
+    if args.delayed_ticks:
+        if not args.interval or not args.signposts:
+            raise SystemExit(
+                "--delayed-ticks requires --signposts and --interval"
+            )
+        selected_windows = delayed_tick_windows(
+            args.delayed_ticks,
+            args.start,
+            args.delayed_window_padding_ms,
         )
     process_pattern = re.compile(re.escape(args.process), re.IGNORECASE)
+    stack_pattern = re.compile(args.contains, re.IGNORECASE) if args.contains else None
 
     binaries: dict[str, str] = {}
     pids: dict[str, str] = {}
@@ -230,9 +332,20 @@ def main() -> None:
                 else process_pattern.search(process_name) or process_pattern.search(pid)
             )
             sample_time = resolved(direct_child(row, "sample-time"), times)
-            if matches and sample_time is not None and args.start <= sample_time < args.end:
+            sample_is_selected = sample_time is not None and (
+                any(start <= sample_time < end for start, end in selected_windows)
+                if selected_windows is not None
+                else args.start <= sample_time < args.end
+            )
+            if matches and sample_is_selected:
                 stack = resolved(direct_child(row, "tagged-backtrace"), stacks)
                 if stack:
+                    if stack_pattern is not None and not any(
+                        stack_pattern.search(f"{binary} {name}")
+                        for name, binary in stack
+                    ):
+                        row.clear()
+                        continue
                     target_binaries.add(re.sub(r" \(\d+\)$", "", process_name))
                     selected = (
                         [frame for frame in stack if frame[1] in target_binaries]
@@ -253,12 +366,29 @@ def main() -> None:
         row.clear()
 
     if sample_count == 0:
+        if stack_pattern is not None or selected_windows is not None:
+            print(f"process\t{args.process}")
+            if selected_windows is not None:
+                print(f"windows\t{len(selected_windows)}")
+            else:
+                print(f"window\t{args.start:.6f}...{args.end:.6f} s")
+            print("samples\t0")
+            print("sampled\t0.000 ms")
+            return
         raise SystemExit(
             f"No Time Profiler samples for process {args.process} in the requested window"
         )
 
     print(f"process\t{args.process}")
-    print(f"window\t{args.start:.6f}...{args.end:.6f} s")
+    if selected_windows is not None:
+        print(f"windows\t{len(selected_windows)}")
+        print(
+            "window-union\t"
+            + ",".join(f"{start:.6f}...{end:.6f}" for start, end in selected_windows)
+            + " s"
+        )
+    else:
+        print(f"window\t{args.start:.6f}...{args.end:.6f} s")
     print(f"samples\t{sample_count}")
     print(f"sampled\t{sampled_milliseconds:.3f} ms")
     print()

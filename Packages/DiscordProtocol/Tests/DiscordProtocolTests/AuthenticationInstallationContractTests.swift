@@ -81,6 +81,11 @@ extension ProviderRequestContractTests {
             JSONSerialization.jsonObject(with: identifyData) as? [String: Any]
         )
         let identifyBody = try #require(identify["d"] as? [String: Any])
+        #expect(
+            (identifyBody["capabilities"] as? NSNumber)?.intValue
+                == DiscordProductionBaseline.august2026
+                    .privateChannelObfuscationCapabilities
+        )
         let identifyProperties = try #require(identifyBody["properties"] as? [String: Any])
         #expect(identifyProperties["installation_id"] == nil)
         await provider.disconnect()

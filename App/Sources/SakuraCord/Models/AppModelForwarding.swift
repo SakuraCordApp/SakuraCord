@@ -14,19 +14,32 @@ extension AppModel {
         case .privateMembersChanged(let value):
             if selectedGuildID == nil { members = value }
         case .knownUsersChanged(let users):
-            guard var value = snapshot else { return true }
-            value.knownUsers = users
-            snapshot = value
-            forwardSearchSourceRevision &+= 1
+            updateForwardSnapshot { $0.knownUsers = users }
+        case .quickSwitcherUserIDsChanged(let userIDs):
+            updateForwardSnapshot { $0.quickSwitcherUserIDs = userIDs }
+        case .messageSearchUsersChanged(let users):
+            updateForwardSnapshot { $0.messageSearchUsers = users }
         case .userSearchAliasesChanged(let aliases):
-            guard var value = snapshot else { return true }
-            value.userSearchAliasesByUserID = aliases
-            snapshot = value
-            forwardSearchSourceRevision &+= 1
+            updateForwardSnapshot { $0.userSearchAliasesByUserID = aliases }
+        case .quickSwitcherGuildMemberUserIDsChanged(let userIDsByGuildID):
+            updateForwardSnapshot { $0.quickSwitcherGuildMemberUserIDs = userIDsByGuildID }
+        case .quickSwitcherJoinedMemberIDsChanged(let userIDsByGuildID):
+            updateForwardSnapshot { $0.quickSwitcherJoinedGuildMemberUserIDs = userIDsByGuildID }
+        case .quickSwitcherGuildMemberAliasesChanged(let aliasesByGuildID):
+            updateForwardSnapshot { $0.quickSwitcherGuildMemberAliases = aliasesByGuildID }
         default:
             return false
         }
         return true
+    }
+
+    private func updateForwardSnapshot(
+        _ update: (inout BootstrapSnapshot) -> Void
+    ) {
+        guard var value = snapshot else { return }
+        update(&value)
+        snapshot = value
+        forwardSearchSourceRevision &+= 1
     }
 
     nonisolated static func updatedForwardDestinationHistory(
