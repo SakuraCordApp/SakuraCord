@@ -18,6 +18,10 @@ private enum SoundboardSection: Hashable, Identifiable {
         case .search: "search"
         }
     }
+
+    var contentID: String {
+        "soundboard-content:\(id)"
+    }
 }
 
 private struct SoundboardPickerSection {
@@ -157,7 +161,7 @@ struct SoundboardPickerView: View {
                                 section: section,
                                 model: model
                             )
-                            .id(section.id.id)
+                            .id(section.id.contentID)
                             .onAppear { visibleSection = section.id }
                         }
                     }
@@ -170,7 +174,7 @@ struct SoundboardPickerView: View {
                 guard !value.isEmpty else { return }
                 Task { @MainActor in
                     await Task.yield()
-                    proxy.scrollTo(SoundboardSection.search.id, anchor: .top)
+                    proxy.scrollTo(SoundboardSection.search.contentID, anchor: .top)
                 }
         }
     }
@@ -225,10 +229,11 @@ struct SoundboardPickerView: View {
 
     private func jump(to section: SoundboardSection, proxy: ScrollViewProxy) {
         visibleSection = section
-        withAnimation(.snappy(duration: 0.2)) {
-            proxy.scrollTo(section.id, anchor: .top)
+        Task { @MainActor in
+            await Task.yield()
+            proxy.scrollTo(section.contentID, anchor: .top)
+            searchIsFocused = true
         }
-        searchIsFocused = true
     }
 }
 
