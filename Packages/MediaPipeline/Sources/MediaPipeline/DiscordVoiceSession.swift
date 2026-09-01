@@ -377,6 +377,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
 
     public func playSoundboardClipLocally(
         _ clip: SoundboardPCMClip,
+        soundID: String,
         volume: Float = 1,
         completion: (@MainActor @Sendable () -> Void)? = nil
     ) async throws {
@@ -385,6 +386,7 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         }
         try await audioEngine.playSoundboardClipLocally(
             clip,
+            soundID: soundID,
             volume: volume,
             completion: completion
         )
@@ -393,12 +395,13 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
     @discardableResult
     public func enqueueOutgoingSoundboardClip(
         _ clip: SoundboardPCMClip,
+        soundID: String,
         volume: Float = 1
     ) async throws -> Bool {
         guard state == .connected, let audioEngine else {
             throw VoiceSessionError.transportUnavailable
         }
-        return await audioEngine.enqueueOutgoingSoundboardClip(clip, volume: volume)
+        return await audioEngine.enqueueOutgoingSoundboardClip(clip, soundID: soundID, volume: volume)
     }
 
     public func stopOutgoingSoundboardAudio() async {

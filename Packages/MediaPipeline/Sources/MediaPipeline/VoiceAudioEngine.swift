@@ -31,6 +31,7 @@ public struct CapturedOpusFrame: Sendable {
 @MainActor
 public final class VoiceAudioEngine {
     private struct LocalSoundboardPlayback {
+        let soundID: String
         let player: AVAudioPlayerNode
         let completion: (@MainActor @Sendable () -> Void)?
     }
@@ -579,6 +580,7 @@ public final class VoiceAudioEngine {
 
     public func playSoundboardClipLocally(
         _ clip: SoundboardPCMClip,
+        soundID: String,
         volume: Float = 1,
         completion: (@MainActor @Sendable () -> Void)? = nil
     ) throws {
@@ -590,6 +592,12 @@ public final class VoiceAudioEngine {
             schedulePlaybackRecovery()
             throw VoiceAudioEngineError.outputUnavailable
         }
+        let buffer = try clip.audioBuffer()
+        for id in localSoundboardPlayers.compactMap({
+            $0.value.soundID == soundID ? $0.key : nil
+        }) {
+            finishLocalSoundboardPlayback(id: id)
+        }
         let id = UUID()
         let player = AVAudioPlayerNode()
         player.volume = min(max(volume, 0), 2)
@@ -600,10 +608,10 @@ public final class VoiceAudioEngine {
             format: OpusCodec.pcmFormat
         )
         localSoundboardPlayers[id] = LocalSoundboardPlayback(
+            soundID: soundID,
             player: player,
             completion: completion
         )
-        let buffer = try clip.audioBuffer()
         player.scheduleBuffer(
             buffer,
             completionCallbackType: .dataPlayedBack
@@ -623,9 +631,10 @@ public final class VoiceAudioEngine {
     @discardableResult
     public func enqueueOutgoingSoundboardClip(
         _ clip: SoundboardPCMClip,
+        soundID: String,
         volume: Float = 1
     ) -> Bool {
-        captureEncoder.enqueueInjectedAudio(clip, volume: volume)
+        captureEncoder.enqueueInjectedAudio(clip, soundID: soundID, volume: volume)
     }
 
     public var hasActiveOutgoingSoundboardAudio: Bool {
@@ -760,8 +769,12 @@ final class OpusSampleBufferEncoder: NSObject,
     }
 
     @discardableResult
-    func enqueueInjectedAudio(_ clip: SoundboardPCMClip, volume: Float) -> Bool {
-        soundboardMixer.enqueue(clip, volume: volume)
+    func enqueueInjectedAudio(
+        _ clip: SoundboardPCMClip,
+        soundID: String,
+        volume: Float
+    ) -> Bool {
+        soundboardMixer.enqueue(clip, soundID: soundID, volume: volume)
     }
 
     var hasActiveInjectedAudio: Bool { soundboardMixer.hasActiveAudio }

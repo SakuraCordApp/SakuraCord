@@ -345,6 +345,7 @@ extension AppModel {
                 )
                 let accepted = try await session.enqueueOutgoingSoundboardClip(
                     clip,
+                    soundID: sound.id,
                     volume: Float(sound.volume)
                 )
                 try await local
@@ -496,6 +497,7 @@ extension AppModel {
         do {
             try await session.playSoundboardClipLocally(
                 clip,
+                soundID: sound.id,
                 volume: volume
             ) { @MainActor [weak self] in
                 self?.soundboardState.activePlaybackTokens[token] = nil

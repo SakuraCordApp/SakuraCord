@@ -127,7 +127,7 @@ import Testing
         Float(sin(Double($0) * 0.09)) * 0.25
     }
     let clip = try SoundboardPCMClip(left: samples, right: samples)
-    #expect(encoder.enqueueInjectedAudio(clip, volume: 1))
+    #expect(encoder.enqueueInjectedAudio(clip, soundID: "muted-test", volume: 1))
 
     let input = try #require(AVAudioPCMBuffer(
         pcmFormat: OpusCodec.pcmFormat,
@@ -159,7 +159,9 @@ import Testing
         left: Array(repeating: 0.8, count: 96_000),
         right: Array(repeating: -0.8, count: 96_000)
     )
-    for _ in 0 ..< 40 { #expect(mixer.enqueue(clip, volume: 1)) }
+    for index in 0 ..< 40 {
+        #expect(mixer.enqueue(clip, soundID: String(index), volume: 1))
+    }
     #expect(mixer.diagnostics.peakConcurrentVoices == 32)
     var left = Array(repeating: Float(0.7), count: 960)
     var right = Array(repeating: Float(-0.7), count: 960)
@@ -181,4 +183,45 @@ import Testing
     #expect(right.allSatisfy { (-1 ... 1).contains($0) })
     #expect(mixer.diagnostics.mixedFrameCount == 96_000)
     #expect(elapsed < .seconds(2))
+}
+
+@Test func `soundboard mixer restarts matching sound and overlaps distinct sounds`() throws {
+    let mixer = OutgoingSoundboardMixer()
+    let original = try SoundboardPCMClip(
+        left: [0.1, 0.2, 0.3],
+        right: [0.1, 0.2, 0.3]
+    )
+    let distinct = try SoundboardPCMClip(
+        left: [0.2, 0.2, 0.2],
+        right: [0.2, 0.2, 0.2]
+    )
+    #expect(mixer.enqueue(original, soundID: "same", volume: 1))
+    var left = [Float](repeating: 0, count: 1)
+    var right = [Float](repeating: 0, count: 1)
+    left.withUnsafeMutableBufferPointer { leftBuffer in
+        right.withUnsafeMutableBufferPointer { rightBuffer in
+            _ = mixer.mix(
+                into: leftBuffer.baseAddress!,
+                rightBuffer.baseAddress!,
+                count: 1
+            )
+        }
+    }
+    #expect(abs(left[0] - 0.1) < 0.000_1)
+
+    #expect(mixer.enqueue(original, soundID: "same", volume: 1))
+    #expect(mixer.enqueue(distinct, soundID: "distinct", volume: 1))
+    left[0] = 0
+    right[0] = 0
+    left.withUnsafeMutableBufferPointer { leftBuffer in
+        right.withUnsafeMutableBufferPointer { rightBuffer in
+            _ = mixer.mix(
+                into: leftBuffer.baseAddress!,
+                rightBuffer.baseAddress!,
+                count: 1
+            )
+        }
+    }
+    #expect(abs(left[0] - 0.3) < 0.000_1)
+    #expect(mixer.diagnostics.peakConcurrentVoices == 2)
 }

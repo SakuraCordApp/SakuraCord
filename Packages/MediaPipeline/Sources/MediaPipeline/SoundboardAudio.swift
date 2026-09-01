@@ -223,6 +223,7 @@ final class OutgoingSoundboardMixer: @unchecked Sendable {
     }
 
     private struct Voice {
+        let soundID: String
         let clip: SoundboardPCMClip
         let volume: Float
         var offset = 0
@@ -234,12 +235,17 @@ final class OutgoingSoundboardMixer: @unchecked Sendable {
     private static let maximumConcurrentVoices = 32
 
     @discardableResult
-    func enqueue(_ clip: SoundboardPCMClip, volume: Float) -> Bool {
+    func enqueue(_ clip: SoundboardPCMClip, soundID: String, volume: Float) -> Bool {
         lock.withLock {
+            voices.removeAll { $0.soundID == soundID }
             if voices.count == Self.maximumConcurrentVoices {
                 voices.removeFirst()
             }
-            voices.append(Voice(clip: clip, volume: min(max(volume, 0), 2)))
+            voices.append(Voice(
+                soundID: soundID,
+                clip: clip,
+                volume: min(max(volume, 0), 2)
+            ))
             metrics.triggerCount += 1
             metrics.peakConcurrentVoices = max(metrics.peakConcurrentVoices, voices.count)
             return true
