@@ -762,6 +762,13 @@ extension NativeTimelineCanvasView {
     ) {
         guard let model else { return }
         closeMentionPopover()
+        let presentationIdentity = AnyHashable(user.id)
+        if messageProfilePopoverCoordinator.isPresenting(
+            identity: presentationIdentity
+        ) {
+            closeMessageProfilePopover()
+            return
+        }
         closeMessageProfilePopover()
         let requestID = model.showProfile(for: user)
         let popoverAnchor = StablePopoverAnchor(
@@ -773,11 +780,11 @@ extension NativeTimelineCanvasView {
             anchor: popoverAnchor,
             anchorSnapshot: nil,
             isPresented: true,
-            configuration: .contextualProfile,
+            configuration: .memberProfile,
             onDismiss: { [weak self] in
                 self?.activeMessageProfilePopoverAnchor = nil
             },
-            presentationIdentity: AnyHashable(user.id),
+            presentationIdentity: presentationIdentity,
             content: AnyView(
                 MessageProfilePopoverContent(
                     model: model,
@@ -809,7 +816,7 @@ extension NativeTimelineCanvasView {
                 )
             ),
             anchor: anchor,
-            configuration: .contextualProfile
+            configuration: .memberProfile
         )
     }
 

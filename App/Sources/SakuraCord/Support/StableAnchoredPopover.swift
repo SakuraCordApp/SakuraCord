@@ -168,16 +168,6 @@ struct StablePopoverConfiguration {
         stabilizesInitialContentSize: false
     )
 
-    static let contextualProfile = StablePopoverConfiguration(
-        preferredEdge: .maxX,
-        behavior: .transient,
-        animates: true,
-        ignoresMouseEvents: false,
-        contentSizing: .constrained(CGSize(width: 520, height: 760)),
-        dismissalBehavior: .native,
-        stabilizesInitialContentSize: true
-    )
-
     static let memberProfile = StablePopoverConfiguration(
         preferredEdge: .maxX,
         behavior: .applicationDefined,
@@ -592,7 +582,7 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
                 dismissFromEventMonitor()
                 return nil
             }
-            if event.window === popover?.contentViewController?.view.window {
+            if eventBelongsToPopoverHierarchy(event) {
                 return event
             }
             if let sourceView = anchor?.sourceView,
@@ -605,6 +595,20 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
             }
             dismissFromEventMonitor()
             return event
+        }
+
+        private func eventBelongsToPopoverHierarchy(_ event: NSEvent) -> Bool {
+            guard let popoverWindow = popover?.contentViewController?.view.window else {
+                return false
+            }
+            var candidateWindow = event.window
+            while let window = candidateWindow {
+                if window === popoverWindow {
+                    return true
+                }
+                candidateWindow = window.parent
+            }
+            return false
         }
 
         private func dismissFromEventMonitor() {
@@ -789,6 +793,10 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
             }
         }
 
+        func isPresenting(identity: AnyHashable) -> Bool {
+            shouldPresent && presentationIdentity == identity
+        }
+
         func popoverDidClose(_ notification: Notification) {
             guard let closedPopover = notification.object as? NSPopover else { return }
             let identifier = ObjectIdentifier(closedPopover)
@@ -852,6 +860,23 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
                 sourceView.geometryDidChange = nil
                 sourceView.hierarchyDidChange = nil
             }
+        }
+    }
+}
+
+extension View {
+    func stableMemberProfilePopover<PopoverContent: View>(
+        isPresented: Binding<Bool>,
+        @ViewBuilder content: @escaping () -> PopoverContent
+    ) -> some View {
+        overlay {
+            StableAnchoredPopoverPresenter(
+                isPresented: isPresented.wrappedValue,
+                configuration: .memberProfile,
+                onDismiss: { isPresented.wrappedValue = false },
+                content: content
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }

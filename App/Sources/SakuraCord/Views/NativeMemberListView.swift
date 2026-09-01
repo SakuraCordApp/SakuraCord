@@ -2670,11 +2670,8 @@ final class NativeMemberListCanvasView: NSView {
             MemberRow(
                 member: member,
                 isSelected: isSelected,
-                isProfilePresented: false,
-                profilePresentation: nil,
                 showsContents: false,
-                select: { [weak self] in self?.selectMember(member) },
-                dismissProfile: {}
+                select: { [weak self] in self?.selectMember(member) }
             )
         )
         host.frame = CGRect(

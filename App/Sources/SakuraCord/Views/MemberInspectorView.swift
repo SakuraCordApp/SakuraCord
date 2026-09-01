@@ -391,11 +391,8 @@ private struct MemberSectionHeader: View {
 struct MemberRow: View {
     let member: Member
     let isSelected: Bool
-    let isProfilePresented: Bool
-    let profilePresentation: ProfilePresentationState?
     var showsContents = true
     let select: () -> Void
-    let dismissProfile: () -> Void
     @State private var isHovered = false
 
     var body: some View {
@@ -462,22 +459,6 @@ struct MemberRow: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
-        .popover(
-            isPresented: Binding(
-                get: { isSelected && isProfilePresented },
-                set: {
-                    if !$0 {
-                        dismissProfile()
-                    }
-                }
-            ),
-            attachmentAnchor: .rect(.bounds),
-            arrowEdge: .trailing
-        ) {
-            if let profilePresentation {
-                ProfilePresentationContent(presentation: profilePresentation)
-            }
-        }
         .help(member.user.username)
     }
 

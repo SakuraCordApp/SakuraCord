@@ -316,7 +316,7 @@ private struct AnchoredMentionPopoverLayer: View {
             StableAnchoredPopoverPresenter(
                 isPresented: true,
                 anchor: request.anchor,
-                configuration: .interactive,
+                configuration: configuration(for: request),
                 onDismiss: onDismiss
             ) {
                 switch request.mention.target {
@@ -335,6 +335,17 @@ private struct AnchoredMentionPopoverLayer: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private func configuration(
+        for request: AnchoredMentionPresentation
+    ) -> StablePopoverConfiguration {
+        switch request.mention.target {
+        case .user:
+            .memberProfile
+        case .unresolved, .role, .channel, .linkedChannel, .message:
+            .interactive
         }
     }
 }

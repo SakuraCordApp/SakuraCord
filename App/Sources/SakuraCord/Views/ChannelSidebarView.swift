@@ -761,11 +761,7 @@ private struct CurrentUserCapsule: View {
             }
             .buttonStyle(.plain)
             .onHover { isMainHovering = $0 }
-            .popover(
-                isPresented: $isYouPopoverPresented,
-                attachmentAnchor: .rect(.bounds),
-                arrowEdge: .bottom
-            ) {
+            .stableMemberProfilePopover(isPresented: $isYouPopoverPresented) {
                 youPopover
             }
 
@@ -876,6 +872,10 @@ private struct CurrentUserCapsule: View {
     }
 
     private func presentYouPopover() {
+        if isYouPopoverPresented {
+            isYouPopoverPresented = false
+            return
+        }
         guard let user else {
             connectAccount()
             return
