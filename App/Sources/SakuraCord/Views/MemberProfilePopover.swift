@@ -33,6 +33,7 @@ struct MemberProfilePopover: View {
 
     @Environment(\.stablePopoverPresentationContext)
     private var popoverPresentationContext
+    @Environment(\.colorScheme) private var colorScheme
     @State private var contentHeight: CGFloat = 320
 
     private let maximumHeight: CGFloat = 560
@@ -73,7 +74,7 @@ struct MemberProfilePopover: View {
                     cornerRadius: innerCornerRadius,
                     style: .continuous
                 )
-                    .fill(.black.opacity(0.64))
+                    .fill(ProfilePalette.innerSurfaceOverlay(for: colorScheme))
                     .padding(surfaceInset)
             }
 
@@ -83,7 +84,10 @@ struct MemberProfilePopover: View {
                         member: member,
                         profile: profile,
                         themeHexes: profileThemeHexes,
-                        avatarCutoutColor: ProfilePalette.innerSurfaceColor(themeHexes: profileThemeHexes),
+                        avatarCutoutColor: ProfilePalette.innerSurfaceColor(
+                            themeHexes: profileThemeHexes,
+                            colorScheme: colorScheme
+                        ),
                         topCornerRadius: layout == .popover ? 16 : 0,
                         statusBubbleWidth: statusBubbleWidth,
                         animatesRemoteMedia: animatesRemoteMedia
@@ -1176,6 +1180,8 @@ private struct ProfileGuildIdentity: View {
 }
 
 private enum ProfilePalette {
+    private static let innerSurfaceThemeAmount = 0.36
+
     static func colors(themeHexes: [UInt32], accentHex: UInt32?) -> [Color] {
         if themeHexes.count >= 2 {
             return themeHexes.prefix(2).map(Color.init(hex:))
@@ -1193,11 +1199,17 @@ private enum ProfilePalette {
         return colors(themeHexes: themeHexes, accentHex: accentHex).reversed()
     }
 
-    static func innerSurfaceColor(themeHexes: [UInt32]) -> Color {
+    static func innerSurfaceOverlay(for colorScheme: ColorScheme) -> Color {
+        let base = colorScheme == .dark ? Color.black : Color.white
+        return base.opacity(1 - innerSurfaceThemeAmount)
+    }
+
+    static func innerSurfaceColor(themeHexes: [UInt32], colorScheme: ColorScheme) -> Color {
         guard let first = themeHexes.first else {
             return Color(nsColor: .windowBackgroundColor)
         }
-        return Color(hex: blend(first, with: 0x000000, colorAmount: 0.36))
+        let base: UInt32 = colorScheme == .dark ? 0x000000 : 0xFFFFFF
+        return Color(hex: blend(first, with: base, colorAmount: innerSurfaceThemeAmount))
     }
 
     private static func blend(_ color: UInt32, with base: UInt32, colorAmount: Double) -> UInt32 {
