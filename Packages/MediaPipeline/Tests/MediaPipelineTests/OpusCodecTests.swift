@@ -3,6 +3,26 @@ import AVFAudio
 import Synchronization
 import Testing
 
+@Test func `opus packet duration follows its TOC sequence`() throws {
+    #expect(try OpusPacket.sampleCount(Data([0b0001_1000])) == 2_880)
+    #expect(try OpusPacket.sampleCount(Data([0b0110_0000])) == 480)
+    #expect(try OpusPacket.sampleCount(Data([0b1000_0000])) == 120)
+    #expect(try OpusPacket.sampleCount(Data([0b1000_0010])) == 240)
+    #expect(try OpusPacket.sampleCount(Data([0b1000_0011, 0b0000_0100])) == 480)
+}
+
+@Test func `opus packet duration rejects missing and oversized frame counts`() {
+    #expect(throws: OpusCodecError.invalidPacket) {
+        try OpusPacket.sampleCount(Data([0b0001_1011]))
+    }
+    #expect(throws: OpusCodecError.invalidPacket) {
+        try OpusPacket.sampleCount(Data([0b0001_1011, 0b0000_0000]))
+    }
+    #expect(throws: OpusCodecError.invalidPacket) {
+        try OpusPacket.sampleCount(Data([0b0001_1011, 0b0000_0011]))
+    }
+}
+
 @Test func `native opus codec produces discord twenty millisecond frames`() throws {
     let codec = try OpusCodec()
     let format = OpusCodec.pcmFormat
@@ -23,6 +43,14 @@ import Testing
     #expect(decoded.format.sampleRate == 48000)
     #expect(decoded.format.channelCount == 2)
     #expect(decoded.frameLength > 0)
+}
+
+@Test func `native opus codec decodes sixty millisecond packets`() throws {
+    let packet = Data([0xFF, 0x03, 0xFF, 0xFE, 0xFF, 0xFE, 0xFF, 0xFE])
+    let decoded = try OpusCodec().decode(packet)
+
+    #expect(decoded.frameLength > OpusCodec.frameSamples)
+    #expect(decoded.frameLength <= 2_880)
 }
 
 @Test func `native opus codec encodes and decodes consecutive voice packets`() throws {

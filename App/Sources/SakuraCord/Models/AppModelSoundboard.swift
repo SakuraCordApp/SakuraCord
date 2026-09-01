@@ -16,6 +16,9 @@ struct SoundboardPresentationState {
     var isLoading = false
     var errorMessage: String?
     var pendingNativeEchoes: [PendingNativeSoundboardEcho] = []
+    var confirmedNativeEchoes: [UUID: ConfirmedNativeSoundboardEcho] = [:]
+    var activePlaybackTokens: [UUID: ActiveSoundboardPlayback] = [:]
+    var cardAnimations: [SoundboardCardAnimation] = []
 }
 
 struct PendingNativeSoundboardEcho: Equatable {
@@ -23,6 +26,23 @@ struct PendingNativeSoundboardEcho: Equatable {
     let channelID: ChannelID
     let soundID: String
     let expiresAt: Date
+}
+
+struct ConfirmedNativeSoundboardEcho: Equatable {
+    let userID: UserID
+    let emoji: EmojiReference?
+}
+
+struct ActiveSoundboardPlayback: Equatable {
+    let soundID: String
+    let nativeEchoID: UUID?
+    var emitterUserID: UserID?
+}
+
+struct SoundboardCardAnimation: Equatable, Identifiable {
+    let id: UUID
+    let userID: UserID
+    let emoji: EmojiReference
 }
 
 nonisolated enum SoundboardEffectPlaybackPolicy {
@@ -224,6 +244,24 @@ extension AppModel {
         soundboardUserSettings.favoriteSoundIDs.contains(sound.id)
     }
 
+    func isSoundPlaying(_ sound: SoundboardSound) -> Bool {
+        soundboardState.activePlaybackTokens.values.contains {
+            $0.soundID == sound.id
+        }
+    }
+
+    func isNativeSoundboardEmitting(userID: String) -> Bool {
+        soundboardState.activePlaybackTokens.values.contains {
+            $0.emitterUserID.map { String($0.rawValue) } == userID
+        }
+    }
+
+    func soundboardCardAnimations(userID: String) -> [SoundboardCardAnimation] {
+        soundboardState.cardAnimations.filter {
+            String($0.userID.rawValue) == userID
+        }
+    }
+
     func toggleFavoriteSound(_ sound: SoundboardSound) async {
         let wasFavorite = isFavoriteSound(sound)
         var optimistic = soundboardUserSettings
@@ -267,10 +305,16 @@ extension AppModel {
                     channelID: channel.id
                 )
                 let localPlayback = Task(priority: .userInitiated) { @MainActor in
+                    defer {
+                        self.soundboardState.confirmedNativeEchoes[echoID] = nil
+                    }
                     let clip = try await SoundboardAudioLibrary.shared.clip(for: sound)
-                    try await session.playSoundboardClipLocally(
-                        clip,
-                        volume: Float(sound.volume)
+                    try await self.playSoundboardClipLocally(
+                        sound,
+                        clip: clip,
+                        session: session,
+                        volume: Float(sound.volume),
+                        nativeEchoID: echoID
                     )
                 }
                 // Give optimistic local playback a head start instead of making it
@@ -287,8 +331,16 @@ extension AppModel {
                 Self.soundboardLogger.info("Native soundboard send rendered locally")
             case .outgoingMixer:
                 let clip = try await SoundboardAudioLibrary.shared.clip(for: sound)
-                async let local: Void = session.playSoundboardClipLocally(
-                    clip,
+                if let currentUserID = snapshot?.currentUser.id {
+                    registerCardAnimation(
+                        emoji: sound.emojiReference,
+                        userID: currentUserID
+                    )
+                }
+                async let local: Void = playSoundboardClipLocally(
+                    sound,
+                    clip: clip,
+                    session: session,
                     volume: Float(sound.volume)
                 )
                 let accepted = try await session.enqueueOutgoingSoundboardClip(
@@ -309,18 +361,26 @@ extension AppModel {
         guard effect.channelID == activeVoiceChannel?.id,
               let soundID = effect.soundID
         else { return }
-        if consumePendingNativeEcho(for: effect, soundID: soundID) {
-            return
-        }
         let sound = SoundboardEffectPlaybackPolicy.sound(
             withID: soundID,
             in: allSoundboardSounds
         )
+        let emoji = effect.emoji ?? sound.emojiReference
+        if let pendingEcho = consumePendingNativeEcho(for: effect, soundID: soundID) {
+            confirmNativeSoundboardPlayback(
+                pendingEcho,
+                userID: effect.userID,
+                emoji: emoji
+            )
+            return
+        }
         Task { @MainActor [weak self] in
             await self?.performSoundboardAudio(
                 sound,
                 mode: .effect(
-                    volume: SoundboardEffectPlaybackPolicy.volume(for: effect)
+                    volume: SoundboardEffectPlaybackPolicy.volume(for: effect),
+                    emitterUserID: effect.userID,
+                    emoji: emoji
                 )
             )
         }
@@ -328,7 +388,27 @@ extension AppModel {
 
     private enum SoundboardAudioMode {
         case preview
-        case effect(volume: Double)
+        case effect(
+            volume: Double,
+            emitterUserID: UserID,
+            emoji: EmojiReference?
+        )
+
+        var isPreview: Bool {
+            if case .preview = self { true } else { false }
+        }
+
+        var emitterUserID: UserID? {
+            if case .effect(_, let userID, _) = self { userID } else { nil }
+        }
+
+        var emoji: EmojiReference? {
+            if case .effect(_, _, let emoji) = self { emoji } else { nil }
+        }
+
+        func volume(default defaultVolume: Double) -> Double {
+            if case .effect(let volume, _, _) = self { volume } else { defaultVolume }
+        }
     }
 
     private func performSoundboardAudio(
@@ -336,25 +416,32 @@ extension AppModel {
         mode: SoundboardAudioMode
     ) async {
         guard voiceSessionState == .connected, let session = voiceSession else {
-            if case .preview = mode {
+            if mode.isPreview {
                 soundboardErrorMessage = "Connect to voice before playing a sound."
             }
             return
         }
         do {
             let clip = try await SoundboardAudioLibrary.shared.clip(for: sound)
-            let volume = switch mode {
-            case .preview: sound.volume
-            case .effect(let effectVolume): effectVolume
+            let volume = mode.volume(default: sound.volume)
+            let emitterUserID = mode.emitterUserID
+            if let emitterUserID {
+                registerCardAnimation(emoji: mode.emoji, userID: emitterUserID)
             }
-            try await session.playSoundboardClipLocally(clip, volume: Float(volume))
-            if case .preview = mode {
+            try await playSoundboardClipLocally(
+                sound,
+                clip: clip,
+                session: session,
+                volume: Float(volume),
+                emitterUserID: emitterUserID
+            )
+            if mode.isPreview {
                 soundboardErrorMessage = nil
             } else {
                 Self.soundboardLogger.info("Incoming soundboard effect rendered locally")
             }
         } catch {
-            if case .preview = mode {
+            if mode.isPreview {
                 soundboardErrorMessage = error.localizedDescription
             }
             Self.soundboardLogger.error("Local playback failed: \(String(reflecting: error), privacy: .public)")
@@ -382,22 +469,94 @@ extension AppModel {
         return id
     }
 
+    private func playSoundboardClipLocally(
+        _ sound: SoundboardSound,
+        clip: SoundboardPCMClip,
+        session: DiscordVoiceSession,
+        volume: Float,
+        emitterUserID: UserID? = nil,
+        nativeEchoID: UUID? = nil
+    ) async throws {
+        let token = UUID()
+        let confirmedEcho = nativeEchoID.flatMap {
+            soundboardState.confirmedNativeEchoes.removeValue(forKey: $0)
+        }
+        let resolvedEmitterUserID = emitterUserID ?? confirmedEcho?.userID
+        soundboardState.activePlaybackTokens[token] = ActiveSoundboardPlayback(
+            soundID: sound.id,
+            nativeEchoID: nativeEchoID,
+            emitterUserID: resolvedEmitterUserID
+        )
+        if let confirmedEcho {
+            registerCardAnimation(
+                emoji: confirmedEcho.emoji,
+                userID: confirmedEcho.userID
+            )
+        }
+        do {
+            try await session.playSoundboardClipLocally(
+                clip,
+                volume: volume
+            ) { @MainActor [weak self] in
+                self?.soundboardState.activePlaybackTokens[token] = nil
+            }
+        } catch {
+            soundboardState.activePlaybackTokens[token] = nil
+            throw error
+        }
+    }
+
     private func cancelPendingNativeEcho(_ id: UUID) {
         soundboardState.pendingNativeEchoes.removeAll { $0.id == id }
+        soundboardState.confirmedNativeEchoes[id] = nil
     }
 
     private func consumePendingNativeEcho(
         for effect: VoiceChannelEffect,
         soundID: String
-    ) -> Bool {
-        guard effect.userID == snapshot?.currentUser.id else { return false }
+    ) -> PendingNativeSoundboardEcho? {
+        guard effect.userID == snapshot?.currentUser.id else { return nil }
         let now = Date()
         soundboardState.pendingNativeEchoes.removeAll { $0.expiresAt <= now }
         guard let index = soundboardState.pendingNativeEchoes.firstIndex(where: {
             $0.channelID == effect.channelID && $0.soundID == soundID
-        }) else { return false }
-        soundboardState.pendingNativeEchoes.remove(at: index)
-        return true
+        }) else { return nil }
+        return soundboardState.pendingNativeEchoes.remove(at: index)
+    }
+
+    private func confirmNativeSoundboardPlayback(
+        _ pendingEcho: PendingNativeSoundboardEcho,
+        userID: UserID,
+        emoji: EmojiReference?
+    ) {
+        if let token = soundboardState.activePlaybackTokens.first(where: {
+            $0.value.nativeEchoID == pendingEcho.id
+        })?.key {
+            soundboardState.activePlaybackTokens[token]?.emitterUserID = userID
+            registerCardAnimation(emoji: emoji, userID: userID)
+            return
+        }
+        soundboardState.confirmedNativeEchoes[pendingEcho.id] =
+            ConfirmedNativeSoundboardEcho(userID: userID, emoji: emoji)
+    }
+
+    private func registerCardAnimation(
+        emoji: EmojiReference?,
+        userID: UserID
+    ) {
+        guard let emoji else { return }
+        let animation = SoundboardCardAnimation(
+            id: UUID(),
+            userID: userID,
+            emoji: emoji
+        )
+        soundboardState.cardAnimations.append(animation)
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1.4))
+            self?.soundboardState.cardAnimations.removeAll {
+                $0.id == animation.id
+            }
+        }
     }
 
     private func soundboardPlaybackRoute(

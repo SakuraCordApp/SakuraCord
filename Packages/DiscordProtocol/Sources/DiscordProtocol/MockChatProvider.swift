@@ -1885,6 +1885,7 @@ public extension MockChatProvider {
             channelID: channelID,
             guildID: snapshot.channels.first(where: { $0.id == channelID })?.guildID,
             userID: currentUser.id,
+            emoji: sound.emojiReference,
             soundID: sound.id,
             soundVolume: 1
         )))

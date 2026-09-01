@@ -100,12 +100,16 @@ struct VoiceVideoGrid: View {
                 isLocal: userID == currentUserID,
                 isMuted: state.isMuted || state.isSelfMuted,
                 isDeafened: state.isDeafened || state.isSelfDeafened,
-                isSpeaking: usesLocalVoiceSession
-                    && (userID == currentUserID
-                        ? model.isLocallySpeaking : (speakingByID[userID] ?? false)),
+                isSpeaking: usesLocalVoiceSession && (
+                    (userID == currentUserID
+                        ? model.isLocallySpeaking : (speakingByID[userID] ?? false))
+                        || model.isNativeSoundboardEmitting(userID: userID)
+                ),
                 isStreaming: state.isStreaming,
                 volume: volumeByID[userID] ?? 1,
-                isRinging: ringingUserIDs.contains(state.userID)
+                isRinging: ringingUserIDs.contains(state.userID),
+                soundboardAnimations: usesLocalVoiceSession
+                    ? model.soundboardCardAnimations(userID: userID) : []
             )
         }
 
@@ -123,11 +127,15 @@ struct VoiceVideoGrid: View {
                 isLocal: participant.userID == currentUserID,
                 isMuted: false,
                 isDeafened: false,
-                isSpeaking: participant.userID == currentUserID
-                    ? model.isLocallySpeaking : participant.isSpeaking,
+                isSpeaking: (participant.userID == currentUserID
+                    ? model.isLocallySpeaking : participant.isSpeaking)
+                    || model.isNativeSoundboardEmitting(userID: participant.userID),
                 isStreaming: numericID.flatMap { model.voiceStates[$0] }?.isStreaming ?? false,
                 volume: participant.volume,
-                isRinging: numericID.map(ringingUserIDs.contains) ?? false
+                isRinging: numericID.map(ringingUserIDs.contains) ?? false,
+                soundboardAnimations: model.soundboardCardAnimations(
+                    userID: participant.userID
+                )
             )
         }
 
@@ -144,10 +152,14 @@ struct VoiceVideoGrid: View {
                 isLocal: true,
                 isMuted: model.isVoiceMuted,
                 isDeafened: model.isVoiceDeafened,
-                isSpeaking: model.isLocallySpeaking,
+                isSpeaking: model.isLocallySpeaking
+                    || model.isNativeSoundboardEmitting(userID: currentUserID),
                 isStreaming: model.localApplicationStreamKey != nil,
                 volume: 1,
-                isRinging: ringingUserIDs.contains(currentUser.id)
+                isRinging: ringingUserIDs.contains(currentUser.id),
+                soundboardAnimations: model.soundboardCardAnimations(
+                    userID: currentUserID
+                )
             )
         }
 
@@ -166,7 +178,8 @@ struct VoiceVideoGrid: View {
                 isSpeaking: false,
                 isStreaming: false,
                 volume: 1,
-                isRinging: true
+                isRinging: true,
+                soundboardAnimations: []
             )
         }
 
@@ -315,6 +328,7 @@ private struct VoiceTileParticipant: Identifiable {
     let isStreaming: Bool
     let volume: Float
     let isRinging: Bool
+    let soundboardAnimations: [SoundboardCardAnimation]
 }
 
 struct VoiceGridLayout: Equatable {
@@ -753,6 +767,20 @@ private struct VoiceParticipantTile: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .aspectRatio(16 / 9, contentMode: .fit)
+        .overlay {
+            if !participant.isRinging {
+                GeometryReader { proxy in
+                    ForEach(participant.soundboardAnimations) { animation in
+                        SoundboardCardEffectAnimation(
+                            animation: animation,
+                            availableHeight: proxy.size.height,
+                            iconSize: metrics.value(68)
+                        )
+                    }
+                }
+                .allowsHitTesting(false)
+            }
+        }
         .clipShape(ConcentricRectangle(cornerRadius: metrics.value(16), style: .continuous))
         .overlay {
             if !participant.isRinging {
@@ -786,6 +814,95 @@ private struct VoiceParticipantTile: View {
         let camera = participant.frame == nil ? "Camera off" : "Camera on"
         let stream = participant.isStreaming ? ", sharing screen" : ""
         return participant.isRinging ? "Ringing, \(camera)\(stream)" : "\(camera)\(stream)"
+    }
+}
+
+private struct SoundboardCardEffectAnimation: View {
+    private enum Phase {
+        case below
+        case center
+        case above
+    }
+
+    let animation: SoundboardCardAnimation
+    let availableHeight: CGFloat
+    let iconSize: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var phase = Phase.below
+
+    var body: some View {
+        SoundboardCardEffectIcon(
+            emoji: animation.emoji,
+            size: iconSize
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .scaleEffect(scale)
+        .offset(y: offset)
+        .opacity(phase == .center ? 1 : 0)
+        .shadow(color: .black.opacity(0.32), radius: iconSize * 0.12, y: iconSize * 0.06)
+        .task {
+            withAnimation(
+                reduceMotion
+                    ? .easeOut(duration: 0.12)
+                    : .spring(duration: 0.52, bounce: 0.24)
+            ) {
+                phase = .center
+            }
+            try? await Task.sleep(for: .milliseconds(760))
+            withAnimation(
+                reduceMotion
+                    ? .easeIn(duration: 0.12)
+                    : .smooth(duration: 0.46)
+            ) {
+                phase = .above
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    private var travelDistance: CGFloat {
+        availableHeight * 0.55 + iconSize
+    }
+
+    private var offset: CGFloat {
+        guard !reduceMotion else { return 0 }
+        return switch phase {
+        case .below: travelDistance
+        case .center: 0
+        case .above: -travelDistance
+        }
+    }
+
+    private var scale: CGFloat {
+        switch phase {
+        case .below: 0.72
+        case .center: 1
+        case .above: 0.88
+        }
+    }
+}
+
+private struct SoundboardCardEffectIcon: View {
+    let emoji: EmojiReference
+    let size: CGFloat
+
+    var body: some View {
+        if let url = emoji.imageURL(size: 128) {
+            AsyncImage(url: url, transaction: Transaction(animation: nil)) { phase in
+                if case .success(let image) = phase {
+                    image
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                }
+            }
+            .frame(width: size, height: size)
+        } else {
+            Text(emoji.name)
+                .font(.system(size: size * 0.82))
+                .fixedSize()
+                .frame(width: size, height: size)
+        }
     }
 }
 

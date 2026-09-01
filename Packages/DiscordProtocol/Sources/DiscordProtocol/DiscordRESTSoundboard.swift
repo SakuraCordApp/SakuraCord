@@ -92,13 +92,33 @@ struct GatewaySoundboardSoundDeleteDTO: Decodable {
 }
 
 struct VoiceChannelEffectDTO: Decodable {
+    struct EmojiDTO: Decodable {
+        var id: StringOrIntegerDTO?
+        var name: String?
+        var animated: Bool?
+
+        var domain: EmojiReference? {
+            if let id {
+                return EmojiReference(
+                    id: id.value,
+                    name: name ?? "emoji",
+                    isAnimated: animated ?? false
+                )
+            }
+            guard let name, !name.isEmpty else { return nil }
+            return EmojiReference(name: name)
+        }
+    }
+
     var channelID: StringOrIntegerDTO
     var guildID: StringOrIntegerDTO?
     var userID: StringOrIntegerDTO
+    var emoji: EmojiDTO?
     var soundID: StringOrIntegerDTO?
     var soundVolume: Double?
 
     enum CodingKeys: String, CodingKey {
+        case emoji
         case channelID = "channel_id"
         case guildID = "guild_id"
         case userID = "user_id"
@@ -114,6 +134,7 @@ struct VoiceChannelEffectDTO: Decodable {
             channelID: channelID,
             guildID: guildID.flatMap { GuildID($0.value) },
             userID: userID,
+            emoji: emoji?.domain,
             soundID: soundID?.value,
             soundVolume: soundVolume ?? 1
         )

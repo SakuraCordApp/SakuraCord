@@ -300,6 +300,10 @@ extension AppModel {
         soundboardUserSettings = .init()
         isLoadingSoundboard = false
         soundboardErrorMessage = nil
+        soundboardState.pendingNativeEchoes = []
+        soundboardState.confirmedNativeEchoes = [:]
+        soundboardState.activePlaybackTokens = [:]
+        soundboardState.cardAnimations = []
         discordFavoriteEmojiKeys = []
         discordFrequentlyUsedEmojiKeys = []
         discordEmojiUsageScores = [:]

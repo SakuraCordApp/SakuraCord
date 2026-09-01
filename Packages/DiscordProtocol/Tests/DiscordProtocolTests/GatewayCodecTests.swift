@@ -851,23 +851,25 @@ private func appendETFBinary(_ value: String, to data: inout Data) {
     let numeric = try JSONDecoder().decode(
         VoiceChannelEffectDTO.self,
         from: Data(
-            #"{"channel_id":"11","guild_id":"12","user_id":"13","sound_id":1,"sound_volume":0.7}"#.utf8
+            #"{"channel_id":"11","guild_id":"12","user_id":"13","emoji":{"id":"14","name":"party","animated":true},"sound_id":1,"sound_volume":0.7}"#.utf8
         )
     ).domain
     #expect(numeric?.channelID == ChannelID(rawValue: 11))
     #expect(numeric?.guildID == GuildID(rawValue: 12))
     #expect(numeric?.userID == UserID(rawValue: 13))
+    #expect(numeric?.emoji == EmojiReference(id: "14", name: "party", isAnimated: true))
     #expect(numeric?.soundID == "1")
     #expect(numeric?.soundVolume == 0.7)
 
     let string = try JSONDecoder().decode(
         VoiceChannelEffectDTO.self,
         from: Data(
-            #"{"channel_id":21,"user_id":22,"sound_id":"900000000000000001"}"#.utf8
+            #"{"channel_id":21,"user_id":22,"emoji":{"id":null,"name":"🔊","animated":false},"sound_id":"900000000000000001"}"#.utf8
         )
     ).domain
     #expect(string?.channelID == ChannelID(rawValue: 21))
     #expect(string?.userID == UserID(rawValue: 22))
+    #expect(string?.emoji == EmojiReference(name: "🔊"))
     #expect(string?.soundID == "900000000000000001")
 }
 

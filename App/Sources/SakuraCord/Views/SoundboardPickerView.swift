@@ -271,49 +271,66 @@ private struct SoundboardSectionView: View {
 private struct SoundboardButton: View {
     let sound: SoundboardSound
     let model: AppModel
+    @Environment(\.colorScheme) private var colorScheme
     @State private var isHovering = false
+    @GestureState private var isPressed = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            if isHovering {
-                SoundboardActionButton(
-                    systemImage: "speaker.wave.2.fill",
-                    help: "Preview \(sound.name) locally"
-                ) { Task { await model.previewSound(sound) } }
-            }
-
+        ZStack {
             Button { Task { await model.playSound(sound) } } label: {
-                HStack(spacing: 7) {
-                    SoundboardEmojiView(sound: sound)
-                    Text(sound.name)
-                        .font(.system(size: 12, weight: .semibold))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, isHovering ? 5 : 9)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                SoundboardButtonLabel(sound: sound)
+                .padding(.horizontal, 8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 .contentShape(Rectangle())
+                .opacity(isHovering ? 0.2 : 1)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SoundboardStaticButtonStyle())
             .help("Play \(sound.name)")
             .accessibilityLabel("Play \(sound.name)")
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0)
+                    .updating($isPressed) { _, state, _ in state = true }
+            )
 
             if isHovering {
-                SoundboardActionButton(
-                    systemImage: model.isFavoriteSound(sound) ? "star.fill" : "star",
-                    help: model.isFavoriteSound(sound) ? "Remove from Favorites" : "Favorite"
-                ) { Task { await model.toggleFavoriteSound(sound) } }
+                HStack(spacing: 0) {
+                    SoundboardActionButton(
+                        systemImage: "speaker.wave.2.fill",
+                        help: "Preview \(sound.name) locally",
+                        iconColor: .secondary
+                    ) { Task { await model.previewSound(sound) } }
+                    Spacer(minLength: 0)
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .frame(width: 30, height: 30)
+                        .allowsHitTesting(false)
+                    Spacer(minLength: 0)
+                    SoundboardActionButton(
+                        systemImage: model.isFavoriteSound(sound) ? "star.fill" : "star",
+                        help: model.isFavoriteSound(sound) ? "Remove from Favorites" : "Favorite"
+                    ) { Task { await model.toggleFavoriteSound(sound) } }
+                }
+                .padding(.horizontal, 6)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .frame(maxWidth: .infinity)
         .frame(height: 42)
         .background(
-            Color.primary.opacity(isHovering ? 0.13 : 0.055),
+            surfaceColor,
             in: ConcentricRectangle(cornerRadius: 8, style: .continuous)
         )
+        .overlay {
+            ConcentricRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(
+                    outlineColor,
+                    lineWidth: 0.5
+                )
+        }
         .contentShape(ConcentricRectangle(cornerRadius: 8, style: .continuous))
         .onHover { isHovering = $0 }
+        .offset(y: isPressed ? 2 : 0)
+        .animation(.easeOut(duration: 0.08), value: isPressed)
         .overlay {
             SoundboardContextMenuBridge(
                 isFavorite: model.isFavoriteSound(sound),
@@ -330,6 +347,23 @@ private struct SoundboardButton: View {
         .accessibilityAction(named: model.isFavoriteSound(sound) ? "Remove from Favorites" : "Favorite") {
             Task { await model.toggleFavoriteSound(sound) }
         }
+    }
+
+    private var surfaceColor: Color {
+        if colorScheme == .dark {
+            return isHovering ? Color(hex: 0x28292C) : Color(hex: 0x202023)
+        }
+        return isHovering ? Color(hex: 0xD8D7DC) : Color(hex: 0xE2E1E6)
+    }
+
+    private var outlineColor: Color {
+        if model.isSoundPlaying(sound), !isPressed {
+            return Color(hex: 0x23A55A)
+        }
+        guard isHovering else { return .clear }
+        return colorScheme == .dark
+            ? Color(hex: 0x44454A)
+            : Color(hex: 0xAFAEB4)
     }
 
     private func download() {
@@ -435,45 +469,91 @@ private struct SoundboardContextMenuBridge: NSViewRepresentable {
 private struct SoundboardActionButton: View {
     let systemImage: String
     let help: String
+    var iconColor = Color.primary
     let action: () -> Void
     @State private var isHovering = false
 
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 11, weight: .semibold))
-                .frame(width: 28, height: 42)
-                .background(Color.primary.opacity(isHovering ? 0.11 : 0))
-                .contentShape(Rectangle())
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(iconColor)
+                .frame(width: 28, height: 28)
+                .background(
+                    Color.primary.opacity(isHovering ? 0.14 : 0),
+                    in: Circle()
+                )
+                .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(SoundboardStaticButtonStyle())
+        .contentShape(Circle())
         .onHover { isHovering = $0 }
         .help(help)
         .accessibilityLabel(help)
     }
 }
 
-private struct SoundboardEmojiView: View {
+private struct SoundboardStaticButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+    }
+}
+
+private struct SoundboardButtonLabel: View {
     let sound: SoundboardSound
 
     var body: some View {
-        Group {
-            if let emojiID = sound.emojiID,
-               let url = URL(string: "https://cdn.discordapp.com/emojis/\(emojiID).webp?size=48&quality=lossless")
-            {
-                StaticEmojiImage(url: url)
-            } else if let emojiName = sound.emojiName, !emojiName.isEmpty {
+        if let emojiID = sound.emojiID,
+           let url = URL(string: "https://cdn.discordapp.com/emojis/\(emojiID).webp?size=48&quality=lossless")
+        {
+            AsyncImage(url: url, transaction: Transaction(animation: nil)) { phase in
+                switch phase {
+                case .empty:
+                    label {
+                        Color.clear
+                            .frame(width: 21, height: 21)
+                    }
+                case .success(let image):
+                    label {
+                        image
+                            .resizable()
+                            .interpolation(.high)
+                            .scaledToFit()
+                            .frame(width: 21, height: 21)
+                    }
+                case .failure:
+                    name
+                @unknown default:
+                    name
+                }
+            }
+        } else if let emojiName = sound.emojiName, !emojiName.isEmpty {
+            label {
                 Text(emojiName)
-                    .font(.system(size: 18))
+                    .font(.system(size: 17))
                     .fixedSize()
                     .offset(y: -0.5)
-            } else {
-                Image(systemName: "waveform")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .frame(width: 21, height: 21)
             }
+        } else {
+            name
         }
-        .frame(width: 22, height: 22, alignment: .center)
+    }
+
+    private var name: some View {
+        Text(sound.name)
+            .font(.system(size: 11, weight: .semibold))
+            .lineLimit(1)
+            .truncationMode(.tail)
+    }
+
+    private func label<Icon: View>(
+        @ViewBuilder icon: () -> Icon
+    ) -> some View {
+        HStack(spacing: 6) {
+            icon()
+            name
+        }
     }
 }
 

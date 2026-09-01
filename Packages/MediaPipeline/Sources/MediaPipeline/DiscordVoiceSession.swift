@@ -377,12 +377,17 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
 
     public func playSoundboardClipLocally(
         _ clip: SoundboardPCMClip,
-        volume: Float = 1
+        volume: Float = 1,
+        completion: (@MainActor @Sendable () -> Void)? = nil
     ) async throws {
         guard state == .connected, let audioEngine else {
             throw VoiceSessionError.transportUnavailable
         }
-        try await audioEngine.playSoundboardClipLocally(clip, volume: volume)
+        try await audioEngine.playSoundboardClipLocally(
+            clip,
+            volume: volume,
+            completion: completion
+        )
     }
 
     @discardableResult

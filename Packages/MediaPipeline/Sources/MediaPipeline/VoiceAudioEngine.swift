@@ -30,6 +30,11 @@ public struct CapturedOpusFrame: Sendable {
 
 @MainActor
 public final class VoiceAudioEngine {
+    private struct LocalSoundboardPlayback {
+        let player: AVAudioPlayerNode
+        let completion: (@MainActor @Sendable () -> Void)?
+    }
+
     public private(set) var isRunning = false
     public private(set) var inputDeviceID: AudioDeviceID?
     public private(set) var outputDeviceID: AudioDeviceID?
@@ -63,7 +68,7 @@ public final class VoiceAudioEngine {
     private let codec: OpusCodec
     private let captureEncoder: OpusSampleBufferEncoder
     private var players: [String: AVAudioPlayerNode] = [:]
-    private var localSoundboardPlayers: [UUID: AVAudioPlayerNode] = [:]
+    private var localSoundboardPlayers: [UUID: LocalSoundboardPlayback] = [:]
     private var participantVolumes: [String: Float] = [:]
     private var captureSessionObservers: [NSObjectProtocol] = []
     private var captureRecoveryTask: Task<Void, Never>?
@@ -431,10 +436,8 @@ public final class VoiceAudioEngine {
             playbackEngine.disconnectNodeOutput(player)
             playbackEngine.detach(player)
         }
-        for player in localSoundboardPlayers.values {
-            player.stop()
-            playbackEngine.disconnectNodeOutput(player)
-            playbackEngine.detach(player)
+        for id in Array(localSoundboardPlayers.keys) {
+            finishLocalSoundboardPlayback(id: id)
         }
         playbackEngine.stop()
         playbackEngine.reset()
@@ -576,9 +579,13 @@ public final class VoiceAudioEngine {
 
     public func playSoundboardClipLocally(
         _ clip: SoundboardPCMClip,
-        volume: Float = 1
+        volume: Float = 1,
+        completion: (@MainActor @Sendable () -> Void)? = nil
     ) throws {
-        guard !isDeafened, !isChangingPlaybackRoute else { return }
+        guard !isDeafened, !isChangingPlaybackRoute else {
+            completion?()
+            return
+        }
         guard playbackEngine.isRunning else {
             schedulePlaybackRecovery()
             throw VoiceAudioEngineError.outputUnavailable
@@ -592,7 +599,10 @@ public final class VoiceAudioEngine {
             to: playbackEngine.mainMixerNode,
             format: OpusCodec.pcmFormat
         )
-        localSoundboardPlayers[id] = player
+        localSoundboardPlayers[id] = LocalSoundboardPlayback(
+            player: player,
+            completion: completion
+        )
         let buffer = try clip.audioBuffer()
         player.scheduleBuffer(
             buffer,
@@ -627,10 +637,11 @@ public final class VoiceAudioEngine {
     }
 
     private func finishLocalSoundboardPlayback(id: UUID) {
-        guard let player = localSoundboardPlayers.removeValue(forKey: id) else { return }
-        player.stop()
-        playbackEngine.disconnectNodeOutput(player)
-        playbackEngine.detach(player)
+        guard let playback = localSoundboardPlayers.removeValue(forKey: id) else { return }
+        playback.player.stop()
+        playbackEngine.disconnectNodeOutput(playback.player)
+        playbackEngine.detach(playback.player)
+        playback.completion?()
     }
 
     private func player(for userID: String) throws -> AVAudioPlayerNode {

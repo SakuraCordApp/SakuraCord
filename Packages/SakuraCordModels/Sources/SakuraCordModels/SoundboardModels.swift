@@ -34,6 +34,14 @@ public struct SoundboardSound: Identifiable, Codable, Hashable, Sendable {
         guard id.allSatisfy(\.isNumber) else { return nil }
         return URL(string: "https://cdn.discordapp.com/soundboard-sounds/\(id)")
     }
+
+    public var emojiReference: EmojiReference? {
+        if let emojiID {
+            return EmojiReference(id: emojiID, name: emojiName ?? "emoji")
+        }
+        guard let emojiName, !emojiName.isEmpty else { return nil }
+        return EmojiReference(name: emojiName)
+    }
 }
 
 public struct SoundboardUserSettings: Equatable, Sendable {
@@ -56,6 +64,7 @@ public struct VoiceChannelEffect: Equatable, Sendable {
     public var channelID: ChannelID
     public var guildID: GuildID?
     public var userID: UserID
+    public var emoji: EmojiReference?
     public var soundID: String?
     public var soundVolume: Double
 
@@ -63,12 +72,14 @@ public struct VoiceChannelEffect: Equatable, Sendable {
         channelID: ChannelID,
         guildID: GuildID?,
         userID: UserID,
+        emoji: EmojiReference? = nil,
         soundID: String?,
         soundVolume: Double = 1
     ) {
         self.channelID = channelID
         self.guildID = guildID
         self.userID = userID
+        self.emoji = emoji
         self.soundID = soundID
         self.soundVolume = soundVolume
     }
