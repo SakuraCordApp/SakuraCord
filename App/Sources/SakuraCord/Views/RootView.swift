@@ -143,6 +143,7 @@ private struct ChatRootView: View {
     @State private var showAccountSwitcher = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var supplementaryPaneFrame = CGRect.zero
+    @State private var supplementaryToolbarSpacerWidth: CGFloat = 0
     @State private var workspaceFrame = CGRect.zero
     @State private var sidebarWidth = ChatChromeMetrics.serverRailWidth + 230
     @State private var presentsForumComposer = false
@@ -396,6 +397,12 @@ private struct ChatRootView: View {
         .onChange(of: hasOpenSupplementaryConversation) { _, isOpen in
             if !isOpen {
                 supplementaryPaneFrame = .zero
+                supplementaryToolbarSpacerWidth = 0
+            }
+        }
+        .onChange(of: model.openThread?.id) { _, threadID in
+            if threadID != nil {
+                model.dismissPinnedMessages()
             }
         }
         .onChange(of: model.selectedChannelID) { _, channelID in
@@ -564,25 +571,35 @@ private struct ChatRootView: View {
         if !model.isSwitchingAccounts {
             if let presentation = supplementaryToolbarPresentation {
                 ToolbarItem {
-                    HStack(spacing: 0) {
-                        ConversationToolbarLabel(
-                            title: presentation.title,
-                            systemImage: presentation.systemImage,
-                            subtitle: presentation.subtitle,
-                            textSize: InterfaceTypographyMetrics.interfaceTextSize
-                        )
-                        Spacer(minLength: 0)
-                    }
-                    .frame(
-                        width: max(supplementaryPaneFrame.width - 64, 120),
-                        alignment: .leading
+                    ConversationToolbarLabel(
+                        title: presentation.title,
+                        systemImage: presentation.systemImage,
+                        subtitle: nil,
+                        textSize: InterfaceTypographyMetrics.interfaceTextSize
                     )
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .onGeometryChange(for: CGRect.self) { proxy in
+                        proxy.frame(in: .global)
+                    } action: { frame in
+                        alignSupplementaryToolbarTitle(frame)
+                    }
                 }
                 .visibilityPriority(.high)
-            }
 
-            if hasOpenSupplementaryToolbarConversation {
+                ToolbarSpacer(.fixed)
+
                 ToolbarItem {
+                    Color.clear
+                        .frame(width: supplementaryToolbarSpacerWidth, height: 1)
+                        .accessibilityHidden(true)
+                }
+                .contentMarginsRemoved()
+                .sharedBackgroundVisibility(.hidden)
+
+                ToolbarSpacer(.fixed)
+
+                ToolbarItem(placement: .primaryAction) {
                     Button(action: closeSupplementaryConversation) {
                         Label("Close conversation", systemImage: "xmark")
                             .labelStyle(.iconOnly)
@@ -889,29 +906,42 @@ private struct ChatRootView: View {
     }
 
     private var toolbarPinsChannelID: ChannelID? {
-        guard selectedVoiceChannel == nil else { return nil }
+        guard selectedVoiceChannel == nil, model.openThread == nil else { return nil }
         return model.activePinsChannelID
     }
 
     private var supplementaryToolbarPresentation: SupplementaryToolbarPresentation? {
         if let thread = model.openThread {
-            let replyCount = max(thread.messageCount, model.threadMessages.count)
             return SupplementaryToolbarPresentation(
                 title: thread.name,
-                systemImage: "bubble.left.and.bubble.right",
-                subtitle: "\(replyCount) \(replyCount == 1 ? "reply" : "replies")"
+                systemImage: "bubble.left.and.bubble.right"
             )
         }
         guard model.isVoiceChatOpen, let channel = model.selectedChannel else { return nil }
         return SupplementaryToolbarPresentation(
             title: channel.name,
-            systemImage: "bubble.left.fill",
-            subtitle: "Voice channel chat"
+            systemImage: "bubble.left.fill"
         )
     }
 
     private var supplementaryCloseHelp: String {
         model.openThread == nil ? "Close voice channel chat" : "Close thread"
+    }
+
+    private func alignSupplementaryToolbarTitle(_ titleFrame: CGRect) {
+        guard supplementaryPaneFrame != .zero,
+              titleFrame != .zero,
+              titleFrame.minX.isFinite
+        else { return }
+
+        let targetLeadingEdge = supplementaryPaneFrame.minX
+            + ChatChromeMetrics.toolbarPaneEdgeInset
+        let correction = titleFrame.minX - targetLeadingEdge
+        guard abs(correction) > 0.5 else { return }
+        supplementaryToolbarSpacerWidth = max(
+            0,
+            supplementaryToolbarSpacerWidth + correction
+        )
     }
 
     private func closeSupplementaryConversation() {
@@ -1205,7 +1235,6 @@ private struct ComposerFileDropOverlay: View {
 private struct SupplementaryToolbarPresentation {
     let title: String
     let systemImage: String
-    let subtitle: String
 }
 
 private struct ConversationToolbarLabel: View {
