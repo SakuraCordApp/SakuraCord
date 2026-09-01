@@ -207,35 +207,39 @@ struct SakuraCordSessionLoadingView: View {
         VStack(spacing: 0) {
             ChannelListLoadingSkeleton()
 
-            GlassEffectContainer(spacing: 0) {
-                HStack(spacing: 9) {
-                    SkeletonShape(cornerRadius: 17)
-                        .frame(width: 34, height: 34)
-                    VStack(alignment: .leading, spacing: 4) {
+            GlassEffectContainer(spacing: SidebarAccountControlMetrics.surfaceSpacing) {
+                HStack(spacing: 8) {
+                    SkeletonShape(Circle())
+                        .frame(
+                            width: SidebarAccountControlMetrics.avatarSize,
+                            height: SidebarAccountControlMetrics.avatarSize
+                        )
+                    VStack(alignment: .leading, spacing: 3) {
                         SkeletonShape(cornerRadius: 4)
-                            .frame(width: 88, height: 11)
+                            .frame(width: 82, height: 10)
                         SkeletonShape(cornerRadius: 3)
-                            .frame(width: 58, height: 8)
+                            .frame(width: 52, height: 7)
                     }
-                    Spacer(minLength: 4)
-                    SkeletonShape(cornerRadius: 7)
-                        .frame(width: 22, height: 22)
+                    Spacer(minLength: 0)
+                    SkeletonShape(Circle())
+                        .frame(
+                            width: SidebarAccountControlMetrics.settingsDiameter,
+                            height: SidebarAccountControlMetrics.settingsDiameter
+                        )
                 }
-                .padding(.horizontal, 10)
-                .frame(height: ChatChromeMetrics.controlHeight)
+                .padding(.horizontal, SidebarAccountControlMetrics.contentInset)
+                .frame(height: SidebarAccountControlMetrics.capsuleHeight)
                 .glassEffect(
                     .regular,
                     in: ConcentricRectangle(
-                        corners: .concentric(
-                            minimum: .fixed(ChatChromeMetrics.composerMinimumCornerRadius)
-                        ),
-                        isUniform: true
+                        cornerRadius: SidebarAccountControlMetrics.cornerRadius,
+                        style: .continuous
                     )
                 )
             }
             .padding(.horizontal, 8)
-            .padding(.top, 8)
-            .padding(.bottom, 12)
+            .padding(.top, SidebarAccountControlMetrics.surfaceSpacing)
+            .padding(.bottom, 8)
         }
         .overlay {
             SidebarChromeSeparator(

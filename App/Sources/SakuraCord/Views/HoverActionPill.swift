@@ -74,6 +74,7 @@ struct HoverActionButton: View {
     var isSelected: Bool?
     var diameter: CGFloat?
     var iconFont: Font = .callout.weight(.medium)
+    var onHoverChanged: ((Bool) -> Void)?
     let action: () -> Void
     @AppStorage("settings.accessibility.largerTargets")
     private var usesLargerTargets = false
@@ -86,7 +87,8 @@ struct HoverActionButton: View {
                 diameter: diameter
                     ?? HoverActionPillMetrics.diameter(
                         enlarged: usesLargerTargets
-                    )
+                    ),
+                onHoverChanged: onHoverChanged
             ) {
                 Image(systemName: systemImage)
                     .symbolVariant(.none)
@@ -108,6 +110,7 @@ struct HoverActionControlLabel<Content: View>: View {
     var role: ButtonRole?
     var isSelected: Bool?
     var diameter: CGFloat = 28
+    var onHoverChanged: ((Bool) -> Void)?
     @ViewBuilder let content: () -> Content
     @State private var isHovering = false
 
@@ -118,7 +121,10 @@ struct HoverActionControlLabel<Content: View>: View {
             .contentShape(Circle())
             .background(backgroundColor, in: Circle())
             .contentShape(Circle())
-            .onHover { isHovering = $0 }
+            .onHover {
+                isHovering = $0
+                onHoverChanged?($0)
+            }
     }
 
     private var iconColor: Color {

@@ -445,6 +445,7 @@ final class AppModel {
         }
     }
     var voiceSessionState: VoiceSessionState = .idle
+    var voiceConnectedAt: Date?
     var voiceParticipants: [VoiceRemoteParticipant] = []
     var isLocallySpeaking = false
     var voiceVideoFrames: [String: VoiceVideoFrame] = [:]

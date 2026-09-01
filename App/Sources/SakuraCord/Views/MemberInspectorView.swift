@@ -601,7 +601,7 @@ nonisolated enum NameplatePresentationPolicy {
     }
 }
 
-private struct NameplateBackground: View {
+struct NameplateBackground: View {
     let nameplate: Nameplate
     let isAnimated: Bool
     @Environment(\.colorScheme) private var colorScheme

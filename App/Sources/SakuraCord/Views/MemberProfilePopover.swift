@@ -7,9 +7,20 @@ enum ProfilePresentationLayout {
     case inspector
 }
 
-struct ProfilePresentationContent: View {
+struct ProfilePresentationContent<Footer: View>: View {
     let presentation: ProfilePresentationState
     var layout: ProfilePresentationLayout = .popover
+    let footer: Footer
+
+    init(
+        presentation: ProfilePresentationState,
+        layout: ProfilePresentationLayout = .popover,
+        @ViewBuilder footer: () -> Footer
+    ) {
+        self.presentation = presentation
+        self.layout = layout
+        self.footer = footer()
+    }
 
     var body: some View {
         MemberProfilePopover(
@@ -17,19 +28,32 @@ struct ProfilePresentationContent: View {
             profile: presentation.profile,
             isLoading: presentation.isLoading,
             errorMessage: presentation.errorMessage,
-            layout: layout
+            layout: layout,
+            footer: footer
         )
     }
 }
 
-struct MemberProfilePopover: View {
-    static let preferredWidth: CGFloat = 330
+extension ProfilePresentationContent where Footer == EmptyView {
+    init(
+        presentation: ProfilePresentationState,
+        layout: ProfilePresentationLayout = .popover
+    ) {
+        self.init(presentation: presentation, layout: layout) {
+            EmptyView()
+        }
+    }
+}
+
+struct MemberProfilePopover<Footer: View>: View {
+    static var preferredWidth: CGFloat { 330 }
 
     let member: Member
     let profile: UserProfile?
     let isLoading: Bool
     let errorMessage: String?
     var layout: ProfilePresentationLayout = .popover
+    let footer: Footer
 
     @Environment(\.stablePopoverPresentationContext)
     private var popoverPresentationContext
@@ -127,6 +151,8 @@ struct MemberProfilePopover: View {
                             ProfileConnectionsSection(accounts: profile.connectedAccounts)
                         }
                     }
+
+                    footer
                 }
                 .padding(.bottom, 14)
                 .background {

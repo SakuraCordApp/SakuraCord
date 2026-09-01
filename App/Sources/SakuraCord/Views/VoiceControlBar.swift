@@ -214,42 +214,138 @@ struct VoiceControlBar<SettingsControl: View>: View {
     }
 }
 
-struct VoiceSidebarStatus: View {
+struct VoiceSidebarControlPanel: View {
     let model: AppModel
+    let navigateToChannel: () -> Void
+    @State private var isHeaderHovering = false
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: statusSymbol)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(statusColor)
+        VStack(spacing: 0) {
+            Button(action: navigateToChannel) {
+                HStack(spacing: 9) {
+                    Image(systemName: statusSymbol)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(statusColor)
+                        .frame(width: 24)
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(statusLabel)
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(statusColor)
-                    .lineLimit(1)
-                Text(connectionSubtitle)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(statusLabel)
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(statusColor)
+                            .lineLimit(1)
+                        Text(connectionSubtitle)
+                            .font(.caption)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        connectionDuration
+                    }
 
-            Spacer(minLength: 4)
-
-            Button(role: .destructive) {
-                Task { await model.leaveVoice() }
-            } label: {
-                Image(systemName: "phone.down.fill")
-                    .font(.caption.weight(.semibold))
-                    .frame(width: 26, height: 26)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
+                .contentShape(Rectangle())
+                .background(
+                    Color.primary.opacity(isHeaderHovering ? 0.09 : 0)
+                )
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Color(hex: 0xDA373C))
-            .help("Disconnect")
+            .onHover { hovering in
+                withAnimation(.snappy(duration: 0.14)) {
+                    isHeaderHovering = hovering
+                }
+            }
+            .help("Open \(connectionSubtitle)")
+
+            GeometryReader { proxy in
+                let spacing = Self.controlSpacing(for: proxy.size.width)
+                let diameter = Self.controlDiameter(
+                    for: proxy.size.width,
+                    spacing: spacing
+                )
+
+                HStack(spacing: spacing) {
+                    SidebarVoiceGlassButton(
+                        systemImage: model.localApplicationStreamKey == nil
+                            ? "rectangle.on.rectangle" : "rectangle.on.rectangle.slash",
+                        help: model.localApplicationStreamKey == nil
+                            ? "Share Screen" : "Screen Share Options",
+                        diameter: diameter,
+                        tintColor: model.localApplicationStreamKey != nil
+                            ? Color(hex: 0x5865F2) : nil,
+                        isDisabled: model.voiceSessionState != .connected
+                            && model.localApplicationStreamKey == nil
+                    ) {
+                        Task { await model.presentScreenSharePreview() }
+                    }
+
+                    SidebarVoiceGlassButton(
+                        systemImage: model.isCameraEnabled
+                            ? "video.fill" : "video.slash.fill",
+                        help: model.isCameraEnabled
+                            ? "Turn Off Camera" : "Turn On Camera",
+                        diameter: diameter,
+                        tintColor: model.isCameraEnabled
+                            ? Color(hex: 0x23A55A) : nil,
+                        isDisabled: model.voiceSessionState != .connected
+                            && !model.isCameraEnabled
+                    ) {
+                        Task { await model.toggleCamera() }
+                    }
+
+                    SidebarVoiceGlassButton(
+                        systemImage: model.isVoiceMuted ? "mic.slash.fill" : "mic.fill",
+                        help: model.isVoiceMuted ? "Unmute" : "Mute",
+                        diameter: diameter,
+                        isAlert: model.isVoiceMuted
+                    ) {
+                        Task { await model.toggleVoiceMute() }
+                    }
+
+                    SidebarVoiceGlassButton(
+                        systemImage: model.isVoiceDeafened
+                            ? "headphones.slash" : "headphones",
+                        help: model.isVoiceDeafened ? "Undeafen" : "Deafen",
+                        diameter: diameter,
+                        isAlert: model.isVoiceDeafened
+                    ) {
+                        Task { await model.toggleVoiceDeafen() }
+                    }
+
+                    SidebarVoiceGlassButton(
+                        systemImage: "phone.down.fill",
+                        help: "Disconnect",
+                        diameter: diameter,
+                        role: .destructive
+                    ) {
+                        Task { await model.leaveVoice() }
+                    }
+                }
+                .padding(.horizontal, Self.controlHorizontalPadding)
+                .frame(
+                    width: proxy.size.width,
+                    height: proxy.size.height
+                )
+            }
+            .frame(height: 46)
         }
-        .padding(.horizontal, 10)
-        .frame(height: 48)
-        .background(statusColor.opacity(statusBackgroundOpacity))
+        .clipShape(panelShape)
+        .glassEffect(
+            .regular,
+            in: panelShape
+        )
+    }
+
+    @ViewBuilder
+    private var connectionDuration: some View {
+        if let connectedAt = model.voiceConnectedAt {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                Text(Self.durationLabel(from: connectedAt, to: context.date))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+        }
     }
 
     private var connectionSubtitle: String {
@@ -284,15 +380,101 @@ struct VoiceSidebarStatus: View {
         switch model.voiceSessionState {
         case .connecting, .reconnecting: "arrow.triangle.2.circlepath.circle.fill"
         case .failed, .disconnected: "wifi.exclamationmark"
-        default: "wave.3.right.circle.fill"
+        default: "wifi"
         }
     }
 
-    private var statusBackgroundOpacity: Double {
-        switch model.voiceSessionState {
-        case .connecting, .reconnecting, .failed, .disconnected: 0.1
-        default: 0
+    private var panelShape: ConcentricRectangle {
+        ConcentricRectangle(
+            cornerRadius: SidebarAccountControlMetrics.cornerRadius,
+            style: .continuous
+        )
+    }
+
+    private static let controlCount: CGFloat = 5
+    private static let controlHorizontalPadding: CGFloat = 6
+    private static let preferredControlDiameter: CGFloat = 36
+    private static let preferredControlSpacing: CGFloat = 7
+    private static let minimumControlSpacing: CGFloat = 2
+
+    private static func controlSpacing(for width: CGFloat) -> CGFloat {
+        let contentWidth = max(0, width - (controlHorizontalPadding * 2))
+        return min(
+            preferredControlSpacing,
+            max(minimumControlSpacing, contentWidth * 0.025)
+        )
+    }
+
+    private static func controlDiameter(
+        for width: CGFloat,
+        spacing: CGFloat
+    ) -> CGFloat {
+        let contentWidth = max(0, width - (controlHorizontalPadding * 2))
+        let totalSpacing = spacing * (controlCount - 1)
+        return min(
+            preferredControlDiameter,
+            max(0, (contentWidth - totalSpacing) / controlCount)
+        )
+    }
+
+    private static func durationLabel(from start: Date, to end: Date) -> String {
+        let elapsed = max(0, Int(end.timeIntervalSince(start)))
+        let hours = elapsed / 3_600
+        let minutes = (elapsed % 3_600) / 60
+        let seconds = elapsed % 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
         }
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+}
+
+private struct SidebarVoiceGlassButton: View {
+    let systemImage: String
+    let help: String
+    let diameter: CGFloat
+    var role: ButtonRole?
+    var isAlert = false
+    var tintColor: Color?
+    var isDisabled = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(role: role, action: action) {
+            Image(systemName: systemImage)
+                .symbolVariant(.none)
+                .font(.callout.weight(.semibold))
+                .frame(width: diameter, height: diameter)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(foregroundColor)
+        .glassEffect(
+            glass,
+            in: Circle()
+        )
+        .disabled(isDisabled)
+        .opacity(isDisabled ? 0.42 : 1)
+        .help(help)
+        .accessibilityLabel(help)
+    }
+
+    private var effectiveTint: Color? {
+        tintColor ?? (isAlert ? Color(hex: 0xF23F43) : nil)
+    }
+
+    private var foregroundColor: Color {
+        role == .destructive ? .white : (effectiveTint ?? .primary)
+    }
+
+    private var glass: Glass {
+        if role == .destructive {
+            return .regular.tint(Color(hex: 0xDA373C)).interactive()
+        }
+        if let effectiveTint {
+            return .regular.tint(effectiveTint.opacity(0.18)).interactive()
+        }
+        return .regular.interactive()
     }
 }
 

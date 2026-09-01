@@ -1105,6 +1105,7 @@ extension AppModel {
         voiceEncryptionVersion = nil
         voiceLatencyMilliseconds = nil
         voiceSessionState = .idle
+        voiceConnectedAt = nil
         isCameraEnabled = false
         reconcilePrivateCallSounds()
         if hadActiveVoice, voiceVideoPreferences.playsFeedbackSounds {
@@ -1436,6 +1437,7 @@ extension AppModel {
         case .stateChanged(let state):
             voiceSessionState = state
             if state == .connected {
+                voiceConnectedAt = voiceConnectedAt ?? .now
                 watchAvailableDirectMessageStreamsAutomatically()
             } else if state == .disconnected, activeVoiceChannel != nil {
                 let account = accountSession()
