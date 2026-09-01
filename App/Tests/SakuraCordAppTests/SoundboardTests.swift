@@ -6,6 +6,31 @@ private let allSoundboardPermissions = DiscordPermissionBits.speak
     | DiscordPermissionBits.useSoundboard
     | DiscordPermissionBits.useExternalSounds
 
+@Test func `soundboard picker matches Discord favorite and frequent presentation`() {
+    let sounds = [
+        SoundboardSound(id: "2", name: "Two", isAvailable: false),
+        SoundboardSound(id: "3", name: "Three"),
+        SoundboardSound(id: "4", name: "Four"),
+        SoundboardSound(id: "9", name: "Nine"),
+        SoundboardSound(id: "700", name: "Seven Hundred"),
+        SoundboardSound(id: "900", name: "Nine Hundred", isAvailable: false),
+    ]
+    let soundsByID = Dictionary(uniqueKeysWithValues: sounds.map { ($0.id, $0) })
+
+    let favorites = SoundboardPickerContentPolicy.favoriteSounds(
+        ids: ["900", "3", "700", "2"],
+        soundsByID: soundsByID
+    )
+    #expect(favorites.map(\.id) == ["3", "700", "2", "900"])
+
+    let frequent = SoundboardPickerContentPolicy.frequentlyUsedSounds(
+        ids: ["9", "2", "missing", "3", "4"],
+        favoriteIDs: ["9"],
+        soundsByID: soundsByID
+    )
+    #expect(frequent.map(\.id) == ["2", "3"])
+}
+
 @Test func `soundboard route keeps defaults and same server sounds native`() {
     let guild = GuildID(rawValue: 1)
     #expect(SoundboardPlaybackPolicy.route(

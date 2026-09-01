@@ -543,6 +543,37 @@ private func appendETFBinary(_ value: String, to data: inout Data) {
     #expect(settings.frequentlyUsedKeys.last == "e17")
 }
 
+@Test func `soundboard settings keep Discord's 32 ranked frequent candidates`() {
+    func field(_ number: Int, payload: [UInt8]) -> [UInt8] {
+        encodeProtoVarint(UInt64(number << 3 | 2))
+            + encodeProtoVarint(UInt64(payload.count))
+            + payload
+    }
+    func frecencyEntry(key: String, totalUses: UInt64, timestamp: UInt64) -> [UInt8] {
+        let item = encodeProtoVarint(UInt64(1 << 3)) + encodeProtoVarint(totalUses)
+            + field(2, payload: encodeProtoVarint(timestamp))
+        let entry = field(1, payload: Array(key.utf8)) + field(2, payload: item)
+        return field(1, payload: entry)
+    }
+
+    let now: UInt64 = 1_800_000_000_000
+    let entries = (0 ..< 40).flatMap { index in
+        frecencyEntry(
+            key: "s\(index)",
+            totalUses: UInt64(40 - index),
+            timestamp: now
+        )
+    }
+    let settings = DiscordSettingsProto.soundboardSettings(
+        from: Data(field(11, payload: entries)),
+        nowMilliseconds: now
+    )
+
+    #expect(settings.frequentlyUsedSoundIDs.count == 32)
+    #expect(settings.frequentlyUsedSoundIDs.first == "s0")
+    #expect(settings.frequentlyUsedSoundIDs.last == "s31")
+}
+
 @Test func `guilds missing from settings appear above the stored sequence`() {
     let stored = Guild(id: GuildID(rawValue: 100), name: "Stored")
     let newlyCreated = Guild(id: GuildID(rawValue: 400), name: "Testing Server 2")

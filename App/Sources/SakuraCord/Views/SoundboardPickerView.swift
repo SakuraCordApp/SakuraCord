@@ -30,6 +30,39 @@ private struct SoundboardPickerSection {
     let sounds: [SoundboardSound]
 }
 
+nonisolated enum SoundboardPickerContentPolicy {
+    static func favoriteSounds(
+        ids: [String],
+        soundsByID: [String: SoundboardSound]
+    ) -> [SoundboardSound] {
+        ids.compactMap { soundsByID[$0] }.sorted(by: discordSoundOrder)
+    }
+
+    static func frequentlyUsedSounds(
+        ids: [String],
+        favoriteIDs: Set<String>,
+        soundsByID: [String: SoundboardSound]
+    ) -> [SoundboardSound] {
+        ids.lazy
+            .filter { !favoriteIDs.contains($0) }
+            .prefix(3)
+            .compactMap { soundsByID[$0] }
+    }
+
+    private static func discordSoundOrder(
+        _ left: SoundboardSound,
+        _ right: SoundboardSound
+    ) -> Bool {
+        if left.isAvailable != right.isAvailable {
+            return left.isAvailable
+        }
+        if let leftID = UInt64(left.id), let rightID = UInt64(right.id) {
+            return leftID < rightID
+        }
+        return left.id < right.id
+    }
+}
+
 struct SoundboardPickerView: View {
     let model: AppModel
     @State private var query = ""
@@ -200,16 +233,24 @@ struct SoundboardPickerView: View {
             }
             return [SoundboardPickerSection(id: .search, title: "Search Results", sounds: matches)]
         }
+        let favoriteIDs = Set(model.soundboardUserSettings.favoriteSoundIDs)
         var result = [
             SoundboardPickerSection(
                 id: .favorites,
                 title: "Favorites",
-                sounds: model.soundboardUserSettings.favoriteSoundIDs.compactMap { soundsByID[$0] }
+                sounds: SoundboardPickerContentPolicy.favoriteSounds(
+                    ids: model.soundboardUserSettings.favoriteSoundIDs,
+                    soundsByID: soundsByID
+                )
             ),
             SoundboardPickerSection(
                 id: .frequent,
                 title: "Frequently Used",
-                sounds: model.soundboardUserSettings.frequentlyUsedSoundIDs.compactMap { soundsByID[$0] }
+                sounds: SoundboardPickerContentPolicy.frequentlyUsedSounds(
+                    ids: model.soundboardUserSettings.frequentlyUsedSoundIDs,
+                    favoriteIDs: favoriteIDs,
+                    soundsByID: soundsByID
+                )
             ),
             SoundboardPickerSection(
                 id: .defaults,

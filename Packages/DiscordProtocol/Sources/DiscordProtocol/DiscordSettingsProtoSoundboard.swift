@@ -59,7 +59,7 @@ extension DiscordSettingsProto {
                     : left.frecency > right.frecency
             }
             .compactMap { seen.insert($0.key).inserted ? $0.key : nil }
-            .prefix(18)
+            .prefix(32)
         return SoundboardUserSettings(
             favoriteSoundIDs: favorites,
             frequentlyUsedSoundIDs: Array(frequent),

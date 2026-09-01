@@ -1662,10 +1662,11 @@ resources on popup dismissal, stop, failure, source removal, or disconnect.
 ### Soundboard
 
 The soundboard contract was authenticated and dynamically rechecked against a
-clean first-party desktop client on 31 August 2026. The bounded live actions
-were performed only in the designated private test guild and voice channel.
-Identifiers, credentials, complete settings blobs, and user content are not
-retained in this baseline.
+clean first-party desktop client on 31 August 2026, then statically rechecked
+against the current public web client on 1 September 2026. The bounded live
+actions were performed only in the designated private test guild and voice
+channel. Identifiers, credentials, complete settings blobs, and user content
+are not retained in this baseline.
 
 - `GET /soundboard-default-sounds` returns the six Discord defaults. Defaults
   have no source guild and always use native delivery. Their media, like custom
@@ -1704,12 +1705,22 @@ retained in this baseline.
   event. SakuraCord locally renders known catalog sounds and resolves an
   uncatalogued valid sound ID through Discord's soundboard CDN. Invalid IDs and
   unavailable media are ignored safely.
-- Sound favourites share Frecency settings-proto type 2. Top-level field 8
-  contains ordered, deduplicated packed fixed64 sound IDs in nested field 1,
-  capped at 250. One explicit toggle patches the complete updated base64 proto
-  and preserves every unrelated or unknown field. Top-level field 11 contains
-  sound usage/frecency data used for the frequently-used section. A failed
-  favourite mutation rolls presentation back to provider-authoritative state.
+- Sound favourites share cloud-backed Frecency settings-proto type 2. Top-level
+  field 8 contains ordered, deduplicated packed fixed64 sound IDs in nested
+  field 1, capped at 250. An add appends to that stored sequence and a remove
+  deletes from it, but the first-party picker does not present storage order:
+  available favourites are placed first and each availability group is sorted
+  by numeric sound ID. Emoji favourites, by contrast, retain their stored order
+  in the picker. One explicit toggle patches the complete updated base64 proto
+  and preserves every unrelated or unknown field. A failed favourite mutation
+  rolls presentation back to provider-authoritative state.
+- Top-level field 11 contains cloud-backed played-sound history. The first-party
+  client immediately adds a play trigger to its local pending frecency state,
+  ranks up to 32 candidates, and later writes the updated history through the
+  settings manager. Its picker removes sounds that are already favourites and
+  shows only the first three remaining IDs. The score weights a use from the
+  last 3/15/30/45/80 days at 100/70/50/30/10 respectively, with older valid
+  samples weighted at 1; total use count scales the sampled-recency score.
 - Local and incoming playback share the selected voice output graph and respect
   deafen/output routing. Outgoing mixing is isolated to the microphone encoder,
   permits bounded overlap and repeated triggers, applies a hard sample limiter,
