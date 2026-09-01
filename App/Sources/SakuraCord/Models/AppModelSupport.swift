@@ -43,6 +43,26 @@ actor AccountTransitionCoordinator {
 }
 
 extension AppModel {
+    func voiceGatewayDiagnostics(transport: String) -> VoiceGatewayDiagnostics {
+        VoiceGatewayDiagnostics(
+            recorder: { direction, data in
+                DiscordAPIDiagnosticStore.shared.recordWebSocketData(
+                    transport: transport,
+                    direction: direction.rawValue,
+                    data: data
+                )
+            },
+            eventRecorder: { event in
+                DiscordAPIDiagnosticStore.shared.recordWebSocketLifecycle(
+                    transport: transport,
+                    operation: event.operation,
+                    integers: event.integers,
+                    flags: event.flags
+                )
+            }
+        )
+    }
+
     func accountSession(allowsTransition: Bool = false) -> AppModelAccountSession {
         let isBlockedTransition = accountTransitionIsActive && !allowsTransition
         return AppModelAccountSession(

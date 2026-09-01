@@ -121,9 +121,9 @@ enum VoiceGatewayCloseAction: Equatable {
 
     init(closeCode: Int) {
         switch closeCode {
-        case 4006, 4009:
+        case 4009:
             self = .reidentify
-        case 4014, 4021, 4022:
+        case 4006, 4014, 4021, 4022:
             self = .disconnect
         default:
             self = .resume

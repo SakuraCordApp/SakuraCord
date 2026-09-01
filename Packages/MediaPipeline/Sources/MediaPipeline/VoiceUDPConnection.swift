@@ -1,5 +1,6 @@
 import Foundation
 @preconcurrency import Network
+import Synchronization
 
 public struct VoiceDiscoveredAddress: Equatable, Sendable {
     public var ip: String
@@ -118,18 +119,33 @@ public actor VoiceUDPConnection {
     }
 
     public func start() async throws {
-        try await withCheckedThrowingContinuation { continuation in
-            readyContinuation = continuation
-            connection.stateUpdateHandler = { [weak self] state in
-                Task { await self?.handleState(state) }
+        let timeoutTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(3))
+                await self?.timeoutPendingStart()
+            } catch {}
+        }
+        defer { timeoutTask.cancel() }
+        try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            try await withCheckedThrowingContinuation { continuation in
+                readyContinuation = continuation
+                connection.stateUpdateHandler = { [weak self] state in
+                    Task { await self?.handleState(state) }
+                }
+                connection.start(queue: queue)
             }
-            connection.start(queue: queue)
+        } onCancel: {
+            Task { [weak self] in
+                await self?.cancelPendingStart()
+            }
         }
     }
 
     public func discoverExternalAddress(ssrc: UInt32) async throws -> VoiceDiscoveredAddress {
-        try await send(VoiceIPDiscovery.request(ssrc: ssrc))
-        let response = try await receiveOne()
+        let request = VoiceIPDiscovery.request(ssrc: ssrc)
+        try await send(request)
+        let response = try await receiveDiscoveryResponse(retrying: request)
         guard let discovered = VoiceIPDiscovery.parseResponse(response) else {
             throw VoiceGatewayCodecError.malformedPayload
         }
@@ -241,23 +257,52 @@ public actor VoiceUDPConnection {
             readyContinuation = nil
             continuation.finish(throwing: error)
         case .cancelled:
+            readyContinuation?.resume(throwing: CancellationError())
+            readyContinuation = nil
             continuation.finish()
         default:
             break
         }
     }
 
-    private func receiveOne() async throws -> Data {
-        try await withCheckedThrowingContinuation { continuation in
-            connection.receiveMessage { data, _, _, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else if let data {
-                    continuation.resume(returning: data)
-                } else {
-                    continuation.resume(throwing: URLError(.cannotParseResponse))
+    private func timeoutPendingStart() {
+        readyContinuation?.resume(throwing: VoiceSessionError.connectionTimedOut)
+        readyContinuation = nil
+    }
+
+    private func cancelPendingStart() {
+        readyContinuation?.resume(throwing: CancellationError())
+        readyContinuation = nil
+        connection.cancel()
+    }
+
+    private func receiveDiscoveryResponse(retrying request: Data) async throws -> Data {
+        let gate = VoiceUDPReceiveGate()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                gate.install(continuation)
+                guard gate.isPending else { return }
+                connection.receiveMessage { data, _, _, error in
+                    if let error {
+                        gate.fail(error)
+                    } else if let data {
+                        gate.succeed(data)
+                    } else {
+                        gate.fail(URLError(.cannotParseResponse))
+                    }
+                }
+                for seconds in 1 ... 2 {
+                    queue.asyncAfter(deadline: .now() + .seconds(seconds)) { [connection] in
+                        guard gate.isPending else { return }
+                        connection.send(content: request, completion: .idempotent)
+                    }
+                }
+                queue.asyncAfter(deadline: .now() + .seconds(3)) {
+                    gate.fail(VoiceSessionError.connectionTimedOut)
                 }
             }
+        } onCancel: {
+            gate.cancel()
         }
     }
 
@@ -299,5 +344,50 @@ public actor VoiceUDPConnection {
     private func nextKeepaliveCounter() -> UInt32 {
         defer { keepaliveCounter &+= 1 }
         return keepaliveCounter
+    }
+}
+
+private final class VoiceUDPReceiveGate: Sendable {
+    private struct State {
+        var continuation: CheckedContinuation<Data, any Error>?
+        var isFinished = false
+    }
+
+    private let state = Mutex(State())
+
+    var isPending: Bool {
+        state.withLock { !$0.isFinished }
+    }
+
+    func install(_ continuation: CheckedContinuation<Data, any Error>) {
+        let wasAlreadyFinished = state.withLock { state in
+            guard !state.isFinished else { return true }
+            state.continuation = continuation
+            return false
+        }
+        if wasAlreadyFinished {
+            continuation.resume(throwing: CancellationError())
+        }
+    }
+
+    func succeed(_ data: Data) {
+        takeContinuation()?.resume(returning: data)
+    }
+
+    func fail(_ error: any Error) {
+        takeContinuation()?.resume(throwing: error)
+    }
+
+    func cancel() {
+        fail(CancellationError())
+    }
+
+    private func takeContinuation() -> CheckedContinuation<Data, any Error>? {
+        state.withLock { state in
+            guard !state.isFinished else { return nil }
+            state.isFinished = true
+            defer { state.continuation = nil }
+            return state.continuation
+        }
     }
 }

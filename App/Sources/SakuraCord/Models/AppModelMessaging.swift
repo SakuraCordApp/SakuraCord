@@ -1306,13 +1306,7 @@ extension AppModel {
         let session = DiscordVoiceSession(
             info: info,
             configuration: currentVoiceConfiguration(),
-            gatewayDiagnostics: VoiceGatewayDiagnostics { direction, data in
-                DiscordAPIDiagnosticStore.shared.recordWebSocketData(
-                    transport: "voice_gateway",
-                    direction: direction.rawValue,
-                    data: data
-                )
-            }
+            gatewayDiagnostics: voiceGatewayDiagnostics(transport: "voice_gateway")
         )
         voiceSession = session
         voiceEventTask?.cancel()
@@ -1350,6 +1344,7 @@ extension AppModel {
     }
 
     func scheduleVoiceServerMigration(to info: VoiceConnectionInfo?) {
+        recordVoiceServerMigrationScheduled(info)
         voiceMigrationGeneration &+= 1
         let generation = voiceMigrationGeneration
         voiceMigrationTask?.cancel()
@@ -1394,10 +1389,11 @@ extension AppModel {
         isCameraEnabled = false
         voiceSessionState = .reconnecting
 
-        guard let info else { return }
+        guard let info else { return recordVoiceServerMigrationWaiting() }
         guard info.channelID == activeVoiceChannel?.id else { return }
 
         do {
+            recordVoiceServerMigrationStarted()
             try await startVoiceSession(
                 with: info,
                 account: account,
@@ -1420,6 +1416,7 @@ extension AppModel {
                 ) else { return }
                 isCameraEnabled = true
             }
+            recordVoiceServerMigrationCompleted()
         } catch is CancellationError {
             return
         } catch {
@@ -1429,12 +1426,14 @@ extension AppModel {
             voiceSessionState = .failed
             voiceErrorMessage = error.localizedDescription
             errorMessage = error.localizedDescription
+            recordVoiceServerMigrationFailed()
         }
     }
 
     func consumeVoiceEvent(_ event: VoiceSessionEvent) {
         switch event {
         case .stateChanged(let state):
+            recordVoiceSessionStateReceived(state)
             voiceSessionState = state
             if state == .connected {
                 voiceConnectedAt = voiceConnectedAt ?? .now

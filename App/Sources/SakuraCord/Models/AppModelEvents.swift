@@ -330,12 +330,14 @@ extension AppModel {
         case .currentUserRolesChanged, .currentUserRolesSnapshot:
             consumeCurrentUserRoleEvent(event)
         case .voiceStateChanged(let state):
+            recordVoiceStateUpdateReceived(state)
             consumeVoiceStateChanged(state)
         case .privateCallChanged(var call):
             consumePrivateCallChanged(&call)
         case .privateCallDeleted(let channelID, let unavailable):
             consumePrivateCallDeleted(channelID: channelID, unavailable: unavailable)
         case .voiceServerChanged(let info):
+            recordVoiceServerUpdateReceived(info)
             scheduleVoiceServerMigration(to: info)
         case .snapshotChanged(let value):
             consumeSnapshotChanged(value)

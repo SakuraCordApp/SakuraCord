@@ -418,6 +418,26 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
         )
     }
 
+    /// Records bounded lifecycle metadata that never contains Discord payload
+    /// strings. These events remain useful when detailed payload capture is off.
+    public func recordWebSocketLifecycle(
+        transport: String,
+        operation: String,
+        integers: [String: Int] = [:],
+        flags: [String: Bool] = [:]
+    ) {
+        var fields = integers.mapValues { JSONValue.number(Double($0)) }
+        fields.merge(flags.mapValues(JSONValue.bool)) { _, replacement in
+            replacement
+        }
+        append(
+            transport: transport,
+            direction: "lifecycle",
+            operation: String(operation.prefix(128)),
+            payload: fields.isEmpty ? nil : .object(fields)
+        )
+    }
+
     public func exportData() throws -> Data {
         let snapshot = withLock { state in
             (

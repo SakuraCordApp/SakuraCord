@@ -10,17 +10,41 @@ public enum VoiceGatewayDiagnosticDirection: String, Sendable {
     case response
 }
 
+public struct VoiceGatewayDiagnosticEvent: Equatable, Sendable {
+    public let operation: String
+    public let integers: [String: Int]
+    public let flags: [String: Bool]
+
+    init(
+        operation: String,
+        integers: [String: Int] = [:],
+        flags: [String: Bool] = [:]
+    ) {
+        self.operation = operation
+        self.integers = integers
+        self.flags = flags
+    }
+}
+
 public struct VoiceGatewayDiagnostics: Sendable {
-    public static let disabled = VoiceGatewayDiagnostics { _, _ in }
+    public static let disabled = VoiceGatewayDiagnostics(
+        recorder: { _, _ in },
+        eventRecorder: { _ in }
+    )
 
     private let recorder:
         @Sendable (VoiceGatewayDiagnosticDirection, Data) -> Void
+    private let eventRecorder:
+        @Sendable (VoiceGatewayDiagnosticEvent) -> Void
 
     public init(
         recorder:
-            @escaping @Sendable (VoiceGatewayDiagnosticDirection, Data) -> Void
+            @escaping @Sendable (VoiceGatewayDiagnosticDirection, Data) -> Void,
+        eventRecorder:
+            @escaping @Sendable (VoiceGatewayDiagnosticEvent) -> Void = { _ in }
     ) {
         self.recorder = recorder
+        self.eventRecorder = eventRecorder
     }
 
     public func record(
@@ -28,6 +52,10 @@ public struct VoiceGatewayDiagnostics: Sendable {
         data: Data
     ) {
         recorder(direction, data)
+    }
+
+    public func record(_ event: VoiceGatewayDiagnosticEvent) {
+        eventRecorder(event)
     }
 }
 
@@ -65,6 +93,11 @@ public actor VoiceGatewayConnection {
     public func connect(resuming: Bool = false) async throws {
         connectionGeneration &+= 1
         let generation = connectionGeneration
+        diagnostics.record(VoiceGatewayDiagnosticEvent(
+            operation: "socket_connect_started",
+            integers: ["generation": generation],
+            flags: ["resuming": resuming]
+        ))
         reportedClosedGeneration = nil
         lastHeartbeatAcknowledged = true
         closeSocketOnly()
@@ -183,6 +216,16 @@ public actor VoiceGatewayConnection {
             } catch is CancellationError {
                 return
             } catch {
+                let nsError = error as NSError
+                diagnostics.record(VoiceGatewayDiagnosticEvent(
+                    operation: "socket_receive_failed",
+                    integers: [
+                        "close_code": socket.closeCode.rawValue,
+                        "close_reason_byte_count": socket.closeReason?.count ?? 0,
+                        "error_code": nsError.code,
+                        "generation": generation,
+                    ]
+                ))
                 voiceGatewayLogger.error(
                     "Voice gateway socket receive failed; error=\(String(reflecting: error), privacy: .public), closeCode=\(socket.closeCode.rawValue)"
                 )
@@ -269,6 +312,10 @@ public actor VoiceGatewayConnection {
                 guard await connectionGeneration == generation else { return }
                 let acknowledged = await lastHeartbeatAcknowledged
                 guard acknowledged else {
+                    diagnostics.record(VoiceGatewayDiagnosticEvent(
+                        operation: "heartbeat_ack_missed",
+                        integers: ["generation": generation]
+                    ))
                     await reportConnectionClosed(generation: generation, closeCode: 4000)
                     return
                 }
@@ -280,6 +327,14 @@ public actor VoiceGatewayConnection {
                         sequence: lastSequence
                     ))
                 } catch {
+                    let nsError = error as NSError
+                    diagnostics.record(VoiceGatewayDiagnosticEvent(
+                        operation: "heartbeat_send_failed",
+                        integers: [
+                            "error_code": nsError.code,
+                            "generation": generation,
+                        ]
+                    ))
                     await reportConnectionClosed(generation: generation, closeCode: 4000)
                     return
                 }
@@ -314,6 +369,13 @@ public actor VoiceGatewayConnection {
               reportedClosedGeneration != generation
         else { return }
         reportedClosedGeneration = generation
+        diagnostics.record(VoiceGatewayDiagnosticEvent(
+            operation: "socket_closed",
+            integers: [
+                "close_code": closeCode,
+                "generation": generation,
+            ]
+        ))
         heartbeatTask?.cancel()
         socket?.cancel(with: .goingAway, reason: nil)
         socket = nil

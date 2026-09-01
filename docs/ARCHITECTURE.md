@@ -107,7 +107,10 @@ Within the production provider:
   uploads, native-authentication traffic, and main, voice, and remote-auth
   Gateway envelopes at those transport boundaries. It discards user-authored and
   credential-bearing values, IDs, nonces, request IDs, and rate-limit bucket IDs
-  before retaining a bounded in-memory session log. The Diagnostics settings
+  before retaining a bounded in-memory session log. The export also retains
+  scalar-only Voice socket closure, reconnect, timeout, migration, and app-state
+  lifecycle events even when detailed payload capture is disabled, so transport
+  loops remain diagnosable without retaining content. The Diagnostics settings
   pane exports the retained JSON Lines data and reports when older entries were
   dropped. Its optional disk capture is off by default and writes private JSON
   Lines session files under Application Support only after the user enables it.

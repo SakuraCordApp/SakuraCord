@@ -537,13 +537,9 @@ extension AppModel {
             kind: .applicationStream(isBroadcaster: isBroadcaster),
             configuration: currentVoiceConfiguration(),
             remoteAudioHandler: remoteAudioHandler,
-            gatewayDiagnostics: VoiceGatewayDiagnostics { direction, data in
-                DiscordAPIDiagnosticStore.shared.recordWebSocketData(
-                    transport: "stream_voice_gateway",
-                    direction: direction.rawValue,
-                    data: data
-                )
-            }
+            gatewayDiagnostics: voiceGatewayDiagnostics(
+                transport: "stream_voice_gateway"
+            )
         )
         applicationStreamSessions[key] = session
         applicationStreamEventTasks.removeValue(forKey: key)?.cancel()

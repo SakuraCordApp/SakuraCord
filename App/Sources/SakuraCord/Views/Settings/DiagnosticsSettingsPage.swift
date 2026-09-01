@@ -164,7 +164,7 @@ struct DiagnosticsSettingsPage: View {
             .settingsControlAnchor(.diagnosticRetainedEntries, state: state)
 
             Text(
-                "Exports retained Discord REST, attachment, authentication, and Gateway request/response metadata from this app session. "
+                "Exports retained Discord REST, attachment, authentication, Gateway request/response metadata, and voice connection lifecycle events from this app session. "
                     + "Detailed sanitized payload capture is off by default because processing large responses increases CPU and energy use. "
                     + "Message text, names, usernames, profile text, credentials, cookies, challenge data, filenames, and URLs are discarded before logging. "
                     + "IDs, nonces, request IDs, and rate-limit bucket IDs are always redacted. "

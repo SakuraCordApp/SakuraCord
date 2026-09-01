@@ -141,6 +141,28 @@ import Testing
     #expect(!text.contains("[11,22,33,44]"))
 }
 
+@Test func `voice Gateway lifecycle diagnostics retain safe reconnect metadata by default`() throws {
+    let store = DiscordAPIDiagnosticStore(maximumEntries: 10)
+
+    store.recordWebSocketLifecycle(
+        transport: "voice_gateway",
+        operation: "reconnect_scheduled",
+        integers: [
+            "attempt": 3,
+            "close_code": 4_014,
+            "delay_milliseconds": 4_000,
+        ],
+        flags: ["resuming": true]
+    )
+
+    let text = try #require(String(data: store.exportData(), encoding: .utf8))
+    #expect(text.contains(#""direction":"lifecycle""#))
+    #expect(text.contains(#""operation":"reconnect_scheduled""#))
+    #expect(text.contains(#""attempt":3"#))
+    #expect(text.contains(#""close_code":4014"#))
+    #expect(text.contains(#""resuming":true"#))
+}
+
 @Test func `API diagnostics report dropped entries when the buffer is full`() throws {
     let store = DiscordAPIDiagnosticStore(maximumEntries: 2)
     for attempt in 1 ... 3 {
