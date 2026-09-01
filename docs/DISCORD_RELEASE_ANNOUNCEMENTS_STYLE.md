@@ -63,12 +63,16 @@ Good headlines are concrete, for example:
 
 - `**Message forwarding, GIFs, and a new media viewer 🌸**`
 - `**Discord forum channels have arrived! 🌸**`
-- `**Message forwarding and GIF fixes are ready to test 🌙**` (nightly only)
+- `**Message forwarding and GIF fixes 🌙**` (nightly only)
 
 Do not use generic promotional phrases that could describe any release, such
 as `More ways to connect, share, and explore`, `Something for everyone`,
 `Better than ever`, or `A new update is available`. Avoid hype, filler, and
 unsupported superlatives.
+
+Never use `ready to test` in a headline. The nightly moon and generated release
+framing already communicate that the release is a test build, so the headline
+should use that space to name its defining features or fixes.
 
 The headline and bullets must pass this specificity test: do not replace
 clearly nameable features with an abstract description of what those features
