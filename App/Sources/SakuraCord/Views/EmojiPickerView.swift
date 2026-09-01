@@ -1525,7 +1525,12 @@ final class EmojiPickerDocumentStore {
 
     func synchronize(with model: AppModel, useCase: DiscordEmojiUseCase) {
         let premiumType = model.snapshot?.currentUser.premiumType ?? 0
-        let guilds = (model.snapshot?.guilds ?? []).filter {
+        let guilds = PickerSectionGuildOrdering.orderedGuilds(
+            railItems: model.serverRailItems,
+            guildsByID: model.serverRailGuildsByID,
+            fallbackGuilds: model.snapshot?.guilds ?? [],
+            currentGuildID: model.selectedGuildID
+        ).filter {
             DiscordEmojiPermissionPolicy.canShowGuild(
                 $0.id,
                 for: useCase,

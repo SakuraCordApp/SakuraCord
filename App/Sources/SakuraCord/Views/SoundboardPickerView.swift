@@ -31,6 +31,20 @@ private struct SoundboardPickerSection {
 }
 
 nonisolated enum SoundboardPickerContentPolicy {
+    static func guilds(
+        railItems: [GuildRailItem],
+        guildsByID: [GuildID: Guild],
+        fallbackGuilds: [Guild],
+        currentGuildID: GuildID?
+    ) -> [Guild] {
+        PickerSectionGuildOrdering.orderedGuilds(
+            railItems: railItems,
+            guildsByID: guildsByID,
+            fallbackGuilds: fallbackGuilds,
+            currentGuildID: currentGuildID
+        )
+    }
+
     static func favoriteSounds(
         ids: [String],
         soundsByID: [String: SoundboardSound]
@@ -125,28 +139,35 @@ struct SoundboardPickerView: View {
     }
 
     private func sidebar(proxy: ScrollViewProxy) -> some View {
-        ScrollView {
-            LazyVStack(spacing: 2) {
+        GeometryReader { _ in
+            ScrollView {
+                LazyVStack(spacing: 2) {
                     bookmark(.favorites, help: "Favorites", systemImage: "star.fill", proxy: proxy)
                     bookmark(.frequent, help: "Frequently Used", systemImage: "clock.fill", proxy: proxy)
                     bookmark(.defaults, help: "Discord Sounds", systemImage: "waveform", proxy: proxy)
+
                     if !guilds.isEmpty {
-                        Divider().frame(width: 28).padding(.vertical, 2)
+                        Divider()
+                            .frame(width: 28)
+                            .padding(.vertical, 2)
+
+                        ForEach(guilds) { guild in
+                            PickerSectionBookmark(
+                                section: SoundboardSection.guild(guild.id),
+                                visibleSection: visibleSection,
+                                help: guild.name,
+                                jump: { section in jump(to: section, proxy: proxy) },
+                                content: { EmojiGuildBookmarkIcon(guild: guild) }
+                            )
+                        }
                     }
-                    ForEach(guilds) { guild in
-                        PickerSectionBookmark(
-                            section: SoundboardSection.guild(guild.id),
-                            visibleSection: visibleSection,
-                            help: guild.name,
-                            jump: { section in jump(to: section, proxy: proxy) },
-                            content: { EmojiGuildBookmarkIcon(guild: guild) }
-                        )
-                    }
+                }
+                .scrollTargetLayout()
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
-            .padding(.vertical, 4)
-            .frame(maxWidth: .infinity)
+            .scrollIndicators(.hidden)
         }
-        .scrollIndicators(.hidden)
         .frame(width: PickerSectionRailLayout.width)
     }
 
@@ -213,9 +234,12 @@ struct SoundboardPickerView: View {
     }
 
     private var guilds: [Guild] {
-        (model.snapshot?.guilds ?? []).filter {
-            model.soundboardSoundsByGuild[$0.id]?.isEmpty == false
-        }
+        SoundboardPickerContentPolicy.guilds(
+            railItems: model.serverRailItems,
+            guildsByID: model.serverRailGuildsByID,
+            fallbackGuilds: model.snapshot?.guilds ?? [],
+            currentGuildID: model.selectedGuildID
+        )
     }
 
     private var sections: [SoundboardPickerSection] {
