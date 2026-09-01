@@ -1043,7 +1043,8 @@ extension AppModel {
     func leaveVoice(
         account: AppModelAccountSession? = nil,
         expectedOperation: AppModelVoiceOperationIdentity? = nil,
-        preservingVoiceActionGeneration preservedActionGeneration: UInt64? = nil
+        preservingVoiceActionGeneration preservedActionGeneration: UInt64? = nil,
+        notifyDiscord: Bool = true
     ) async {
         let account = account ?? accountSession()
         guard isCurrentAccountSession(account) else { return }
@@ -1071,7 +1072,7 @@ extension AppModel {
         voiceMigrationTask = nil
         voiceEventTask?.cancel()
         voiceEventTask = nil
-        await teardownApplicationStreams(account: account, notifyDiscord: true)
+        await teardownApplicationStreams(account: account, notifyDiscord: notifyDiscord)
         await departingSession?.disconnect()
         guard isCurrentAccountSession(account),
               voiceMigrationGeneration == voiceGeneration,
@@ -1080,7 +1081,7 @@ extension AppModel {
         if voiceSession === departingSession {
             voiceSession = nil
         }
-        if activeVoiceChannel?.id == channel?.id, channel != nil {
+        if notifyDiscord, activeVoiceChannel?.id == channel?.id, channel != nil {
             try? await account.provider.updateVoiceState(
                 channelID: nil,
                 guildID: guildID,
@@ -1098,7 +1099,7 @@ extension AppModel {
         voiceParticipants = []
         isLocallySpeaking = false
         voiceVideoFrames = [:]
-        if let ownUserID = snapshot?.currentUser.id {
+        if notifyDiscord, let ownUserID = snapshot?.currentUser.id {
             voiceStates[ownUserID] = nil
         }
         voiceEncryptionVersion = nil
@@ -1436,6 +1437,16 @@ extension AppModel {
             voiceSessionState = state
             if state == .connected {
                 watchAvailableDirectMessageStreamsAutomatically()
+            } else if state == .disconnected, activeVoiceChannel != nil {
+                let account = accountSession()
+                let operation = currentVoiceOperationIdentity()
+                startAccountChildTask(account: account) { model, account in
+                    await model.leaveVoice(
+                        account: account,
+                        expectedOperation: operation,
+                        notifyDiscord: false
+                    )
+                }
             }
         case .latencyUpdated(let milliseconds):
             voiceLatencyMilliseconds = milliseconds

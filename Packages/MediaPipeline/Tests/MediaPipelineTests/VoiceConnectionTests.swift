@@ -10,6 +10,15 @@ import Testing
     #expect(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems == [URLQueryItem(name: "v", value: "8")])
 }
 
+@Test func `voice gateway close codes select the required recovery path`() {
+    #expect(VoiceGatewayCloseAction(closeCode: 4015) == .resume)
+    #expect(VoiceGatewayCloseAction(closeCode: 4006) == .reidentify)
+    #expect(VoiceGatewayCloseAction(closeCode: 4009) == .reidentify)
+    #expect(VoiceGatewayCloseAction(closeCode: 4014) == .disconnect)
+    #expect(VoiceGatewayCloseAction(closeCode: 4021) == .disconnect)
+    #expect(VoiceGatewayCloseAction(closeCode: 4022) == .disconnect)
+}
+
 @Test func `voice IP discovery uses documented seventy four byte packet`() {
     let request = VoiceIPDiscovery.request(ssrc: 0x0102_0304)
     #expect(request.count == 74)

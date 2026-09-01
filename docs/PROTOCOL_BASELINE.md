@@ -1568,6 +1568,14 @@ session. A 2560×1440 60 FPS screen was advertised by Voice opcode 12 with
 `max_bitrate:9000000`. Viewer demand used opcode 15 quality 100 with a
 `pixelCounts` hint; hidden/unwatched content used zero demand.
 
+Voice WebSocket recovery follows Discord's published close-code contract.
+Session-invalid (`4006`) and timed-out (`4009`) connections identify again
+instead of attempting to resume. Server-directed disconnects (`4014`, `4021`,
+and `4022`) tear down only SakuraCord's local media session and do not publish a
+main-Gateway leave, so another client that took ownership of the account's
+voice session is not disconnected in turn. Other transient closures retain the
+bounded resume path.
+
 A sanitized authenticated 23 August source-quality follow-up confirmed that
 the stream Voice Identify keeps `streams[0].type:"screen"`, while its later
 opcode-12 media advertisement uses `streams[0].type:"video"`. Source quality

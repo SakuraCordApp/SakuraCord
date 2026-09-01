@@ -114,6 +114,23 @@ public enum VoiceGatewayCodecError: Error, Equatable {
     case unsupportedBinaryOpcode(UInt8)
 }
 
+enum VoiceGatewayCloseAction: Equatable {
+    case resume
+    case reidentify
+    case disconnect
+
+    init(closeCode: Int) {
+        switch closeCode {
+        case 4006, 4009:
+            self = .reidentify
+        case 4014, 4021, 4022:
+            self = .disconnect
+        default:
+            self = .resume
+        }
+    }
+}
+
 public enum VoiceGatewayCodec {
     public static func decodeJSON(_ data: Data) throws -> SequencedVoiceGatewayEvent {
         let raw = try JSONDecoder().decode(RawEnvelope.self, from: data)

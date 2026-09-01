@@ -723,8 +723,8 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         switch event {
         case .resumed:
             completeReconnect()
-        case .connectionClosed:
-            scheduleGatewayReconnect(resuming: true)
+        case let .connectionClosed(closeCode):
+            await handleGatewayClosure(closeCode: closeCode)
         case let .heartbeatAcknowledged(nonce):
             let now = UInt64(max(0, Date.now.timeIntervalSince1970 * 1000))
             let latency = Int(clamping: now >= nonce ? now - nonce : 0)
@@ -1724,6 +1724,20 @@ public extension DiscordVoiceSession {
 }
 
 private extension DiscordVoiceSession {
+    func handleGatewayClosure(closeCode: Int) async {
+        switch VoiceGatewayCloseAction(closeCode: closeCode) {
+        case .resume:
+            scheduleGatewayReconnect(resuming: true)
+        case .reidentify:
+            scheduleGatewayReconnect(resuming: false)
+        case .disconnect:
+            voiceMediaLogger.info(
+                "Voice gateway closed without reconnect; closeCode=\(closeCode)"
+            )
+            await disconnect()
+        }
+    }
+
     func scheduleGatewayReconnect(resuming: Bool) {
         guard state == .connected || state == .reconnecting else { return }
         if !resuming {

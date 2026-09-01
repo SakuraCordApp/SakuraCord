@@ -3464,6 +3464,38 @@ private actor FailingRemovalCredentialStore: CredentialStore {
 }
 
 @MainActor
+@Test func `server disconnected voice session tears down locally without leaving the replacement client`() async throws {
+    let provider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    let snapshot = try await provider.bootstrap()
+    model.snapshot = snapshot
+    model.activeVoiceChannel = Channel(
+        id: provider.channelID,
+        guildID: nil,
+        name: "Displaced call",
+        kind: .directMessage
+    )
+    model.voiceSessionState = .connected
+    let replacementState = VoiceParticipantState(
+        userID: snapshot.currentUser.id,
+        channelID: provider.channelID,
+        guildID: nil,
+        sessionID: "replacement-session"
+    )
+    model.voiceStates[snapshot.currentUser.id] = replacementState
+
+    model.consumeVoiceEvent(.stateChanged(.disconnected))
+    for task in Array(model.accountChildTasks.values) {
+        await task.value
+    }
+
+    #expect(model.activeVoiceChannel == nil)
+    #expect(model.voiceSessionState == .idle)
+    #expect(model.voiceStates[snapshot.currentUser.id] == replacementState)
+    #expect(await provider.voiceStateUpdateRequestCount == 0)
+}
+
+@MainActor
 @Test func `unchanged unread projection does not republish the account snapshot`() async throws {
     let snapshot = try await MockChatProvider().bootstrap()
     #expect(
