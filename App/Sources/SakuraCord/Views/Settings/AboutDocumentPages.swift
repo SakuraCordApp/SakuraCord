@@ -15,7 +15,7 @@ struct AboutChangelogPage: View {
                     )
                 )
             } else {
-                Form {
+                SettingsForm {
                     Section {
                         ForEach(releaseNotes) { release in
                             NavigationLink {
@@ -30,7 +30,6 @@ struct AboutChangelogPage: View {
                         }
                     }
                 }
-                .formStyle(.grouped)
             }
         }
         .navigationTitle("Changelog")
@@ -51,7 +50,7 @@ struct AboutAcknowledgementsPage: View {
                     )
                 )
             } else {
-                Form {
+                SettingsForm {
                     Section {
                         ForEach(acknowledgements) { acknowledgement in
                             NavigationLink {
@@ -64,7 +63,6 @@ struct AboutAcknowledgementsPage: View {
                         }
                     }
                 }
-                .formStyle(.grouped)
             }
         }
         .navigationTitle("Third-Party Acknowledgements")

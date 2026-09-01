@@ -1,5 +1,17 @@
 import SwiftUI
 
+struct SettingsForm<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        Form {
+            content
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+    }
+}
+
 struct SettingsPageForm<Content: View>: View {
     let page: SettingsPageID
     let state: SettingsViewState
@@ -26,7 +38,7 @@ struct SettingsPageForm<Content: View>: View {
 
     private var pageForm: some View {
         let metadata = state.catalog.page(page)
-        return Form {
+        return SettingsForm {
             if page.showsConstructionNotice {
                 Section {
                     SettingsConstructionNotice()
@@ -35,8 +47,6 @@ struct SettingsPageForm<Content: View>: View {
 
             content
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
         .navigationTitle(metadata.title)
     }
 }

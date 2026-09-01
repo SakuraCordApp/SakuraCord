@@ -30,36 +30,23 @@ struct AboutSettingsPage: View {
     }
 
     private var aboutOverview: some View {
-        ScrollViewReader { proxy in
-            Form {
-                aboutHeader
-                    .padding(.horizontal, 32)
-                    .padding(.vertical, 8)
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
+        SettingsPageForm(page: .about, state: state) {
+            aboutHeader
+                .padding(.horizontal, 32)
+                .padding(.vertical, 8)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
 
-                SoftwareUpdateOverviewSection(
-                    updateController: updateController,
-                    state: state,
-                    checkForUpdatesControlID: .aboutCheckForUpdates,
-                    changelogControlID: .aboutChangelog,
-                    changelogDestination: AboutDestination.changelog
-                )
-                projectLinks
-                acknowledgements
-            }
-            .formStyle(.grouped)
-            .task(id: state.revealRequest?.id) {
-                guard let request = state.revealRequest,
-                      request.destination.page == .about
-                else { return }
-                await Task.yield()
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    proxy.scrollTo(request.controlID, anchor: .center)
-                }
-            }
+            SoftwareUpdateOverviewSection(
+                updateController: updateController,
+                state: state,
+                checkForUpdatesControlID: .aboutCheckForUpdates,
+                changelogControlID: .aboutChangelog,
+                changelogDestination: AboutDestination.changelog
+            )
+            projectLinks
+            acknowledgements
         }
-        .navigationTitle(state.catalog.page(.about).title)
     }
 
     private var versionInformation: AboutVersionInformation {
