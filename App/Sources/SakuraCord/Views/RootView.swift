@@ -5,46 +5,109 @@ import SwiftUI
 
 struct RootView: View {
     let model: AppModel
+    @State private var toolbarSearchFieldMetrics = ToolbarSearchFieldMetrics.zero
 
     var body: some View {
-        switch model.sessionState {
-        case .workspace:
-            ChatRootView(model: model)
-        case .signedOut:
-            if model.launchMode == .normal {
-                if model.savedAccounts.isEmpty {
-                    DiscordLoginView(
-                        showsCancel: false,
-                        networkingEnabled: !model.isDiscordNetworkingDisabled
-                    ) { credential in
-                        await model.connectPendingAuthenticatedAccount(
-                            credential,
-                            preservesInteractivePresentation: true
-                        )
-                            ? nil
-                            : (model.errorMessage ?? "Discord account bootstrap failed for an unknown reason.")
+        @Bindable var model = model
+        @Bindable var search = model.messageSearch
+        Group {
+            switch model.sessionState {
+            case .workspace:
+                ChatRootView(
+                    model: model,
+                    toolbarSearchFieldMetrics: toolbarSearchFieldMetrics
+                )
+            case .signedOut:
+                if model.launchMode == .normal {
+                    if model.savedAccounts.isEmpty {
+                        DiscordLoginView(
+                            showsCancel: false,
+                            networkingEnabled: !model.isDiscordNetworkingDisabled
+                        ) { credential in
+                            await model.connectPendingAuthenticatedAccount(
+                                credential,
+                                preservesInteractivePresentation: true
+                            )
+                                ? nil
+                                : (model.errorMessage ?? "Discord account bootstrap failed for an unknown reason.")
+                        }
+                    } else {
+                        AccountSwitcherView(model: model, showsCancel: false)
                     }
                 } else {
-                    AccountSwitcherView(model: model, showsCancel: false)
+                    SakuraCordSessionLoadingView(
+                        state: model.sessionState,
+                        isOfflineTesting: model.isOfflineTesting
+                    )
                 }
-            } else {
+            case .restoring, .connecting:
                 SakuraCordSessionLoadingView(
                     state: model.sessionState,
-                    isOfflineTesting: model.isOfflineTesting
+                    isOfflineTesting: model.isOfflineTesting,
+                    isAccountSwitch: model.isSwitchingAccounts
                 )
             }
+        }
+        .modifier(MessageSearchExperienceModifier(
+            model: model,
+            search: search,
+            isEnabled: showsMessageSearchToolbar,
+            prompt: messageSearchPrompt,
+            toolbarMetrics: toolbarSearchFieldMetrics
+        ))
+        .background {
+            ZStack {
+                MessageSearchToolbarBridge(
+                    model: model,
+                    isVisible: showsMessageSearchToolbar,
+                    metrics: $toolbarSearchFieldMetrics
+                )
+                ToolbarSearchFieldLoadingStyler(isActive: showsSessionLoadingChrome)
+            }
+            .frame(width: 0, height: 0)
+        }
+        .onChange(of: model.isSwitchingAccounts) { _, isSwitching in
+            if isSwitching {
+                search.isFilterSheetPresented = false
+                model.dismissMessageSearch()
+            }
+        }
+    }
+
+    private var showsMessageSearchToolbar: Bool {
+        switch model.sessionState {
         case .restoring, .connecting:
-            SakuraCordSessionLoadingView(
-                state: model.sessionState,
-                isOfflineTesting: model.isOfflineTesting,
-                isAccountSwitch: model.isSwitchingAccounts
-            )
+            true
+        case .workspace:
+            model.isSwitchingAccounts
+                || MessageSearchSurfacePolicy.showsToolbar(
+                    channelKind: model.selectedChannel?.kind,
+                    hasOpenThread: model.openThread != nil
+                )
+        case .signedOut:
+            model.launchMode != .normal
+        }
+    }
+
+    private var messageSearchPrompt: Text {
+        Text(showsSessionLoadingChrome ? "" : model.messageSearchPromptTitle)
+    }
+
+    private var showsSessionLoadingChrome: Bool {
+        switch model.sessionState {
+        case .restoring, .connecting:
+            true
+        case .workspace:
+            model.isSwitchingAccounts
+        case .signedOut:
+            model.launchMode != .normal
         }
     }
 }
 
 private struct ChatRootView: View {
     let model: AppModel
+    let toolbarSearchFieldMetrics: ToolbarSearchFieldMetrics
     @State private var showAccountSwitcher = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var supplementaryPaneFrame = CGRect.zero
@@ -60,39 +123,18 @@ private struct ChatRootView: View {
         @Bindable var model = model
         NavigationSplitView(columnVisibility: $columnVisibility) {
             HStack(spacing: 0) {
-                ServerRailView(
-                    guildsByID: model.serverRailGuildsByID,
-                    items: model.serverRailItems,
-                    selectedGuildID: model.selectedGuildID,
-                    homeIsUnread: model.directMessageUnread,
-                    homeMentionCount: model.directMessageMentionCount,
-                    selectHome: { model.selectGuild(nil) },
-                    selectGuild: model.selectGuild,
-                    contextMenuActions: ServerRailContextMenuActions(
-                        settings: model.guildNotificationSettings,
-                        isMutationPending: model.isGuildNotificationMutationPending,
-                        markRead: model.markGuildRead,
-                        mute: { guild, duration in
-                            model.setGuildMute(
-                                true,
-                                until: duration.endDate(),
-                                for: guild
-                            )
-                        },
-                        unmute: { guild in
-                            model.setGuildMute(false, until: nil, for: guild)
-                        },
-                        setNotificationLevel: { guild, level in
-                            model.setGuildNotificationLevel(level, for: guild)
-                        }
-                    )
-                )
+                ServerRailContainer(model: model)
                 .zIndex(200)
                 ChannelSidebarView(
                     voiceModel: model,
                     guild: selectedGuild,
                     channels: model.visibleChannels,
                     selection: sidebarChannelSelection,
+                    channelGroups: model.visibleChannelGroups,
+                    unreadCategoryIDs: selectedGuild.map {
+                        model.unreadCategoryIDsByGuild[$0.id] ?? []
+                    } ?? [],
+                    selection: $model.selectedChannelID,
                     currentUser: model.snapshot?.currentUser,
                     connectionState: model.connectionState,
                     currentStatus: model.currentStatus,
@@ -126,11 +168,17 @@ private struct ChatRootView: View {
                 max: ChatChromeMetrics.serverRailWidth + 310
             )
         } detail: {
-            ChatWorkspaceView(
-                model: model,
-                presentsForumComposer: $presentsForumComposer
-            )
-            .opacity(model.isSwitchingAccounts ? 0 : 1)
+            Group {
+                if model.isSwitchingAccounts {
+                    Color.clear
+                } else {
+                    ChatWorkspaceView(
+                        model: model,
+                        presentsForumComposer: $presentsForumComposer,
+                        toolbarSearchFieldMetrics: toolbarSearchFieldMetrics
+                    )
+                }
+            }
             .navigationTitle("")
             .toolbar {
                 detailToolbar
@@ -216,8 +264,25 @@ private struct ChatRootView: View {
             .frame(width: 0, height: 0)
         }
         .background {
-            ForwardMessageWindowOverlay(model: model)
+            CommunicationWindowOverlays(model: model)
                 .frame(width: 0, height: 0)
+        }
+        .background {
+            WindowModalOverlay(
+                presentation: model.workspaceNavigationOverlay,
+                preloadedPresentation: .quickSwitcher,
+                behavior: { presentation in
+                    presentation == .quickSwitcher ? .instantKeyboardOwned : .standard
+                },
+                dismiss: model.dismissWorkspaceNavigationOverlay,
+                content: { presentation, animationState in
+                WorkspaceNavigationOverlayView(
+                    model: model,
+                    presentation: presentation,
+                    animationState: animationState
+                )
+            })
+            .frame(width: 0, height: 0)
         }
         .background {
             DisplayCompleteFrameReporter(
@@ -425,8 +490,8 @@ private struct ChatRootView: View {
 
     @ToolbarContentBuilder
     private var conversationToolbar: some ToolbarContent {
-        if model.isSwitchingAccounts {
-            ToolbarItem(placement: .navigation) {
+        ToolbarItem(placement: .navigation) {
+            if model.isSwitchingAccounts {
                 SkeletonShimmerTimeline {
                     HStack(spacing: 8) {
                         SkeletonShape(cornerRadius: 4)
@@ -437,6 +502,16 @@ private struct ChatRootView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
                 }
+            } else if let channel = model.selectedChannel {
+                ConversationToolbarLabel(
+                    title: channel.name,
+                    systemImage: channelToolbarSymbol(channel),
+                    subtitle: isDirectMessageSelected
+                        ? directMessageToolbarSubtitle(for: channel)
+                        : nil
+                )
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
             }
             .visibilityPriority(.high)
         } else {
@@ -465,7 +540,10 @@ private struct ChatRootView: View {
                 }
                 .visibilityPriority(.high)
             }
+        }
+        .visibilityPriority(.high)
 
+        if !model.isSwitchingAccounts {
             if let presentation = supplementaryToolbarPresentation {
                 if isChannelsAndRolesPreviewOpen {
                     ToolbarItem {
@@ -506,16 +584,12 @@ private struct ChatRootView: View {
                 }
             }
 
-            if hasOpenSupplementaryConversation {
-                ToolbarSpacer(.fixed)
-
+            if hasOpenSupplementaryToolbarConversation {
                 ToolbarItem {
                     Button(action: closeSupplementaryConversation) {
                         Label("Close conversation", systemImage: "xmark")
                             .labelStyle(.iconOnly)
                     }
-                    .buttonStyle(.glass)
-                    .buttonBorderShape(.circle)
                     .help(supplementaryCloseHelp)
                 }
                 .sharedBackgroundVisibility(
@@ -530,25 +604,12 @@ private struct ChatRootView: View {
     private var detailToolbar: some ToolbarContent {
         ToolbarSpacer(.flexible)
 
-        if model.isSwitchingAccounts {
-            ToolbarItem {
-                SkeletonShimmerTimeline {
-                    HStack(spacing: 0) {
-                        SkeletonShape(cornerRadius: 6)
-                            .frame(width: 20, height: 20)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .fixedSize()
-                }
-            }
-            .visibilityPriority(.high)
-        } else {
+        if !model.isSwitchingAccounts {
             if let channel = selectedPrivateChannel {
                 ToolbarItemGroup {
                     Button {
                         Task {
-                            if model.privateCall(in: channel.id) != nil {
+                            if model.joinablePrivateCall(in: channel.id) != nil {
                                 await model.joinPrivateCall(in: channel)
                             } else {
                                 await model.startPrivateCall(in: channel)
@@ -556,7 +617,7 @@ private struct ChatRootView: View {
                         }
                     } label: {
                         Label(
-                            model.privateCall(in: channel.id) == nil
+                            model.joinablePrivateCall(in: channel.id) == nil
                                 ? "Start Voice Call" : "Join Voice Call",
                             systemImage: "phone.fill"
                         )
@@ -566,13 +627,13 @@ private struct ChatRootView: View {
                             || model.isPrivateCallActionInFlight(in: channel.id)
                     )
                     .help(
-                        model.privateCall(in: channel.id) == nil
+                        model.joinablePrivateCall(in: channel.id) == nil
                             ? "Start Voice Call" : "Join Ongoing Call"
                     )
 
                     Button {
                         Task {
-                            if model.privateCall(in: channel.id) != nil {
+                            if model.joinablePrivateCall(in: channel.id) != nil {
                                 await model.joinPrivateCall(in: channel, withVideo: true)
                             } else {
                                 await model.startPrivateCall(in: channel, withVideo: true)
@@ -586,7 +647,7 @@ private struct ChatRootView: View {
                             || model.isPrivateCallActionInFlight(in: channel.id)
                     )
                     .help(
-                        model.privateCall(in: channel.id) == nil
+                        model.joinablePrivateCall(in: channel.id) == nil
                             ? "Start Video Call" : "Join Ongoing Call with Video"
                     )
                 }
@@ -600,19 +661,33 @@ private struct ChatRootView: View {
                 }
                 .visibilityPriority(.high)
             }
+        }
 
-            if !hasOpenSupplementaryConversation, selectedVoiceChannel == nil {
-                if selectedPrivateChannel != nil {
-                    ToolbarSpacer(.fixed)
-                }
+        if model.isSwitchingAccounts
+            || (!hasOpenSupplementaryToolbarConversation && selectedVoiceChannel == nil)
+        {
+            if !model.isSwitchingAccounts, selectedPrivateChannel != nil {
+                ToolbarSpacer(.fixed)
+            }
 
-                ToolbarItem {
+            ToolbarItem {
+                ZStack {
                     Button { model.showInspector.toggle() } label: {
                         inspectorToolbarLabel
                     }
+                    .disabled(model.isSwitchingAccounts)
+                    .opacity(model.isSwitchingAccounts ? 0 : 1)
+
+                    if model.isSwitchingAccounts {
+                        SkeletonShimmerTimeline {
+                            SkeletonShape(cornerRadius: 6)
+                                .frame(width: 20, height: 20)
+                        }
+                        .accessibilityHidden(true)
+                    }
                 }
-                .visibilityPriority(.high)
             }
+            .visibilityPriority(.high)
         }
     }
 
@@ -748,13 +823,13 @@ private struct ChatRootView: View {
     }
 
     private var hasOpenSupplementaryConversation: Bool {
-        model.openThread != nil
-            || model.isVoiceChatOpen
-            || model.channelsAndRolesPreviewChannelID != nil
+        hasOpenSupplementaryToolbarConversation
+            || model.messageSearch.isPresented
     }
 
-    private var isChannelsAndRolesPreviewOpen: Bool {
-        model.channelsAndRolesPreviewChannelID != nil
+    private var hasOpenSupplementaryToolbarConversation: Bool {
+        model.openThread != nil
+            || model.isVoiceChatOpen
     }
 
     private var selectedVoiceChannel: Channel? {
@@ -786,6 +861,10 @@ private struct ChatRootView: View {
             systemImage: "bubble.left.fill",
             subtitle: "Voice channel chat"
         )
+    }
+
+    private var supplementaryCloseHelp: String {
+        model.openThread == nil ? "Close voice channel chat" : "Close thread"
     }
 
     private func closeSupplementaryConversation() {
@@ -874,6 +953,89 @@ final class DisplayCompleteFrameReportingView: NSView {
         self.presentationID = presentationID
         didReport = false
         needsDisplay = true
+    }
+}
+
+private struct MessageSearchExperienceModifier: ViewModifier {
+    let model: AppModel
+    let search: MessageSearchState
+    let isEnabled: Bool
+    let prompt: Text
+    let toolbarMetrics: ToolbarSearchFieldMetrics
+
+    func body(content: Content) -> some View {
+        content
+            .modifier(MessageSearchToolbarModifier(
+                model: model,
+                search: search,
+                prompt: prompt
+            ))
+            .overlay(alignment: .topTrailing) {
+                if isEnabled, search.isInputFocused, toolbarMetrics.isValid {
+                    MessageSearchAutocompleteView(
+                        model: model,
+                        width: toolbarMetrics.fieldWidth
+                    )
+                    .padding(.trailing, toolbarMetrics.trailingInset)
+                    .zIndex(100_000)
+                }
+            }
+            .onChange(of: isEnabled) { wasVisible, isVisible in
+                guard wasVisible, !isVisible else { return }
+                search.isFilterSheetPresented = false
+                model.dismissMessageSearch()
+            }
+    }
+}
+
+private struct MessageSearchToolbarBridge: View {
+    let model: AppModel
+    let isVisible: Bool
+    @Binding var metrics: ToolbarSearchFieldMetrics
+
+    var body: some View {
+        @Bindable var model = model
+        @Bindable var search = model.messageSearch
+        ToolbarSearchFieldGeometryReader(
+            searchText: $model.messageSearchInputText,
+            searchTokens: $search.tokens,
+            isSearchFocused: $search.isInputFocused,
+            isToolbarItemVisible: isVisible,
+            didUseBuiltInClear: model.clearMessageSearchUsingBuiltInButton,
+            didEndEditing: model.messageSearchEditingDidEnd,
+            pasteCanonicalSyntax: { value in
+                MessageSearchTokenParser.parse(
+                    value,
+                    users: model.messageSearchUsers,
+                    channels: model.messageSearchChannels
+                )
+            },
+            changed: { metrics = $0 }
+        )
+    }
+}
+
+private struct MessageSearchToolbarModifier: ViewModifier {
+    let model: AppModel
+    let search: MessageSearchState
+    let prompt: Text
+
+    func body(content: Content) -> some View {
+        @Bindable var model = model
+        @Bindable var search = search
+        content
+            .searchable(
+                text: $model.messageSearchInputText,
+                tokens: $search.tokens,
+                isPresented: $search.isInputFocused,
+                placement: .toolbar,
+                prompt: prompt
+            ) { token in
+                Text(token.title)
+            }
+            .onSubmit(of: .search) {
+                model.submitMessageSearchInput()
+            }
     }
 }
 

@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# shellcheck source=worktree_runtime.sh
-source "$ROOT_DIR/script/worktree_runtime.sh"
+# shellcheck source=runtime.sh
+source "$ROOT_DIR/script/runtime.sh"
 
 MODE="${1:-all}"
 case "$MODE" in
@@ -16,6 +16,9 @@ esac
 
 "$ROOT_DIR/script/code_quality.sh" check
 "$ROOT_DIR/script/test_release_metadata.sh"
+"$ROOT_DIR/script/test_publish_nightly_appcast.sh"
+"$ROOT_DIR/script/test_sync_main_into_nightly.sh"
+"$ROOT_DIR/script/test_debug_credentials_config.sh"
 node --test "$ROOT_DIR/script/release_automation.test.mjs"
 "$ROOT_DIR/script/test_release_tag_guard.sh"
 

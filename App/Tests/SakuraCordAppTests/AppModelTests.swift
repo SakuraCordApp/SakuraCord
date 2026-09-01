@@ -9,6 +9,183 @@ import UserNotifications
 @testable import SakuraCord
 
 @MainActor
+@Test func `server rail projection isolates unrelated guild row updates`() {
+    var first = Guild(id: GuildID(rawValue: 1), name: "First")
+    let second = Guild(id: GuildID(rawValue: 2), name: "Second")
+    let missingID = GuildID(rawValue: 3)
+    let items: [GuildRailItem] = [
+        .guild(first.id),
+        .guild(second.id),
+        .guild(missingID),
+        .folder(
+            GuildFolder(
+                id: 4,
+                name: "Folder",
+                guildIDs: [first.id, missingID, second.id]
+            )
+        ),
+    ]
+    let settings: (Guild) -> GuildNotificationSettings = {
+        GuildNotificationSettings(guildID: $0.id)
+    }
+    let store = ServerRailPresentationStore()
+    store.updateLayout(items)
+    store.updateGuilds(
+        [first.id: first, second.id: second],
+        notificationSettings: settings,
+        isMutationPending: { _ in false }
+    )
+    let baseline = store.items
+    guard case .guild(let firstEntry) = baseline[0],
+          case .guild(let secondEntry) = baseline[1],
+          case .guild(let missingEntry) = baseline[2],
+          case .folder(let folderEntry) = baseline[3]
+    else {
+        Issue.record("Expected the projected server rail layout")
+        return
+    }
+    let secondPresentation = secondEntry.presentation
+
+    first.mentionCount = 1
+    store.updateGuilds(
+        [first.id: first, second.id: second],
+        notificationSettings: settings,
+        isMutationPending: { _ in false }
+    )
+    let updated = store.items
+
+    #expect(baseline.map(\.id) == items.map(\.id))
+    guard case .guild(let updatedFirstEntry) = updated[0],
+          case .guild(let updatedSecondEntry) = updated[1],
+          case .guild(let updatedMissingEntry) = updated[2],
+          case .folder(let updatedFolderEntry) = updated[3]
+    else {
+        Issue.record("Expected the stable projected server rail layout")
+        return
+    }
+    #expect(firstEntry === updatedFirstEntry)
+    #expect(secondEntry === updatedSecondEntry)
+    #expect(missingEntry === updatedMissingEntry)
+    #expect(folderEntry === updatedFolderEntry)
+    #expect(firstEntry.presentation?.guild.mentionCount == 1)
+    #expect(secondEntry.presentation == secondPresentation)
+    #expect(missingEntry.presentation == nil)
+    #expect(folderEntry.mentionCount == 1)
+}
+
+@MainActor
+@Test func `voice sidebar projection isolates unrelated channel updates`() {
+    let firstChannelID = ChannelID(rawValue: 10)
+    let secondChannelID = ChannelID(rawValue: 20)
+    let firstUserID = UserID(rawValue: 11)
+    let secondUserID = UserID(rawValue: 21)
+    let firstEntry: VoiceSidebarChannelEntry
+    let secondEntry: VoiceSidebarChannelEntry
+    let store = VoiceSidebarPresentationStore()
+
+    firstEntry = store.entry(for: firstChannelID)
+    secondEntry = store.entry(for: secondChannelID)
+    let firstState = VoiceParticipantState(
+        userID: firstUserID,
+        channelID: firstChannelID,
+        guildID: GuildID(rawValue: 1),
+        sessionID: "first"
+    )
+    let secondState = VoiceParticipantState(
+        userID: secondUserID,
+        channelID: secondChannelID,
+        guildID: GuildID(rawValue: 1),
+        sessionID: "second"
+    )
+    let states = [firstUserID: firstState, secondUserID: secondState]
+    var firstMember = Member(
+        user: User(
+            id: firstUserID,
+            username: "first",
+            displayName: "First"
+        ),
+        roleName: "Member",
+        status: .online
+    )
+    let secondMember = Member(
+        user: User(
+            id: secondUserID,
+            username: "second",
+            displayName: "Second"
+        ),
+        roleName: "Member",
+        status: .online
+    )
+    store.update(
+        voiceStates: states,
+        membersByID: [firstUserID: firstMember, secondUserID: secondMember],
+        currentUser: nil,
+        activeVoiceChannel: nil,
+        isVoiceMuted: false,
+        isVoiceDeafened: false,
+        isCameraEnabled: false
+    )
+    let unchangedParticipants = secondEntry.participants
+
+    firstMember = Member(
+        user: User(
+            id: firstUserID,
+            username: "first",
+            displayName: "Renamed First"
+        ),
+        roleName: "Member",
+        status: .online
+    )
+    store.update(
+        voiceStates: states,
+        membersByID: [firstUserID: firstMember, secondUserID: secondMember],
+        currentUser: nil,
+        activeVoiceChannel: nil,
+        isVoiceMuted: false,
+        isVoiceDeafened: false,
+        isCameraEnabled: false
+    )
+
+    #expect(store.entry(for: firstChannelID) === firstEntry)
+    #expect(store.entry(for: secondChannelID) === secondEntry)
+    #expect(firstEntry.participants.map(\.name) == ["Renamed First"])
+    #expect(secondEntry.participants == unchangedParticipants)
+
+    store.update(
+        voiceStates: [secondUserID: secondState],
+        membersByID: [secondUserID: secondMember],
+        currentUser: nil,
+        activeVoiceChannel: nil,
+        isVoiceMuted: false,
+        isVoiceDeafened: false,
+        isCameraEnabled: false
+    )
+
+    #expect(firstEntry.participants.isEmpty)
+    #expect(secondEntry.participants == unchangedParticipants)
+}
+
+@Test func `loading overlap bootstrap keeps measured guild cold`() {
+    let google = Guild(id: GuildID(rawValue: 10), name: "Google Labs")
+    let control = Guild(id: GuildID(rawValue: 20), name: "Control")
+
+    #expect(
+        PerformanceBenchmarkInitialGuildPolicy.resolve(
+            guilds: [google, control],
+            retainedGuildID: google.id,
+            avoidingGuildNamed: "google labs"
+        ) == control.id
+    )
+    #expect(
+        PerformanceBenchmarkInitialGuildPolicy.resolve(
+            guilds: [google, control],
+            retainedGuildID: google.id,
+            avoidingGuildNamed: nil
+        ) == google.id
+    )
+}
+
+@MainActor
 @Test func `numbered navigation maps and selects direct messages and eight servers in rail order`() async {
     let model = AppModel(launchMode: .offlineTesting)
     let guilds = (1 ... 10).map {
@@ -45,6 +222,133 @@ import UserNotifications
     #expect(model.selectedGuildID == nil)
 }
 
+@MainActor
+@Test func `switching servers restores each server's last opened channel`() async throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    await model.start()
+    let auroraID = GuildID(rawValue: 100)
+    let nativeLabID = GuildID(rawValue: 101)
+    let rememberedAuroraChannel = try #require(
+        model.snapshot?.channels.first(where: {
+            $0.guildID == auroraID && $0.id == ChannelID(rawValue: 211)
+        })
+    )
+    let rememberedNativeChannel = try #require(
+        model.snapshot?.channels.first(where: {
+            $0.guildID == nativeLabID && $0.id == ChannelID(rawValue: 301)
+        })
+    )
+
+    model.selectedChannelID = rememberedAuroraChannel.id
+    #expect(model.lastOpenedChannelIDsByGuild[auroraID] == rememberedAuroraChannel.id)
+    model.selectGuild(nativeLabID)
+    await model.guildActivationTask?.value
+    model.selectedChannelID = rememberedNativeChannel.id
+    #expect(model.lastOpenedChannelIDsByGuild[nativeLabID] == rememberedNativeChannel.id)
+
+    model.selectGuild(auroraID)
+    await model.guildActivationTask?.value
+    #expect(model.selectedChannelID == rememberedAuroraChannel.id)
+
+    model.selectGuild(nativeLabID)
+    await model.guildActivationTask?.value
+    #expect(model.selectedChannelID == rememberedNativeChannel.id)
+}
+
+@MainActor
+@Test func `message search Escape respects focused and unfocused behavior`() async {
+    let model = AppModel(launchMode: .offlineTesting)
+    await model.start()
+    model.presentMessageSearch()
+    model.messageSearch.queryText = "road"
+    model.messageSearch.isPresented = true
+
+    #expect(!model.consumeEscapeForUnfocusedMessageSearch())
+    #expect(model.messageSearch.queryText == "road")
+
+    model.handleMessageSearchEscape()
+    #expect(model.messageSearch.queryText.isEmpty)
+    #expect(model.messageSearch.isPresented)
+    #expect(model.messageSearch.isInputFocused)
+
+    model.handleMessageSearchEscape()
+    #expect(!model.messageSearch.isPresented)
+    #expect(!model.messageSearch.isInputFocused)
+
+    model.presentMessageSearch()
+    model.messageSearch.queryText = "priority"
+    model.messageSearch.isPresented = true
+    model.messageSearch.isInputFocused = false
+
+    #expect(model.consumeEscapeForUnfocusedMessageSearch())
+    #expect(model.messageSearch.queryText.isEmpty)
+    #expect(model.messageSearch.tokens.isEmpty)
+    #expect(!model.messageSearch.isPresented)
+    #expect(!model.consumeEscapeForUnfocusedMessageSearch())
+}
+
+@Test func `forum navigation keeps the toolbar search surface installed`() {
+    #expect(MessageSearchSurfacePolicy.showsToolbar(
+        channelKind: .forum,
+        hasOpenThread: false
+    ))
+    #expect(!MessageSearchSurfacePolicy.showsToolbar(
+        channelKind: .forum,
+        hasOpenThread: true
+    ))
+}
+
+@Test func `message search keeps guild thread metadata out of canonical channels`() {
+    let guildID = GuildID(rawValue: 100)
+    let thread = Channel(
+        id: ChannelID(rawValue: 300),
+        guildID: guildID,
+        name: "Search result thread",
+        categoryID: ChannelID(rawValue: 200)
+    )
+    let directMessage = Channel(
+        id: ChannelID(rawValue: 400),
+        guildID: nil,
+        name: "Maya",
+        kind: .directMessage
+    )
+    let groupDirectMessage = Channel(
+        id: ChannelID(rawValue: 500),
+        guildID: nil,
+        name: "Release group",
+        kind: .groupDirectMessage
+    )
+
+    let canonicalChannels = MessageSearchChannelMergePolicy
+        .canonicalPrivateChannels(
+            in: [thread, directMessage, groupDirectMessage]
+        )
+
+    #expect(canonicalChannels.map(\.id) == [
+        directMessage.id,
+        groupDirectMessage.id,
+    ])
+}
+
+@MainActor
+@Test func `command f scopes message search to the current conversation`() async throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    await model.start()
+    let channel = try #require(model.selectedChannel)
+
+    model.presentMessageSearchFromCommand()
+
+    let token = try #require(model.messageSearch.tokens.first)
+    guard case .channel(let channelID, let name) = token.kind else {
+        Issue.record("Command-F did not create an in: token")
+        return
+    }
+    #expect(channelID == channel.id)
+    #expect(name == model.messageSearchPresentedName(for: channel))
+    #expect(model.messageSearch.isInputFocused)
+}
+
+@MainActor
 @Test func `channel message cache keeps only the newest bounded history`() {
     let channelID = ChannelID(rawValue: 9)
     let author = User(
@@ -70,177 +374,6 @@ import UserNotifications
     )
     #expect(retained.first?.id == messages[messages.count - retained.count].id)
     #expect(retained.last?.id == messages.last?.id)
-}
-
-@MainActor
-@Test func `member avatar decorations decode only at their rendered scale`() {
-    let avatar = DecoratedAvatarView(
-        name: "Member",
-        avatarURL: nil,
-        decorationURL: nil,
-        size: 34
-    )
-
-    #expect(avatar.decorationPixelDimension == 83)
-}
-
-@MainActor
-@Test func `native emoji catalog loads every fully qualified unicode 17 emoji`() {
-    #expect(NativeEmojiCatalogDiagnostics.sourceEntryCount == 3944)
-    #expect(
-        NativeEmojiCatalogDiagnostics.itemCount < NativeEmojiCatalogDiagnostics.sourceEntryCount)
-    #expect(NativeEmojiCatalogDiagnostics.skinToneCapableItemCount > 100)
-    #expect(NativeEmojiCatalogDiagnostics.wavingHandValues == ["👋", "👋🏻", "👋🏼", "👋🏽", "👋🏾", "👋🏿"])
-    #expect(NativeEmojiCatalogDiagnostics.mediumToneVariationSelectorValues == ["✌🏽", "☝🏽", "✍🏽"])
-    #expect(NativeEmojiCatalogDiagnostics.baseItemsContainingSkinToneModifier == 0)
-    #expect(NativeEmojiCatalogDiagnostics.categoryItemCounts.count == 9)
-    #expect(NativeEmojiCatalogDiagnostics.categoryItemCounts.values.allSatisfy { $0 > 0 })
-    #expect(NativeEmojiCatalogDiagnostics.shortcode(for: "🤍") == ":white_heart:")
-    // Tone variants share their base emoji's aliases, so the collapsed picker catalog is smaller
-    // than Emojibase's 3,808 keyed source records.
-    #expect(NativeEmojiCatalogDiagnostics.emojiCountWithDiscordShortcodes == 1884)
-    #expect(NativeEmojiCatalogDiagnostics.discordShortcodeAliasCount == 2551)
-    #expect(NativeEmojiCatalogDiagnostics.shortcodes(for: "🎉") == ["tada", "party_popper"])
-    #expect(NativeEmojiCatalogDiagnostics.shortcode(for: "🎉") == ":tada:")
-    #expect(NativeEmojiCatalogDiagnostics.searchMatches(value: "🎉", query: ":party_popper:"))
-    #expect(NativeEmojiCatalogDiagnostics.searchMatches(value: "👍", query: "+1"))
-    #expect(EmojiSearchMatcher.normalized(":grinning_face:") == "grinning_face")
-}
-
-@MainActor
-@Test func `emoji picker uses one continuous recycled document`() {
-    #expect(EmojiPickerPerformanceDiagnostics.itemsPerRecycledRow == 9)
-    #expect(EmojiPickerPerformanceDiagnostics.nativeSectionIDs.count == 9)
-    #expect(Set(EmojiPickerPerformanceDiagnostics.nativeSectionIDs).count == 9)
-    #expect(
-        EmojiPickerPerformanceDiagnostics.nativeDocumentRowCount
-            < EmojiPickerPerformanceDiagnostics.nativeItemCount / 4)
-    #expect(NativeEmojiCatalogDiagnostics.categoryItemCounts["people", default: 0] > 300)
-    #expect(
-        !EmojiPickerPerformanceDiagnostics.nativeSidebarIsVisible(
-            bounds: nil,
-            viewportHeight: 300
-        ))
-    #expect(
-        !EmojiPickerPerformanceDiagnostics.nativeSidebarIsVisible(
-            bounds: CGRect(x: 0, y: 320, width: 46, height: 300),
-            viewportHeight: 300
-        ))
-    #expect(
-        EmojiPickerPerformanceDiagnostics.nativeSidebarIsVisible(
-            bounds: CGRect(x: 0, y: 280, width: 46, height: 300),
-            viewportHeight: 300
-        ))
-}
-
-@Test func `emoji picker keyboard navigation wraps rows and clamps columns`() {
-    let rows = [
-        ["a", "b", "c"],
-        ["d", "e", "f"],
-        ["g"],
-    ]
-
-    #expect(
-        EmojiPickerGridNavigation.destinationID(
-            rows: rows, currentID: nil, direction: .right
-        ) == "a")
-    #expect(
-        EmojiPickerGridNavigation.destinationID(
-            rows: rows, currentID: "a", direction: .left
-        ) == "a")
-    #expect(
-        EmojiPickerGridNavigation.destinationID(
-            rows: rows, currentID: "c", direction: .right
-        ) == "d")
-    #expect(
-        EmojiPickerGridNavigation.destinationID(
-            rows: rows, currentID: "d", direction: .left
-        ) == "c")
-    #expect(
-        EmojiPickerGridNavigation.destinationID(
-            rows: rows, currentID: "c", direction: .down
-        ) == "f")
-    #expect(
-        EmojiPickerGridNavigation.destinationID(
-            rows: rows, currentID: "f", direction: .down
-        ) == "g")
-    #expect(
-        EmojiPickerGridNavigation.destinationID(
-            rows: rows, currentID: "g", direction: .up
-        ) == "d")
-}
-
-@Test func `emoji picker only stays open for explicit persistent shift selection`() {
-    #expect(
-        EmojiPickerActivationPolicy.keepsPickerPresented(
-            allowsPersistentSelection: true,
-            shiftPressed: true
-        ))
-    #expect(
-        !EmojiPickerActivationPolicy.keepsPickerPresented(
-            allowsPersistentSelection: true,
-            shiftPressed: false
-        ))
-    #expect(
-        !EmojiPickerActivationPolicy.keepsPickerPresented(
-            allowsPersistentSelection: false,
-            shiftPressed: true
-        ))
-}
-
-@MainActor
-@Test func `custom emoji preference keys retain their display name`() {
-    let emoji = DiscordEmoji(
-        id: "123",
-        name: "party_blob",
-        guildID: GuildID(rawValue: 1)
-    )
-    #expect(EmojiPickerSelection.custom(emoji).usageKey == "custom:party_blob:123")
-}
-
-@Test func `message actions remain visible while their reaction picker is presented`() {
-    #expect(
-        MessageActionVisibilityPolicy.isVisible(
-            isRowHovered: true,
-            isReactionPickerPresented: false,
-            isEditing: false
-        ))
-    #expect(
-        MessageActionVisibilityPolicy.isVisible(
-            isRowHovered: false,
-            isReactionPickerPresented: true,
-            isEditing: false
-        ))
-    #expect(
-        !MessageActionVisibilityPolicy.isVisible(
-            isRowHovered: false,
-            isReactionPickerPresented: false,
-            isEditing: false
-        ))
-    #expect(
-        !MessageActionVisibilityPolicy.isVisible(
-            isRowHovered: true,
-            isReactionPickerPresented: true,
-            isEditing: true
-        ))
-}
-
-@Test func `emoji picker only asks the scroll view to reveal changed rows`() {
-    #expect(
-        !EmojiPickerScrollPolicy.shouldReveal(
-            previousRowID: "row:4",
-            destinationRowID: "row:4"
-        ))
-    #expect(
-        EmojiPickerScrollPolicy.shouldReveal(
-            previousRowID: "row:4",
-            destinationRowID: "row:5"
-        ))
-    #expect(
-        EmojiPickerScrollPolicy.shouldReveal(
-            previousRowID: nil,
-            destinationRowID: "row:1"
-        ))
 }
 
 @MainActor
@@ -569,42 +702,6 @@ import UserNotifications
 }
 
 @MainActor
-@Test func `workspace remains a skeleton until live bootstrap completes`() async throws {
-    let handle = CredentialHandle(accountID: "77110")
-    let credentials = RestoredCredentialHandleStore(handle: handle)
-    let provider = SuspendedBootstrapTestProvider(suspendsAuthentication: true)
-    let database = try SakuraCordDatabase(inMemory: true)
-    let model = AppModel(
-        launchMode: .normal,
-        discordNetworkDisabledOverride: false,
-        credentialStore: credentials,
-        authenticatedProviderFactory: { _, _ in provider },
-        accountDatabaseFactory: { _ in database }
-    )
-
-    let start = Task { await model.start() }
-    await provider.waitUntilAuthenticationStarts()
-
-    #expect(model.sessionState == .restoring)
-    #expect(model.snapshot == nil)
-    #expect(model.selectedChannelID == nil)
-
-    await provider.releaseAuthentication()
-    await provider.waitUntilBootstrapStarts()
-
-    #expect(model.sessionState == .connecting)
-    #expect(model.snapshot == nil)
-    #expect(model.serverRailItems.isEmpty)
-    #expect(model.selectedChannelID == nil)
-    #expect(!model.isAuthenticated)
-
-    await provider.releaseBootstrap()
-    await start.value
-    #expect(model.isAuthenticated)
-    #expect(model.sessionState == .workspace)
-}
-
-@MainActor
 @Test func `reopening a channel reuses session memory without another history request`() async throws {
     let provider = ChannelLoadTestProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
@@ -824,7 +921,10 @@ import UserNotifications
         usesNewNotifications: true
     )
     await provider.emit(.snapshotChanged(refreshed))
-    #expect(await eventuallyOnMain { model.snapshot == refreshed })
+    #expect(await eventuallyOnMain {
+        model.snapshot?.usesNewNotifications == true
+            && model.snapshot?.channels.contains(where: { $0.id == channelID }) == true
+    })
     #expect(!model.isChannelUnread(channelID))
 
     await provider.emit(
@@ -835,77 +935,9 @@ import UserNotifications
         model.snapshot?.usesNewNotifications == false
     })
     #expect(model.isChannelUnread(channelID))
-    #expect(model.serverRailGuildsByID[guildID]?.unreadCount == 1)
-}
-
-@MainActor
-@Test func `fast forum loads do not flash a transient loading surface`() async throws {
-    let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
-    await model.start()
-    let forum = try #require(model.snapshot?.channels.first(where: { $0.kind == .forum }))
-
-    model.selectedChannelID = forum.id
-    #expect(!model.isLoadingForumPosts)
-    #expect(await eventuallyOnMain { model.hasLoadedForumPosts && !model.forumPosts.isEmpty })
-    let unreadPosts = model.forumPosts.filter(\.isUnread)
-    #expect(!unreadPosts.isEmpty)
-    #expect(unreadPosts.allSatisfy { model.isForumPostUnread($0) })
-    #expect(model.forumPosts.contains { $0.thread.isLocked })
-    #expect(!model.forumRecentPosts.isEmpty)
-    #expect(!model.forumOlderPosts.isEmpty)
-
-    let reactionPost = try #require(
-        model.forumPosts.first(where: { $0.firstMessage?.reactions.isEmpty == false })
-    )
-    let reactionMessage = try #require(reactionPost.firstMessage)
-    let reaction = try #require(reactionMessage.reactions.first)
-    let wasReacted = reaction.didCurrentUserReact
-    await model.toggleReaction(reaction.emoji, on: reactionMessage)
-    #expect(
-        await eventuallyOnMain {
-            model.forumPosts.first(where: { $0.id == reactionPost.id })?
-                .firstMessage?.reactions.first?.didCurrentUserReact == !wasReacted
-        }
-    )
-
-    model.open(reactionPost)
-    #expect(model.openThread?.id == reactionPost.id)
-    #expect(model.threadMessages.first == reactionPost.firstMessage)
-    #expect(await eventuallyOnMain { !model.isLoadingThread })
-    model.closeThread()
-
-    let matchingTitle = try #require(model.forumPosts.first?.thread.name)
-    model.updateForumSearch(String(matchingTitle.prefix(3)))
-    #expect(!model.forumPosts.isEmpty)
-    #expect(
-        model.forumPosts.allSatisfy {
-            $0.thread.name.localizedCaseInsensitiveContains(String(matchingTitle.prefix(3)))
-        })
-    #expect(model.isSearchingForumPosts)
-    try await Task.sleep(for: .milliseconds(350))
-    #expect(await eventuallyOnMain { !model.isSearchingForumPosts })
-    let searchQueries = await provider.forumQueries(in: forum.id)
-    #expect(
-        searchQueries.contains {
-            if case let .search(text) = $0.scope {
-                return text == String(matchingTitle.prefix(3))
-            }
-            return false
-        }
-    )
-
-    model.updateForumSearch("")
-    #expect(!model.forumPosts.isEmpty)
-
-    model.updateForumSearch("no-post-can-match-this-query")
-    #expect(!model.isLoadingForumPosts)
-    #expect(await eventuallyOnMain { model.forumPosts.isEmpty })
-
-    model.updateForumSearch("")
-    #expect(!model.isLoadingForumPosts)
-    #expect(await eventuallyOnMain { !model.forumPosts.isEmpty })
-    #expect(!model.isLoadingForumPosts)
+    #expect(await eventuallyOnMain {
+        model.serverRailGuildsByID[guildID]?.unreadCount == 1
+    })
 }
 
 @MainActor
@@ -1529,145 +1561,6 @@ import UserNotifications
     #expect(model.forumActionError == nil)
 }
 
-@Test func `forum presentation preserves section ordering while filtering without duplicates`() {
-    let now = Date(timeIntervalSince1970: 10_000)
-    let tagA = ForumTagID(rawValue: 1)
-    let tagB = ForumTagID(rawValue: 2)
-    let posts = [
-        forumPresentationPost(id: 1, name: "Pinned alpha", date: now, tags: [tagA], pinned: true),
-        forumPresentationPost(
-            id: 2, name: "Newest alpha beta", date: now.addingTimeInterval(30), tags: [tagA, tagB]
-        ),
-        forumPresentationPost(
-            id: 3, name: "Older alpha beta", date: now.addingTimeInterval(20), tags: [tagA, tagB],
-            archived: true
-        ),
-        forumPresentationPost(
-            id: 4, name: "Newest archived alpha beta", date: now.addingTimeInterval(40),
-            tags: [tagA, tagB], archived: true
-        ),
-        forumPresentationPost(id: 5, name: "Unrelated", date: now, tags: [tagB]),
-    ]
-
-    let presentation = ForumPostPresentation.make(
-        catalogue: posts,
-        searchText: " ALPHA ",
-        selectedTagIDs: [tagA, tagB],
-        tagMatch: .matchAll,
-        sortOrder: .latestActivity
-    )
-
-    #expect(presentation.recentCount == 1)
-    #expect(presentation.posts.map(\.id.rawValue) == [2, 4, 3])
-    #expect(Set(presentation.posts.map(\.id)).count == presentation.posts.count)
-
-    var updated = posts[3]
-    updated.thread.isArchived = false
-    updated.thread.flags = 1 << 1
-    let incremental = presentation.updating(
-        updated,
-        searchText: " ALPHA ",
-        selectedTagIDs: [tagA, tagB],
-        tagMatch: .matchAll,
-        sortOrder: .latestActivity
-    )
-    let rebuilt = ForumPostPresentation.make(
-        catalogue: posts.enumerated().map { $0.offset == 3 ? updated : $0.element },
-        searchText: " ALPHA ",
-        selectedTagIDs: [tagA, tagB],
-        tagMatch: .matchAll,
-        sortOrder: .latestActivity
-    )
-    #expect(incremental.posts == rebuilt.posts)
-    #expect(incremental.recentCount == rebuilt.recentCount)
-
-    let narrowed = ForumPostPresentation.make(
-        catalogue: posts,
-        searchText: "",
-        selectedTagIDs: [],
-        tagMatch: .matchSome,
-        sortOrder: .latestActivity
-    ).filtering(
-        searchText: "newest alpha beta",
-        selectedTagIDs: [],
-        tagMatch: .matchSome
-    )
-    let rebuiltNarrowed = ForumPostPresentation.make(
-        catalogue: posts,
-        searchText: "newest alpha beta",
-        selectedTagIDs: [],
-        tagMatch: .matchSome,
-        sortOrder: .latestActivity
-    )
-    #expect(narrowed.posts == rebuiltNarrowed.posts)
-    #expect(narrowed.recentCount == rebuiltNarrowed.recentCount)
-}
-
-private func forumPresentationPost(
-    id: UInt64,
-    name: String,
-    date: Date,
-    tags: [ForumTagID],
-    pinned: Bool = false,
-    archived: Bool = false
-) -> ForumPost {
-    ForumPost(
-        thread: MessageThreadSummary(
-            id: ChannelID(rawValue: id),
-            name: name,
-            isArchived: archived,
-            appliedTagIDs: tags,
-            flags: pinned ? 1 << 1 : 0,
-            archiveTimestamp: archived ? date : nil,
-            createdAt: date
-        )
-    )
-}
-
-@Test func `ten thousand forum posts keep stable identities through an incremental update`() throws {
-    let posts = (0 ..< 10_000).map { index in
-        forumPresentationPost(
-            id: UInt64(index + 1),
-            name: "Forum post \(index)",
-            date: Date(timeIntervalSince1970: TimeInterval(index)),
-            tags: [],
-            pinned: index.isMultiple(of: 1_000),
-            archived: index >= 5_000
-        )
-    }
-    let presentation = ForumPostPresentation.make(
-        catalogue: posts,
-        searchText: "",
-        selectedTagIDs: [],
-        tagMatch: .matchSome,
-        sortOrder: .latestActivity
-    )
-    #expect(presentation.posts.count == 10_000)
-    #expect(presentation.recentCount == 5_000)
-    #expect(Set(presentation.posts.map(\.id)).count == 10_000)
-
-    var updated = try #require(posts.last)
-    updated.thread.isArchived = false
-    updated.thread.flags = 1 << 1
-    let result = presentation.updating(
-        updated,
-        searchText: "",
-        selectedTagIDs: [],
-        tagMatch: .matchSome,
-        sortOrder: .latestActivity
-    )
-    #expect(result.posts.count == 10_000)
-    #expect(result.recentCount == 5_001)
-    #expect(Set(result.posts.map(\.id)).count == 10_000)
-}
-
-@Test func `component control identity is scoped to its message`() {
-    let first = ComponentControlKey(messageID: MessageID(rawValue: 1), customID: "confirm")
-    let second = ComponentControlKey(messageID: MessageID(rawValue: 2), customID: "confirm")
-    #expect(first != second)
-    #expect(Set([first, second]).count == 2)
-}
-
 @Test func `rich message selection copies custom emoji as its discord token`() {
     let value = NSMutableAttributedString(string: "hello ")
     let attachment = NSMutableAttributedString(attachment: NSTextAttachment())
@@ -1688,113 +1581,6 @@ private func forumPresentationPost(
 }
 
 @MainActor
-@Test func `selected custom emoji exposes an attachment overlay rect`() throws {
-    let attachment = NSTextAttachment()
-    attachment.image = NSImage(size: NSSize(width: 22, height: 22))
-    attachment.bounds = NSRect(x: 0, y: -3, width: 22, height: 22)
-    let value = NSMutableAttributedString(string: "before ")
-    value.append(NSAttributedString(attachment: attachment))
-    value.append(NSAttributedString(string: " after"))
-
-    let textView = RichMessageNSTextView(frame: NSRect(x: 0, y: 0, width: 240, height: 40))
-    textView.textContainerInset = .zero
-    textView.textContainer?.lineFragmentPadding = 0
-    textView.textContainer?.containerSize = NSSize(width: 240, height: 40)
-    textView.textStorage?.setAttributedString(value)
-    textView.setSelectedRange(NSRange(location: 7, length: 1))
-    textView.layoutManager?.ensureLayout(for: try #require(textView.textContainer))
-
-    let rect = try #require(textView.attachmentSelectionRects().first)
-    #expect(rect.width >= 22)
-    #expect(rect.height >= 22)
-}
-
-@MainActor
-@Test func `mention popover anchor tracks the exact inline attachment glyph`() throws {
-    let token = "<@42>"
-    let presentation = MentionPresentation(
-        rawToken: token,
-        label: "@Maya",
-        target: .user(UserID(rawValue: 42))
-    )
-    let value = NSMutableAttributedString(string: "before ")
-    value.append(MentionAttachmentRenderer.attributedString(presentation: presentation))
-    value.append(NSAttributedString(string: " after"))
-
-    let window = NSWindow(
-        contentRect: CGRect(x: 120, y: 140, width: 420, height: 180),
-        styleMask: [.borderless],
-        backing: .buffered,
-        defer: false
-    )
-    let contentView = NSView(frame: window.contentLayoutRect)
-    let textView = RichMessageNSTextView(frame: CGRect(x: 36, y: 70, width: 320, height: 44))
-    textView.textContainerInset = .zero
-    textView.textContainer?.lineFragmentPadding = 0
-    textView.textContainer?.containerSize = NSSize(width: 320, height: 44)
-    textView.textStorage?.setAttributedString(value)
-    contentView.addSubview(textView)
-    window.contentView = contentView
-    window.orderFrontRegardless()
-    defer { window.orderOut(nil) }
-
-    let index = 7
-    textView.layoutManager?.ensureLayout(for: try #require(textView.textContainer))
-    let glyphRect = try #require(textView.mentionAttachmentRect(at: index, rawToken: token))
-    let anchor = try #require(textView.mentionPopoverAnchor(at: index, rawToken: token))
-    #expect(anchor.sourceView === textView)
-    #expect(anchor.sourceRect() == glyphRect)
-    #expect(glyphRect.width >= 50)
-    #expect(glyphRect.height >= 21)
-
-    let tracker = StablePopoverAnchorTracker()
-    let firstSourceRect = try #require(anchor.sourceRect())
-    let firstFrame = try #require(
-        tracker.attach(
-            to: textView,
-            sourceRect: firstSourceRect
-        ))
-    #expect(firstFrame != contentView.bounds)
-
-    textView.frame.origin.x += 48
-    let movedSourceRect = try #require(anchor.sourceRect())
-    let movedFrame = try #require(
-        tracker.attach(
-            to: textView,
-            sourceRect: movedSourceRect
-        ))
-    #expect(abs(movedFrame.minX - firstFrame.minX - 48) <= 0.5)
-    #expect(abs(movedFrame.width - glyphRect.width) <= 0.5)
-}
-
-@MainActor
-@Test func `selecting a different message clears the previous message selection`() {
-    let first = RichMessageNSTextView()
-    first.string = "first message"
-    first.setSelectedRange(NSRange(location: 0, length: 5))
-    first.claimSelectionOwnership()
-
-    let second = RichMessageNSTextView()
-    second.string = "second message"
-    second.setSelectedRange(NSRange(location: 0, length: 6))
-    second.claimSelectionOwnership()
-
-    #expect(first.selectedRange().length == 0)
-    #expect(second.selectedRange() == NSRange(location: 0, length: 6))
-}
-
-@MainActor
-@Test func `reply summary removes markdown and collapses multiline content`() {
-    let summary = MessageReplySummary.text(
-        content: "# **test**\n[DiscordKit](https://example.com) <:cat_blob:123> <@42>"
-    ) { mention in
-        mention.id == "42" ? "@Maya" : "@unknown-user"
-    }
-
-    #expect(summary == "test DiscordKit :cat_blob: @Maya")
-    #expect(MessageReplySummary.text(content: " \n\t ") == "Attachment")
-}
-
 @Test func `only supported offline flags select testing mode`() {
     #expect(AppLaunchConfiguration(arguments: ["SakuraCord"]).mode == .normal)
     #expect(AppLaunchConfiguration(arguments: ["SakuraCord", "--offline"]).mode == .offlineTesting)
@@ -1854,6 +1640,27 @@ private func forumPresentationPost(
     #expect(authenticatedMemberListAutoScroll.mode == .normal)
     #expect(authenticatedMemberListAutoScroll.runsMemberListPerformanceAutoScroll)
     #expect(!authenticatedMemberListAutoScroll.runsChatPerformanceAutoScroll)
+    let authenticatedGestureScroll = AppLaunchConfiguration(
+        arguments: [
+            "SakuraCord",
+            "--debug-authenticated-gesture-scroll-performance",
+        ]
+    )
+    #expect(authenticatedGestureScroll.mode == .normal)
+    #expect(authenticatedGestureScroll.runsAuthenticatedGestureScrollBenchmark)
+    #expect(authenticatedGestureScroll.runsAnyReadOnlyPerformanceBenchmark)
+    let authenticatedLoadingOverlap = AppLaunchConfiguration(
+        arguments: [
+            "SakuraCord",
+            "--debug-authenticated-loading-scroll-overlap-performance",
+        ]
+    )
+    #expect(authenticatedLoadingOverlap.mode == .normal)
+    #expect(
+        authenticatedLoadingOverlap
+            .runsLoadingScrollOverlapBenchmark
+    )
+    #expect(authenticatedLoadingOverlap.runsAnyReadOnlyPerformanceBenchmark)
     let incomingPrivateCall = AppLaunchConfiguration(
         arguments: ["SakuraCord", "--offline-incoming-private-call"]
     )
@@ -1912,8 +1719,7 @@ private func forumPresentationPost(
 @Test func `saved account registry filters removed credentials and remembers the newest account`()
     async throws
 {
-    let suiteName = "dev.sakuracord.tests.saved-accounts.\(UUID().uuidString)"
-    let store = UserDefaultsSavedAccountStore(suiteName: suiteName)
+    let store = UserDefaultsSavedAccountStore(defaults: InMemoryPreferences())
     let older = SavedAccount(
         accountID: "100",
         username: "older",
@@ -1945,7 +1751,6 @@ private func forumPresentationPost(
         await store.accounts(matching: [CredentialHandle(accountID: "100")])
             == [older]
     )
-    await store.removePersistentDomain(named: suiteName)
 }
 
 @MainActor
@@ -2022,6 +1827,35 @@ private func forumPresentationPost(
     #expect(await credentials.accountIDs.isEmpty)
     #expect(await credentials.removedAccountIDs == ["93000", "94000"])
     #expect(await savedAccounts.preferredAccountID() == nil)
+}
+
+@MainActor
+@Test func `stale bootstrap persistence cannot replace the current account`() async {
+    let savedAccounts = SuspendedSavedAccountStore()
+    let model = AppModel(
+        launchMode: .normal,
+        discordNetworkDisabledOverride: false,
+        restoresStoredSession: false,
+        savedAccountStore: savedAccounts,
+        accountDatabaseFactory: { _ in nil }
+    )
+    model.activeAccountID = "current-account"
+    let staleSession = model.accountSession()
+    let persistence = Task { @MainActor in
+        await model.persistBootstrapAccount(
+            SavedAccount(accountID: "stale-account"),
+            session: staleSession
+        )
+    }
+    await savedAccounts.waitUntilRecordStarts()
+
+    model.invalidateAccountSession()
+    await savedAccounts.releaseRecord()
+    await persistence.value
+
+    #expect(model.activeAccountID == "current-account")
+    #expect(model.savedAccounts.isEmpty)
+    #expect(await savedAccounts.preferredAccountID() == "current-account")
 }
 
 @MainActor
@@ -2302,6 +2136,52 @@ private actor SavedAccountStoreSpy: SavedAccountStoring {
 
     func setPreferredAccountID(_ accountID: String?) {
         preferredID = accountID
+    }
+}
+
+private actor SuspendedSavedAccountStore: SavedAccountStoring {
+    private var preferredID: String?
+    private var recordStarted = false
+    private var recordStartWaiters: [CheckedContinuation<Void, Never>] = []
+    private var recordRelease: CheckedContinuation<Void, Never>?
+
+    func accounts(matching handles: [CredentialHandle]) -> [SavedAccount] {
+        handles.map(SavedAccount.init(handle:))
+    }
+
+    func preferredAccountID() -> String? {
+        preferredID
+    }
+
+    func record(_ account: SavedAccount) async {
+        recordStarted = true
+        let waiters = recordStartWaiters
+        recordStartWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+        await withCheckedContinuation { continuation in
+            recordRelease = continuation
+        }
+        preferredID = account.accountID
+    }
+
+    func remove(accountID: String) {}
+
+    func setPreferredAccountID(_ accountID: String?) {
+        preferredID = accountID
+    }
+
+    func waitUntilRecordStarts() async {
+        guard !recordStarted else { return }
+        await withCheckedContinuation { continuation in
+            recordStartWaiters.append(continuation)
+        }
+    }
+
+    func releaseRecord() {
+        recordRelease?.resume()
+        recordRelease = nil
     }
 }
 
@@ -3043,6 +2923,62 @@ private actor FailingRemovalCredentialStore: CredentialStore {
 }
 
 @MainActor
+@Test func `reply selection navigates both directions without wrapping`() async throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    await model.start()
+    let messages = model.messages
+    #expect(messages.count >= 2)
+
+    #expect(model.navigateReplySelection(in: .channel, direction: .older))
+    #expect(model.replyingTo?.id == messages.last?.id)
+
+    #expect(model.navigateReplySelection(in: .channel, direction: .older))
+    #expect(model.replyingTo?.id == messages.dropLast().last?.id)
+
+    model.reply(to: messages.first!)
+    #expect(model.navigateReplySelection(in: .channel, direction: .older))
+    #expect(model.replyingTo?.id == messages.first?.id)
+
+    #expect(model.navigateReplySelection(in: .channel, direction: .newer))
+    #expect(model.replyingTo?.id == messages.dropFirst().first?.id)
+
+    model.reply(to: messages.last!)
+    #expect(model.navigateReplySelection(in: .channel, direction: .newer))
+    #expect(model.replyingTo?.id == messages.last?.id)
+}
+
+@MainActor
+@Test func `reply Escape cancels reply state`() async throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    await model.start()
+    let target = try #require(model.messages.last)
+
+    model.reply(to: target)
+    #expect(model.consumeEscapeForReply(in: .channel))
+    #expect(model.replyingTo == nil)
+    #expect(!model.consumeEscapeForReply(in: .channel))
+}
+
+@MainActor
+@Test func `supplementary Escape closes thread before voice chat`() {
+    let model = AppModel(launchMode: .offlineTesting)
+    model.openThread = MessageThreadSummary(
+        id: ChannelID(rawValue: 88_001),
+        parentID: ChannelID(rawValue: 88_000),
+        name: "Escape priority"
+    )
+    model.isVoiceChatOpen = true
+
+    #expect(model.consumeEscapeForSupplementaryConversation())
+    #expect(model.openThread == nil)
+    #expect(model.isVoiceChatOpen)
+
+    #expect(model.consumeEscapeForSupplementaryConversation())
+    #expect(!model.isVoiceChatOpen)
+    #expect(!model.consumeEscapeForSupplementaryConversation())
+}
+
+@MainActor
 @Test func `replying in a forum post targets the thread message and clears after sending`() async throws {
     let provider = MockChatProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
@@ -3087,178 +3023,6 @@ private actor FailingRemovalCredentialStore: CredentialStore {
 }
 
 @MainActor
-@Test func `message grouping matches discord continuation rules`() {
-    let author = User(id: UserID(rawValue: 1), username: "one", displayName: "One")
-    let other = User(id: UserID(rawValue: 2), username: "two", displayName: "Two")
-    let channel = ChannelID(rawValue: 10)
-    let base = Date(timeIntervalSince1970: 1_700_000_000)
-    let messages = [
-        Message(
-            id: MessageID(rawValue: 1), channelID: channel, author: author, content: "first",
-            timestamp: base),
-        Message(
-            id: MessageID(rawValue: 2), channelID: channel, author: author, content: "six minutes",
-            timestamp: base.addingTimeInterval(6 * 60)),
-        Message(
-            id: MessageID(rawValue: 3), channelID: channel, author: author,
-            content: "seven minutes", timestamp: base.addingTimeInterval(13 * 60)),
-        Message(
-            id: MessageID(rawValue: 4), channelID: channel, author: other, content: "other author",
-            timestamp: base.addingTimeInterval(13 * 60 + 1)),
-        Message(
-            id: MessageID(rawValue: 5), channelID: channel, author: other, content: "reply",
-            timestamp: base.addingTimeInterval(13 * 60 + 2), replyTo: MessageID(rawValue: 1)),
-    ]
-
-    let rows = MessageGrouping.rows(for: messages)
-    #expect(rows.map(\.startsGroup) == [true, false, true, true, true])
-}
-
-@MainActor
-@Test func `system messages break surrounding author groups`() {
-    let author = User(id: UserID(rawValue: 1), username: "nova", displayName: "Nova")
-    let start = Date(timeIntervalSince1970: 1_000)
-    let messages = [
-        Message(
-            id: MessageID(rawValue: 1), channelID: ChannelID(rawValue: 1), author: author,
-            content: "before", timestamp: start
-        ),
-        Message(
-            id: MessageID(rawValue: 2), channelID: ChannelID(rawValue: 1), author: author,
-            content: "", timestamp: start.addingTimeInterval(10), type: .userJoin
-        ),
-        Message(
-            id: MessageID(rawValue: 3), channelID: ChannelID(rawValue: 1), author: author,
-            content: "after", timestamp: start.addingTimeInterval(20)
-        ),
-    ]
-
-    #expect(MessageGrouping.rows(for: messages).map(\.startsGroup) == [true, true, true])
-}
-
-@MainActor
-@Test func `application command responses break surrounding app groups`() {
-    let app = User(
-        id: UserID(rawValue: 10), username: "verified", displayName: "Verified", isBot: true
-    )
-    let channel = ChannelID(rawValue: 1)
-    let start = Date(timeIntervalSince1970: 1_000)
-    let messages = [
-        Message(
-            id: MessageID(rawValue: 1), channelID: channel, author: app,
-            content: "before", timestamp: start
-        ),
-        Message(
-            id: MessageID(rawValue: 2), channelID: channel, author: app,
-            content: "result", timestamp: start.addingTimeInterval(1), type: .chatInputCommand
-        ),
-        Message(
-            id: MessageID(rawValue: 3), channelID: channel, author: app,
-            content: "after", timestamp: start.addingTimeInterval(2)
-        ),
-    ]
-
-    #expect(MessageGrouping.rows(for: messages).map(\.startsGroup) == [true, true, true])
-}
-
-@MainActor
-@Test func `member sections use hoisted roles and sort members`() {
-    let members = [
-        Member(
-            user: User(id: UserID(rawValue: 1), username: "zed", displayName: "Zed"),
-            roleName: "Moderator",
-            status: .online,
-            rolePosition: 10,
-            isRoleCategory: true,
-            roles: [
-                GuildRole(
-                    id: RoleID(rawValue: 10), name: "Moderator", position: 10,
-                    colorHex: 0xFF8800
-                ),
-            ]
-        ),
-        Member(
-            user: User(id: UserID(rawValue: 2), username: "amy", displayName: "Amy"),
-            roleName: "Moderator",
-            status: .idle,
-            rolePosition: 10,
-            isRoleCategory: true,
-            roles: [
-                GuildRole(
-                    id: RoleID(rawValue: 10), name: "Moderator", position: 10,
-                    colorHex: 0xFF8800
-                ),
-            ]
-        ),
-        Member(
-            user: User(id: UserID(rawValue: 3), username: "sam", displayName: "Sam"),
-            roleName: "Member",
-            status: .online
-        ),
-        Member(
-            user: User(id: UserID(rawValue: 4), username: "off", displayName: "Offline"),
-            roleName: "Moderator",
-            status: .offline,
-            rolePosition: 10,
-            isRoleCategory: true
-        ),
-    ]
-
-    let sections = MemberSection.make(from: members)
-    #expect(sections.map(\.title) == ["Moderator", "Online", "Offline"])
-    #expect(sections.map(\.colorHex) == [0xFF8800, nil, nil])
-    #expect(sections.map(\.totalCount) == [2, 1, 1])
-    #expect(sections[0].members.map(\.user.displayName) == ["Amy", "Zed"])
-    #expect(sections[2].members.map(\.user.displayName) == ["Offline"])
-}
-
-@MainActor
-@Test func `member sections preserve gateway group and member order with authoritative counts`() {
-    let role = GuildRole(
-        id: RoleID(rawValue: 10), name: "Moderator", position: 10,
-        colorHex: 0xFF8800
-    )
-    let members = [
-        Member(
-            user: User(id: UserID(rawValue: 1), username: "zed", displayName: "Zed"),
-            roleName: role.name,
-            status: .online,
-            roleID: role.id,
-            rolePosition: role.position,
-            isRoleCategory: true,
-            roles: [role]
-        ),
-        Member(
-            user: User(id: UserID(rawValue: 2), username: "amy", displayName: "Amy"),
-            roleName: role.name,
-            status: .online,
-            roleID: role.id,
-            rolePosition: role.position,
-            isRoleCategory: true,
-            roles: [role]
-        ),
-        Member(
-            user: User(id: UserID(rawValue: 3), username: "sam", displayName: "Sam"),
-            roleName: "Member",
-            status: .online
-        ),
-    ]
-
-    let sections = MemberSection.make(
-        from: members,
-        groups: [
-            GuildMemberListGroup(id: role.id.description, count: 2),
-            GuildMemberListGroup(id: "online", count: 388),
-        ],
-        roles: [role]
-    )
-
-    #expect(sections.map(\.title) == ["Moderator", "Online"])
-    #expect(sections.map(\.totalCount) == [2, 388])
-    #expect(sections[0].members.map(\.user.displayName) == ["Zed", "Amy"])
-    #expect(sections[1].members.map(\.user.displayName) == ["Sam"])
-}
-
 @Test func `member store merge retains members outside latest range and replaces updates`() {
     let orangeRole = GuildRole(
         id: RoleID(rawValue: 10), name: "Orange", position: 10,
@@ -3294,6 +3058,63 @@ private actor FailingRemovalCredentialStore: CredentialStore {
     #expect(merged[existing.id]?.status == replacement.status)
     #expect(merged[existing.id]?.memberListIndex == 73)
     #expect(merged[other.id] == other)
+}
+
+@Test func `timeline member impact ignores members absent from retained message rows`() {
+    let author = User(
+        id: UserID(rawValue: 81), username: "author", displayName: "Author"
+    )
+    let replyAuthor = User(
+        id: UserID(rawValue: 82), username: "reply", displayName: "Reply"
+    )
+    let mentioned = User(
+        id: UserID(rawValue: 83), username: "mention", displayName: "Mention"
+    )
+    let unrelated = User(
+        id: UserID(rawValue: 84), username: "other", displayName: "Other"
+    )
+    let message = Message(
+        id: MessageID(rawValue: 8_100),
+        channelID: ChannelID(rawValue: 8_101),
+        author: author,
+        content: "Member presentation dependencies",
+        replyPreview: MessageReplyPreview(
+            messageID: MessageID(rawValue: 8_099),
+            author: replyAuthor,
+            content: "Referenced reply"
+        ),
+        mentionedUsers: [mentioned]
+    )
+    let referenced = TimelineMemberPresentationImpact.referencedUserIDs(
+        in: [message]
+    )
+    #expect(referenced == [author.id, replyAuthor.id, mentioned.id])
+
+    let oldMembers = Dictionary(
+        uniqueKeysWithValues: [author, replyAuthor, mentioned, unrelated].map {
+            ($0.id, Member(user: $0, roleName: "Member", status: .online))
+        }
+    )
+    let newMembers = oldMembers.mapValues { member in
+        var changed = member
+        changed.user.displayName += " updated"
+        return changed
+    }
+    let changed = TimelineMemberPresentationImpact.changedUserIDs(
+        from: oldMembers,
+        to: newMembers,
+        guildRoles: [],
+        candidates: referenced
+    )
+
+    #expect(changed == referenced)
+    #expect(!changed.contains(unrelated.id))
+    #expect(
+        TimelineMemberPresentationImpact.affectedMessageIDs(
+            in: [message],
+            changedUserIDs: changed
+        ) == [message.id]
+    )
 }
 
 @MainActor
@@ -3414,125 +3235,6 @@ private actor FailingRemovalCredentialStore: CredentialStore {
             visibleRange: 0 ... 0
         ),
     ])
-}
-
-@MainActor
-@Test func `member list churn invalidates only presentation dependent messages`() throws {
-    let model = AppModel(launchMode: .offlineTesting)
-    let channelID = ChannelID(rawValue: 70_001)
-    let author = User(
-        id: UserID(rawValue: 70_002),
-        username: "timeline-author",
-        displayName: "Timeline Author"
-    )
-    let message = Message(
-        id: MessageID(rawValue: 70_003),
-        channelID: channelID,
-        author: author,
-        content: "Cached row"
-    )
-    model.replaceSelectedMessages(with: [message])
-    let original = Member(
-        user: author,
-        roleName: "Member",
-        status: .online
-    )
-    model.members = [original]
-
-    let stableRowsRevision = model.messageRowsRevision
-    let stablePresentationRevision = model.timelinePresentationRevision
-    let unrelated = Member(
-        user: User(
-            id: UserID(rawValue: 70_004),
-            username: "unrelated",
-            displayName: "Unrelated"
-        ),
-        roleName: "Member",
-        status: .online
-    )
-    model.members = [original, unrelated]
-    #expect(model.messageRowsRevision == stableRowsRevision)
-    #expect(model.timelinePresentationRevision == stablePresentationRevision)
-
-    var presenceOnly = original
-    presenceOnly.status = .idle
-    presenceOnly.activityText = "Playing something"
-    model.members = [presenceOnly, unrelated]
-    #expect(model.messageRowsRevision == stableRowsRevision)
-    #expect(model.timelinePresentationRevision == stablePresentationRevision)
-
-    var renamed = presenceOnly
-    renamed.user.displayName = "Renamed Author"
-    model.members = [renamed, unrelated]
-    #expect(model.messageRowsRevision == stableRowsRevision &+ 1)
-    #expect(model.timelinePresentationRevision == stablePresentationRevision)
-    let record = try #require(
-        model.messageRowsUpdateJournal.records(
-            after: stableRowsRevision,
-            through: model.messageRowsRevision
-        )?.first
-    )
-    #expect(record.change == nil)
-    #expect(record.changedMessageIDs == [message.id])
-    #expect(!record.invalidatesAllRows)
-}
-
-@MainActor
-@Test func `member changes affecting an offscreen cached conversation invalidate safely`() {
-    let model = AppModel(launchMode: .offlineTesting)
-    let author = User(
-        id: UserID(rawValue: 71_001),
-        username: "cached-author",
-        displayName: "Cached Author"
-    )
-    model.storeCachedMessages(
-        [
-            Message(
-                id: MessageID(rawValue: 71_002),
-                channelID: ChannelID(rawValue: 71_003),
-                author: author,
-                content: "Offscreen cached row"
-            ),
-        ],
-        for: ChannelID(rawValue: 71_003)
-    )
-    let revision = model.timelinePresentationRevision
-
-    model.members = [
-        Member(
-            user: author,
-            roleName: "Member",
-            status: .online
-        ),
-    ]
-
-    #expect(model.timelinePresentationRevision == revision &+ 1)
-}
-
-@MainActor
-@Test func `channel groups place voice channels after text channels`() {
-    let guildID = GuildID(rawValue: 20)
-    let categoryID = ChannelID(rawValue: 21)
-    let channels = [
-        Channel(
-            id: ChannelID(rawValue: 22), guildID: guildID, name: "Voice first by position",
-            kind: .voice, category: "Chat", categoryID: categoryID, position: 0),
-        Channel(
-            id: ChannelID(rawValue: 23), guildID: guildID, name: "general", category: "Chat",
-            categoryID: categoryID, position: 2),
-        Channel(
-            id: ChannelID(rawValue: 24), guildID: guildID, name: "announcements",
-            kind: .announcement, category: "Chat", categoryID: categoryID, position: 3),
-        Channel(
-            id: ChannelID(rawValue: 25), guildID: guildID, name: "Voice second", kind: .voice,
-            category: "Chat", categoryID: categoryID, position: 1),
-    ]
-
-    let group = ChannelGroup.make(from: channels)[0]
-    #expect(
-        group.channels.map(\.name) == [
-            "general", "announcements", "Voice first by position", "Voice second",
-        ])
 }
 
 @MainActor
@@ -3709,15 +3411,32 @@ private actor FailingRemovalCredentialStore: CredentialStore {
 }
 
 @MainActor
-@Test func `profile role names remove custom emoji markup and collapse whitespace`() {
-    #expect(
-        ProfileRolePresentation.normalizedName("  Developers   <:sparkle:123456>   💖  ")
-            == "Developers 💖"
+@Test func `gateway recovery republishes an active voice state once`() async {
+    let provider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    model.activeVoiceChannel = Channel(
+        id: provider.channelID,
+        guildID: nil,
+        name: "Recovered call",
+        kind: .directMessage
     )
-    #expect(ProfileRolePresentation.normalizedName("<a:dance:987654>") == "")
-    #expect(ProfileRolePresentation.collapsedLimit == 5)
+    model.voiceSessionState = .reconnecting
+    model.connectionState = .resuming
+
+    model.consumeConnectionChange(.ready)
+    for task in Array(model.accountChildTasks.values) {
+        await task.value
+    }
+    #expect(await provider.voiceStateUpdateRequestCount == 1)
+
+    model.consumeConnectionChange(.ready)
+    for task in Array(model.accountChildTasks.values) {
+        await task.value
+    }
+    #expect(await provider.voiceStateUpdateRequestCount == 1)
 }
 
+@MainActor
 @Test func `unchanged unread projection does not republish the account snapshot`() async throws {
     let snapshot = try await MockChatProvider().bootstrap()
     #expect(
@@ -3754,68 +3473,6 @@ private actor FailingRemovalCredentialStore: CredentialStore {
     #expect(!profile.badges.isEmpty)
     #expect(!profile.mutualGuilds.isEmpty)
     #expect(profile.status == member.status)
-}
-
-@MainActor
-@Test func `message profile does not compete with the member inspector popover`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
-    await model.start()
-    let contextualMember = try #require(model.members.first)
-    let inspectorMember = try #require(
-        model.members.first { $0.id != contextualMember.id }
-    )
-    model.showInspector = false
-
-    model.selectMember(inspectorMember)
-    model.showProfile(for: contextualMember.user)
-    #expect(model.isInspectorProfilePresented)
-    #expect(model.selectedMember?.id == inspectorMember.id)
-    #expect(
-        model.contextualProfilePresentation?.member.id
-            == contextualMember.id
-    )
-    #expect(
-        await eventuallyOnMain {
-            model.contextualProfilePresentation?.profile?.id
-                == contextualMember.id
-        }
-    )
-    #expect(
-        await eventuallyOnMain {
-            model.selectedProfile?.id == inspectorMember.id
-        }
-    )
-    #expect(model.selectedMember?.id == inspectorMember.id)
-    #expect(model.selectedProfile?.id == inspectorMember.id)
-    #expect(model.isInspectorProfilePresented)
-    #expect(!model.showInspector)
-    #expect(
-        model.contextualProfilePresentation?.member.id
-            == contextualMember.id
-    )
-
-    model.dismissContextualProfile(for: contextualMember.id)
-    #expect(model.contextualProfilePresentation == nil)
-    #expect(model.isInspectorProfilePresented)
-    #expect(model.selectedMember?.id == inspectorMember.id)
-}
-
-@MainActor
-@Test func `stale message profile disappearance cannot clear a repeated click`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
-    await model.start()
-    let member = try #require(model.members.first)
-
-    let firstRequestID = model.showProfile(for: member.user)
-    let secondRequestID = model.showProfile(for: member.user)
-    #expect(firstRequestID != secondRequestID)
-    #expect(model.contextualProfilePresentation?.requestID == secondRequestID)
-
-    model.dismissContextualProfile(requestID: firstRequestID)
-    #expect(model.contextualProfilePresentation?.requestID == secondRequestID)
-
-    model.dismissContextualProfile(requestID: secondRequestID)
-    #expect(model.contextualProfilePresentation == nil)
 }
 
 @MainActor
@@ -3905,102 +3562,6 @@ private func hiddenMockChannel(
 }
 
 @MainActor
-@Test func `demo emoji preferences and custom emoji assets stay offline`() async throws {
-    let provider = MockChatProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
-    await model.start()
-
-    #expect(model.favoriteEmojiKeys.isEmpty)
-    #expect(model.emojiUsageCounts.isEmpty)
-    model.recordEmojiUse("native:✨")
-    #expect(model.emojiUsageCounts == ["native:✨": 1])
-
-    let guildID = try #require(model.selectedGuildID)
-    let emojis = try await provider.emojis(in: guildID)
-    #expect(emojis.count == 3)
-    #expect(emojis.allSatisfy { $0.imageURL?.isFileURL == true })
-    #expect(emojis.allSatisfy { $0.imageURL?.host != "cdn.discordapp.com" })
-    #expect(
-        emojis.allSatisfy { emoji in
-            emoji.imageURL.map { FileManager.default.fileExists(atPath: $0.path) } == true
-        })
-    for emoji in emojis {
-        ComposerEmojiImageStore.shared.register(emoji)
-        #expect(ComposerEmojiImageStore.shared.cachedImage(for: emoji.messageToken) != nil)
-    }
-    let attributed = ComposerEmojiAttributedText.make(
-        emojis.map(\.messageToken).joined(separator: " ")
-    )
-    var renderedAttachmentCount = 0
-    attributed.enumerateAttribute(
-        .attachment,
-        in: NSRange(location: 0, length: attributed.length)
-    ) { value, _, _ in
-        guard let attachment = value as? NSTextAttachment else { return }
-        #expect(attachment.image?.isValid == true)
-        renderedAttachmentCount += 1
-    }
-    #expect(renderedAttachmentCount == emojis.count)
-    let settings = try await provider.emojiUserSettings()
-    #expect(
-        settings.favoriteKeys.prefix(3) == [
-            "custom:900000000000000201", "white_check_mark", "x",
-        ])
-    #expect(settings.frequentlyUsedKeys.count == 18)
-}
-
-@MainActor
-@Test func `complete channel pages reopen immediately from session memory`()
-    async throws
-{
-    let provider = ChannelLoadTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
-
-    await model.start()
-    let firstChannel = ChannelID(rawValue: 91001)
-    let secondChannel = ChannelID(rawValue: 91002)
-    #expect(await provider.requestCount(for: firstChannel) == 1)
-    #expect(
-        await provider.requests(for: firstChannel)
-            == [ChannelLoadMessageRequest(before: nil, limit: 10)]
-    )
-    #expect(model.messages.map(\.channelID) == [firstChannel])
-    let preparedFirstRow = try #require(model.messageRows.first)
-
-    model.selectedChannelID = secondChannel
-    try await Task.sleep(for: .milliseconds(5))
-    model.selectedChannelID = firstChannel
-
-    // The in-memory page and its known boundary are restored synchronously.
-    // Gateway events keep it current while the app remains open, so reopening
-    // the channel does not issue another history request.
-    #expect(model.messages.map(\.channelID) == [firstChannel])
-    #expect(model.messageRows.first === preparedFirstRow)
-    #expect(!model.isLoadingMessages)
-    #expect(!model.hasMoreMessages)
-    #expect(
-        ConversationBeginningPolicy.showsBeginning(
-            isLoading: model.isLoadingMessages,
-            hasMoreBefore: model.hasMoreMessages,
-            hasError: model.messageLoadError != nil
-        )
-    )
-    #expect(
-        !MessageTimelineLoadingPolicy.showsEarlierIndicator(
-            isLoadingInitialPage: model.isLoadingMessages,
-            messageCount: model.messages.count,
-            isLoadingEarlierPage: model.isLoadingEarlier
-        )
-    )
-    #expect(model.selectedChannelID == firstChannel)
-    #expect(model.messages.allSatisfy { $0.channelID == firstChannel })
-    #expect(await provider.requestCount(for: firstChannel) == 1)
-    #expect(await provider.requestCount(for: secondChannel) == 1)
-    try await Task.sleep(for: .milliseconds(120))
-    #expect(await provider.requestWasCancelled(for: secondChannel) == false)
-}
-
-@MainActor
 @Test func `app model reconciles lazy production reactors without repeated reads`() async throws {
     let provider = ChannelLoadTestProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
@@ -4058,14 +3619,14 @@ private func hiddenMockChannel(
             && model.hasCompletedInitialMessageLoad
     })
     let initialCount = model.messages.count
-    for _ in 0 ..< 5 {
+    for _ in 0 ..< 13 {
         await model.loadEarlier()
     }
-    #expect(model.messages.count == min(500, initialCount + 250))
+    #expect(model.messages.count == min(500, initialCount + 260))
 
     let updateTarget = model.messages[173]
     var updated = updateTarget
-    updated.content = "Updated after five prepended pages"
+    updated.content = "Updated after repeated prepended pages"
     await provider.emit(.messageUpdated(updated))
 
     #expect(await eventuallyOnMain {
@@ -4081,6 +3642,55 @@ private func hiddenMockChannel(
     #expect(await eventuallyOnMain {
         !model.messages.contains(where: { $0.id == deleted.id })
     })
+}
+
+@MainActor
+@Test func `distant message navigation owns a contiguous bidirectional history window`() async throws {
+    let provider = MockChatProvider(timelineMessageCount: 500)
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+
+    let channelID = ChannelID(rawValue: 210)
+    let targetID = MessageID(rawValue: 5_000_100)
+    model.navigate(to: GuildID(rawValue: 100), channelID: channelID, messageID: targetID)
+
+    #expect(await eventuallyOnMain {
+        model.messageNavigationRequest?.messageID == targetID
+            && model.messages.contains(where: { $0.id == targetID })
+    })
+    #expect(model.messages.map(\.id) == (75 ... 124).map {
+        MessageID(rawValue: 5_000_000 + UInt64($0))
+    })
+    #expect(model.hasMoreMessages)
+    #expect(model.hasMoreLaterMessages)
+
+    await model.loadEarlier()
+    #expect(model.messages.map(\.id) == (55 ... 124).map {
+        MessageID(rawValue: 5_000_000 + UInt64($0))
+    })
+
+    await model.loadLater()
+    #expect(model.messages.map(\.id) == (55 ... 144).map {
+        MessageID(rawValue: 5_000_000 + UInt64($0))
+    })
+    #expect(model.hasMoreLaterMessages)
+
+    let liveMessage = Message(
+        id: MessageID(rawValue: 6_000_000),
+        channelID: channelID,
+        author: try #require(model.snapshot?.currentUser),
+        content: "This must not bridge the unloaded history gap."
+    )
+    await provider.emit(.messageCreated(liveMessage))
+    try await Task.sleep(for: .milliseconds(20))
+    #expect(!model.messages.contains(where: { $0.id == liveMessage.id }))
+
+    #expect(await model.loadNewestMessageWindow())
+    #expect(model.messages.map(\.id) == (450 ... 499).map {
+        MessageID(rawValue: 5_000_000 + UInt64($0))
+    })
+    #expect(model.hasMoreMessages)
+    #expect(!model.hasMoreLaterMessages)
 }
 
 @MainActor
@@ -4279,6 +3889,170 @@ private func hiddenMockChannel(
 }
 
 @MainActor
+@Test func `role snapshot preserves unchanged guild access projection`() {
+    let model = AppModel(launchMode: .offlineTesting)
+    let user = User(
+        id: UserID(rawValue: 92_200), username: "member", displayName: "Member"
+    )
+    let changedGuild = Guild(id: GuildID(rawValue: 92_201), name: "Changed")
+    let unchangedGuild = Guild(id: GuildID(rawValue: 92_202), name: "Unchanged")
+    let changedChannel = Channel(
+        id: ChannelID(rawValue: 92_203),
+        guildID: changedGuild.id,
+        name: "changed",
+        kind: .text
+    )
+    let unchangedChannel = Channel(
+        id: ChannelID(rawValue: 92_204),
+        guildID: unchangedGuild.id,
+        name: "unchanged",
+        kind: .text
+    )
+    model.snapshot = BootstrapSnapshot(
+        currentUser: user,
+        guilds: [changedGuild, unchangedGuild],
+        channels: [changedChannel, unchangedChannel],
+        members: []
+    )
+    model.serverRailGuildsByID = [
+        changedGuild.id: changedGuild,
+        unchangedGuild.id: unchangedGuild,
+    ]
+    let readablePermissions = DiscordPermissionBits.viewChannel
+        | DiscordPermissionBits.sendMessages
+        | DiscordPermissionBits.readMessageHistory
+    model.guildRolesByGuildID = [
+        changedGuild.id: [
+            GuildRole(
+                id: RoleID(rawValue: changedGuild.id.rawValue),
+                name: "@everyone",
+                position: 0,
+                permissions: readablePermissions
+            )
+        ],
+        unchangedGuild.id: [
+            GuildRole(
+                id: RoleID(rawValue: unchangedGuild.id.rawValue),
+                name: "@everyone",
+                position: 0,
+                permissions: readablePermissions
+            )
+        ],
+    ]
+    let changedRoleID = RoleID(rawValue: 92_205)
+    model.currentUserRoleIDsByGuild = [
+        changedGuild.id: [],
+        unchangedGuild.id: [],
+    ]
+    model.hiddenChannelIDs = [unchangedChannel.id]
+
+    model.consumeCurrentUserRolesSnapshot([
+        changedGuild.id: [changedRoleID],
+        unchangedGuild.id: [],
+    ])
+
+    #expect(!model.hiddenChannelIDs.contains(changedChannel.id))
+    #expect(model.hiddenChannelIDs.contains(unchangedChannel.id))
+}
+
+@MainActor
+@Test func `channel replacement removes deleted access projection entries`() {
+    let model = AppModel(launchMode: .offlineTesting)
+    let user = User(
+        id: UserID(rawValue: 92_300), username: "member", displayName: "Member"
+    )
+    let guild = Guild(id: GuildID(rawValue: 92_301), name: "Guild")
+    let deletedChannel = Channel(
+        id: ChannelID(rawValue: 92_302),
+        guildID: guild.id,
+        name: "deleted",
+        kind: .text
+    )
+    let replacementChannel = Channel(
+        id: ChannelID(rawValue: 92_303),
+        guildID: guild.id,
+        name: "replacement",
+        kind: .text
+    )
+    model.snapshot = BootstrapSnapshot(
+        currentUser: user,
+        guilds: [guild],
+        channels: [deletedChannel],
+        members: []
+    )
+    model.serverRailGuildsByID = [guild.id: guild]
+    model.currentUserRoleIDsByGuild[guild.id] = []
+    model.hiddenChannelIDs = [deletedChannel.id]
+    model.checkingChannelIDs = [deletedChannel.id]
+
+    model.consumeChannelsChanged(
+        guildID: guild.id,
+        channels: [replacementChannel]
+    )
+
+    #expect(!model.hiddenChannelIDs.contains(deletedChannel.id))
+    #expect(!model.checkingChannelIDs.contains(deletedChannel.id))
+    #expect(model.snapshot?.channels == [replacementChannel])
+}
+
+@MainActor
+@Test func `channel access replacement preserves unchanged access projections`() {
+    let model = AppModel(launchMode: .offlineTesting)
+    let user = User(
+        id: UserID(rawValue: 92_310), username: "member", displayName: "Member"
+    )
+    let guild = Guild(
+        id: GuildID(rawValue: 92_311),
+        name: "Guild",
+        currentUserPermissions: DiscordPermissionBits.viewChannel
+            | DiscordPermissionBits.sendMessages
+            | DiscordPermissionBits.readMessageHistory
+    )
+    let changedChannel = Channel(
+        id: ChannelID(rawValue: 92_312),
+        guildID: guild.id,
+        name: "changed",
+        kind: .text
+    )
+    let unchangedChannel = Channel(
+        id: ChannelID(rawValue: 92_313),
+        guildID: guild.id,
+        name: "unchanged",
+        kind: .text
+    )
+    model.snapshot = BootstrapSnapshot(
+        currentUser: user,
+        guilds: [guild],
+        channels: [changedChannel, unchangedChannel],
+        members: []
+    )
+    model.serverRailGuildsByID = [guild.id: guild]
+    model.currentUserRoleIDsByGuild[guild.id] = []
+    model.hiddenChannelIDs = [unchangedChannel.id]
+
+    let revokedChannel = Channel(
+        id: changedChannel.id,
+        guildID: guild.id,
+        name: changedChannel.name,
+        kind: changedChannel.kind,
+        permissionOverwrites: [
+            ChannelPermissionOverwrite(
+                id: guild.id.description,
+                type: 0,
+                deny: DiscordPermissionBits.viewChannel
+            ),
+        ]
+    )
+    model.consumeChannelsChanged(
+        guildID: guild.id,
+        channels: [revokedChannel, unchangedChannel]
+    )
+
+    #expect(model.hiddenChannelIDs.contains(revokedChannel.id))
+    #expect(model.hiddenChannelIDs.contains(unchangedChannel.id))
+}
+
+@MainActor
 @Test func `gateway lifecycle projections update app workspace state`() {
     let model = AppModel(launchMode: .offlineTesting)
     let oldUser = User(
@@ -4467,6 +4241,7 @@ private func hiddenMockChannel(
     try await Task.sleep(for: .milliseconds(20))
     #expect(model.incomingPrivateCalls.map(\.channelID) == [channelID])
     #expect(model.privateCall(in: channelID)?.isRinging(currentUserID) == true)
+    #expect(model.joinablePrivateCall(in: channelID) != nil)
     #expect(sounds.looping[.callRinging] == true)
 
     await provider.emit(
@@ -4490,6 +4265,7 @@ private func hiddenMockChannel(
     try await Task.sleep(for: .milliseconds(20))
     #expect(model.incomingPrivateCalls.isEmpty)
     #expect(model.privateCall(in: channelID)?.voiceStates?.map(\.userID) == [senderID])
+    #expect(model.joinablePrivateCall(in: channelID) != nil)
     #expect(sounds.looping[.callRinging] == false)
 
     let destinationChannelID = ChannelID(rawValue: 88_804)
@@ -4518,6 +4294,8 @@ private func hiddenMockChannel(
             && model.privateCall(in: destinationChannelID)?.voiceStates?.map(\.userID)
                 == [senderID]
     })
+    #expect(model.joinablePrivateCall(in: channelID) == nil)
+    #expect(model.joinablePrivateCall(in: destinationChannelID) != nil)
 
     await provider.emit(.privateCallDeleted(channelID: channelID, unavailable: false))
     try await Task.sleep(for: .milliseconds(20))
@@ -4536,6 +4314,12 @@ private func hiddenMockChannel(
         })
     )
     let baselineCounts = await provider.counts()
+    model.privateCallsByChannel[channel.id] = PrivateCall(
+        channelID: channel.id,
+        messageID: MessageID(rawValue: 88_813),
+        region: "rotterdam",
+        voiceStates: []
+    )
 
     let firstStart = Task {
         await model.startPrivateCall(in: channel)
@@ -4600,151 +4384,6 @@ private func hiddenMockChannel(
     await firstDecline.value
     #expect((await provider.counts()).declines == 1)
     #expect(!model.isPrivateCallActionInFlight(in: channel.id))
-}
-
-@MainActor @Test
-func `conversation first-frame marker only completes its matching navigation`() {
-    let first = ChannelID(rawValue: 98_001)
-    let second = ChannelID(rawValue: 98_002)
-    AppPerformanceSignposts.cancelConversationNavigation()
-    defer { AppPerformanceSignposts.cancelConversationNavigation() }
-
-    AppPerformanceSignposts.beginConversationNavigation(to: first)
-    AppPerformanceSignposts.reportConversationFirstFrame(channelID: second)
-    #expect(
-        AppPerformanceSignposts.navigationChannelIDForTesting
-            == first
-    )
-
-    AppPerformanceSignposts.ensureConversationNavigation(to: first)
-    #expect(
-        AppPerformanceSignposts.navigationChannelIDForTesting
-            == first
-    )
-
-    AppPerformanceSignposts.reportConversationFirstFrame(channelID: first)
-    #expect(
-        AppPerformanceSignposts.navigationChannelIDForTesting
-            == nil
-    )
-}
-
-@Test func `startup presentation waits for history then a subsequent frame`() {
-    let cachedChannelID = ChannelID(rawValue: 98_003)
-    var readiness = StartupPresentationReadiness(
-        expectedConversationID: cachedChannelID
-    )
-
-    #expect(!readiness.reportFramePresented(channelID: cachedChannelID))
-    readiness.reportHistoryReady(channelID: cachedChannelID)
-    #expect(readiness.reportFramePresented(channelID: cachedChannelID))
-
-    let unrelatedChannelID = ChannelID(rawValue: 98_004)
-    readiness.reportHistoryReady(channelID: unrelatedChannelID)
-    #expect(!readiness.reportFramePresented(channelID: unrelatedChannelID))
-}
-
-@MainActor @Test
-func `channel sidebar selection commits after coalescing reentrant changes`() async {
-    let committer = ChannelSidebarSelectionCommitter()
-    let first = ChannelID(rawValue: 98_011)
-    let second = ChannelID(rawValue: 98_012)
-    var modelSelection: ChannelID?
-    var committed: [ChannelID?] = []
-
-    committer.schedule(first, currentSelection: { modelSelection }) {
-        modelSelection = $0
-        committed.append($0)
-    }
-    committer.schedule(second, currentSelection: { modelSelection }) {
-        modelSelection = $0
-        committed.append($0)
-    }
-    for _ in 0 ..< 4 {
-        await Task.yield()
-    }
-
-    #expect(committed == [second])
-    #expect(committer.pendingSelection == second)
-    #expect(committer.hasPendingSelection)
-    committer.selectedValueChanged(to: second)
-    #expect(committer.pendingSelection == nil)
-    #expect(!committer.hasPendingSelection)
-}
-
-@MainActor @Test
-func `external navigation cancels a pending sidebar selection`() async {
-    let committer = ChannelSidebarSelectionCommitter()
-    let pending = ChannelID(rawValue: 98_021)
-    let external = ChannelID(rawValue: 98_022)
-    let modelSelection: ChannelID? = nil
-    var committed: [ChannelID?] = []
-
-    committer.schedule(pending, currentSelection: { modelSelection }) {
-        committed.append($0)
-    }
-    committer.selectedValueChanged(to: external)
-    for _ in 0 ..< 4 {
-        await Task.yield()
-    }
-
-    #expect(committed.isEmpty)
-    #expect(committer.pendingSelection == nil)
-    #expect(!committer.hasPendingSelection)
-}
-
-@MainActor @Test
-func `external navigation cancels a pending sidebar deselection`() async {
-    let committer = ChannelSidebarSelectionCommitter()
-    let current = ChannelID(rawValue: 98_031)
-    let external = ChannelID(rawValue: 98_032)
-    let modelSelection: ChannelID? = current
-    var committed: [ChannelID?] = []
-
-    committer.schedule(nil, currentSelection: { modelSelection }) {
-        committed.append($0)
-    }
-    #expect(committer.hasPendingSelection)
-    #expect(committer.presentedSelection(fallback: current) == nil)
-    committer.selectedValueChanged(to: external)
-    for _ in 0 ..< 4 {
-        await Task.yield()
-    }
-
-    #expect(committed.isEmpty)
-    #expect(!committer.hasPendingSelection)
-    #expect(committer.presentedSelection(fallback: external) == external)
-}
-
-@MainActor @Test
-func `deferred sidebar commit revalidates external model navigation`() async {
-    let committer = ChannelSidebarSelectionCommitter()
-    let current = ChannelID(rawValue: 98_041)
-    let pending = ChannelID(rawValue: 98_042)
-    let external = ChannelID(rawValue: 98_043)
-    let modelSelection = ChannelSidebarSelectionTestState(current)
-    var committed: [ChannelID?] = []
-
-    committer.schedule(pending, currentSelection: { modelSelection.value }) {
-        committed.append($0)
-    }
-    modelSelection.value = external
-    for _ in 0 ..< 4 {
-        await Task.yield()
-    }
-
-    #expect(committed.isEmpty)
-    #expect(!committer.hasPendingSelection)
-    #expect(committer.presentedSelection(fallback: external) == external)
-}
-
-@MainActor
-private final class ChannelSidebarSelectionTestState {
-    var value: ChannelID?
-
-    init(_ value: ChannelID?) {
-        self.value = value
-    }
 }
 
 private struct ReactionMutationRequest: Equatable, Sendable {

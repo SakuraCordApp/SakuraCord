@@ -1290,10 +1290,8 @@ private struct EmojiSearchTextField: NSViewRepresentable {
         textField.cell?.usesSingleLineMode = true
         textField.isAutomaticTextCompletionEnabled = false
         textField.contentType = NSTextContentType(rawValue: "dev.sakuracord.emoji-search")
-        if #available(macOS 15.2, *) {
-            textField.allowsWritingTools = false
-            textField.allowsWritingToolsAffordance = false
-        }
+        textField.allowsWritingTools = false
+        textField.allowsWritingToolsAffordance = false
         textField.setAccessibilityLabel("Search emojis")
         return textField
     }

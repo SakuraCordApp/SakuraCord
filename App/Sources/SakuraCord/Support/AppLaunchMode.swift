@@ -14,6 +14,11 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
     let includesIncomingPrivateCallFixture: Bool
     let runsChatPerformanceAutoScroll: Bool
     let runsMemberListPerformanceAutoScroll: Bool
+    let runsAuthenticatedNavigationBenchmark: Bool
+    let runsAuthenticatedAccountSwitchBenchmark: Bool
+    let runsHistoryPaginationBenchmark: Bool
+    let runsAuthenticatedGestureScrollBenchmark: Bool
+    let runsLoadingScrollOverlapBenchmark: Bool
     let runsChatLiveArrivalStress: Bool
 
     init(arguments: [String]) {
@@ -26,10 +31,30 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
         let runsAuthenticatedAutoScroll = false
 #endif
         #if DEBUG
+            runsAuthenticatedNavigationBenchmark = arguments.contains(
+                "--debug-authenticated-navigation-performance"
+            )
+            runsAuthenticatedAccountSwitchBenchmark = arguments.contains(
+                "--debug-authenticated-account-switch-performance"
+            )
+            runsHistoryPaginationBenchmark = arguments.contains(
+                "--debug-authenticated-history-pagination-performance"
+            )
+            runsAuthenticatedGestureScrollBenchmark = arguments.contains(
+                "--debug-authenticated-gesture-scroll-performance"
+            )
+            runsLoadingScrollOverlapBenchmark = arguments.contains(
+                "--debug-authenticated-loading-scroll-overlap-performance"
+            )
             runsMemberListPerformanceAutoScroll = arguments.contains(
                 "--debug-authenticated-member-list-performance-autoscroll"
             )
         #else
+            runsAuthenticatedNavigationBenchmark = false
+            runsAuthenticatedAccountSwitchBenchmark = false
+            runsHistoryPaginationBenchmark = false
+            runsAuthenticatedGestureScrollBenchmark = false
+            runsLoadingScrollOverlapBenchmark = false
             runsMemberListPerformanceAutoScroll = false
         #endif
         includesLongServerList = arguments.contains("--offline-long-server-list")
@@ -58,6 +83,16 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
             "--offline-incoming-private-call",
         ]
         mode = arguments.contains(where: testingFlags.contains) ? .offlineTesting : .normal
+    }
+
+    var runsAnyReadOnlyPerformanceBenchmark: Bool {
+        runsChatPerformanceAutoScroll
+            || runsMemberListPerformanceAutoScroll
+            || runsAuthenticatedNavigationBenchmark
+            || runsAuthenticatedAccountSwitchBenchmark
+            || runsHistoryPaginationBenchmark
+            || runsAuthenticatedGestureScrollBenchmark
+            || runsLoadingScrollOverlapBenchmark
     }
 }
 

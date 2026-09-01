@@ -10,19 +10,12 @@ import SwiftUI
 
 extension NativeTimelineRowPainter {
     static func mediaPlayGlyph(in frame: CGRect) {
-        let configuration = NSImage.SymbolConfiguration(
+        guard let image = NativeTimelineSystemSymbolCache.configuredImage(
+            named: "play.circle.fill",
             pointSize: 36,
-            weight: .regular
-        ).applying(
-            NSImage.SymbolConfiguration(
-                paletteColors: [.labelColor]
-            )
-        )
-        guard let image = NSImage(
-            systemSymbolName: "play.circle.fill",
-            accessibilityDescription: "Play"
-        )?.withSymbolConfiguration(configuration)
-        else { return }
+            weight: .regular,
+            color: .labelColor
+        ) else { return }
         let imageSize = image.size
         let imageFrame = CGRect(
             x: frame.midX - imageSize.width / 2,
@@ -819,16 +812,12 @@ extension NativeTimelineRowPainter {
                 width: iconSize,
                 height: iconSize
             )
-            let configuration = NSImage.SymbolConfiguration(
+            if let image = NativeTimelineSystemSymbolCache.configuredImage(
+                named: systemImage,
                 pointSize: iconSize,
-                weight: .semibold
-            ).applying(
-                NSImage.SymbolConfiguration(paletteColors: [color])
-            )
-            if let image = NSImage(
-                systemSymbolName: systemImage,
-                accessibilityDescription: nil
-            )?.withSymbolConfiguration(configuration) {
+                weight: .semibold,
+                color: color
+            ) {
                 drawImage(
                     image,
                     in: iconFrame,

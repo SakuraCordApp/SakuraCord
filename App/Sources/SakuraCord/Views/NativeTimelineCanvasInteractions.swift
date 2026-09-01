@@ -479,7 +479,11 @@ extension NativeTimelineCanvasView {
                 )
             }
         ) {
-            model?.mediaViewerPresentation = presentation
+            model?.mediaViewerPresentation = mediaViewerPresentation(
+                presentation,
+                componentID: id,
+                rowIndex: rowIndex
+            )
         } else {
             NSWorkspace.shared.open(openURL)
         }
@@ -575,12 +579,14 @@ extension NativeTimelineCanvasView {
         rowIdentifier: NativeMessageTimelineItem.Identifier,
         region: NativeTimelineTextRegion
     ) -> Bool {
-        if let spoilerRange = hit.spoilerRange {
-            revealTextSpoiler(
-                itemIdentifier: rowIdentifier,
-                region: region,
-                rangeLocation: spoilerRange.location
-            )
+        if let spoilerRange = hit.spoilerRange,
+           let key = textSpoilerRevealKey(
+               itemIdentifier: rowIdentifier,
+               region: region,
+               rangeLocation: spoilerRange.location
+           ), !spoilerRevealStore.isTextRevealed(key)
+        {
+            revealTextSpoiler(key)
             return true
         }
         if let mention = hit.mention {
@@ -617,6 +623,10 @@ extension NativeTimelineCanvasView {
         ),
               spoilerRevealStore.revealText(key)
         else { return }
+    }
+
+    func revealTextSpoiler(_ key: NativeTimelineTextSpoilerRevealKey) {
+        _ = spoilerRevealStore.revealText(key)
     }
 
     func activateMention(
@@ -753,9 +763,12 @@ extension NativeTimelineCanvasView {
             $0.messageID == messageID
         }) else { return }
         let identifier = items[rowIndex].identifier
+        visibleMediaProjection = nil
+        mediaKeysByIdentifier[identifier] = nil
         invalidateBitmap(identifier)
         requestMedia(for: items[rowIndex], at: rowIndex)
         setNeedsDisplay(rowFrame(at: rowIndex))
+        window?.invalidateCursorRects(for: self)
         reconcileAnimatedMedia()
         reconcileSpoilerOverlays()
         rebuildAccessibilityProxy(for: identifier)
@@ -928,7 +941,8 @@ extension NativeTimelineCanvasView {
             canEdit: canEdit,
             canRetry: row.message.outboxState == .failed,
             canReply: actions.reply != nil,
-            canForward: actions.forward != nil && model?.canForward(row.message) == true
+            canForward: actions.forward != nil && model?.canForward(row.message) == true,
+            context: messageInteractionContext
         ) {
             guard case let .action(
                 action,
@@ -965,6 +979,8 @@ extension NativeTimelineCanvasView {
         actions: NativeTimelineRowActions
     ) -> () -> Void {
         switch action {
+        case .jumpToMessage:
+            { actions.openMessage?(row.message) }
         case .retrySending:
             { actions.retry(row.message) }
         case .addReaction:
@@ -992,8 +1008,10 @@ extension NativeTimelineCanvasView {
             }
         case .copyMessageID:
             { Self.copyText(row.message.id.description) }
+        case .copyAuthorID:
+            { Self.copyText(row.message.author.id.description) }
         case .deleteMessage:
-            { [weak self] in self?.confirmDelete(row.message) }
+            { [weak self] in self?.requestDelete(row.message) }
         }
     }
 

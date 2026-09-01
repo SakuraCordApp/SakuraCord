@@ -40,12 +40,25 @@ printf '%s\n' \
 
 "$ROOT_DIR/script/validate_release_tag.sh" "$TEMP_ROOT" v0.1.3 >/dev/null
 
+printf '%s\n' \
+  '{' \
+  '  "schemaVersion": 1,' \
+  '  "tagName": "v0.2.0-Beta-3",' \
+  '  "githubDescription": "Reviewed nightly GitHub notes.",' \
+  '  "discordAnnouncement": "**Reviewed nightly feature 🌙**\n\n**Highlights**\n- Reviewed highlight"' \
+  '}' > "$TEMP_ROOT/Releases/v0.2.0-Beta-3.json"
+
+"$ROOT_DIR/script/validate_release_tag.sh" \
+  "$TEMP_ROOT" v0.2.0-Beta-3 >/dev/null
+
 HOOK_REPO="$TEMP_ROOT/hook-repo"
 mkdir -p "$HOOK_REPO/script" "$HOOK_REPO/Releases"
 cp "$ROOT_DIR/script/pre_push_code_quality.sh" "$HOOK_REPO/script/"
 cp "$ROOT_DIR/script/validate_release_tag.sh" "$HOOK_REPO/script/"
 cp "$ROOT_DIR/script/release_automation.mjs" "$HOOK_REPO/script/"
+cp "$ROOT_DIR/script/release_metadata.sh" "$HOOK_REPO/script/"
 cp "$TEMP_ROOT/Releases/v0.1.3.json" "$HOOK_REPO/Releases/"
+cp "$TEMP_ROOT/Releases/v0.2.0-Beta-3.json" "$HOOK_REPO/Releases/"
 printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$HOOK_REPO/script/check_code_quality_snapshot.sh"
 chmod +x "$HOOK_REPO/script/"*.sh
 git -C "$HOOK_REPO" init --quiet
@@ -60,9 +73,16 @@ printf 'refs/heads/main %s refs/heads/main %s\n' "$HOOK_SHA" "$ZERO_SHA" \
   | (cd "$HOOK_REPO" && "$ROOT_DIR/script/pre_push_code_quality.sh") >/dev/null
 printf 'refs/heads/main %s refs/tags/v0.1.3 %s\n' "$HOOK_SHA" "$ZERO_SHA" \
   | (cd "$HOOK_REPO" && "$ROOT_DIR/script/pre_push_code_quality.sh") >/dev/null
+printf 'refs/heads/main %s refs/tags/v0.2.0-Beta-3 %s\n' "$HOOK_SHA" "$ZERO_SHA" \
+  | (cd "$HOOK_REPO" && "$ROOT_DIR/script/pre_push_code_quality.sh") >/dev/null
 if printf 'refs/heads/main %s refs/tags/v0.1.4 %s\n' "$HOOK_SHA" "$ZERO_SHA" \
   | (cd "$HOOK_REPO" && "$ROOT_DIR/script/pre_push_code_quality.sh") >/dev/null 2>&1; then
   echo "Pre-push validation accepted a tagged destination without its release-copy file." >&2
+  exit 1
+fi
+if printf 'refs/heads/main %s refs/tags/v0.2.0-Beta-4 %s\n' "$HOOK_SHA" "$ZERO_SHA" \
+  | (cd "$HOOK_REPO" && "$ROOT_DIR/script/pre_push_code_quality.sh") >/dev/null 2>&1; then
+  echo "Pre-push validation accepted a nightly tag without its release-copy file." >&2
   exit 1
 fi
 

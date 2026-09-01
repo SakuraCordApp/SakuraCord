@@ -30,6 +30,19 @@ struct MessageMentionResolver {
         }
     }
 
+    /// Media discovery only needs the avatar carried by user mentions. Going
+    /// through the complete presentation switch for channel, role, and
+    /// message mentions performs unrelated channel/role lookups even though
+    /// those presentations can never contribute a media key.
+    func avatarURL(_ mention: RenderedMention) -> URL? {
+        guard mention.kind == .user,
+              let userID = UserID(mention.id)
+        else { return nil }
+        let member = model.membersByID[userID]
+            ?? model.knownMentionMembers[userID]
+        return member?.guildAvatarURL ?? user(userID)?.avatarURL
+    }
+
     private func userPresentation(_ mention: RenderedMention) -> MentionPresentation {
         guard let userID = UserID(mention.id) else {
             return MentionPresentation.fallback(for: mention)

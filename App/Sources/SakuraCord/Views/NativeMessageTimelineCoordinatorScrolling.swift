@@ -198,7 +198,8 @@ extension NativeMessageTimelineCoordinator {
 
         func applySnapshot(
             to canvas: NativeTimelineCanvasView,
-            in scrollView: NSScrollView
+            in scrollView: NSScrollView,
+            redrawsMovedShortContentSynchronously: Bool = true
         ) {
             let viewportHeight = max(1, scrollView.contentView.bounds.height)
             updateDocumentSize(
@@ -208,20 +209,25 @@ extension NativeMessageTimelineCoordinator {
                 )
             )
             canvas.presentedConversationID = parent.conversation.id
+            canvas.messageInteractionContext =
+                parent.conversation.messageInteractionContext
             canvas.apply(
                 storage: storage,
                 model: parent.model,
                 actions: actions,
                 viewportWidth: layoutWidth,
                 minimumHeight: viewportHeight,
-                bottomSpacerHeight: bottomInset,
+                bottomSpacerHeight:
+                    bottomInset + trailingHistoryReserve,
                 contentOriginY: contentOriginY(
                     viewportHeight: viewportHeight
                 ),
                 historySkeleton:
                     historySkeletonPresentation(
                         viewportHeight: viewportHeight
-                    )
+                    ),
+                redrawsMovedShortContentSynchronously:
+                    redrawsMovedShortContentSynchronously
             )
         }
 
@@ -304,82 +310,172 @@ extension NativeMessageTimelineCoordinator {
         }
 
         @discardableResult
-        func clampToMaterializedHistoryBoundary() -> Bool {
-            guard parent.hasMoreMessages,
-                  leadingHistoryReserve > 0,
+        func clampToMaterializedHistoryBoundaries() -> Bool {
+            var didClamp = false
+            for direction in TimelineHistoryDirection.allCases
+            where clampToMaterializedHistoryBoundary(direction) {
+                didClamp = true
+            }
+            return didClamp
+        }
+
+        func clampToMaterializedHistoryBoundary(
+            _ direction: TimelineHistoryDirection
+        ) -> Bool {
+            guard hasMoreHistory(direction),
+                  historyReserve(direction) > 0,
                   let scrollView
             else {
-                followsMaterializedHistoryBoundary = false
+                setFollowsMaterializedHistoryBoundary(false, direction: direction)
                 return false
             }
             let clipView = scrollView.contentView
-            if !isApplyingUpdate,
-               clipView.bounds.minY > leadingHistoryReserve + 1
-            {
-                followsMaterializedHistoryBoundary = false
-            }
-            let attemptedProvisionalHistory =
-                clipView.bounds.minY < leadingHistoryReserve - 0.5
-            if attemptedProvisionalHistory {
-                followsMaterializedHistoryBoundary = true
-            }
-            let minimumY = provisionalHistoryMinimumY(
+            let boundaryY = materializedHistoryScrollBoundaryY(
+                direction,
                 viewportHeight: clipView.bounds.height
             )
-            guard clipView.bounds.minY < minimumY - 0.5 else {
-                return attemptedProvisionalHistory
+            let attemptedProvisionalHistory: Bool
+            switch direction {
+            case .earlier:
+                if !isApplyingUpdate,
+                   clipView.bounds.minY > boundaryY + 1
+                {
+                    setFollowsMaterializedHistoryBoundary(
+                        false,
+                        direction: direction
+                    )
+                }
+                attemptedProvisionalHistory =
+                    clipView.bounds.minY < boundaryY - 0.5
+            case .later:
+                if !isApplyingUpdate,
+                   clipView.bounds.minY < boundaryY - 1
+                {
+                    setFollowsMaterializedHistoryBoundary(
+                        false,
+                        direction: direction
+                    )
+                }
+                attemptedProvisionalHistory =
+                    clipView.bounds.minY > boundaryY + 0.5
             }
+            if attemptedProvisionalHistory {
+                setFollowsMaterializedHistoryBoundary(true, direction: direction)
+            }
+            let clampedY = provisionalHistoryBoundaryY(
+                direction,
+                viewportHeight: clipView.bounds.height
+            )
+            let requiresClamp = switch direction {
+            case .earlier:
+                clipView.bounds.minY < clampedY - 0.5
+            case .later:
+                clipView.bounds.minY > clampedY + 0.5
+            }
+            guard requiresClamp else { return attemptedProvisionalHistory }
             clipView.scroll(
                 to: NSPoint(
                     x: clipView.bounds.minX,
-                    y: minimumY
+                    y: clampedY
                 )
             )
             scrollView.reflectScrolledClipView(clipView)
             return true
         }
 
-        var allowsProvisionalHistory: Bool {
-            parent.isLoadingEarlier
-                || followsMaterializedHistoryBoundary
+        func allowsProvisionalHistory(
+            _ direction: TimelineHistoryDirection
+        ) -> Bool {
+            isLoadingHistory(direction)
+                || followsMaterializedHistoryBoundary(direction)
         }
 
         func provisionalHistoryMinimumY(
             viewportHeight: CGFloat
         ) -> CGFloat {
-            NativeMessageTimelineLayoutPolicy
-                .provisionalHistoryMinimumY(
-                    reserve: leadingHistoryReserve,
-                    viewportHeight: viewportHeight,
-                    allowsProvisionalHistory:
-                        parent.hasMoreMessages
-                        && allowsProvisionalHistory
-                )
+            provisionalHistoryBoundaryY(
+                .earlier,
+                viewportHeight: viewportHeight
+            )
+        }
+
+        func provisionalHistoryBoundaryY(
+            _ direction: TimelineHistoryDirection,
+            viewportHeight: CGFloat
+        ) -> CGFloat {
+            switch direction {
+            case .earlier:
+                NativeMessageTimelineLayoutPolicy
+                    .provisionalHistoryMinimumY(
+                        reserve: leadingHistoryReserve,
+                        viewportHeight: viewportHeight,
+                        allowsProvisionalHistory:
+                            parent.hasMoreMessages
+                            && allowsProvisionalHistory(direction)
+                    )
+            case .later:
+                NativeMessageTimelineLayoutPolicy
+                    .provisionalHistoryMaximumY(
+                        materializedMaximumY:
+                            materializedHistoryMaximumY(
+                                viewportHeight: viewportHeight
+                            ),
+                        reserve: trailingHistoryReserve,
+                        viewportHeight: viewportHeight,
+                        bottomInset: bottomInset,
+                        allowsProvisionalHistory:
+                            parent.hasMoreLaterMessages
+                            && allowsProvisionalHistory(direction)
+                    )
+            }
         }
 
         func historySkeletonPresentation(
             viewportHeight: CGFloat
         ) -> TimelineHistorySkeletonPresentation? {
+            let visibleRect = scrollView?.contentView.bounds ?? .zero
+            let presentations = TimelineHistoryDirection.allCases.compactMap {
+                historySkeletonPresentation(
+                    for: $0,
+                    viewportHeight: viewportHeight
+                )
+            }
+            return presentations.first(where: {
+                $0.frame.intersects(visibleRect.insetBy(dx: 0, dy: -viewportHeight))
+            }) ?? presentations.first
+        }
+
+        func historySkeletonPresentation(
+            for direction: TimelineHistoryDirection,
+            viewportHeight: CGFloat
+        ) -> TimelineHistorySkeletonPresentation? {
             guard NativeMessageTimelineLayoutPolicy.showsHistorySkeleton(
-                hasMoreMessages: parent.hasMoreMessages,
-                isLoadingEarlier: parent.isLoadingEarlier,
+                hasMoreMessages: hasMoreHistory(direction),
+                isLoading: isLoadingHistory(direction),
                 followsMaterializedHistoryBoundary:
-                    followsMaterializedHistoryBoundary
+                    followsMaterializedHistoryBoundary(direction)
             ),
-                  leadingHistoryReserve > 0
+                  historyReserve(direction) > 0
             else {
                 return nil
             }
-            let minimumY =
-                NativeMessageTimelineLayoutPolicy
-                .provisionalHistoryMinimumY(
-                    reserve: leadingHistoryReserve,
-                    viewportHeight: viewportHeight,
-                    allowsProvisionalHistory: true
+            let minimumY: CGFloat
+            let maximumY: CGFloat
+            switch direction {
+            case .earlier:
+                minimumY = NativeMessageTimelineLayoutPolicy
+                    .provisionalHistoryMinimumY(
+                        reserve: leadingHistoryReserve,
+                        viewportHeight: viewportHeight,
+                        allowsProvisionalHistory: true
+                    )
+                maximumY = contentOriginY(viewportHeight: viewportHeight)
+            case .later:
+                minimumY = materializedHistoryMaximumY(
+                    viewportHeight: viewportHeight
                 )
-            let maximumY = contentOriginY(
-                viewportHeight: viewportHeight
-            )
+                maximumY = minimumY + trailingHistoryReserve
+            }
             guard maximumY > minimumY else { return nil }
             return TimelineHistorySkeletonPresentation(
                 frame: CGRect(
@@ -391,6 +487,46 @@ extension NativeMessageTimelineCoordinator {
                 kind: parent.conversation.loaderKind,
                 conversationID: parent.conversation.id
             )
+        }
+
+        func hasMoreHistory(_ direction: TimelineHistoryDirection) -> Bool {
+            switch direction {
+            case .earlier: parent.hasMoreMessages
+            case .later: parent.hasMoreLaterMessages
+            }
+        }
+
+        func isLoadingHistory(_ direction: TimelineHistoryDirection) -> Bool {
+            switch direction {
+            case .earlier: parent.isLoadingEarlier
+            case .later: parent.isLoadingLater
+            }
+        }
+
+        func historyReserve(_ direction: TimelineHistoryDirection) -> CGFloat {
+            switch direction {
+            case .earlier: leadingHistoryReserve
+            case .later: trailingHistoryReserve
+            }
+        }
+
+        func followsMaterializedHistoryBoundary(
+            _ direction: TimelineHistoryDirection
+        ) -> Bool {
+            switch direction {
+            case .earlier: followsMaterializedHistoryBoundary
+            case .later: followsMaterializedLaterHistoryBoundary
+            }
+        }
+
+        func setFollowsMaterializedHistoryBoundary(
+            _ value: Bool,
+            direction: TimelineHistoryDirection
+        ) {
+            switch direction {
+            case .earlier: followsMaterializedHistoryBoundary = value
+            case .later: followsMaterializedLaterHistoryBoundary = value
+            }
         }
 
         func updateHistorySkeletonPresentation() {
@@ -723,7 +859,7 @@ extension NativeMessageTimelineCoordinator {
             return .message(
                 resolvedRow,
                 isUnreadBoundary: parent.unreadMessageID == row.id,
-                isHighlighted: parent.highlightedMessageID == row.id
+                isHighlighted: parent.selectedMessageID == row.id
             )
         }
 
@@ -742,7 +878,7 @@ extension NativeMessageTimelineCoordinator {
                             return
                         }
                         let didClamp =
-                            self.clampToMaterializedHistoryBoundary()
+                            self.clampToMaterializedHistoryBoundaries()
                         self.positionViewportCanvas()
                         self.updateHistorySkeletonPresentation()
                         guard !self.isApplyingUpdate else { return }
@@ -793,14 +929,7 @@ extension NativeMessageTimelineCoordinator {
                     queue: .main
                 ) { [weak self] _ in
                     MainActor.assumeIsolated {
-                        guard let self,
-                              !self.isApplyingUpdate,
-                              let scrollView = self.scrollView
-                        else { return }
-                        self.update(
-                            parent: self.parent,
-                            scrollView: scrollView
-                        )
+                        self?.scheduleModelRowsUpdate()
                     }
                 },
             ]
@@ -841,26 +970,63 @@ extension NativeMessageTimelineCoordinator {
         }
 
         func liveScrollTrackingDidEnd() {
+            let interval = Self.performanceSignposter.beginInterval(
+                "TimelineLiveScrollEnd"
+            )
+            defer {
+                Self.performanceSignposter.endInterval(
+                    "TimelineLiveScrollEnd",
+                    interval
+                )
+            }
             let state = scrollState()
             isEarlierHistoryScrollGestureActive = false
             hasEarlierHistoryScrollIntent = state.isInProvisionalHistory
+            isLaterHistoryScrollGestureActive = false
+            hasLaterHistoryScrollIntent =
+                state.isInProvisionalLaterHistory
             if !state.isInProvisionalHistory,
                followsMaterializedHistoryBoundary
             {
                 followsMaterializedHistoryBoundary = false
                 updateHistorySkeletonPresentation()
             }
-            finishScrollActivity()
+            if !state.isInProvisionalLaterHistory,
+               followsMaterializedLaterHistoryBoundary
+            {
+                followsMaterializedLaterHistoryBoundary = false
+                updateHistorySkeletonPresentation()
+            }
+            // `didEndLiveScroll` also fires when a fresh trackpad gesture
+            // interrupts momentum. Restoring hover, accessibility, and media
+            // presentation synchronously here made that new gesture wait for
+            // a full reconciliation before AppKit could move its first frame.
+            // Keep the existing idle grace alive across rapid gestures; the
+            // task created by `noteScrollActivity` performs the same restore
+            // after input has genuinely settled.
+            noteScrollActivity()
             parent.onUserScrollEnded(state)
-            requestEarlierHistoryIfNeeded(for: state)
+            requestHistoryIfNeeded(.earlier, for: state)
+            requestHistoryIfNeeded(.later, for: state)
         }
 
         func liveScrollTrackingWillBegin() {
+            let interval = Self.performanceSignposter.beginInterval(
+                "TimelineLiveScrollStart"
+            )
+            defer {
+                Self.performanceSignposter.endInterval(
+                    "TimelineLiveScrollStart",
+                    interval
+                )
+            }
             canvas?.dismissHoverPresentationForScroll()
             noteScrollActivity()
             isEarlierHistoryScrollGestureActive = true
-            hasEarlierHistoryScrollIntent = true
-            if scrollState().isNearTop {
+            isLaterHistoryScrollGestureActive = true
+            let state = scrollState()
+            if state.isNearTop {
+                hasEarlierHistoryScrollIntent = true
                 // Activate the reserved coordinates before AppKit handles the
                 // first upward delta. Initial ten-message pages can otherwise
                 // visibly pin at their oldest row until the loading-state
@@ -879,6 +1045,17 @@ extension NativeMessageTimelineCoordinator {
                 // from the gesture itself in that case.
                 reportScrollState(force: true)
             }
+            if state.isNearLoadedBottom {
+                hasLaterHistoryScrollIntent = true
+                if parent.hasMoreLaterMessages,
+                   trailingHistoryReserve > 0,
+                   !followsMaterializedLaterHistoryBoundary
+                {
+                    followsMaterializedLaterHistoryBoundary = true
+                    updateHistorySkeletonPresentation()
+                }
+                reportScrollState(force: true)
+            }
             parent.onUserScrollBegan()
         }
 
@@ -887,12 +1064,8 @@ extension NativeMessageTimelineCoordinator {
             scrollIdleTask?.cancel()
             scrollIdleTask = nil
             publishScrollActivity(false)
-            if let canvas, let scrollView {
+            if let canvas {
                 canvas.allowHoverPresentationAfterScroll()
-                canvas.prewarmRows(
-                    above: scrollView.contentView.bounds,
-                    count: 48
-                )
             }
         }
 
@@ -902,7 +1075,8 @@ extension NativeMessageTimelineCoordinator {
             canvas.updateContentOriginY(
                 contentOriginY(viewportHeight: viewportHeight),
                 minimumHeight: max(1, viewportHeight),
-                bottomSpacerHeight: bottomInset
+                bottomSpacerHeight:
+                    bottomInset + trailingHistoryReserve
             )
             let contentInsets = scrollView.contentInsets
             if contentInsets.top != 0
@@ -925,8 +1099,10 @@ extension NativeMessageTimelineCoordinator {
         }
 
         func contentOriginY(viewportHeight: CGFloat) -> CGFloat {
-            leadingHistoryReserve
-                + NativeMessageTimelineLayoutPolicy.shortContentTopInset(
+            let topInset = if parent.conversation == .search {
+                ChatDetailLayoutPolicy.timelineTopPadding
+            } else {
+                NativeMessageTimelineLayoutPolicy.shortContentTopInset(
                     viewportHeight: viewportHeight,
                     contentHeight: contentHeight,
                     bottomInset: bottomInset,
@@ -934,6 +1110,9 @@ extension NativeMessageTimelineCoordinator {
                         ChatDetailLayoutPolicy.timelineTopPadding
                             + parent.topContentInset
                 )
+            }
+            return leadingHistoryReserve
+                + topInset
         }
 
         var effectiveContentHeight: CGFloat {
@@ -943,7 +1122,7 @@ extension NativeMessageTimelineCoordinator {
                 contentOriginY: contentOriginY(
                     viewportHeight: viewportHeight
                 ),
-                contentHeight: contentHeight,
+                contentHeight: contentHeight + trailingHistoryReserve,
                 bottomInset: bottomInset,
                 viewportHeight: viewportHeight
             )
@@ -951,6 +1130,29 @@ extension NativeMessageTimelineCoordinator {
 
         var scrollableDocumentHeight: CGFloat {
             documentView?.frame.height ?? effectiveContentHeight
+        }
+
+        func materializedHistoryMaximumY(
+            viewportHeight: CGFloat
+        ) -> CGFloat {
+            contentOriginY(viewportHeight: viewportHeight) + contentHeight
+        }
+
+        func materializedHistoryScrollBoundaryY(
+            _ direction: TimelineHistoryDirection,
+            viewportHeight: CGFloat
+        ) -> CGFloat {
+            switch direction {
+            case .earlier:
+                leadingHistoryReserve
+            case .later:
+                max(
+                    0,
+                    materializedHistoryMaximumY(
+                        viewportHeight: viewportHeight
+                    ) + bottomInset - viewportHeight
+                )
+            }
         }
 
         func visibleAnchor(
@@ -1076,12 +1278,6 @@ extension NativeMessageTimelineCoordinator {
                     scrollView: scrollView
                 )
             }
-            if let canvas {
-                canvas.prewarmRows(
-                    above: scrollView.contentView.bounds,
-                    count: 48
-                )
-            }
             return true
         }
 
@@ -1102,8 +1298,23 @@ extension NativeMessageTimelineCoordinator {
                         scrollView.contentView.bounds.height
                 )
                 : 0
+            let maximumY =
+                parent.hasMoreLaterMessages
+                    ? provisionalHistoryBoundaryY(
+                        .later,
+                        viewportHeight:
+                            scrollView.contentView.bounds.height
+                    )
+                    : max(
+                        0,
+                        scrollableDocumentHeight
+                            - scrollView.contentView.bounds.height
+                    )
             scrollView.contentView.scroll(
-                to: NSPoint(x: 0, y: max(minimumY, clampedY))
+                to: NSPoint(
+                    x: 0,
+                    y: min(maximumY, max(minimumY, clampedY))
+                )
             )
             scrollView.reflectScrolledClipView(scrollView.contentView)
             positionViewportCanvas()
@@ -1117,7 +1328,14 @@ extension NativeMessageTimelineCoordinator {
             {
                 hasEarlierHistoryScrollIntent = false
             }
-            requestEarlierHistoryIfNeeded(for: state)
+            if hasLaterHistoryScrollIntent,
+               !isLaterHistoryScrollGestureActive,
+               !state.isInProvisionalLaterHistory
+            {
+                hasLaterHistoryScrollIntent = false
+            }
+            requestHistoryIfNeeded(.earlier, for: state)
+            requestHistoryIfNeeded(.later, for: state)
             guard force || state != lastReportedState else { return }
             lastReportedState = state
             pendingScrollState = state
@@ -1147,18 +1365,38 @@ extension NativeMessageTimelineCoordinator {
         /// display-rate gesture that callback can be postponed until after the
         /// viewport has consumed its entire provisional reserve. Issue at most
         /// one request per observed loading cycle directly from the native
-        /// boundary; `AppModel.loadEarlier` retains its own in-flight guard.
-        func requestEarlierHistoryIfNeeded(
+        /// boundary; the model's directional loader retains its own in-flight
+        /// guard.
+        func requestHistoryIfNeeded(
+            _ direction: TimelineHistoryDirection,
             for state: TimelineScrollState
         ) {
-            guard state.isNearTop,
-                  hasEarlierHistoryScrollIntent,
-                  parent.hasMoreMessages,
-                  !parent.isLoadingEarlier,
-                  !hasIssuedEarlierHistoryRequest
+            let isNearBoundary = switch direction {
+            case .earlier: state.isNearTop
+            case .later: state.isNearLoadedBottom
+            }
+            let hasIntent = switch direction {
+            case .earlier: hasEarlierHistoryScrollIntent
+            case .later: hasLaterHistoryScrollIntent
+            }
+            let hasIssuedRequest = switch direction {
+            case .earlier: hasIssuedEarlierHistoryRequest
+            case .later: hasIssuedLaterHistoryRequest
+            }
+            guard isNearBoundary,
+                  hasIntent,
+                  hasMoreHistory(direction),
+                  !isLoadingHistory(direction),
+                  !hasIssuedRequest
             else { return }
-            hasIssuedEarlierHistoryRequest = true
-            parent.loadEarlier()
+            switch direction {
+            case .earlier:
+                hasIssuedEarlierHistoryRequest = true
+                parent.loadEarlier()
+            case .later:
+                hasIssuedLaterHistoryRequest = true
+                parent.loadLater()
+            }
         }
 
         func publishScrollActivity(_ isActive: Bool) {
@@ -1195,20 +1433,32 @@ extension NativeMessageTimelineCoordinator {
 
         func scrollState() -> TimelineScrollState {
             guard let scrollView else {
-                return TimelineScrollState(isNearTop: true, isNearBottom: true)
+                return TimelineScrollState(
+                    isNearTop: true,
+                    isNearBottom: !parent.hasMoreLaterMessages,
+                    isNearLoadedBottom: true
+                )
             }
             let visibleRect = scrollView.contentView.bounds
             let hasEstablishedInitialPosition =
                 initialPositionConversation == parent.conversation
+            let isAtDocumentBottom =
+                NativeMessageTimelineLayoutPolicy.isAtTrueBottom(
+                    documentHeight: scrollableDocumentHeight,
+                    visibleMaximumY: visibleRect.maxY
+                )
+            let isNearLoadedBottom =
+                materializedHistoryMaximumY(
+                    viewportHeight: visibleRect.height
+                ) - visibleRect.maxY < Self.prefetchDistance
             return TimelineScrollState(
                 isNearTop:
                     visibleRect.minY - leadingHistoryReserve
                     < Self.prefetchDistance,
                 isNearBottom:
-                    NativeMessageTimelineLayoutPolicy.isAtTrueBottom(
-                        documentHeight: scrollableDocumentHeight,
-                        visibleMaximumY: visibleRect.maxY
-                    ),
+                    isAtDocumentBottom
+                    && !parent.hasMoreLaterMessages,
+                isNearLoadedBottom: isNearLoadedBottom,
                 contentFitsViewport:
                     !NativeMessageTimelineLayoutPolicy.showsVerticalScroller(
                         contentHeight: contentHeight,
@@ -1225,13 +1475,21 @@ extension NativeMessageTimelineCoordinator {
                 isInProvisionalHistory:
                     parent.hasMoreMessages
                     && visibleRect.minY
-                        < leadingHistoryReserve - 0.5
+                        < leadingHistoryReserve - 0.5,
+                isInProvisionalLaterHistory:
+                    parent.hasMoreLaterMessages
+                    && visibleRect.minY
+                        > materializedHistoryScrollBoundaryY(
+                            .later,
+                            viewportHeight: visibleRect.height
+                        ) + 0.5
             )
         }
 
         func hasReachedNewestMessageBoundary(
             in visibleRect: CGRect
         ) -> Bool {
+            guard !parent.hasMoreLaterMessages else { return false }
             guard let newestIndex = items.lastIndex(where: {
                 $0.messageID != nil
             }),
@@ -1396,6 +1654,11 @@ extension NativeMessageTimelineCoordinator {
                 var maximumScrollWork = 0.0
                 var completedTicks = 0
                 var delayedTicks = 0
+                var tickIntervals: [TimeInterval] = []
+                tickIntervals.reserveCapacity(1_500)
+                var delayedTickSamples:
+                    [NativeTimelineBenchmarkArtifact.DelayedTick] = []
+                delayedTickSamples.reserveCapacity(64)
                 var maximumTickItemCount = items.count
                 var maximumTickDocumentY = 0.0
                 var historyStarvedTicks = 0
@@ -1407,6 +1670,7 @@ extension NativeMessageTimelineCoordinator {
                 let finish: (NativeTimelineBenchmarkFinishOutcome) -> Void = { [weak self, weak canvas, weak displayLinkTicker] outcome in
                     guard !didFinish else { return }
                     didFinish = true
+                    AppScrollWorkGate.endActivity()
                     displayLinkTicker?.stop()
                     switch outcome {
                     case .completed:
@@ -1445,7 +1709,17 @@ extension NativeMessageTimelineCoordinator {
                                     outcome: outcome,
                                     completedDistance:
                                         benchmarkController.completedDistance,
-                                    elapsed: elapsed
+                                    elapsed: elapsed,
+                                    completedTicks: completedTicks,
+                                    delayedTicks: delayedTicks,
+                                    tickIntervals: tickIntervals,
+                                    delayedTickSamples: delayedTickSamples,
+                                    maximumTickInterval: maximumTickInterval,
+                                    maximumScrollWork: maximumScrollWork,
+                                    historyStarvedTicks: historyStarvedTicks,
+                                    maximumConsecutiveHistoryStarvedTicks:
+                                        maximumHistoryStarvedTicks,
+                                    renderTelemetry: canvas?.renderTelemetry
                                 )
                                 AppPerformanceSignposts.endResourceWindow(
                                     named:
@@ -1491,6 +1765,11 @@ extension NativeMessageTimelineCoordinator {
                     self?.finishScrollActivity()
                 }
                 self.performanceBenchmarkFinish = finish
+                // The deterministic workload bypasses NSEvent, but production
+                // loading isolation keys off the same cross-surface gate as a
+                // real gesture. Exercise that scheduling policy here so the
+                // permanent benchmark catches priority regressions.
+                AppScrollWorkGate.beginActivity()
                 displayLinkTicker.start(on: canvas) { [weak self, weak scrollView] in
                     guard let self, let scrollView else {
                         finish(.cancelled)
@@ -1500,9 +1779,16 @@ extension NativeMessageTimelineCoordinator {
                     let tickInterval = tickUptime - previousTickUptime
                     previousTickUptime = tickUptime
                     completedTicks += 1
+                    tickIntervals.append(tickInterval)
                     let visibleRect = scrollView.contentView.bounds
                     if tickInterval > 0.033 {
                         delayedTicks += 1
+                        delayedTickSamples.append(
+                            .init(
+                                offset: tickUptime - benchmarkStartUptime,
+                                interval: tickInterval
+                            )
+                        )
                     }
                     if tickInterval > maximumTickInterval {
                         maximumTickInterval = tickInterval

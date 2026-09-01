@@ -38,6 +38,7 @@ public final class VoiceVideoEngine: NSObject, AVCaptureVideoDataOutputSampleBuf
     public static let width = 1280
     public static let height = 720
     public static let framerate = 30
+    public static let bitrate = 2_500_000
 
     private let captureSession = AVCaptureSession()
     private let captureQueue = DispatchQueue(label: "app.sakuracord.video.capture", qos: .userInteractive)
@@ -57,7 +58,7 @@ public final class VoiceVideoEngine: NSObject, AVCaptureVideoDataOutputSampleBuf
             width: Self.width,
             height: Self.height,
             framerate: Self.framerate,
-            bitrate: 2_500_000,
+            bitrate: Self.bitrate,
             output: encodedFrameHandler
         )
         super.init()
@@ -119,7 +120,7 @@ public final class VoiceVideoEngine: NSObject, AVCaptureVideoDataOutputSampleBuf
     public func stop() {
         captureQueue.sync { [captureSession, encoder] in
             captureSession.stopRunning()
-            encoder.completeFrames()
+            encoder.finish()
         }
     }
 
@@ -145,8 +146,30 @@ public final class VoiceVideoEngine: NSObject, AVCaptureVideoDataOutputSampleBuf
 }
 
 final class H264VideoEncoder: @unchecked Sendable {
+    private final class FrameFailure: @unchecked Sendable {
+        private let lock = NSLock()
+        private var didReport = false
+        private let handler: @Sendable () -> Void
+
+        init(handler: @escaping @Sendable () -> Void) {
+            self.handler = handler
+        }
+
+        func report() {
+            let shouldReport = lock.withLock { () -> Bool in
+                guard !didReport else { return false }
+                didReport = true
+                return true
+            }
+            if shouldReport {
+                handler()
+            }
+        }
+    }
+
     private var session: VTCompressionSession?
     private let output: @Sendable (EncodedVideoFrame) -> Void
+    private let didDropFrame: @Sendable () -> Void
     private let framerate: Int
     private var shouldForceKeyframe = true
 
@@ -155,9 +178,11 @@ final class H264VideoEncoder: @unchecked Sendable {
         height: Int,
         framerate: Int,
         bitrate: Int,
+        didDropFrame: @escaping @Sendable () -> Void = {},
         output: @escaping @Sendable (EncodedVideoFrame) -> Void
     ) throws {
         self.output = output
+        self.didDropFrame = didDropFrame
         self.framerate = framerate
         var created: VTCompressionSession?
         let status = VTCompressionSessionCreate(
@@ -168,8 +193,8 @@ final class H264VideoEncoder: @unchecked Sendable {
             encoderSpecification: nil,
             imageBufferAttributes: nil,
             compressedDataAllocator: nil,
-            outputCallback: Self.outputCallback,
-            refcon: Unmanaged.passUnretained(self).toOpaque(),
+            outputCallback: nil,
+            refcon: nil,
             compressionSessionOut: &created
         )
         guard status == noErr, let created else { throw VoiceVideoError.encoderCreationFailed(status) }
@@ -183,8 +208,16 @@ final class H264VideoEncoder: @unchecked Sendable {
         // constrained profile and zero frame delay still enforce no reordering.
         try? set(kVTCompressionPropertyKey_ReferenceBufferCount, value: 1 as CFNumber)
         try set(kVTCompressionPropertyKey_AverageBitRate, value: bitrate as CFNumber)
+        // AverageBitRate alone permits large motion bursts. Discord's media
+        // transport advertises a hard maximum, so bound VideoToolbox to the
+        // same one-second byte window instead of overflowing the RTP sender.
+        try? set(
+            kVTCompressionPropertyKey_DataRateLimits,
+            value: [max(1, bitrate / 8), 1] as CFArray
+        )
         try set(kVTCompressionPropertyKey_ExpectedFrameRate, value: framerate as CFNumber)
         try set(kVTCompressionPropertyKey_MaxKeyFrameInterval, value: (framerate * 2) as CFNumber)
+        try? set(kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration, value: 2 as CFNumber)
         let prepareStatus = VTCompressionSessionPrepareToEncodeFrames(created)
         guard prepareStatus == noErr else { throw VoiceVideoError.encoderConfigurationFailed(prepareStatus) }
     }
@@ -201,23 +234,43 @@ final class H264VideoEncoder: @unchecked Sendable {
         let frameProperties: CFDictionary? = shouldForceKeyframe
             ? [kVTEncodeFrameOptionKey_ForceKeyFrame: true] as CFDictionary
             : nil
+        let failure = FrameFailure(handler: didDropFrame)
+        var infoFlags: UInt32 = 0
+        let output = self.output
         let status = VTCompressionSessionEncodeFrame(
             session,
             imageBuffer: pixelBuffer,
             presentationTimeStamp: presentationTime,
             duration: duration,
             frameProperties: frameProperties,
-            sourceFrameRefcon: nil,
-            infoFlagsOut: nil
-        )
-        if status == noErr {
-            shouldForceKeyframe = false
+            infoFlagsOut: &infoFlags
+        ) { status, infoFlags, sampleBuffer in
+            guard status == noErr,
+                  infoFlags & 0x2 == 0,
+                  let sampleBuffer,
+                  CMSampleBufferDataIsReady(sampleBuffer),
+                  let encoded = H264VideoEncoder.annexB(from: sampleBuffer)
+            else {
+                failure.report()
+                return
+            }
+            output(encoded)
         }
+        guard status == noErr, infoFlags & 0x2 == 0 else {
+            failure.report()
+            return
+        }
+        shouldForceKeyframe = false
     }
 
-    func completeFrames() {
+    /// Drains callbacks before invalidating the session. The owner must call
+    /// every encoder operation, including this one, from its serial capture
+    /// queue; VideoToolbox compression sessions are not Sendable.
+    func finish() {
         guard let session else { return }
         VTCompressionSessionCompleteFrames(session, untilPresentationTimeStamp: .invalid)
+        VTCompressionSessionInvalidate(session)
+        self.session = nil
     }
 
     func requestKeyframe() {
@@ -228,17 +281,6 @@ final class H264VideoEncoder: @unchecked Sendable {
         guard let session else { throw VoiceVideoError.encoderCreationFailed(-1) }
         let status = VTSessionSetProperty(session, key: key, value: value)
         guard status == noErr else { throw VoiceVideoError.encoderConfigurationFailed(status) }
-    }
-
-    private static let outputCallback: VTCompressionOutputCallback = { refcon, _, status, infoFlags, sampleBuffer in
-        guard status == noErr,
-              infoFlags & 0x2 == 0,
-              let refcon,
-              let sampleBuffer,
-              CMSampleBufferDataIsReady(sampleBuffer) else { return }
-        let encoder = Unmanaged<H264VideoEncoder>.fromOpaque(refcon).takeUnretainedValue()
-        guard let encoded = H264VideoEncoder.annexB(from: sampleBuffer) else { return }
-        encoder.output(encoded)
     }
 
     private static func annexB(from sampleBuffer: CMSampleBuffer) -> EncodedVideoFrame? {

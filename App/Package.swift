@@ -42,7 +42,7 @@ let package = Package(
         .executableTarget(name: "SakuraCordPluginHost", dependencies: ["SakuraCordPluginSDK"]),
         .testTarget(
             name: "SakuraCordAppTests",
-            dependencies: ["SakuraCord", "DiscordProtocol"],
+            dependencies: ["SakuraCord", "DiscordProtocol", "MediaPipeline"],
             swiftSettings: [.interoperabilityMode(.Cxx)]
         )
     ]

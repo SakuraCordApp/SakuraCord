@@ -137,7 +137,7 @@ extension DiscordRESTProvider {
             }
         }
         let payload: ChannelDTO = try await request("/channels/\(threadID)")
-        guard [10, 11, 12].contains(payload.type) else {
+        guard payload.isThread else {
             throw ChatProviderError.invalidRequest("That link does not point to a thread.")
         }
         let post = try payload.forumPost(fallbackGuildID: nil)
@@ -646,7 +646,10 @@ extension DiscordRESTProvider {
     }
 
     func publishForumPosts(parentID: ChannelID) {
-        let posts = Array(cachedForumPosts[parentID, default: [:]].values)
+        var remaining = cachedForumPosts[parentID, default: [:]]
+        let posts = cachedForumThreadOrder.compactMap {
+            remaining.removeValue(forKey: $0)
+        } + remaining.values.sorted { $0.id < $1.id }
         continuation?.yield(.forumPostsChanged(channelID: parentID, posts: posts))
     }
 
@@ -690,6 +693,9 @@ extension DiscordRESTProvider {
             guard var post = try? dto.forumPost(fallbackGuildID: fallbackGuildID),
                   let parentID = post.thread.parentID
             else { continue }
+            if !cachedForumThreadOrder.contains(post.id) {
+                cachedForumThreadOrder.append(post.id)
+            }
             if post.owner == nil, let ownerID = post.thread.ownerID,
                let ownerDTO = cachedGatewayUsersByID[ownerID.description]
             {
@@ -987,6 +993,36 @@ extension DiscordRESTProvider {
         try await updateGuildNotificationSettings(
             guildID: guildID,
             settings: settings
+        )
+    }
+
+    public func updateGuildNotificationToggle(
+        guildID: GuildID,
+        toggle: GuildNotificationToggle,
+        isEnabled: Bool
+    ) async throws {
+        let setting: (key: String, value: JSONValue) = switch toggle {
+        case .suppressEveryone:
+            ("suppress_everyone", .bool(isEnabled))
+        case .suppressRoles:
+            ("suppress_roles", .bool(isEnabled))
+        case .suppressHighlights:
+            (
+                "notify_highlights",
+                .number(Double(
+                    isEnabled
+                        ? GuildHighlightNotificationLevel.disabled.rawValue
+                        : GuildHighlightNotificationLevel.inherit.rawValue
+                ))
+            )
+        case .muteScheduledEvents:
+            ("mute_scheduled_events", .bool(isEnabled))
+        case .mobilePush:
+            ("mobile_push", .bool(isEnabled))
+        }
+        try await updateGuildNotificationSettings(
+            guildID: guildID,
+            settings: [setting.key: setting.value]
         )
     }
 
@@ -1552,11 +1588,10 @@ extension DiscordRESTProvider {
             "mobile_network_type": .string("unknown"),
         ]
         if let replyTo = draft.replyTo {
-            body["message_reference"] = .object([
-                "type": .number(0),
-                "message_id": .string(replyTo.description),
-                "channel_id": .string(draft.channelID.description),
-            ])
+            body["message_reference"] = draft.replyReferencePayload(for: replyTo)
+            if let allowedMentions = draft.replyAllowedMentionsPayload {
+                body["allowed_mentions"] = allowedMentions
+            }
         }
         if !draft.attachmentURLs.isEmpty {
             body["attachments"] = try await .array(
@@ -1715,8 +1750,10 @@ extension DiscordRESTProvider {
             )
             let uploadStarted = ContinuousClock.now
             let rawResponse: URLResponse
+            let uploadSession = restSession
+            let uploadSessionGeneration = restSessionGeneration
             do {
-                (_, rawResponse) = try await session.upload(
+                (_, rawResponse) = try await uploadSession.upload(
                     for: uploadRequest,
                     fromFile: fileURL
                 )
@@ -1728,6 +1765,10 @@ extension DiscordRESTProvider {
                     attempt: 1,
                     duration: uploadStarted.duration(to: .now),
                     error: error
+                )
+                _ = recoverRESTSessionIfNeeded(
+                    after: error,
+                    requestGeneration: uploadSessionGeneration
                 )
                 throw error
             }

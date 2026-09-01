@@ -123,28 +123,55 @@ final class NativeTimelineCanvasView: NSView {
         let frame: CGRect
     }
 
+    struct MessageJumpHighlight: Equatable {
+        let messageID: MessageID
+        let startedAt: TimeInterval
+    }
+
+    struct MessageJumpHighlightPresentation: Equatable {
+        let frame: CGRect
+        let opacity: CGFloat
+    }
+
+    struct VisibleMediaProjection {
+        let rowRange: Range<Int>
+        let keysByIdentifier:
+            [NativeMessageTimelineItem.Identifier:
+                Set<NativeTimelineMediaKey>]
+    }
+
     static let bitmapCostLimit =
         NativeTimelineMediaMemoryPolicy.rowBitmapBytes
-    static let prewarmRowLimit = 8
     var storage = NativeTimelineCanvasStorage()
     var baseContentOriginY: CGFloat = 0
     var contentOriginY: CGFloat = 0
     var historySkeleton:
         TimelineHistorySkeletonPresentation?
     var historySkeletonShimmerTask: Task<Void, Never>?
+    var messageJumpHighlight: MessageJumpHighlight?
+    var messageJumpHighlightTask: Task<Void, Never>?
     var minimumHeight: CGFloat = 1
     var bottomSpacerHeight: CGFloat = 0
     var maximumDrawDuration = 0.0
+    var totalDrawDuration = 0.0
+    var drawCount = 0
     var maximumRowRasterDuration = 0.0
     var maximumRowRasterHeight: CGFloat = 0
+    var totalRowRasterDuration = 0.0
+    var rowRasterCount = 0
+    var rowBitmapCacheHitCount = 0
+    var liveScrollDirectPaintCount = 0
     var contentOriginInvalidationCount = 0
     var synchronousShortContentRedrawCount = 0
     var bitmapCache:
         [NativeMessageTimelineItem.Identifier: CachedRowBitmap] = [:]
     var bitmapInsertionOrder: [NativeMessageTimelineItem.Identifier] = []
-    var bitmapEvictionIndex = 0
     var bitmapCost = 0
     let visibleMediaPinOwner = UUID()
+    var mediaKeysByIdentifier:
+        [NativeMessageTimelineItem.Identifier:
+            Set<NativeTimelineMediaKey>] = [:]
+    var visibleMediaProjection: VisibleMediaProjection?
     var presentationCacheInvalidationCount = 0
     var mentionPointerRegionCache:
         [NativeMessageTimelineItem.Identifier: [MentionPointerRegion]] = [:]
@@ -159,6 +186,9 @@ final class NativeTimelineCanvasView: NSView {
 
     var model: AppModel?
     var presentedConversationID: ChannelID?
+    var mediaReadyConversationID: ChannelID?
+    var mediaViewerHighlightedMessageID: MessageID?
+    var messageInteractionContext: NativeTimelineMessageInteractionContext = .conversation
     var actions: NativeTimelineRowActions?
     var onWidthChange: ((CGFloat) -> Void)?
     var usesViewportSizedBacking = false
@@ -174,7 +204,9 @@ final class NativeTimelineCanvasView: NSView {
     var actionCapsuleMessageID: MessageID?
     var actionCapsuleSize: NSSize?
     let editing = NativeTimelineEditingSession()
-    var messageProfilePopover: NSPopover?
+    let messageProfilePopoverCoordinator =
+        StableAnchoredPopoverPresenter<AnyView>.Coordinator()
+    var activeMessageProfilePopoverAnchor: StablePopoverAnchor?
     var componentChoicePopover: NSPopover?
     let mentionPopoverCoordinator =
         StableAnchoredPopoverPresenter<AnyView>.Coordinator()
@@ -229,6 +261,9 @@ final class NativeTimelineCanvasView: NSView {
     var mediaInvalidationTask: Task<Void, Never>?
     var pendingMediaInvalidations:
         Set<NativeMessageTimelineItem.Identifier> = []
+    var visibleMediaRequestTask: Task<Void, Never>?
+    var pendingVisibleMediaRequests:
+        [NativeMessageTimelineItem.Identifier: Set<NativeTimelineMediaKey>] = [:]
     lazy var mediaViewerHost = NSHostingView(
         rootView: AnyView(Color.clear.frame(width: 0, height: 0))
     )
@@ -304,7 +339,9 @@ final class NativeTimelineCanvasView: NSView {
         MainActor.assumeIsolated {
             NotificationCenter.default.removeObserver(self)
             mediaInvalidationTask?.cancel()
+            visibleMediaRequestTask?.cancel()
             historySkeletonShimmerTask?.cancel()
+            messageJumpHighlightTask?.cancel()
             cancelReactionPreviewLoads()
             NativeTimelineMediaStore.shared.removeStaticRequests(
                 owner: visibleMediaPinOwner
@@ -373,45 +410,23 @@ enum NativeTimelineRowPainter {
         let transform = NSAffineTransform()
         transform.translateX(by: rowFrame.minX, yBy: rowFrame.minY)
         transform.concat()
-        let bounds = CGRect(origin: .zero, size: rowFrame.size)
 
-        if case let .message(row, _, _) = item,
-           let highlightFrame = layout.highlightFrame
-        {
-            let currentUserID = model?.snapshot?.currentUser.id
-            let currentUserRoleIDs =
-                model?.currentUserRoleIDs(
-                    for: row.message.guildID
-                ) ?? []
-            switch MessageRowPersistentHighlight.resolve(
-                message: row.message,
-                currentUserID: currentUserID,
-                currentUserRoleIDs: currentUserRoleIDs
-            ) {
-            case .none:
-                break
-            case .ephemeral:
-                NSColor(
-                    srgbRed: 88 / 255,
-                    green: 101 / 255,
-                    blue: 242 / 255,
-                    alpha: 0.10
-                ).setFill()
-                highlightFrame.fill()
-            case .mention:
-                NSColor(
-                    srgbRed: 240 / 255,
-                    green: 178 / 255,
-                    blue: 50 / 255,
-                    alpha: 0.12
-                ).setFill()
-                highlightFrame.fill()
-            }
+        if let cardFrame = layout.searchCardFrame {
+            NSColor.separatorColor.withAlphaComponent(0.42).setStroke()
+            let border = NSBezierPath(
+                concentricRoundedRect: cardFrame.insetBy(dx: 0.5, dy: 0.5),
+                cornerRadius: 8.5
+            )
+            border.lineWidth = 1
+            border.stroke()
         }
-        if isHovered, let highlightFrame = layout.highlightFrame {
-            NSColor.labelColor.withAlphaComponent(0.055).setFill()
-            highlightFrame.fill()
-        }
+
+        drawHighlight(
+            for: item,
+            in: layout.highlightFrame,
+            model: model,
+            isHovered: isHovered
+        )
         switch item {
         case let .beginning(beginning):
             drawBeginning(
@@ -425,13 +440,11 @@ enum NativeTimelineRowPainter {
                 kind: kind,
                 layout: layout
             )
-        case let .message(row, _, isHighlighted):
+        case let .message(row, _, _):
             drawMessage(.init(
                 row: row,
                 layout: layout,
-                bounds: bounds,
                 model: model,
-                highlighted: isHighlighted,
                 isHovered: isHovered,
                 showsCompactTimestamp: showsCompactTimestamp,
                 hoveredMention: hoveredMention,
@@ -453,6 +466,75 @@ enum NativeTimelineRowPainter {
             ))
         }
         NSGraphicsContext.restoreGraphicsState()
+    }
+
+    private static func drawStripedHighlight(
+        in frame: CGRect,
+        color: NSColor,
+        backgroundAlpha: CGFloat
+    ) {
+        color.withAlphaComponent(backgroundAlpha).setFill()
+        frame.fill()
+        color.setFill()
+        CGRect(
+            x: frame.minX,
+            y: frame.minY,
+            width: min(2, frame.width),
+            height: frame.height
+        ).fill()
+    }
+
+    private static func drawHighlight(
+        for item: NativeMessageTimelineItem,
+        in frame: CGRect?,
+        model: AppModel?,
+        isHovered: Bool
+    ) {
+        guard case let .message(row, _, isHighlighted) = item,
+              let frame
+        else { return }
+        if isHighlighted {
+            drawStripedHighlight(
+                in: frame,
+                color: .controlAccentColor,
+                backgroundAlpha: 0.14
+            )
+        } else {
+            let currentUserID = model?.snapshot?.currentUser.id
+            let currentUserRoleIDs =
+                model?.currentUserRoleIDs(for: row.message.guildID) ?? []
+            switch MessageRowPersistentHighlight.resolve(
+                message: row.message,
+                currentUserID: currentUserID,
+                currentUserRoleIDs: currentUserRoleIDs
+            ) {
+            case .none:
+                break
+            case .ephemeral:
+                NSColor(
+                    srgbRed: 88 / 255,
+                    green: 101 / 255,
+                    blue: 242 / 255,
+                    alpha: 0.10
+                ).setFill()
+                frame.fill()
+            case .mention:
+                drawStripedHighlight(
+                    in: frame,
+                    color: NSColor(
+                        srgbRed: 240 / 255,
+                        green: 178 / 255,
+                        blue: 50 / 255,
+                        alpha: 1
+                    ),
+                    backgroundAlpha: 0.12
+                )
+            }
+        }
+        if isHovered {
+            NSColor.labelColor.withAlphaComponent(0.055).setFill()
+            frame.fill()
+        }
     }
 
     static func drawBeginning(

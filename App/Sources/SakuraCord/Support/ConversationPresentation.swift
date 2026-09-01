@@ -1,7 +1,7 @@
 import Foundation
 import SakuraCordModels
 
-nonisolated enum ConversationAccess: Equatable {
+nonisolated enum ConversationAccess: Equatable, Sendable {
     case checking
     case readable(canSend: Bool)
     case hidden
@@ -30,6 +30,98 @@ nonisolated enum DiscordPermissionBits {
     static let sendMessagesInThreads: UInt64 = 1 << 38
     static let sendVoiceMessages: UInt64 = 1 << 46
     static let bypassSlowmode: UInt64 = 1 << 52
+}
+
+nonisolated enum ForwardDestinationPermissionPolicy {
+    static func canSearchChannel(
+        _ channel: Channel,
+        permissions: UInt64?
+    ) -> Bool {
+        guard AppModel.supportsForwardSearchCandidate(channel.kind) else {
+            return false
+        }
+        guard channel.kind != .groupDirectMessage else { return true }
+        guard let permissions else {
+            // Discord's queryChannels path requires the resolved vocal
+            // `accessPermissions` value to contain CONNECT before the row can
+            // enter either raw channel category. Do not turn missing guild
+            // role/member state into connect access.
+            if channel.kind == .voice { return false }
+            return channel.permissionOverwrites?.isEmpty != false
+        }
+        var required = DiscordPermissionBits.viewChannel
+        if channel.kind == .voice {
+            required |= DiscordPermissionBits.connect
+        }
+        return permissions & required == required
+    }
+
+    static func canUseChannel(
+        _ channel: Channel,
+        permissions: UInt64?
+    ) -> Bool {
+        guard AppModel.supportsForwardDestination(channel.kind) else {
+            return false
+        }
+        guard channel.kind != .groupDirectMessage else {
+            return !channel.isOfficialSystemDirectMessage
+        }
+        guard canSearchChannel(channel, permissions: permissions) else {
+            return false
+        }
+        guard let permissions else {
+            return channel.permissionOverwrites?.isEmpty != false
+        }
+        let required = DiscordPermissionBits.viewChannel
+            | DiscordPermissionBits.sendMessages
+        return permissions & required == required
+    }
+
+    static func canSearchThread(
+        parent: Channel,
+        permissions: UInt64?
+    ) -> Bool {
+        guard parent.kind == .text
+            || parent.kind == .announcement
+            || parent.kind == .forum
+        else { return false }
+        guard let permissions else {
+            return parent.permissionOverwrites?.isEmpty != false
+        }
+        return permissions & DiscordPermissionBits.viewChannel != 0
+    }
+
+    static func canUseThread(
+        parent: Channel,
+        permissions: UInt64?
+    ) -> Bool {
+        guard parent.kind == .text
+            || parent.kind == .announcement
+            || parent.kind == .forum
+        else { return false }
+        guard let permissions else {
+            return parent.permissionOverwrites?.isEmpty != false
+        }
+        let required = DiscordPermissionBits.viewChannel
+            | DiscordPermissionBits.sendMessages
+        return permissions & required == required
+    }
+}
+
+nonisolated struct PermissionOverwritePrincipals: Sendable {
+    let guildID: String
+    let currentUserID: String
+    let roleIDs: Set<String>
+
+    init(
+        guildID: GuildID,
+        currentUserID: UserID,
+        roleIDs: Set<RoleID>
+    ) {
+        self.guildID = guildID.rawValue.description
+        self.currentUserID = currentUserID.rawValue.description
+        self.roleIDs = Set(roleIDs.lazy.map { $0.rawValue.description })
+    }
 }
 
 nonisolated enum ChannelIconPresentation {
@@ -161,9 +253,12 @@ nonisolated enum ConversationPermissionResolver {
         return effectivePermissions(
             guild: guild,
             channel: channel,
-            currentUserID: currentUserID,
             resolvedBasePermissions: resolvedBasePermissions,
-            roleIDs: roleIDs,
+            overwritePrincipals: PermissionOverwritePrincipals(
+                guildID: guild.id,
+                currentUserID: currentUserID,
+                roleIDs: roleIDs
+            ),
             hasCurrentRoleIdentity: hasCurrentRoleIdentity
         )
     }
@@ -176,6 +271,26 @@ nonisolated enum ConversationPermissionResolver {
         roleIDs: Set<RoleID>,
         hasCurrentRoleIdentity: Bool
     ) -> UInt64? {
+        effectivePermissions(
+            guild: guild,
+            channel: channel,
+            resolvedBasePermissions: resolvedBasePermissions,
+            overwritePrincipals: PermissionOverwritePrincipals(
+                guildID: guild.id,
+                currentUserID: currentUserID,
+                roleIDs: roleIDs
+            ),
+            hasCurrentRoleIdentity: hasCurrentRoleIdentity
+        )
+    }
+
+    static func effectivePermissions(
+        guild: Guild,
+        channel: Channel,
+        resolvedBasePermissions: UInt64?,
+        overwritePrincipals: PermissionOverwritePrincipals,
+        hasCurrentRoleIdentity: Bool
+    ) -> UInt64? {
         if guild.isOwnedByCurrentUser == true { return .max }
         guard let permissions = resolvedBasePermissions else { return nil }
         if permissions & DiscordPermissionBits.administrator != 0 { return .max }
@@ -185,9 +300,7 @@ nonisolated enum ConversationPermissionResolver {
         }
         let mask = OverwriteMask(
             overwrites,
-            guildRawID: guild.id.rawValue,
-            currentUserRawID: currentUserID.rawValue,
-            roleIDs: roleIDs
+            principals: overwritePrincipals
         )
         if !hasCurrentRoleIdentity, mask.hasRoleOverwrite { return nil }
         return mask.applied(to: permissions)
@@ -206,28 +319,22 @@ nonisolated enum ConversationPermissionResolver {
 
         init(
             _ overwrites: [ChannelPermissionOverwrite],
-            guildRawID: UInt64,
-            currentUserRawID: UInt64,
-            roleIDs: Set<RoleID>
+            principals: PermissionOverwritePrincipals
         ) {
             for overwrite in overwrites {
                 switch overwrite.type {
                 case 0:
-                    guard let rawID = Self.canonicalRawID(overwrite.id) else {
-                        hasRoleOverwrite = true
-                        continue
-                    }
-                    if rawID == guildRawID {
+                    if overwrite.id == principals.guildID {
                         everyoneAllow |= overwrite.allow
                         everyoneDeny |= overwrite.deny
                     } else {
                         hasRoleOverwrite = true
                     }
-                    guard roleIDs.contains(RoleID(rawValue: rawID)) else { continue }
+                    guard principals.roleIDs.contains(overwrite.id) else { continue }
                     roleAllow |= overwrite.allow
                     roleDeny |= overwrite.deny
                 case 1:
-                    guard Self.canonicalRawID(overwrite.id) == currentUserRawID else {
+                    guard overwrite.id == principals.currentUserID else {
                         continue
                     }
                     memberAllow |= overwrite.allow
@@ -236,13 +343,6 @@ nonisolated enum ConversationPermissionResolver {
                     continue
                 }
             }
-        }
-
-        private static func canonicalRawID(_ value: String) -> UInt64? {
-            guard let rawID = UInt64(value), value == rawID.description else {
-                return nil
-            }
-            return rawID
         }
 
         func applied(to permissions: UInt64) -> UInt64 {

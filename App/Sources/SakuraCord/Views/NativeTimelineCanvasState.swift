@@ -64,7 +64,6 @@ final class NativeTimelinePointerState {
     var didDragTextSelection = false
     var trackingArea: NSTrackingArea?
     var rowTrackingAreas: [NSTrackingArea] = []
-    var prewarmTask: Task<Void, Never>?
     var reactionMouseMonitor: Any?
 
     @discardableResult
@@ -98,11 +97,6 @@ final class NativeTimelinePointerState {
         pressedActivationTarget = nil
         hoveredReaction = nil
         return cleared
-    }
-
-    func cancelPrewarming() {
-        prewarmTask?.cancel()
-        prewarmTask = nil
     }
 
     func removeTrackingAreas(from view: NSView) {
@@ -352,11 +346,6 @@ extension NativeTimelineCanvasView {
     var rowTrackingAreas: [NSTrackingArea] {
         get { pointer.rowTrackingAreas }
         set { pointer.rowTrackingAreas = newValue }
-    }
-
-    var prewarmTask: Task<Void, Never>? {
-        get { pointer.prewarmTask }
-        set { pointer.prewarmTask = newValue }
     }
 
     var editingRowHost: NativeTimelineEditingHost? {

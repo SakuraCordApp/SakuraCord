@@ -11,8 +11,7 @@ nonisolated struct NativeMemberActivityEmojiRegion: Equatable {
     }
 }
 
-@MainActor
-enum NativeMemberActivityPresentation {
+nonisolated enum NativeMemberActivityPresentation {
     private static let emojiExpression = RegularExpressionFactory.make(
         #"<(a?):([A-Za-z0-9_~]+):([0-9]+)>"#
     )

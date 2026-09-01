@@ -1,16 +1,35 @@
 import Foundation
 import Observation
 
+nonisolated enum MediaViewerTransitionTiming {
+    static let presentationDuration: TimeInterval = 0.22
+    static let remoteImageFadeDuration: TimeInterval = 0.10
+    static let interactiveDismissalDuration: TimeInterval = 0.24
+    static let interactiveCancellationDuration: TimeInterval = 0.28
+}
+
+nonisolated enum MediaViewerPinchDismissalThresholdChange: Equatable {
+    case willCommit
+    case willCancel
+}
+
 @MainActor
 @Observable
 final class MediaViewerInteractionModel {
     nonisolated static let minimumScale: CGFloat = 1
     nonisolated static let maximumScale: CGFloat = 8
+    nonisolated static let minimumPinchDismissalMagnification: CGFloat = 0.45
+    nonisolated static let pinchDismissalThreshold: CGFloat = 0.65
+
+    private nonisolated static let minimumScaleTolerance: CGFloat = 0.001
+    private nonisolated static let pinchDismissalResetThreshold: CGFloat = 0.70
 
     let itemCount: Int
     private(set) var selection: Int
     private(set) var scale: CGFloat = minimumScale
     private(set) var offset = CGSize.zero
+    private(set) var pinchDismissalProgress: CGFloat = 0
+    private(set) var pinchDismissalWillCommit = false
     var isSaving = false
     var feedback: MediaViewerFeedback?
     var errorMessage: String?
@@ -52,6 +71,9 @@ final class MediaViewerInteractionModel {
         scale = min(Self.maximumScale, max(Self.minimumScale, value))
         if scale == Self.minimumScale {
             offset = .zero
+        } else {
+            pinchDismissalProgress = 0
+            pinchDismissalWillCommit = false
         }
     }
 
@@ -62,6 +84,58 @@ final class MediaViewerInteractionModel {
     func resetZoom() {
         scale = Self.minimumScale
         offset = .zero
+        pinchDismissalProgress = 0
+        pinchDismissalWillCommit = false
+    }
+
+    @discardableResult
+    func updatePinchDismissal(
+        magnification: CGFloat
+    ) -> MediaViewerPinchDismissalThresholdChange? {
+        guard canPinchDismiss else {
+            pinchDismissalProgress = 0
+            pinchDismissalWillCommit = false
+            return nil
+        }
+        let clampedMagnification = min(
+            1,
+            max(Self.minimumPinchDismissalMagnification, magnification)
+        )
+        let linearProgress =
+            (1 - clampedMagnification)
+            / (1 - Self.minimumPinchDismissalMagnification)
+        pinchDismissalProgress = linearProgress * linearProgress
+
+        let previousWillCommit = pinchDismissalWillCommit
+        pinchDismissalWillCommit = if pinchDismissalWillCommit {
+            magnification <= Self.pinchDismissalResetThreshold
+        } else {
+            magnification <= Self.pinchDismissalThreshold
+        }
+        guard pinchDismissalWillCommit != previousWillCommit else {
+            return nil
+        }
+        return pinchDismissalWillCommit ? .willCommit : .willCancel
+    }
+
+    func shouldCommitPinchDismissal(magnification: CGFloat) -> Bool {
+        guard canPinchDismiss else { return false }
+        return pinchDismissalWillCommit
+            ? magnification <= Self.pinchDismissalResetThreshold
+            : magnification <= Self.pinchDismissalThreshold
+    }
+
+    func cancelPinchDismissal() {
+        pinchDismissalProgress = 0
+        pinchDismissalWillCommit = false
+    }
+
+    nonisolated static func isAtMinimumScale(_ scale: CGFloat) -> Bool {
+        scale <= minimumScale + minimumScaleTolerance
+    }
+
+    private var canPinchDismiss: Bool {
+        Self.isAtMinimumScale(scale)
     }
 }
 
@@ -112,6 +186,35 @@ nonisolated enum MediaViewerLayoutPolicy {
         return CGSize(
             width: availableHeight * mediaAspect,
             height: availableHeight
+        )
+    }
+
+    static func imageFrame(
+        imageSize: CGSize,
+        in frame: CGRect,
+        fillsFrame: Bool
+    ) -> CGRect {
+        guard imageSize.width > 0, imageSize.height > 0 else {
+            return frame
+        }
+        let scale = fillsFrame
+            ? max(
+                frame.width / imageSize.width,
+                frame.height / imageSize.height
+            )
+            : min(
+                frame.width / imageSize.width,
+                frame.height / imageSize.height
+            )
+        let size = CGSize(
+            width: imageSize.width * scale,
+            height: imageSize.height * scale
+        )
+        return CGRect(
+            x: frame.midX - size.width / 2,
+            y: frame.midY - size.height / 2,
+            width: size.width,
+            height: size.height
         )
     }
 

@@ -2,19 +2,14 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-# shellcheck source=worktree_runtime.sh
-source "$ROOT_DIR/script/worktree_runtime.sh"
+# shellcheck source=runtime.sh
+source "$ROOT_DIR/script/runtime.sh"
 # shellcheck source=release_metadata.sh
 source "$ROOT_DIR/script/release_metadata.sh"
 
-if [[ "$SAKURACORD_IS_MAIN_WORKTREE" -ne 1 ]]; then
-  echo "Production appcasts must be generated from the main checkout, not a linked worktree." >&2
-  exit 2
-fi
-
 RELEASE_TAG="${SAKURACORD_RELEASE_TAG:-${GITHUB_REF_NAME:-}}"
-if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "SAKURACORD_RELEASE_TAG or GITHUB_REF_NAME must use vMAJOR.MINOR.PATCH." >&2
+if ! sakuracord_is_release_tag "$RELEASE_TAG"; then
+  echo "SAKURACORD_RELEASE_TAG or GITHUB_REF_NAME must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-Beta-NUMBER." >&2
   exit 2
 fi
 if [[ -z "${SPARKLE_ED_PRIVATE_KEY:-}" ]]; then
@@ -23,7 +18,7 @@ if [[ -z "${SPARKLE_ED_PRIVATE_KEY:-}" ]]; then
 fi
 
 RELEASE_VERSION="$(sakuracord_release_version "$ROOT_DIR")"
-DMG_NAME="$(sakuracord_release_dmg_name "$RELEASE_VERSION")"
+DMG_NAME="$(sakuracord_release_dmg_name_from_tag "$RELEASE_TAG")"
 DMG_PATH="${1:-$ROOT_DIR/dist/$DMG_NAME}"
 OUTPUT_PATH="${2:-$ROOT_DIR/dist/appcast.xml}"
 RELEASE_NOTES_PATH="${3:-${SAKURACORD_RELEASE_NOTES_PATH:-}}"

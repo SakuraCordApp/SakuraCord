@@ -4,14 +4,16 @@ import SwiftUI
 
 struct MediaViewerStage: View {
     let item: RichMediaItem
-    let scale: CGFloat
-    let offset: CGSize
+    let previewImage: NSImage?
+    let isVisible: Bool
+    let transitionSource: MediaViewerTransitionSource?
+    let transitionSourceFrame: CGRect?
+    let transitionSourceVisibleFrame: CGRect?
     let horizontalInset: CGFloat
     let topInset: CGFloat
     let bottomInset: CGFloat
-    let commitScale: (CGFloat) -> Void
-    let commitOffset: (CGSize) -> Void
-    let toggleZoom: () -> Void
+    let interaction: MediaViewerInteractionModel
+    let finishPinchDismissal: (CGFloat) -> Bool
     let open: () -> Void
     let imageContextMenuActions: MediaImageContextMenuActions?
 
@@ -22,16 +24,19 @@ struct MediaViewerStage: View {
                 MediaViewerZoomableImage(
                     url: item.url,
                     isAnimated: animated,
+                    previewImage: previewImage,
                     mediaWidth: item.width,
                     mediaHeight: item.height,
-                    scale: scale,
-                    offset: offset,
+                    isVisible: isVisible,
+                    transitionSource: transitionSource,
+                    transitionSourceFrame: transitionSourceFrame,
+                    transitionSourceVisibleFrame:
+                        transitionSourceVisibleFrame,
                     horizontalInset: horizontalInset,
                     topInset: topInset,
                     bottomInset: bottomInset,
-                    commitScale: commitScale,
-                    commitOffset: commitOffset,
-                    toggleZoom: toggleZoom,
+                    interaction: interaction,
+                    finishPinchDismissal: finishPinchDismissal,
                     contextMenuActions: imageContextMenuActions
                 )
             case .video:
@@ -62,21 +67,29 @@ struct MediaViewerStage: View {
 private struct MediaViewerZoomableImage: View {
     let url: URL
     let isAnimated: Bool
+    let previewImage: NSImage?
     let mediaWidth: Int?
     let mediaHeight: Int?
-    let scale: CGFloat
-    let offset: CGSize
+    let isVisible: Bool
+    let transitionSource: MediaViewerTransitionSource?
+    let transitionSourceFrame: CGRect?
+    let transitionSourceVisibleFrame: CGRect?
     let horizontalInset: CGFloat
     let topInset: CGFloat
     let bottomInset: CGFloat
-    let commitScale: (CGFloat) -> Void
-    let commitOffset: (CGSize) -> Void
-    let toggleZoom: () -> Void
+    let interaction: MediaViewerInteractionModel
+    let finishPinchDismissal: (CGFloat) -> Bool
     let contextMenuActions: MediaImageContextMenuActions?
     @GestureState private var liveMagnification: CGFloat = 1
     @GestureState private var liveTranslation = CGSize.zero
 
     var body: some View {
+        let scale = interaction.scale
+        let offset = interaction.offset
+        let presentationProgress = isVisible
+            ? 1 - interaction.pinchDismissalProgress
+            : 0
+
         GeometryReader { proxy in
             let availableSize = proxy.size
             let restingFrame = MediaViewerLayoutPolicy.restingFrame(
@@ -118,9 +131,9 @@ private struct MediaViewerZoomableImage: View {
                 AnimatedRemoteImage(
                     url: url,
                     isLooping: isAnimated,
-                    fallbackSystemImage: "photo",
-                    fallbackInset: 24
+                    previewImage: previewImage
                 )
+                .id(url)
                 .frame(width: fittedSize.width, height: fittedSize.height)
                 .scaleEffect(effectiveScale)
                 .offset(
@@ -129,7 +142,24 @@ private struct MediaViewerZoomableImage: View {
                     y: restingFrame.midY - availableSize.height / 2
                         + effectiveOffset.height
                 )
+                .opacity(transitionSource == nil ? 1 : 0)
                 .allowsHitTesting(false)
+
+                if let transitionSource,
+                   let transitionSourceFrame,
+                   let transitionSourceVisibleFrame
+                {
+                    MediaViewerTransitionImage(
+                        url: url,
+                        isAnimated: isAnimated,
+                        source: transitionSource,
+                        sourceFrame: transitionSourceFrame,
+                        sourceVisibleFrame: transitionSourceVisibleFrame,
+                        destinationFrame: transformedFrame,
+                        presentationProgress: presentationProgress,
+                        isPresented: isVisible
+                    )
+                }
 
                 Color.clear
                     .frame(
@@ -146,9 +176,34 @@ private struct MediaViewerZoomableImage: View {
                             .updating($liveMagnification) { value, state, _ in
                                 state = value.magnification
                             }
+                            .onChanged { value in
+                                guard MediaViewerInteractionModel
+                                    .isAtMinimumScale(scale),
+                                    value.magnification < 1
+                                else {
+                                    updatePinchDismissal(magnification: 1)
+                                    return
+                                }
+                                updatePinchDismissal(
+                                    magnification: value.magnification
+                                )
+                            }
                             .onEnded { value in
-                                commitScale(scale * value.magnification)
-                                commitOffset(
+                                if MediaViewerInteractionModel
+                                    .isAtMinimumScale(scale),
+                                    value.magnification < 1
+                                {
+                                    let committed = finishPinchDismissal(
+                                        value.magnification
+                                    )
+                                    if committed {
+                                        return
+                                    }
+                                }
+                                interaction.commitScale(
+                                    scale * value.magnification
+                                )
+                                interaction.commitOffset(
                                     MediaViewerLayoutPolicy.clampedOffset(
                                         effectiveOffset,
                                         scale: scale * value.magnification,
@@ -170,7 +225,7 @@ private struct MediaViewerZoomableImage: View {
                                     width: offset.width + value.translation.width,
                                     height: offset.height + value.translation.height
                                 )
-                                commitOffset(
+                                interaction.commitOffset(
                                     MediaViewerLayoutPolicy.clampedOffset(
                                         proposed,
                                         scale: scale,
@@ -180,7 +235,10 @@ private struct MediaViewerZoomableImage: View {
                                 )
                             }
                     )
-                    .onTapGesture(count: 2, perform: toggleZoom)
+                    .onTapGesture(
+                        count: 2,
+                        perform: interaction.toggleZoom
+                    )
                     .accessibilityLabel("Media image")
                     .accessibilityValue(
                         "Zoom \(scale, format: .number.precision(.fractionLength(1))) times"
@@ -202,7 +260,7 @@ private struct MediaViewerZoomableImage: View {
                     isEnabled: effectiveScale
                         > MediaViewerInteractionModel.minimumScale
                 ) { scrollingDelta in
-                    commitOffset(
+                    interaction.commitOffset(
                         MediaViewerLayoutPolicy.offsetByScrolling(
                             offset,
                             scrollingDelta: scrollingDelta,
@@ -216,6 +274,203 @@ private struct MediaViewerZoomableImage: View {
             }
             .frame(width: availableSize.width, height: availableSize.height)
         }
+    }
+
+    private func updatePinchDismissal(magnification: CGFloat) {
+        guard let thresholdChange = interaction.updatePinchDismissal(
+            magnification: magnification
+        ) else { return }
+        let pattern: NSHapticFeedbackManager.FeedbackPattern =
+            switch thresholdChange {
+            case .willCommit:
+                .alignment
+            case .willCancel:
+                .levelChange
+            }
+        NSHapticFeedbackManager.defaultPerformer.perform(
+            pattern,
+            performanceTime: .drawCompleted
+        )
+    }
+}
+
+private struct MediaViewerTransitionImage: View {
+    private static let remoteImageHandoffStartProgress: CGFloat = 0.86
+    private static let remoteImageHandoffEndProgress: CGFloat = 0.58
+
+    let url: URL
+    let isAnimated: Bool
+    let source: MediaViewerTransitionSource
+    let sourceFrame: CGRect
+    let sourceVisibleFrame: CGRect
+    let destinationFrame: CGRect
+    let presentationProgress: CGFloat
+    let isPresented: Bool
+    @State private var presentsRemoteImage: Bool
+
+    init(
+        url: URL,
+        isAnimated: Bool,
+        source: MediaViewerTransitionSource,
+        sourceFrame: CGRect,
+        sourceVisibleFrame: CGRect,
+        destinationFrame: CGRect,
+        presentationProgress: CGFloat,
+        isPresented: Bool
+    ) {
+        self.url = url
+        self.isAnimated = isAnimated
+        self.source = source
+        self.sourceFrame = sourceFrame
+        self.sourceVisibleFrame = sourceVisibleFrame
+        self.destinationFrame = destinationFrame
+        self.presentationProgress = presentationProgress
+        self.isPresented = isPresented
+        _presentsRemoteImage = State(initialValue: isPresented)
+    }
+
+    var body: some View {
+        let progress = min(1, max(0, presentationProgress))
+        let sourceProgress = 1 - progress
+        let remoteImageOpacity = remoteImageOpacity(for: progress)
+        let clipFrame = interpolatedFrame(
+            from: sourceVisibleFrame,
+            to: destinationFrame,
+            progress: progress
+        )
+        let sourceImageFrame = MediaViewerLayoutPolicy.imageFrame(
+            imageSize: source.image.size,
+            in: sourceFrame,
+            fillsFrame: source.fillsFrame
+        )
+        let destinationImageFrame = MediaViewerLayoutPolicy.imageFrame(
+            imageSize: source.image.size,
+            in: destinationFrame,
+            fillsFrame: false
+        )
+        let imageFrame = interpolatedFrame(
+            from: sourceImageFrame,
+            to: destinationImageFrame,
+            progress: progress
+        )
+        let cornerRadii = RectangleCornerRadii(
+            topLeading: sharesEdge(\.minX) && sharesEdge(\.minY)
+                ? source.cornerRadius * sourceProgress
+                : 0,
+            bottomLeading: sharesEdge(\.minX) && sharesEdge(\.maxY)
+                ? source.cornerRadius * sourceProgress
+                : 0,
+            bottomTrailing: sharesEdge(\.maxX) && sharesEdge(\.maxY)
+                ? source.cornerRadius * sourceProgress
+                : 0,
+            topTrailing: sharesEdge(\.maxX) && sharesEdge(\.minY)
+                ? source.cornerRadius * sourceProgress
+                : 0
+        )
+
+        ZStack {
+            ZStack {
+                Image(nsImage: source.image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+
+                if presentsRemoteImage {
+                    AnimatedRemoteImage(
+                        url: url,
+                        isLooping: isAnimated,
+                        contentMode: .fit
+                    )
+                    .opacity(remoteImageOpacity)
+                    .transition(.opacity)
+                }
+            }
+            .frame(width: imageFrame.width, height: imageFrame.height)
+            .position(
+                x: imageFrame.midX - clipFrame.minX,
+                y: imageFrame.midY - clipFrame.minY
+            )
+        }
+        .frame(width: clipFrame.width, height: clipFrame.height)
+        .clipShape(UnevenRoundedRectangle(cornerRadii: cornerRadii))
+        .position(x: clipFrame.midX, y: clipFrame.midY)
+        .allowsHitTesting(false)
+        .task(id: isPresented) {
+            guard isPresented, !presentsRemoteImage else { return }
+            try? await Task.sleep(
+                for: .seconds(
+                    MediaViewerTransitionTiming.presentationDuration
+                )
+            )
+            guard !Task.isCancelled else { return }
+            withAnimation(
+                .easeOut(
+                    duration:
+                        MediaViewerTransitionTiming.remoteImageFadeDuration
+                )
+            ) {
+                presentsRemoteImage = true
+            }
+        }
+    }
+
+    private func sharesEdge(
+        _ edge: KeyPath<CGRect, CGFloat>
+    ) -> Bool {
+        abs(sourceFrame[keyPath: edge] - sourceVisibleFrame[keyPath: edge])
+            < 0.5
+    }
+
+    private func interpolatedFrame(
+        from source: CGRect,
+        to destination: CGRect,
+        progress: CGFloat
+    ) -> CGRect {
+        CGRect(
+            x: interpolatedValue(
+                from: source.minX,
+                to: destination.minX,
+                progress: progress
+            ),
+            y: interpolatedValue(
+                from: source.minY,
+                to: destination.minY,
+                progress: progress
+            ),
+            width: interpolatedValue(
+                from: source.width,
+                to: destination.width,
+                progress: progress
+            ),
+            height: interpolatedValue(
+                from: source.height,
+                to: destination.height,
+                progress: progress
+            )
+        )
+    }
+
+    private func interpolatedValue(
+        from source: CGFloat,
+        to destination: CGFloat,
+        progress: CGFloat
+    ) -> CGFloat {
+        source + (destination - source) * progress
+    }
+
+    private func remoteImageOpacity(for progress: CGFloat) -> CGFloat {
+        let normalizedProgress = min(
+            1,
+            max(
+                0,
+                (progress - Self.remoteImageHandoffEndProgress)
+                    / (
+                        Self.remoteImageHandoffStartProgress
+                            - Self.remoteImageHandoffEndProgress
+                    )
+            )
+        )
+        return normalizedProgress * normalizedProgress
+            * (3 - 2 * normalizedProgress)
     }
 }
 

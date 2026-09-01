@@ -29,6 +29,19 @@ struct ComposerView: View {
         @Bindable var model = model
         GlassEffectContainer(spacing: 8) {
             VStack(alignment: .leading, spacing: 0) {
+                if !hasActiveCommand, let reply = activeReply {
+                    let author = model.authorPresentation(for: reply)
+                    ComposerReplyHeader(
+                        authorName: author.user.displayName,
+                        avatarURL: author.user.avatarURL,
+                        roleColorHex: author.roleColorHex,
+                        mentionsAuthor: activeReplyMentionsAuthor,
+                        canMentionAuthor: author.user.id != model.snapshot?.currentUser.id,
+                        toggleMention: toggleReplyMention,
+                        cancel: cancelReply
+                    )
+                    Divider()
+                }
                 if !hasActiveCommand, !attachments.isEmpty {
                     ComposerAttachmentTray(
                         attachments: attachments,
@@ -45,33 +58,10 @@ struct ComposerView: View {
                     Divider()
                         .padding(.horizontal, 11)
                 }
-                    if !hasActiveCommand, let reply = activeReply {
-                        HStack(spacing: 7) {
-                            Image(systemName: "arrowshape.turn.up.left")
-                                .foregroundStyle(.secondary)
-                            Text("Replying to")
-                                .foregroundStyle(.secondary)
-                            Text(reply.author.displayName)
-                                .fontWeight(.semibold)
-                                .lineLimit(1)
-                            Spacer(minLength: 8)
-                            Button {
-                                cancelReply()
-                            } label: {
-                                Image(systemName: "xmark")
-                                    .frame(width: 22, height: 22)
-                            }
-                            .buttonStyle(.plain)
-                            .help("Cancel reply")
-                        }
-                        .font(.caption)
-                        .padding(.horizontal, 12)
-                        .frame(height: 30)
-                    }
-                    HStack(alignment: .bottom, spacing: 9) {
+                HStack(alignment: .bottom, spacing: 9) {
                         if !hasActiveCommand {
                             ComposerActionButton(
-                                systemImage: "plus",
+                                icon: Image(systemName: "plus"),
                                 help: "Add attachments",
                                 iconSize: 19,
                                 iconWeight: .regular
@@ -105,6 +95,12 @@ struct ComposerView: View {
                                     onSubmit: send,
                                     onEscape: handleEscapeCommand,
                                     onEditLatestMessage: editLatestMessage,
+                                    onNavigateReplySelection: { direction in
+                                        model.navigateReplySelection(
+                                            in: conversation,
+                                            direction: direction
+                                        )
+                                    },
                                     onAutocompleteCommand: handleAutocomplete,
                                     onPasteAttachments: addPastedAttachments,
                                     capturesUnfocusedTyping: true,
@@ -128,9 +124,9 @@ struct ComposerView: View {
                             if !hasActiveCommand {
                                 if model.supportedCapabilities.contains(.gifs) {
                                     ComposerActionButton(
-                                        systemImage: "rectangle.stack",
+                                        icon: Image("gif.square", bundle: .module),
                                         help: "Choose GIF",
-                                        iconSize: 18,
+                                        iconSize: 20,
                                         iconWeight: .medium
                                     ) {
                                         toggleGIFPicker()
@@ -148,7 +144,7 @@ struct ComposerView: View {
                                     }
                                 }
                                 ComposerActionButton(
-                                    systemImage: "face.smiling.inverse",
+                                    icon: Image(systemName: "face.smiling.inverse"),
                                     help: "Choose emoji",
                                     iconSize: 19,
                                     iconWeight: .medium
@@ -400,10 +396,17 @@ struct ComposerView: View {
 
     private func handleEscapeCommand() {
         guard !model.consumeEscapeForMediaViewer() else { return }
-        if showGIFPicker {
+        guard !model.consumeEscapeForUnfocusedMessageSearch() else { return }
+        if model.consumeEscapeForReply(in: conversation) {
+            return
+        } else if showGIFPicker {
             showGIFPicker = false
         } else if showEmojiPicker {
             showEmojiPicker = false
+        } else if model.consumeEscapeForComposerAttachments(in: conversation) {
+            return
+        } else if model.consumeEscapeForSupplementaryConversation() {
+            return
         } else if let conversationID = activeConversationID {
             model.completeConversationReadingAndAdvance(
                 channelID: conversationID
@@ -927,6 +930,13 @@ struct ComposerView: View {
         }
     }
 
+    private var activeReplyMentionsAuthor: Bool {
+        switch conversation {
+        case .channel: model.replyMentionsAuthor
+        case .thread: model.threadReplyMentionsAuthor
+        }
+    }
+
     private var attachments: [ForumPostAttachment] {
         model.composerAttachments(for: conversation)
     }
@@ -949,6 +959,13 @@ struct ComposerView: View {
 
     private func cancelReply() {
         model.cancelReply(in: conversation)
+    }
+
+    private func toggleReplyMention() {
+        model.setReplyMentionsAuthor(
+            !activeReplyMentionsAuthor,
+            in: conversation
+        )
     }
 }
 

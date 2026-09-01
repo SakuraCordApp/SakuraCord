@@ -3,6 +3,10 @@ import OSLog
 import SakuraCordModels
 
 let gatewayLogger = Logger(subsystem: "dev.sakuracord.SakuraCord", category: "Gateway")
+let discordPerformanceSignposter = OSSignposter(
+    subsystem: "dev.sakuracord.SakuraCord",
+    category: "PointsOfInterest"
+)
 
 nonisolated struct AttachmentUploadFile: Equatable, Sendable {
     let url: URL
@@ -17,6 +21,23 @@ nonisolated struct AttachmentUploadFile: Equatable, Sendable {
 }
 
 public actor DiscordRESTProvider: PendingCredentialChatProvider {
+    struct RESTRateLimitBucketKey: Hashable, Sendable {
+        let identifier: String
+        let majorParameter: String
+    }
+
+    struct RESTRateLimitBucketState: Sendable {
+        var limit: Int?
+        var remaining: Int?
+        var resetDate: Date
+        var resetInterval: TimeInterval?
+    }
+
+    struct RESTRateLimitReservation: Sendable {
+        let routeKey: String
+        let discoveryToken: UUID?
+    }
+
     struct ForumReadState: Sendable {
         var lastReadMessageID: MessageID?
         var mentionCount: Int
@@ -39,7 +60,9 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
 
     var credentialSource: DiscordCredentialSource
     var accountID: String?
-    let session: URLSession
+    var restSession: URLSession
+    let restSessionConfiguration: URLSessionConfiguration?
+    var restSessionGeneration = 0
     let gatewayTransport: any GatewayTransport
     let gatewayCodec: any GatewayCodec
     let gatewayEncoding: String
@@ -67,8 +90,10 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var privateChannelTasks: [UserID: Task<Channel, Error>] = [:]
     var messageSendTasks: [String: Task<Message, Error>] = [:]
     var cachedForumPosts: [ChannelID: [ChannelID: ForumPost]] = [:]
+    var cachedForumThreadOrder: [ChannelID] = []
     var cachedJoinedThreads: [ChannelID: MessageThreadSummary] = [:]
     var cachedJoinedThreadOrder: [ChannelID] = []
+    var cachedGuildNotificationSettings: [GuildID?: GuildNotificationSettings] = [:]
     var forumCatalogueTasks: [ForumCatalogueLoadKey: Task<Void, Never>] = [:]
     var forumCatalogueTaskIDs: [ForumCatalogueLoadKey: UUID] = [:]
     var forumPreviewHydrationTasks: [ChannelID: Task<Void, Never>] = [:]
@@ -78,18 +103,41 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var presenceStatus: PresenceStatus = .invisible
     var globalRateLimitDate: Date = .distantPast
     var routeRateLimitDates: [String: Date] = [:]
-    var nextRequestSlotDate: Date = .distantPast
+    var rateLimitBucketKeyByRoute:
+        [String: RESTRateLimitBucketKey] = [:]
+    var rateLimitBuckets:
+        [RESTRateLimitBucketKey: RESTRateLimitBucketState] = [:]
+    var rateLimitRoutesWithoutBuckets: Set<String> = []
+    var rateLimitDiscoveryTokenByRoute: [String: UUID] = [:]
+    var rateLimitDiscoveryWaitersByRoute:
+        [String: [UUID: CheckedContinuation<Void, Never>]] = [:]
     var requestSafetyCircuitIsOpen = false
     var unexpectedNotFoundCounts: [String: Int] = [:]
     var gatewaySession: GatewaySession?
     var gatewayEventTask: Task<Void, Never>?
     var gatewayGuildIDs: [GuildID] = []
+    // Preserve READY's raw guild membership projection independently of user
+    // hydration. A merged member can precede its UserStore row in
+    // READY_SUPPLEMENTAL, but Discord still makes it eligible immediately in
+    // the quick switcher for the selected guild.
+    var quickSwitcherGuildMemberUserIDsByGuildID: [GuildID: Set<UserID>] = [:]
+    // Bare @ uses GuildMemberStore rather than the search worker's broader
+    // message-derived membership markers.
+    var quickSwitcherJoinedMemberIDsByGuildID: [GuildID: Set<UserID>] = [:]
     var gatewayReady = false
     var initialGatewaySnapshotResult: Result<InitialGatewaySnapshot, any Error>?
     var initialGatewaySnapshotContinuation:
         CheckedContinuation<InitialGatewaySnapshot, any Error>?
     var pendingMemberGuildID: GuildID?
-    var cachedMembers: [GuildID: [Member]] = [:]
+    var cachedMembers: [GuildID: [Member]] = [:] {
+        didSet {
+            // Member arrays preserve Discord's store order. Keep a separate
+            // process-only lookup projection for bounded history/profile reads;
+            // any ordered-store mutation invalidates it atomically.
+            cachedMembersByID.removeAll(keepingCapacity: true)
+        }
+    }
+    var cachedMembersByID: [GuildID: [UserID: Member]] = [:]
     var cachedPrivateMembersByID: [UserID: Member] = [:]
     var cachedMemberListItems:
         [GuildID: [String: [GuildMemberListUpdateDTO.Item?]]] = [:]
@@ -101,12 +149,25 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var memberListSubscriptionOrder: [GuildID: [String]] = [:]
     var cachedGatewayUsersByID: [String: UserDTO] = [:]
     var cachedGatewayUserOrder: [String] = []
+    var cachedGatewayUserIDs: Set<String> = []
+    var messageSearchUserIDs: Set<UserID> = []
+    var messageSearchUserOrder: [UserID] = []
+    var lazyPrivateChannelIDs: Set<ChannelID> = []
+    var forwardSearchEligibleUserIDs: Set<UserID> = []
+    var forwardSearchEligibleUserOrder: [UserID] = []
     var cachedForwardSearchUsersByID: [UserID: User] = [:]
     var cachedForwardSearchUserOrder: [UserID] = []
     var cachedForwardSearchAliasesByGuildID: [GuildID: [UserID: String]] = [:]
     var cachedForwardSearchAliasGuildOrder: [GuildID] = []
     var loadedForwardSearchAliasGuildOrder: [GuildID] = []
     var forwardPeopleCacheDirectoryOverride: URL?
+    var forwardPeopleCachePersistenceTask: Task<Void, Never>?
+    var forwardPeopleCachePersistenceGeneration: UInt64 = 0
+    var forwardPeopleCacheWriteTask: Task<Void, Never>?
+    var forwardPeopleCacheWriteGeneration: UInt64 = 0
+    var startupSearchCacheLoadTask:
+        Task<DiscordStartupSearchCacheSnapshot, Never>?
+    var startupSearchCacheLoadGeneration: UInt64 = 0
     var cachedFriendUserIDs: Set<UserID> = []
     var cachedBlockedOrIgnoredUserIDs: Set<UserID> = []
     var cachedRelationshipNicknamesByUserID: [UserID: String] = [:]
@@ -116,6 +177,7 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var pendingMemberSearchRequestByGuild: [GuildID: String] = [:]
     var pendingRoleMemberRequests: [String: PendingRoleMemberRequest] = [:]
     var requestedHistoryMemberIDs: [GuildID: Set<UserID>] = [:]
+    var resolvingHistoryMemberIDs: [GuildID: Set<UserID>] = [:]
     var cachedGuilds: [GuildID: Guild] = [:]
     var cachedOnboardingConfigurations: [GuildID: (value: GuildOnboardingConfiguration, storedAt: Date)] = [:]
     var onboardingConfigurationTasks:
@@ -150,6 +212,13 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var pendingVoiceNegotiation: PendingVoiceNegotiation?
     var activeVoiceConnection: VoiceConnectionInfo?
     var voiceNegotiationTimeoutTask: Task<Void, Never>?
+    var applicationStreams: [ApplicationStreamKey: ApplicationStream] = [:]
+    var applicationStreamConnections:
+        [ApplicationStreamKey: ApplicationStreamConnectionInfo] = [:]
+    var pendingApplicationStreamNegotiations:
+        [ApplicationStreamKey: PendingApplicationStreamNegotiation] = [:]
+    var applicationStreamNegotiationTimeoutTasks:
+        [ApplicationStreamKey: Task<Void, Never>] = [:]
     var privateCallsByChannel: [ChannelID: PrivateCall] = [:]
     var subscribedPrivateCallChannelIDs: Set<ChannelID> = []
     #if DEBUG
@@ -224,11 +293,16 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
         usesEmojiDiskCache: Bool = true,
         usesForwardSearchPeopleDiskCache: Bool? = nil
     ) {
-        let resolvedSession = session ?? URLSession(configuration: .default)
+        let defaultRESTConfiguration = URLSessionConfiguration.default
+        let resolvedSession = session ?? URLSession(
+            configuration: defaultRESTConfiguration
+        )
+        let gatewaySession = session ?? URLSession(configuration: .default)
         credentialSource = .stored(credentials, handle)
         accountID = handle.accountID
-        self.session = resolvedSession
-        gatewayTransport = URLSessionGatewayTransport(session: resolvedSession)
+        restSession = resolvedSession
+        restSessionConfiguration = session == nil ? defaultRESTConfiguration : nil
+        gatewayTransport = URLSessionGatewayTransport(session: gatewaySession)
         gatewayCodec = ETFGatewayCodec()
         gatewayEncoding = DiscordProductionBaseline.august2026.desktopGatewayEncoding
         gatewayCompression = .zstdStream
@@ -251,11 +325,16 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
         usesEmojiDiskCache: Bool = true,
         usesForwardSearchPeopleDiskCache: Bool? = nil
     ) {
-        let resolvedSession = session ?? URLSession(configuration: .default)
+        let defaultRESTConfiguration = URLSessionConfiguration.default
+        let resolvedSession = session ?? URLSession(
+            configuration: defaultRESTConfiguration
+        )
+        let gatewaySession = session ?? URLSession(configuration: .default)
         credentialSource = .pending(pendingCredential)
         accountID = nil
-        self.session = resolvedSession
-        gatewayTransport = URLSessionGatewayTransport(session: resolvedSession)
+        restSession = resolvedSession
+        restSessionConfiguration = session == nil ? defaultRESTConfiguration : nil
+        gatewayTransport = URLSessionGatewayTransport(session: gatewaySession)
         gatewayCodec = ETFGatewayCodec()
         gatewayEncoding = DiscordProductionBaseline.august2026.desktopGatewayEncoding
         gatewayCompression = .zstdStream
@@ -281,11 +360,13 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
         usesDesktopHeartbeat: Bool = false,
         installationID: String? = nil,
         apiDiagnostics: DiscordAPIDiagnosticStore = .shared,
-        usesEmojiDiskCache: Bool = true
+        usesEmojiDiskCache: Bool = true,
+        ownsRESTSession: Bool = false
     ) {
         credentialSource = .stored(credentials, handle)
         accountID = handle.accountID
-        self.session = session
+        restSession = session
+        restSessionConfiguration = ownsRESTSession ? session.configuration : nil
         self.gatewayTransport = gatewayTransport
         self.gatewayCodec = gatewayCodec
         self.gatewayEncoding = gatewayEncoding
@@ -308,11 +389,13 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
         usesDesktopHeartbeat: Bool = false,
         installationID: String? = nil,
         apiDiagnostics: DiscordAPIDiagnosticStore = .shared,
-        usesEmojiDiskCache: Bool = true
+        usesEmojiDiskCache: Bool = true,
+        ownsRESTSession: Bool = false
     ) {
         credentialSource = .pending(pendingCredential)
         accountID = nil
-        self.session = session
+        restSession = session
+        restSessionConfiguration = ownsRESTSession ? session.configuration : nil
         self.gatewayTransport = gatewayTransport
         self.gatewayCodec = gatewayCodec
         self.gatewayEncoding = gatewayEncoding
@@ -431,8 +514,10 @@ extension DiscordRESTProvider {
         let requestStarted = ContinuousClock.now
         let data: Data
         let rawResponse: URLResponse
+        let requestSession = restSession
+        let requestSessionGeneration = restSessionGeneration
         do {
-            (data, rawResponse) = try await session.data(for: request)
+            (data, rawResponse) = try await requestSession.data(for: request)
         } catch {
             apiDiagnostics.recordHTTPFailure(
                 transport: "authentication",
@@ -441,6 +526,10 @@ extension DiscordRESTProvider {
                 attempt: 1,
                 duration: requestStarted.duration(to: .now),
                 error: error
+            )
+            _ = recoverRESTSessionIfNeeded(
+                after: error,
+                requestGeneration: requestSessionGeneration
             )
             throw error
         }
@@ -470,17 +559,51 @@ extension DiscordRESTProvider {
         ).installation.flatMap { $0.isEmpty ? nil : $0 }
     }
 
+    // Bootstrap deliberately presents the complete READY-to-snapshot assembly
+    // in one place so account-state fallbacks remain auditable.
+    // swiftlint:disable:next function_body_length
     public func bootstrap() async throws -> BootstrapSnapshot {
         continuation?.yield(.connectionChanged(.connecting))
+        let authentication = discordPerformanceSignposter.beginInterval(
+            "ProviderBootstrapAuthentication",
+            id: discordPerformanceSignposter.makeSignpostID()
+        )
         _ = try await authorizationToken()
         if usesDesktopHeartbeat {
             try await ensureInstallationID()
         }
+        discordPerformanceSignposter.endInterval(
+            "ProviderBootstrapAuthentication", authentication
+        )
         presenceStatus = statusDefaultsKey.flatMap {
             UserDefaults.standard.string(forKey: $0)
         }.flatMap(PresenceStatus.init(rawValue:)) ?? .invisible
+        beginStartupSearchCacheLoad()
+        let gatewayStartup = discordPerformanceSignposter.beginInterval(
+            "ProviderGatewayStartup",
+            id: discordPerformanceSignposter.makeSignpostID()
+        )
         try await startGateway()
+        discordPerformanceSignposter.endInterval(
+            "ProviderGatewayStartup", gatewayStartup
+        )
+        let initialSnapshotWait = discordPerformanceSignposter.beginInterval(
+            "ProviderGatewayInitialSnapshotWait",
+            id: discordPerformanceSignposter.makeSignpostID()
+        )
         let ready = try await waitForInitialGatewaySnapshot()
+        discordPerformanceSignposter.endInterval(
+            "ProviderGatewayInitialSnapshotWait", initialSnapshotWait
+        )
+        let assembly = discordPerformanceSignposter.beginInterval(
+            "ProviderBootstrapSnapshotAssembly",
+            id: discordPerformanceSignposter.makeSignpostID()
+        )
+        defer {
+            discordPerformanceSignposter.endInterval(
+                "ProviderBootstrapSnapshotAssembly", assembly
+            )
+        }
 
         // Current Discord and Swiftcord v1 source a newly authenticated account
         // from Gateway READY. Paicord performs an additional /users/@me read,
@@ -543,21 +666,40 @@ extension DiscordRESTProvider {
                     }
                 }
                 + channelsByID.values.sorted { $0.id < $1.id }
-        let startupThreads =
-            cachedForumPosts.values
-                .flatMap(\.values)
-                .map(\.thread)
-                .sorted { $0.id < $1.id }
+        let forumThreadsByID = Dictionary(
+            cachedForumPosts.values.flatMap(\.values).map { ($0.id, $0.thread) },
+            uniquingKeysWith: { _, newer in newer }
+        )
+        var remainingForumThreads = forumThreadsByID
+        let startupThreads = cachedForumThreadOrder.compactMap {
+            remainingForumThreads.removeValue(forKey: $0)
+        } + remainingForumThreads.values.sorted { $0.id < $1.id }
         let startupActiveJoinedThreads = currentActiveJoinedThreads()
         let userSearchAliasesByUserID = currentUserSearchAliasesByUserID()
         return BootstrapSnapshot(
             currentUser: user,
             knownUsers: currentKnownUsers(),
+            quickSwitcherUserIDs: currentQuickSwitcherUsers().map(\.id),
+            messageSearchUsers: currentMessageSearchUsers(),
+            messageSearchUserBoosterChannelIDs: Set(
+                (cachedChannels[nil] ?? []).lazy
+                    .filter {
+                        $0.kind == .directMessage
+                            && !self.lazyPrivateChannelIDs.contains($0.id)
+                    }
+                    .map(\.id)
+            ),
             friendUserIDs: cachedFriendUserIDs,
+            blockedOrIgnoredUserIDs: cachedBlockedOrIgnoredUserIDs,
             relationshipNicknamesByUserID: cachedRelationshipNicknamesByUserID,
             userSearchAliasesByUserID: userSearchAliasesByUserID,
+            quickSwitcherGuildMemberUserIDs: currentQuickSwitcherGuildMemberUserIDs(),
+            quickSwitcherJoinedGuildMemberUserIDs:
+                currentQuickSwitcherJoinedGuildMemberUserIDs(),
+            quickSwitcherGuildMemberAliases: currentQuickSwitcherGuildMemberAliases(),
             guilds: currentGuilds,
             guildRailItems: cachedGuildRailItems,
+            forwardGuildStoreOrder: gatewayGuildIDs,
             channels: startupChannels,
             forwardChannelStoreOrder: cachedForwardChannelStoreOrder,
             threads: startupThreads,
@@ -572,9 +714,12 @@ extension DiscordRESTProvider {
     func currentUserSearchAliasesByUserID() -> [UserID: [String]] {
         var result: [UserID: [String]] = [:]
         var seenGuildIDs = Set<GuildID>()
-        let orderedGuildIDs = loadedForwardSearchAliasGuildOrder.filter {
+        // CONNECTION_OPEN establishes GuildMemberStore's key insertion order.
+        // Cached aliases only fill gaps after that live authoritative order;
+        // putting the disk cache first changed equal-score nickname ties.
+        let orderedGuildIDs = gatewayGuildIDs.filter {
             seenGuildIDs.insert($0).inserted
-        } + gatewayGuildIDs.filter { seenGuildIDs.insert($0).inserted }
+        } + loadedForwardSearchAliasGuildOrder.filter { seenGuildIDs.insert($0).inserted }
             + cachedMembers.keys.sorted().filter { seenGuildIDs.insert($0).inserted }
             + cachedForwardSearchAliasGuildOrder.filter { seenGuildIDs.insert($0).inserted }
         for guildID in orderedGuildIDs {
@@ -594,6 +739,54 @@ extension DiscordRESTProvider {
         return result
     }
 
+    func currentQuickSwitcherGuildMemberUserIDs() -> [GuildID: [UserID]] {
+        var guildIDs = Set(gatewayGuildIDs)
+        guildIDs.formUnion(quickSwitcherGuildMemberUserIDsByGuildID.keys)
+        guildIDs.formUnion(cachedMembers.keys)
+        let result = Dictionary(uniqueKeysWithValues: guildIDs.map { guildID in
+            var remaining = quickSwitcherGuildMemberUserIDsByGuildID[guildID] ?? []
+            remaining.formUnion((cachedMembers[guildID] ?? []).map(\.id))
+            var ordered: [UserID] = []
+            for member in cachedMembers[guildID] ?? [] where remaining.remove(member.id) != nil {
+                ordered.append(member.id)
+            }
+            ordered.append(contentsOf: remaining.sorted())
+            return (guildID, ordered)
+        })
+        return result
+    }
+
+    func currentQuickSwitcherGuildMemberAliases() -> [GuildID: [UserID: String]] {
+        var guildIDs = Set(gatewayGuildIDs)
+        guildIDs.formUnion(cachedMembers.keys)
+        return Dictionary(uniqueKeysWithValues: guildIDs.map { guildID in
+            var aliases: [UserID: String] = [:]
+            for member in cachedMembers[guildID] ?? [] {
+                aliases[member.id] = forwardSearchNickname(from: member)
+            }
+            return (guildID, aliases.filter { !$0.value.isEmpty })
+        })
+    }
+
+    func currentQuickSwitcherJoinedGuildMemberUserIDs() -> [GuildID: [UserID]] {
+        Dictionary(uniqueKeysWithValues: quickSwitcherJoinedMemberIDsByGuildID.map { entry in
+            (entry.key, entry.value.sorted())
+        })
+    }
+
+    func publishUserSearchAliases() {
+        continuation?.yield(.userSearchAliasesChanged(currentUserSearchAliasesByUserID()))
+        continuation?.yield(.quickSwitcherGuildMemberUserIDsChanged(
+            currentQuickSwitcherGuildMemberUserIDs()
+        ))
+        continuation?.yield(.quickSwitcherJoinedMemberIDsChanged(
+            currentQuickSwitcherJoinedGuildMemberUserIDs()
+        ))
+        continuation?.yield(.quickSwitcherGuildMemberAliasesChanged(
+            currentQuickSwitcherGuildMemberAliases()
+        ))
+    }
+
     func currentKnownUsers() -> [User] {
         cachedGatewayUserOrder.compactMap { rawUserID -> User? in
             let userID = UserID(rawUserID)
@@ -607,17 +800,79 @@ extension DiscordRESTProvider {
         }
     }
 
+    func currentQuickSwitcherUsers() -> [User] {
+        var seen = Set<UserID>()
+        let orderedUserIDs = forwardSearchEligibleUserOrder.filter {
+            seen.insert($0).inserted
+        }
+        // Discord's quick-switcher worker mirrors the live UserStore. It does
+        // not index every user record carried by READY_SUPPLEMENTAL, nor does
+        // it restore message authors from an app-specific disk cache. READY
+        // users and members hydrated into UserStore are marked eligible at
+        // their ingestion sites and retain the same insertion order here.
+        // UserStore retains blocked/ignored relationships as searchable
+        // identities; forwarding continues to exclude them separately.
+        // Keeping this distinct from currentKnownUsers() prevents a relaunch
+        // with ForwardSearchPeople data from changing quick-switcher results.
+        return orderedUserIDs.compactMap { userID in
+            cachedGatewayUsersByID[userID.description]
+                .flatMap { try? $0.domain() } ?? cachedForwardSearchUsersByID[userID]
+        }
+    }
+
+    func currentMessageSearchUsers() -> [User] {
+        messageSearchUserOrder.compactMap { userID in
+            cachedGatewayUsersByID[userID.description].flatMap { try? $0.domain() }
+        }
+    }
+
     @discardableResult
-    func cacheGatewayUser(_ user: UserDTO) -> Bool {
+    func cacheGatewayUser(
+        _ user: UserDTO,
+        forwardSearchEligible: Bool = true,
+        includeInKnownUserStore: Bool = true,
+        messageSearchEligible: Bool? = nil
+    ) -> Bool {
         let userID = UserID(user.id)
         let previous = cachedGatewayUsersByID[user.id].flatMap { try? $0.domain() }
             ?? userID.flatMap { cachedForwardSearchUsersByID[$0] }
-        let inserted = previous == nil
-        if inserted {
+        let insertedIntoKnownUserStore = includeInKnownUserStore
+            && cachedGatewayUserIDs.insert(user.id).inserted
+        if insertedIntoKnownUserStore {
             cachedGatewayUserOrder.append(user.id)
         }
         cachedGatewayUsersByID[user.id] = user
-        return inserted || previous != (try? user.domain())
+        let becameForwardSearchEligible = userID.map {
+            forwardSearchEligible && forwardSearchEligibleUserIDs.insert($0).inserted
+        } ?? false
+        if let userID, becameForwardSearchEligible {
+            forwardSearchEligibleUserOrder.append(userID)
+        }
+        let admitsToMessageSearch = messageSearchEligible ?? includeInKnownUserStore
+        let becameMessageSearchEligible = userID.map {
+            admitsToMessageSearch && messageSearchUserIDs.insert($0).inserted
+        } ?? false
+        if let userID, becameMessageSearchEligible {
+            messageSearchUserOrder.append(userID)
+        }
+        return becameMessageSearchEligible || becameForwardSearchEligible || insertedIntoKnownUserStore
+            || previous != (try? user.domain())
+    }
+
+    @discardableResult
+    func includeCachedGatewayUserInKnownUserStore(_ rawUserID: String) -> Bool {
+        guard cachedGatewayUsersByID[rawUserID] != nil,
+              let userID = UserID(rawUserID)
+        else { return false }
+        let insertedIntoKnownUserStore = cachedGatewayUserIDs.insert(rawUserID).inserted
+        if insertedIntoKnownUserStore {
+            cachedGatewayUserOrder.append(rawUserID)
+        }
+        let insertedIntoMessageSearch = messageSearchUserIDs.insert(userID).inserted
+        if insertedIntoMessageSearch {
+            messageSearchUserOrder.append(userID)
+        }
+        return insertedIntoKnownUserStore || insertedIntoMessageSearch
     }
 
     func cacheLiveSearchUsers(_ users: [UserDTO]) {
@@ -639,10 +894,14 @@ extension DiscordRESTProvider {
         let persistentChanged = persistToMessageCache
             ? cacheForwardSearchMessageUsers(users) : false
         if persistentChanged {
-            persistForwardSearchPeopleCache()
+            scheduleForwardSearchPeopleCachePersistence()
         }
         if changed || persistentChanged {
             continuation?.yield(.knownUsersChanged(currentKnownUsers()))
+            continuation?.yield(
+                .quickSwitcherUserIDsChanged(currentQuickSwitcherUsers().map(\.id))
+            )
+            continuation?.yield(.messageSearchUsersChanged(currentMessageSearchUsers()))
         }
     }
 
@@ -836,6 +1095,32 @@ extension DiscordRESTProvider {
         }
     }
 
+    func admitCachedPrivateRecipientUsersToMessageSearch() {
+        for channel in cachedChannels[nil] ?? [] {
+            for recipientID in cachedPrivateRecipientIDsByChannelID[channel.id] ?? [] {
+                includeCachedGatewayUserInKnownUserStore(recipientID)
+            }
+        }
+    }
+
+    /// READY_SUPPLEMENTAL may carry a broad user hydration table, but Discord's
+    /// UserStore only admits the raw recipients referenced by lazy private
+    /// channels. Preserve their payload order independently of the deterministic
+    /// recipient ordering used to render a group DM.
+    func cacheLazyPrivateRecipientUsers(_ values: [ChannelDTO]) {
+        for value in values where value.type == 1 || value.type == 3 {
+            if let recipients = value.recipients {
+                for recipient in recipients {
+                    cacheGatewayUser(recipient)
+                }
+            } else {
+                for recipientID in value.recipientIDs ?? [] {
+                    includeCachedGatewayUserInKnownUserStore(recipientID)
+                }
+            }
+        }
+    }
+
     /// READY can describe private channels with only `recipient_ids`, while
     /// the corresponding UserStore records arrive in READY_SUPPLEMENTAL. The
     /// official client retains those references and resolves the recipients
@@ -940,7 +1225,7 @@ extension DiscordRESTProvider {
         let categories = Dictionary(
             uniqueKeysWithValues: values.filter { $0.type == 4 }.map { ($0.id, $0) }
         )
-        return try values.filter { $0.type != 4 }.map { dto in
+        return try values.filter { $0.type != 4 && !$0.isThread }.map { dto in
             let category = dto.parentID.flatMap { categories[$0] }
             return try dto.domain(
                 guildID: guildID,
@@ -1017,7 +1302,7 @@ extension DiscordRESTProvider {
                 "Discord Gateway is not ready to search guild members.")
         }
         let requestID = UUID().uuidString
-        let maximumResults = min(max(1, limit), 20)
+        let maximumResults = min(max(1, limit), 100)
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[Member], any Error>) in
                 if let supersededRequestID = pendingMemberSearchRequestByGuild[guildID] {
@@ -1043,7 +1328,7 @@ extension DiscordRESTProvider {
                     do {
                         try await self?.sendGateway(
                             DiscordGatewayPayloadFactory.searchMembers(
-                                guildID: guildID,
+                                guildIDs: [guildID],
                                 query: normalized,
                                 limit: maximumResults
                             )
@@ -1064,6 +1349,28 @@ extension DiscordRESTProvider {
                 )
             }
         }
+    }
+
+    public func requestQuickSwitcherMembers(
+        in guildID: GuildID, query: String, limit: Int
+    ) async throws {
+        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return }
+        guard gatewayReady else {
+            throw ChatProviderError.invalidRequest(
+                "Discord Gateway is not ready to search guild members.")
+        }
+        let maximumResults = min(max(1, limit), 100)
+        try await sendGateway(
+            DiscordGatewayPayloadFactory.searchMembers(
+                guildIDs: [guildID],
+                query: normalized.lowercased(),
+                limit: maximumResults
+            )
+        )
+        gatewayLogger.info(
+            "Sent quick-switcher member Gateway request; limit=\(maximumResults)"
+        )
     }
 
     public func members(withRole roleID: RoleID, in guildID: GuildID) async throws
@@ -1093,17 +1400,13 @@ extension DiscordRESTProvider {
         let requested = Array(userIDs.filter { seen.insert($0).inserted }.prefix(100))
         guard !requested.isEmpty else { return [] }
 
-        let cachedByID = Dictionary(
-            uniqueKeysWithValues: (cachedMembers[guildID] ?? []).map { ($0.id, $0) }
-        )
+        var cachedByID = cachedMemberIndex(guildID: guildID)
         let missing = requested.filter { cachedByID[$0] == nil }
         if !missing.isEmpty {
             try await requestMembersByID(missing, guildID: guildID)
+            cachedByID = cachedMemberIndex(guildID: guildID)
         }
-        let resolvedByID = Dictionary(
-            uniqueKeysWithValues: (cachedMembers[guildID] ?? []).map { ($0.id, $0) }
-        )
-        return requested.compactMap { resolvedByID[$0] }
+        return requested.compactMap { cachedByID[$0] }
     }
 
     public func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
@@ -1311,19 +1614,76 @@ extension DiscordRESTProvider {
     public func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
         -> MessagePage
     {
+        try await messages(
+            in: channelID,
+            anchoredAt: before.map(MessageHistoryAnchor.before) ?? .newest,
+            limit: limit
+        )
+    }
+
+    public func messages(
+        in channelID: ChannelID,
+        anchoredAt anchor: MessageHistoryAnchor,
+        limit: Int
+    ) async throws -> MessagePage {
+        try await messages(
+            in: channelID,
+            anchoredAt: anchor,
+            limit: limit,
+            resolvesMissingHistoryMembers: true
+        )
+    }
+
+    public func messagesForImmediatePresentation(
+        in channelID: ChannelID,
+        anchoredAt anchor: MessageHistoryAnchor,
+        limit: Int
+    ) async throws -> MessagePage {
+        try await messages(
+            in: channelID,
+            anchoredAt: anchor,
+            limit: limit,
+            resolvesMissingHistoryMembers: false
+        )
+    }
+
+    private func messages(
+        in channelID: ChannelID,
+        anchoredAt anchor: MessageHistoryAnchor,
+        limit: Int,
+        resolvesMissingHistoryMembers: Bool
+    ) async throws -> MessagePage {
         var query: [URLQueryItem] = []
-        if let before {
-            query.append(URLQueryItem(name: "before", value: before.description))
+        switch anchor {
+        case .newest:
+            break
+        case .before(let messageID):
+            query.append(URLQueryItem(name: "before", value: messageID.description))
+        case .after(let messageID):
+            query.append(URLQueryItem(name: "after", value: messageID.description))
+        case .around(let messageID):
+            query.append(URLQueryItem(name: "around", value: messageID.description))
         }
+        let boundedLimit = min(max(limit, 1), 100)
         query.append(
             URLQueryItem(
                 name: "limit",
-                value: String(min(max(limit, 1), 100))
+                value: String(boundedLimit)
             )
         )
         let payload: LossyList<MessageDTO> = try await request(
             "/channels/\(channelID)/messages", query: query
         )
+        let postprocess = discordPerformanceSignposter.beginInterval(
+            "MessageHistoryPostprocess",
+            id: discordPerformanceSignposter.makeSignpostID()
+        )
+        defer {
+            discordPerformanceSignposter.endInterval(
+                "MessageHistoryPostprocess",
+                postprocess
+            )
+        }
         cacheMessageSearchUsers(payload.elements.flatMap(\.searchIndexUsers))
         if payload.skippedCount > 0 {
             gatewayLogger.warning(
@@ -1333,7 +1693,19 @@ extension DiscordRESTProvider {
         var values = payload.elements.compactMap { try? $0.domain() }.sorted {
             $0.timestamp < $1.timestamp
         }
-        await hydrateHistoryMembers(&values, channelID: channelID)
+        let hydration = discordPerformanceSignposter.beginInterval(
+            "MessageHistoryMemberHydration",
+            id: discordPerformanceSignposter.makeSignpostID()
+        )
+        let memberHydration = await hydrateHistoryMembers(
+            &values,
+            channelID: channelID,
+            resolvesMissingMembers: resolvesMissingHistoryMembers
+        )
+        discordPerformanceSignposter.endInterval(
+            "MessageHistoryMemberHydration",
+            hydration
+        )
         cacheForwardSearchMessageAliases(values)
         for index in values.indices {
             if let existing = cachedMessages[values[index].id] {
@@ -1344,10 +1716,38 @@ extension DiscordRESTProvider {
             }
             cachedMessages[values[index].id] = values[index]
         }
-        return MessagePage(messages: values, hasMoreBefore: values.count == min(max(limit, 1), 100))
+        let firstID = values.first?.id
+        let lastID = values.last?.id
+        let hasMoreBefore: Bool
+        let hasMoreAfter: Bool
+        switch anchor {
+        case .newest:
+            hasMoreBefore = values.count == boundedLimit
+            hasMoreAfter = false
+        case .before:
+            hasMoreBefore = values.count == boundedLimit
+            hasMoreAfter = true
+        case .after:
+            hasMoreBefore = false
+            hasMoreAfter = values.count == boundedLimit
+        case .around(let messageID):
+            hasMoreBefore = firstID.map { $0 < messageID } ?? false
+            hasMoreAfter = lastID.map { $0 > messageID } ?? false
+        }
+        return MessagePage(
+            messages: values,
+            hasMoreBefore: hasMoreBefore,
+            hasMoreAfter: hasMoreAfter,
+            resolvedMembers: memberHydration.members,
+            hasCompleteMemberResolution: memberHydration.isComplete
+        )
     }
 
-    func hydrateHistoryMembers(_ values: inout [Message], channelID: ChannelID) async {
+    func hydrateHistoryMembers(
+        _ values: inout [Message],
+        channelID: ChannelID,
+        resolvesMissingMembers: Bool = true
+    ) async -> (members: [Member], isComplete: Bool) {
         if let guildID = cachedChannels.values.lazy.flatMap(\.self).first(where: {
             $0.id == channelID
         })?.guildID {
@@ -1356,20 +1756,37 @@ extension DiscordRESTProvider {
             }
 
             let requested = requestedHistoryMemberIDs[guildID] ?? []
-            let cached = Set((cachedMembers[guildID] ?? []).map(\.id))
+            let resolving = resolvingHistoryMemberIDs[guildID] ?? []
+            var membersByID = cachedMemberIndex(guildID: guildID)
+            let requiredUserIDs = Set(
+                DiscordMessageMemberHydration.userIDs(in: values)
+            )
             let missing = DiscordMessageMemberHydration.missingUserIDs(
                 in: values,
-                cached: cached,
+                cached: Set(membersByID.keys),
                 requested: requested
             )
-            if !missing.isEmpty {
+            let hasPendingResolution = !requiredUserIDs.isDisjoint(with: resolving)
+            var isComplete = missing.isEmpty && !hasPendingResolution
+            if resolvesMissingMembers, !missing.isEmpty {
                 requestedHistoryMemberIDs[guildID, default: []].formUnion(missing)
+                resolvingHistoryMemberIDs[guildID, default: []].formUnion(missing)
                 do {
                     try await requestMembersByID(missing, guildID: guildID)
+                    isComplete = !hasPendingResolution
+                    resolvingHistoryMemberIDs[guildID]?.subtract(missing)
+                    if resolvingHistoryMemberIDs[guildID]?.isEmpty == true {
+                        resolvingHistoryMemberIDs[guildID] = nil
+                    }
                 } catch {
+                    isComplete = false
                     requestedHistoryMemberIDs[guildID]?.subtract(missing)
                     if requestedHistoryMemberIDs[guildID]?.isEmpty == true {
                         requestedHistoryMemberIDs[guildID] = nil
+                    }
+                    resolvingHistoryMemberIDs[guildID]?.subtract(missing)
+                    if resolvingHistoryMemberIDs[guildID]?.isEmpty == true {
+                        resolvingHistoryMemberIDs[guildID] = nil
                     }
                     gatewayLogger.warning(
                         "History member lookup failed; count=\(missing.count), error=\(error.localizedDescription, privacy: .public)"
@@ -1377,16 +1794,35 @@ extension DiscordRESTProvider {
                 }
             }
 
-            let membersByID = Dictionary(
-                uniqueKeysWithValues: (cachedMembers[guildID] ?? []).map { ($0.id, $0) }
-            )
+            if !missing.isEmpty {
+                membersByID = cachedMemberIndex(guildID: guildID)
+            }
             for index in values.indices {
                 DiscordMessageMemberHydration.hydrate(
                     message: &values[index],
                     membersByID: membersByID
                 )
             }
+            return (
+                DiscordMessageMemberHydration.userIDs(in: values).compactMap {
+                    membersByID[$0]
+                },
+                isComplete
+            )
         }
+        return ([], true)
+    }
+
+    func cachedMemberIndex(guildID: GuildID) -> [UserID: Member] {
+        if let cached = cachedMembersByID[guildID] {
+            return cached
+        }
+        let indexed = Dictionary(
+            (cachedMembers[guildID] ?? []).map { ($0.id, $0) },
+            uniquingKeysWith: { _, newer in newer }
+        )
+        cachedMembersByID[guildID] = indexed
+        return indexed
     }
 
 }

@@ -12,6 +12,10 @@ struct GuildIconView: View {
             ConcentricRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(Color.secondary.opacity(0.16))
             if let iconURL {
+                StaticRemoteImage(
+                    url: iconURL,
+                    maximumPixelDimension: requestedPixelDimension
+                )
                 if animates,
                    NativeTimelineAvatarPresentation
                     .shouldDecodeAnimation(for: iconURL)
@@ -20,11 +24,7 @@ struct GuildIconView: View {
                         url: iconURL,
                         maximumPixelDimension: requestedPixelDimension
                     )
-                } else {
-                    StaticRemoteImage(
-                        url: iconURL,
-                        maximumPixelDimension: requestedPixelDimension
-                    )
+                    .transition(.identity)
                 }
             } else {
                 Image(systemName: "person.3.fill")

@@ -27,17 +27,8 @@ struct ForwardMessageWindowOverlay: View {
         // picker instead of starting permission and fuzzy-index work on open.
         .task(id: model.forwardSearchSourceRevision) {
             guard model.snapshot != nil else { return }
-            while model.selectedGuildID != nil,
-                  model.memberListGroups.isEmpty || model.guildRoles.isEmpty
-            {
-                try? await Task.sleep(for: .milliseconds(100))
-                guard !Task.isCancelled else { return }
-            }
-            try? await Task.sleep(for: .milliseconds(150))
-            guard !Task.isCancelled else { return }
-            _ = await ForwardDestinationSearchIndexCache.shared.prepare(
-                for: model,
-                priority: .utility
+            ForwardDestinationSearchIndexCache.shared.schedulePrewarm(
+                for: model
             )
         }
     }

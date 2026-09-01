@@ -141,7 +141,7 @@ actor GatewaySession {
             clientLaunchID: String? = nil,
             qosActive: Bool = false,
             qosVersion: Int = 29,
-            maximumReconnectAttempts: Int = 8,
+            maximumReconnectAttempts: Int = .max,
             maximumMessageSize: Int = 16 * 1024 * 1024,
             maximumCompressedBufferSize: Int = 8 * 1024 * 1024,
             maximumDecompressedPayloadSize: Int = 16 * 1024 * 1024,
@@ -402,6 +402,9 @@ actor GatewaySession {
         }
     }
 
+    // The receive loop deliberately owns framing, decoding, diagnostics, and
+    // lifecycle teardown so a malformed payload closes one exact socket.
+    // swiftlint:disable:next function_body_length
     private func runConnection(generation activeGeneration: Int) async -> ConnectionOutcome {
         transition(to: .connecting)
         eventContinuation.yield(.stateChanged(.connecting))
@@ -455,10 +458,26 @@ actor GatewaySession {
         do {
             while isActive(activeGeneration) {
                 let message = try await activeSocket.receive()
+                let framing = discordPerformanceSignposter.beginInterval(
+                    "GatewayPayloadFraming",
+                    id: discordPerformanceSignposter.makeSignpostID()
+                )
                 let payloads = try framer.append(message)
+                discordPerformanceSignposter.endInterval(
+                    "GatewayPayloadFraming", framing
+                )
                 for payload in payloads {
                     let envelope: GatewayEnvelope
                     do {
+                        let decoding = discordPerformanceSignposter.beginInterval(
+                            "GatewayEnvelopeDecode",
+                            id: discordPerformanceSignposter.makeSignpostID()
+                        )
+                        defer {
+                            discordPerformanceSignposter.endInterval(
+                                "GatewayEnvelopeDecode", decoding
+                            )
+                        }
                         envelope = try codec.decode(payload)
                     } catch {
                         apiDiagnostics.recordGatewayData(

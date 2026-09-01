@@ -2,23 +2,6 @@
 import Foundation
 import Testing
 
-@Test func `worktree builds isolate keychain credentials from the primary app`() {
-    #expect(
-        CredentialServiceName.resolve(bundleIdentifier: "dev.sakuracord.SakuraCord")
-            == CredentialServiceName.primary
-    )
-    #expect(
-        CredentialServiceName.resolve(bundleIdentifier: nil)
-            == CredentialServiceName.primary
-    )
-
-    let worktreeIdentifier = "dev.sakuracord.SakuraCord.worktree.wauthenticated-audi"
-    #expect(
-        CredentialServiceName.resolve(bundleIdentifier: worktreeIdentifier)
-            == "\(CredentialServiceName.primary).\(worktreeIdentifier)"
-    )
-}
-
 @Test func `insecure debug file credentials use private permissions and round trip`() async throws {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)

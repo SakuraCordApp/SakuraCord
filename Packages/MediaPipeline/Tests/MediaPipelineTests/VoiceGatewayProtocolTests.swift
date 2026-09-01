@@ -74,6 +74,38 @@ import Testing
     #expect(resumeData["seq_ack"] as? Int == 71)
 }
 
+@Test func `application stream voice identify advertises a screen stream`() throws {
+    let identify = try VoiceGatewayCodec.identify(
+        serverID: "10",
+        userID: "20",
+        sessionID: "session",
+        token: "token",
+        maxDaveProtocolVersion: 1,
+        channelID: "30",
+        videoStreamType: "screen"
+    )
+    let object = try #require(JSONSerialization.jsonObject(with: Data(identify.utf8)) as? [String: Any])
+    let data = try #require(object["d"] as? [String: Any])
+    let stream = try #require((data["streams"] as? [[String: Any]])?.first)
+
+    #expect(data["channel_id"] as? String == "30")
+    #expect(stream["type"] as? String == "screen")
+    #expect(stream["rid"] as? String == "100")
+    #expect(stream["quality"] as? Int == 100)
+}
+
+@Test func `soundshare audio advertises the context audio speaking flag`() throws {
+    let speaking = try VoiceGatewayCodec.speaking(flags: 2, ssrc: 42)
+    let object = try #require(
+        JSONSerialization.jsonObject(with: Data(speaking.utf8)) as? [String: Any]
+    )
+    let data = try #require(object["d"] as? [String: Any])
+
+    #expect(object["op"] as? Int == 5)
+    #expect(data["speaking"] as? Int == 2)
+    #expect(data["ssrc"] as? Int == 42)
+}
+
 @Test func `voice gateway video codec supports streams and sink wants`() throws {
     let protocolSelection = try VoiceGatewayCodec.selectProtocol(
         address: "127.0.0.1",
@@ -89,6 +121,53 @@ import Testing
     #expect(h264["payload_type"] as? Int == 105)
     #expect(h264["rtx_payload_type"] as? Int == 106)
 
+    let sourceAdvertisement = try VoiceGatewayCodec.video(
+        audioSSRC: 11,
+        videoSSRC: 12,
+        rtxSSRC: 13,
+        width: 2_560,
+        height: 1_440,
+        framerate: 60,
+        enabled: true,
+        maximumBitrate: 9_000_000,
+        resolutionType: .source
+    )
+    let advertisementObject = try #require(
+        JSONSerialization.jsonObject(with: Data(sourceAdvertisement.utf8)) as? [String: Any]
+    )
+    let advertisementData = try #require(advertisementObject["d"] as? [String: Any])
+    let advertisedStream = try #require(
+        (advertisementData["streams"] as? [[String: Any]])?.first
+    )
+    let advertisedResolution = try #require(
+        advertisedStream["max_resolution"] as? [String: Any]
+    )
+    #expect(advertisedStream["type"] as? String == "video")
+    #expect(advertisedStream["max_bitrate"] as? Int == 9_000_000)
+    #expect(advertisedStream["max_framerate"] as? Int == 60)
+    #expect(advertisedResolution["type"] as? String == "source")
+    #expect(advertisedResolution["width"] as? Int == 0)
+    #expect(advertisedResolution["height"] as? Int == 0)
+
+    let fixedAdvertisement = try VoiceGatewayCodec.video(
+        audioSSRC: 11,
+        videoSSRC: 12,
+        rtxSSRC: 13,
+        width: 1_280,
+        height: 720,
+        framerate: 30,
+        enabled: true
+    )
+    let fixedObject = try #require(
+        JSONSerialization.jsonObject(with: Data(fixedAdvertisement.utf8)) as? [String: Any]
+    )
+    let fixedData = try #require(fixedObject["d"] as? [String: Any])
+    let fixedStream = try #require((fixedData["streams"] as? [[String: Any]])?.first)
+    let fixedResolution = try #require(fixedStream["max_resolution"] as? [String: Any])
+    #expect(fixedResolution["type"] as? String == "fixed")
+    #expect(fixedResolution["width"] as? Int == 1_280)
+    #expect(fixedResolution["height"] as? Int == 720)
+
     let video = try VoiceGatewayCodec.decodeJSON(Data(
         #"""
         {"op":12,"d":{"user_id":"55","audio_ssrc":11,"video_ssrc":12,"rtx_ssrc":13,
@@ -103,12 +182,30 @@ import Testing
     #expect(state.userID == "55")
     #expect(state.streams.first?.width == 1280)
 
-    let wants = try VoiceGatewayCodec.videoSinkWants([12: 100, 22: 0], any: 50)
+    let wants = try VoiceGatewayCodec.videoSinkWants(
+        [12: 100, 22: 0],
+        any: 50,
+        pixelCounts: [12: 2_073_600]
+    )
     let object = try #require(JSONSerialization.jsonObject(with: Data(wants.utf8)) as? [String: Any])
-    let data = try #require(object["d"] as? [String: Int])
-    #expect(data["12"] == 100)
-    #expect(data["22"] == 0)
-    #expect(data["any"] == 50)
+    let data = try #require(object["d"] as? [String: Any])
+    #expect(data["12"] as? Int == 100)
+    #expect(data["22"] as? Int == 0)
+    #expect(data["any"] as? Int == 50)
+    let pixelCounts = try #require(data["pixelCounts"] as? [String: Int])
+    #expect(pixelCounts["12"] == 2_073_600)
+}
+
+@Test func `voice gateway sink wants tolerate current pixel count metadata`() throws {
+    let event = try VoiceGatewayCodec.decodeJSON(Data(#"""
+    {
+      "op":15,
+      "d":{"12":100,"22":0,"any":0,"pixelCounts":{"12":2073600}},
+      "seq":10
+    }
+    """#.utf8))
+
+    #expect(event.event == .videoSinkWants([12: 100, 22: 0], any: 0))
 }
 
 @Test func `voice gateway video state allows discord to omit legacy RTX fields`() throws {

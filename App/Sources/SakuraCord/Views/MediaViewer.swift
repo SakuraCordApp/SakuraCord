@@ -4,7 +4,10 @@ import SwiftUI
 struct MediaViewer: View {
     let presentation: NativeTimelineMediaViewerPresentation
     let isVisible: Bool
+    let transitionSourceFrame: CGRect?
+    let transitionSourceVisibleFrame: CGRect?
     let close: () -> Void
+    let closeInteractively: () -> Void
     @State private var interaction: MediaViewerInteractionModel
     @State private var feedbackTask: Task<Void, Never>?
     @FocusState private var keyboardNavigationIsFocused: Bool
@@ -12,11 +15,17 @@ struct MediaViewer: View {
     init(
         presentation: NativeTimelineMediaViewerPresentation,
         isVisible: Bool = true,
-        close: @escaping () -> Void
+        transitionSourceFrame: CGRect? = nil,
+        transitionSourceVisibleFrame: CGRect? = nil,
+        close: @escaping () -> Void,
+        closeInteractively: @escaping () -> Void
     ) {
         self.presentation = presentation
         self.isVisible = isVisible
+        self.transitionSourceFrame = transitionSourceFrame
+        self.transitionSourceVisibleFrame = transitionSourceVisibleFrame
         self.close = close
+        self.closeInteractively = closeInteractively
         _interaction = State(
             initialValue: MediaViewerInteractionModel(
                 itemCount: presentation.items.count,
@@ -27,25 +36,53 @@ struct MediaViewer: View {
 
     var body: some View {
         let item = presentation.items[interaction.selection]
+        let transitionSource = presentation.transitionSource.flatMap { source in
+            source.itemID == item.id
+                && transitionSourceFrame != nil
+                && transitionSourceVisibleFrame != nil
+                ? source
+                : nil
+        }
+        let usesSourceTransition = transitionSource != nil
 
         GlassEffectContainer(spacing: 12) {
             GeometryReader { proxy in
                 ZStack {
-                    Color.black.opacity(0.91)
-                        .opacity(isVisible ? 1 : 0)
-                        .contentShape(Rectangle())
-                        .onTapGesture(perform: close)
+                    if presentation.transitionSource != nil,
+                       let transitionSourceVisibleFrame
+                    {
+                        Color(nsColor: .windowBackgroundColor)
+                            .frame(
+                                width: transitionSourceVisibleFrame.width,
+                                height: transitionSourceVisibleFrame.height
+                            )
+                            .position(
+                                x: transitionSourceVisibleFrame.midX,
+                                y: transitionSourceVisibleFrame.midY
+                            )
+                            .allowsHitTesting(false)
+                    }
+
+                    MediaViewerBackdrop(
+                        isVisible: isVisible,
+                        interaction: interaction,
+                        close: close
+                    )
 
                     MediaViewerStage(
                         item: item,
-                        scale: interaction.scale,
-                        offset: interaction.offset,
+                        previewImage:
+                            presentation.timelinePreviewImages[item.id],
+                        isVisible: isVisible,
+                        transitionSource: transitionSource,
+                        transitionSourceFrame: transitionSourceFrame,
+                        transitionSourceVisibleFrame:
+                            transitionSourceVisibleFrame,
                         horizontalInset: 66,
                         topInset: MediaViewerTopChromeMetrics.mediaTopInset,
                         bottomInset: presentation.items.count > 1 ? 82 : 14,
-                        commitScale: interaction.commitScale,
-                        commitOffset: interaction.commitOffset,
-                        toggleZoom: interaction.toggleZoom,
+                        interaction: interaction,
+                        finishPinchDismissal: finishPinchDismissal,
                         open: {
                             MediaViewerActionService.openInBrowser(item.url)
                         },
@@ -58,9 +95,13 @@ struct MediaViewer: View {
                             }
                         )
                     )
-                    .id(item.id)
-                    .scaleEffect(isVisible ? 1 : 0.965)
-                    .opacity(isVisible ? 1 : 0)
+                    .modifier(
+                        MediaViewerStagePresentationEffect(
+                            isVisible: isVisible,
+                            usesSourceTransition: usesSourceTransition,
+                            interaction: interaction
+                        )
+                    )
 
                     MediaViewerHeader(
                         authorName: presentation.authorName,
@@ -75,8 +116,13 @@ struct MediaViewer: View {
                         .top,
                         MediaViewerTopChromeMetrics.outerPadding
                     )
-                    .offset(y: isVisible ? 0 : -10)
-                    .opacity(isVisible ? 1 : 0)
+                    .modifier(
+                        MediaViewerChromePresentationEffect(
+                            isVisible: isVisible,
+                            hiddenOffsetY: -10,
+                            interaction: interaction
+                        )
+                    )
 
                     MediaViewerTopControls(
                         item: item,
@@ -96,8 +142,13 @@ struct MediaViewer: View {
                         .top,
                         MediaViewerTopChromeMetrics.outerPadding
                     )
-                    .offset(y: isVisible ? 0 : -10)
-                    .opacity(isVisible ? 1 : 0)
+                    .modifier(
+                        MediaViewerChromePresentationEffect(
+                            isVisible: isVisible,
+                            hiddenOffsetY: -10,
+                            interaction: interaction
+                        )
+                    )
 
                     if presentation.items.count > 1 {
                         MediaViewerNavigationButtons(
@@ -107,7 +158,13 @@ struct MediaViewer: View {
                             moveForward: { move(1) }
                         )
                         .padding(.horizontal, 18)
-                        .opacity(isVisible ? 1 : 0)
+                        .modifier(
+                            MediaViewerChromePresentationEffect(
+                                isVisible: isVisible,
+                                hiddenOffsetY: 0,
+                                interaction: interaction
+                            )
+                        )
 
                         MediaViewerThumbnailStrip(
                             items: presentation.items,
@@ -120,8 +177,13 @@ struct MediaViewer: View {
                         )
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                         .padding(.bottom, 14)
-                        .offset(y: isVisible ? 0 : 14)
-                        .opacity(isVisible ? 1 : 0)
+                        .modifier(
+                            MediaViewerChromePresentationEffect(
+                                isVisible: isVisible,
+                                hiddenOffsetY: 14,
+                                interaction: interaction
+                            )
+                        )
                     }
 
                     if let feedback = interaction.feedback {
@@ -131,7 +193,6 @@ struct MediaViewer: View {
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
                 }
-                .animation(.easeOut(duration: 0.22), value: isVisible)
             }
         }
         .ignoresSafeArea()
@@ -202,6 +263,27 @@ struct MediaViewer: View {
         )
     }
 
+    private func finishPinchDismissal(magnification: CGFloat) -> Bool {
+        let committed = interaction.shouldCommitPinchDismissal(
+            magnification: magnification
+        )
+        if committed {
+            closeInteractively()
+        } else {
+            withAnimation(
+                .snappy(
+                    duration:
+                        MediaViewerTransitionTiming
+                            .interactiveCancellationDuration,
+                    extraBounce: 0.04
+                )
+            ) {
+                interaction.cancelPinchDismissal()
+            }
+        }
+        return committed
+    }
+
     private func copyImage(_ item: RichMediaItem) {
         Task {
             do {
@@ -250,5 +332,59 @@ struct MediaViewer: View {
                 interaction.feedback = nil
             }
         }
+    }
+}
+
+private struct MediaViewerBackdrop: View {
+    let isVisible: Bool
+    let interaction: MediaViewerInteractionModel
+    let close: () -> Void
+
+    var body: some View {
+        let presentationProgress = isVisible
+            ? 1 - interaction.pinchDismissalProgress
+            : 0
+
+        Color.black.opacity(
+            WindowModalVisualStyle.mediaViewerBackgroundDimmingOpacity
+                * presentationProgress
+        )
+        .contentShape(Rectangle())
+        .onTapGesture(perform: close)
+    }
+}
+
+private struct MediaViewerStagePresentationEffect: ViewModifier {
+    let isVisible: Bool
+    let usesSourceTransition: Bool
+    let interaction: MediaViewerInteractionModel
+
+    func body(content: Content) -> some View {
+        let presentationProgress = isVisible
+            ? 1 - interaction.pinchDismissalProgress
+            : 0
+        content
+            .scaleEffect(
+                usesSourceTransition
+                    ? 1
+                    : 0.965 + presentationProgress * 0.035
+            )
+            .opacity(usesSourceTransition ? 1 : presentationProgress)
+    }
+}
+
+private struct MediaViewerChromePresentationEffect: ViewModifier {
+    let isVisible: Bool
+    let hiddenOffsetY: CGFloat
+    let interaction: MediaViewerInteractionModel
+
+    func body(content: Content) -> some View {
+        let presentationProgress = isVisible
+            ? 1 - interaction.pinchDismissalProgress
+            : 0
+        content
+            .offset(y: hiddenOffsetY * (1 - presentationProgress))
+            .opacity(presentationProgress)
+            .scaleEffect(0.975 + presentationProgress * 0.025)
     }
 }

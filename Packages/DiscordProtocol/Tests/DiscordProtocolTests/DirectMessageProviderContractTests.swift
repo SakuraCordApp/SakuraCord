@@ -260,7 +260,7 @@ struct DirectMessageProviderContractTests {
         await provider.disconnect()
     }
 
-    @Test func `ready supplemental publishes newly known users without a REST lookup`() async throws {
+    @Test func `ready supplemental does not admit standalone hydration users`() async throws {
         DirectMessageURLProtocol.reset()
         let provider = makeProvider()
         let events = await provider.eventStream()
@@ -292,10 +292,42 @@ struct DirectMessageProviderContractTests {
         )
 
         let users = try #require(await published.value)
-        #expect(users.map(\.id) == [UserID(rawValue: 3), UserID(rawValue: 2)])
-        #expect(users.first?.id == UserID(rawValue: 3))
-        #expect(users.first?.tag == "legacy-bot#8860")
+        #expect(users.isEmpty)
+        #expect(await provider.currentMessageSearchUsers().isEmpty)
         #expect(DirectMessageURLProtocol.requests.isEmpty)
+        await provider.disconnect()
+    }
+
+    @Test func `ready supplemental admits only lazy private channel recipients in payload order`() async {
+        let provider = makeProvider()
+        await provider.receiveGatewayDispatchForTesting(
+            name: "READY_SUPPLEMENTAL",
+            data: .object([
+                "guilds": .array([]),
+                "users": .array([
+                    user(id: "9", username: "hydration", globalName: "Hydration"),
+                    user(id: "3", username: "third", globalName: "Third"),
+                    user(id: "2", username: "second", globalName: "Second"),
+                ]),
+                "lazy_private_channels": .array([
+                    .object([
+                        "id": .string("41"),
+                        "type": .number(3),
+                        "recipients": .array([
+                            user(id: "3", username: "third", globalName: "Third"),
+                            user(id: "2", username: "second", globalName: "Second"),
+                        ]),
+                    ])
+                ]),
+            ])
+        )
+
+        #expect(await provider.currentKnownUsers().map(\.id) == [
+            UserID(rawValue: 3), UserID(rawValue: 2),
+        ])
+        #expect(await provider.currentMessageSearchUsers().map(\.id) == [
+            UserID(rawValue: 3), UserID(rawValue: 2),
+        ])
         await provider.disconnect()
     }
 
@@ -351,6 +383,7 @@ struct DirectMessageProviderContractTests {
 
         let second = makeProvider(usesForwardSearchPeopleDiskCache: true)
         await second.setForwardSearchPeopleCacheDirectoryForTesting(cacheDirectory)
+        await second.beginStartupSearchCacheLoad()
         await second.receiveGatewayDispatchForTesting(
             name: "READY",
             data: .object([
@@ -363,13 +396,18 @@ struct DirectMessageProviderContractTests {
         )
 
         #expect(await second.currentKnownUsers().map(\.id) == [
-            UserID(rawValue: 2),
-            UserID(rawValue: 3),
             UserID(rawValue: 1),
+            UserID(rawValue: 3),
         ])
-        #expect(!(await second.currentKnownUsers()).contains {
-            $0.id == UserID(rawValue: 5)
-        })
+        #expect(await second.currentQuickSwitcherUsers().map(\.id) == [
+            UserID(rawValue: 1), UserID(rawValue: 3),
+        ])
+        let reloadedMemberships = await second.currentQuickSwitcherGuildMemberUserIDs()
+        #expect(reloadedMemberships[GuildID(rawValue: 7)] == nil)
+        #expect(
+            await second.currentQuickSwitcherGuildMemberAliases()[GuildID(rawValue: 7)]
+                == nil
+        )
         #expect(
             await second.currentUserSearchAliasesByUserID()[UserID(rawValue: 2)]
                 == ["Current nickname"]
@@ -378,20 +416,62 @@ struct DirectMessageProviderContractTests {
         await seedLiveForwardSearchUsers(on: second)
 
         #expect(await second.currentKnownUsers().map(\.id) == [
-            UserID(rawValue: 2),
-            UserID(rawValue: 3),
             UserID(rawValue: 1),
+            UserID(rawValue: 3),
+            UserID(rawValue: 2),
             UserID(rawValue: 4),
         ])
-        #expect(
-            await second.currentUserSearchAliasesByUserID()[UserID(rawValue: 2)]
-                == ["Current nickname", "Ready nickname"]
-        )
+        #expect(await second.currentQuickSwitcherUsers().map(\.id) == [
+            UserID(rawValue: 1), UserID(rawValue: 3),
+            UserID(rawValue: 2), UserID(rawValue: 4),
+        ])
+        let reloadedAliases = await second.currentUserSearchAliasesByUserID()
+        #expect(reloadedAliases[UserID(rawValue: 2)] == [
+            "Ready nickname", "Current nickname",
+        ])
         #expect(
             await second.currentUserSearchAliasesByUserID()[UserID(rawValue: 4)]
                 == nil
         )
+        let liveMessageMemberships = await second.currentQuickSwitcherGuildMemberUserIDs()
+        #expect(liveMessageMemberships[GuildID(rawValue: 6)] == [
+            UserID(rawValue: 2), UserID(rawValue: 4),
+        ])
+        #expect(
+            await second.currentQuickSwitcherGuildMemberAliases()[GuildID(rawValue: 8)]
+                == [UserID(rawValue: 2): "Ready nickname"]
+        )
         #expect(DirectMessageURLProtocol.requests.isEmpty)
+        await second.disconnect()
+    }
+
+    @Test func `quick switcher channel store order survives Ready reconciliation`() async throws {
+        let cacheDirectory = FileManager.default.temporaryDirectory.appending(
+            path: "quick-switcher-channel-store-\(UUID().uuidString)",
+            directoryHint: .isDirectory
+        )
+        defer { try? FileManager.default.removeItem(at: cacheDirectory) }
+
+        let first = makeProvider(usesForwardSearchPeopleDiskCache: true)
+        await first.setForwardSearchPeopleCacheDirectoryForTesting(cacheDirectory)
+        await first.reconcileQuickSwitcherChannelStoreOrder(with: [
+            ChannelID(rawValue: 3), ChannelID(rawValue: 1), ChannelID(rawValue: 2),
+        ])
+        await first.persistQuickSwitcherChannelStoreCache()
+
+        let second = makeProvider(usesForwardSearchPeopleDiskCache: true)
+        await second.setForwardSearchPeopleCacheDirectoryForTesting(cacheDirectory)
+        await second.loadQuickSwitcherChannelStoreCache()
+        await second.reconcileQuickSwitcherChannelStoreOrder(with: [
+            ChannelID(rawValue: 2), ChannelID(rawValue: 3),
+            ChannelID(rawValue: 4), ChannelID(rawValue: 1),
+        ])
+
+        #expect(await second.cachedForwardChannelStoreOrder == [
+            ChannelID(rawValue: 3), ChannelID(rawValue: 1),
+            ChannelID(rawValue: 2), ChannelID(rawValue: 4),
+        ])
+        await first.disconnect()
         await second.disconnect()
     }
 
@@ -430,6 +510,9 @@ struct DirectMessageProviderContractTests {
         let channel = try #require(await provider.cachedPrivateChannelsForTesting().first)
         #expect(channel.recipients.map(\.id) == [UserID(rawValue: 2)])
         #expect(channel.name == "Later User")
+        #expect(await provider.currentMessageSearchUsers().map(\.id) == [
+            UserID(rawValue: 1), UserID(rawValue: 2),
+        ])
         #expect(DirectMessageURLProtocol.requests.isEmpty)
         await provider.disconnect()
     }
@@ -490,6 +573,10 @@ struct DirectMessageProviderContractTests {
         #expect(users.contains { $0.id == UserID(rawValue: 9) })
         #expect(!users.contains { $0.id == UserID(rawValue: 7) })
         #expect(!users.contains { $0.id == UserID(rawValue: 8) })
+        let quickSwitcherUsers = await provider.currentQuickSwitcherUsers()
+        #expect(quickSwitcherUsers.contains { $0.id == UserID(rawValue: 7) })
+        #expect(quickSwitcherUsers.contains { $0.id == UserID(rawValue: 8) })
+        #expect(quickSwitcherUsers.contains { $0.id == UserID(rawValue: 9) })
         await provider.disconnect()
     }
 

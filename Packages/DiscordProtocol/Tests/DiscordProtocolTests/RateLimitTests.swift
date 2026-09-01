@@ -3,8 +3,211 @@ import Foundation
 import SakuraCordModels
 import Testing
 
+// Rate-limit coverage is kept in one sequential suite because the tests share
+// deterministic URL-protocol and virtual-clock fixtures.
+// swiftlint:disable file_length
+
 @Suite(.serialized)
 struct ProviderRequestContractTests {
+    @Test func `REST scheduling learns server buckets without a global cadence`() async throws {
+        let provider = DiscordRESTProvider(
+            credentials: TestCredentialStore(),
+            handle: CredentialHandle(accountID: "rate-limit-scheduler"),
+            session: URLSession(configuration: .ephemeral),
+            installationID: "server-issued-installation"
+        )
+        let route = DiscordRESTProvider.rateLimitRouteKey(
+            method: "GET",
+            path: "/channels/123456789012345200/messages"
+        )
+        #expect(route == "GET /channels/{id}/messages")
+        #expect(
+            DiscordRESTProvider.rateLimitMajorParameter(
+                path: "/channels/200/messages"
+            ) == "channels:200"
+        )
+        let firstMajorParameter = "channels:123456789012345200"
+        let secondMajorParameter = "channels:123456789012345201"
+        let firstChannelKey = "\(route) [\(firstMajorParameter)]"
+        let secondChannelKey = "\(route) [\(secondMajorParameter)]"
+        let response = try #require(HTTPURLResponse(
+            url: URL(
+                string: "https://discord.com/api/v9/channels/123456789012345200/messages"
+            )!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: [
+                "X-RateLimit-Bucket": "message-history",
+                "X-RateLimit-Limit": "1",
+                "X-RateLimit-Remaining": "0",
+                "X-RateLimit-Reset-After": "0.08",
+            ]
+        ))
+        await provider.recordRateLimitState(
+            response: response,
+            routeKey: firstChannelKey,
+            majorParameter: firstMajorParameter
+        )
+
+        let independentElapsed = try await ContinuousClock().measure {
+            try await provider.reserveRateLimitSlot(
+                routeKey: secondChannelKey
+            )
+        }
+        #expect(independentElapsed < .milliseconds(30))
+
+        let exhaustedElapsed = try await ContinuousClock().measure {
+            try await provider.reserveRateLimitSlot(
+                routeKey: firstChannelKey
+            )
+        }
+        #expect(exhaustedElapsed >= .milliseconds(40))
+        #expect(exhaustedElapsed < .seconds(1))
+    }
+
+    @Test func `concurrent first requests serialize only until their route learns a bucket`() async throws {
+        let provider = DiscordRESTProvider(
+            credentials: TestCredentialStore(),
+            handle: CredentialHandle(accountID: "rate-limit-discovery"),
+            session: URLSession(configuration: .ephemeral),
+            installationID: "server-issued-installation"
+        )
+        let routeKey = "GET /channels/{id}/messages [channels:200]"
+        let first = try await provider.reserveRateLimitSlot(routeKey: routeKey)
+        #expect(first.discoveryToken != nil)
+
+        let second = Task {
+            try await provider.reserveRateLimitSlot(routeKey: routeKey)
+        }
+        #expect(await eventually {
+            await provider.rateLimitDiscoveryWaiterCountForTesting(
+                routeKey: routeKey
+            ) == 1
+        })
+
+        let response = try #require(HTTPURLResponse(
+            url: URL(string: "https://discord.com/api/v9/channels/200/messages")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: [
+                "X-RateLimit-Bucket": "message-history",
+                "X-RateLimit-Limit": "2",
+                "X-RateLimit-Remaining": "1",
+                "X-RateLimit-Reset-After": "1",
+            ]
+        ))
+        await provider.recordRateLimitState(
+            response: response,
+            routeKey: routeKey,
+            majorParameter: "channels:200"
+        )
+        await provider.finishRateLimitReservation(first)
+
+        let secondReservation = try await second.value
+        #expect(secondReservation.discoveryToken == nil)
+        await provider.finishRateLimitReservation(secondReservation)
+
+        let unbucketedRouteKey = "GET /users/@me/settings-proto/1 [none]"
+        let unbucketedDiscovery = try await provider.reserveRateLimitSlot(
+            routeKey: unbucketedRouteKey
+        )
+        #expect(unbucketedDiscovery.discoveryToken != nil)
+        let unbucketedResponse = try #require(HTTPURLResponse(
+            url: URL(string: "https://discord.com/api/v9/users/@me/settings-proto/1")!,
+            statusCode: 204,
+            httpVersion: "HTTP/1.1",
+            headerFields: [:]
+        ))
+        await provider.recordRateLimitState(
+            response: unbucketedResponse,
+            routeKey: unbucketedRouteKey,
+            majorParameter: "none"
+        )
+        await provider.finishRateLimitReservation(unbucketedDiscovery)
+
+        let laterUnbucketedRequest = try await provider.reserveRateLimitSlot(
+            routeKey: unbucketedRouteKey
+        )
+        #expect(laterUnbucketedRequest.discoveryToken == nil)
+
+        let cancellationRouteKey = "GET /guilds/{id}/channels [guilds:300]"
+        let cancellationDiscovery = try await provider.reserveRateLimitSlot(
+            routeKey: cancellationRouteKey
+        )
+        let cancelledWaiter = Task {
+            try await provider.reserveRateLimitSlot(
+                routeKey: cancellationRouteKey
+            )
+        }
+        #expect(await eventually {
+            await provider.rateLimitDiscoveryWaiterCountForTesting(
+                routeKey: cancellationRouteKey
+            ) == 1
+        })
+        cancelledWaiter.cancel()
+        await #expect(throws: CancellationError.self) {
+            try await cancelledWaiter.value
+        }
+        #expect(await provider.rateLimitDiscoveryWaiterCountForTesting(
+            routeKey: cancellationRouteKey
+        ) == 0)
+        await provider.finishRateLimitReservation(cancellationDiscovery)
+    }
+
+    @Test func `message history encodes bounded around and after anchors`() async throws {
+        RateLimitURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RateLimitURLProtocol.self]
+        let provider = DiscordRESTProvider(
+            credentials: TestCredentialStore(),
+            handle: CredentialHandle(accountID: "1"),
+            session: URLSession(configuration: configuration),
+            installationID: "server-issued-installation"
+        )
+
+        _ = try await provider.messages(
+            in: ChannelID(rawValue: 200),
+            anchoredAt: .around(MessageID(rawValue: 350)),
+            limit: 50
+        )
+        _ = try await provider.messages(
+            in: ChannelID(rawValue: 200),
+            anchoredAt: .after(MessageID(rawValue: 350)),
+            limit: 20
+        )
+
+        #expect(RateLimitURLProtocol.messageHistoryQueryItems == [
+            ["around=350", "limit=50"],
+            ["after=350", "limit=20"],
+        ])
+    }
+
+    @Test func `history reports incomplete member hydration when Gateway lookup is unavailable`() async throws {
+        RateLimitURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RateLimitURLProtocol.self]
+        let provider = DiscordRESTProvider(
+            credentials: TestCredentialStore(),
+            handle: CredentialHandle(accountID: "1"),
+            session: URLSession(configuration: configuration),
+            installationID: "server-issued-installation"
+        )
+        await provider.seedGuildChannelForTesting(Channel(
+            id: ChannelID(rawValue: 200),
+            guildID: GuildID(rawValue: 100),
+            name: "general"
+        ))
+
+        let page = try await provider.messages(
+            in: ChannelID(rawValue: 200),
+            before: nil,
+            limit: 10
+        )
+
+        #expect(page.resolvedMembers.isEmpty)
+        #expect(!page.hasCompleteMemberResolution)
+    }
+
     @Test func `desktop ready lifecycle matches official opcode ordering`() async throws {
         let socket = ReadyGatewaySocket()
         await socket.push(gatewayMessage(
@@ -1417,7 +1620,6 @@ private struct ApplicationCommandScenario {
                     version: 73
                 )
         )
-
         let notificationSettingsEvent = Task { () -> GuildNotificationSettings? in
             for await event in events {
                 if case let .notificationSettingsChanged(settings) = event { return settings }
@@ -1432,6 +1634,9 @@ private struct ApplicationCommandScenario {
                 "muted": .bool(false),
                 "suppress_everyone": .bool(true),
                 "suppress_roles": .bool(false),
+                "notify_highlights": .number(1),
+                "mute_scheduled_events": .bool(true),
+                "mobile_push": .bool(false),
                 "channel_overrides": .array([
                     .object([
                         "channel_id": .string("200"),
@@ -1447,8 +1652,33 @@ private struct ApplicationCommandScenario {
         #expect(decodedSettings.guildID == GuildID(rawValue: 100))
         #expect(decodedSettings.messageNotifications == .onlyMentions)
         #expect(decodedSettings.suppressEveryone)
+        #expect(decodedSettings.notifyHighlights == .disabled)
+        #expect(decodedSettings.muteScheduledEvents)
+        #expect(!decodedSettings.mobilePush)
         #expect(decodedSettings.channelOverrides.first?.messageNotifications == .allMessages)
         #expect(decodedSettings.channelOverrides.first?.isMuted == true)
+        let partialSettingsEvent = Task { () -> GuildNotificationSettings? in
+            for await event in events {
+                if case let .notificationSettingsChanged(settings) = event { return settings }
+            }
+            return nil
+        }
+        await socket.push(gatewayMessage(
+            op: 0,
+            data: .object([
+                "guild_id": .string("100"),
+                "suppress_roles": .bool(true),
+            ]),
+            sequence: 9,
+            eventName: "USER_GUILD_SETTINGS_UPDATE"
+        ))
+        let mergedSettings = try #require(await partialSettingsEvent.value)
+        #expect(mergedSettings.suppressEveryone)
+        #expect(mergedSettings.suppressRoles)
+        #expect(mergedSettings.notifyHighlights == .disabled)
+        #expect(mergedSettings.muteScheduledEvents)
+        #expect(!mergedSettings.mobilePush)
+        #expect(mergedSettings.channelOverrides.first?.isMuted == true)
         await provider.disconnect()
         }
     }
@@ -1612,13 +1842,15 @@ private struct BootstrapRequestScenario {
         #expect(historyMessage.guildID == GuildID(rawValue: 100))
         #expect(historyMessage.guildMember?.nickname == "Colored Author")
         #expect(historyMessage.guildMember?.roleIDs == [RoleID(rawValue: 101)])
+        #expect(historyPage.resolvedMembers.map(\.id) == [UserID(rawValue: 4)])
+        #expect(historyPage.hasCompleteMemberResolution)
         let historyMemberRequests = await socket.sentPayloadCount(opcode: 8)
         _ = try await provider.messages(in: ChannelID(rawValue: 200), before: nil, limit: 50)
         #expect(await socket.sentPayloadCount(opcode: 8) == historyMemberRequests)
 
         let memberSearch = Task {
             try await provider.searchMembers(
-                in: GuildID(rawValue: 100), query: "maya", limit: 25
+                in: GuildID(rawValue: 100), query: "maya", limit: 125
             )
         }
         #expect(await eventually {
@@ -1630,9 +1862,9 @@ private struct BootstrapRequestScenario {
         )
         #expect((gatewayPayload["op"] as? NSNumber)?.intValue == 8)
         let searchData = try #require(gatewayPayload["d"] as? [String: Any])
-        #expect(searchData["guild_id"] as? String == "100")
+        #expect(searchData["guild_id"] as? [String] == ["100"])
         #expect(searchData["query"] as? String == "maya")
-        #expect((searchData["limit"] as? NSNumber)?.intValue == 20)
+        #expect((searchData["limit"] as? NSNumber)?.intValue == 100)
         #expect(searchData["presences"] as? Bool == true)
         #expect(Set(searchData.keys) == ["guild_id", "query", "limit", "presences"])
         await socket.push(gatewayMessage(
@@ -1669,7 +1901,37 @@ private struct BootstrapRequestScenario {
         ))
         let memberMatches = try await memberSearch.value
         #expect(memberMatches.map(\.user.displayName) == ["Maya", "Maya Bot"])
+        #expect((await provider.currentMessageSearchUsers()).contains {
+            $0.id == UserID(rawValue: 2)
+        })
+        let indexedQuickSwitcherMembers =
+            await provider.currentQuickSwitcherGuildMemberUserIDs()
+        #expect(indexedQuickSwitcherMembers[GuildID(rawValue: 100)] == [
+            // GuildMemberStore retains READY insertion order, then appends
+            // query-member chunks in their returned order.
+            UserID(rawValue: 4), UserID(rawValue: 2), UserID(rawValue: 3),
+        ])
         #expect(RateLimitURLProtocol.memberSearchRequestCount == 0)
+
+        let memberRequestCount = await socket.sentPayloadCount(opcode: 8)
+        try await provider.requestQuickSwitcherMembers(
+            in: GuildID(rawValue: 100), query: "HEN", limit: 125
+        )
+        #expect(await socket.sentPayloadCount(opcode: 8) == memberRequestCount + 1)
+        let quickSwitcherGatewayData = try #require(await socket.sentPayload(opcode: 8))
+        let quickSwitcherGatewayPayload = try #require(
+            JSONSerialization.jsonObject(with: quickSwitcherGatewayData) as? [String: Any]
+        )
+        let quickSwitcherSearch = try #require(
+            quickSwitcherGatewayPayload["d"] as? [String: Any]
+        )
+        #expect(quickSwitcherSearch["guild_id"] as? [String] == ["100"])
+        #expect(quickSwitcherSearch["query"] as? String == "hen")
+        #expect((quickSwitcherSearch["limit"] as? NSNumber)?.intValue == 100)
+        #expect(quickSwitcherSearch["presences"] as? Bool == true)
+        #expect(Set(quickSwitcherSearch.keys) == [
+            "guild_id", "query", "limit", "presences",
+        ])
 
         await provider.updateClientAppState(isFocused: false)
         let clientAppState = await provider.clientAppStateForTesting()
@@ -1732,6 +1994,22 @@ private struct BootstrapRequestScenario {
         #expect((reference["type"] as? NSNumber)?.intValue == 0)
         #expect(reference["message_id"] as? String == "299")
         #expect(reference["channel_id"] as? String == "200")
+        #expect(replyBody["allowed_mentions"] == nil)
+
+        _ = try await provider.send(SendMessageDraft(
+            channelID: ChannelID(rawValue: 200),
+            content: "quiet reply",
+            replyTo: MessageID(rawValue: 299),
+            mentionsRepliedUser: false
+        ))
+        let quietReplyBody = try #require(RateLimitURLProtocol.sentMessageBody)
+        let allowedMentions = try #require(
+            quietReplyBody["allowed_mentions"] as? [String: Any]
+        )
+        #expect(allowedMentions["replied_user"] as? Bool == false)
+        #expect(allowedMentions["parse"] as? [String] == [
+            "users", "roles", "everyone",
+        ])
 
         let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent("sakuracord-upload-test.txt")
         try Data("attachment".utf8).write(to: fileURL)

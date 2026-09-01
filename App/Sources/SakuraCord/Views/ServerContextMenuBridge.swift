@@ -10,6 +10,7 @@ struct ServerContextMenuBridge: NSViewRepresentable {
     let mute: (ChannelMuteDuration) -> Void
     let unmute: () -> Void
     let setNotificationLevel: (MessageNotificationLevel) -> Void
+    let setNotificationToggle: (GuildNotificationToggle, Bool) -> Void
     let copyServerID: () -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -40,6 +41,7 @@ struct ServerContextMenuBridge: NSViewRepresentable {
         private var mute: (ChannelMuteDuration) -> Void
         private var unmute: () -> Void
         private var setNotificationLevel: (MessageNotificationLevel) -> Void
+        private var setNotificationToggle: (GuildNotificationToggle, Bool) -> Void
         private var copyServerID: () -> Void
 
         init(from bridge: ServerContextMenuBridge) {
@@ -50,6 +52,7 @@ struct ServerContextMenuBridge: NSViewRepresentable {
             mute = bridge.mute
             unmute = bridge.unmute
             setNotificationLevel = bridge.setNotificationLevel
+            setNotificationToggle = bridge.setNotificationToggle
             copyServerID = bridge.copyServerID
         }
 
@@ -61,6 +64,7 @@ struct ServerContextMenuBridge: NSViewRepresentable {
             mute = bridge.mute
             unmute = bridge.unmute
             setNotificationLevel = bridge.setNotificationLevel
+            setNotificationToggle = bridge.setNotificationToggle
             copyServerID = bridge.copyServerID
         }
 
@@ -154,6 +158,20 @@ struct ServerContextMenuBridge: NSViewRepresentable {
                 item.representedObject = NSNumber(value: level.rawValue)
                 menu.addItem(item)
             }
+            menu.addItem(.separator())
+            for toggle in GuildNotificationToggle.allCases {
+                if toggle == .mobilePush {
+                    menu.addItem(.separator())
+                }
+                let item = menuItem(
+                    toggle.menuTitle,
+                    action: #selector(setNotificationToggleFromMenu(_:)),
+                    isEnabled: !isMutationPending
+                )
+                item.state = notificationSettings.isEnabled(toggle) ? .on : .off
+                item.representedObject = NSNumber(value: toggle.rawValue)
+                menu.addItem(item)
+            }
             return menu
         }
 
@@ -198,8 +216,27 @@ struct ServerContextMenuBridge: NSViewRepresentable {
             setNotificationLevel(level)
         }
 
+        @objc private func setNotificationToggleFromMenu(_ sender: NSMenuItem) {
+            guard let rawValue = (sender.representedObject as? NSNumber)?.intValue,
+                  let toggle = GuildNotificationToggle(rawValue: rawValue)
+            else { return }
+            setNotificationToggle(toggle, !notificationSettings.isEnabled(toggle))
+        }
+
         @objc private func copyServerIDFromMenu() {
             copyServerID()
+        }
+    }
+}
+
+private extension GuildNotificationToggle {
+    var menuTitle: String {
+        switch self {
+        case .suppressEveryone: "Suppress @everyone and @here"
+        case .suppressRoles: "Suppress All Role @mentions"
+        case .suppressHighlights: "Suppress Highlights"
+        case .muteScheduledEvents: "Mute New Events"
+        case .mobilePush: "Mobile Push Notifications"
         }
     }
 }

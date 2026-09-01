@@ -53,3 +53,20 @@ import Testing
     let didSkipGap = buffer.takeSkippedGap()
     #expect(!didSkipGap)
 }
+
+@Test func `rtp reorder buffer can release a low-rate stream after a recovery deadline`() {
+    var buffer = RTPReorderBuffer(maximumHold: 64)
+    func packet(_ sequence: UInt16) -> RTPBufferedPacket {
+        RTPBufferedPacket(
+            header: RTPHeader(payloadType: 105, sequence: sequence, timestamp: 1, ssrc: 1),
+            payload: Data([1])
+        )
+    }
+
+    #expect(buffer.insert(packet(10)).map(\.header.sequence) == [10])
+    #expect(buffer.insert(packet(12)).isEmpty)
+    #expect(buffer.hasPendingGap)
+    #expect(buffer.skipPendingGap().map(\.header.sequence) == [12])
+    #expect(!buffer.hasPendingGap)
+    #expect(buffer.skipPendingGap().isEmpty)
+}

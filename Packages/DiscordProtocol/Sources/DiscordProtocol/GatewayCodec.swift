@@ -73,19 +73,79 @@ public struct ETFGatewayCodec: GatewayCodec {
     public init() {}
 
     public func encode(_ envelope: GatewayEnvelope) throws -> Data {
-        let json = try JSONEncoder().encode(envelope)
-        let value = try JSONDecoder().decode(JSONValue.self, from: json)
         var output = Data([131]) // ETF version.
-        try Self.append(value, to: &output)
+        var fieldCount = 1
+        if envelope.data != nil { fieldCount += 1 }
+        if envelope.sequence != nil { fieldCount += 1 }
+        if envelope.eventName != nil { fieldCount += 1 }
+        output.append(116) // MAP_EXT
+        Self.appendUInt32(fieldCount, to: &output)
+        try Self.append(.string("op"), to: &output)
+        try Self.append(.number(Double(envelope.op)), to: &output)
+        if let data = envelope.data {
+            try Self.append(.string("d"), to: &output)
+            try Self.append(data, to: &output)
+        }
+        if let sequence = envelope.sequence {
+            try Self.append(.string("s"), to: &output)
+            try Self.append(.number(Double(sequence)), to: &output)
+        }
+        if let eventName = envelope.eventName {
+            try Self.append(.string("t"), to: &output)
+            try Self.append(.string(eventName), to: &output)
+        }
         return output
     }
 
     public func decode(_ data: Data) throws -> GatewayEnvelope {
-        var parser = ETFParser(data: data)
-        let value = try parser.parse()
-        guard parser.isAtEnd else { throw GatewaySessionError.malformedPayload }
-        let json = try JSONEncoder().encode(value)
-        return try JSONDecoder().decode(GatewayEnvelope.self, from: json)
+        let value = try data.withUnsafeBytes { rawBytes in
+            var parser = ETFParser(bytes: rawBytes.bindMemory(to: UInt8.self))
+            let value = try parser.parse()
+            guard parser.isAtEnd else { throw GatewaySessionError.malformedPayload }
+            return value
+        }
+        guard case let .object(object) = value,
+              let op = Self.integer(object["op"])
+        else { throw GatewaySessionError.malformedPayload }
+        let sequence: Int?
+        switch object["s"] {
+        case nil, .null?:
+            sequence = nil
+        case let value?:
+            guard let integer = Self.integer(value) else {
+                throw GatewaySessionError.malformedPayload
+            }
+            sequence = integer
+        }
+        let eventName: String?
+        switch object["t"] {
+        case nil, .null?:
+            eventName = nil
+        case let .string(value)?:
+            eventName = value
+        default:
+            throw GatewaySessionError.malformedPayload
+        }
+        let payload: JSONValue? = switch object["d"] {
+        case nil, .null?: nil
+        case let value?: value
+        }
+        return GatewayEnvelope(
+            op: op,
+            data: payload,
+            sequence: sequence,
+            eventName: eventName
+        )
+    }
+
+    private static func integer(_ value: JSONValue?) -> Int? {
+        guard case let .number(number)? = value,
+              number.isFinite,
+              number.rounded(.towardZero) == number,
+              number >= Double(Int.min),
+              number <= Double(Int.max)
+        else { return nil }
+        return Int(number)
     }
 
     private static func append(_ value: JSONValue, to output: inout Data) throws {
@@ -168,11 +228,14 @@ public struct ETFGatewayCodec: GatewayCodec {
 }
 
 private struct ETFParser {
-    private let bytes: [UInt8]
+    /// The codec owns the backing `Data` for the complete lifetime of this
+    /// parser. Direct bounded reads avoid copying multi-megabyte READY payloads
+    /// and avoid one collection-index lookup per byte in debug builds.
+    private let bytes: UnsafeBufferPointer<UInt8>
     private var index = 0
 
-    init(data: Data) {
-        bytes = Array(data)
+    init(bytes: UnsafeBufferPointer<UInt8>) {
+        self.bytes = bytes
     }
 
     var isAtEnd: Bool { index == bytes.count }
@@ -368,32 +431,70 @@ private struct ETFParser {
     }
 
     private mutating func readByte() throws -> UInt8 {
-        guard bytes.indices.contains(index) else { throw GatewaySessionError.malformedPayload }
-        defer { index += 1 }
-        return bytes[index]
+        guard index < bytes.count, let baseAddress = bytes.baseAddress else {
+            throw GatewaySessionError.malformedPayload
+        }
+        let value = baseAddress.advanced(by: index).pointee
+        index += 1
+        return value
     }
 
     private mutating func readUInt16() throws -> UInt16 {
-        (UInt16(try readByte()) << 8) | UInt16(try readByte())
+        guard bytes.count >= 2,
+              index <= bytes.count - 2,
+              let baseAddress = bytes.baseAddress
+        else {
+            throw GatewaySessionError.malformedPayload
+        }
+        let pointer = baseAddress.advanced(by: index)
+        index += 2
+        return (UInt16(pointer.pointee) << 8) | UInt16(pointer.advanced(by: 1).pointee)
     }
 
     private mutating func readUInt32() throws -> UInt32 {
-        (UInt32(try readByte()) << 24)
-            | (UInt32(try readByte()) << 16)
-            | (UInt32(try readByte()) << 8)
-            | UInt32(try readByte())
+        guard bytes.count >= 4,
+              index <= bytes.count - 4,
+              let baseAddress = bytes.baseAddress
+        else {
+            throw GatewaySessionError.malformedPayload
+        }
+        let pointer = baseAddress.advanced(by: index)
+        index += 4
+        return (UInt32(pointer.pointee) << 24)
+            | (UInt32(pointer.advanced(by: 1).pointee) << 16)
+            | (UInt32(pointer.advanced(by: 2).pointee) << 8)
+            | UInt32(pointer.advanced(by: 3).pointee)
     }
 
     private mutating func readUInt64() throws -> UInt64 {
-        (UInt64(try readUInt32()) << 32) | UInt64(try readUInt32())
+        guard bytes.count >= 8,
+              index <= bytes.count - 8,
+              let baseAddress = bytes.baseAddress
+        else {
+            throw GatewaySessionError.malformedPayload
+        }
+        let pointer = baseAddress.advanced(by: index)
+        index += 8
+        var result: UInt64 = 0
+        for offset in 0 ..< 8 {
+            result = (result << 8) | UInt64(pointer.advanced(by: offset).pointee)
+        }
+        return result
     }
 
     private mutating func readString(count: Int) throws -> String {
-        guard count >= 0, index <= bytes.count - count else {
+        guard count >= 0,
+              count <= bytes.count,
+              index <= bytes.count - count
+        else {
             throw GatewaySessionError.malformedPayload
         }
         defer { index += count }
-        guard let string = String(bytes: bytes[index ..< index + count], encoding: .utf8) else {
+        let source = UnsafeBufferPointer(
+            start: bytes.baseAddress?.advanced(by: index),
+            count: count
+        )
+        guard let string = String(bytes: source, encoding: .utf8) else {
             throw GatewaySessionError.malformedPayload
         }
         return string

@@ -5,7 +5,11 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fixture="$root/script/fixtures/performance-overlap"
 temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-performance-test.XXXXXX")"
 member_list_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-member-list-performance-test.XXXXXX")"
+loading_scroll_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-loading-scroll-performance-test.XXXXXX")"
+loading_scroll_invalid_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-loading-scroll-invalid-test.XXXXXX")"
+loading_scroll_missing_gesture_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-loading-scroll-missing-gesture-test.XXXXXX")"
 startup_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-startup-test.XXXXXX")"
+navigation_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-navigation-test.XXXXXX")"
 insufficient_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-insufficient-test.XXXXXX")"
 cancelled_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-cancelled-test.XXXXXX")"
 missing_outcome_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-missing-outcome-test.XXXXXX")"
@@ -13,18 +17,42 @@ pagination_failed_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-pagination-
 short_distance_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-short-distance-test.XXXXXX")"
 missing_elapsed_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-missing-elapsed-test.XXXXXX")"
 late_tick_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-late-tick-test.XXXXXX")"
+incomplete_render_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-incomplete-render-test.XXXXXX")"
 missing_profiler_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-missing-profiler-test.XXXXXX")"
 provenance_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-provenance-test.XXXXXX")"
 source_marker="$root/.performance-provenance-test.$$"
-trap 'rm -rf "$temporary" "$member_list_temporary" "$startup_temporary" "$insufficient_temporary" "$cancelled_temporary" "$missing_outcome_temporary" "$pagination_failed_temporary" "$short_distance_temporary" "$missing_elapsed_temporary" "$late_tick_temporary" "$missing_profiler_temporary" "$provenance_temporary"; rm -f "$source_marker"' EXIT
+trap 'rm -rf "$temporary" "$member_list_temporary" "$loading_scroll_temporary" "$loading_scroll_invalid_temporary" "$loading_scroll_missing_gesture_temporary" "$startup_temporary" "$navigation_temporary" "$insufficient_temporary" "$cancelled_temporary" "$missing_outcome_temporary" "$pagination_failed_temporary" "$short_distance_temporary" "$missing_elapsed_temporary" "$late_tick_temporary" "$incomplete_render_temporary" "$missing_profiler_temporary" "$provenance_temporary"; rm -f "$source_marker"' EXIT
 
 cp "$fixture"/* "$temporary"/
 "$root/script/performance_benchmark.sh" summarize "$temporary" >/dev/null
 
 summary="$temporary/summary.txt"
 grep -F $'signpost.OverlappingWork.count\t2' "$summary" >/dev/null
+grep -F $'signpost.OverlappingWork.total\t5000.000 ms' "$summary" >/dev/null
+grep -F $'signpost.OverlappingWork.average\t2500.000 ms' "$summary" >/dev/null
 grep -F $'signpost.OverlappingWork.median\t2000.000 ms' "$summary" >/dev/null
 grep -F $'signpost.OverlappingWork.maximum\t3000.000 ms' "$summary" >/dev/null
+grep -F $'signpost.OverlappingWork.p99\t3000.000 ms' "$summary" >/dev/null
+grep -F $'signpost.OverlappingWork.main-thread-overlap-sampled.count\t2' "$summary" >/dev/null
+grep -F $'signpost.OverlappingWork.main-thread-overlap-sampled.total\t8.000 ms' "$summary" >/dev/null
+grep -F $'signpost.OverlappingWork.main-thread-overlap-sampled.average\t4.000 ms' "$summary" >/dev/null
+grep -F $'signpost.OverlappingWork.main-thread-overlap-sampled.maximum\t5.000 ms' "$summary" >/dev/null
+grep -F $'time-profile.measurement.cpu-sampled\t1.000 ms' "$summary" >/dev/null
+grep -F $'time-profile.outline-list.cpu-sampled\t0.000 ms' "$summary" >/dev/null
+grep -F $'time-profile.delayed-frame-windows.cpu-sampled\t1.000 ms' \
+    "$summary" >/dev/null
+grep -F $'sampled\t1.000 ms' \
+    "$temporary/measurement-time-profile.txt" >/dev/null
+grep -F $'sampled\t0.000 ms' \
+    "$temporary/measurement-outline-list-time-profile.txt" >/dev/null
+grep -F $'windows\t1' \
+    "$temporary/delayed-frame-time-profile.txt" >/dev/null
+grep -F $'sampled\t1.000 ms' \
+    "$temporary/delayed-frame-time-profile.txt" >/dev/null
+grep -F $'signpost.AsyncThreadMigration.count\t1' "$summary" >/dev/null
+grep -F $'signpost.AsyncThreadMigration.total\t1250.000 ms' "$summary" >/dev/null
+grep -F $'signpost.AsyncThreadMigration.average\t1250.000 ms' "$summary" >/dev/null
+grep -F $'signpost.AsyncThreadMigration.median\t1250.000 ms' "$summary" >/dev/null
 grep -F $'measurement.window\tMessageTimelineAutoScrollBenchmark' "$summary" >/dev/null
 grep -F $'resources.window\tMessageTimelineAutoScrollBenchmark nominal 20.000 s' "$summary" >/dev/null
 grep -F $'duration.nominal\t20.0 s' "$summary" >/dev/null
@@ -34,6 +62,19 @@ grep -F $'spatial.distance.completed\t192000.0 points' "$summary" >/dev/null
 grep -F $'spatial.distance.nominal\t192000.0 points' "$summary" >/dev/null
 grep -F $'spatial.distance.deficit\t0.0 points' "$summary" >/dev/null
 grep -F $'spatial.quality\t1.0 ratio' "$summary" >/dev/null
+grep -F $'render.canvas-draw.count\t400' "$summary" >/dev/null
+grep -F $'render.canvas-draw.total\t800.0 ms' "$summary" >/dev/null
+grep -F $'render.canvas-draw.average\t2.0 ms' "$summary" >/dev/null
+grep -F $'render.canvas-draw.maximum\t8.0 ms' "$summary" >/dev/null
+grep -F $'render.row-raster.count\t50' "$summary" >/dev/null
+grep -F $'render.row-raster.total\t250.0 ms' "$summary" >/dev/null
+grep -F $'render.row-raster.average\t5.0 ms' "$summary" >/dev/null
+grep -F $'render.row-raster.maximum\t10.0 ms' "$summary" >/dev/null
+grep -F $'render.row-raster.maximum-height\t320.0 points' "$summary" >/dev/null
+grep -F $'render.row-bitmap-cache-hits\t350' "$summary" >/dev/null
+grep -F $'render.live-scroll-direct-paints\t0' "$summary" >/dev/null
+grep -F $'event.MessageTimelineAutoScrollBenchmarkCompleted.count\t1' \
+    "$summary" >/dev/null
 grep -F $'cpu.average\t110.000 %' "$summary" >/dev/null
 grep -F $'energy.average\t1.200 mW' "$summary" >/dev/null
 grep -F $'energy.total\t24.000 mJ' "$summary" >/dev/null
@@ -45,6 +86,10 @@ if grep -E '^(rss\.|footprint\.current|footprint\.peak)' "$summary" >/dev/null; 
 fi
 if grep -F 'signpost.OverlappingWork.unmatched' "$summary" >/dev/null; then
     printf '%s\n' 'overlap fixture produced unmatched signposts' >&2
+    exit 1
+fi
+if grep -F 'signpost.AsyncThreadMigration.unmatched' "$summary" >/dev/null; then
+    printf '%s\n' 'async thread migration produced unmatched signposts' >&2
     exit 1
 fi
 
@@ -59,6 +104,93 @@ grep -F $'measurement.window\tMemberListAutoScrollBenchmark' \
 grep -F $'resources.window\tMemberListAutoScrollBenchmark nominal 20.000 s' \
     "$member_list_summary" >/dev/null
 grep -F $'spatial.quality\t1.0 ratio' "$member_list_summary" >/dev/null
+
+cp "$root/script/fixtures/performance-loading-scroll-overlap"/* \
+    "$loading_scroll_temporary"/
+"$root/script/performance_benchmark.sh" summarize \
+    "$loading_scroll_temporary" >/dev/null
+loading_scroll_summary="$loading_scroll_temporary/summary.txt"
+grep -F $'loading-scroll.surface\ttimeline' "$loading_scroll_summary" >/dev/null
+grep -F $'loading-scroll.initial-messages\t10' "$loading_scroll_summary" >/dev/null
+grep -F $'loading-scroll.final-messages\t100' "$loading_scroll_summary" >/dev/null
+grep -F $'loading-scroll.timeline.idle.gestures\t2' \
+    "$loading_scroll_summary" >/dev/null
+grep -F $'loading-scroll.timeline.loading.gestures\t2' \
+    "$loading_scroll_summary" >/dev/null
+grep -F $'loading-scroll.timeline.idle.input-latency.p95\t15.000 ms' \
+    "$loading_scroll_summary" >/dev/null
+grep -F $'loading-scroll.timeline.loading.input-latency.p95\t16.000 ms' \
+    "$loading_scroll_summary" >/dev/null
+grep -F $'loading-scroll.timeline.loading-vs-idle.p95-ratio\t1.067 x' \
+    "$loading_scroll_summary" >/dev/null
+grep -F $'loading-scroll.timeline.loading-vs-idle.within-10-percent\ttrue' \
+    "$loading_scroll_summary" >/dev/null
+
+cp "$root/script/fixtures/performance-loading-scroll-overlap"/* \
+    "$loading_scroll_invalid_temporary"/
+perl -0pi -e 's/message_count\t100/message_count\t30/' \
+    "$loading_scroll_invalid_temporary/benchmark-result.tsv"
+if "$root/script/performance_benchmark.sh" summarize \
+    "$loading_scroll_invalid_temporary" >/dev/null 2>&1; then
+    printf '%s\n' \
+        'loading-scroll benchmark without comparable history was accepted' >&2
+    exit 1
+fi
+
+cp "$root/script/fixtures/performance-loading-scroll-overlap"/* \
+    "$loading_scroll_missing_gesture_temporary"/
+perl -0pi -e \
+    's/TimelineGestureInputToDisplay/UnrelatedGestureInputToDisplay/g' \
+    "$loading_scroll_missing_gesture_temporary/signposts.xml"
+if "$root/script/performance_benchmark.sh" summarize \
+    "$loading_scroll_missing_gesture_temporary" >/dev/null 2>&1; then
+    printf '%s\n' \
+        'loading-scroll benchmark without physical gesture coverage was accepted' >&2
+    exit 1
+fi
+SAKURACORD_PERFORMANCE_ALLOW_MISSING_GESTURES=1 \
+    "$root/script/performance_benchmark.sh" summarize \
+    "$loading_scroll_missing_gesture_temporary" >/dev/null
+grep -F $'loading-scroll.gesture-coverage\tfalse' \
+    "$loading_scroll_missing_gesture_temporary/summary.txt" >/dev/null
+
+cp "$root/script/fixtures/performance-navigation-network-union"/* \
+    "$navigation_temporary"/
+"$root/script/performance_benchmark.sh" summarize \
+    "$navigation_temporary" >/dev/null
+navigation_summary="$navigation_temporary/summary.txt"
+grep -F $'navigation.direct-message.history-network.median\t100.000 ms' \
+    "$navigation_summary" >/dev/null
+grep -F $'navigation.direct-message.all-network-union.median\t130.000 ms' \
+    "$navigation_summary" >/dev/null
+grep -F $'navigation.direct-message.other-rest-network-overlap.median\t80.000 ms' \
+    "$navigation_summary" >/dev/null
+grep -F $'navigation.direct-message.outer-minus-all-network-union.median\t70.000 ms' \
+    "$navigation_summary" >/dev/null
+grep -F $'navigation.direct-message.app-controlled-residual.median\t70.000 ms' \
+    "$navigation_summary" >/dev/null
+grep -F $'navigation.direct-message.history-network-subtracted-residual.median\t100.000 ms' \
+    "$navigation_summary" >/dev/null
+grep -F $'navigation.direct-message.conversation-load-app-residual.median\t30.000 ms' \
+    "$navigation_summary" >/dev/null
+grep -F $'navigation.direct-message.outside-conversation-load-app-residual.median\t40.000 ms' \
+    "$navigation_summary" >/dev/null
+grep -F $'navigation.direct-message.first-frame-app-residual.median\t60.000 ms' \
+    "$navigation_summary" >/dev/null
+grep -F $'navigation.direct-message.outside-first-frame-app-residual.median\t10.000 ms' \
+    "$navigation_summary" >/dev/null
+grep -F $'navigation.animated-decode-overlap.count\t1' \
+    "$navigation_summary" >/dev/null
+grep -F $'navigation.animated-decode-overlap.total\t20.000 ms' \
+    "$navigation_summary" >/dev/null
+grep -F $'navigation.animated-decode-overlap.maximum\t20.000 ms' \
+    "$navigation_summary" >/dev/null
+grep -F $'navigation.static-decode-overlap.count\t2' \
+    "$navigation_summary" >/dev/null
+grep -F $'navigation.static-decode-overlap.total\t75.000 ms' \
+    "$navigation_summary" >/dev/null
+grep -F $'navigation.static-decode-overlap.maximum\t45.000 ms' \
+    "$navigation_summary" >/dev/null
 
 cp "$root/script/fixtures/performance-startup-order"/* "$startup_temporary"/
 "$root/script/performance_benchmark.sh" summarize "$startup_temporary" >/dev/null
@@ -146,6 +278,15 @@ grep -F $'duration.nominal\t20.0 s' "$late_summary" >/dev/null
 grep -F $'duration.ui-stop\t23.0 s' "$late_summary" >/dev/null
 grep -F $'duration.overshoot\t3.0 s' "$late_summary" >/dev/null
 grep -F $'resources.window\tMessageTimelineAutoScrollBenchmark nominal 20.000 s' "$late_summary" >/dev/null
+
+cp "$fixture"/* "$incomplete_render_temporary"/
+perl -ni -e 'print unless /^row_raster_average_ms\t/' \
+    "$incomplete_render_temporary/benchmark-result.tsv"
+if "$root/script/performance_benchmark.sh" summarize \
+    "$incomplete_render_temporary" >/dev/null 2>&1; then
+    printf '%s\n' 'benchmark with incomplete render metadata was accepted' >&2
+    exit 1
+fi
 
 provenance_executable="$provenance_temporary/SakuraCord"
 provenance_directory="$provenance_temporary/build-provenance"

@@ -2,9 +2,7 @@ import SakuraCordModels
 import SwiftUI
 
 struct ServerFolderRailView: View {
-    let folder: GuildFolder
-    let guildsByID: [GuildID: Guild]
-    let selectedGuildID: GuildID?
+    let entry: ServerRailFolderEntry
     let selectGuild: (GuildID?) -> Void
     let contextMenuActions: ServerRailContextMenuActions
     let expansionChanged: () -> Void
@@ -13,22 +11,18 @@ struct ServerFolderRailView: View {
     @State private var isHovering = false
 
     init(
-        folder: GuildFolder,
-        guildsByID: [GuildID: Guild],
-        selectedGuildID: GuildID?,
+        entry: ServerRailFolderEntry,
         selectGuild: @escaping (GuildID?) -> Void,
         contextMenuActions: ServerRailContextMenuActions,
         expansionChanged: @escaping () -> Void
     ) {
-        self.folder = folder
-        self.guildsByID = guildsByID
-        self.selectedGuildID = selectedGuildID
+        self.entry = entry
         self.selectGuild = selectGuild
         self.contextMenuActions = contextMenuActions
         self.expansionChanged = expansionChanged
         _isExpanded = AppStorage(
             wrappedValue: false,
-            "GuildFolders.\(folder.id).isExpanded"
+            "GuildFolders.\(entry.folder.id).isExpanded"
         )
     }
 
@@ -38,9 +32,7 @@ struct ServerFolderRailView: View {
 
             if isExpanded {
                 ExpandedFolderGuilds(
-                    guildIDs: folder.guildIDs,
-                    guildsByID: guildsByID,
-                    selectedGuildID: selectedGuildID,
+                    guildEntries: entry.guildEntries,
                     selectGuild: selectGuild,
                     contextMenuActions: contextMenuActions
                 )
@@ -61,9 +53,9 @@ struct ServerFolderRailView: View {
     private var folderButton: some View {
         HStack(spacing: 5) {
             ServerRailSelectionIndicator(
-                isSelected: containsSelectedGuild,
+                isSelected: entry.containsSelectedGuild,
                 isHovering: isHovering,
-                hasNotification: hasUnreadGuild
+                hasNotification: showsUnreadIndicators && entry.hasUnreadGuild
             )
             Button {
                 withAnimation(ServerRailAnimations.folderExpansion) {
@@ -84,8 +76,8 @@ struct ServerFolderRailView: View {
                 .background(folderColor.opacity(isExpanded ? 0.18 : 0.12))
                 .clipShape(ConcentricRectangle(cornerRadius: 14, style: .continuous))
                 .overlay(alignment: .bottomTrailing) {
-                    if folderMentionCount > 0 {
-                        Text(folderMentionCount, format: .number)
+                    if showsUnreadIndicators, entry.mentionCount > 0 {
+                        Text(entry.mentionCount, format: .number)
                             .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 5)
@@ -99,8 +91,10 @@ struct ServerFolderRailView: View {
             .accessibilityLabel(displayName)
             .accessibilityValue(
                 "\(isExpanded ? "Expanded" : "Collapsed")"
-                    + (folderMentionCount > 0 ? ", \(folderMentionCount) unread mentions" : "")
-                    + (folderMentionCount == 0 && hasUnreadGuild ? ", Unread" : "")
+                    + (showsUnreadIndicators && entry.mentionCount > 0
+                        ? ", \(entry.mentionCount) unread mentions" : "")
+                    + (showsUnreadIndicators && entry.mentionCount == 0
+                        && entry.hasUnreadGuild ? ", Unread" : "")
             )
             .accessibilityHint("Toggles the server folder")
             .help(displayName)
@@ -115,7 +109,7 @@ struct ServerFolderRailView: View {
     }
 
     private var collapsedPreview: some View {
-        let preview = folder.guildIDs.prefix(4).compactMap { guildsByID[$0] }
+        let preview = entry.previewGuilds
         return VStack(spacing: 2) {
             HStack(spacing: 2) {
                 previewIcon(preview[safe: 0])
@@ -145,46 +139,32 @@ struct ServerFolderRailView: View {
     }
 
     private var displayName: String {
-        guard let name = folder.name, !name.isEmpty else { return "Server Folder" }
+        guard let name = entry.folder.name, !name.isEmpty else { return "Server Folder" }
         return name
     }
 
+    private var showsUnreadIndicators: Bool {
+        !isExpanded
+    }
+
     private var folderColor: Color {
-        Color(hex: folder.colorHex ?? 0x5865F2)
-    }
-
-    private var containsSelectedGuild: Bool {
-        selectedGuildID.map(folder.guildIDs.contains) ?? false
-    }
-
-    private var hasUnreadGuild: Bool {
-        folder.guildIDs.contains { guildsByID[$0]?.unreadCount ?? 0 > 0 }
-    }
-
-    private var folderMentionCount: Int {
-        folder.guildIDs.reduce(0) { $0 + (guildsByID[$1]?.mentionCount ?? 0) }
+        Color(hex: entry.folder.colorHex ?? 0x5865F2)
     }
 }
 
 private struct ExpandedFolderGuilds: View {
-    let guildIDs: [GuildID]
-    let guildsByID: [GuildID: Guild]
-    let selectedGuildID: GuildID?
+    let guildEntries: [ServerRailGuildEntry]
     let selectGuild: (GuildID?) -> Void
     let contextMenuActions: ServerRailContextMenuActions
 
     var body: some View {
         VStack(spacing: 8) {
-            ForEach(guildIDs, id: \.self) { guildID in
-                if let guild = guildsByID[guildID] {
-                    GuildRailButton(
-                        guild: guild,
-                        isSelected: selectedGuildID == guild.id,
-                        contextMenuActions: contextMenuActions
-                    ) {
-                        selectGuild(guild.id)
-                    }
-                }
+            ForEach(guildEntries) { entry in
+                ServerRailGuildItemView(
+                    entry: entry,
+                    selectGuild: selectGuild,
+                    contextMenuActions: contextMenuActions
+                )
             }
         }
     }

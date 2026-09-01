@@ -2,9 +2,18 @@ import AppKit
 import CoreText
 import MessageRendering
 import SakuraCordModels
+import Synchronization
 
 @MainActor
 enum NativeTimelineTextPresentation {
+    nonisolated struct Preparation: Sendable {
+        let key: NativeTimelineResolvedTextCache.Key
+        let prepared: RichMessageAttributedText.Prepared
+        let emojiSize: CGFloat
+        let baseFontSize: CGFloat
+        let mentions: [String: MentionPresentation]
+    }
+
     struct Value {
         let attributedContent: NSAttributedString?
         let framesetter: CTFramesetter
@@ -26,7 +35,7 @@ enum NativeTimelineTextPresentation {
         plan: NativeTimelineTextPlan,
         model: AppModel?
     ) -> Value {
-        guard let prepared = plan.preparedText else {
+        guard plan.preparedText != nil else {
             return Value(
                 attributedContent: nil,
                 framesetter: CTFramesetterCreateWithAttributedString(
@@ -44,6 +53,35 @@ enum NativeTimelineTextPresentation {
             )
         }
 
+        guard let preparation = preparation(
+            message: message,
+            plan: plan,
+            model: model
+        ) else {
+            return Value(
+                attributedContent: nil,
+                framesetter: CTFramesetterCreateWithAttributedString(
+                    NSAttributedString()
+                ),
+                linkedImages: plan.linkedImages
+            )
+        }
+        let box = resolvedBox(for: preparation)
+        return Value(
+            attributedContent: box.value,
+            framesetter: box.framesetter,
+            linkedImages: plan.linkedImages
+        )
+    }
+
+    static func preparation(
+        message: Message,
+        plan: NativeTimelineTextPlan,
+        model: AppModel?
+    ) -> Preparation? {
+        guard plan.attributedText == nil,
+              let prepared = plan.preparedText
+        else { return nil }
         let resolver = model.map { MessageMentionResolver(model: $0, message: message) }
         let mentions = prepared.tokens.reduce(into: [String: MentionPresentation]()) { values, token in
             guard case let .mention(mention) = token else { return }
@@ -62,28 +100,42 @@ enum NativeTimelineTextPresentation {
                 $0.rawToken < $1.rawToken
             }
         )
-        let box = NativeTimelineResolvedTextCache.shared.box(
-            for: cacheKey
+        return Preparation(
+            key: cacheKey,
+            prepared: prepared,
+            emojiSize: emojiSize,
+            baseFontSize: plan.baseFontSize,
+            mentions: mentions
+        )
+    }
+
+    @discardableResult
+    nonisolated static func prewarm(
+        _ preparation: Preparation
+    ) -> NativeTimelineAttributedTextBox {
+        resolvedBox(for: preparation)
+    }
+
+    private nonisolated static func resolvedBox(
+        for preparation: Preparation
+    ) -> NativeTimelineAttributedTextBox {
+        NativeTimelineResolvedTextCache.shared.box(
+            for: preparation.key
         ) {
             NativeTimelineAttributedTextBox(
                 NativeTimelineCoreText.make(
-                    prepared: prepared,
-                    emojiSize: emojiSize,
-                    baseFontSize: plan.baseFontSize,
-                    mentionPresentations: mentions
+                    prepared: preparation.prepared,
+                    emojiSize: preparation.emojiSize,
+                    baseFontSize: preparation.baseFontSize,
+                    mentionPresentations: preparation.mentions
                 )
             )
         }
-        return Value(
-            attributedContent: box.value,
-            framesetter: box.framesetter,
-            linkedImages: plan.linkedImages
-        )
     }
 }
 
-final class NativeTimelineResolvedTextCache {
-    struct Key: Hashable {
+nonisolated final class NativeTimelineResolvedTextCache: Sendable {
+    struct Key: Hashable, Sendable {
         let messageID: MessageID
         let scope: String
         let prepared: RichMessageAttributedText.Prepared
@@ -94,44 +146,55 @@ final class NativeTimelineResolvedTextCache {
 
     static let shared = NativeTimelineResolvedTextCache()
 
+    private struct State: Sendable {
+        var entries: [Key: NativeTimelineAttributedTextBox] = [:]
+        var insertionOrder: [Key] = []
+        var evictionIndex = 0
+    }
+
     private let entryLimit = 2_000
-    private var entries: [Key: NativeTimelineAttributedTextBox] = [:]
-    private var insertionOrder: [Key] = []
-    private var evictionIndex = 0
+    private let state: Mutex<State>
 
     private init() {
-        entries.reserveCapacity(entryLimit)
-        insertionOrder.reserveCapacity(entryLimit + 512)
+        var initial = State()
+        initial.entries.reserveCapacity(entryLimit)
+        initial.insertionOrder.reserveCapacity(entryLimit + 512)
+        state = Mutex(initial)
     }
 
     func box(
         for key: Key,
         make: () -> NativeTimelineAttributedTextBox
     ) -> NativeTimelineAttributedTextBox {
-        if let cached = entries[key] {
+        if let cached = state.withLock({ $0.entries[key] }) {
             return cached
         }
         let box = make()
-        entries[key] = box
-        insertionOrder.append(key)
-        while entries.count > entryLimit,
-              evictionIndex < insertionOrder.count
-        {
-            let oldest = insertionOrder[evictionIndex]
-            evictionIndex += 1
-            entries.removeValue(forKey: oldest)
+        return state.withLock { state in
+            if let existing = state.entries[key] {
+                return existing
+            }
+            state.entries[key] = box
+            state.insertionOrder.append(key)
+            while state.entries.count > entryLimit,
+                  state.evictionIndex < state.insertionOrder.count
+            {
+                let oldest = state.insertionOrder[state.evictionIndex]
+                state.evictionIndex += 1
+                state.entries.removeValue(forKey: oldest)
+            }
+            if state.evictionIndex > 1_024,
+               state.evictionIndex * 2 > state.insertionOrder.count
+            {
+                state.insertionOrder.removeFirst(state.evictionIndex)
+                state.evictionIndex = 0
+            }
+            return box
         }
-        if evictionIndex > 1_024,
-           evictionIndex * 2 > insertionOrder.count
-        {
-            insertionOrder.removeFirst(evictionIndex)
-            evictionIndex = 0
-        }
-        return box
     }
 }
 
-enum NativeTimelineCoreText {
+nonisolated enum NativeTimelineCoreText {
     private static let runDelegateKey = NSAttributedString.Key(
         rawValue: kCTRunDelegateAttributeName as String
     )

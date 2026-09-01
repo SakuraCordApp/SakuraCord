@@ -11,9 +11,7 @@ import SwiftUI
 struct NativeTimelineMessageDrawInput {
     let row: MessageRowPresentation
     let layout: NativeTimelineRowLayout
-    let bounds: CGRect
     let model: AppModel?
-    let highlighted: Bool
     let isHovered: Bool
     let showsCompactTimestamp: Bool
     let hoveredMention: NativeTimelineMentionHover?
@@ -39,9 +37,7 @@ extension NativeTimelineRowPainter {
         { input in
             let row = input.row
             let layout = input.layout
-            let bounds = input.bounds
             let model = input.model
-            let highlighted = input.highlighted
             let showsCompactTimestamp = input.showsCompactTimestamp
             let hoveredMention = input.hoveredMention
             let hoveredTextLink = input.hoveredTextLink
@@ -58,9 +54,37 @@ extension NativeTimelineRowPainter {
             let spoilerRevealStore = input.spoilerRevealStore
             let reactionCountTransitions = input.reactionCountTransitions
         let message = row.message
-        if highlighted {
-            NSColor.controlAccentColor.withAlphaComponent(0.12).setFill()
-            bounds.fill()
+        if let context = row.searchContext,
+           let region = layout.searchSectionRegion
+        {
+            NativeTimelineRowPainter.systemSymbol(
+                context.systemImage,
+                in: region.iconFrame,
+                color: .secondaryLabelColor,
+                inset: 1,
+                weight: .semibold
+            )
+            text(
+                context.sectionTitle,
+                in: region.titleFrame,
+                font: .systemFont(
+                    ofSize: NSFont.preferredFont(forTextStyle: .headline).pointSize,
+                    weight: .semibold
+                ),
+                color: .labelColor,
+                lineBreakMode: .byTruncatingTail
+            )
+            if let subtitle = context.sectionSubtitle,
+               let subtitleFrame = region.subtitleFrame
+            {
+                text(
+                    subtitle,
+                    in: subtitleFrame,
+                    font: .preferredFont(forTextStyle: .caption1),
+                    color: .secondaryLabelColor,
+                    lineBreakMode: .byTruncatingTail
+                )
+            }
         }
         if let frame = layout.daySeparatorFrame {
             dateSeparator(date: message.timestamp, frame: frame)
@@ -152,13 +176,22 @@ extension NativeTimelineRowPainter {
                 color: .tertiaryLabelColor
             )
         }
-        if let frame = layout.replyFrame, let preview = row.replyPreview {
-            replyContext(
-                preview: preview,
-                isAvailable: row.isReplyAvailable,
-                frame: frame,
-                model: model
-            )
+        if let frame = layout.replyFrame,
+           let contentFrame = layout.replyContentFrame
+        {
+            if let preview = row.replyPreview {
+                replyContext(
+                    preview: preview,
+                    frame: frame,
+                    contentFrame: contentFrame,
+                    model: model
+                )
+            } else {
+                unavailableReplyContext(
+                    frame: frame,
+                    contentFrame: contentFrame
+                )
+            }
         }
         if let region = layout.commandInvocationRegion {
             commandInvocation(
@@ -593,6 +626,12 @@ extension NativeTimelineRowPainter {
                 threadSummary(thread, in: frame)
             }
         }
+        ComponentUnicodeEmojiRenderer.prepareImages(
+            for: layout.reactionRegions.compactMap { region in
+                let reference = region.reaction.emojiReference
+                return reference.id == nil ? reference.name : nil
+            }
+        )
         for region in layout.reactionRegions {
             reaction(
                 region,
@@ -701,21 +740,25 @@ extension NativeTimelineRowPainter {
 
     static func replyContext(
         preview: MessageReplyPreview,
-        isAvailable: Bool,
         frame: CGRect,
+        contentFrame: CGRect,
         model: AppModel?
     ) {
         let connectorFrame = CGRect(
             x: frame.minX,
             y: frame.minY,
-            width: 30,
+            width: max(
+                0,
+                contentFrame.minX - frame.minX
+                    - NativeTimelineReplyMetrics.horizontalSpacing
+            ),
             height: 20
         )
         replyConnector(in: connectorFrame)
 
         let avatarFrame =
             NativeTimelineAvatarPresentation
-                .replyAvatarFrame(in: frame)
+                .replyAvatarFrame(in: contentFrame)
         let authorFrame = replyAuthor(
             preview: preview,
             frame: frame,
@@ -723,26 +766,60 @@ extension NativeTimelineRowPainter {
             model: model
         )
 
-        let summary: String
-        if isAvailable, let model {
-            summary = MessageReplySummary.text(
+        let summary = if let model {
+            MessageReplySummary.text(
                 content: preview.content,
                 mentionLabel: MessageMentionResolver(model: model).label
             )
-        } else if isAvailable {
-            summary = MessageReplySummary.text(content: preview.content)
         } else {
-            summary = "Original unavailable"
+            MessageReplySummary.text(content: preview.content)
         }
         text(
             summary,
             in: CGRect(
-                x: authorFrame.maxX + 5,
+                x: authorFrame.maxX
+                    + NativeTimelineReplyMetrics.horizontalSpacing,
                 y: frame.minY,
-                width: max(0, frame.maxX - 48 - authorFrame.maxX - 5),
+                width: max(
+                    0,
+                    frame.maxX - 48 - authorFrame.maxX
+                        - NativeTimelineReplyMetrics.horizontalSpacing
+                ),
                 height: 20
             ),
             font: NativeTimelineReplyMetrics.summaryFont,
+            color: .secondaryLabelColor
+        )
+    }
+
+    static func unavailableReplyContext(
+        frame: CGRect,
+        contentFrame: CGRect
+    ) {
+        replyConnector(in: CGRect(
+            x: frame.minX,
+            y: frame.minY,
+            width: max(
+                0,
+                contentFrame.minX - frame.minX
+                    - NativeTimelineReplyMetrics.horizontalSpacing
+            ),
+            height: 20
+        ))
+        let baseFont = NativeTimelineReplyMetrics.summaryFont
+        let italicFont = NSFont(
+            descriptor: baseFont.fontDescriptor.withSymbolicTraits(.italic),
+            size: baseFont.pointSize
+        ) ?? baseFont
+        text(
+            "Message could not be loaded",
+            in: CGRect(
+                x: contentFrame.minX,
+                y: frame.minY,
+                width: contentFrame.width,
+                height: 20
+            ),
+            font: italicFont,
             color: .secondaryLabelColor
         )
     }
@@ -766,9 +843,17 @@ extension NativeTimelineRowPainter {
             font: font
         )
         let authorFrame = CGRect(
-            x: avatarFrame.maxX + 5,
+            x: avatarFrame.maxX
+                + NativeTimelineReplyMetrics.horizontalSpacing,
             y: frame.minY,
-            width: min(width, max(0, frame.maxX - avatarFrame.maxX - 5)),
+            width: min(
+                width,
+                max(
+                    0,
+                    frame.maxX - avatarFrame.maxX
+                        - NativeTimelineReplyMetrics.horizontalSpacing
+                )
+            ),
             height: 20
         )
         text(

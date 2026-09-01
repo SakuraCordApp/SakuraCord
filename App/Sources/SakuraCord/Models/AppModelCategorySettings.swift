@@ -13,7 +13,10 @@ extension AppModel {
     }
 
     func isCategoryCollapsed(guildID: GuildID, categoryID: ChannelID) -> Bool {
-        readState.isCategoryCollapsed(categoryID: categoryID, guildID: guildID)
+        if let optimisticValue = optimisticCategoryCollapsedByID[categoryID] {
+            return optimisticValue
+        }
+        return readState.isCategoryCollapsed(categoryID: categoryID, guildID: guildID)
     }
 
     func inheritedCategoryNotificationLevel(

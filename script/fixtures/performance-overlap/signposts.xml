@@ -37,6 +37,20 @@
       <signpost-name>OverlappingWork</signpost-name>
     </row>
     <row>
+      <event-time fmt="00:06.000.000">6000000000</event-time>
+      <thread fmt="SakuraCord (0x10) (SakuraCord, pid: 1)">16</thread>
+      <event-type>Begin</event-type>
+      <os-signpost-identifier fmt="505">505</os-signpost-identifier>
+      <signpost-name>AsyncThreadMigration</signpost-name>
+    </row>
+    <row>
+      <event-time fmt="00:07.250.000">7250000000</event-time>
+      <thread fmt="SakuraCord (0x20) (SakuraCord, pid: 1)">32</thread>
+      <event-type>End</event-type>
+      <os-signpost-identifier fmt="505">505</os-signpost-identifier>
+      <signpost-name>AsyncThreadMigration</signpost-name>
+    </row>
+    <row>
       <event-time fmt="00:21.000.000">21000000000</event-time>
       <process fmt="SakuraCord (pid: 1)">1</process>
       <event-type>End</event-type>

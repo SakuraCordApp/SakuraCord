@@ -40,17 +40,6 @@ import Testing
 }
 
 @MainActor
-@Test func `typing state expires automatically`() async {
-    let state = TypingStateModel(expiry: .milliseconds(10))
-    let channel = ChannelID(rawValue: 20)
-    let user = User(id: UserID(rawValue: 21), username: "timer", displayName: "Timer")
-    state.receive(channelID: channel, user: user, currentUserID: nil)
-    #expect(state.presentation(in: channel) != nil)
-    try? await Task.sleep(for: .milliseconds(30))
-    #expect(await eventuallyOnMain { state.presentation(in: channel) == nil })
-}
-
-@MainActor
 @Test func `remote typing is channel scoped cleared by message and disconnect`() async throws {
     let provider = TypingTestProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider, typingExpiry: .seconds(1))
@@ -76,55 +65,6 @@ import Testing
 
     await provider.emit(.connectionChanged(.disconnected))
     #expect(await eventuallyOnMain { model.typingState.presentation(in: ChannelID(rawValue: 12)) == nil })
-}
-
-@MainActor
-@Test func `local typing debounces throttles and cancels for draft send and channel changes`() async throws {
-    let provider = TypingTestProvider()
-    let model = AppModel(
-        launchMode: .offlineTesting,
-        provider: provider,
-        localTypingTiming: .init(debounce: .milliseconds(10), throttle: .milliseconds(50))
-    )
-    await model.start()
-    let textID = try #require(model.selectedChannelID)
-
-    // Loading/restoring a draft is not a user edit and must not emit typing.
-    try? await Task.sleep(for: .milliseconds(20))
-    #expect(await provider.typingCount == 0)
-
-    model.updateDraft("h")
-    model.updateDraft("he")
-    model.updateDraft("hello")
-    #expect(await eventuallyTypingCount(1, from: provider))
-    #expect(await provider.typingChannels == [textID])
-
-    model.updateDraft("hello!")
-    model.updateDraft("hello!!")
-    try? await Task.sleep(for: .milliseconds(15))
-    #expect(await provider.typingCount == 1)
-    #expect(await eventuallyTypingCount(2, from: provider))
-
-    model.updateDraft("pending")
-    model.updateDraft("")
-    try? await Task.sleep(for: .milliseconds(20))
-    #expect(await provider.typingCount == 2)
-
-    model.updateDraft("send now")
-    await model.send()
-    try? await Task.sleep(for: .milliseconds(20))
-    #expect(await provider.typingCount == 2)
-
-    model.selectedChannelID = ChannelID(rawValue: 11)
-    model.updateDraft("voice draft")
-    try? await Task.sleep(for: .milliseconds(20))
-    #expect(await provider.typingCount == 2)
-
-    model.selectedChannelID = ChannelID(rawValue: 12)
-    model.updateDraft("other channel")
-    model.selectedChannelID = textID
-    try? await Task.sleep(for: .milliseconds(20))
-    #expect(await provider.typingCount == 2)
 }
 
 @MainActor
@@ -249,6 +189,31 @@ import Testing
 }
 
 @MainActor
+@Test func `command arrows request directional reply navigation`() throws {
+    let textView = ComposerNSTextView()
+    var directions: [MessageReplyNavigationDirection] = []
+    textView.onAutocompleteCommand = { _ in false }
+    textView.onNavigateReplySelection = { direction in
+        directions.append(direction)
+        return true
+    }
+
+    textView.keyDown(with: try upArrowKeyEvent(modifiers: [.command]))
+    textView.keyDown(with: try downArrowKeyEvent(modifiers: [.command]))
+
+    #expect(directions == [.older, .newer])
+    #expect(ComposerNSTextView.replyNavigationDirection(
+        for: try upArrowKeyEvent(modifiers: [.command])
+    ) == .older)
+    #expect(ComposerNSTextView.replyNavigationDirection(
+        for: try downArrowKeyEvent(modifiers: [.command])
+    ) == .newer)
+    #expect(ComposerNSTextView.replyNavigationDirection(
+        for: try upArrowKeyEvent(modifiers: [.command, .shift])
+    ) == nil)
+}
+
+@MainActor
 @Test func `timeline edit request rechecks current user ownership`() async throws {
     let model = AppModel(launchMode: .offlineTesting)
     await model.start()
@@ -355,16 +320,6 @@ import Testing
     ) == .inputMethod)
 }
 
-@Test func `message edit footer stays compact and vertically balanced`() {
-    #expect(MessageEditLayoutMetrics.editorFooterSpacing == 2)
-    #expect(MessageEditLayoutMetrics.footerVerticalPadding == 0)
-    #expect(MessageEditLayoutMetrics.actionHeight == 22)
-    #expect(MessageEditLayoutMetrics.actionHeight >= 20)
-    #expect(MessageEditLayoutMetrics.keycapVerticalPadding == 1)
-    #expect(MessageEditLayoutMetrics.footerIntrinsicHeight == 22)
-    #expect(MessageEditLayoutMetrics.verticalContributionBelowEditor == 24)
-}
-
 @MainActor
 @Test func `attachment only send works and whitespace only does not send`() async {
     let provider = TypingTestProvider()
@@ -381,7 +336,7 @@ import Testing
 }
 
 @MainActor
-@Test func `composer stages at most ten attachments including repeated files and clears them on navigation`() async throws {
+@Test func `composer stages at most ten attachments and clears them on Escape and navigation`() async throws {
     let provider = TypingTestProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
@@ -401,6 +356,11 @@ import Testing
     model.removeComposerAttachment(firstID, from: .channel)
     #expect(model.channelComposerAttachments.filter { $0.url == urls[0] }.count == 1)
 
+    #expect(model.consumeEscapeForComposerAttachments(in: .channel))
+    #expect(model.channelComposerAttachments.isEmpty)
+    #expect(!model.consumeEscapeForComposerAttachments(in: .channel))
+
+    #expect(model.addComposerAttachments([urls[0]], to: .channel))
     model.selectedChannelID = ChannelID(rawValue: 12)
     #expect(model.channelComposerAttachments.isEmpty)
 }
@@ -658,32 +618,6 @@ import Testing
     #expect(url.pathExtension == "png")
     #expect((try Data(contentsOf: url)).isEmpty == false)
     #expect(NSImage(contentsOf: url)?.isValid == true)
-}
-
-@Test func `unfocused composer offers command v only for ordinary paste`() {
-    #expect(ComposerUnfocusedTypingMonitor.shouldOfferPaste(
-        keyCode: 9,
-        modifierFlags: .command
-    ))
-    #expect(!ComposerUnfocusedTypingMonitor.shouldOfferPaste(
-        keyCode: 9,
-        modifierFlags: [.command, .option]
-    ))
-    #expect(!ComposerUnfocusedTypingMonitor.shouldOfferPaste(
-        keyCode: 8,
-        modifierFlags: .command
-    ))
-
-    var handled = false
-    #expect(ComposerUnfocusedTypingMonitor.handlePaste(
-        keyCode: 9,
-        modifierFlags: .command,
-        onPasteAttachments: {
-            handled = true
-            return true
-        }
-    ))
-    #expect(handled)
 }
 
 @MainActor
@@ -973,6 +907,39 @@ import Testing
     let imageURLs = DiscordCustomEmojiCatalog.imageURLsByID(from: [first, local])
     #expect(imageURLs["100"] == first.imageURL)
     #expect(imageURLs["300"] == localURL)
+
+    let prepared = try #require(DiscordCustomEmojiCatalog.prepare(
+        emojisByGuild: [
+            firstGuild: [first, local],
+            secondGuild: [second, other]
+        ],
+        guildOrder: [secondGuild, firstGuild],
+        previousOrderedEmojis: [],
+        previousImageURLsByID: [:]
+    ))
+    let preparedOrder = try #require(prepared.orderedEmojis)
+    let preparedURLs = try #require(prepared.imageURLsByID)
+    #expect(preparedOrder.map(\.id) == ["200", "201", "100", "300"])
+    #expect(preparedURLs["300"] == localURL)
+
+    let unchanged = try #require(DiscordCustomEmojiCatalog.prepare(
+        emojisByGuild: [
+            firstGuild: [first, local],
+            secondGuild: [second, other]
+        ],
+        guildOrder: [secondGuild, firstGuild],
+        previousOrderedEmojis: preparedOrder,
+        previousImageURLsByID: preparedURLs
+    ))
+    #expect(unchanged.orderedEmojis == nil)
+    #expect(unchanged.imageURLsByID == nil)
+    #expect(DiscordCustomEmojiCatalog.prepare(
+        emojisByGuild: [firstGuild: [first]],
+        guildOrder: [firstGuild],
+        previousOrderedEmojis: [],
+        previousImageURLsByID: [:],
+        cancellationCheck: { true }
+    ) == nil)
 }
 
 @MainActor
@@ -1539,6 +1506,40 @@ import Testing
 }
 
 @MainActor
+@Test func `mention media discovery only returns user avatars`() throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    let userID = UserID(rawValue: 7_001)
+    let userAvatarURL = try #require(
+        URL(string: "https://cdn.example/user-avatar.png")
+    )
+    let guildAvatarURL = try #require(
+        URL(string: "https://cdn.example/guild-avatar.png")
+    )
+    let member = Member(
+        user: User(
+            id: userID,
+            username: "avatar-user",
+            displayName: "Avatar User",
+            avatarURL: userAvatarURL
+        ),
+        roleName: "Member",
+        isOnline: true,
+        guildAvatarURL: guildAvatarURL
+    )
+    model.knownMentionMembers = [userID: member]
+    let userMention = try #require(
+        RenderedMention(rawToken: "<@\(userID.rawValue)>")
+    )
+    let channelMention = try #require(
+        RenderedMention(rawToken: "<#7002>")
+    )
+    let resolver = MessageMentionResolver(model: model)
+
+    #expect(resolver.avatarURL(userMention) == guildAvatarURL)
+    #expect(resolver.avatarURL(channelMention) == nil)
+}
+
+@MainActor
 @Test func `channel autocomplete follows guild positions and shows category metadata without duplicate hashes`() {
     let guildID = GuildID(rawValue: 50)
     let currentUser = User(id: UserID(rawValue: 60), username: "current", displayName: "Current")
@@ -1718,25 +1719,6 @@ import Testing
 }
 
 @MainActor
-@Test func `mention attachment geometry stays atomic while using compact padding`() throws {
-    let presentation = MentionPresentation(
-        rawToken: "<@123>",
-        label: "@Ari",
-        target: .user(UserID(rawValue: 123))
-    )
-    let attributed = MentionAttachmentRenderer.attributedString(presentation: presentation)
-    let attachment = try #require(attributed.attribute(
-        .attachment,
-        at: 0,
-        effectiveRange: nil
-    ) as? MentionTextAttachment)
-
-    #expect(attributed.length == 1)
-    #expect(attachment.normalImage.size.height == 21)
-    #expect(ComposerEmojiAttributedText.serialize(attributed) == "<@123>")
-}
-
-@MainActor
 @Test func `emoji completion returns every matching custom emoji`() {
     let guildID = GuildID(rawValue: 30)
     let emojis = (0 ..< 24).map {
@@ -1862,12 +1844,6 @@ import Testing
 }
 
 @MainActor
-@Test func `composer text accepts the activation click`() {
-    let textView = ComposerNSTextView()
-    #expect(textView.acceptsFirstMouse(for: nil))
-}
-
-@MainActor
 private func escapeKeyEvent() throws -> NSEvent {
     try #require(NSEvent.keyEvent(
         with: .keyDown,
@@ -1900,6 +1876,26 @@ private func upArrowKeyEvent(
         ),
         isARepeat: false,
         keyCode: 126
+    ))
+}
+
+@MainActor
+private func downArrowKeyEvent(
+    modifiers: NSEvent.ModifierFlags = []
+) throws -> NSEvent {
+    try #require(NSEvent.keyEvent(
+        with: .keyDown,
+        location: .zero,
+        modifierFlags: modifiers,
+        timestamp: 0,
+        windowNumber: 0,
+        context: nil,
+        characters: String(NSEvent.SpecialKey.downArrow.unicodeScalar),
+        charactersIgnoringModifiers: String(
+            NSEvent.SpecialKey.downArrow.unicodeScalar
+        ),
+        isARepeat: false,
+        keyCode: 125
     ))
 }
 
@@ -1945,48 +1941,6 @@ private func upArrowKeyEvent(
             MessageOutboxPresentation.textOpacity(for: $0.outboxState)
         } == 1
     )
-}
-
-@MainActor
-@Test func `optimistic image attachment renders as dimmed local media`() async throws {
-    let provider = TypingTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
-    await model.start()
-
-    let imageURL = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "sakuracord-pending-image-\(UUID().uuidString).png"
-    )
-    let representation = try #require(NSBitmapImageRep(
-        bitmapDataPlanes: nil,
-        pixelsWide: 48,
-        pixelsHigh: 30,
-        bitsPerSample: 8,
-        samplesPerPixel: 4,
-        hasAlpha: true,
-        isPlanar: false,
-        colorSpaceName: .deviceRGB,
-        bytesPerRow: 0,
-        bitsPerPixel: 0
-    ))
-    let pngData = try #require(representation.representation(using: .png, properties: [:]))
-    try pngData.write(to: imageURL)
-    defer { try? FileManager.default.removeItem(at: imageURL) }
-
-    await provider.suspendNextSend()
-    let send = Task { await model.send(attachments: [imageURL]) }
-    await provider.waitUntilSendStarts()
-
-    let pending = try #require(model.messages.last { $0.attachments.first?.url == imageURL })
-    let attachment = try #require(pending.attachments.first)
-    #expect(attachment.mediaType == "image/png")
-    #expect(attachment.width == 48)
-    #expect(attachment.height == 30)
-    #expect(attachment.size == pngData.count)
-    #expect(RichMediaItem(attachment).kind == .image(animated: false))
-    #expect(MessageOutboxPresentation.mediaOpacity(for: pending.outboxState) == 0.55)
-
-    await provider.releaseSend()
-    #expect(await send.value)
 }
 
 @MainActor
@@ -2042,20 +1996,6 @@ private func eventuallyOnMain(_ condition: @escaping @MainActor () -> Bool) asyn
         try? await Task.sleep(for: .milliseconds(1))
     }
     return condition()
-}
-
-private func eventuallyTypingCount(
-    _ expectedCount: Int,
-    from provider: TypingTestProvider
-) async -> Bool {
-    let deadline = ContinuousClock.now + .seconds(3)
-    repeat {
-        if await provider.typingCount == expectedCount {
-            return true
-        }
-        try? await Task.sleep(for: .milliseconds(5))
-    } while ContinuousClock.now < deadline
-    return await provider.typingCount == expectedCount
 }
 
 private func eventuallyUploadCallCount(

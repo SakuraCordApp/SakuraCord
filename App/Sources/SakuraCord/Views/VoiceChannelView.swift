@@ -27,6 +27,28 @@ struct VoiceChannelView: View {
                 .padding(18)
                 .glassEffect(.regular, in: ConcentricRectangle(cornerRadius: 16, style: .continuous))
             }
+        } else if model.voiceSessionState == .failed
+            || model.voiceSessionState == .disconnected
+        {
+            ZStack {
+                VoiceVideoGrid(model: model)
+                    .opacity(0.45)
+                VStack(spacing: 10) {
+                    Image(systemName: "wifi.exclamationmark")
+                        .font(.system(size: 28, weight: .medium))
+                        .foregroundStyle(Color(hex: 0xDA373C))
+                    Text("Voice disconnected")
+                        .font(.headline)
+                    Text("SakuraCord is no longer receiving call audio.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(20)
+                .glassEffect(
+                    .regular.tint(Color(hex: 0xDA373C).opacity(0.16)),
+                    in: ConcentricRectangle(cornerRadius: 16, style: .continuous)
+                )
+            }
         } else {
             VoiceVideoGrid(model: model)
         }
@@ -83,7 +105,7 @@ struct VoiceChannelView: View {
         .buttonStyle(.plain)
         .foregroundStyle(.white)
         .glassEffect(
-            .regular.tint(Color(hex: 0x23A55A)).interactive(),
+            .regular.tint(Color.accentColor).interactive(),
             in: Capsule()
         )
         .disabled(channel.map(model.canJoinVoice) != true)
@@ -124,7 +146,8 @@ struct VoiceChannelView: View {
                     isLocal: state.userID == currentUser?.id,
                     isMuted: state.isMuted || state.isSelfMuted,
                     isDeafened: state.isDeafened || state.isSelfDeafened,
-                    isCameraEnabled: state.isVideoEnabled
+                    isCameraEnabled: state.isVideoEnabled,
+                    isStreaming: state.isStreaming
                 )
             }
             .sorted {
@@ -144,6 +167,7 @@ private struct VoiceChannelPreviewParticipant: Identifiable {
     let isMuted: Bool
     let isDeafened: Bool
     let isCameraEnabled: Bool
+    let isStreaming: Bool
 }
 
 private struct VoiceChannelPreviewGrid: View {
@@ -182,13 +206,22 @@ private struct VoiceChannelPreviewCard: View {
             AvatarView(name: participant.name, url: participant.avatarURL, size: 88)
         }
         .overlay(alignment: .topTrailing) {
-            if participant.isCameraEnabled {
-                Image(systemName: "video.fill")
-                    .font(.caption.weight(.semibold))
-                    .padding(8)
-                    .glassEffect(.regular, in: Circle())
-                    .padding(10)
+            HStack(spacing: 6) {
+                if participant.isStreaming {
+                    Image(systemName: "display")
+                        .foregroundStyle(Color(hex: 0x23A55A))
+                        .accessibilityLabel("Sharing screen")
+                }
+                if participant.isCameraEnabled {
+                    Image(systemName: "video.fill")
+                        .accessibilityLabel("Camera on")
+                }
             }
+            .font(.caption.weight(.semibold))
+            .padding(8)
+            .glassEffect(.regular, in: Capsule())
+            .padding(10)
+            .opacity(participant.isCameraEnabled || participant.isStreaming ? 1 : 0)
         }
         .overlay(alignment: .bottomLeading) {
             VoiceParticipantNameCapsule(
@@ -208,6 +241,9 @@ private struct VoiceChannelPreviewCard: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(participant.isLocal ? "\(participant.name), you" : participant.name)
-        .accessibilityValue(participant.isCameraEnabled ? "Camera on" : "Camera off")
+        .accessibilityValue(
+            (participant.isCameraEnabled ? "Camera on" : "Camera off")
+                + (participant.isStreaming ? ", sharing screen" : "")
+        )
     }
 }

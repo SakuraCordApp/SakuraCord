@@ -1,295 +1,66 @@
-# SakuraCord agent guidance
+# SakuraCord
 
-This file applies to the entire repository.
+SakuraCord is an interactive native macOS Discord client. User-visible actions
+initiate account actions.
 
-SakuraCord is an interactive native macOS Discord client. It is not a self-bot,
-spam tool, scraper, or unattended account-automation system. User-visible
-actions initiate account actions. Do not add hidden automation, bulk messaging,
-mass-DM behavior, token sharing, challenge bypasses, or claims that the client
-is affiliated with Discord or safe from account action.
+## Platform posture
 
-## Start with the right source of truth
+SakuraCord targets only the newest macOS beta and its matching Xcode and Swift
+toolchain. The current required versions live in the root README and package
+manifests.
 
-- Read [docs/README.md](docs/README.md) and the canonical document relevant to
-  the task. Do not load every historical implementation detail into context.
-- Inspect the current code, tests, configuration, and working-tree state before
-  relying on a dated document or roadmap description.
-- Preserve unrelated and dirty work. Make the smallest coherent change and
-  distinguish direct evidence from inference.
+- Prefer the newest suitable Apple APIs and current Swift language patterns.
+- Migrate, do not wrap. When a platform API has a suitable modern replacement,
+  adopt it and remove the superseded app-owned path.
+- Do not add back-deployment branches, compatibility shims, or speculative
+  fallbacks for older Apple platforms unless explicitly requested.
+- Capability gaps and vendored sources are deliberate exceptions. Understand
+  why an older API exists before replacing it.
 
-## Decide the current checkout mode
+## Read it before you
 
-Worktree rules are conditional. Do not assume they apply because this file
-mentions worktrees or because `git worktree list` contains other checkouts.
+| Read it before you | Source |
+| --- | --- |
+| navigate or change the canonical documentation set | [docs/README.md](docs/README.md) |
+| change package ownership, runtime wiring, persistence, plugins, or packaging | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| add or materially change production REST, Gateway, authentication, upload, or other Discord communication | [docs/PROTOCOL_BASELINE.md](docs/PROTOCOL_BASELINE.md) |
+| build, run, test, package, or verify the app | [README.md — Build from source](README.md#build-from-source) |
+| add, change, or remove automated tests | [docs/TESTING.md](docs/TESTING.md) |
+| commit or push from a fresh clone | [docs/README.md — Developer and agent bootstrap](docs/README.md#developer-and-agent-bootstrap) |
+| push `main`, create a release tag, or change release automation | [docs/RELEASING.md](docs/RELEASING.md) |
+| use Computer Use against SakuraCord | run `./script/runtime.sh` and use the complete path from its `App:` line |
+| work on planned scope, priority, acceptance criteria, or progress | [Roadmap Management](plugin://roadmap-management@personal) |
+| draft release notes or a Discord release announcement | [RELEASE_NOTES_STYLE.md](docs/RELEASE_NOTES_STYLE.md) and [DISCORD_RELEASE_ANNOUNCEMENTS_STYLE.md](docs/DISCORD_RELEASE_ANNOUNCEMENTS_STYLE.md) |
 
-When checkout identity matters for building, testing, cleanup, concurrent work,
-or Computer Use, execute:
+## Further Information
 
-```sh
-./script/worktree_runtime.sh
-```
+- Inspect current code, tests, configuration, and Git state before relying on
+  documentation or roadmap descriptions. Preserve unrelated and dirty work.
+- For work that is not exclusively UI, prefer a read-only authenticated
+  verification pass against a configured session when it can exercise the
+  changed behavior. Agent-run verification must not deliberately mutate remote
+  account state or content.
+- When using Computer Use, target SakuraCord by the absolute bundle path printed
+  by `runtime.sh`, never by display name, and keep that target for the session.
+- Roadmap state belongs only in the deployed roadmap service. Repository code
+  and commits are evidence to assess, not proof that an item is complete.
+- Keep documentation canonical. Update an existing source of truth instead of
+  duplicating architecture, protocol, workflow, or planning information.
+- Preserve the release-branch invariant: `main` must always be an ancestor of
+  `nightly`. Before pushing `main`, incorporate the same commit into `nightly`
+  without rewriting either branch and push both refs atomically when possible.
+  Never push a regular or beta release tag until its commit is present on the
+  remote `nightly` branch. Follow `docs/RELEASING.md` for the exact sequence.
 
-- `Checkout: main` means this is the ordinary canonical checkout. Work normally
-  here with `dist/SakuraCord.app` and `dev.sakuracord.SakuraCord`. Do not create
-  a worktree, set `SAKURACORD_WORKTREE_ID`, or apply linked-only setup/cleanup
-  guidance unless the user actually requested concurrent writers.
-- `Checkout: linked worktree` means isolated variant behavior is active. Follow
-  [docs/PARALLEL_WORKTREES.md](docs/PARALLEL_WORKTREES.md).
+## Tests
 
-`script/worktree_test.sh` only serializes tests in the current checkout. It does
-not create, select, or switch to a worktree.
+Reserve committed automated tests for critical behavior, major new
+functionality, and high-value regression coverage. Do not commit automated
+tests for purely visual UI changes. Temporary UI tests may be used during
+development, but remove them before committing.
 
-## Roadmap workflow
+## Before you finish
 
-The deployed roadmap service is the only source of truth for planned work,
-priority, lifecycle state, acceptance criteria, research, verification, and
-linked Discord discussions. Use the
-[@roadmap-management](plugin://roadmap-management@personal) plugin and its
-roadmap tools. Do not create or maintain a repository `ROADMAP.md`.
-
-For roadmap work:
-
-1. Search or list items to resolve the stable item ID.
-2. Read the complete current item and revision before any mutation.
-3. Use that exact revision as `expectedRevision`; on conflict, read again and
-   reapply only the intended change.
-4. Do not infer progress from code presence or intuition. Cite acceptance
-   criteria, tests, commits, pull requests, benchmarks, or an explicit manual
-   assessment with rationale.
-5. Record actual verification through the roadmap verification tool. A normal
-   transition to done requires acceptance criteria, every criterion satisfied,
-   and at least one passing verification result.
-6. Use roadmap history for “what changed” questions. Use sync status before
-   reconciliation when diagnosing Discord projection drift.
-
-Community submissions remain in the review inbox until a maintainer accepts or
-links them. Reactions and duplicate counts are signals, not automatic priority.
-Roadmap data and per-item state never belong in Git commits. Repository
-inspection is evidence to review, not proof that an item is complete.
-
-## Linked-worktree isolation
-
-This section applies only to an actual linked checkout or to a coordinating task
-that is deliberately creating separate linked worktrees for concurrent writers.
-A single writer in the main checkout should not enter the parallel-worktree
-workflow.
-
-- Give every concurrently writing agent its own Codex-created worktree. Never
-  build or edit through another agent's checkout.
-- Variant app identities are only for actual Codex linked worktrees. A normal
-  checkout must build `dist/SakuraCord.app` with display name `SakuraCord` and
-  bundle identifier `dev.sakuracord.SakuraCord`. Do not set
-  `SAKURACORD_WORKTREE_ID` to manufacture a variant identity.
-- Use repository environment actions or `script/build_and_run.sh`; they assign
-  each worktree a unique app name, bundle, process scope, and build cache. Do
-  not use `pkill`, `killall`, or a hard-coded `dist/SakuraCord.app` path in
-  worktree automation.
-- Use `--offline`, `--offline-long-server-list`, or
-  `--offline-forum-performance` for agent visual testing. Linked-worktree
-  live-account launches are blocked by default. Agents must not set the
-  live-worktree override.
-- Use `script/worktree_test.sh` to serialize tests within one checkout. Builds
-  and tests in separate worktrees remain independent.
-- Integrate results patch-by-patch. Never replace a shared file wholesale from
-  another worktree. Resolve overlaps semantically, run `git diff --check`,
-  search for conflict markers, and verify the combined result.
-
-The full procedure is in
-[docs/PARALLEL_WORKTREES.md](docs/PARALLEL_WORKTREES.md).
-
-## Computer Use app targeting
-
-- Never target SakuraCord by the generic display name. A read-only state lookup
-  can launch an ambiguous installed, authenticated, offline, or worktree build.
-- Execute, do not source, `script/worktree_runtime.sh` from the checkout being
-  tested. First confirm whether it reports `Checkout: main` or
-  `Checkout: linked worktree`, then use the complete bundle path from its `App:`
-  line as the Computer Use target.
-- Confirm the printed executable is the scoped running process. If it is not
-  running, launch that exact bundle with the intended offline arguments.
-- After every action, fetch fresh state from the same absolute bundle path.
-  Never switch to a display-name target mid-session.
-
-## Protocol research proportional to risk
-
-UI-only work, local persistence, mock fixtures, tests, accessibility, styling,
-and mechanical refactors do not require fresh Discord protocol research when
-they leave the established network contract unchanged.
-
-Every new or materially changed production REST request, Gateway path,
-authentication exchange, upload, or other communication with Discord requires
-a complete, current cross-reference of all of the following:
-
-1. Discord's current public API, Gateway, status-code, and rate-limit
-   documentation wherever those documents cover the behavior;
-2. the corresponding implementation in the current official production web
-   client bundle, including its route constants, action, state store, and
-   Gateway reconciliation path;
-3. the corresponding pinned Paicord path;
-4. the corresponding pinned Swiftcord v1 path; and
-5. the exact visible or sanitized protocol behavior of a current clean,
-   unmodified official Discord client when static sources leave a material
-   ambiguity.
-
-Paicord and Swiftcord are mandatory cross-references even when the official web
-bundle appears conclusive. Record explicitly when either reference has no
-corresponding implementation; absence is evidence, not permission to skip it.
-Treat the current official web bundle as the primary operational reference for
-normal-user client behavior that public documentation does not cover. Treat
-public documentation as the authority for supported API semantics, status
-codes, and rate limits. The minified bundle is dated first-party implementation
-evidence, not a promise of API stability.
-
-Trace the complete feature path: UI trigger, cache/state lookup, Gateway
-dependency, route or opcode, headers, request body, sequencing, request count,
-response decoding, errors, rate limits, retries, cancellation, invalidation,
-and reconciliation. Begin with the exact current first-party request and event
-shape, then resolve every mismatch against Paicord and Swiftcord. Swiftcord v1
-is a historical design reference and Paicord is a current compatibility
-reference; neither outranks contradictory current first-party evidence.
-Any SakuraCord difference must be deliberate, safer or architecturally
-necessary, documented with evidence, and covered by request-contract and
-request-budget tests.
-
-Capture only sanitized protocol shape. Never store or share credentials,
-authorization headers, cookies, message bodies, personal data, fingerprints,
-installation identifiers, or unsanitized traffic. Never replay captured
-credentials or synthesize server-issued values.
-
-Record narrow, time-bound evidence in the roadmap item, pull request, or commit
-description. Update [docs/PROTOCOL_BASELINE.md](docs/PROTOCOL_BASELINE.md) only
-when a change establishes or supersedes a durable repository-wide contract. Do
-not create a feature-specific Markdown implementation journal.
-
-## REST and account safety
-
-- Route every authenticated request through `DiscordRESTProvider`'s central
-  transport, rate-limit coordinator, metadata source, logging, and safety
-  circuit. Do not create a one-off authenticated `URLSession`.
-- Preserve the current retry contract unless the protocol comparison and tests
-  justify changing it: ordinary GETs have at most two attempts and retry only
-  after a server `429`; mutations have one attempt. The application-command
-  index has its separately tested three-request `202`/`429` readiness bound.
-- Use server-provided bucket and cooldown data. Never hard-code a rate limit,
-  retry early, spin, or add speculative “just in case” probes.
-- Preserve nonces/idempotency and Gateway reconciliation. An ambiguous mutation
-  result must not become an automatic second user action.
-- Native login may follow its separately documented, bounded Paicord-style
-  status retry and one user-completed CAPTCHA replay. Cancelling or failing a
-  challenge never replays it. Never synthesize, borrow, or bypass a challenge.
-- Validate channel type, permissions when known, required fields, limits, and
-  attachment metadata before transmission.
-- Coalesce identical reads, deduplicate in-flight work, paginate deliberately,
-  cancel superseded work, and cap fan-out.
-- Log only sanitized route templates, status/error codes, bucket identifiers,
-  request counts, and timing. Never log credentials or message content.
-
-### Direct-message guardrail
-
-DM behavior needs extra review because a SakuraCord DM send has previously
-triggered an account restriction.
-
-- Treat opening/creating a DM, loading an existing DM, and sending as distinct
-  actions. Do not create or reopen a DM on every send.
-- Before materially changing DM creation or sending, recheck the current
-  official web-client bundle, a clean official client, Paicord, Swiftcord v1,
-  request ordering, body, nonce, context, challenge handling, and Gateway
-  reconciliation.
-- Serialize duplicate open/create attempts and deduplicate sends. Never invent
-  a second send after an ambiguous timeout.
-- Handle `40003`, `40004`, verification/challenge responses, and connection
-  revocation at the same bounded scope as the reviewed reference path.
-- Keep incomplete DM mutation behavior experimental and gated until contract
-  and request-budget tests pass.
-
-## Gateway requirements
-
-- Keep an explicit testable state machine for connect, Hello, Identify/Resume,
-  heartbeat, ACK, Ready, reconnect, invalid session, backoff, and shutdown.
-- Track heartbeat ACKs, prefer Resume when valid, bound reconnect attempts, and
-  prevent stale socket generations from affecting a newer connection.
-- Understand and source Identify metadata correctly. Do not paste captured
-  blobs or claim official-client identity.
-- Add deterministic fixtures for each new opcode and transition.
-
-## Testing and live-account rules
-
-- Default to mocked transports, sanitized fixtures, deterministic clocks, and
-  synthetic accounts/guilds. Offline coverage remains required for every behavior that can be represented faithfully without authenticated server state.
-- Add request-contract tests for method, route, query, headers, body,
-  status/error handling, rate-limit behavior, retries, and mutation nonce when
-  any of those change.
-- Add request-budget tests for fan-out, caching, pagination, cancellation, and
-  deduplication.
-- Use `./script/worktree_test.sh protocol`, `app`, or `all`. For packaged-app
-  claims, run `./script/build_and_run.sh package` and strict deep `codesign`
-  verification. A successful compile is not shipped-app or visual proof.
-- Every agent must run `./script/install_git_hooks.sh` once in each fresh clone
-  before its first commit or push and verify
-  `git config --local --get core.hooksPath` reports `.githooks`. The installer
-  refuses to replace a different existing hooks path; stop and report that
-  conflict instead of bypassing it.
-- Run `./script/code_quality.sh check` before reporting a change ready to push.
-  The versioned pre-commit hook checks the staged index, and pre-push checks the
-  committed ref tips and any staged Swift snapshot with that same pinned
-  command; do not bypass either hook.
-
-## Documentation rules
-
-- Keep the root README accurate for public setup, safety, tests, and releases.
-- Keep the docs set small and canonical; follow
-  [docs/README.md](docs/README.md).
-- Planning and progress belong in the roadmap service. Durable architecture,
-  protocol, workflow, and legal facts belong in the existing canonical docs.
-- Verify commands, paths, versions, capability gates, and release claims
-  against current source before documenting them.
-- Date observations and state what was not verified. Do not present a build,
-  benchmark, live check, or memory-derived fact as current without evidence.
-
-## Release copy workflow
-
-When asked to generate, revise, or save release notes or a Discord release
-announcement, read [docs/RELEASE_NOTES_STYLE.md](docs/RELEASE_NOTES_STYLE.md)
-and
-[docs/DISCORD_RELEASE_ANNOUNCEMENTS_STYLE.md](docs/DISCORD_RELEASE_ANNOUNCEMENTS_STYLE.md).
-
-- Resolve the exact requested tag and inspect its published GitHub Release
-  state before drafting. Never assume the next version is intended.
-- Derive claims from the previous-tag comparison and the code, tests, and
-  documentation actually contained in the requested tag. Exclude later work.
-- Draft GitHub notes and Discord copy separately. GitHub notes are detailed;
-  Discord copy is concise and prioritizes user-facing features.
-- Use feature-specific Discord headlines ending in `🌸`; do not use generic
-  marketing phrases that could describe any release.
-- Keep Discord embed sections compact: use only the custom headline and the
-  `**Highlights**` list, with no introductory paragraph. Put one blank line
-  between the headings and the first bullet immediately after `**Highlights**`.
-- Apply the specificity test from both style guides before presenting a draft:
-  name major features directly instead of reducing them to abstract benefits.
-  Broad quality-of-life wording is allowed only for genuinely diffuse polish
-  and must be supported by representative concrete details.
-- Treat the Discord role mention, `SakuraCord vX.Y.Z` embed title, and
-  **View release** button as generated output, not authored copy.
-- Show both complete drafts to the maintainer for revision before writing
-  `Releases/vX.Y.Z.json`, unless the maintainer explicitly asks to save them
-  immediately. Preserve the approved wording exactly.
-
-## Completion checklist
-
-Before finishing, apply the parts relevant to the change:
-
-- Did the implementation stay within the interactive-client scope?
-- Did protocol-changing work compare the required references and record any
-  deliberate difference?
-- Are request counts, ordering, caching, cancellation, retries, and
-  reconciliation explicit and tested?
-- Are authentication, permission, restriction, malformed-response, and
-  challenge paths bounded without bypasses?
-- Do automated tests run offline without secrets or personal data?
-- If an authenticated-only exception was necessary, was its inherently
-  authenticated trigger identified, the exact API path re-audited, and fresh
-  action-specific user permission obtained before the test?
-- Were the actual relevant tests run, and were package, signature, live, and
-  visual checks reported separately?
-- Was durable documentation updated without creating duplicate roadmap or
-  feature-journal state?
+Follow the relevant validation defined by the sources above. Report only checks
+actually performed, and distinguish compilation, tests, packaging, signature,
+live-account, and visual verification.

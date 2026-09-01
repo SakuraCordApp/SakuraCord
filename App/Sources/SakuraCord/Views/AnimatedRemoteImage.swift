@@ -147,6 +147,7 @@ struct AnimatedRemoteImage: View {
     let url: URL
     var animates = true
     var isLooping = true
+    var previewImage: NSImage?
     var fallbackSystemImage: String?
     var fallbackInset: CGFloat = 2
     var maximumPixelDimension: Int?
@@ -163,6 +164,7 @@ struct AnimatedRemoteImage: View {
         url: URL,
         animates: Bool = true,
         isLooping: Bool = true,
+        previewImage: NSImage? = nil,
         fallbackSystemImage: String? = nil,
         fallbackInset: CGFloat = 2,
         maximumPixelDimension: Int? = nil,
@@ -172,6 +174,7 @@ struct AnimatedRemoteImage: View {
         self.url = url
         self.animates = animates
         self.isLooping = isLooping
+        self.previewImage = previewImage
         self.fallbackSystemImage = fallbackSystemImage
         self.fallbackInset = fallbackInset
         self.maximumPixelDimension = maximumPixelDimension
@@ -199,6 +202,10 @@ struct AnimatedRemoteImage: View {
                     isLooping: isLooping,
                     contentMode: contentMode
                 )
+            } else if let previewImage {
+                Image(nsImage: previewImage)
+                    .resizable()
+                    .aspectRatio(contentMode: contentMode)
             } else if didFail, let fallbackSystemImage {
                 Image(systemName: fallbackSystemImage)
                     .resizable()
@@ -374,7 +381,11 @@ nonisolated final class DecodedAnimatedImage: @unchecked Sendable {
     let frameDurations: [TimeInterval]
     let estimatedByteCount: Int
 
-    nonisolated init(data: Data, maximumPixelDimension: Int?) throws {
+    nonisolated init(
+        data: Data,
+        maximumPixelDimension: Int?,
+        shouldInterrupt: @escaping @Sendable () -> Bool = { false }
+    ) throws {
         let decodeStart = ProcessInfo.processInfo.systemUptime
         let decodeSignpost = Self.performanceSignposter.beginInterval(
             "AnimatedImageDecode"
@@ -385,7 +396,7 @@ nonisolated final class DecodedAnimatedImage: @unchecked Sendable {
                 decodeSignpost
             )
         }
-        try Task.checkCancellation()
+        try Self.checkInterruption(shouldInterrupt)
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
             throw CocoaError(.fileReadCorruptFile)
         }
@@ -395,7 +406,7 @@ nonisolated final class DecodedAnimatedImage: @unchecked Sendable {
         var sourceDurations: [TimeInterval] = []
         sourceDurations.reserveCapacity(frameCount)
         for index in 0 ..< frameCount {
-            try Task.checkCancellation()
+            try Self.checkInterruption(shouldInterrupt)
             sourceDurations.append(
                 AnimatedImageFrameTiming.duration(
                     source: source,
@@ -426,7 +437,7 @@ nonisolated final class DecodedAnimatedImage: @unchecked Sendable {
             // ImageIO frame expansion is synchronous. Checking between frames
             // lets a viewport change abandon a large GIF/APNG instead of
             // finishing obsolete work after the media has scrolled away.
-            try Task.checkCancellation()
+            try Self.checkInterruption(shouldInterrupt)
             let image = thumbnailOptions.flatMap {
                 CGImageSourceCreateThumbnailAtIndex(
                     source,
@@ -469,6 +480,19 @@ nonisolated final class DecodedAnimatedImage: @unchecked Sendable {
             )
         }
     }
+
+    private nonisolated static func checkInterruption(
+        _ shouldInterrupt: @Sendable () -> Bool
+    ) throws {
+        try Task.checkCancellation()
+        if shouldInterrupt() {
+            throw AnimatedImageDecodeInterruption.scrollActivity
+        }
+    }
+}
+
+nonisolated enum AnimatedImageDecodeInterruption: Error {
+    case scrollActivity
 }
 
 nonisolated enum AnimatedImageFrameSelection {
@@ -703,7 +727,7 @@ nonisolated enum AnimatedImageDecodePolicy {
     /// thumbnail scheduler, so serialize the optional animation expansion at
     /// utility priority without delaying first paint.
     static let maximumConcurrentDecodes = 1
-    static let taskPriority = TaskPriority.utility
+    static let taskPriority = TaskPriority.background
 }
 
 actor SharedAnimatedImageDecodeScheduler {
@@ -716,8 +740,12 @@ actor SharedAnimatedImageDecodeScheduler {
 
     private var activeCount = 0
     private var waiters: [Waiter] = []
-    private var defersForInteractiveScrolling = false
-    private var interactiveScrollingRevision: UInt64 = 0
+    private var interactiveScrollingSources: Set<AnimatedImageInteractiveScrollSource> = []
+    private var interactiveScrollingRevisions: [AnimatedImageInteractiveScrollSource: UInt64] = [:]
+
+    private var defersForInteractiveScrolling: Bool {
+        !interactiveScrollingSources.isEmpty
+    }
 
     /// Full frame expansion is optional background work. Keep already decoded
     /// animations playing, but do not start another memory-bandwidth-heavy
@@ -726,11 +754,17 @@ actor SharedAnimatedImageDecodeScheduler {
     /// available for immediate visual feedback.
     func setInteractiveScrolling(
         _ isScrolling: Bool,
+        source: AnimatedImageInteractiveScrollSource,
         revision: UInt64
     ) {
-        guard revision >= interactiveScrollingRevision else { return }
-        interactiveScrollingRevision = revision
-        defersForInteractiveScrolling = isScrolling
+        guard revision >= interactiveScrollingRevisions[source, default: 0]
+        else { return }
+        interactiveScrollingRevisions[source] = revision
+        if isScrolling {
+            interactiveScrollingSources.insert(source)
+        } else {
+            interactiveScrollingSources.remove(source)
+        }
         resumeNextIfPossible()
     }
 
@@ -738,31 +772,48 @@ actor SharedAnimatedImageDecodeScheduler {
         data: Data,
         maximumPixelDimension: Int?
     ) async throws -> DecodedAnimatedImage {
-        let waiterID = UUID()
-        let acquired = await withTaskCancellationHandler {
-            await acquire(waiterID: waiterID)
-        } onCancel: {
-            Task { await self.cancelWaiter(waiterID) }
-        }
-        guard acquired, !Task.isCancelled else {
-            if acquired {
-                release()
+        while true {
+            await AppScrollWorkGate.waitUntilInactive()
+            try Task.checkCancellation()
+            let waiterID = UUID()
+            let acquired = await withTaskCancellationHandler {
+                await acquire(waiterID: waiterID)
+            } onCancel: {
+                Task { await self.cancelWaiter(waiterID) }
             }
-            throw CancellationError()
-        }
-        defer { release() }
-        let task = Task.detached(
-            priority: AnimatedImageDecodePolicy.taskPriority
-        ) {
-            try DecodedAnimatedImage(
-                data: data,
-                maximumPixelDimension: maximumPixelDimension
-            )
-        }
-        return try await withTaskCancellationHandler {
-            try await task.value
-        } onCancel: {
-            task.cancel()
+            guard acquired, !Task.isCancelled else {
+                if acquired {
+                    release()
+                }
+                throw CancellationError()
+            }
+            let task = Task.detached(
+                priority: AnimatedImageDecodePolicy.taskPriority
+            ) {
+                try DecodedAnimatedImage(
+                    data: data,
+                    maximumPixelDimension: maximumPixelDimension,
+                    shouldInterrupt: { AppScrollWorkGate.isActive }
+                )
+            }
+            do {
+                let image = try await withTaskCancellationHandler {
+                    try await task.value
+                } onCancel: {
+                    task.cancel()
+                }
+                release()
+                return image
+            } catch AnimatedImageDecodeInterruption.scrollActivity {
+                release()
+                AppPerformanceSignposts.signposter.emitEvent(
+                    "AnimatedImageDecodeInterruptedForScroll"
+                )
+                try Task.checkCancellation()
+            } catch {
+                release()
+                throw error
+            }
         }
     }
 
@@ -819,6 +870,11 @@ actor SharedAnimatedImageDecodeScheduler {
         )
     }
 #endif
+}
+
+nonisolated enum AnimatedImageInteractiveScrollSource: Hashable, Sendable {
+    case timeline
+    case memberList(UUID)
 }
 
 nonisolated struct AnimatedImageDecodeSchedulerState: Equatable, Sendable {

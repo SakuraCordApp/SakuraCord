@@ -2,19 +2,19 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-# shellcheck source=worktree_runtime.sh
-source "$ROOT_DIR/script/worktree_runtime.sh"
+# shellcheck source=runtime.sh
+source "$ROOT_DIR/script/runtime.sh"
 # shellcheck source=release_metadata.sh
 source "$ROOT_DIR/script/release_metadata.sh"
 
-if [[ "$SAKURACORD_IS_MAIN_WORKTREE" -ne 1 ]]; then
-  echo "Release DMGs must be built from the main checkout, not a linked worktree." >&2
-  exit 2
-fi
-
 DMGBUILD="${DMGBUILD:-dmgbuild}"
 RELEASE_VERSION="$(sakuracord_release_version "$ROOT_DIR")"
-DMG_NAME="$(sakuracord_release_dmg_name "$RELEASE_VERSION")"
+RELEASE_TAG="${SAKURACORD_RELEASE_TAG:-}"
+if [[ -n "$RELEASE_TAG" ]]; then
+  DMG_NAME="$(sakuracord_release_dmg_name_from_tag "$RELEASE_TAG")"
+else
+  DMG_NAME="$(sakuracord_release_dmg_name "$RELEASE_VERSION")"
+fi
 OUTPUT_PATH="${1:-$ROOT_DIR/dist/$DMG_NAME}"
 SETTINGS="$ROOT_DIR/App/Packaging/DMG/settings.py"
 

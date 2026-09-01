@@ -1,9 +1,26 @@
 import SwiftUI
 
+nonisolated enum HoverActionPillMetrics {
+    static let controlDiameter: CGFloat = 28
+    static let spacing: CGFloat = 1
+    static let padding: CGFloat = 4
+
+    static func size(controlCount: Int) -> CGSize {
+        let count = max(1, controlCount)
+        return CGSize(
+            width:
+                padding * 2
+                + controlDiameter * CGFloat(count)
+                + spacing * CGFloat(count - 1),
+            height: padding * 2 + controlDiameter
+        )
+    }
+}
+
 struct HoverActionPill<Content: View>: View {
     var glass: Glass = .regular
-    var spacing: CGFloat = 1
-    var padding: CGFloat = 4
+    var spacing: CGFloat = HoverActionPillMetrics.spacing
+    var padding: CGFloat = HoverActionPillMetrics.padding
     @ViewBuilder let content: () -> Content
 
     var body: some View {
@@ -17,12 +34,39 @@ struct HoverActionPill<Content: View>: View {
     }
 }
 
+struct HoverCloseButton: View {
+    let help: LocalizedStringResource
+    let accessibilityIdentifier: String
+    var diameter: CGFloat = 36
+    var iconSize: CGFloat = 15
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.system(size: iconSize, weight: .medium))
+                .frame(width: diameter, height: diameter)
+                .contentShape(Circle())
+                .background {
+                    Circle()
+                        .fill(.primary.opacity(isHovered ? 0.09 : 0.001))
+                }
+        }
+        .buttonStyle(.plain)
+        .contentShape(Circle())
+        .onHover { isHovered = $0 }
+        .help(help)
+        .accessibilityIdentifier(accessibilityIdentifier)
+    }
+}
+
 struct HoverActionButton: View {
     let systemImage: String
     let help: String
     var role: ButtonRole?
     var isSelected: Bool?
-    var diameter: CGFloat = 28
+    var diameter: CGFloat = HoverActionPillMetrics.controlDiameter
     var iconFont: Font = .callout.weight(.medium)
     let action: () -> Void
 

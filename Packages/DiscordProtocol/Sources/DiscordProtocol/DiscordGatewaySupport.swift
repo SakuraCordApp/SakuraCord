@@ -63,6 +63,20 @@ enum DiscordGatewayPayloadFactory {
         ]
     }
 
+    static func searchMembers(
+        guildIDs: [GuildID], query: String, limit: Int
+    ) -> [String: Any] {
+        [
+            "op": 8,
+            "d": [
+                "guild_id": guildIDs.map(\.description),
+                "query": query,
+                "limit": limit,
+                "presences": true,
+            ] as [String: Any],
+        ]
+    }
+
     static func voiceStateUpdate(
         guildID: GuildID?,
         channelID: ChannelID?,
@@ -78,7 +92,6 @@ enum DiscordGatewayPayloadFactory {
                 "self_mute": selfMute,
                 "self_deaf": selfDeaf,
                 "self_video": selfVideo,
-                "self_stream": false,
             ] as [String: Any],
         ]
     }
@@ -88,6 +101,47 @@ enum DiscordGatewayPayloadFactory {
             "op": 13,
             "d": [
                 "channel_id": channelID.description
+            ] as [String: Any],
+        ]
+    }
+
+    static func applicationStreamCreate(
+        channelID: ChannelID,
+        guildID: GuildID?,
+        preferredRegion: String?
+    ) -> [String: Any] {
+        [
+            "op": 18,
+            "d": [
+                "type": guildID == nil ? "call" : "guild",
+                "guild_id": guildID?.description ?? NSNull(),
+                "channel_id": channelID.description,
+                "preferred_region": preferredRegion ?? NSNull(),
+            ] as [String: Any],
+        ]
+    }
+
+    static func applicationStreamDelete(_ key: ApplicationStreamKey) -> [String: Any] {
+        ["op": 19, "d": ["stream_key": key.rawValue]]
+    }
+
+    static func applicationStreamWatch(_ key: ApplicationStreamKey) -> [String: Any] {
+        ["op": 20, "d": ["stream_key": key.rawValue]]
+    }
+
+    static func applicationStreamPing(_ key: ApplicationStreamKey) -> [String: Any] {
+        ["op": 21, "d": ["stream_key": key.rawValue]]
+    }
+
+    static func applicationStreamSetPaused(
+        _ key: ApplicationStreamKey,
+        isPaused: Bool
+    ) -> [String: Any] {
+        [
+            "op": 22,
+            "d": [
+                "stream_key": key.rawValue,
+                "paused": isPaused,
             ] as [String: Any],
         ]
     }
@@ -368,10 +422,36 @@ enum DiscordMemberStoreOrdering {
 }
 
 enum DiscordMessageMemberHydration {
-    /// A history page contains at most 100 messages. Authors are prioritized so
-    /// resolving a page needs at most one bounded Gateway member request; any
-    /// remaining capacity mirrors Discord and Paicord by including mentions.
-    static let maximumUserIDsPerHistoryPage = 100
+    /// Preserve the app's existing two-batch resolution ceiling, but let the
+    /// provider issue Discord's 100-ID Gateway batches concurrently rather
+    /// than discovering the second batch only after the first completes.
+    static let maximumUserIDsPerHistoryPage = 200
+
+    static func userIDs(in messages: [Message]) -> [UserID] {
+        var seen: Set<UserID> = []
+        var result: [UserID] = []
+        result.reserveCapacity(min(messages.count * 2, maximumUserIDsPerHistoryPage))
+
+        func append(_ userID: UserID) {
+            guard result.count < maximumUserIDsPerHistoryPage,
+                  seen.insert(userID).inserted
+            else { return }
+            result.append(userID)
+        }
+
+        for message in messages.reversed() {
+            append(message.author.id)
+            if let replyAuthorID = message.replyPreview?.author.id {
+                append(replyAuthorID)
+            }
+        }
+        for message in messages.reversed() {
+            for user in message.mentionedUsers {
+                append(user.id)
+            }
+        }
+        return result
+    }
 
     static func missingUserIDs(
         in messages: [Message],
@@ -382,19 +462,19 @@ enum DiscordMessageMemberHydration {
         var result: [UserID] = []
 
         func append(_ userID: UserID) {
-            guard result.count < maximumUserIDsPerHistoryPage, seen.insert(userID).inserted else {
-                return
-            }
+            guard result.count < maximumUserIDsPerHistoryPage,
+                  seen.insert(userID).inserted
+            else { return }
             result.append(userID)
         }
 
-        for message in messages {
+        for message in messages.reversed() {
             append(message.author.id)
             if let replyAuthorID = message.replyPreview?.author.id {
                 append(replyAuthorID)
             }
         }
-        for message in messages {
+        for message in messages.reversed() {
             for user in message.mentionedUsers {
                 append(user.id)
             }
@@ -441,6 +521,75 @@ struct PendingVoiceNegotiation {
     var token: String?
     var endpoint: String?
     var continuation: CheckedContinuation<VoiceConnectionInfo, any Error>
+}
+
+struct PendingApplicationStreamNegotiation {
+    var id: UUID
+    var key: ApplicationStreamKey
+    var stream: ApplicationStream?
+    var token: String?
+    var endpoint: String?
+    var continuation: CheckedContinuation<ApplicationStreamConnectionInfo, any Error>
+}
+
+struct ApplicationStreamDTO: Decodable {
+    var streamKey: String
+    var region: String?
+    var viewerIDs: [String]?
+    var rtcServerID: String?
+    var rtcChannelID: String?
+    var paused: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case streamKey = "stream_key"
+        case region
+        case viewerIDs = "viewer_ids"
+        case rtcServerID = "rtc_server_id"
+        case rtcChannelID = "rtc_channel_id"
+        case paused
+    }
+
+    func merging(_ existing: ApplicationStream? = nil) -> ApplicationStream? {
+        guard let key = ApplicationStreamKey(rawValue: streamKey) else { return nil }
+        return ApplicationStream(
+            key: key,
+            region: region ?? existing?.region,
+            viewerIDs: viewerIDs?.compactMap(UserID.init) ?? existing?.viewerIDs ?? [],
+            rtcServerID: rtcServerID ?? existing?.rtcServerID,
+            rtcChannelID: rtcChannelID.flatMap(ChannelID.init) ?? existing?.rtcChannelID,
+            isPaused: paused ?? existing?.isPaused ?? false
+        )
+    }
+}
+
+struct ApplicationStreamServerUpdateDTO: Decodable {
+    var streamKey: String
+    var endpoint: String?
+    var token: String?
+
+    enum CodingKeys: String, CodingKey {
+        case streamKey = "stream_key"
+        case endpoint, token
+    }
+
+    var resolvedEndpoint: String? {
+        endpoint?.trimmingCharacters(in: CharacterSet(charactersIn: "."))
+    }
+}
+
+struct ApplicationStreamDeleteDTO: Decodable {
+    var streamKey: String
+    var unavailable: Bool?
+    var reason: String?
+
+    enum CodingKeys: String, CodingKey {
+        case streamKey = "stream_key"
+        case unavailable, reason
+    }
+}
+
+struct ApplicationStreamPreviewDTO: Decodable {
+    var url: URL?
 }
 
 struct VoiceStateUpdateDTO: Decodable {
@@ -501,6 +650,26 @@ struct GuildVoiceStateSnapshotDTO: Decodable {
     }
 }
 
+struct GatewayActivityParticipantDTO: Decodable {
+    var member: GuildMemberDTO?
+}
+
+struct GatewayActivityInstanceDTO: Decodable {
+    var participants: [GatewayActivityParticipantDTO]
+
+    private enum CodingKeys: String, CodingKey {
+        case participants
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        participants = (try? container.decode(
+            LossyList<GatewayActivityParticipantDTO>.self,
+            forKey: .participants
+        ))?.elements ?? []
+    }
+}
+
 struct GatewayReadyGuildsDTO: Decodable {
     struct GuildReference: Decodable {
         var id: String
@@ -518,6 +687,7 @@ struct GatewayReadyGuildsDTO: Decodable {
         var threads: [ChannelDTO]
         var roles: [GuildRoleDTO]
         var members: [GuildMemberDTO]
+        var activityInstances: [GatewayActivityInstanceDTO]
 
         enum CodingKeys: String, CodingKey {
             case id, name, icon, owner, permissions, properties, features
@@ -527,6 +697,7 @@ struct GatewayReadyGuildsDTO: Decodable {
             case voiceStates = "voice_states"
             case emojis
             case channels, threads, roles, members
+            case activityInstances = "activity_instances"
         }
 
         init(from decoder: any Decoder) throws {
@@ -576,6 +747,11 @@ struct GatewayReadyGuildsDTO: Decodable {
             members =
                 (try? container.decode(
                     LossyList<GuildMemberDTO>.self, forKey: .members
+                ))?.elements ?? []
+            activityInstances =
+                (try? container.decode(
+                    LossyList<GatewayActivityInstanceDTO>.self,
+                    forKey: .activityInstances
                 ))?.elements ?? []
         }
 
@@ -802,6 +978,7 @@ struct GatewayUserGuildSettingsDTO: Decodable {
         var muteConfig: MuteConfigDTO?
         var flags: UInt64?
         var collapsed: Bool?
+        var hasMuteConfig: Bool
 
         enum CodingKeys: String, CodingKey {
             case channelID = "channel_id"
@@ -812,18 +989,48 @@ struct GatewayUserGuildSettingsDTO: Decodable {
             case collapsed
         }
 
-        var domain: ChannelNotificationOverride? {
-            guard let channelID = ChannelID(channelID) else { return nil }
-            return ChannelNotificationOverride(
-                channelID: channelID,
-                messageNotifications:
-                    messageNotifications.flatMap(MessageNotificationLevel.init(rawValue:))
-                    ?? .inherit,
-                isMuted: muted ?? false,
-                muteConfiguration: muteConfig?.domain,
-                flags: flags ?? 0,
-                isCollapsed: collapsed
+        init(from decoder: any Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            channelID = try values.decode(String.self, forKey: .channelID)
+            messageNotifications = try? values.decode(
+                Int.self,
+                forKey: .messageNotifications
             )
+            muted = try? values.decode(Bool.self, forKey: .muted)
+            hasMuteConfig = values.contains(.muteConfig)
+            muteConfig = try? values.decode(MuteConfigDTO.self, forKey: .muteConfig)
+            flags = try? values.decode(UInt64.self, forKey: .flags)
+            collapsed = try? values.decode(Bool.self, forKey: .collapsed)
+        }
+
+        func domain(
+            merging existing: ChannelNotificationOverride? = nil
+        ) -> ChannelNotificationOverride? {
+            guard let channelID = ChannelID(channelID) else { return nil }
+            var value = existing ?? ChannelNotificationOverride(channelID: channelID)
+            value.channelID = channelID
+            if let messageNotifications = messageNotifications.flatMap(
+                MessageNotificationLevel.init(rawValue:)
+            ) {
+                value.messageNotifications = messageNotifications
+            }
+            if let muted {
+                value.isMuted = muted
+            }
+            if hasMuteConfig || muted == false {
+                value.muteConfiguration = muteConfig?.domain
+            }
+            if let flags {
+                value.flags = flags
+            }
+            if let collapsed {
+                value.isCollapsed = collapsed
+            }
+            return value
+        }
+
+        var domain: ChannelNotificationOverride? {
+            domain(merging: nil)
         }
     }
 
@@ -831,10 +1038,15 @@ struct GatewayUserGuildSettingsDTO: Decodable {
     var messageNotifications: Int?
     var muted: Bool?
     var muteConfig: MuteConfigDTO?
+    var hasMuteConfig: Bool
     var suppressEveryone: Bool?
     var suppressRoles: Bool?
+    var notifyHighlights: Int?
+    var muteScheduledEvents: Bool?
+    var mobilePush: Bool?
     var flags: UInt64?
     var channelOverrides: [OverrideDTO]
+    var hasChannelOverrides: Bool
 
     enum CodingKeys: String, CodingKey {
         case guildID = "guild_id"
@@ -843,6 +1055,9 @@ struct GatewayUserGuildSettingsDTO: Decodable {
         case muteConfig = "mute_config"
         case suppressEveryone = "suppress_everyone"
         case suppressRoles = "suppress_roles"
+        case notifyHighlights = "notify_highlights"
+        case muteScheduledEvents = "mute_scheduled_events"
+        case mobilePush = "mobile_push"
         case flags
         case channelOverrides = "channel_overrides"
     }
@@ -852,29 +1067,72 @@ struct GatewayUserGuildSettingsDTO: Decodable {
         guildID = try? values.decode(String.self, forKey: .guildID)
         messageNotifications = try? values.decode(Int.self, forKey: .messageNotifications)
         muted = try? values.decode(Bool.self, forKey: .muted)
+        hasMuteConfig = values.contains(.muteConfig)
         muteConfig = try? values.decode(MuteConfigDTO.self, forKey: .muteConfig)
         suppressEveryone = try? values.decode(Bool.self, forKey: .suppressEveryone)
         suppressRoles = try? values.decode(Bool.self, forKey: .suppressRoles)
+        notifyHighlights = try? values.decode(Int.self, forKey: .notifyHighlights)
+        muteScheduledEvents = try? values.decode(Bool.self, forKey: .muteScheduledEvents)
+        mobilePush = try? values.decode(Bool.self, forKey: .mobilePush)
         flags = try? values.decode(UInt64.self, forKey: .flags)
-        channelOverrides =
-            (try? values.decode(
+        hasChannelOverrides = values.contains(.channelOverrides)
+        channelOverrides = (try? values.decode(
                 LossyList<OverrideDTO>.self, forKey: .channelOverrides
-            ))?.elements ?? []
+            ).elements) ?? []
     }
 
     var domain: GuildNotificationSettings {
-        GuildNotificationSettings(
-            guildID: guildID.flatMap(GuildID.init),
-            messageNotifications:
-                messageNotifications.flatMap(MessageNotificationLevel.init(rawValue:))
-                ?? .inherit,
-            isMuted: muted ?? false,
-            muteConfiguration: muteConfig?.domain,
-            suppressEveryone: suppressEveryone ?? false,
-            suppressRoles: suppressRoles ?? false,
-            flags: flags ?? 0,
-            channelOverrides: channelOverrides.compactMap(\.domain)
+        domain(merging: nil)
+    }
+
+    func domain(merging existing: GuildNotificationSettings?) -> GuildNotificationSettings {
+        let parsedGuildID = guildID.flatMap(GuildID.init)
+        var value = existing ?? GuildNotificationSettings(
+            guildID: parsedGuildID,
+            messageNotifications: .inherit
         )
+        value.guildID = parsedGuildID
+        if let messageNotifications = messageNotifications.flatMap(
+            MessageNotificationLevel.init(rawValue:)
+        ) {
+            value.messageNotifications = messageNotifications
+        }
+        if let muted {
+            value.isMuted = muted
+        }
+        if hasMuteConfig || muted == false {
+            value.muteConfiguration = muteConfig?.domain
+        }
+        if let suppressEveryone {
+            value.suppressEveryone = suppressEveryone
+        }
+        if let suppressRoles {
+            value.suppressRoles = suppressRoles
+        }
+        if let notifyHighlights = notifyHighlights.flatMap(
+            GuildHighlightNotificationLevel.init(rawValue:)
+        ) {
+            value.notifyHighlights = notifyHighlights
+        }
+        if let muteScheduledEvents {
+            value.muteScheduledEvents = muteScheduledEvents
+        }
+        if let mobilePush {
+            value.mobilePush = mobilePush
+        }
+        if let flags {
+            value.flags = flags
+        }
+        if hasChannelOverrides {
+            let existingByID = Dictionary(
+                uniqueKeysWithValues: value.channelOverrides.map { ($0.channelID, $0) }
+            )
+            value.channelOverrides = channelOverrides.compactMap { override in
+                let channelID = ChannelID(override.channelID)
+                return override.domain(merging: channelID.flatMap { existingByID[$0] })
+            }
+        }
+        return value
     }
 }
 
@@ -942,10 +1200,13 @@ struct ReadyMergedMemberDTO: Decodable {
     var avatar: String?
     var banner: String?
     var bio: String?
+    var pending: Bool?
+    var joinedAt: String?
 
     enum CodingKeys: String, CodingKey {
         case userID = "user_id"
-        case nick, roles, presence, avatar, banner, bio
+        case nick, roles, presence, avatar, banner, bio, pending
+        case joinedAt = "joined_at"
     }
 
     func hydrated(using usersByID: [String: UserDTO]) -> GuildMemberDTO? {
@@ -957,7 +1218,9 @@ struct ReadyMergedMemberDTO: Decodable {
             presence: presence,
             avatar: avatar,
             banner: banner,
-            bio: bio
+            bio: bio,
+            pending: pending,
+            joinedAt: joinedAt
         )
     }
 }

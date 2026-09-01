@@ -36,6 +36,8 @@ public actor MockChatProvider: ChatProvider {
         public var level: MessageNotificationLevel?
         public var isMuted: Bool?
         public var muteEndTime: Date?
+        public var toggle: GuildNotificationToggle?
+        public var isEnabled: Bool?
     }
 
     public private(set) var guildNotificationRequests: [GuildNotificationRequest] = []
@@ -72,6 +74,8 @@ public actor MockChatProvider: ChatProvider {
     }
 
     public private(set) var channelOptInRequests: [ChannelOptInRequest] = []
+    private var categoryCollapsedUpdatesAreSuspended = false
+    private var categoryCollapsedUpdateWaiters: [CheckedContinuation<Void, Never>] = []
     public struct ThreadNotificationRequest: Equatable, Sendable {
         public var threadID: ChannelID
         public var level: MessageNotificationLevel?
@@ -331,6 +335,20 @@ public actor MockChatProvider: ChatProvider {
         )
     }
 
+    public func updateGuildNotificationToggle(
+        guildID: GuildID,
+        toggle: GuildNotificationToggle,
+        isEnabled: Bool
+    ) async throws {
+        guildNotificationRequests.append(
+            GuildNotificationRequest(
+                guildID: guildID,
+                toggle: toggle,
+                isEnabled: isEnabled
+            )
+        )
+    }
+
     public func updateChannelMute(
         guildID: GuildID?,
         channelID: ChannelID,
@@ -389,6 +407,24 @@ public actor MockChatProvider: ChatProvider {
                 isCollapsed: isCollapsed
             )
         )
+        if categoryCollapsedUpdatesAreSuspended {
+            await withCheckedContinuation { continuation in
+                categoryCollapsedUpdateWaiters.append(continuation)
+            }
+        }
+    }
+
+    public func suspendCategoryCollapsedUpdates() {
+        categoryCollapsedUpdatesAreSuspended = true
+    }
+
+    public func resumeCategoryCollapsedUpdates() {
+        categoryCollapsedUpdatesAreSuspended = false
+        let waiters = categoryCollapsedUpdateWaiters
+        categoryCollapsedUpdateWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
     }
 
     public func onboardingConfiguration(in guildID: GuildID) async throws
@@ -543,6 +579,18 @@ public actor MockChatProvider: ChatProvider {
     public func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws
         -> MessagePage
     {
+        try await messages(
+            in: channelID,
+            anchoredAt: before.map(MessageHistoryAnchor.before) ?? .newest,
+            limit: limit
+        )
+    }
+
+    public func messages(
+        in channelID: ChannelID,
+        anchoredAt anchor: MessageHistoryAnchor,
+        limit: Int
+    ) async throws -> MessagePage {
         guard
             snapshot.channels.contains(where: { $0.id == channelID })
             || messagesByChannel[channelID] != nil
@@ -550,27 +598,52 @@ public actor MockChatProvider: ChatProvider {
             throw ChatProviderError.channelNotFound
         }
         let messages = messagesByChannel[channelID] ?? []
-        let pageEnd: Int
-        if let before {
+        let boundedLimit = min(max(1, limit), 100)
+
+        func lowerBound(for messageID: MessageID) -> Int {
             var lowerBound = messages.startIndex
             var upperBound = messages.endIndex
             while lowerBound < upperBound {
                 let middle = lowerBound + (upperBound - lowerBound) / 2
-                if messages[middle].id < before {
+                if messages[middle].id < messageID {
                     lowerBound = middle + 1
                 } else {
                     upperBound = middle
                 }
             }
-            pageEnd = lowerBound
-        } else {
-            pageEnd = messages.endIndex
+            return lowerBound
         }
-        let pageStart = max(messages.startIndex, pageEnd - max(1, limit))
+
+        let pageStart: Int
+        let pageEnd: Int
+        switch anchor {
+        case .newest:
+            pageEnd = messages.endIndex
+            pageStart = max(messages.startIndex, pageEnd - boundedLimit)
+        case .before(let messageID):
+            pageEnd = lowerBound(for: messageID)
+            pageStart = max(messages.startIndex, pageEnd - boundedLimit)
+        case .after(let messageID):
+            let boundary = lowerBound(for: messageID)
+            pageStart = messages.indices.contains(boundary)
+                && messages[boundary].id == messageID
+                ? boundary + 1
+                : boundary
+            pageEnd = min(messages.endIndex, pageStart + boundedLimit)
+        case .around(let messageID):
+            let target = min(lowerBound(for: messageID), messages.endIndex)
+            let proposedStart = max(
+                messages.startIndex,
+                target - boundedLimit / 2
+            )
+            pageEnd = min(messages.endIndex, proposedStart + boundedLimit)
+            pageStart = max(messages.startIndex, pageEnd - boundedLimit)
+        }
         let page = Array(messages[pageStart ..< pageEnd])
         return MessagePage(
             messages: page,
-            hasMoreBefore: pageStart > messages.startIndex
+            hasMoreBefore: pageStart > messages.startIndex,
+            hasMoreAfter: pageEnd < messages.endIndex
         )
     }
 

@@ -1,6 +1,20 @@
 import AppKit
 import SwiftUI
 
+@MainActor
+@Observable
+final class StablePopoverPresentationContext {
+    private(set) var hasFinishedPresenting = false
+
+    func markPresentationFinished() {
+        hasFinishedPresenting = true
+    }
+}
+
+extension EnvironmentValues {
+    @Entry var stablePopoverPresentationContext: StablePopoverPresentationContext?
+}
+
 nonisolated struct StablePopoverPlacement: Equatable {
     let edge: NSRectEdge
     let availableSpace: CGFloat
@@ -152,6 +166,16 @@ struct StablePopoverConfiguration {
         contentSizing: .constrained(CGSize(width: 520, height: 760)),
         dismissalBehavior: .native,
         stabilizesInitialContentSize: false
+    )
+
+    static let contextualProfile = StablePopoverConfiguration(
+        preferredEdge: .maxX,
+        behavior: .transient,
+        animates: true,
+        ignoresMouseEvents: false,
+        contentSizing: .constrained(CGSize(width: 520, height: 760)),
+        dismissalBehavior: .native,
+        stabilizesInitialContentSize: true
     )
 
     static let memberProfile = StablePopoverConfiguration(
@@ -323,6 +347,18 @@ func sizeIntrinsicPopover<Content: View>(
     return contentSize
 }
 
+private struct StablePopoverHostedContent<Content: View>: View {
+    let content: Content
+    let presentationContext: StablePopoverPresentationContext
+
+    var body: some View {
+        content.environment(
+            \.stablePopoverPresentationContext,
+            presentationContext
+        )
+    }
+}
+
 struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
     let isPresented: Bool
     let anchor: StablePopoverAnchor?
@@ -378,7 +414,9 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
     final class Coordinator: NSObject, NSPopoverDelegate {
         private let anchorTracker = StablePopoverAnchorTracker()
         private var popover: NSPopover?
-        private var hostingController: NSHostingController<Content>?
+        private var hostingController:
+            NSHostingController<StablePopoverHostedContent<Content>>?
+        private var presentationContext: StablePopoverPresentationContext?
         private var anchor: StablePopoverAnchor?
         private var anchorSnapshot: StablePopoverAnchorSnapshot?
         private var configuration = StablePopoverConfiguration.hover
@@ -445,7 +483,11 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
                 return
             }
             if let hostingController {
-                hostingController.rootView = content
+                guard let presentationContext else { return }
+                hostingController.rootView = StablePopoverHostedContent(
+                    content: content,
+                    presentationContext: presentationContext
+                )
                 scheduleRefresh()
             } else {
                 scheduleShow(content: content)
@@ -472,13 +514,20 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
                 dismissBecauseAnchorIsUnavailable()
                 return
             }
-            let hostingController = NSHostingController(rootView: content)
+            let presentationContext = StablePopoverPresentationContext()
+            let hostingController = NSHostingController(
+                rootView: StablePopoverHostedContent(
+                    content: content,
+                    presentationContext: presentationContext
+                )
+            )
             let popover = NSPopover()
             popover.behavior = configuration.behavior
             popover.animates = configuration.animates
             popover.delegate = self
             popover.contentViewController = hostingController
             self.hostingController = hostingController
+            self.presentationContext = presentationContext
             self.popover = popover
             installDismissalMonitorIfNeeded()
             if configuration.stabilizesInitialContentSize {
@@ -494,7 +543,7 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
 
         private func warmInitialContentSize(
             popover: NSPopover,
-            hostingController: NSHostingController<Content>
+            hostingController: NSHostingController<StablePopoverHostedContent<Content>>
         ) {
             switch configuration.contentSizing {
             case .intrinsic:
@@ -766,6 +815,13 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
             onDismiss()
         }
 
+        func popoverDidShow(_ notification: Notification) {
+            guard let shownPopover = notification.object as? NSPopover,
+                  shownPopover === popover
+            else { return }
+            presentationContext?.markPresentationFinished()
+        }
+
         func close() {
             shouldPresent = false
             generation &+= 1
@@ -787,6 +843,7 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
             }
             popover = nil
             hostingController = nil
+            presentationContext = nil
             anchorSnapshot = nil
             anchorTracker.detach()
             removeGeometryObservers()

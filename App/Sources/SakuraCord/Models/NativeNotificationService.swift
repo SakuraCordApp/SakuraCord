@@ -72,9 +72,9 @@ final class NotificationPreferences {
     var quietStartHour: Int { didSet { defaults.set(quietStartHour, forKey: Key.quietStart) } }
     var quietEndHour: Int { didSet { defaults.set(quietEndHour, forKey: Key.quietEnd) } }
 
-    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let defaults: any PreferenceStoring
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: any PreferenceStoring = UserDefaults.standard) {
         self.defaults = defaults
         isEnabled = defaults.object(forKey: Key.enabled) as? Bool ?? true
         previewStyle =

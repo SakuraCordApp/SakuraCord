@@ -1,6 +1,13 @@
 import Foundation
 import SakuraCordModels
 
+public enum MessageHistoryAnchor: Equatable, Sendable {
+    case newest
+    case before(MessageID)
+    case after(MessageID)
+    case around(MessageID)
+}
+
 public struct PartialBulkReadAcknowledgementError: Error, Sendable {
     public let acceptedReadStates: [BulkReadStateAcknowledgement]
     public let failureDescription: String
@@ -26,6 +33,9 @@ public protocol ChatProvider: Sendable {
     ) async throws
     func resolveMembers(in guildID: GuildID, userIDs: [UserID]) async throws -> [Member]
     func searchMembers(in guildID: GuildID, query: String, limit: Int) async throws -> [Member]
+    func requestQuickSwitcherMembers(
+        in guildID: GuildID, query: String, limit: Int
+    ) async throws
     func roles(in guildID: GuildID) async throws -> [GuildRole]
     func members(withRole roleID: RoleID, in guildID: GuildID) async throws -> RoleMemberResult
     func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile
@@ -34,6 +44,17 @@ public protocol ChatProvider: Sendable {
     func currentStatus() async -> PresenceStatus
     func updateStatus(_ status: PresenceStatus) async throws
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws -> MessagePage
+    func messages(
+        in channelID: ChannelID,
+        anchoredAt anchor: MessageHistoryAnchor,
+        limit: Int
+    ) async throws -> MessagePage
+    func messagesForImmediatePresentation(
+        in channelID: ChannelID,
+        anchoredAt anchor: MessageHistoryAnchor,
+        limit: Int
+    ) async throws -> MessagePage
+    func searchMessages(_ query: MessageSearchQuery) async throws -> MessageSearchPage
     func forumPosts(in channelID: ChannelID, query: ForumPostQuery) async throws -> ForumPostPage
     func forumPost(threadID: ChannelID) async throws -> ForumPost
     func createForumPost(
@@ -104,6 +125,11 @@ public protocol ChatProvider: Sendable {
         isMuted: Bool,
         until: Date?
     ) async throws
+    func updateGuildNotificationToggle(
+        guildID: GuildID,
+        toggle: GuildNotificationToggle,
+        isEnabled: Bool
+    ) async throws
     func updateChannelNotificationLevel(
         guildID: GuildID?,
         channelID: ChannelID,
@@ -169,6 +195,21 @@ public protocol ChatProvider: Sendable {
         selfDeaf: Bool,
         selfVideo: Bool
     ) async throws
+    func startApplicationStream(
+        channelID: ChannelID,
+        guildID: GuildID?,
+        preferredRegion: String?
+    ) async throws -> ApplicationStreamConnectionInfo
+    func watchApplicationStream(
+        _ key: ApplicationStreamKey
+    ) async throws -> ApplicationStreamConnectionInfo
+    func stopApplicationStream(_ key: ApplicationStreamKey) async throws
+    func pingApplicationStream(_ key: ApplicationStreamKey) async throws
+    func setApplicationStreamPaused(
+        _ key: ApplicationStreamKey,
+        isPaused: Bool
+    ) async throws
+    func applicationStreamPreview(for key: ApplicationStreamKey) async throws -> URL?
     func subscribeToPrivateCall(channelID: ChannelID) async throws
     func privateCallIsRingable(channelID: ChannelID) async throws -> Bool
     func ringPrivateCall(channelID: ChannelID, recipients: [UserID]?) async throws
@@ -191,6 +232,151 @@ public extension ChatProvider {
 
     func updateClientAppState(isFocused: Bool) async {}
 
+    func startApplicationStream(
+        channelID _: ChannelID,
+        guildID _: GuildID?,
+        preferredRegion _: String?
+    ) async throws -> ApplicationStreamConnectionInfo {
+        throw ChatProviderError.invalidRequest("This provider does not support screen sharing.")
+    }
+
+    func watchApplicationStream(
+        _ key: ApplicationStreamKey
+    ) async throws -> ApplicationStreamConnectionInfo {
+        throw ChatProviderError.invalidRequest("This provider does not support watching screen shares.")
+    }
+
+    func stopApplicationStream(_: ApplicationStreamKey) async throws {}
+
+    func pingApplicationStream(_: ApplicationStreamKey) async throws {}
+
+    func setApplicationStreamPaused(
+        _: ApplicationStreamKey,
+        isPaused _: Bool
+    ) async throws {}
+
+    func applicationStreamPreview(for _: ApplicationStreamKey) async throws -> URL? { nil }
+
+    func messages(
+        in channelID: ChannelID,
+        anchoredAt anchor: MessageHistoryAnchor,
+        limit: Int
+    ) async throws -> MessagePage {
+        switch anchor {
+        case .newest:
+            return try await messages(in: channelID, before: nil, limit: limit)
+        case .before(let messageID):
+            return try await messages(in: channelID, before: messageID, limit: limit)
+        case .after, .around:
+            throw ChatProviderError.invalidRequest(
+                "This provider does not support bidirectional message history."
+            )
+        }
+    }
+
+    /// Returns the history payload required to draw the conversation. Providers
+    /// may defer supplemental member resolution because Discord message payloads
+    /// already carry the nickname, roles, and guild avatar used by the timeline.
+    /// The default retains the complete-history behavior for other providers.
+    func messagesForImmediatePresentation(
+        in channelID: ChannelID,
+        anchoredAt anchor: MessageHistoryAnchor,
+        limit: Int
+    ) async throws -> MessagePage {
+        try await messages(
+            in: channelID,
+            anchoredAt: anchor,
+            limit: limit
+        )
+    }
+
+    func searchMessages(_ query: MessageSearchQuery) async throws -> MessageSearchPage {
+        guard !query.isEmpty else {
+            throw ChatProviderError.invalidRequest("Enter text or choose a filter to search.")
+        }
+        let availableChannels = try await channels(in: query.scope.guildID)
+        let selectedChannelIDs = Set(query.filters.channelIDs)
+        let searchedChannels = availableChannels.filter {
+            selectedChannelIDs.isEmpty || selectedChannelIDs.contains($0.id)
+        }
+        var candidates: [Message] = []
+        for channel in searchedChannels {
+            try Task.checkCancellation()
+            candidates.append(
+                contentsOf: try await messages(
+                    in: channel.id,
+                    before: nil,
+                    limit: 100
+                ).messages
+            )
+        }
+        let normalized = query.normalizedContent
+        let authorIDs = Set(query.filters.authorIDs)
+        let mentionedUserIDs = Set(query.filters.mentionedUserIDs)
+        let matches = candidates.filter { message in
+            (normalized.isEmpty
+                || message.content.localizedCaseInsensitiveContains(normalized))
+                && (authorIDs.isEmpty || authorIDs.contains(message.author.id))
+                && (mentionedUserIDs.isEmpty
+                    || !mentionedUserIDs.isDisjoint(
+                        with: message.mentionedUsers.map(\.id)
+                    ))
+                && Self.matchesSearchContentTypes(
+                    query.filters.contentTypes,
+                    message: message
+                )
+        }.sorted {
+            query.sort == .oldest
+                ? $0.timestamp < $1.timestamp
+                : $0.timestamp > $1.timestamp
+        }
+        let lowerBound = min(max(0, query.offset), matches.count)
+        let upperBound = min(
+            matches.count,
+            lowerBound + MessageSearchQuery.pageSize
+        )
+        return MessageSearchPage(
+            messages: Array(matches[lowerBound ..< upperBound]),
+            channels: searchedChannels,
+            totalResults: matches.count
+        )
+    }
+
+    private static func matchesSearchContentTypes(
+        _ types: [MessageSearchContentType],
+        message: Message
+    ) -> Bool {
+        guard !types.isEmpty else { return true }
+        return types.contains { type in
+            switch type {
+            case .image:
+                message.attachments.contains { attachment in
+                    attachment.mediaType?.hasPrefix("image/") == true
+                }
+            case .video:
+                message.attachments.contains { attachment in
+                    attachment.mediaType?.hasPrefix("video/") == true
+                }
+            case .link:
+                message.content.contains("://")
+            case .file:
+                !message.attachments.isEmpty
+            case .embed:
+                !message.embeds.isEmpty
+            case .sound:
+                message.attachments.contains { attachment in
+                    attachment.mediaType?.hasPrefix("audio/") == true
+                }
+            case .poll:
+                message.hasPoll
+            case .sticker:
+                !message.stickers.isEmpty
+            case .forward:
+                message.forwardedSnapshot != nil
+            }
+        }
+    }
+
     func updateMemberListViewport(
         in guildID: GuildID,
         channelID: ChannelID,
@@ -210,6 +396,10 @@ public extension ChatProvider {
                 || member.user.username.localizedCaseInsensitiveContains(normalized)
         }.prefix(max(1, limit)).map(\.self)
     }
+
+    func requestQuickSwitcherMembers(
+        in guildID: GuildID, query: String, limit: Int
+    ) async throws {}
 
     func roles(in guildID: GuildID) async throws -> [GuildRole] {
         var rolesByID: [RoleID: GuildRole] = [:]
@@ -353,6 +543,12 @@ public extension ChatProvider {
         guildID: GuildID,
         isMuted: Bool,
         until: Date?
+    ) async throws {}
+
+    func updateGuildNotificationToggle(
+        guildID: GuildID,
+        toggle: GuildNotificationToggle,
+        isEnabled: Bool
     ) async throws {}
 
     func updateChannelMute(

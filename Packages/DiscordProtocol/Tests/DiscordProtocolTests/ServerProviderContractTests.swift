@@ -89,6 +89,27 @@ extension ProviderRequestContractTests {
         #expect(settings?["muted"] as? Bool == false)
         #expect(settings?["mute_config"] is NSNull)
 
+        let toggleExpectations: [GuildNotificationToggleExpectation] = [
+            .init(.suppressEveryone, true, key: "suppress_everyone", value: 1),
+            .init(.suppressRoles, true, key: "suppress_roles", value: 1),
+            .init(.suppressHighlights, true, key: "notify_highlights", value: 1),
+            .init(.suppressHighlights, false, key: "notify_highlights", value: 0),
+            .init(.muteScheduledEvents, true, key: "mute_scheduled_events", value: 1),
+            .init(.mobilePush, false, key: "mobile_push", value: 0),
+        ]
+        for (index, expectation) in toggleExpectations.enumerated() {
+            try await provider.updateGuildNotificationToggle(
+                guildID: guildID,
+                toggle: expectation.toggle,
+                isEnabled: expectation.isEnabled
+            )
+            #expect(RateLimitURLProtocol.guildNotificationRequestCount == index + 4)
+            guilds = RateLimitURLProtocol.guildNotificationBody?["guilds"] as? [String: Any]
+            settings = guilds?["100"] as? [String: Any]
+            #expect(settings?.count == 1)
+            #expect((settings?[expectation.key] as? NSNumber)?.intValue == expectation.value)
+        }
+
         RateLimitURLProtocol.guildNotificationStatus = 429
         await #expect(throws: ChatProviderError.self) {
             try await provider.updateGuildNotificationLevel(
@@ -96,7 +117,7 @@ extension ProviderRequestContractTests {
                 level: .nothing
             )
         }
-        #expect(RateLimitURLProtocol.guildNotificationRequestCount == 4)
+        #expect(RateLimitURLProtocol.guildNotificationRequestCount == 10)
     }
 
     private func makeProvider() -> DiscordRESTProvider {
@@ -107,6 +128,25 @@ extension ProviderRequestContractTests {
             handle: CredentialHandle(accountID: "1"),
             session: URLSession(configuration: configuration)
         )
+    }
+}
+
+private struct GuildNotificationToggleExpectation {
+    var toggle: GuildNotificationToggle
+    var isEnabled: Bool
+    var key: String
+    var value: Int
+
+    init(
+        _ toggle: GuildNotificationToggle,
+        _ isEnabled: Bool,
+        key: String,
+        value: Int
+    ) {
+        self.toggle = toggle
+        self.isEnabled = isEnabled
+        self.key = key
+        self.value = value
     }
 }
 

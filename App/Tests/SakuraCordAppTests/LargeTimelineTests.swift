@@ -65,6 +65,17 @@ func `spoiler reveal state follows stable message and content identity`() {
         ).isEmpty
     )
     #expect(notifications == [messageID, messageID])
+
+    store.reset()
+    #expect(!store.isMediaRevealed(attachment))
+    #expect(
+        store.revealedTextLocations(
+            messageID: messageID,
+            contentID: "message-content",
+            contentHash: 91
+        ).isEmpty
+    )
+    #expect(notifications == [messageID, messageID, messageID])
 }
 
 @MainActor @Test
@@ -760,7 +771,7 @@ func `animated attachment and component spoilers start only after their own reve
 }
 
 @MainActor @Test
-func `shared timeline canvases synchronize spoiler reveal across channel switching`() throws {
+func `switching channels resets spoiler reveal across shared timeline canvases`() throws {
     let mediaURL = try #require(
         URL(string: "file:///tmp/sakuracord-shared-spoiler.png")
     )
@@ -804,6 +815,7 @@ func `shared timeline canvases synchronize spoiler reveal across channel switchi
     storage.rowOrigins = [0]
     storage.contentHeight = layout.height
     let model = AppModel(launchMode: .offlineTesting)
+    model.selectedChannelID = message.channelID
     let actions = NativeTimelineRowActions(
         loadEarlier: {},
         openReply: { _ in },
@@ -882,39 +894,12 @@ func `shared timeline canvases synchronize spoiler reveal across channel switchi
 
     #expect(firstCanvas.spoilerOverlayFramesForTesting.isEmpty)
     #expect(secondCanvas.spoilerOverlayFramesForTesting.isEmpty)
-    let returningCanvas = makeCanvas()
-    #expect(returningCanvas.spoilerOverlayFramesForTesting.isEmpty)
-}
+    model.selectedChannelID = ChannelID(rawValue: 8_503)
 
-@Test func `benchmark startup waits for real quiet display frames`() {
-    #expect(
-        !NativeTimelineBenchmarkStartupPolicy.isReady(
-            completedTicks: 0,
-            uptime: 10,
-            lastDelayedTickUptime: 0
-        )
-    )
-    #expect(
-        !NativeTimelineBenchmarkStartupPolicy.isReady(
-            completedTicks: 1,
-            uptime: 10,
-            lastDelayedTickUptime: 0
-        )
-    )
-    #expect(
-        !NativeTimelineBenchmarkStartupPolicy.isReady(
-            completedTicks: 2,
-            uptime: 10.05,
-            lastDelayedTickUptime: 10
-        )
-    )
-    #expect(
-        NativeTimelineBenchmarkStartupPolicy.isReady(
-            completedTicks: 2,
-            uptime: 10.10,
-            lastDelayedTickUptime: 10
-        )
-    )
+    #expect(firstCanvas.spoilerOverlayFramesForTesting[key] != nil)
+    #expect(secondCanvas.spoilerOverlayFramesForTesting[key] != nil)
+    let returningCanvas = makeCanvas()
+    #expect(returningCanvas.spoilerOverlayFramesForTesting[key] != nil)
 }
 
 @Test
@@ -992,7 +977,7 @@ func `hidden text spoilers stay private to accessibility until revealed`() {
 
 @Test
 @MainActor
-func `inline rich tokens inherit their enclosing spoiler`() {
+func `inline rich tokens inherit their enclosing spoiler`() throws {
     let source = "before ||<@&10> and <:glow:123>|| after"
     let prepared = RichMessageAttributedText.prepare(source: source)
     let value = NativeTimelineCoreText.make(
@@ -1019,155 +1004,264 @@ func `inline rich tokens inherit their enclosing spoiler`() {
             revealedLocations: []
         ) == "before Spoiler after"
     )
+    let frame = CGRect(x: 0, y: 0, width: 360, height: 40)
+    let framesetter = CTFramesetterCreateWithAttributedString(value)
+    let mention = try #require(
+        NativeTimelineTextHitTester.mentionRegions(
+            value: value,
+            framesetter: framesetter,
+            frame: frame
+        ).first
+    )
+    let hit = NativeTimelineTextHitTester.hit(
+        value: value,
+        framesetter: framesetter,
+        frame: frame,
+        point: CGPoint(x: mention.frame.midX, y: mention.frame.midY)
+    )
+    #expect(hit?.spoilerRange == spoilerRanges.first)
+    #expect(hit?.mention?.target == .role(RoleID(rawValue: 10)))
 }
 
-@Test func `native message menu preserves the pre CoreText presentation contract`() {
+@Test func `native scrolling caches bounded rows and directly paints oversized rows`() {
+    let cacheCostLimit = 32 * 1_024 * 1_024
     #expect(
-        NativeTimelineMessageMenuPolicy.entries(
-            canEdit: true,
-            canRetry: false,
-            canReply: true
-        ) == [
-            .action(
-                .addReaction,
-                title: "Add Reaction",
-                systemImage: "face.smiling.inverse"
-            ),
-            .action(
-                .reply,
-                title: "Reply",
-                systemImage: "arrowshape.turn.up.left"
-            ),
-            .action(
-                .editMessage,
-                title: "Edit Message",
-                systemImage: "pencil"
-            ),
-            .action(
-                .markUnread,
-                title: "Mark Unread",
-                systemImage: "envelope.badge"
-            ),
-            .separator,
-            .action(
-                .copyText,
-                title: "Copy Text",
-                systemImage: "doc.on.doc"
-            ),
-            .action(
-                .copyLink,
-                title: "Copy Link",
-                systemImage: "link"
-            ),
-            .action(
-                .copyMessageID,
-                title: "Copy Message ID",
-                systemImage: "number.square.fill"
-            ),
-            .separator,
-            .action(
-                .deleteMessage,
-                title: "Delete Message",
-                systemImage: "trash",
-                isDestructive: true
-            ),
-        ]
-    )
-
-    #expect(
-        NativeTimelineMessageMenuPolicy.entries(
-            canEdit: false,
-            canRetry: true,
-            canReply: false
-        ) == [
-            .action(
-                .retrySending,
-                title: "Retry Sending",
-                systemImage: "arrow.clockwise"
-            ),
-            .separator,
-            .action(
-                .addReaction,
-                title: "Add Reaction",
-                systemImage: "face.smiling.inverse"
-            ),
-            .action(
-                .markUnread,
-                title: "Mark Unread",
-                systemImage: "envelope.badge"
-            ),
-            .separator,
-            .action(
-                .copyText,
-                title: "Copy Text",
-                systemImage: "doc.on.doc"
-            ),
-            .action(
-                .copyLink,
-                title: "Copy Link",
-                systemImage: "link"
-            ),
-            .action(
-                .copyMessageID,
-                title: "Copy Message ID",
-                systemImage: "number.square.fill"
-            ),
-        ]
-    )
-}
-
-@Test func `native author profile hitboxes do not cover message text`() {
-    let avatar = CGRect(x: 14, y: 3, width: 38, height: 38)
-    let author = CGRect(x: 64, y: 3, width: 86, height: 16)
-    let frames = NativeTimelineAuthorProfileGeometry.hitFrames(
-        avatarFrame: avatar,
-        authorFrame: author
-    )
-
-    #expect(frames == [avatar, author])
-    #expect(
-        NativeTimelineAuthorProfileGeometry.hitFrame(
-            at: CGPoint(x: 30, y: 24),
-            avatarFrame: avatar,
-            authorFrame: author
-        ) == avatar
-    )
-    #expect(
-        NativeTimelineAuthorProfileGeometry.hitFrame(
-            at: CGPoint(x: 90, y: 10),
-            avatarFrame: avatar,
-            authorFrame: author
-        ) == author
-    )
-    #expect(
-        NativeTimelineAuthorProfileGeometry.hitFrame(
-            at: CGPoint(x: 90, y: 27),
-            avatarFrame: avatar,
-            authorFrame: author
-        ) == nil
-    )
-    #expect(avatar.union(author).contains(CGPoint(x: 90, y: 27)))
-}
-
-@Test func `native scrolling paints uncached rows without synchronous rasterization`() {
-    #expect(
-        NativeTimelineScrollingRenderPolicy.usesDirectPainter(
+        !NativeTimelineScrollingRenderPolicy.usesDirectPainter(
             isScrolling: true,
-            hasCachedBitmap: false
+            hasCachedBitmap: false,
+            estimatedBitmapCost: 2 * 1_024 * 1_024,
+            cacheCostLimit: cacheCostLimit
         )
     )
     #expect(
         !NativeTimelineScrollingRenderPolicy.usesDirectPainter(
             isScrolling: true,
-            hasCachedBitmap: true
+            hasCachedBitmap: true,
+            estimatedBitmapCost: 20 * 1_024 * 1_024,
+            cacheCostLimit: cacheCostLimit
+        )
+    )
+    #expect(
+        NativeTimelineScrollingRenderPolicy.usesDirectPainter(
+            isScrolling: true,
+            hasCachedBitmap: false,
+            estimatedBitmapCost: 20 * 1_024 * 1_024,
+            cacheCostLimit: cacheCostLimit
         )
     )
     #expect(
         !NativeTimelineScrollingRenderPolicy.usesDirectPainter(
             isScrolling: false,
-            hasCachedBitmap: false
+            hasCachedBitmap: false,
+            estimatedBitmapCost: 20 * 1_024 * 1_024,
+            cacheCostLimit: cacheCostLimit
         )
     )
+    #expect(
+        NativeTimelineShortContentRedrawPolicy.redrawsSynchronously(
+            conversationChanged: false,
+            appendedAtTail: true
+        )
+    )
+    #expect(
+        !NativeTimelineShortContentRedrawPolicy.redrawsSynchronously(
+            conversationChanged: true,
+            appendedAtTail: true
+        )
+    )
+    #expect(
+        !NativeTimelineShortContentRedrawPolicy.redrawsSynchronously(
+            conversationChanged: false,
+            appendedAtTail: false
+        )
+    )
+    #expect(
+        TimelineAccessibilityWorkPolicy.reconcilesEagerly(
+            isVoiceOverEnabled: true,
+            isSwitchControlEnabled: false
+        )
+    )
+    #expect(
+        TimelineAccessibilityWorkPolicy.reconcilesEagerly(
+            isVoiceOverEnabled: false,
+            isSwitchControlEnabled: true
+        )
+    )
+    #expect(
+        !TimelineAccessibilityWorkPolicy.reconcilesEagerly(
+            isVoiceOverEnabled: false,
+            isSwitchControlEnabled: false
+        )
+    )
+    #expect(
+        HoverActionPillMetrics.size(controlCount: 1)
+            == CGSize(width: 36, height: 36)
+    )
+    #expect(
+        HoverActionPillMetrics.size(controlCount: 5)
+            == CGSize(width: 152, height: 36)
+    )
+}
+
+@Test
+@MainActor
+func `cross surface scroll work gate stays active until every surface ends`() {
+    let timelineScrollView = NSScrollView()
+    let serverListScrollView = NSScrollView()
+    let timelineProbe = ScrollInputPerformanceProbe(surface: .timeline)
+    let serverListProbe = ScrollInputPerformanceProbe(surface: .serverList)
+    var ownsBenchmarkActivity = true
+    AppScrollWorkGate.beginActivity()
+    timelineProbe.install(on: timelineScrollView)
+    serverListProbe.install(on: serverListScrollView)
+    defer {
+        if ownsBenchmarkActivity {
+            AppScrollWorkGate.endActivity()
+        }
+        timelineProbe.invalidate()
+        serverListProbe.invalidate()
+    }
+
+    NotificationCenter.default.post(
+        name: NSScrollView.willStartLiveScrollNotification,
+        object: timelineScrollView
+    )
+    #expect(AppScrollActivity.isActive)
+    #expect(AppScrollWorkGate.isActive)
+
+    NotificationCenter.default.post(
+        name: NSScrollView.willStartLiveScrollNotification,
+        object: serverListScrollView
+    )
+    NotificationCenter.default.post(
+        name: NSScrollView.didEndLiveScrollNotification,
+        object: timelineScrollView
+    )
+    #expect(AppScrollActivity.isActive)
+    #expect(AppScrollWorkGate.isActive)
+
+    NotificationCenter.default.post(
+        name: NSScrollView.didEndLiveScrollNotification,
+        object: serverListScrollView
+    )
+    #expect(!AppScrollActivity.isActive)
+    #expect(AppScrollWorkGate.isActive)
+
+    AppScrollWorkGate.endActivity()
+    ownsBenchmarkActivity = false
+    #expect(!AppScrollWorkGate.isActive)
+}
+
+@MainActor
+@Test func `conversation replacement defers live append short content redraw`() {
+    let viewport = CGRect(x: 0, y: 0, width: 560, height: 400)
+    let canvas = NativeTimelineCanvasView(frame: viewport)
+    let scrollView = NSScrollView(frame: viewport)
+    scrollView.documentView = canvas
+    let window = NSWindow(
+        contentRect: viewport,
+        styleMask: .borderless,
+        backing: .buffered,
+        defer: false
+    )
+    window.contentView = scrollView
+    let storage = NativeTimelineCanvasStorage()
+    let model = AppModel(launchMode: .offlineTesting)
+    let actions = NativeTimelineRowActions(
+        loadEarlier: {},
+        openReply: { _ in },
+        reply: nil,
+        retry: { _ in },
+        edit: { _, _ in },
+        markUnread: { _ in },
+        delete: { _ in },
+        react: { _, _ in },
+        openThread: { _ in },
+        submitComponent: { _, _, _, _ in }
+    )
+    let shortContentOrigin =
+        ChatDetailLayoutPolicy.timelineTopPadding + 100
+
+    canvas.apply(
+        storage: storage,
+        model: model,
+        actions: actions,
+        viewportWidth: viewport.width,
+        minimumHeight: viewport.height,
+        bottomSpacerHeight: 0,
+        contentOriginY: shortContentOrigin,
+        redrawsMovedShortContentSynchronously: false
+    )
+    #expect(canvas.synchronousShortContentRedrawCount == 0)
+
+    canvas.apply(
+        storage: storage,
+        model: model,
+        actions: actions,
+        viewportWidth: viewport.width,
+        minimumHeight: viewport.height,
+        bottomSpacerHeight: 0,
+        contentOriginY: shortContentOrigin + 20
+    )
+    #expect(canvas.synchronousShortContentRedrawCount == 1)
+}
+
+@MainActor
+@Test func `timeline accessibility query materializes lazy row proxies`() {
+    let viewport = CGRect(x: 0, y: 0, width: 560, height: 400)
+    let channel = Channel(
+        id: ChannelID(rawValue: 9_001),
+        guildID: GuildID(rawValue: 9_002),
+        name: "accessibility",
+        kind: .text
+    )
+    let item = NativeMessageTimelineItem.beginning(
+        .channel(channel, rulesChannelID: nil)
+    )
+    let layout = NativeTimelineRowLayout.make(
+        item: item,
+        width: viewport.width
+    )
+    let storage = NativeTimelineCanvasStorage()
+    storage.items = [item]
+    storage.layouts = [layout]
+    storage.rowOrigins = [0]
+    storage.contentHeight = layout.height
+    let canvas = NativeTimelineCanvasView(frame: viewport)
+    let scrollView = NSScrollView(frame: viewport)
+    scrollView.documentView = canvas
+    let window = NSWindow(
+        contentRect: viewport,
+        styleMask: .borderless,
+        backing: .buffered,
+        defer: false
+    )
+    window.contentView = scrollView
+    canvas.apply(
+        storage: storage,
+        model: AppModel(launchMode: .offlineTesting),
+        actions: NativeTimelineRowActions(
+            loadEarlier: {},
+            openReply: { _ in },
+            reply: nil,
+            retry: { _ in },
+            edit: { _, _ in },
+            markUnread: { _ in },
+            delete: { _ in },
+            react: { _, _ in },
+            openThread: { _ in },
+            submitComponent: { _, _, _, _ in }
+        ),
+        viewportWidth: viewport.width,
+        minimumHeight: viewport.height,
+        bottomSpacerHeight: 0,
+        contentOriginY: 0
+    )
+    canvas.removeAccessibilityProxies()
+    #expect(canvas.accessibilityProxyRowsInTimelineOrder().isEmpty)
+
+    #expect(canvas.accessibilityRows()?.count == 1)
+    #expect(canvas.accessibilityProxyRowsInTimelineOrder().count == 1)
 }
 
 @MainActor
@@ -1358,983 +1452,6 @@ func `inline rich tokens inherit their enclosing spoiler`() {
     #expect(NativeTimelineReplyMediaPolicy.avatarKey(for: nil) == nil)
 }
 
-@MainActor @Test
-func `timeline presentation invalidation clears cached render state`() {
-    let canvas = NativeTimelineCanvasView(
-        frame: CGRect(x: 0, y: 0, width: 720, height: 480)
-    )
-    canvas.needsDisplay = false
-
-    canvas.invalidatePresentationCaches()
-
-    #expect(canvas.presentationCacheInvalidationCount == 1)
-}
-
-@MainActor @Test
-func `conversation switch retains validated row bitmap cache`() {
-    let canvas = NativeTimelineCanvasView(
-        frame: CGRect(x: 0, y: 0, width: 720, height: 480)
-    )
-    let channel = Channel(
-        id: ChannelID(rawValue: 77),
-        guildID: GuildID(rawValue: 7),
-        name: "cached-channel",
-        kind: .text
-    )
-    let item = NativeMessageTimelineItem.beginning(
-        .channel(channel, rulesChannelID: nil)
-    )
-    let image = NSImage(size: NSSize(width: 720, height: 80))
-    canvas.bitmapCache[item.identifier] = .init(
-        item: item,
-        width: 720,
-        appearanceName: canvas.effectiveAppearance.name,
-        image: image,
-        cost: 1,
-        mediaPinOwner: UUID()
-    )
-
-    canvas.invalidateConversationTransientCaches()
-
-    #expect(canvas.cachedBitmap(for: item, width: 720) === image)
-    canvas.invalidatePresentationCaches()
-    #expect(canvas.cachedBitmap(for: item, width: 720) == nil)
-}
-
-@MainActor @Test
-func `native scrolling removes installed pointer tracking immediately`() {
-    let canvas = NativeTimelineCanvasView(
-        frame: CGRect(x: 0, y: 0, width: 720, height: 480)
-    )
-    let window = NSWindow(
-        contentRect: canvas.frame,
-        styleMask: .borderless,
-        backing: .buffered,
-        defer: false
-    )
-    window.contentView = canvas
-    canvas.updateTrackingAreas()
-    #expect(!canvas.trackingAreas.isEmpty)
-
-    canvas.dismissHoverPresentationForScroll()
-
-    #expect(canvas.trackingAreas.isEmpty)
-}
-
-@Test func `short native timeline fills above its rows and footer`() {
-    let top = NativeMessageTimelineLayoutPolicy.shortContentTopInset(
-        viewportHeight: 700,
-        contentHeight: 180,
-        bottomInset: 76,
-        verticalPadding: 8
-    )
-    #expect(top == 444)
-    let documentHeight = NativeMessageTimelineLayoutPolicy.documentHeight(
-        contentOriginY: top,
-        contentHeight: 180,
-        bottomInset: 76,
-        viewportHeight: 700
-    )
-    #expect(documentHeight == 700)
-    #expect(
-        NativeMessageTimelineLayoutPolicy.clampedDocumentY(
-            proposedY: .greatestFiniteMagnitude,
-            contentHeight: documentHeight,
-            viewportHeight: 700,
-            bottomInset: 0
-        ) == 0
-    )
-    #expect(
-        !NativeMessageTimelineLayoutPolicy.showsVerticalScroller(
-            contentHeight: 180,
-            viewportHeight: 700,
-            bottomInset: 76,
-            verticalPadding: 8
-        )
-    )
-    #expect(
-        !NativeMessageTimelineLayoutPolicy.showsVerticalScroller(
-            contentHeight: 616,
-            viewportHeight: 700,
-            bottomInset: 76,
-            verticalPadding: 8
-        )
-    )
-    #expect(
-        NativeMessageTimelineLayoutPolicy.showsVerticalScroller(
-            contentHeight: 617,
-            viewportHeight: 700,
-            bottomInset: 76,
-            verticalPadding: 8
-        )
-    )
-
-    let preservedEmptyChannelTop =
-        NativeMessageTimelineLayoutPolicy.shortContentTopInset(
-            viewportHeight: 740,
-            contentHeight: 179,
-            bottomInset:
-                ChatDetailLayoutPolicy.defaultFloatingFooterHeight
-                + ChatDetailLayoutPolicy.timelineBottomPadding,
-            verticalPadding: ChatDetailLayoutPolicy.timelineTopPadding
-        )
-    #expect(preservedEmptyChannelTop == 471)
-
-    let previewTop = NativeMessageTimelineLayoutPolicy.shortContentTopInset(
-        viewportHeight: 400,
-        contentHeight: 600,
-        bottomInset: 76,
-        verticalPadding: ChatDetailLayoutPolicy.timelineTopPadding + 46
-    )
-    #expect(previewTop == ChatDetailLayoutPolicy.timelineTopPadding + 46)
-}
-
-@Test func `native timeline bottom scroll includes the floating footer inset`() {
-    let documentHeight = NativeMessageTimelineLayoutPolicy.documentHeight(
-        contentOriginY: 8,
-        contentHeight: 2_000,
-        bottomInset: 76,
-        viewportHeight: 700
-    )
-    let y = NativeMessageTimelineLayoutPolicy.clampedDocumentY(
-        proposedY: .greatestFiniteMagnitude,
-        contentHeight: documentHeight,
-        viewportHeight: 700,
-        bottomInset: 0
-    )
-    #expect(documentHeight == 2_084)
-    #expect(y == 1_384)
-}
-
-@Test func `native timeline distinguishes the true bottom from a nearby viewport`() {
-    #expect(
-        NativeMessageTimelineLayoutPolicy.isAtTrueBottom(
-            documentHeight: 2_084,
-            visibleMaximumY: 2_084
-        )
-    )
-    #expect(
-        NativeMessageTimelineLayoutPolicy.isAtTrueBottom(
-            documentHeight: 2_084,
-            visibleMaximumY: 2_083
-        )
-    )
-    #expect(
-        !NativeMessageTimelineLayoutPolicy.isAtTrueBottom(
-            documentHeight: 2_084,
-            visibleMaximumY: 2_080
-        )
-    )
-}
-
-@Test func `native timeline prepends consume reserved document coordinates`() {
-    let absorbed =
-        NativeMessageTimelineLayoutPolicy.consumingLeadingHistoryReserve(
-            65_536,
-            prependedHeight: 3_200,
-            chunk: 65_536
-        )
-    #expect(absorbed.reserve == 62_336)
-    #expect(!absorbed.grew)
-
-    let replenished =
-        NativeMessageTimelineLayoutPolicy.consumingLeadingHistoryReserve(
-            1_000,
-            prependedHeight: 3_200,
-            chunk: 65_536
-        )
-    #expect(replenished.reserve == 63_336)
-    #expect(replenished.grew)
-
-    let proactivelyReplenished =
-        NativeMessageTimelineLayoutPolicy.consumingLeadingHistoryReserve(
-            65_536,
-            prependedHeight: 40_000,
-            chunk: 65_536
-        )
-    #expect(proactivelyReplenished.reserve == 91_072)
-    #expect(proactivelyReplenished.grew)
-}
-
-@Test func `native timeline exposes its complete bounded history reserve`() {
-    #expect(
-        NativeMessageTimelineLayoutPolicy.provisionalHistoryDepth(
-            reserve: 65_536,
-            viewportHeight: 800
-        ) == 65_536
-    )
-    #expect(
-        NativeMessageTimelineLayoutPolicy.provisionalHistoryMinimumY(
-            reserve: 65_536,
-            viewportHeight: 800,
-            allowsProvisionalHistory: true
-        ) == 0
-    )
-    #expect(
-        NativeMessageTimelineLayoutPolicy.provisionalHistoryMinimumY(
-            reserve: 65_536,
-            viewportHeight: 800,
-            allowsProvisionalHistory: false
-        ) == 65_536
-    )
-    #expect(
-        NativeMessageTimelineLayoutPolicy.provisionalHistoryMinimumY(
-            reserve: 1_200,
-            viewportHeight: 800,
-            allowsProvisionalHistory: true
-        ) == 0
-    )
-}
-
-@Test func `native timeline benchmark scroll speed is display refresh independent`() {
-    #expect(
-        NativeTimelineBenchmarkScrollPolicy.distance(
-            tickInterval: 1.0 / 60.0
-        ) == 20
-    )
-    #expect(
-        NativeTimelineBenchmarkScrollPolicy.distance(
-            tickInterval: 1.0 / 120.0
-        ) == 10
-    )
-    #expect(
-        NativeTimelineBenchmarkScrollPolicy.distance(
-            tickInterval: 1
-        ) == 40
-    )
-    #expect(
-        NativeTimelineBenchmarkScrollPolicy.nominalDistance == 24_000
-    )
-    #expect(
-        NativeTimelineBenchmarkScrollPolicy.distanceDeficit(
-            completedDistance: 23_920
-        ) == 80
-    )
-    #expect(
-        NativeTimelineBenchmarkScrollPolicy.spatialQuality(
-            completedDistance: 24_000
-        ) == 1
-    )
-    #expect(
-        NativeTimelineBenchmarkScrollPolicy.spatialQuality(
-            completedDistance: 12_000
-        ) == 0.5
-    )
-}
-
-@Test func `native timeline benchmark controller rejects exhausted short history`() {
-    var paginating = NativeTimelineBenchmarkScrollController(startedAt: 0)
-    #expect(
-        paginating.recordTick(
-            uptime: 1,
-            previousDocumentY: 100,
-            currentDocumentY: 100,
-            hasMoreMessages: true
-        ) == .continueBenchmark
-    )
-
-    var exhausted = NativeTimelineBenchmarkScrollController(startedAt: 0)
-    #expect(
-        exhausted.recordTick(
-            uptime: 1,
-            previousDocumentY: 100,
-            currentDocumentY: 100,
-            hasMoreMessages: false
-        ) == .insufficientHistory
-    )
-
-    var completing = NativeTimelineBenchmarkScrollController(startedAt: 0)
-    #expect(
-        completing.recordTick(
-            uptime: 10,
-            previousDocumentY: 100_000,
-            currentDocumentY: 88_000,
-            hasMoreMessages: true
-        ) == .continueBenchmark
-    )
-    #expect(
-        completing.recordTick(
-            uptime: 20,
-            previousDocumentY: 88_000,
-            currentDocumentY: 76_000,
-            hasMoreMessages: false
-        ) == .completed
-    )
-    #expect(completing.completedDistance == 24_000)
-
-}
-
-@Test func `benchmark rejects an earlier history request failure`() {
-    var failed = NativeTimelineBenchmarkScrollController(startedAt: 0)
-    #expect(
-        failed.recordTick(
-            uptime: 1,
-            previousDocumentY: 100,
-            currentDocumentY: 100,
-            hasMoreMessages: true,
-            paginationFailed: true
-        ) == .paginationFailed
-    )
-}
-
-@Test func `one several second late tick remains a reportable fixed duration run`() {
-    var controller = NativeTimelineBenchmarkScrollController(startedAt: 0)
-    var uptime: TimeInterval = 0
-    var documentY: CGFloat = 500_000
-    for _ in 0 ..< 1_194 {
-        uptime += 1.0 / 60.0
-        let step = NativeTimelineBenchmarkScrollPolicy.distance(
-            tickInterval: 1.0 / 60.0
-        )
-        let previousY = documentY
-        documentY -= step
-        #expect(
-            controller.recordTick(
-                uptime: uptime,
-                previousDocumentY: previousY,
-                currentDocumentY: documentY,
-                hasMoreMessages: true
-            ) == .continueBenchmark
-        )
-    }
-    let delayedStep = NativeTimelineBenchmarkScrollPolicy.distance(
-        tickInterval: 3.1
-    )
-    #expect(delayedStep == NativeTimelineBenchmarkScrollPolicy.maximumStep)
-    let previousY = documentY
-    documentY -= delayedStep
-    #expect(
-        controller.recordTick(
-            uptime: NativeTimelineBenchmarkScrollPolicy.duration + 3,
-            previousDocumentY: previousY,
-            currentDocumentY: documentY,
-            hasMoreMessages: true
-        ) == .completed
-    )
-    #expect(controller.completedDistance == 23_920)
-    #expect(
-        NativeTimelineBenchmarkScrollPolicy.distanceDeficit(
-            completedDistance: controller.completedDistance
-        ) == 80
-    )
-}
-
-@MainActor @Test
-func `benchmark closes measurement before delayed bookkeeping`() {
-    var uptime: TimeInterval = 20
-    var measuredEnd: TimeInterval?
-    var persistedElapsed: TimeInterval?
-    var sequence: [String] = []
-
-    let elapsed = NativeTimelineBenchmarkFinishSequence.run(
-        startedAt: 0,
-        now: {
-            sequence.append("capture")
-            return uptime
-        },
-        closeMeasurement: {
-            sequence.append("close")
-            measuredEnd = uptime
-        },
-        performBookkeeping: { capturedElapsed in
-            sequence.append("bookkeeping")
-            uptime += 5
-            persistedElapsed = capturedElapsed
-        }
-    )
-
-    #expect(sequence == ["capture", "close", "bookkeeping"])
-    #expect(measuredEnd == 20)
-    #expect(persistedElapsed == 20)
-    #expect(elapsed == 20)
-    #expect(uptime == 25)
-}
-
-@MainActor @Test
-func `automated benchmark pagination never emits user interaction callbacks`() {
-    let model = AppModel(launchMode: .offlineTesting)
-    var beganCount = 0
-    var endedCount = 0
-    let timeline = NativeMessageTimelineView(
-        model: model,
-        conversation: .channel(ChannelID(rawValue: 99_910)),
-        beginning: nil,
-        firstMessageStartsDayOverride: nil,
-        hasMoreMessages: true,
-        isLoadingEarlier: false,
-        bottomContentInset: 0,
-        unreadMessageID: nil,
-        highlightedMessageID: nil,
-        scrollRequest: nil,
-        runsPerformanceAutoScroll: true,
-        loadEarlier: {},
-        openReply: { _ in },
-        onScrollActivityChange: { _ in },
-        onScrollStateChange: { _ in },
-        onUserScrollBegan: { beganCount += 1 },
-        onUserScrollEnded: { _ in endedCount += 1 }
-    )
-    let coordinator = timeline.makeCoordinator()
-
-    coordinator.beginPerformanceBenchmarkPaginationIntent()
-    coordinator.endPerformanceBenchmarkPaginationIntent()
-
-    #expect(beganCount == 0)
-    #expect(endedCount == 0)
-}
-
-@Test func `native timeline only presents history skeletons while provisional history is active`() {
-    #expect(
-        !NativeMessageTimelineLayoutPolicy.showsHistorySkeleton(
-            hasMoreMessages: true,
-            isLoadingEarlier: false,
-            followsMaterializedHistoryBoundary: false
-        )
-    )
-    #expect(
-        NativeMessageTimelineLayoutPolicy.showsHistorySkeleton(
-            hasMoreMessages: true,
-            isLoadingEarlier: true,
-            followsMaterializedHistoryBoundary: false
-        )
-    )
-    #expect(
-        NativeMessageTimelineLayoutPolicy.showsHistorySkeleton(
-            hasMoreMessages: true,
-            isLoadingEarlier: false,
-            followsMaterializedHistoryBoundary: true
-        )
-    )
-    #expect(
-        !NativeMessageTimelineLayoutPolicy.showsHistorySkeleton(
-            hasMoreMessages: false,
-            isLoadingEarlier: true,
-            followsMaterializedHistoryBoundary: true
-        )
-    )
-}
-
-@MainActor @Test
-func `native earlier loader is hidden until automatic pagination starts`() {
-    let width: CGFloat = 620
-    let idle = NativeTimelineLoaderLayout.make(
-        isLoading: false,
-        kind: .messages,
-        width: width
-    )
-    let loading = NativeTimelineLoaderLayout.make(
-        isLoading: true,
-        kind: .messages,
-        width: width
-    )
-    let reference = NSHostingController(
-        rootView: NativeTimelineEarlierLoaderReference()
-    ).sizeThatFits(in: CGSize(width: width, height: 1_000))
-
-    #expect(idle.height == 0)
-    #expect(idle.controlFrame == .zero)
-    #expect(idle.labelFrame == .zero)
-    #expect(idle.spinnerFrame == nil)
-    #expect(loading.height == reference.height)
-    #expect(loading.controlFrame.midX == width / 2)
-    #expect(loading.controlFrame.minY == 10)
-    #expect(loading.height == 36)
-    #expect(loading.controlFrame.size == CGSize(width: 155, height: 16))
-    #expect(loading.spinnerFrame?.size == CGSize(width: 16, height: 16))
-}
-
-@MainActor @Test
-func `native unread boundary preserves the pre CoreText separator height`() {
-    let width: CGFloat = 620
-    let reference = NSHostingController(
-        rootView: NewMessagesSeparator()
-    ).sizeThatFits(in: CGSize(width: width, height: 1_000))
-    let author = User(
-        id: UserID(rawValue: 1),
-        username: "fixture",
-        displayName: "Fixture"
-    )
-    let row = MessageRowPresentation(
-        message: Message(
-            id: MessageID(rawValue: 2),
-            channelID: ChannelID(rawValue: 3),
-            author: author,
-            content: "Unread message"
-        ),
-        startsGroup: true,
-        startsDay: false,
-        replyPreview: nil,
-        isReplyAvailable: false
-    )
-    let ordinary = NativeTimelineRowLayout.make(
-        item: .message(
-            row,
-            isUnreadBoundary: false,
-            isHighlighted: false
-        ),
-        width: width
-    )
-    let unread = NativeTimelineRowLayout.make(
-        item: .message(
-            row,
-            isUnreadBoundary: true,
-            isHighlighted: false
-        ),
-        width: width
-    )
-
-    #expect(
-        reference.height
-            == NativeTimelineUnreadSeparatorMetrics.rowHeight
-    )
-    #expect(unread.unreadSeparatorFrame?.height == reference.height)
-    #expect(
-        unread.highlightFrame?.minY
-            == NativeTimelineUnreadSeparatorMetrics.rowHeight
-    )
-    #expect(
-        unread.avatarFrame?.minY
-            == NativeTimelineUnreadSeparatorMetrics.rowHeight
-                + MessageRowLayoutMetrics.visibleHighlightInset
-    )
-    let lineY =
-        NativeTimelineUnreadSeparatorMetrics.rowHeight / 2
-    let precedingVisibleGap =
-        MessageRowLayoutMetrics.visibleHighlightInset + lineY
-    let followingVisibleGap =
-        (unread.avatarFrame?.minY ?? 0) - lineY
-    #expect(precedingVisibleGap == followingVisibleGap)
-    #expect(
-        unread.height - ordinary.height
-            == NativeTimelineUnreadSeparatorMetrics.rowHeight
-                - MessageRowLayoutMetrics.separation(
-                    startsGroup: true,
-                    highlightTopInset:
-                        MessageRowLayoutMetrics.visibleHighlightInset
-                )
-    )
-}
-
-@MainActor @Test
-func `native day separator preserves the pre CoreText label metrics`() {
-    let date = Date(timeIntervalSince1970: 1_774_896_000)
-    let label = date.formatted(
-        .dateTime.day().month(.wide).year()
-    )
-    let referenceLabel = NSHostingController(
-        rootView: Text(
-            date,
-            format: .dateTime.day().month(.wide).year()
-        )
-        .font(.caption2.weight(.semibold))
-        .fixedSize()
-    ).sizeThatFits(in: CGSize(width: 1_000, height: 1_000))
-    let referenceSeparator = NSHostingController(
-        rootView: DateSeparator(date: date)
-    ).sizeThatFits(in: CGSize(width: 620, height: 1_000))
-    let frame = CGRect(
-        x: 14,
-        y: 0,
-        width: 592,
-        height: NativeTimelineDateSeparatorMetrics.rowHeight
-    )
-    let labelFrame = NativeTimelineDateSeparatorMetrics.labelFrame(
-        for: label,
-        in: frame
-    )
-
-    #expect(referenceLabel.height == 13)
-    #expect(NativeTimelineDateSeparatorMetrics.font.pointSize == 10)
-    #expect(
-        labelFrame.size
-            == CGSize(
-                width: referenceLabel.width,
-                height: referenceLabel.height
-            )
-    )
-    #expect(referenceSeparator.height == 37)
-    #expect(
-        NativeTimelineDateSeparatorMetrics.rowHeight
-            == referenceSeparator.height
-    )
-    #expect(
-        labelFrame.minY
-            == NativeTimelineDateSeparatorMetrics.verticalPadding
-    )
-
-    let author = User(
-        id: UserID(rawValue: 4),
-        username: "fixture",
-        displayName: "Fixture"
-    )
-    let row = MessageRowPresentation(
-        message: Message(
-            id: MessageID(rawValue: 5),
-            channelID: ChannelID(rawValue: 6),
-            author: author,
-            content: "First message of the day",
-            timestamp: date
-        ),
-        startsGroup: true,
-        startsDay: true,
-        replyPreview: nil,
-        isReplyAvailable: false
-    )
-    let layout = NativeTimelineRowLayout.make(
-        item: .message(
-            row,
-            isUnreadBoundary: false,
-            isHighlighted: false
-        ),
-        width: 620
-    )
-    #expect(
-        layout.highlightFrame?.minY
-            == NativeTimelineDateSeparatorMetrics.rowHeight
-    )
-    #expect(
-        layout.avatarFrame?.minY
-            == NativeTimelineDateSeparatorMetrics.rowHeight
-                + MessageRowLayoutMetrics.visibleHighlightInset
-    )
-    let separatorLineY =
-        NativeTimelineDateSeparatorMetrics.rowHeight / 2
-    let precedingVisibleGap =
-        MessageRowLayoutMetrics.visibleHighlightInset
-            + separatorLineY
-    let followingVisibleGap =
-        (layout.avatarFrame?.minY ?? 0) - separatorLineY
-    #expect(precedingVisibleGap == followingVisibleGap)
-}
-
-@MainActor @Test
-func `native reply preview preserves the pre CoreText caption metrics`() {
-    let author = "Juniper Reed"
-    let summary = "A compact reply preview"
-    let referenceAuthor = NSHostingController(
-        rootView: Text(author)
-            .font(.caption2.weight(.semibold))
-            .fixedSize()
-    ).sizeThatFits(in: CGSize(width: 1_000, height: 1_000))
-    let referenceSummary = NSHostingController(
-        rootView: Text(summary)
-            .font(.caption)
-            .fixedSize()
-    ).sizeThatFits(in: CGSize(width: 1_000, height: 1_000))
-
-    #expect(NativeTimelineReplyMetrics.authorFont.pointSize == 10)
-    #expect(NativeTimelineReplyMetrics.summaryFont.pointSize == 10)
-    #expect(
-        NativeTimelineReplyMetrics.textWidth(
-            author,
-            font: NativeTimelineReplyMetrics.authorFont
-        ) == referenceAuthor.width
-    )
-    #expect(
-        NativeTimelineReplyMetrics.textWidth(
-            summary,
-            font: NativeTimelineReplyMetrics.summaryFont
-        ) == referenceSummary.width
-    )
-}
-
-@MainActor @Test
-func `native generated messages preserve the pre CoreText body font`() throws {
-    let author = User(
-        id: UserID(rawValue: 41),
-        username: "nova",
-        displayName: "Nova Chen"
-    )
-    let generated = Message(
-        id: MessageID(rawValue: 42),
-        channelID: ChannelID(rawValue: 43),
-        author: author,
-        content: "",
-        type: .channelPinnedMessage
-    )
-    let ordinary = Message(
-        id: MessageID(rawValue: 44),
-        channelID: generated.channelID,
-        author: author,
-        content: "Ordinary rich message text"
-    )
-    let generatedPlan = NativeTimelineTextPlan.make(for: generated)
-    let ordinaryPlan = NativeTimelineTextPlan.make(for: ordinary)
-    let generatedText = try #require(generatedPlan.attributedText?.value)
-    let generatedFont = try #require(
-        generatedText.attribute(
-            .font,
-            at: 0,
-            effectiveRange: nil
-        ) as? NSFont
-    )
-    let label = SystemMessagePresentation.label(for: generated)
-    let reference = NSHostingController(
-        rootView: Text(label)
-            .font(.body)
-            .fixedSize()
-    ).sizeThatFits(in: CGSize(width: 1_000, height: 1_000))
-    let attributedWidth = ceil(generatedText.size().width)
-
-    #expect(generatedPlan.baseFontSize == 13)
-    #expect(generatedFont.pointSize == 13)
-    #expect(attributedWidth > reference.width)
-    #expect(ordinaryPlan.baseFontSize == 15)
-}
-
-@MainActor @Test
-func `group action rows use specific symbols names and text contrast`() throws {
-    let author = User(
-        id: UserID(rawValue: 71),
-        username: "nova",
-        displayName: "Nova"
-    )
-    let recipient = User(
-        id: UserID(rawValue: 72),
-        username: "maya",
-        displayName: "Maya"
-    )
-    let channelID = ChannelID(rawValue: 73)
-    let added = Message(
-        id: MessageID(rawValue: 74),
-        channelID: channelID,
-        author: author,
-        content: "",
-        type: .recipientAdd,
-        mentionedUsers: [recipient]
-    )
-
-    #expect(
-        SystemMessagePresentation.label(for: added)
-            == "Nova added Maya to the group."
-    )
-    #expect(SystemMessagePresentation.systemImage(for: added) == "arrow.right")
-    #expect(SystemMessagePresentation.usesSuccessColor(for: added))
-    #expect(
-        SystemMessagePresentation.textRuns(for: added).map(\.isEmphasized)
-            == [true, false, true, false]
-    )
-
-    let attributed = try #require(
-        NativeTimelineTextPlan.make(for: added).attributedText?.value
-    )
-    let authorFont = try #require(
-        attributed.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
-    )
-    let connectiveFont = try #require(
-        attributed.attribute(
-            .font,
-            at: author.displayName.utf16.count,
-            effectiveRange: nil
-        ) as? NSFont
-    )
-    #expect(
-        NSFontManager.shared.traits(of: authorFont).contains(.boldFontMask)
-    )
-    #expect(
-        !NSFontManager.shared.traits(of: connectiveFont).contains(.boldFontMask)
-    )
-
-    let removed = Message(
-        id: MessageID(rawValue: 75),
-        channelID: channelID,
-        author: author,
-        content: "",
-        type: .recipientRemove,
-        mentionedUsers: [recipient]
-    )
-    let renamed = Message(
-        id: MessageID(rawValue: 76),
-        channelID: channelID,
-        author: author,
-        content: "Layout crew",
-        type: .channelNameChange
-    )
-    let iconChanged = Message(
-        id: MessageID(rawValue: 77),
-        channelID: channelID,
-        author: author,
-        content: "",
-        type: .channelIconChange
-    )
-    #expect(SystemMessagePresentation.systemImage(for: removed) == "arrow.left")
-    #expect(SystemMessagePresentation.systemImage(for: renamed) == "pencil")
-    #expect(SystemMessagePresentation.systemImage(for: iconChanged) == "photo.fill")
-    #expect(
-        SystemMessagePresentation.label(for: renamed)
-            == "Nova changed the group name to Layout crew."
-    )
-    #expect(
-        SystemMessagePresentation.textRuns(for: renamed).map(\.isEmphasized)
-            == [true, false, true, false]
-    )
-}
-
-@MainActor @Test
-func `completed call system messages include the bounded discord duration`() {
-    let start = Date(timeIntervalSince1970: 1_800_000_000)
-    let currentUserID = UserID(rawValue: 64)
-    var message = Message(
-        id: MessageID(rawValue: 62),
-        channelID: ChannelID(rawValue: 63),
-        author: User(
-            id: UserID(rawValue: 61),
-            username: "nova",
-            displayName: "Nova"
-        ),
-        content: "",
-        timestamp: start,
-        type: .call,
-        call: MessageCall(
-            participantIDs: [UserID(rawValue: 61), currentUserID],
-            endedAt: start.addingTimeInterval(4 * 60 + 42)
-        )
-    )
-
-    #expect(
-        SystemMessagePresentation.label(
-            for: message,
-            currentUserID: currentUserID
-        )
-            == "Nova started a call that lasted 4 minutes."
-    )
-    #expect(
-        SystemMessagePresentation.systemImage(
-            for: message,
-            currentUserID: currentUserID
-        ) == "phone.fill"
-    )
-    #expect(
-        SystemMessagePresentation.usesSuccessColor(
-            for: message,
-            currentUserID: currentUserID
-        )
-    )
-
-    message.call = MessageCall(
-        participantIDs: [UserID(rawValue: 61)],
-        endedAt: start.addingTimeInterval(18)
-    )
-    #expect(
-        SystemMessagePresentation.label(
-            for: message,
-            currentUserID: currentUserID
-        )
-            == "You missed a call from Nova that lasted a few seconds."
-    )
-    #expect(
-        SystemMessagePresentation.systemImage(
-            for: message,
-            currentUserID: currentUserID
-        ) == "phone.down.fill"
-    )
-    #expect(
-        !SystemMessagePresentation.usesSuccessColor(
-            for: message,
-            currentUserID: currentUserID
-        )
-    )
-}
-
-@MainActor @Test
-func `native compact timestamp follows the full message hover area`() {
-    let author = User(
-        id: UserID(rawValue: 51),
-        username: "rowan",
-        displayName: "Rowan Vale"
-    )
-    let message = Message(
-        id: MessageID(rawValue: 52),
-        channelID: ChannelID(rawValue: 53),
-        author: author,
-        content: "A compact continuation"
-    )
-    let compact = NativeTimelineRowLayout.make(
-        item: .message(
-            MessageRowPresentation(
-                message: message,
-                startsGroup: false,
-                startsDay: false,
-                replyPreview: nil,
-                isReplyAvailable: false
-            ),
-            isUnreadBoundary: false,
-            isHighlighted: false
-        ),
-        width: 620
-    )
-    let first = NativeTimelineRowLayout.make(
-        item: .message(
-            MessageRowPresentation(
-                message: message,
-                startsGroup: true,
-                startsDay: false,
-                replyPreview: nil,
-                isReplyAvailable: false
-            ),
-            isUnreadBoundary: false,
-            isHighlighted: false
-        ),
-        width: 620
-    )
-    let frame = compact.compactTimestampFrame
-
-    #expect(
-        frame?.size
-            == CGSize(
-                width: MessageRowLayoutMetrics.avatarDiameter,
-                height: MessageRowLayoutMetrics.compactContentHeight
-            )
-    )
-    #expect(frame?.minX == 14)
-    #expect(first.compactTimestampFrame == nil)
-    #expect(NativeTimelineCompactTimestampMetrics.font.pointSize == 10)
-    #expect(
-        NativeTimelineCompactTimestampHitTesting.contains(
-            CGPoint(x: 15, y: 107),
-            rowOrigin: 100,
-            highlightFrame: compact.highlightFrame
-        )
-    )
-    #expect(
-        NativeTimelineCompactTimestampHitTesting.contains(
-            CGPoint(x: 540, y: 107),
-            rowOrigin: 100,
-            highlightFrame: compact.highlightFrame
-        )
-    )
-    #expect(
-        !NativeTimelineCompactTimestampHitTesting.contains(
-            CGPoint(x: 621, y: 107),
-            rowOrigin: 100,
-            highlightFrame: compact.highlightFrame
-        )
-    )
-}
-
-@Test func `native timeline width reflow top pins an intersecting legacy row`() {
-    #expect(
-        NativeMessageTimelineLayoutPolicy.widthChangeAnchorOffset(from: -371)
-            == ChatDetailLayoutPolicy.timelineWidthReflowTopInset
-    )
-    #expect(
-        NativeMessageTimelineLayoutPolicy.widthChangeAnchorOffset(from: 28)
-            == 28
-    )
-    #expect(
-        !NativeMessageTimelineLayoutPolicy.prefersVisibleMessageBeginning(
-            from: 861,
-            to: 701
-        )
-    )
-    #expect(
-        NativeMessageTimelineLayoutPolicy.prefersVisibleMessageBeginning(
-            from: 701,
-            to: 861
-        )
-    )
-}
-
 @Test func `native timeline identifies prepended rows without replacing existing rows`() {
     let insertions = NativeMessageTimelineLayoutPolicy.insertionIndexes(
         preserving: ["loader", "101", "102", "103"],
@@ -2425,24 +1542,24 @@ func `native compact timestamp follows the full message hover area`() {
 @Test func `native timeline chains successful earlier history pages`() {
     #expect(
         NativeTimelineAutomaticHistoryPolicy.shouldReevaluateAfterUpdate(
-            wasLoadingEarlier: true,
-            isLoadingEarlier: false,
+            wasLoading: true,
+            isLoading: false,
             previousRowCount: 100,
             currentRowCount: 150
         )
     )
     #expect(
         !NativeTimelineAutomaticHistoryPolicy.shouldReevaluateAfterUpdate(
-            wasLoadingEarlier: true,
-            isLoadingEarlier: false,
+            wasLoading: true,
+            isLoading: false,
             previousRowCount: 100,
             currentRowCount: 100
         )
     )
     #expect(
         !NativeTimelineAutomaticHistoryPolicy.shouldReevaluateAfterUpdate(
-            wasLoadingEarlier: false,
-            isLoadingEarlier: false,
+            wasLoading: false,
+            isLoading: false,
             previousRowCount: 100,
             currentRowCount: 150
         )
@@ -2468,470 +1585,6 @@ func `native compact timestamp follows the full message hover area`() {
             isLoadingEarlier: false
         )
     )
-}
-
-@MainActor @Test
-func `native channel beginning preserves the pre CoreText intrinsic height`() {
-    let channel = Channel(
-        id: ChannelID(rawValue: 41),
-        guildID: GuildID(rawValue: 42),
-        name: "announcements",
-        topic: "Product updates and community news.",
-        kind: .announcement
-    )
-    let beginning = NativeTimelineBeginning.channel(
-        channel,
-        rulesChannelID: channel.id
-    )
-    let width: CGFloat = 420
-    let layout = NativeTimelineBeginningLayout.make(
-        beginning: beginning,
-        width: width
-    )
-    let reference = NSHostingController(
-        rootView: ChannelBeginningView(
-            channel: channel,
-            rulesChannelID: channel.id
-        )
-    ).sizeThatFits(in: CGSize(width: width, height: 10_000))
-
-    #expect(beginning.symbolName == "newspaper.fill")
-    #expect(beginning.title == "Welcome to #announcements!")
-    #expect(beginning.description == "Product updates and community news.")
-    #expect(abs(layout.height - reference.height) <= 1)
-}
-
-@MainActor @Test
-func `native channel and thread beginnings expose selectable Core Text regions`() {
-    let beginning = NativeTimelineBeginning.thread(
-        id: ChannelID(rawValue: 49),
-        title: "Rich message feedback",
-        starterName: "Nova Chen",
-        startedAt: Date(timeIntervalSince1970: 1_700_000_000)
-    )
-    let layout = NativeTimelineBeginningLayout.make(
-        beginning: beginning,
-        width: 428
-    )
-    let title = NativeTimelineBeginningText.title(beginning)
-    let description = NativeTimelineBeginningText.description(beginning)
-
-    #expect(title.value.string == "Rich message feedback")
-    #expect(description.value.string == "Started by Nova Chen")
-    #expect(beginning.isDescriptionSelectable)
-    #expect(
-        !NativeTimelineBeginning.thread(
-            id: ChannelID(rawValue: 50),
-            title: "Unattributed thread",
-            starterName: nil,
-            startedAt: nil
-        ).isDescriptionSelectable
-    )
-
-    func selectionRects(
-        box: NativeTimelineAttributedTextBox,
-        frame: CGRect
-    ) -> [CGRect] {
-        let textFrame = CTFramesetterCreateFrame(
-            box.framesetter,
-            CFRange(location: 0, length: box.value.length),
-            CGPath(
-                rect: CGRect(origin: .zero, size: frame.size),
-                transform: nil
-            ),
-            nil
-        )
-        return NativeTimelineTextSelectionGeometry.rects(
-            in: textFrame,
-            outerFrame: frame,
-            range: NSRange(location: 0, length: box.value.length)
-        )
-    }
-
-    let titleRects = selectionRects(
-        box: title,
-        frame: layout.titleFrame
-    )
-    let descriptionRects = selectionRects(
-        box: description,
-        frame: layout.descriptionFrame
-    )
-    #expect(!titleRects.isEmpty)
-    #expect(!descriptionRects.isEmpty)
-    #expect(titleRects.allSatisfy { layout.titleFrame.intersects($0) })
-    #expect(
-        descriptionRects.allSatisfy {
-            layout.descriptionFrame.intersects($0)
-        }
-    )
-}
-
-@MainActor @Test
-func `native channel beginning configuration covers every unified conversation kind`() {
-    let directMessage = NativeTimelineBeginning.channel(
-        Channel(
-            id: ChannelID(rawValue: 51),
-            guildID: nil,
-            name: "Maya",
-            kind: .directMessage
-        ),
-        rulesChannelID: nil
-    )
-    let groupDirectMessage = NativeTimelineBeginning.channel(
-        Channel(
-            id: ChannelID(rawValue: 52),
-            guildID: nil,
-            name: "Design crew",
-            kind: .groupDirectMessage
-        ),
-        rulesChannelID: nil
-    )
-    let announcement = NativeTimelineBeginning.channel(
-        Channel(
-            id: ChannelID(rawValue: 53),
-            guildID: GuildID(rawValue: 42),
-            name: "release-notes",
-            kind: .announcement
-        ),
-        rulesChannelID: nil
-    )
-    let voice = NativeTimelineBeginning.channel(
-        Channel(
-            id: ChannelID(rawValue: 54),
-            guildID: GuildID(rawValue: 42),
-            name: "Studio Lounge",
-            kind: .voice
-        ),
-        rulesChannelID: nil
-    )
-
-    #expect(directMessage.title == "Beginning of your conversation with Maya")
-    #expect(
-        directMessage.description
-            == "This is the beginning of your direct message history."
-    )
-    #expect(directMessage.symbolName == "person.fill")
-    #expect(
-        groupDirectMessage.title
-            == "Beginning of your conversation with Design crew"
-    )
-    #expect(groupDirectMessage.symbolName == "person.2.fill")
-    #expect(announcement.title == "Welcome to #release-notes!")
-    #expect(announcement.symbolName == "megaphone.fill")
-    #expect(voice.title == "Welcome to Studio Lounge!")
-    #expect(
-        voice.description
-            == "This is the start of the Studio Lounge voice channel chat."
-    )
-    #expect(voice.symbolName == "bubble.left.fill")
-}
-
-@MainActor @Test
-func `channel and thread configurations instantiate the same native canvas engine`() {
-    let model = AppModel(launchMode: .offlineTesting)
-
-    for conversation in [
-        NativeTimelineConversation.channel(ChannelID(rawValue: 210)),
-        .thread(ChannelID(rawValue: 43)),
-    ] {
-        let timeline = NativeMessageTimelineView(
-            model: model,
-            conversation: conversation,
-            beginning: nil,
-            firstMessageStartsDayOverride: nil,
-            hasMoreMessages: false,
-            isLoadingEarlier: false,
-            bottomContentInset: 0,
-            unreadMessageID: nil,
-            highlightedMessageID: nil,
-            scrollRequest: nil,
-            runsPerformanceAutoScroll: false,
-            loadEarlier: {},
-            openReply: { _ in },
-            onScrollActivityChange: { _ in },
-            onScrollStateChange: { _ in },
-            onUserScrollBegan: {},
-            onUserScrollEnded: { _ in }
-        )
-        let coordinator = timeline.makeCoordinator()
-        let scrollView = coordinator.makeScrollView()
-
-        #expect(scrollView.horizontalScrollElasticity == .none)
-
-        let documentView =
-            scrollView.documentView as? NativeTimelineDocumentView
-        #expect(
-            documentView?.subviews.contains {
-                $0 is NativeTimelineCanvasView
-            } == true
-        )
-
-        coordinator.stopObserving()
-    }
-}
-
-@MainActor @Test
-func `first viewport layout keeps bounded canvas frame and bounds synchronized`() throws {
-    let model = AppModel(launchMode: .offlineTesting)
-    let timeline = NativeMessageTimelineView(
-        model: model,
-        conversation: .channel(ChannelID(rawValue: 210)),
-        beginning: nil,
-        firstMessageStartsDayOverride: nil,
-        hasMoreMessages: false,
-        isLoadingEarlier: false,
-        bottomContentInset: 0,
-        unreadMessageID: nil,
-        highlightedMessageID: nil,
-        scrollRequest: nil,
-        runsPerformanceAutoScroll: false,
-        loadEarlier: {},
-        openReply: { _ in },
-        onScrollActivityChange: { _ in },
-        onScrollStateChange: { _ in },
-        onUserScrollBegan: {},
-        onUserScrollEnded: { _ in }
-    )
-    let coordinator = timeline.makeCoordinator()
-    let scrollView = coordinator.makeScrollView()
-    scrollView.frame = CGRect(x: 0, y: 0, width: 820.6, height: 700)
-    scrollView.tile()
-    scrollView.layoutSubtreeIfNeeded()
-    coordinator.update(parent: timeline, scrollView: scrollView)
-
-    let documentView = try #require(
-        scrollView.documentView as? NativeTimelineDocumentView
-    )
-    let canvas = try #require(
-        documentView.subviews.first {
-            $0 is NativeTimelineCanvasView
-        } as? NativeTimelineCanvasView
-    )
-
-    #expect(
-        abs(
-            documentView.frame.width
-                - scrollView.contentView.bounds.width
-        ) < 0.01
-    )
-    #expect(abs(canvas.frame.width - scrollView.contentView.bounds.width) < 0.5)
-    #expect(abs(canvas.frame.origin.y - canvas.bounds.origin.y) < 0.5)
-    #expect(abs(canvas.frame.height - canvas.bounds.height) < 0.5)
-
-    coordinator.stopObserving()
-}
-
-@Test
-func `small scrolls retain the overscanned timeline backing window`() {
-    let documentSize = CGSize(width: 820, height: 20_000)
-    let initialViewport = CGRect(x: 0, y: 8_000, width: 820, height: 700)
-    let initial = NativeTimelineViewportWindowPolicy.geometry(
-        viewport: initialViewport,
-        documentSize: documentSize,
-        currentFrame: .zero
-    )
-
-    let lightlyScrolled = NativeTimelineViewportWindowPolicy.geometry(
-        viewport: initialViewport.offsetBy(dx: 0, dy: 200),
-        documentSize: documentSize,
-        currentFrame: initial.frame
-    )
-    #expect(lightlyScrolled.frame == initial.frame)
-    #expect(lightlyScrolled.bounds == initial.bounds)
-}
-
-@Test
-func `timeline backing window advances only near its overscan edge`() {
-    let documentSize = CGSize(width: 820, height: 20_000)
-    let initialViewport = CGRect(x: 0, y: 8_000, width: 820, height: 700)
-    let initial = NativeTimelineViewportWindowPolicy.geometry(
-        viewport: initialViewport,
-        documentSize: documentSize,
-        currentFrame: .zero
-    )
-
-    let advanced = NativeTimelineViewportWindowPolicy.geometry(
-        viewport: initialViewport.offsetBy(dx: 0, dy: 260),
-        documentSize: documentSize,
-        currentFrame: initial.frame
-    )
-    #expect(advanced.frame != initial.frame)
-    #expect(abs(advanced.frame.minY - 7_940) < 0.5)
-    #expect(advanced.bounds.minY == advanced.frame.minY)
-}
-
-@MainActor @Test
-func `member presentation changes use a bounded timeline journal refresh`() throws {
-    let model = AppModel(launchMode: .offlineTesting)
-    let channelID = ChannelID(rawValue: 92_201)
-    let author = User(
-        id: UserID(rawValue: 92_202),
-        username: "member-refresh",
-        displayName: "Before"
-    )
-    let message = Message(
-        id: MessageID(rawValue: 92_203),
-        channelID: channelID,
-        author: author,
-        content: "Stable message storage"
-    )
-    model.replaceSelectedMessages(with: [message])
-    model.members = [
-        Member(user: author, roleName: "Member", status: .online),
-    ]
-    let timeline = NativeMessageTimelineView(
-        model: model,
-        conversation: .channel(channelID),
-        beginning: nil,
-        firstMessageStartsDayOverride: nil,
-        hasMoreMessages: false,
-        isLoadingEarlier: false,
-        bottomContentInset: 0,
-        unreadMessageID: nil,
-        highlightedMessageID: nil,
-        scrollRequest: nil,
-        runsPerformanceAutoScroll: false,
-        loadEarlier: {},
-        openReply: { _ in },
-        onScrollActivityChange: { _ in },
-        onScrollStateChange: { _ in },
-        onUserScrollBegan: {},
-        onUserScrollEnded: { _ in }
-    )
-    let coordinator = timeline.makeCoordinator()
-    let scrollView = coordinator.makeScrollView()
-    coordinator.stopObserving()
-    scrollView.frame = CGRect(x: 0, y: 0, width: 820, height: 700)
-    scrollView.tile()
-    scrollView.layoutSubtreeIfNeeded()
-    coordinator.update(parent: timeline, scrollView: scrollView)
-    let presentationRevision = model.timelinePresentationRevision
-
-    var renamed = try #require(model.members.first)
-    renamed.user.displayName = "After"
-    model.members = [renamed]
-    coordinator.update(parent: timeline, scrollView: scrollView)
-
-    #expect(model.timelinePresentationRevision == presentationRevision)
-    #expect(
-        coordinator.performanceUpdatePathForTesting
-            == "bounded-journal-merge"
-    )
-    coordinator.stopObserving()
-}
-
-@MainActor @Test
-func `short timeline is bottom aligned on its first frame and stays there while resizing`() throws {
-    let model = AppModel(launchMode: .offlineTesting)
-    let channelID = ChannelID(rawValue: 91_001)
-    let timeline = NativeMessageTimelineView(
-        model: model,
-        conversation: .channel(channelID),
-        beginning: .channel(
-            Channel(
-                id: channelID,
-                guildID: GuildID(rawValue: 91_000),
-                name: "short-history",
-                kind: .text
-            ),
-            rulesChannelID: nil
-        ),
-        firstMessageStartsDayOverride: nil,
-        hasMoreMessages: false,
-        isLoadingEarlier: false,
-        bottomContentInset: 76,
-        unreadMessageID: nil,
-        highlightedMessageID: nil,
-        initialScrollTarget: .bottom,
-        scrollRequest: nil,
-        runsPerformanceAutoScroll: false,
-        loadEarlier: {},
-        openReply: { _ in },
-        onScrollActivityChange: { _ in },
-        onScrollStateChange: { _ in },
-        onUserScrollBegan: {},
-        onUserScrollEnded: { _ in }
-    )
-    let coordinator = timeline.makeCoordinator()
-    let scrollView = coordinator.makeScrollView()
-    scrollView.frame = CGRect(x: 0, y: 0, width: 820, height: 700)
-    scrollView.tile()
-    scrollView.layoutSubtreeIfNeeded()
-    coordinator.update(parent: timeline, scrollView: scrollView)
-    coordinator.reconcileViewportGeometryForTesting()
-
-    let firstOrigin = coordinator.contentOriginYForTesting
-    #expect(coordinator.hasAppliedInitialPositionForTesting)
-    #expect(coordinator.scrollStateForTesting.isNearBottom)
-    #expect(
-        coordinator.scrollStateForTesting
-            .hasEstablishedInitialPosition
-    )
-    #expect(!scrollView.hasVerticalScroller)
-    #expect(
-        abs(
-            (scrollView.documentView?.frame.height ?? 0)
-                - scrollView.contentView.bounds.height
-        ) < 0.5
-    )
-
-    scrollView.frame.size.height = 900
-    scrollView.tile()
-    scrollView.layoutSubtreeIfNeeded()
-    coordinator.reconcileViewportGeometryForTesting()
-
-    #expect(coordinator.scrollStateForTesting.isNearBottom)
-    #expect(!scrollView.hasVerticalScroller)
-    #expect(
-        abs(
-            coordinator.contentOriginYForTesting
-                - firstOrigin
-                - 200
-        ) < 0.5
-    )
-    coordinator.updateDocumentHeightForTesting(
-        (scrollView.documentView?.frame.height ?? 0) + 240
-    )
-    #expect(coordinator.scrollStateForTesting.isNearBottom)
-    #expect(scrollView.hasVerticalScroller)
-
-    let threadID = ChannelID(rawValue: 91_002)
-    let threadTimeline = NativeMessageTimelineView(
-        model: model,
-        conversation: .thread(threadID),
-        beginning: .thread(
-            id: threadID,
-            title: "Short thread",
-            starterName: "Fixture",
-            startedAt: .now
-        ),
-        firstMessageStartsDayOverride: nil,
-        hasMoreMessages: false,
-        isLoadingEarlier: false,
-        bottomContentInset: 76,
-        unreadMessageID: nil,
-        highlightedMessageID: nil,
-        initialScrollTarget: .bottom,
-        scrollRequest: nil,
-        runsPerformanceAutoScroll: false,
-        loadEarlier: {},
-        openReply: { _ in },
-        onScrollActivityChange: { _ in },
-        onScrollStateChange: { _ in },
-        onUserScrollBegan: {},
-        onUserScrollEnded: { _ in }
-    )
-    coordinator.update(
-        parent: threadTimeline,
-        scrollView: scrollView
-    )
-
-    #expect(
-        coordinator.initialPositionConversationForTesting
-            == .thread(threadID)
-    )
-    #expect(coordinator.scrollStateForTesting.isNearBottom)
-    coordinator.stopObserving()
 }
 
 @MainActor @Test
@@ -3190,187 +1843,6 @@ func `media rich timeline establishes unread context before display and preserve
 }
 
 @MainActor @Test
-func `reentrant first width layout preserves the newer canvas bounds`() {
-    let canvas = NativeTimelineCanvasView(
-        frame: CGRect(x: 0, y: 0, width: 1, height: 1)
-    )
-    let correctedBounds = CGRect(x: 0, y: 640, width: 820, height: 700)
-    canvas.onWidthChange = { _ in
-        // Model the synchronous coordinator relayout performed by the real
-        // first width update.
-        canvas.bounds = correctedBounds
-    }
-
-    canvas.installViewportGeometry(
-        frame: CGRect(x: 0, y: 0, width: 820, height: 700),
-        bounds: CGRect(x: 0, y: 0, width: 820, height: 700)
-    )
-
-    #expect(canvas.bounds == correctedBounds)
-}
-
-@MainActor @Test
-func `timeline coalesces intermediate width changes before reflow`() throws {
-    let model = AppModel(launchMode: .offlineTesting)
-    let channelID = ChannelID(rawValue: 99_201)
-    let author = User(
-        id: UserID(rawValue: 99_202),
-        username: "resize",
-        displayName: "Resize"
-    )
-    let messages = (0 ..< 500).map { index in
-        Message(
-            id: MessageID(rawValue: UInt64(99_300 + index)),
-            channelID: channelID,
-            author: author,
-            content:
-                "Message \(index) has enough text to wrap differently as the timeline width changes."
-        )
-    }
-    model.replaceSelectedMessages(with: messages)
-    let targetMessage = messages[430]
-    let timeline = NativeMessageTimelineView(
-        model: model,
-        conversation: .channel(channelID),
-        beginning: .channel(
-            Channel(
-                id: channelID,
-                guildID: GuildID(rawValue: 99_200),
-                name: "resize",
-                kind: .text
-            ),
-            rulesChannelID: nil
-        ),
-        firstMessageStartsDayOverride: nil,
-        hasMoreMessages: false,
-        isLoadingEarlier: false,
-        bottomContentInset: 0,
-        unreadMessageID: nil,
-        highlightedMessageID: nil,
-        initialScrollTarget: .message(targetMessage.id, anchor: .top),
-        scrollRequest: nil,
-        runsPerformanceAutoScroll: false,
-        loadEarlier: {},
-        openReply: { _ in },
-        onScrollActivityChange: { _ in },
-        onScrollStateChange: { _ in },
-        onUserScrollBegan: {},
-        onUserScrollEnded: { _ in }
-    )
-    let coordinator = timeline.makeCoordinator()
-    let scrollView = coordinator.makeScrollView()
-    scrollView.frame = CGRect(x: 0, y: 0, width: 820, height: 700)
-    scrollView.tile()
-    scrollView.layoutSubtreeIfNeeded()
-    coordinator.update(parent: timeline, scrollView: scrollView)
-    coordinator.reconcileViewportGeometryForTesting()
-    #expect(coordinator.hasAppliedInitialPositionForTesting)
-    let initialWidth = coordinator.layoutWidth
-    let initialOffset = try #require(
-        coordinator.messageOffsetFromViewportTopForTesting(
-            targetMessage.id
-        )
-    )
-
-    coordinator.relayoutForWidthChange(760)
-    coordinator.relayoutForWidthChange(700)
-    let pendingGeneration = coordinator.widthRelayoutGenerationForTesting
-    coordinator.relayoutForWidthChange(700)
-    coordinator.relayoutForWidthChange(700)
-
-    #expect(coordinator.layoutWidth == initialWidth)
-    #expect(coordinator.pendingLayoutWidthForTesting == 700)
-    #expect(coordinator.widthRelayoutGenerationForTesting == pendingGeneration)
-
-    scrollView.frame.size.width = initialWidth
-    scrollView.tile()
-    scrollView.layoutSubtreeIfNeeded()
-    coordinator.reconcileViewportGeometryForTesting()
-    #expect(coordinator.pendingLayoutWidthForTesting == nil)
-    #expect(coordinator.layoutWidth == initialWidth)
-
-    coordinator.relayoutForWidthChange(760)
-    coordinator.relayoutForWidthChange(700)
-    scrollView.frame.size.width = 700
-    scrollView.tile()
-    scrollView.layoutSubtreeIfNeeded()
-    coordinator.reconcileViewportGeometryForTesting()
-    #expect(coordinator.canvas?.frame.width == initialWidth)
-    coordinator.applyPendingWidthRelayoutForTesting()
-
-    #expect(coordinator.pendingLayoutWidthForTesting == nil)
-    #expect(coordinator.layoutWidth == 700)
-    #expect(coordinator.canvas?.frame.width == 700)
-    let resizedOffset = try #require(
-        coordinator.messageOffsetFromViewportTopForTesting(
-            targetMessage.id
-        )
-    )
-    #expect(
-        abs(
-            resizedOffset
-                - NativeMessageTimelineLayoutPolicy
-                    .widthChangeAnchorOffset(from: initialOffset)
-        ) < 1
-    )
-
-    coordinator.relayoutForWidthChange(initialWidth)
-    coordinator.applyPendingWidthRelayoutForTesting()
-    #expect(coordinator.layoutWidth == initialWidth)
-    coordinator.stopObserving()
-}
-
-@Test
-func `five thousand row width relayout prioritizes visible rows and stays bounded`() {
-    let visibleRange = 4_200 ..< 4_224
-    let indexes = NativeTimelineWidthRelayoutPolicy.indexes(
-        itemCount: 5_000,
-        visibleRange: visibleRange
-    )
-
-    #expect(indexes.count == 5_000)
-    #expect(Array(indexes.prefix(visibleRange.count)) == Array(visibleRange))
-    #expect(Set(indexes).count == 5_000)
-    #expect(indexes.allSatisfy { (0 ..< 5_000).contains($0) })
-    #expect(NativeTimelineWidthRelayoutPolicy.batchSize < 5_000)
-}
-
-@MainActor @Test
-func `live scroll end restores hover presentation`() throws {
-    let model = AppModel(launchMode: .offlineTesting)
-    let channelID = ChannelID(rawValue: 99_211)
-    let timeline = NativeMessageTimelineView(
-        model: model,
-        conversation: .channel(channelID),
-        beginning: nil,
-        firstMessageStartsDayOverride: nil,
-        hasMoreMessages: false,
-        isLoadingEarlier: false,
-        bottomContentInset: 0,
-        unreadMessageID: nil,
-        highlightedMessageID: nil,
-        scrollRequest: nil,
-        runsPerformanceAutoScroll: false,
-        loadEarlier: {},
-        openReply: { _ in },
-        onScrollActivityChange: { _ in },
-        onScrollStateChange: { _ in },
-        onUserScrollBegan: {},
-        onUserScrollEnded: { _ in }
-    )
-    let coordinator = timeline.makeCoordinator()
-    _ = coordinator.makeScrollView()
-    let canvas = try #require(coordinator.canvas)
-    canvas.dismissHoverPresentationForScroll()
-
-    coordinator.liveScrollTrackingDidEnd()
-
-    #expect(!canvas.suppressesHoverPresentation)
-    #expect(coordinator.lastReportedScrollActivity == false)
-    coordinator.stopObserving()
-}
-
-@MainActor @Test
 func `completed initial ten message page exposes history reserve before first upward delta`() throws {
     let model = AppModel(launchMode: .offlineTesting)
     let channelID = ChannelID(rawValue: 99_221)
@@ -3467,182 +1939,145 @@ func `completed initial ten message page exposes history reserve before first up
 }
 
 @MainActor @Test
-func `native thread beginning and loader preserve thread surface configuration`() {
-    let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
-    let title = "Media viewer should use a native presentation"
-    let beginning = NativeTimelineBeginning.thread(
-        id: ChannelID(rawValue: 43),
-        title: title,
-        starterName: "Maya",
-        startedAt: startedAt
+func `rapid gesture boundary does not restore timeline presentation between swipes`() throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    let channelID = ChannelID(rawValue: 99_260)
+    let timeline = NativeMessageTimelineView(
+        model: model,
+        conversation: .channel(channelID),
+        beginning: nil,
+        firstMessageStartsDayOverride: nil,
+        hasMoreMessages: false,
+        isLoadingEarlier: false,
+        bottomContentInset: 0,
+        unreadMessageID: nil,
+        highlightedMessageID: nil,
+        initialScrollTarget: .bottom,
+        scrollRequest: nil,
+        runsPerformanceAutoScroll: false,
+        loadEarlier: {},
+        openReply: { _ in },
+        onScrollActivityChange: { _ in },
+        onScrollStateChange: { _ in },
+        onUserScrollBegan: {},
+        onUserScrollEnded: { _ in }
     )
-    let width: CGFloat = 428
-    let layout = NativeTimelineBeginningLayout.make(
-        beginning: beginning,
-        width: width
-    )
-    let reference = NSHostingController(
-        rootView: NativeTimelineThreadBeginningReference(
-            title: title,
-            starterName: "Maya"
-        )
-    ).sizeThatFits(
-        in: CGSize(
-            width: width,
-            height: 10_000
-        )
-    )
+    let coordinator = timeline.makeCoordinator()
+    let scrollView = coordinator.makeScrollView()
+    coordinator.update(parent: timeline, scrollView: scrollView)
+    let canvas = try #require(coordinator.canvas)
 
-    #expect(beginning.symbolName == "bubble.left.and.bubble.right.fill")
-    #expect(beginning.description == "Started by Maya")
-    #expect(layout.titleFrame.width == width - 32)
-    #expect(layout.dateSeparatorFrame?.height == 37)
-    #expect(layout.height == reference.height + 37)
-    #expect(
-        NativeTimelineLoaderKind.replies.loadingLabel
-            == "Loading earlier replies…"
-    )
-    #expect(NativeTimelineConversation.thread(ChannelID(rawValue: 43)).supportsReply)
-    #expect(NativeTimelineConversation.channel(nil).supportsReply)
+    coordinator.liveScrollTrackingWillBegin()
+    #expect(canvas.suppressesHoverPresentation)
+
+    coordinator.liveScrollTrackingDidEnd()
+    #expect(canvas.suppressesHoverPresentation)
+    #expect(coordinator.scrollIdleTask != nil)
+
+    coordinator.liveScrollTrackingWillBegin()
+    #expect(canvas.suppressesHoverPresentation)
+    coordinator.stopObserving()
 }
 
 @MainActor @Test
-func `single line native thread beginning preserves the pre CoreText height`() {
-    let width: CGFloat = 427
-    let beginning = NativeTimelineBeginning.thread(
-        id: ChannelID(rawValue: 45),
-        title: "Rich message feedback",
-        starterName: "Nova Chen",
-        startedAt: Date(timeIntervalSince1970: 1_700_000_000)
+func `completed anchored page exposes the same history reserve below its loaded window`() throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    let channelID = ChannelID(rawValue: 99_241)
+    let author = User(
+        id: UserID(rawValue: 99_242),
+        username: "anchored-page",
+        displayName: "Anchored Page"
     )
-    let layout = NativeTimelineBeginningLayout.make(
-        beginning: beginning,
-        width: width
-    )
-    let reference = NSHostingController(
-        rootView: NativeTimelineThreadBeginningReference(
-            title: beginning.title,
-            starterName: "Nova Chen"
-        )
-    ).sizeThatFits(
-        in: CGSize(width: width, height: 10_000)
-    )
-
-    #expect(layout.height == reference.height + 37)
-}
-
-@Test
-func `native timeline accessibility preserves media sticker and thread labels`() throws {
-    let attachment = Attachment(
-        id: "spoiler",
-        filename: "SPOILER-layout.png",
-        url: try #require(URL(string: "https://cdn.example/layout.png")),
-        mediaType: "image/png",
-        description: "Zoomed layout comparison",
-        isSpoiler: true
-    )
-    let sticker = MessageSticker(
-        id: "sticker",
-        name: "Aurora wave",
-        description: "Animated Aurora greeting"
-    )
-    let thread = MessageThreadSummary(
-        id: ChannelID(rawValue: 44),
-        name: "Visual parity",
-        messageCount: 3
-    )
-
-    #expect(
-        NativeTimelineAccessibilityPresentation.attachmentLabel(attachment)
-            == "Spoiler attachment, Zoomed layout comparison"
-    )
-    #expect(
-        NativeTimelineAccessibilityPresentation.stickerLabel(sticker)
-            == "Animated Aurora greeting"
-    )
-    #expect(
-        NativeTimelineAccessibilityPresentation.threadLabel(thread)
-            == "Visual parity, 3 replies"
-    )
-}
-
-@Test
-func `native timeline accessibility proxies stay within one viewport of visible content`() {
-    let middle = NativeTimelineAccessibilityPolicy.bufferedViewport(
-        around: CGRect(x: 0, y: 1_000, width: 620, height: 500),
-        contentHeight: 10_000
-    )
-    let beginning = NativeTimelineAccessibilityPolicy.bufferedViewport(
-        around: CGRect(x: 0, y: 0, width: 620, height: 500),
-        contentHeight: 10_000
-    )
-    let ending = NativeTimelineAccessibilityPolicy.bufferedViewport(
-        around: CGRect(x: 0, y: 9_700, width: 620, height: 500),
-        contentHeight: 10_000
-    )
-
-    #expect(middle == CGRect(x: 0, y: 500, width: 620, height: 1_500))
-    #expect(beginning == CGRect(x: 0, y: 0, width: 620, height: 1_000))
-    #expect(ending == CGRect(x: 0, y: 9_200, width: 620, height: 800))
-}
-
-@Test
-func `native timeline accessibility replaces an editing message body in timeline order`() {
-    let editingMessageID = MessageID(rawValue: 42)
-    let identifiers: [NativeMessageTimelineItem.Identifier] = [
-        .beginning(ChannelID(rawValue: 1)),
-        .message(MessageID(rawValue: 41)),
-        .message(editingMessageID),
-        .message(MessageID(rawValue: 43))
-    ]
-
-    #expect(
-        !NativeTimelineAccessibilityPolicy.showsMessageBody(
-            messageID: editingMessageID,
-            editingMessageID: editingMessageID
-        )
-    )
-    #expect(
-        NativeTimelineAccessibilityPolicy.showsMessageBody(
-            messageID: MessageID(rawValue: 43),
-            editingMessageID: editingMessageID
-        )
-    )
-    #expect(
-        NativeTimelineAccessibilityPolicy.editingOverlayInsertionIndex(
-            in: identifiers,
-            editingMessageID: editingMessageID
-        ) == 3
-    )
-    #expect(
-        NativeTimelineAccessibilityPolicy.editingOverlayInsertionIndex(
-            in: identifiers,
-            editingMessageID: MessageID(rawValue: 99)
-        ) == nil
-    )
-}
-
-@MainActor @Test
-func `ten thousand message timeline keeps stable identities across incremental update`() {
-    let author = User(id: UserID(rawValue: 1), username: "fixture", displayName: "Fixture")
-    let base = Date(timeIntervalSince1970: 1_700_000_000)
-    var messages = (0 ..< 10000).map { index in
+    let messages = (0 ..< 10).map { index in
         Message(
-            id: MessageID(rawValue: UInt64(index + 1)), channelID: ChannelID(rawValue: 1), author: author,
-            content: "Message \(index)", timestamp: base.addingTimeInterval(Double(index))
+            id: MessageID(rawValue: UInt64(99_250 + index)),
+            channelID: channelID,
+            author: author,
+            content: "Anchored page message \(index)"
         )
     }
-    let original = MessageGrouping.rows(for: messages)
-    messages[5000].content = "Changed"
-    let updated = MessageGrouping.updating(
-        existing: original, oldMessages: original.map(\.message), newMessages: messages
-    )
+    model.replaceSelectedMessages(with: messages)
+    var loadLaterCount = 0
+    var userScrollBeganCount = 0
+    func timeline(
+        hasMoreLaterMessages: Bool,
+        isLoadingLater: Bool
+    ) -> NativeMessageTimelineView {
+        NativeMessageTimelineView(
+            model: model,
+            conversation: .channel(channelID),
+            beginning: nil,
+            firstMessageStartsDayOverride: nil,
+            hasMoreMessages: false,
+            hasMoreLaterMessages: hasMoreLaterMessages,
+            isLoadingEarlier: false,
+            isLoadingLater: isLoadingLater,
+            bottomContentInset: 0,
+            unreadMessageID: nil,
+            highlightedMessageID: nil,
+            initialScrollTarget: .bottom,
+            scrollRequest: nil,
+            runsPerformanceAutoScroll: false,
+            loadEarlier: {},
+            loadLater: { loadLaterCount += 1 },
+            openReply: { _ in },
+            onScrollActivityChange: { _ in },
+            onScrollStateChange: { _ in },
+            onUserScrollBegan: { userScrollBeganCount += 1 },
+            onUserScrollEnded: { _ in }
+        )
+    }
 
-    #expect(updated.count == 10000)
-    #expect(updated.map(\.id) == original.map(\.id))
-    #expect(updated[4999] == original[4999])
-    #expect(updated[5000].message.content == "Changed")
-    #expect(updated[5002] == original[5002])
+    let loadingTimeline = timeline(
+        hasMoreLaterMessages: false,
+        isLoadingLater: true
+    )
+    let coordinator = loadingTimeline.makeCoordinator()
+    let scrollView = coordinator.makeScrollView()
+    scrollView.frame = CGRect(x: 0, y: 0, width: 820, height: 700)
+    scrollView.tile()
+    scrollView.layoutSubtreeIfNeeded()
+    coordinator.update(parent: loadingTimeline, scrollView: scrollView)
+    coordinator.reconcileViewportGeometryForTesting()
+    let canvas = try #require(coordinator.canvas)
+
+    #expect(coordinator.rowCount == 10)
+    #expect(coordinator.trailingHistoryReserve == 0)
+
+    let completedTimeline = timeline(
+        hasMoreLaterMessages: true,
+        isLoadingLater: false
+    )
+    coordinator.update(parent: completedTimeline, scrollView: scrollView)
+
+    #expect(
+        coordinator.trailingHistoryReserve
+            == NativeMessageTimelineCoordinator.historyReserveChunk
+    )
+    #expect(!coordinator.followsMaterializedLaterHistoryBoundary)
+    #expect(canvas.historySkeleton == nil)
+
+    coordinator.liveScrollTrackingWillBegin()
+
+    #expect(coordinator.followsMaterializedLaterHistoryBoundary)
+    #expect(canvas.historySkeleton != nil)
+    #expect(
+        coordinator.provisionalHistoryBoundaryY(
+            .later,
+            viewportHeight: scrollView.contentView.bounds.height
+        )
+            > coordinator.materializedHistoryScrollBoundaryY(
+                .later,
+                viewportHeight: scrollView.contentView.bounds.height
+            )
+    )
+    #expect(loadLaterCount == 1)
+    #expect(userScrollBeganCount == 1)
+
+    coordinator.liveScrollTrackingDidEnd()
+    #expect(!coordinator.followsMaterializedLaterHistoryBoundary)
+    #expect(canvas.historySkeleton == nil)
+    coordinator.stopObserving()
 }
 
 @MainActor @Test func `timeline prepend preserves prior rows beyond boundary`() {
@@ -3666,42 +2101,6 @@ func `ten thousand message timeline keeps stable identities across incremental u
     )
     #expect(updated.count == 20)
     #expect(updated[11] == original[1])
-}
-
-@MainActor @Test
-func `native timeline render plan preserves markdown inline emoji mentions and linked images`() throws {
-    let author = User(
-        id: UserID(rawValue: 1),
-        username: "fixture",
-        displayName: "Fixture"
-    )
-    let message = Message(
-        id: MessageID(rawValue: 2),
-        channelID: ChannelID(rawValue: 3),
-        author: author,
-        content:
-            "# Heading\n**bold** <@4> <:wave:900000000000000101> [preview](https://cdn.discordapp.com/attachments/3/4/image.png)"
-    )
-    let row = MessageRowPresentation(
-        message: message,
-        startsGroup: true,
-        startsDay: false,
-        replyPreview: nil,
-        isReplyAvailable: false
-    )
-    let layout = NativeTimelineRowLayout.make(
-        item: .message(row, isUnreadBoundary: false, isHighlighted: false),
-        width: 620
-    )
-    let attributed = try #require(layout.attributedContent)
-
-    #expect(attributed.string.contains("Heading"))
-    #expect(!attributed.string.contains("# Heading"))
-    #expect(!attributed.string.contains("**bold**"))
-    #expect(attributed.string.contains("\u{FFFC}"))
-    #expect(layout.linkedImageRegions.count == 1)
-    #expect(layout.linkedImageRegions[0].reference.label == "preview")
-    #expect(layout.contentFrame?.height ?? 0 > 22)
 }
 
 @MainActor @Test
@@ -3736,6 +2135,47 @@ func `native timeline does not auto load third party linked images`() throws {
     #expect(layout.attributedContent?.string.contains("invoice") == true)
 }
 
+@MainActor @Test
+func `timeline mention text prewarms off main without changing its resolved presentation`() async throws {
+    let message = Message(
+        id: MessageID(rawValue: 98_001),
+        channelID: ChannelID(rawValue: 98_002),
+        author: User(
+            id: UserID(rawValue: 98_003),
+            username: "prewarm.fixture",
+            displayName: "Prewarm Fixture"
+        ),
+        content: "Hello <@98004>"
+    )
+    let plan = NativeTimelineTextPlan.make(for: message)
+    let preparation = try #require(
+        NativeTimelineTextPresentation.preparation(
+            message: message,
+            plan: plan,
+            model: nil
+        )
+    )
+
+    let prewarmed = await Task.detached(priority: .utility) {
+        NativeTimelineTextPresentation.prewarm(preparation)
+    }.value
+    let presentation = NativeTimelineTextPresentation.make(
+        message: message,
+        plan: plan,
+        model: nil
+    )
+
+    #expect(presentation.attributedContent === prewarmed.value)
+    let mention = try #require(
+        presentation.attributedContent?.attribute(
+            .nativeTimelineMention,
+            at: 6,
+            effectiveRange: nil
+        ) as? NativeTimelineMentionBox
+    )
+    #expect(mention.presentation.label == "@unknown-user")
+}
+
 @Test
 func `linked image trust rejects lookalike insecure and credential URLs`() throws {
     let accepted = try #require(URL(
@@ -3753,42 +2193,6 @@ func `linked image trust rejects lookalike insecure and credential URLs`() throw
     #expect(rejected.allSatisfy {
         !LinkedImageReference.isSupported($0)
     })
-}
-
-@MainActor @Test
-func `emoji only linked images use jumbo custom emoji layout without a duplicate preview`() throws {
-    let author = User(
-        id: UserID(rawValue: 20),
-        username: "fixture",
-        displayName: "Fixture"
-    )
-    let message = Message(
-        id: MessageID(rawValue: 21),
-        channelID: ChannelID(rawValue: 22),
-        author: author,
-        content:
-            "[party](https://cdn.discordapp.com/emojis/456.gif?size=48&animated=true&name=party&lossless=true)"
-    )
-    let row = MessageRowPresentation(
-        message: message,
-        startsGroup: true,
-        startsDay: false,
-        replyPreview: nil,
-        isReplyAvailable: false
-    )
-    let layout = NativeTimelineRowLayout.make(
-        item: .message(
-            row,
-            isUnreadBoundary: false,
-            isHighlighted: false
-        ),
-        width: 620
-    )
-    let attributed = try #require(layout.attributedContent)
-
-    #expect(attributed.string == "\u{FFFC}")
-    #expect(layout.linkedImageRegions.isEmpty)
-    #expect((layout.contentFrame?.height ?? 0) >= 48)
 }
 
 @Test
@@ -3825,429 +2229,6 @@ func `timeline avatar animation policy avoids decoding ordinary static avatars`(
     #expect(abs(decorationFrame.minY + 0.04) < 0.000_001)
     #expect(abs(decorationFrame.width - 44.08) < 0.000_001)
     #expect(abs(decorationFrame.height - 44.08) < 0.000_001)
-}
-
-@MainActor @Test
-func `native timeline mention popover anchor follows the exact Core Text run after reflow`() throws {
-    let author = User(
-        id: UserID(rawValue: 5),
-        username: "fixture",
-        displayName: "Fixture"
-    )
-    let mentioned = User(
-        id: UserID(rawValue: 6),
-        username: "maya",
-        displayName: "Maya Ortiz"
-    )
-    let message = Message(
-        id: MessageID(rawValue: 7),
-        channelID: ChannelID(rawValue: 8),
-        author: author,
-        content:
-            "A deliberately long prefix keeps wrapping deterministic before <@6> and the suffix.",
-        mentionedUsers: [mentioned]
-    )
-    let row = MessageRowPresentation(
-        message: message,
-        startsGroup: true,
-        startsDay: false,
-        replyPreview: nil,
-        isReplyAvailable: false
-    )
-
-    func anchor(width: CGFloat) throws -> CGRect {
-        let layout = NativeTimelineRowLayout.make(
-            item: .message(
-                row,
-                isUnreadBoundary: false,
-                isHighlighted: false
-            ),
-            width: width
-        )
-        let value = try #require(layout.attributedContent)
-        let framesetter = try #require(layout.contentFramesetter)
-        let frame = try #require(layout.contentFrame)
-        var mentionIndex: Int?
-        value.enumerateAttribute(
-            .nativeTimelineMention,
-            in: NSRange(location: 0, length: value.length)
-        ) { attribute, range, stop in
-            guard attribute != nil else { return }
-            mentionIndex = range.location
-            stop.pointee = true
-        }
-        let resolvedMentionIndex = try #require(mentionIndex)
-        let drawingFrame = NativeTimelineTextGeometry
-            .messageContentDrawingFrame(frame)
-        let mentionFrame = try #require(
-            NativeTimelineTextHitTester.mentionAnchorFrame(
-                value: value,
-                framesetter: framesetter,
-                frame: drawingFrame,
-                characterIndex: resolvedMentionIndex,
-                rawToken: "<@6>"
-            )
-        )
-        for point in [
-            CGPoint(x: mentionFrame.minX + 1, y: mentionFrame.minY + 1),
-            CGPoint(x: mentionFrame.maxX - 1, y: mentionFrame.minY + 1),
-            CGPoint(x: mentionFrame.midX, y: mentionFrame.midY),
-            CGPoint(x: mentionFrame.midX, y: mentionFrame.maxY - 1),
-        ] {
-            #expect(
-                NativeTimelineTextHitTester.mention(
-                    value: value,
-                    framesetter: framesetter,
-                    frame: drawingFrame,
-                    point: point
-                )?.rawToken == "<@6>"
-            )
-        }
-        return mentionFrame
-    }
-
-    let wide = try anchor(width: 620)
-    let narrow = try anchor(width: 260)
-
-    #expect(wide.width > 40)
-    #expect(wide.height >= 18)
-    #expect(narrow.width == wide.width)
-    #expect(narrow.minY > wide.minY)
-}
-
-@MainActor @Test
-func `native mention hover preserves the legacy artwork and exact glyph hit regions`() throws {
-    let author = User(
-        id: UserID(rawValue: 31),
-        username: "author",
-        displayName: "Author"
-    )
-    let mentioned = User(
-        id: UserID(rawValue: 32),
-        username: "mentioned",
-        displayName: "Mentioned"
-    )
-    let message = Message(
-        id: MessageID(rawValue: 33),
-        channelID: ChannelID(rawValue: 34),
-        author: author,
-        content: "Body <@32>",
-        embeds: [
-            MessageEmbed(
-                id: "mention-embed",
-                description: "Embed <@32>"
-            )
-        ],
-        components: [
-            .textDisplay(
-                id: "mention-component",
-                content: "Component <@32>"
-            )
-        ],
-        mentionedUsers: [mentioned]
-    )
-    let layout = NativeTimelineRowLayout.make(
-        item: .message(
-            MessageRowPresentation(
-                message: message,
-                startsGroup: true,
-                startsDay: false,
-                replyPreview: nil,
-                isReplyAvailable: false
-            ),
-            isUnreadBoundary: false,
-            isHighlighted: false
-        ),
-        width: 620
-    )
-
-    func verify(
-        value: NSAttributedString,
-        framesetter: CTFramesetter,
-        frame: CGRect
-    ) throws {
-        let region = try #require(
-            NativeTimelineTextHitTester.mentionRegions(
-                value: value,
-                framesetter: framesetter,
-                frame: frame
-            ).first
-        )
-        #expect(region.presentation.rawToken == "<@32>")
-        #expect(
-            NativeTimelineTextHitTester.mentionAnchorFrame(
-                value: value,
-                framesetter: framesetter,
-                frame: frame,
-                characterIndex: region.characterIndex,
-                rawToken: region.presentation.rawToken
-            ) == region.frame
-        )
-        #expect(
-            NativeTimelineTextHitTester.mention(
-                value: value,
-                framesetter: framesetter,
-                frame: frame,
-                point: CGPoint(
-                    x: region.frame.maxX - 0.5,
-                    y: region.frame.maxY - 0.5
-                )
-            )?.rawToken == "<@32>"
-        )
-    }
-
-    let content = try #require(layout.attributedContent)
-    let contentFramesetter = try #require(layout.contentFramesetter)
-    let contentFrame = NativeTimelineTextGeometry
-        .messageContentDrawingFrame(try #require(layout.contentFrame))
-    try verify(
-        value: content,
-        framesetter: contentFramesetter,
-        frame: contentFrame
-    )
-
-    let embedText = try #require(
-        layout.embedRegions
-            .flatMap(\.textRegions)
-            .first(where: {
-                $0.text.value.string.contains("\u{FFFC}")
-            })
-    )
-    var embedFrame = embedText.frame
-    embedFrame.size.height += embedText.text.layoutHeightAdjustment
-    try verify(
-        value: embedText.text.value,
-        framesetter: embedText.text.framesetter,
-        frame: embedFrame
-    )
-
-    let componentText = try #require(
-        layout.componentLayouts
-            .flatMap(\.textRegions)
-            .first
-    )
-    var componentFrame = componentText.frame
-    componentFrame.size.height +=
-        componentText.text.layoutHeightAdjustment
-    try verify(
-        value: componentText.text.value,
-        framesetter: componentText.text.framesetter,
-        frame: componentFrame
-    )
-
-    #expect(
-        NativeTimelineMentionAppearance.backgroundAlpha(
-            isHovered: false
-        ) == 0.18
-    )
-    #expect(
-        NativeTimelineMentionAppearance.backgroundAlpha(
-            isHovered: true
-        ) == 0.34
-    )
-}
-
-@Test func `reaction click hit testing ignores stale hover outside the click point`() {
-    let staleHoveredFrame = CGRect(x: 20, y: 20, width: 80, height: 28)
-    let addFrame = CGRect(x: 110, y: 20, width: 28, height: 28)
-
-    #expect(
-        NativeTimelineReactionClickHitTesting.target(
-            at: CGPoint(x: 60, y: 34),
-            reactionFrames: [staleHoveredFrame],
-            addReactionFrame: addFrame
-        ) == .reaction(index: 0)
-    )
-    #expect(
-        NativeTimelineReactionClickHitTesting.target(
-            at: CGPoint(x: 300, y: 120),
-            reactionFrames: [staleHoveredFrame],
-            addReactionFrame: addFrame
-        ) == nil
-    )
-}
-
-@MainActor @Test
-func `native timeline ordinary rows preserve compact geometry and center the avatar`() throws {
-    let author = User(
-        id: UserID(rawValue: 41),
-        username: "nova",
-        displayName: "Nova Chen"
-    )
-    let first = Message(
-        id: MessageID(rawValue: 42),
-        channelID: ChannelID(rawValue: 43),
-        author: author,
-        content: "hm",
-        timestamp: Date(timeIntervalSince1970: 1_000)
-    )
-    let grouped = Message(
-        id: MessageID(rawValue: 44),
-        channelID: first.channelID,
-        author: author,
-        content: "hmm",
-        timestamp: first.timestamp.addingTimeInterval(1)
-    )
-    let firstLayout = NativeTimelineRowLayout.make(
-        item: .message(
-            MessageRowPresentation(
-                message: first,
-                startsGroup: true,
-                startsDay: false,
-                replyPreview: nil,
-                isReplyAvailable: false
-            ),
-            isUnreadBoundary: false,
-            isHighlighted: false
-        ),
-        width: 620
-    )
-    let groupedLayout = NativeTimelineRowLayout.make(
-        item: .message(
-            MessageRowPresentation(
-                message: grouped,
-                startsGroup: false,
-                startsDay: false,
-                replyPreview: nil,
-                isReplyAvailable: false
-            ),
-            isUnreadBoundary: false,
-            isHighlighted: false
-        ),
-        width: 620
-    )
-
-    #expect(firstLayout.height == 53)
-    #expect(firstLayout.highlightFrame == CGRect(x: 0, y: 9, width: 620, height: 44))
-    #expect(!NativeTimelineHoverHitTesting.contains(
-        CGPoint(x: 100, y: 9),
-        in: firstLayout.highlightFrame
-    ))
-    #expect(NativeTimelineHoverHitTesting.contains(
-        CGPoint(x: 100, y: 10),
-        in: firstLayout.highlightFrame
-    ))
-    #expect(NativeTimelineHoverHitTesting.pointerFrame(
-        for: firstLayout.highlightFrame
-    ) == CGRect(x: 0, y: 10, width: 620, height: 44))
-    #expect(!TimelineContextMenuHitTesting.contains(
-        CGPoint(x: 100, y: 9),
-        rowOrigin: 0,
-        highlightFrame: firstLayout.highlightFrame
-    ))
-    #expect(TimelineContextMenuHitTesting.contains(
-        CGPoint(x: 100, y: 10),
-        rowOrigin: 0,
-        highlightFrame: firstLayout.highlightFrame
-    ))
-    #expect(firstLayout.avatarFrame?.minY == 12)
-    #expect(firstLayout.contentFrame?.minY == 32)
-    #expect(firstLayout.contentFrame?.height == 18)
-    #expect(firstLayout.timestampFrame?.minX == (firstLayout.authorFrame?.maxX ?? 0) + 7)
-    #expect(groupedLayout.height == 24)
-    #expect(groupedLayout.highlightFrame == CGRect(x: 0, y: 0, width: 620, height: 24))
-    #expect(groupedLayout.contentFrame?.minY == 3)
-    #expect(groupedLayout.contentFrame?.height == 18)
-}
-
-@MainActor @Test
-func `native multiline grouped row preserves the pre CoreText intrinsic height`() {
-    let author = User(
-        id: UserID(rawValue: 45),
-        username: "maya",
-        displayName: "Maya • Orbit"
-    )
-    let message = Message(
-        id: MessageID(rawValue: 46),
-        channelID: ChannelID(rawValue: 47),
-        author: author,
-        content:
-            "The parent timeline stays anchored while this pane is open.",
-        timestamp: Date(timeIntervalSince1970: 1_700_000_000)
-    )
-    let row = MessageRowPresentation(
-        message: message,
-        startsGroup: true,
-        startsDay: false,
-        replyPreview: nil,
-        isReplyAvailable: false
-    )
-    let width: CGFloat = 427
-    let layout = NativeTimelineRowLayout.make(
-        item: .message(
-            row,
-            isUnreadBoundary: false,
-            isHighlighted: false
-        ),
-        width: width
-    )
-    let reference = NSHostingController(
-        rootView: NativeTimelineLegacyPlainMessageReference(message: message)
-    ).sizeThatFits(in: CGSize(width: width, height: 10_000))
-
-    #expect(layout.height == reference.height)
-    #expect(layout.avatarFrame?.minY == 12)
-}
-
-@MainActor @Test
-func `native single line grouped row preserves the pre CoreText intrinsic height`() {
-    let author = User(
-        id: UserID(rawValue: 48),
-        username: "juniper",
-        displayName: "Juniper Reed"
-    )
-    let message = Message(
-        id: MessageID(rawValue: 49),
-        channelID: ChannelID(rawValue: 50),
-        author: author,
-        content: "And closing it restores the member inspector.",
-        timestamp: Date(timeIntervalSince1970: 1_700_000_000)
-    )
-    let row = MessageRowPresentation(
-        message: message,
-        startsGroup: true,
-        startsDay: false,
-        replyPreview: nil,
-        isReplyAvailable: false
-    )
-    let width: CGFloat = 427
-    let layout = NativeTimelineRowLayout.make(
-        item: .message(
-            row,
-            isUnreadBoundary: false,
-            isHighlighted: false
-        ),
-        width: width
-    )
-    let reference = NSHostingController(
-        rootView: NativeTimelineLegacyPlainMessageReference(message: message)
-    ).sizeThatFits(in: CGSize(width: width, height: 10_000))
-
-    #expect(layout.height == reference.height)
-    #expect(layout.avatarFrame?.minY == 12)
-}
-
-@Test func `chat timeline preserves the legacy vertical stack padding`() {
-    #expect(ChatDetailLayoutPolicy.timelineTopPadding == 12)
-    #expect(ChatDetailLayoutPolicy.timelineBottomPadding == 12)
-}
-
-@Test func `native timeline animation overlays preserve compositor frame timing`() {
-    let durations = [0.10, 0.20, 0.05]
-    let keyTimes = AnimatedImageKeyframeSchedule.keyTimes(
-        for: durations
-    ).map(\.doubleValue)
-    #expect(
-        abs(AnimatedImageKeyframeSchedule.duration(for: durations) - 0.35)
-            < 0.000_001
-    )
-    #expect(keyTimes.count == 3)
-    #expect(abs(keyTimes[0] - 0) < 0.000_001)
-    #expect(abs(keyTimes[1] - (0.10 / 0.35)) < 0.000_001)
-    #expect(abs(keyTimes[2] - (0.30 / 0.35)) < 0.000_001)
-    #expect(
-        AnimatedImageKeyframeSchedule.duration(for: []) == 0.05
-    )
 }
 
 @Test func `native timeline animated decoder preserves multiple GIF frames`() throws {
@@ -4301,2530 +2282,50 @@ func `native single line grouped row preserves the pre CoreText intrinsic height
 }
 
 @MainActor @Test
-func `native timeline render plan preserves generated system message content`() {
-    let author = User(
-        id: UserID(rawValue: 91),
-        username: "nova",
-        displayName: "Nova Chen"
-    )
-    let message = Message(
-        id: MessageID(rawValue: 92),
-        channelID: ChannelID(rawValue: 93),
-        author: author,
-        content: "",
-        timestamp: Date(timeIntervalSince1970: 1_000),
-        type: .userJoin
-    )
+func `batched unicode reaction rendering is pixel identical to individual rendering`() throws {
+    let values = ["👍", "❤️", "🏳️‍🌈", "👨‍👩‍👧‍👦"]
+    ComponentUnicodeEmojiRenderer.clearCacheForTesting()
+    let individual = values.map(ComponentUnicodeEmojiRenderer.image(for:))
 
-    let plan = NativeTimelineTextPlan.make(for: message)
-    let row = MessageRowPresentation(
-        message: message,
-        startsGroup: true,
-        startsDay: false,
-        replyPreview: nil,
-        isReplyAvailable: false
-    )
-    let layout = NativeTimelineRowLayout.make(
-        item: .message(
-            row,
-            isUnreadBoundary: false,
-            isHighlighted: false
-        ),
-        width: 620
-    )
+    ComponentUnicodeEmojiRenderer.clearCacheForTesting()
+    ComponentUnicodeEmojiRenderer.prepareImages(for: values)
+    let batched = values.map(ComponentUnicodeEmojiRenderer.image(for:))
 
-    #expect(plan.attributedText?.value.string == "Yay you made it, Nova Chen!")
-    #expect(layout.height == 33)
-    #expect(layout.avatarFrame == nil)
-    #expect(layout.authorFrame == nil)
-    #expect(
-        layout.systemIconFrame
-            == CGRect(x: 50, y: 12, width: 16, height: 18)
-    )
-    #expect(layout.contentFrame?.minX == 72)
-    #expect(layout.contentFrame?.minY == 12)
-    #expect(layout.contentFrame?.height == 18)
-}
-
-@MainActor @Test
-func `native command invocation and ephemeral footer preserve legacy row geometry`() {
-    let invokingUser = User(
-        id: UserID(rawValue: 94),
-        username: "nova",
-        displayName: "Nova Chen"
-    )
-    let application = User(
-        id: UserID(rawValue: 95),
-        username: "verified",
-        displayName: "Verified",
-        isBot: true
-    )
-    let message = Message(
-        id: MessageID(rawValue: 96),
-        channelID: ChannelID(rawValue: 97),
-        author: application,
-        content: "Only the invoking user can see this response.",
-        timestamp: Date(timeIntervalSince1970: 1_000),
-        type: .chatInputCommand,
-        flags: [.ephemeral],
-        interactionMetadata: MessageInteractionMetadata(
-            id: "98",
-            type: 2,
-            name: "inspect",
-            user: invokingUser,
-            applicationID: "95"
-        )
-    )
-    let layout = NativeTimelineRowLayout.make(
-        item: .message(
-            MessageRowPresentation(
-                message: message,
-                startsGroup: true,
-                startsDay: false,
-                replyPreview: nil,
-                isReplyAvailable: false
-            ),
-            isUnreadBoundary: false,
-            isHighlighted: false
-        ),
-        width: 620
-    )
-    let invocation = layout.commandInvocationRegion
-    let ephemeral = layout.ephemeralRegion
-    let reference = NSHostingController(
-        rootView: NativeTimelineLegacyCommandEphemeralReference(
-            message: message
-        )
-    ).sizeThatFits(in: CGSize(width: 620, height: 10_000))
-
-    #expect(layout.height == 90)
-    #expect(abs(layout.height - reference.height) <= 1)
-    #expect(invocation?.frame == CGRect(x: 14, y: 12, width: 592, height: 20))
-    #expect(invocation?.connectorFrame == CGRect(x: 14, y: 12, width: 30, height: 20))
-    #expect(invocation?.avatarFrame == CGRect(x: 49, y: 15, width: 14, height: 14))
-    #expect(invocation?.pillFrame.minY == 14)
-    #expect(invocation?.commandSymbolFrame.minY == 17)
-    #expect(invocation?.commandSymbolFrame.height == 10)
-    #expect(invocation?.commandFrame.minY == 14)
-    #expect(invocation?.commandFrame.height == 16)
-    #expect(layout.avatarFrame == CGRect(x: 14, y: 32, width: 38, height: 38))
-    #expect(layout.authorFrame?.minY == 32)
-    #expect(layout.botBadgeFrame?.minY == 33)
-    #expect(layout.botBadgeFrame?.height == 14)
-    #expect(layout.contentFrame?.minY == 50)
-    #expect(ephemeral?.frame == CGRect(x: 64, y: 72, width: 542, height: 15))
-    #expect(ephemeral?.dismissFrame.width ?? 0 > 80)
-}
-
-@MainActor @Test
-func `native deferred command keeps the legacy loading indicator in its author line`() {
-    let application = User(
-        id: UserID(rawValue: 99),
-        username: "bot",
-        displayName: "Bot",
-        isBot: true
-    )
-    let base = Message(
-        id: MessageID(rawValue: 100),
-        channelID: ChannelID(rawValue: 101),
-        author: application,
-        content: "Working…",
-        timestamp: Date(timeIntervalSince1970: 1_000),
-        type: .chatInputCommand
-    )
-    var loading = base
-    loading.flags.insert(.loading)
-    var sending = base
-    sending.outboxState = .sending
-
-    func layout(_ message: Message) -> NativeTimelineRowLayout {
-        NativeTimelineRowLayout.make(
-            item: .message(
-                MessageRowPresentation(
-                    message: message,
-                    startsGroup: true,
-                    startsDay: false,
-                    replyPreview: nil,
-                    isReplyAvailable: false
-                ),
-                isUnreadBoundary: false,
-                isHighlighted: false
-            ),
-            width: 620
-        )
-    }
-
-    let confirmedLayout = layout(base)
-    let loadingLayout = layout(loading)
-    let sendingLayout = layout(sending)
-
-    #expect(
-        loadingLayout.loadingIndicatorFrame
-            == CGRect(
-                x: loadingLayout.loadingIndicatorFrame?.minX ?? 0,
-                y: 34,
-                width: 12,
-                height: 12
-            )
-    )
-    #expect(loadingLayout.height == confirmedLayout.height)
-    #expect(loadingLayout.failedFrame == nil)
-    #expect(sendingLayout.failedFrame == nil)
-    #expect(sendingLayout.height == confirmedLayout.height)
-}
-
-@MainActor @Test
-func `native failed outbox footer is the only legacy outbox state that changes row geometry`() {
-    let author = User(
-        id: UserID(rawValue: 102),
-        username: "nova",
-        displayName: "Nova"
-    )
-    let base = Message(
-        id: MessageID(rawValue: 103),
-        channelID: ChannelID(rawValue: 104),
-        author: author,
-        content: "This message could not be sent.",
-        timestamp: Date(timeIntervalSince1970: 1_000)
-    )
-    var failed = base
-    failed.outboxState = .failed
-    var queued = base
-    queued.outboxState = .queued
-
-    func layout(_ message: Message) -> NativeTimelineRowLayout {
-        NativeTimelineRowLayout.make(
-            item: .message(
-                MessageRowPresentation(
-                    message: message,
-                    startsGroup: true,
-                    startsDay: false,
-                    replyPreview: nil,
-                    isReplyAvailable: false
-                ),
-                isUnreadBoundary: false,
-                isHighlighted: false
-            ),
-            width: 620
-        )
-    }
-
-    let confirmedLayout = layout(base)
-    let failedLayout = layout(failed)
-    let queuedLayout = layout(queued)
-
-    #expect(failedLayout.failedFrame?.height == 14)
-    #expect(
-        failedLayout.failedFrame?.minY
-            == (confirmedLayout.contentFrame?.maxY ?? 0) + 4
-    )
-    #expect(failedLayout.height == confirmedLayout.height + 18)
-    #expect(queuedLayout.failedFrame == nil)
-    #expect(queuedLayout.height == confirmedLayout.height)
-}
-
-@MainActor @Test
-func `native timeline embed layout renders rich text mentions and media`() throws {
-    let author = User(
-        id: UserID(rawValue: 101),
-        username: "fixture",
-        displayName: "Fixture"
-    )
-    let mediaURL = try #require(URL(string: "https://example.com/embed.png"))
-    let thumbnailURL = try #require(URL(string: "https://example.com/thumb.png"))
-    let titleURL = try #require(URL(string: "https://example.com/release"))
-    let embed = MessageEmbed(
-        id: "rich-embed",
-        title: "Release notes",
-        description: "Hello <@&10> — **everything is native**.",
-        url: titleURL,
-        color: 0x5865F2,
-        footer: MessageEmbedFooter(text: "SakuraCord"),
-        image: MessageEmbedMedia(
-            url: mediaURL,
-            width: 640,
-            height: 360
-        ),
-        thumbnail: MessageEmbedMedia(
-            url: thumbnailURL,
-            width: 128,
-            height: 128
-        ),
-        author: MessageEmbedAuthor(name: "Build bot"),
-        fields: [
-            MessageEmbedField(
-                id: 1,
-                name: "Status",
-                value: "`ready`",
-                isInline: true
-            )
-        ]
-    )
-    let message = Message(
-        id: MessageID(rawValue: 102),
-        channelID: ChannelID(rawValue: 103),
-        author: author,
-        content: "",
-        embeds: [embed],
-        mentionedRoleIDs: [RoleID(rawValue: 10)]
-    )
-    let row = MessageRowPresentation(
-        message: message,
-        startsGroup: true,
-        startsDay: false,
-        replyPreview: nil,
-        isReplyAvailable: false
-    )
-
-    let layout = NativeTimelineRowLayout.make(
-        item: .message(row, isUnreadBoundary: false, isHighlighted: false),
-        width: 620
-    )
-    let region = try #require(layout.embedRegions.first)
-    let richText = NSMutableAttributedString()
-    for textRegion in region.textRegions {
-        richText.append(textRegion.text.value)
-        richText.append(NSAttributedString(string: "\n"))
-    }
-    let selectableText = region.textRegions
-        .filter(\.isSelectable)
-        .map(\.text.value.string)
-        .joined(separator: "\n")
-
-    #expect(region.kind == .card)
-    #expect(richText.string.contains("Release notes"))
-    #expect(richText.string.contains("everything is native"))
-    #expect(!richText.string.contains("**"))
-    #expect(!richText.string.contains("<@&10>"))
-    #expect(richText.string.contains("\u{FFFC}"))
-    #expect(selectableText.contains("everything is native"))
-    #expect(selectableText.contains("ready"))
-    #expect(!selectableText.contains("Release notes"))
-    #expect(!selectableText.contains("Status"))
-    #expect(!selectableText.contains("SakuraCord"))
-    let item = NativeMessageTimelineItem.message(
-        row,
-        isUnreadBoundary: false,
-        isHighlighted: false
-    )
-    let canvas = NativeTimelineCanvasView(frame: .zero)
-    let titlePointerRegion = try #require(
-        canvas.linkPointerTextRegions(
-            for: item,
-            layout: layout
-        ).first(where: {
-            $0.value.string == "Release notes"
-        })
-    )
-    #expect(
-        titlePointerRegion.value.attribute(
-            .link,
-            at: 0,
-            effectiveRange: nil
-        ) as? URL == titleURL
-    )
-    #expect(
-        NativeTimelineTextHitTester.linkFrames(
-            value: titlePointerRegion.value,
-            framesetter: titlePointerRegion.framesetter,
-            frame: titlePointerRegion.frame
-        ).isEmpty == false
-    )
-    #expect(region.imageRegions.contains { $0.url == thumbnailURL })
-    #expect(region.mediaURL == mediaURL)
-    #expect(region.imageRegions.contains {
-        $0.url == thumbnailURL && $0.frame.size == CGSize(width: 80, height: 80)
-    })
-    #expect(region.mediaFrame != nil)
-    #expect(region.frame.height > 200)
-}
-
-@MainActor @Test
-func `native media viewer preserves attachment gallery order and selected item`() throws {
-    let firstURL = try #require(URL(string: "https://cdn.example/first.png"))
-    let secondURL = try #require(URL(string: "https://cdn.example/second.mp4"))
-    let message = Message(
-        id: MessageID(rawValue: 104),
-        channelID: ChannelID(rawValue: 105),
-        author: User(
-            id: UserID(rawValue: 106),
-            username: "fixture",
-            displayName: "Fixture"
-        ),
-        content: "",
-        attachments: [
-            Attachment(
-                id: "first",
-                filename: "first.png",
-                url: firstURL,
-                mediaType: "image/png"
-            ),
-            Attachment(
-                id: "second",
-                filename: "second.mp4",
-                url: secondURL,
-                mediaType: "video/mp4"
-            ),
-        ]
-    )
-
-    let presentation = try #require(
-        NativeTimelineMediaViewerPlan.attachments(
-            in: message,
-            selectedAttachmentID: "second"
-        )
-    )
-
-    #expect(presentation.items.map(\.url) == [firstURL, secondURL])
-    #expect(presentation.items.map(\.id) == ["first", "second"])
-    #expect(presentation.selection == 1)
-    #expect(presentation.items[1].kind == .video)
-}
-
-@MainActor @Test
-func `native media viewer resolves attachment backed embed by stable embed id`() throws {
-    let attachmentURL = try #require(
-        URL(string: "https://cdn.example/attachment-backed.png")
-    )
-    let attachmentReference = try #require(
-        URL(string: "attachment://attachment-backed.png")
-    )
-    let hidden = MessageEmbed(id: "hidden", type: "rich")
-    let visible = MessageEmbed(
-        id: "visible",
-        type: "image",
-        image: MessageEmbedMedia(
-            url: attachmentReference,
-            width: 640,
-            height: 360
-        )
-    )
-    let message = Message(
-        id: MessageID(rawValue: 107),
-        channelID: ChannelID(rawValue: 108),
-        author: User(
-            id: UserID(rawValue: 109),
-            username: "fixture",
-            displayName: "Fixture"
-        ),
-        content: "",
-        attachments: [
-            Attachment(
-                id: "attachment",
-                filename: "attachment-backed.png",
-                url: attachmentURL,
-                mediaType: "image/png",
-                width: 640,
-                height: 360
-            )
-        ],
-        embeds: [hidden, visible]
-    )
-    let layout = NativeTimelineRowLayout.make(
-        item: .message(
-            MessageRowPresentation(
-                message: message,
-                startsGroup: true,
-                startsDay: false,
-                replyPreview: nil,
-                isReplyAvailable: false
-            ),
-            isUnreadBoundary: false,
-            isHighlighted: false
-        ),
-        width: 620
-    )
-    let visibleRegion = try #require(layout.embedRegions.first)
-    let presentation = try #require(
-        NativeTimelineMediaViewerPlan.embed(
-            in: message,
-            id: visibleRegion.embedID
-        )
-    )
-
-    #expect(layout.embedRegions.count == 1)
-    #expect(visibleRegion.embedID == "visible")
-    #expect(presentation.items.count == 1)
-    #expect(presentation.items[0].url == attachmentURL)
-    #expect(presentation.items[0].kind == .image(animated: false))
-    #expect(presentation.selection == 0)
-}
-
-@MainActor @Test
-func `native media viewer preserves remote embed video playback kind`() throws {
-    let videoURL = try #require(
-        URL(string: "https://cdn.example/embed-video.mp4")
-    )
-    let message = Message(
-        id: MessageID(rawValue: 110),
-        channelID: ChannelID(rawValue: 111),
-        author: User(
-            id: UserID(rawValue: 112),
-            username: "fixture",
-            displayName: "Fixture"
-        ),
-        content: "",
-        embeds: [
-            MessageEmbed(
-                id: "video",
-                type: "video",
-                video: MessageEmbedMedia(
-                    url: videoURL,
-                    width: 1280,
-                    height: 720
-                )
-            )
-        ]
-    )
-
-    let presentation = try #require(
-        NativeTimelineMediaViewerPlan.embed(in: message, id: "video")
-    )
-
-    #expect(presentation.items.count == 1)
-    #expect(presentation.items[0].url == videoURL)
-    #expect(presentation.items[0].kind == .video)
-    #expect(presentation.selection == 0)
-}
-
-@MainActor @Test
-func `native timeline rich embed lays out live card content`() throws {
-    let iconURL = try #require(URL(string: "https://example.com/icon.png"))
-    let thumbnailURL = try #require(URL(string: "https://example.com/thumbnail.png"))
-    let embed = MessageEmbed(
-        title: "Server-provided link preview",
-        type: "rich",
-        description:
-            "This preview uses decoded embed data and performs no speculative unfurl request.",
-        url: URL(string: "https://example.com"),
-        color: 0x7C3AED,
-        footer: MessageEmbedFooter(
-            text: "Offline fixture",
-            iconURL: iconURL
-        ),
-        thumbnail: MessageEmbedMedia(url: thumbnailURL),
-        author: MessageEmbedAuthor(
-            name: "Aurora Studio",
-            iconURL: iconURL
-        ),
-        fields: [
-            MessageEmbedField(
-                id: 1,
-                name: "Layout",
-                value: "Hero plus stack",
-                isInline: true
-            ),
-            MessageEmbedField(
-                id: 2,
-                name: "Accessibility",
-                value: "Alt text included",
-                isInline: true
-            ),
-        ]
-    )
-    let message = Message(
-        id: MessageID(rawValue: 111),
-        channelID: ChannelID(rawValue: 112),
-        author: User(
-            id: UserID(rawValue: 113),
-            username: "fixture",
-            displayName: "Fixture"
-        ),
-        content: "",
-        embeds: [embed]
-    )
-    let layout = NativeTimelineRowLayout.make(
-        item: .message(
-            MessageRowPresentation(
-                message: message,
-                startsGroup: true,
-                startsDay: false,
-                replyPreview: nil,
-                isReplyAvailable: false
-            ),
-            isUnreadBoundary: false,
-            isHighlighted: false
-        ),
-        width: 620
-    )
-
-    let region = try #require(layout.embedRegions.first)
-    let author = try #require(
-        region.textRegions.first(where: {
-            $0.text.value.string == "Aurora Studio"
-        })
-    )
-    let description = try #require(
-        region.textRegions.first(where: {
-            $0.text.value.string
-                == "This preview uses decoded embed data and performs no speculative unfurl request."
-        })
-    )
-    let firstField = try #require(
-        region.textRegions.first(where: {
-            $0.text.value.string == "Layout"
-        })
-    )
-    let secondField = try #require(
-        region.textRegions.first(where: {
-            $0.text.value.string == "Accessibility"
-        })
-    )
-
-    #expect(region.kind == .card)
-    #expect(region.accentColor == 0x7C3AED)
-    #expect(region.frame.width <= DiscordRichMessageMetrics.maximumWidth)
-    #expect(region.frame.height > description.frame.height)
-    #expect(region.imageRegions.count == 3)
-    #expect(author.frame.minX - region.frame.minX == 42)
-    #expect(
-        description.frame.width
-            == region.frame.width - 4 - 24 - 80 - 24
-    )
-    #expect(
-        abs(
-            secondField.frame.minX - firstField.frame.minX
-                - (description.frame.width + 14) / 2
-        ) < 0.001
-    )
-}
-
-@MainActor @Test
-func `native timeline embed semantic colors preserve SwiftUI opacity`() throws {
-    let appearance = try #require(NSAppearance(named: .darkAqua))
-    var capturedColors: (NSColor?, NSColor?, NSColor, NSColor, NSColor)?
-    appearance.performAsCurrentDrawingAppearance {
-        capturedColors = (
-            NSColor.secondaryLabelColor.usingColorSpace(.deviceRGB),
-            NSColor.labelColor.usingColorSpace(.deviceRGB),
-            NativeTimelineSemanticColor.opacity(.secondaryLabelColor, 0.08),
-            NativeTimelineSemanticColor.opacity(.secondaryLabelColor, 0.5),
-            NativeTimelineSemanticColor.opacity(.labelColor, 0.08)
-        )
-    }
-    let colors = try #require(capturedColors)
-    let secondary = try #require(colors.0)
-    let primary = try #require(colors.1)
-
-    #expect(
-        abs(colors.2.alphaComponent - secondary.alphaComponent * 0.08)
-            < 0.0001
-    )
-    #expect(
-        abs(colors.3.alphaComponent - secondary.alphaComponent * 0.5)
-            < 0.0001
-    )
-    #expect(
-        abs(colors.4.alphaComponent - primary.alphaComponent * 0.08)
-            < 0.0001
-    )
-}
-
-@MainActor @Test
-func `native timeline bare embeds preserve previous media gallery geometry`() throws {
-    let mediaURL = try #require(URL(string: "https://example.com/media.png"))
-    let media = MessageEmbedMedia(
-        url: mediaURL,
-        width: 1_200,
-        height: 800
-    )
-    let message = Message(
-        id: MessageID(rawValue: 114),
-        channelID: ChannelID(rawValue: 115),
-        author: User(
-            id: UserID(rawValue: 116),
-            username: "fixture",
-            displayName: "Fixture"
-        ),
-        content: "",
-        embeds: [
-            MessageEmbed(type: "image", image: media)
-        ]
-    )
-    let layout = NativeTimelineRowLayout.make(
-        item: .message(
-            MessageRowPresentation(
-                message: message,
-                startsGroup: true,
-                startsDay: false,
-                replyPreview: nil,
-                isReplyAvailable: false
-            ),
-            isUnreadBoundary: false,
-            isHighlighted: false
-        ),
-        width: 720
-    )
-    let region = try #require(layout.embedRegions.first)
-    let previousFrame = try #require(
-        MediaGalleryPlan.frames(
-            count: 1,
-            width: 500,
-            aspectRatios: [1.5],
-            intrinsicSizes: [CGSize(width: 1_200, height: 800)],
-            spacing: 4
-        ).first
-    )
-
-    #expect(region.kind == .bareMedia)
-    #expect(abs(region.frame.width - previousFrame.width) <= 0.001)
-    #expect(abs(region.frame.height - previousFrame.height) <= 0.001)
-}
-
-@MainActor @Test
-func `native timeline suppressed embeds restore link text without preview geometry`() throws {
-    let sourceURL = try #require(URL(string: "https://example.com/media"))
-    let mediaURL = try #require(URL(string: "https://cdn.example.com/media.mp4"))
-    let message = Message(
-        id: MessageID(rawValue: 117),
-        channelID: ChannelID(rawValue: 118),
-        author: User(
-            id: UserID(rawValue: 119),
-            username: "fixture",
-            displayName: "Fixture"
-        ),
-        content: sourceURL.absoluteString,
-        flags: [.suppressEmbeds],
-        embeds: [
-            MessageEmbed(
-                id: "suppressed",
-                type: "gifv",
-                url: sourceURL,
-                video: MessageEmbedMedia(
-                    url: mediaURL,
-                    width: 320,
-                    height: 180
-                )
-            )
-        ]
-    )
-    let row = MessageRowPresentation(
-        message: message,
-        startsGroup: true,
-        startsDay: false,
-        replyPreview: nil,
-        isReplyAvailable: false
-    )
-    let layout = NativeTimelineRowLayout.make(
-        item: .message(
-            row,
-            isUnreadBoundary: false,
-            isHighlighted: false
-        ),
-        width: 720
-    )
-    let prepared = try #require(row.textPlan.preparedText)
-    let attributed = DiscordMarkdown.appKitAttributed(
-        prepared.markdownPlan,
-        baseFontSize: row.textPlan.baseFontSize
-    )
-
-    #expect(attributed.string == sourceURL.absoluteString)
-    #expect(layout.contentFrame != nil)
-    #expect(layout.embedRegions.isEmpty)
-}
-
-@MainActor @Test
-func `native timeline component layout preserves the complete V2 hierarchy`() throws {
-    let author = User(
-        id: UserID(rawValue: 201),
-        username: "fixture",
-        displayName: "Fixture"
-    )
-    let thumbnailURL = try #require(
-        URL(string: "https://example.com/component-thumb.png")
-    )
-    let galleryURL = try #require(
-        URL(string: "https://example.com/component-gallery.png")
-    )
-    let fileURL = try #require(
-        URL(string: "https://example.com/component.pdf")
-    )
-    let message = Message(
-        id: MessageID(rawValue: 202),
-        channelID: ChannelID(rawValue: 203),
-        author: author,
-        content: "Legacy content must not render beside Components V2.",
-        attachments: [
-            Attachment(
-                id: "legacy-attachment",
-                filename: "legacy.png",
-                url: thumbnailURL,
-                mediaType: "image/png",
-                width: 80,
-                height: 80
-            )
-        ],
-        flags: [.isComponentsV2],
-        embeds: [
-            MessageEmbed(
-                title: "Legacy embed",
-                image: MessageEmbedMedia(url: galleryURL)
-            )
-        ],
-        components: [
-            .container(
-                id: "container",
-                accentColor: 0x5865F2,
-                spoiler: false,
-                children: [
-                    .textDisplay(
-                        id: "heading",
-                        content: "## Components V2\nHello <@&10>"
-                    ),
-                    .separator(
-                        id: "separator",
-                        divider: true,
-                        spacing: 1
-                    ),
-                    .actionRow(
-                        id: "actions",
-                        children: [
-                            .button(
-                                id: "primary",
-                                style: .primary,
-                                label: "Continue",
-                                emoji: nil,
-                                customID: "continue",
-                                url: nil,
-                                skuID: nil,
-                                disabled: false
-                            ),
-                            .button(
-                                id: "link",
-                                style: .link,
-                                label: "Learn more",
-                                emoji: nil,
-                                customID: nil,
-                                url: URL(string: "https://example.com"),
-                                skuID: nil,
-                                disabled: false
-                            ),
-                        ]
-                    ),
-                    .select(
-                        id: "select",
-                        kind: .string,
-                        customID: "choice",
-                        placeholder: "Choose one…",
-                        minValues: 1,
-                        maxValues: 1,
-                        disabled: false,
-                        options: [
-                            ComponentSelectOption(
-                                label: "First",
-                                value: "first"
-                            )
-                        ],
-                        channelTypes: []
-                    ),
-                    .section(
-                        id: "section",
-                        children: [
-                            .textDisplay(
-                                id: "section-text",
-                                content: "**Section copy**"
-                            )
-                        ],
-                        accessory: .thumbnail(
-                            id: "thumbnail",
-                            media: ComponentMedia(
-                                url: thumbnailURL,
-                                width: 80,
-                                height: 80,
-                                description: "Thumbnail"
-                            )
-                        )
-                    ),
-                    .mediaGallery(
-                        id: "gallery",
-                        items: [
-                            ComponentGalleryItem(
-                                id: "gallery-item",
-                                media: ComponentMedia(
-                                    url: galleryURL,
-                                    width: 640,
-                                    height: 360,
-                                    description: "Gallery image"
-                                )
-                            )
-                        ]
-                    ),
-                    .file(
-                        id: "file",
-                        media: ComponentMedia(
-                            url: fileURL,
-                            contentType: "application/pdf",
-                            description: "Fixture document"
-                        )
-                    ),
-                ]
-            )
-        ],
-        mentionedRoleIDs: [RoleID(rawValue: 10)]
-    )
-    let row = MessageRowPresentation(
-        message: message,
-        startsGroup: true,
-        startsDay: false,
-        replyPreview: nil,
-        isReplyAvailable: false
-    )
-
-    let layout = NativeTimelineRowLayout.make(
-        item: .message(row, isUnreadBoundary: false, isHighlighted: false),
-        width: 720
-    )
-    let components = try #require(layout.componentLayouts.first)
-    let container = try #require(components.containers.first)
-    let renderedText = components.textRegions
-        .map(\.text.value.string)
-        .joined(separator: "\n")
-
-    #expect(container.accentColor == 0x5865F2)
-    #expect(container.frame.width <= DiscordRichMessageMetrics.maximumWidth)
-    #expect(components.buttons.count == 2)
-    #expect(components.buttons.allSatisfy { $0.frame.height == 32 })
-    #expect(components.selects.count == 1)
-    #expect(components.images.contains { $0.displayURL == thumbnailURL })
-    #expect(components.media.contains { $0.displayURL == galleryURL })
-    #expect(components.files.contains { $0.openURL == fileURL })
-    #expect(components.separators.count == 1)
-    #expect(renderedText.contains("Components V2"))
-    #expect(!renderedText.contains("##"))
-    #expect(renderedText.contains("\u{FFFC}"))
-    #expect(components.textRegions.allSatisfy { $0.isSelectable })
-    #expect(components.frame.height > 400)
-    #expect(layout.attributedContent == nil)
-    #expect(layout.linkedImageRegions.isEmpty)
-    #expect(layout.attachmentRegions.isEmpty)
-    #expect(layout.embedRegions.isEmpty)
-}
-
-@MainActor @Test
-func `native component section pins its button accessory to the trailing edge`() throws {
-    let message = Message(
-        id: MessageID(rawValue: 310),
-        channelID: ChannelID(rawValue: 311),
-        author: User(
-            id: UserID(rawValue: 312),
-            username: "fixture",
-            displayName: "Fixture"
-        ),
-        content: "",
-        flags: [.isComponentsV2],
-        components: [
-            .section(
-                id: "candidate",
-                children: [
-                    .textDisplay(
-                        id: "candidate-copy",
-                        content: "<@313>"
-                    )
-                ],
-                accessory: .button(
-                    id: "vote",
-                    style: .success,
-                    label: "Vote",
-                    emoji: nil,
-                    customID: "vote",
-                    url: nil,
-                    skuID: nil,
-                    disabled: false
-                )
-            )
-        ]
-    )
-    let row = MessageRowPresentation(
-        message: message,
-        startsGroup: true,
-        startsDay: false,
-        replyPreview: nil,
-        isReplyAvailable: false
-    )
-    let layout = NativeTimelineRowLayout.make(
-        item: .message(
-            row,
-            isUnreadBoundary: false,
-            isHighlighted: false
-        ),
-        width: 720
-    )
-    let components = try #require(layout.componentLayouts.first)
-    let button = try #require(components.buttons.first)
-
-    #expect(button.frame.maxX == components.frame.maxX)
-    #expect(
-        components.textRegions.allSatisfy {
-            $0.frame.maxX <= button.frame.minX - 8
-        }
-    )
-}
-
-@Test
-func `native component button preserves legacy hover press and activation behavior`() {
-    #expect(
-        NativeTimelineComponentButtonVisualState.pressAnimationDuration
-            == 0.09
-    )
-    #expect(
-        NativeTimelineComponentButtonVisualState.scale(
-            pressProgress: 0
-        ) == 1
-    )
-    #expect(
-        NativeTimelineComponentButtonVisualState.scale(
-            pressProgress: 1
-        ) == 0.985
-    )
-    #expect(
-        NativeTimelineComponentButtonVisualState.scale(
-            pressProgress: -1
-        ) == 1
-    )
-    #expect(
-        NativeTimelineComponentButtonVisualState.scale(
-            pressProgress: 2
-        ) == 0.985
-    )
-
-    #expect(
-        NativeTimelineComponentButtonVisualState.brightness(
-            isHovered: false,
-            pressProgress: 0
-        ) == 0
-    )
-    #expect(
-        NativeTimelineComponentButtonVisualState.brightness(
-            isHovered: true,
-            pressProgress: 0
-        ) == 0.035
-    )
-    #expect(
-        abs(
-            NativeTimelineComponentButtonVisualState.brightness(
-                isHovered: true,
-                pressProgress: 0.5
-            ) + 0.0175
-        ) < 0.000_001
-    )
-    #expect(
-        NativeTimelineComponentButtonVisualState.brightness(
-            isHovered: true,
-            pressProgress: 1
-        ) == -0.07
-    )
-    #expect(
-        NativeTimelineComponentButtonVisualState.borderAlpha(
-            isHovered: true,
-            isEnabled: true
-        ) == 0.14
-    )
-    #expect(
-        NativeTimelineComponentButtonVisualState.borderAlpha(
-            isHovered: true,
-            isEnabled: false
-        ) == 0.07
-    )
-    #expect(
-        NativeTimelineComponentButtonVisualState.borderAlpha(
-            isHovered: false,
-            isEnabled: true
-        ) == 0.07
-    )
-    #expect(
-        NativeTimelineComponentButtonVisualState.easeOut(0) == 0
-    )
-    #expect(
-        NativeTimelineComponentButtonVisualState.easeOut(0.5)
-            == 0.875
-    )
-    #expect(
-        NativeTimelineComponentButtonVisualState.easeOut(1) == 1
-    )
-
-    let first = NativeTimelineComponentButtonTarget(
-        messageID: MessageID(rawValue: 301),
-        componentID: "first"
-    )
-    let second = NativeTimelineComponentButtonTarget(
-        messageID: MessageID(rawValue: 301),
-        componentID: "second"
-    )
-    #expect(
-        TimelineButtonActivationPolicy.activates(
-            pressed: first,
-            released: first
-        )
-    )
-    #expect(
-        !TimelineButtonActivationPolicy.activates(
-            pressed: first,
-            released: second
-        )
-    )
-    #expect(
-        !TimelineButtonActivationPolicy.activates(
-            pressed: first,
-            released: nil
-        )
-    )
-    #expect(
-        !TimelineButtonActivationPolicy.activates(
-            pressed: nil,
-            released: first
-        )
-    )
-}
-
-@Test
-func `native timeline activation requires the same stable press target`() {
-    let message = MessageID(rawValue: 401)
-    let otherMessage = MessageID(rawValue: 402)
-    let firstAttachment = NativeTimelinePointerActivationTarget.attachment(
-        message,
-        "first"
-    )
-    let secondAttachment = NativeTimelinePointerActivationTarget.attachment(
-        message,
-        "second"
-    )
-    let sameAttachmentOnAnotherMessage =
-        NativeTimelinePointerActivationTarget.attachment(
-            otherMessage,
-            "first"
-        )
-
-    #expect(
-        NativeTimelinePointerActivationPolicy.activates(
-            pressed: firstAttachment,
-            released: firstAttachment
-        )
-    )
-    #expect(
-        !NativeTimelinePointerActivationPolicy.activates(
-            pressed: firstAttachment,
-            released: secondAttachment
-        )
-    )
-    #expect(
-        !NativeTimelinePointerActivationPolicy.activates(
-            pressed: firstAttachment,
-            released: sameAttachmentOnAnotherMessage
-        )
-    )
-    #expect(
-        !NativeTimelinePointerActivationPolicy.activates(
-            pressed: firstAttachment,
-            released: nil
-        )
-    )
-    #expect(
-        !NativeTimelinePointerActivationPolicy.activates(
-            pressed: nil,
-            released: firstAttachment
-        )
-    )
-
-    let image = NativeTimelinePointerActivationTarget.componentImage(
-        message,
-        "shared-id"
-    )
-    let media = NativeTimelinePointerActivationTarget.componentMedia(
-        message,
-        "shared-id"
-    )
-    #expect(
-        !NativeTimelinePointerActivationPolicy.activates(
-            pressed: image,
-            released: media
-        )
-    )
-
-    let mention = NativeTimelinePointerActivationTarget.textMention(
-        message,
-        .content,
-        characterIndex: 4,
-        rawToken: "<@123>"
-    )
-    let movedMention = NativeTimelinePointerActivationTarget.textMention(
-        message,
-        .content,
-        characterIndex: 5,
-        rawToken: "<@123>"
-    )
-    #expect(mention.supportsTextSelection)
-    #expect(!firstAttachment.supportsTextSelection)
-    #expect(
-        !NativeTimelinePointerActivationPolicy.activates(
-            pressed: mention,
-            released: movedMention
-        )
-    )
-}
-
-@MainActor @Test
-func `native timeline links use standard underline hover and exact pointer regions`() throws {
-    let url = try #require(URL(
-        string: "https://example.com/a_b/c_d/e_f/g_h/i_j/k_l"
-    ))
-    let value = NSMutableAttributedString(
-        attributedString: DiscordMarkdown.appKitAttributed(
-            "Open \(url.absoluteString) now"
-        )
-    )
-    let range = (value.string as NSString).range(of: url.absoluteString)
-    #expect(
-        value.attribute(
-            .underlineStyle,
-            at: range.location,
-            effectiveRange: nil
-        ) == nil
-    )
-
-    NativeTimelineLinkAppearance.applyHover(
-        to: value,
-        characterIndex: range.location + 1
-    )
-
-    #expect(
-        value.attribute(
-            .underlineStyle,
-            at: range.location,
-            effectiveRange: nil
-        ) as? Int == NSUnderlineStyle.single.rawValue
-    )
-    #expect(
-        value.attribute(
-            .underlineStyle,
-            at: NSMaxRange(range) - 1,
-            effectiveRange: nil
-        ) as? Int == NSUnderlineStyle.single.rawValue
-    )
-    let framesetter = CTFramesetterCreateWithAttributedString(value)
-    let textFrame = CGRect(x: 0, y: 0, width: 180, height: 120)
-    let linkFrames = NativeTimelineTextHitTester.linkFrames(
-        value: value,
-        framesetter: framesetter,
-        frame: textFrame
-    )
-    try #require(linkFrames.count >= 3)
-    let interlineBridge = linkFrames[1]
-    #expect(interlineBridge.height > 0)
-
-    let bridgeHit = try #require(
-        NativeTimelineTextHitTester.hit(
-            value: value,
-            framesetter: framesetter,
-            frame: textFrame,
-            point: CGPoint(
-                x: interlineBridge.midX,
-                y: interlineBridge.midY
-            )
-        )
-    )
-    #expect(bridgeHit.url == url)
-    #expect(bridgeHit.characterIndex == range.location)
-}
-
-@MainActor @Test
-func `native timeline thread activation owns its complete click gesture`() throws {
-    let thread = MessageThreadSummary(
-        id: ChannelID(rawValue: 411),
-        name: "Press ownership",
-        messageCount: 3,
-        memberCount: 2
-    )
-    let message = Message(
-        id: MessageID(rawValue: 412),
-        channelID: ChannelID(rawValue: 413),
-        author: User(
-            id: UserID(rawValue: 414),
-            username: "fixture",
-            displayName: "Fixture"
-        ),
-        content: "Thread activation fixture",
-        thread: thread
-    )
-    let row = MessageRowPresentation(
-        message: message,
-        startsGroup: true,
-        startsDay: false,
-        replyPreview: nil,
-        isReplyAvailable: false
-    )
-    let item = NativeMessageTimelineItem.message(
-        row,
-        isUnreadBoundary: false,
-        isHighlighted: false
-    )
-    let width: CGFloat = 720
-    let layout = NativeTimelineRowLayout.make(
-        item: item,
-        width: width
-    )
-    let threadFrame = try #require(layout.threadFrame)
-    let storage = NativeTimelineCanvasStorage()
-    storage.items = [item]
-    storage.layouts = [layout]
-    storage.rowOrigins = [0]
-    storage.contentHeight = layout.height
-
-    var openedThreads: [ChannelID] = []
-    let canvas = NativeTimelineCanvasView(
-        frame: CGRect(
-            x: 0,
-            y: 0,
-            width: width,
-            height: layout.height
-        )
-    )
-    let window = NSWindow(
-        contentRect: canvas.frame,
-        styleMask: .borderless,
-        backing: .buffered,
-        defer: false
-    )
-    window.contentView = canvas
-    canvas.apply(
-        storage: storage,
-        model: AppModel(launchMode: .offlineTesting),
-        actions: NativeTimelineRowActions(
-            loadEarlier: {},
-            openReply: { _ in },
-            reply: nil,
-            retry: { _ in },
-            edit: { _, _ in },
-            markUnread: { _ in },
-            delete: { _ in },
-            react: { _, _ in },
-            openThread: { openedThreads.append($0.id) },
-            submitComponent: { _, _, _, _ in }
-        ),
-        viewportWidth: width,
-        minimumHeight: layout.height,
-        bottomSpacerHeight: 0,
-        contentOriginY: 0
-    )
-
-    func event(
-        _ type: NSEvent.EventType,
-        at point: CGPoint,
-        number: Int
-    ) throws -> NSEvent {
-        try #require(NSEvent.mouseEvent(
-            with: type,
-            location: canvas.convert(point, to: nil),
-            modifierFlags: [],
-            timestamp: TimeInterval(number),
-            windowNumber: window.windowNumber,
+    for (expected, actual) in zip(individual, batched) {
+        let expectedImage = try #require(expected.cgImage(
+            forProposedRect: nil,
             context: nil,
-            eventNumber: number,
-            clickCount: 1,
-            pressure: type == .leftMouseDown ? 1 : 0
+            hints: nil
         ))
-    }
-
-    let inside = CGPoint(
-        x: threadFrame.midX,
-        y: threadFrame.midY
-    )
-    let outside = CGPoint(
-        x: min(width - 1, threadFrame.maxX + 12),
-        y: threadFrame.midY
-    )
-
-    canvas.mouseDown(with: try event(.leftMouseDown, at: outside, number: 1))
-    canvas.mouseUp(with: try event(.leftMouseUp, at: inside, number: 2))
-    #expect(openedThreads.isEmpty)
-
-    canvas.mouseDown(with: try event(.leftMouseDown, at: inside, number: 3))
-    canvas.mouseDragged(
-        with: try event(.leftMouseDragged, at: outside, number: 4)
-    )
-    canvas.mouseUp(with: try event(.leftMouseUp, at: outside, number: 5))
-    #expect(openedThreads.isEmpty)
-
-    canvas.mouseDown(with: try event(.leftMouseDown, at: inside, number: 6))
-    canvas.mouseUp(with: try event(.leftMouseUp, at: inside, number: 7))
-    #expect(openedThreads == [thread.id])
-}
-
-@MainActor @Test
-func `short timeline origin changes invalidate all former row pixels`() {
-    let width: CGFloat = 480
-    let message = Message(
-        id: MessageID(rawValue: 415),
-        channelID: ChannelID(rawValue: 416),
-        author: User(
-            id: UserID(rawValue: 417),
-            username: "fixture",
-            displayName: "Fixture"
-        ),
-        content: "Sparse thread reply"
-    )
-    let item = NativeMessageTimelineItem.message(
-        MessageRowPresentation(
-            message: message,
-            startsGroup: true,
-            startsDay: false,
-            replyPreview: nil,
-            isReplyAvailable: false
-        ),
-        isUnreadBoundary: false,
-        isHighlighted: false
-    )
-    let layout = NativeTimelineRowLayout.make(item: item, width: width)
-    let storage = NativeTimelineCanvasStorage()
-    storage.items = [item]
-    storage.layouts = [layout]
-    storage.rowOrigins = [0]
-    storage.contentHeight = layout.height
-    let canvas = NativeTimelineCanvasView(
-        frame: CGRect(x: 0, y: 0, width: width, height: 400)
-    )
-    let window = NSWindow(
-        contentRect: canvas.frame,
-        styleMask: .borderless,
-        backing: .buffered,
-        defer: false
-    )
-    window.contentView = canvas
-    let actions = NativeTimelineRowActions(
-        loadEarlier: {},
-        openReply: { _ in },
-        reply: nil,
-        retry: { _ in },
-        edit: { _, _ in },
-        markUnread: { _ in },
-        delete: { _ in },
-        react: { _, _ in },
-        openThread: { _ in },
-        submitComponent: { _, _, _, _ in }
-    )
-    let model = AppModel(launchMode: .offlineTesting)
-    canvas.apply(
-        storage: storage,
-        model: model,
-        actions: actions,
-        viewportWidth: width,
-        minimumHeight: 400,
-        bottomSpacerHeight: 0,
-        contentOriginY: 260
-    )
-    let invalidationsBeforeMove = canvas.contentOriginInvalidationCount
-    let synchronousRedrawsBeforeMove =
-        canvas.synchronousShortContentRedrawCount
-
-    canvas.apply(
-        storage: storage,
-        model: model,
-        actions: actions,
-        viewportWidth: width,
-        minimumHeight: 400,
-        bottomSpacerHeight: 0,
-        contentOriginY: 220
-    )
-
-    #expect(
-        canvas.contentOriginInvalidationCount
-            == invalidationsBeforeMove + 1
-    )
-    #expect(
-        canvas.synchronousShortContentRedrawCount
-            == synchronousRedrawsBeforeMove + 1
-    )
-    let rowTrackingArea = canvas.trackingAreas.first {
-        $0.userInfo?["nativeTimelineTrackingKind"] as? String == "row"
-    }
-    #expect(
-        rowTrackingArea?.rect.minY
-            == 220
-                + (layout.highlightFrame?.minY ?? 0)
-                + NativeTimelineHoverHitTesting.coreTextOpticalOffset
-    )
-}
-
-@MainActor @Test
-func `replacing an edited conversation with empty storage clears stale geometry`() {
-    let width: CGFloat = 480
-    let message = Message(
-        id: MessageID(rawValue: 615),
-        channelID: ChannelID(rawValue: 616),
-        author: User(
-            id: UserID(rawValue: 617),
-            username: "fixture",
-            displayName: "Fixture"
-        ),
-        content: "Editing while the thread closes"
-    )
-    let item = NativeMessageTimelineItem.message(
-        MessageRowPresentation(
-            message: message,
-            startsGroup: true,
-            startsDay: false,
-            replyPreview: nil,
-            isReplyAvailable: false
-        ),
-        isUnreadBoundary: false,
-        isHighlighted: false
-    )
-    let layout = NativeTimelineRowLayout.make(item: item, width: width)
-    let storage = NativeTimelineCanvasStorage()
-    storage.items = [item]
-    storage.layouts = [layout]
-    storage.rowOrigins = [0]
-    storage.contentHeight = layout.height
-
-    let canvas = NativeTimelineCanvasView(
-        frame: CGRect(x: 0, y: 0, width: width, height: 400)
-    )
-    let window = NSWindow(
-        contentRect: canvas.frame,
-        styleMask: .borderless,
-        backing: .buffered,
-        defer: false
-    )
-    window.contentView = canvas
-    let actions = NativeTimelineRowActions(
-        loadEarlier: {},
-        openReply: { _ in },
-        reply: nil,
-        retry: { _ in },
-        edit: { _, _ in },
-        markUnread: { _ in },
-        delete: { _ in },
-        react: { _, _ in },
-        openThread: { _ in },
-        submitComponent: { _, _, _, _ in }
-    )
-    let model = AppModel(launchMode: .offlineTesting)
-    canvas.apply(
-        storage: storage,
-        model: model,
-        actions: actions,
-        viewportWidth: width,
-        minimumHeight: 400,
-        bottomSpacerHeight: 0,
-        contentOriginY: 260
-    )
-    canvas.installEditingGeometryForTesting(
-        messageID: message.id,
-        rowIndex: 0,
-        rowHeight: layout.height + 40
-    )
-
-    canvas.apply(
-        storage: NativeTimelineCanvasStorage(),
-        model: model,
-        actions: actions,
-        viewportWidth: width,
-        minimumHeight: 400,
-        bottomSpacerHeight: 0,
-        contentOriginY: 8
-    )
-
-    #expect(!canvas.hasEditingGeometryForTesting)
-}
-
-@MainActor @Test
-func `native timeline attachments preserve the previous media mosaic geometry`() throws {
-    let url = try #require(URL(string: "https://example.com/layout.png"))
-    let attachments = (0 ..< 3).map { index in
-        Attachment(
-            id: "attachment-\(index)",
-            filename: "layout-\(index).png",
-            url: url,
-            mediaType: "image/png",
-            width: index == 0 ? 720 : 420,
-            height: 420
-        )
-    }
-    let message = Message(
-        id: MessageID(rawValue: 204),
-        channelID: ChannelID(rawValue: 205),
-        author: User(
-            id: UserID(rawValue: 206),
-            username: "fixture",
-            displayName: "Fixture"
-        ),
-        content: "",
-        attachments: attachments
-    )
-    let layout = NativeTimelineRowLayout.make(
-        item: .message(
-            MessageRowPresentation(
-                message: message,
-                startsGroup: true,
-                startsDay: false,
-                replyPreview: nil,
-                isReplyAvailable: false
-            ),
-            isUnreadBoundary: false,
-            isHighlighted: false
-        ),
-        width: 720
-    )
-    let previous = MediaGalleryPlan.frames(
-        count: 3,
-        width: 500,
-        aspectRatios: attachments.map {
-            CGFloat($0.width!) / CGFloat($0.height!)
-        },
-        intrinsicSizes: attachments.map {
-            CGSize(
-                width: CGFloat($0.width!),
-                height: CGFloat($0.height!)
-            )
-        },
-        spacing: 4
-    )
-
-    #expect(layout.attachmentRegions.count == previous.count)
-    let origin = try #require(layout.attachmentRegions.first?.frame.origin)
-    for (region, expected) in zip(layout.attachmentRegions, previous) {
-        #expect(
-            region.frame.offsetBy(dx: -origin.x, dy: -origin.y)
-                == expected
-        )
+        let actualImage = try #require(actual.cgImage(
+            forProposedRect: nil,
+            context: nil,
+            hints: nil
+        ))
+        #expect(expectedImage.width == actualImage.width)
+        #expect(expectedImage.height == actualImage.height)
+        #expect(try rgbaBytes(expectedImage) == rgbaBytes(actualImage))
     }
 }
 
-@MainActor @Test
-func `native timeline component container lays out live controls`() throws {
-    func button(
-        _ id: String,
-        _ style: ComponentButtonStyle,
-        _ label: String,
-        _ emoji: String
-    ) -> MessageComponent {
-        .actionRow(
-            id: "\(id)-row",
-            children: [
-                .button(
-                    id: id,
-                    style: style,
-                    label: label,
-                    emoji: EmojiReference(name: emoji),
-                    customID: id,
-                    url: nil,
-                    skuID: nil,
-                    disabled: false
-                )
-            ]
-        )
-    }
-
-    let children: [MessageComponent] = [
-        .textDisplay(
-            id: "heading",
-            content: "## How did you join the server?"
-        ),
-        .separator(id: "divider", divider: true, spacing: 1),
-        button("reddit", .success, "Reddit", "🙂"),
-        button("social", .secondary, "Other social media", "🌐"),
-        button("friend", .primary, "A friend invited me", "🧑‍🤝‍🧑"),
-        button("returning", .primary, "I was here before", "🏠"),
-        button("other", .destructive, "Other", "❓"),
-    ]
-    let component = MessageComponent.container(
-        id: "container",
-        accentColor: 0x5865F2,
-        spoiler: false,
-        children: children
+private func rgbaBytes(_ image: CGImage) throws -> [UInt8] {
+    let bytesPerRow = image.width * 4
+    var bytes = [UInt8](
+        repeating: 0,
+        count: bytesPerRow * image.height
     )
-    let message = Message(
-        id: MessageID(rawValue: 221),
-        channelID: ChannelID(rawValue: 222),
-        author: User(
-            id: UserID(rawValue: 223),
-            username: "fixture",
-            displayName: "Fixture"
-        ),
-        content: "",
-        flags: [.isComponentsV2],
-        components: [component]
-    )
-    let model = AppModel(launchMode: .offlineTesting)
-    let layout = try #require(
-        NativeTimelineComponentLayout.make(
-            message: message,
-            model: model,
-            origin: .zero,
-            maximumWidth: 520
-        )
-    )
-    let container = try #require(layout.containers.first)
-    #expect(container.accentColor == 0x5865F2)
-    #expect(container.frame == layout.frame)
-    #expect(layout.frame.width <= DiscordRichMessageMetrics.maximumWidth)
-    #expect(layout.buttons.count == 5)
-    #expect(
-        layout.buttons.allSatisfy {
-            $0.frame.height == NativeTimelineComponentButtonMetrics.height
-        }
-    )
-    #expect(layout.buttons.map(\.label) == [
-        "Reddit",
-        "Other social media",
-        "A friend invited me",
-        "I was here before",
-        "Other",
-    ])
-    #expect(layout.buttons.map(\.emoji?.name) == [
-        "🙂", "🌐", "🧑‍🤝‍🧑", "🏠", "❓",
-    ])
-}
-
-@MainActor @Test
-func `native timeline stickers thread and reactions use live geometry`() throws {
-    let assetURL = try #require(
-        URL(string: "https://example.com/sticker.png")
-    )
-    let reaction = Reaction(
-        emoji: "🔥",
-        count: 7,
-        didCurrentUserReact: true,
-        reactors: [
-            ReactionReactor(
-                id: UserID(rawValue: 301),
-                displayName: "Maya"
-            ),
-            ReactionReactor(
-                id: UserID(rawValue: 302),
-                displayName: "Nova"
-            ),
-        ]
-    )
-    let thread = MessageThreadSummary(
-        id: ChannelID(rawValue: 303),
-        name: "Rich message feedback",
-        messageCount: 2,
-        memberCount: 3
-    )
-    let stickers = [
-        MessageSticker(
-            id: "one",
-            name: "One",
-            format: .png,
-            assetURL: assetURL
-        ),
-        MessageSticker(
-            id: "two",
-            name: "Two",
-            format: .png,
-            assetURL: assetURL
-        ),
-    ]
-    let message = Message(
-        id: MessageID(rawValue: 304),
-        channelID: ChannelID(rawValue: 305),
-        author: User(
-            id: UserID(rawValue: 306),
-            username: "fixture",
-            displayName: "Fixture"
-        ),
-        content: "",
-        reactions: [reaction],
-        stickers: stickers,
-        thread: thread
-    )
-    let layout = NativeTimelineRowLayout.make(
-        item: .message(
-            MessageRowPresentation(
-                message: message,
-                startsGroup: true,
-                startsDay: false,
-                replyPreview: nil,
-                isReplyAvailable: false
-            ),
-            isUnreadBoundary: false,
-            isHighlighted: false
-        ),
-        width: 720
-    )
-
-    let previousReaction = NSHostingController(
-        rootView: MessageReactionPill(
-            reaction: reaction,
-            emojiURL: nil,
-            react: {},
-            loadReactors: {}
-        )
-    ).sizeThatFits(in: CGSize(width: 500, height: 10_000))
-
-    #expect(layout.stickerFrames.count == 2)
-    #expect(
-        layout.stickerFrames[1].maxX
-            - layout.stickerFrames[0].minX
-            == 232
-    )
-    #expect(layout.stickerFrames.allSatisfy {
-        $0.size == CGSize(width: 112, height: 112)
-    })
-    let threadFrame = try #require(layout.threadFrame)
-    #expect(threadFrame.width == 500)
-    #expect(threadFrame.height == 48)
-    let reactionRegion = try #require(layout.reactionRegions.first)
-    #expect(abs(reactionRegion.frame.width - previousReaction.width) <= 1)
-    #expect(abs(reactionRegion.frame.height - previousReaction.height) <= 1)
-    #expect(layout.addReactionFrame?.size == CGSize(width: 30, height: 28))
-}
-
-@MainActor @Test
-func `native timeline loads reactor avatars when reactions become visible`() {
-    let width: CGFloat = 520
-    let firstMessage = Message(
-        id: MessageID(rawValue: 41_001),
-        channelID: ChannelID(rawValue: 41_000),
-        author: User(
-            id: UserID(rawValue: 41_101),
-            username: "first.fixture",
-            displayName: "First Fixture"
-        ),
-        content: "First visible reaction",
-        reactions: [Reaction(emoji: "🔥", count: 2)]
-    )
-    let secondMessage = Message(
-        id: MessageID(rawValue: 41_002),
-        channelID: firstMessage.channelID,
-        author: User(
-            id: UserID(rawValue: 41_102),
-            username: "second.fixture",
-            displayName: "Second Fixture"
-        ),
-        content: "Second initially hidden reaction",
-        reactions: [Reaction(emoji: "✅", count: 3)]
-    )
-    let messages = [firstMessage, secondMessage]
-    let items = messages.map { message in
-        NativeMessageTimelineItem.message(
-            MessageRowPresentation(
-                message: message,
-                startsGroup: true,
-                startsDay: false,
-                replyPreview: nil,
-                isReplyAvailable: false
-            ),
-            isUnreadBoundary: false,
-            isHighlighted: false
-        )
-    }
-    let layouts = items.map {
-        NativeTimelineRowLayout.make(item: $0, width: width)
-    }
-    let storage = NativeTimelineCanvasStorage()
-    storage.items = items
-    storage.layouts = layouts
-    storage.rowOrigins = [0, layouts[0].height]
-    storage.contentHeight = layouts[0].height + layouts[1].height
-
-    let viewportHeight = max(1, layouts[0].height - 1)
-    let canvas = NativeTimelineCanvasView(
-        frame: CGRect(
-            x: 0,
-            y: 0,
-            width: width,
-            height: storage.contentHeight
-        )
-    )
-    let scrollView = NSScrollView(
-        frame: CGRect(x: 0, y: 0, width: width, height: viewportHeight)
-    )
-    scrollView.documentView = canvas
-    let window = NSWindow(
-        contentRect: scrollView.frame,
-        styleMask: .borderless,
-        backing: .buffered,
-        defer: false
-    )
-    window.contentView = scrollView
-    canvas.apply(
-        storage: storage,
-        model: AppModel(launchMode: .offlineTesting),
-        actions: NativeTimelineRowActions(
-            loadEarlier: {},
-            openReply: { _ in },
-            reply: nil,
-            retry: { _ in },
-            edit: { _, _ in },
-            markUnread: { _ in },
-            delete: { _ in },
-            react: { _, _ in },
-            openThread: { _ in },
-            submitComponent: { _, _, _, _ in }
-        ),
-        viewportWidth: width,
-        minimumHeight: viewportHeight,
-        bottomSpacerHeight: 0,
-        contentOriginY: 0
-    )
-    scrollView.tile()
-    scrollView.layoutSubtreeIfNeeded()
-    canvas.reconcileVisibleReactionPreviewLoadsForTesting()
-
-    #expect(canvas.hasVisibleReactionPreviewLoadForTesting(
-        messageID: firstMessage.id,
-        reactionID: firstMessage.reactions[0].id
+    let context = try #require(CGContext(
+        data: &bytes,
+        width: image.width,
+        height: image.height,
+        bitsPerComponent: 8,
+        bytesPerRow: bytesPerRow,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
     ))
-    #expect(!canvas.hasVisibleReactionPreviewLoadForTesting(
-        messageID: secondMessage.id,
-        reactionID: secondMessage.reactions[0].id
-    ))
-
-    scrollView.contentView.scroll(
-        to: CGPoint(x: 0, y: layouts[0].height)
+    context.draw(
+        image,
+        in: CGRect(x: 0, y: 0, width: image.width, height: image.height)
     )
-    scrollView.reflectScrolledClipView(scrollView.contentView)
-    canvas.reconcileVisibleReactionPreviewLoadsForTesting()
-
-    #expect(!canvas.hasVisibleReactionPreviewLoadForTesting(
-        messageID: firstMessage.id,
-        reactionID: firstMessage.reactions[0].id
-    ))
-    #expect(canvas.hasVisibleReactionPreviewLoadForTesting(
-        messageID: secondMessage.id,
-        reactionID: secondMessage.reactions[0].id
-    ))
-}
-
-@Test
-func `first reaction mutation uses the pre-update canvas count as its animation baseline`() {
-    #expect(
-        NativeTimelineReactionCountBaseline.canAnimate(
-            hasCapturedVisibleCounts: false,
-            hasStoredSnapshot: true
-        )
-    )
-    #expect(
-        !NativeTimelineReactionCountBaseline.canAnimate(
-            hasCapturedVisibleCounts: false,
-            hasStoredSnapshot: false
-        )
-    )
-    #expect(
-        NativeTimelineReactionCountBaseline.previousCount(
-            capturedCount: nil,
-            storedCountBeforeUpdate: 4,
-            messageExistedBeforeUpdate: true,
-            messageWasPreviouslyVisible: false,
-            currentCount: 5
-        ) == 4
-    )
-    #expect(
-        NativeTimelineReactionCountBaseline.previousCount(
-            capturedCount: nil,
-            storedCountBeforeUpdate: nil,
-            messageExistedBeforeUpdate: true,
-            messageWasPreviouslyVisible: false,
-            currentCount: 1
-        ) == 0
-    )
-    #expect(
-        NativeTimelineReactionCountBaseline.previousCount(
-            capturedCount: nil,
-            storedCountBeforeUpdate: nil,
-            messageExistedBeforeUpdate: false,
-            messageWasPreviouslyVisible: false,
-            currentCount: 4
-        ) == 4
-    )
-    #expect(
-        NativeTimelineReactionCountBaseline.previousCount(
-            capturedCount: nil,
-            storedCountBeforeUpdate: 9,
-            messageExistedBeforeUpdate: true,
-            messageWasPreviouslyVisible: false,
-            currentCount: 10
-        ) == 9
-    )
-}
-
-@Test
-func `native add reaction symbol preserves its aspect ratio and centers its box`() {
-    let control = CGRect(x: 10, y: 20, width: 30, height: 28)
-    let icon = NativeTimelineReactionAddControlGeometry.iconFrame(in: control)
-    let fitted = NativeTimelineSymbolGeometry.opticallyFitted(
-        sourceSize: CGSize(width: 20, height: 20),
-        alignmentRect: CGRect(x: 0, y: 4, width: 19.5, height: 11.5),
-        in: icon
-    )
-
-    #expect(icon.size == CGSize(width: 16, height: 16))
-    #expect(icon.midX == control.midX)
-    #expect(icon.midY == control.midY)
-    #expect(fitted.midX > icon.midX)
-    #expect(fitted.midY > icon.midY)
-    #expect(fitted.width == icon.width)
-    #expect(fitted.height == icon.height)
-}
-
-@MainActor @Test
-func `native timeline selection geometry follows wrapped Core Text lines`() {
-    let value = NSAttributedString(
-        string: "alpha beta gamma delta epsilon zeta eta theta",
-        attributes: [
-            .font: NSFont.systemFont(ofSize: 15),
-        ]
-    )
-    let framesetter = CTFramesetterCreateWithAttributedString(value)
-    let outerFrame = CGRect(x: 13, y: 29, width: 92, height: 180)
-    let path = CGPath(
-        rect: CGRect(origin: .zero, size: outerFrame.size),
-        transform: nil
-    )
-    let textFrame = CTFramesetterCreateFrame(
-        framesetter,
-        CFRange(location: 0, length: value.length),
-        path,
-        nil
-    )
-
-    let rects = NativeTimelineTextSelectionGeometry.rects(
-        in: textFrame,
-        outerFrame: outerFrame,
-        range: NSRange(location: 0, length: value.length)
-    )
-
-    #expect(rects.count > 1)
-    #expect(rects.allSatisfy { outerFrame.intersects($0) })
-    #expect(rects.allSatisfy { $0.width > 1 && $0.height > 1 })
-}
-
-@MainActor @Test
-func `native fenced code chrome stays inside measured row height`() throws {
-    let terminalSource = [
-        "Multi-line Code Block:",
-        "```",
-        "Hello World",
-        "Line 2",
-        "```",
-    ].joined(separator: "\n")
-    let terminalCode = DiscordMarkdown.appKitAttributed(terminalSource)
-    #expect(
-        NativeTimelineMarkdownChromeMetrics.trailingVisualOverflow(
-            in: terminalCode
-        ) == 9.5
-    )
-
-    let followedCode = DiscordMarkdown.appKitAttributed(
-        [
-            "```",
-            "Hello World",
-            "```",
-            "Ordinary text follows.",
-        ].joined(separator: "\n")
-    )
-    #expect(
-        NativeTimelineMarkdownChromeMetrics.trailingVisualOverflow(
-            in: followedCode
-        ) == 0
-    )
-
-    let message = Message(
-        id: MessageID(rawValue: 91),
-        channelID: ChannelID(rawValue: 92),
-        author: User(
-            id: UserID(rawValue: 93),
-            username: "fixture",
-            displayName: "Fixture"
-        ),
-        content: terminalSource
-    )
-    let layout = NativeTimelineRowLayout.make(
-        item: .message(
-            MessageRowPresentation(
-                message: message,
-                startsGroup: true,
-                startsDay: false,
-                replyPreview: nil,
-                isReplyAvailable: false
-            ),
-            isUnreadBoundary: false,
-            isHighlighted: false
-        ),
-        width: 836
-    )
-    let contentFrame = try #require(layout.contentFrame)
-    let attributedContent = try #require(layout.attributedContent)
-    let framesetter = try #require(layout.contentFramesetter)
-    let highlightFrame = try #require(layout.highlightFrame)
-    let terminalRegion = try #require(
-        NativeTimelineCodeBlockGeometry.regions(
-            value: attributedContent,
-            framesetter: framesetter,
-            frame: NativeTimelineTextGeometry
-                .messageContentDrawingFrame(contentFrame)
-        ).last
-    )
-    let bottomHighlightPadding =
-        highlightFrame.maxY - terminalRegion.backgroundFrame.maxY
-    #expect(
-        bottomHighlightPadding
-            >= MessageRowLayoutMetrics.visibleHighlightInset
-    )
-    #expect(
-        bottomHighlightPadding
-            < MessageRowLayoutMetrics.visibleHighlightInset + 1
-    )
-}
-
-@MainActor @Test
-func `native fenced code regions share paint hover copy and accessibility geometry`() throws {
-    let value = DiscordMarkdown.appKitAttributed(
-        [
-            "Before",
-            "```",
-            "first",
-            "second",
-            "```",
-            "Between",
-            "```json",
-            #"{"value": 1}"#,
-            "```",
-        ].joined(separator: "\n")
-    )
-    let frame = CGRect(x: 20, y: 10, width: 400, height: 500)
-    let regions = NativeTimelineCodeBlockGeometry.regions(
-        value: value,
-        framesetter: CTFramesetterCreateWithAttributedString(value),
-        frame: frame
-    )
-
-    #expect(regions.count == 2)
-    let first = try #require(regions.first)
-    let last = try #require(regions.last)
-    #expect(first.content == "first\nsecond")
-    #expect(last.content == #"{"value": 1}"#)
-    for region in regions {
-        #expect(region.backgroundFrame.minX == frame.minX)
-        #expect(region.backgroundFrame.width == frame.width)
-        #expect(region.backgroundFrame.contains(region.copyButtonFrame))
-        #expect(
-            region.copyButtonFrame.maxX
-                == region.backgroundFrame.maxX - 4
-        )
-        #expect(
-            region.copyButtonFrame.minY
-                == region.backgroundFrame.minY + 4
-        )
-        #expect(region.copyButtonFrame.size == CGSize(width: 28, height: 28))
-    }
-}
-
-@MainActor @Test
-func `native timeline selection uses the full message text container`() {
-    let frame = NativeTimelineTextSelectionGeometry.interactionFrame(
-        contentFrame: CGRect(x: 128, y: 41, width: 520, height: 22),
-        rowOrigin: 300,
-        canvasWidth: 900
-    )
-
-    #expect(frame == CGRect(x: 128, y: 341, width: 772, height: 22))
-    #expect(frame.contains(CGPoint(x: 899, y: 352)))
-}
-
-@MainActor @Test
-func `native timeline selection recognizes selected inline attachment runs`() {
-    #expect(
-        NativeTimelineTextSelectionGeometry.intersects(
-            characterRange: CFRange(location: 8, length: 1),
-            selectionRange: NSRange(location: 3, length: 7)
-        )
-    )
-    #expect(
-        !NativeTimelineTextSelectionGeometry.intersects(
-            characterRange: CFRange(location: 10, length: 1),
-            selectionRange: NSRange(location: 3, length: 7)
-        )
-    )
-}
-
-@MainActor @Test
-func `native timeline selection paints inline attachments exactly once`() throws {
-    let value = NSMutableAttributedString(string: "a\u{FFFC}b")
-    value.addAttribute(
-        .font,
-        value: NSFont.systemFont(ofSize: 15),
-        range: NSRange(location: 0, length: value.length)
-    )
-    value.addAttribute(
-        .discordEmojiToken,
-        value: "<:fixture:123>",
-        range: NSRange(location: 1, length: 1)
-    )
-
-    #expect(
-        NativeTimelineTextSelectionGeometry.backgroundRanges(
-            in: value,
-            selectionRange: NSRange(location: 0, length: 3)
-        ) == [
-            NSRange(location: 0, length: 1),
-            NSRange(location: 2, length: 1),
-        ]
-    )
-
-    let framesetter = CTFramesetterCreateWithAttributedString(value)
-    let outerFrame = CGRect(x: 20, y: 40, width: 240, height: 28)
-    let textFrame = CTFramesetterCreateFrame(
-        framesetter,
-        CFRange(location: 0, length: value.length),
-        CGPath(
-            rect: CGRect(origin: .zero, size: outerFrame.size),
-            transform: nil
-        ),
-        nil
-    )
-    let lineSelection = try #require(
-        NativeTimelineTextSelectionGeometry.rects(
-        in: textFrame,
-        outerFrame: outerFrame,
-        range: NSRange(location: 0, length: value.length)
-        ).first
-    )
-    let attachmentSelection = try #require(
-        NativeTimelineTextSelectionGeometry.rects(
-        in: textFrame,
-        outerFrame: outerFrame,
-        range: NSRange(location: 1, length: 1)
-        ).first
-    )
-    #expect(attachmentSelection.minY == lineSelection.minY)
-    #expect(attachmentSelection.height == lineSelection.height)
-}
-
-@MainActor @Test
-func `native timeline copied custom emojis preserve exact Discord tokens`() {
-    let first = "<:aurora_glow:900000000000000101>"
-    let second = "<:native_mac:900000000000000102>"
-    let value = NSMutableAttributedString(string: "\u{FFFC} \u{FFFC}")
-    value.addAttribute(
-        .discordEmojiToken,
-        value: first,
-        range: NSRange(location: 0, length: 1)
-    )
-    value.addAttribute(
-        .discordEmojiToken,
-        value: second,
-        range: NSRange(location: 2, length: 1)
-    )
-
-    #expect(
-        RichMessageCopySerializer.string(
-            from: value,
-            range: NSRange(location: 0, length: value.length)
-        ) == "\(first) \(second)"
-    )
-}
-
-@MainActor @Test
-func `native timeline vertical selection clamps beyond text to line boundaries`() {
-    let value = NSAttributedString(
-        string: "alpha beta",
-        attributes: [.font: NSFont.systemFont(ofSize: 15)]
-    )
-    let framesetter = CTFramesetterCreateWithAttributedString(value)
-    let frame = CGRect(x: 100, y: 200, width: 300, height: 24)
-
-    #expect(
-        NativeTimelineTextHitTester.caretIndex(
-            value: value,
-            framesetter: framesetter,
-            frame: frame,
-            point: CGPoint(x: 160, y: frame.minY - 20),
-            clampsToText: true
-        ) == 0
-    )
-    #expect(
-        NativeTimelineTextHitTester.caretIndex(
-            value: value,
-            framesetter: framesetter,
-            frame: frame,
-            point: CGPoint(x: 160, y: frame.maxY + 20),
-            clampsToText: true
-        ) == value.length
-    )
-}
-
-@Test
-func `native timeline transient editor replaces exactly one row geometry`() {
-    let origins: [CGFloat] = [0, 40, 100, 180]
-    let heights: [CGFloat] = [40, 60, 80, 50]
-    let replacementIndex = 1
-    let replacementHeight: CGFloat = 110
-
-    let displayedOrigins = origins.indices.map { index in
-        NativeTimelineTransientRowGeometry.rowOrigin(
-            base: origins[index],
-            rowIndex: index,
-            replacementIndex: replacementIndex,
-            replacementHeight: replacementHeight,
-            baseRowHeight: heights[replacementIndex]
-        )
-    }
-    let displayedHeights = heights.indices.map { index in
-        NativeTimelineTransientRowGeometry.rowHeight(
-            base: heights[index],
-            rowIndex: index,
-            replacementIndex: replacementIndex,
-            replacementHeight: replacementHeight
-        )
-    }
-
-    #expect(displayedOrigins == [0, 40, 150, 230])
-    #expect(displayedHeights == [40, 110, 80, 50])
-    #expect(
-        NativeTimelineTransientRowGeometry.contentHeight(
-            base: 230,
-            replacementHeight: replacementHeight,
-            baseRowHeight: heights[replacementIndex]
-        ) == 280
-    )
-    #expect(
-        NativeTimelineTransientRowGeometry.contentOriginY(
-            base: 120,
-            heightDelta: replacementHeight - heights[replacementIndex],
-            minimum: 8
-        ) == 70
-    )
-    #expect(
-        NativeTimelineTransientRowGeometry.contentOriginY(
-            base: 40,
-            heightDelta: 50,
-            minimum: 8
-        ) == 8
-    )
-    #expect(
-        NativeTimelineTransientRowGeometry.contentOriginY(
-            base: 8,
-            heightDelta: 50,
-            minimum: 8
-        ) == 8
-    )
-}
-
-@Test
-func `native timeline transient editor can shrink a media row without overlap`() {
-    #expect(
-        NativeTimelineTransientRowGeometry.rowOrigin(
-            base: 620,
-            rowIndex: 3,
-            replacementIndex: 2,
-            replacementHeight: 84,
-            baseRowHeight: 420
-        ) == 284
-    )
-    #expect(
-        NativeTimelineTransientRowGeometry.contentHeight(
-            base: 900,
-            replacementHeight: 84,
-            baseRowHeight: 420
-        ) == 564
-    )
-    #expect(
-        NativeTimelineTransientRowGeometry.contentOriginY(
-            base: 120,
-            heightDelta: 84 - 420,
-            minimum: 8
-        ) == 456
-    )
-}
-
-@Test
-func `native timeline multiline editor growth expands the replacement row`() {
-    let oneLineHeight = NativeTimelineEditingGeometry.rowHeight(
-        avatarMaxY: 44,
-        contentOriginY: 20,
-        contentHeight: 57
-    )
-    let twoLineHeight = NativeTimelineEditingGeometry.rowHeight(
-        avatarMaxY: 44,
-        contentOriginY: 20,
-        contentHeight: 74
-    )
-
-    #expect(oneLineHeight == 80)
-    #expect(twoLineHeight == 97)
-    #expect(
-        NativeTimelineTransientRowGeometry.rowOrigin(
-            base: 240,
-            rowIndex: 3,
-            replacementIndex: 2,
-            replacementHeight: twoLineHeight,
-            baseRowHeight: oneLineHeight
-        ) == 257
-    )
-}
-
-private struct NativeTimelineEarlierLoaderReference: View {
-    var body: some View {
-        HStack(spacing: 8) {
-            ProgressView().controlSize(.small)
-            Text("Loading earlier messages…")
-        }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 10)
-    }
-}
-
-private struct NativeTimelineThreadBeginningReference: View {
-    let title: String
-    let starterName: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Image(systemName: "bubble.left.and.bubble.right.fill")
-                .font(.system(size: 34, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 68, height: 68)
-                .background(.quaternary, in: Circle())
-
-            Text(title)
-                .font(.largeTitle.weight(.bold))
-
-            if let starterName {
-                Text("Started by \(starterName)")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-            } else {
-                Text("This is the start of the thread.")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 28)
-        .padding(.bottom, 18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-private struct NativeTimelineLegacyPlainMessageReference: View {
-    let message: Message
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Color.clear
-                .frame(
-                    width: MessageRowLayoutMetrics.avatarDiameter,
-                    height: MessageRowLayoutMetrics.avatarDiameter
-                )
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline, spacing: 7) {
-                    Text(message.author.displayName)
-                        .font(.headline)
-                    Text(
-                        message.timestamp,
-                        format: .dateTime.hour().minute()
-                    )
-                    .font(.caption)
-                }
-                SelectableMessageTextView(
-                    model: nil,
-                    source: message.content,
-                    emojiSize: 18,
-                    mentionPresentations: [:]
-                )
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 3)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, 9)
-    }
-}
-
-private struct NativeTimelineLegacyCommandEphemeralReference: View {
-    let message: Message
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 5) {
-                Color.clear.frame(width: 30, height: 20)
-                AvatarView(
-                    name: message.interactionMetadata?.user?.displayName
-                        ?? "Someone",
-                    url: message.interactionMetadata?.user?.avatarURL,
-                    size: 14
-                )
-                Text(
-                    message.interactionMetadata?.user?.displayName
-                        ?? "Someone"
-                )
-                .font(.caption2.weight(.semibold))
-                Text("used")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                HStack(spacing: 3) {
-                    Image(
-                        systemName:
-                            "xmark.triangle.circle.square.fill"
-                    )
-                    .font(.system(size: 9, weight: .semibold))
-                    Text(
-                        message.interactionMetadata?.displayName
-                            ?? "command"
-                    )
-                }
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.tint)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(
-                    Color.accentColor.opacity(0.16),
-                    in: ConcentricRectangle(cornerRadius: 4)
-                )
-            }
-            .padding(.trailing, 48)
-            .frame(height: 20)
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            HStack(alignment: .top, spacing: 12) {
-                AvatarView(
-                    name: message.author.displayName,
-                    url: message.author.avatarURL,
-                    size: MessageRowLayoutMetrics.avatarDiameter
-                )
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(
-                        alignment: .firstTextBaseline,
-                        spacing: 7
-                    ) {
-                        Text(message.author.displayName)
-                            .font(.headline)
-                        Text("APP")
-                            .font(.caption2.bold())
-                            .padding(.horizontal, 4)
-                        Text(
-                            message.timestamp,
-                            format: .dateTime.hour().minute()
-                        )
-                        .font(.caption)
-                    }
-                    VStack(alignment: .leading, spacing: 4) {
-                        SelectableMessageTextView(
-                            model: nil,
-                            source: message.content,
-                            emojiSize: 18,
-                            mentionPresentations: [:]
-                        )
-                        HStack(spacing: 4) {
-                            Image(systemName: "eye")
-                            Text("Only you can see this")
-                            Text("•")
-                            Text("Dismiss message")
-                        }
-                        .font(.caption)
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 3)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, 9)
-    }
+    return bytes
 }

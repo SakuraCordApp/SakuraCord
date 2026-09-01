@@ -99,9 +99,7 @@ public enum PendingDiscordCredentialError: LocalizedError, Sendable {
 public actor KeychainCredentialStore: CredentialStore {
     private let service: String
     public init(service: String? = nil) {
-        self.service = service ?? CredentialServiceName.resolve(
-            bundleIdentifier: Bundle.main.bundleIdentifier
-        )
+        self.service = service ?? CredentialServiceName.primary
     }
 
     public func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
@@ -295,15 +293,6 @@ public enum InsecureDebugCredentialError: LocalizedError, Sendable {
 
 public nonisolated enum CredentialServiceName {
     public static let primary = "dev.sakuracord.SakuraCord.session"
-
-    public static func resolve(bundleIdentifier: String?) -> String {
-        guard let bundleIdentifier,
-              bundleIdentifier.hasPrefix("dev.sakuracord.SakuraCord.worktree.")
-        else {
-            return primary
-        }
-        return "\(primary).\(bundleIdentifier)"
-    }
 }
 
 public struct KeychainError: LocalizedError, Sendable {

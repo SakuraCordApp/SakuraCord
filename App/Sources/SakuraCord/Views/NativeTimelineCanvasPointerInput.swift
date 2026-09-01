@@ -46,41 +46,7 @@ extension NativeTimelineCanvasView {
               displayedRowOrigin(at: index) < visibleRect.maxY
         {
             if layouts.indices.contains(index) {
-                for selectable in selectableTextRegions(
-                    for: items[index],
-                    layout: layouts[index]
-                ) {
-                    addCursorRect(
-                        textSelectionInteractionFrame(
-                            region: selectable.region,
-                            frame: selectable.interactionFrame,
-                            rowIndex: index
-                        ),
-                        cursor: .iBeam
-                    )
-                }
-                for mention in mentionPointerRegions(at: index) {
-                    addCursorRect(
-                        mention.frame,
-                        cursor: .pointingHand
-                    )
-                }
-                let rowOrigin = displayedRowOrigin(at: index)
-                for selectable in linkPointerTextRegions(
-                    for: items[index],
-                    layout: layouts[index]
-                ) {
-                    for frame in NativeTimelineTextHitTester.linkFrames(
-                        value: selectable.value,
-                        framesetter: selectable.framesetter,
-                        frame: selectable.frame
-                    ) {
-                        addCursorRect(
-                            frame.offsetBy(dx: 0, dy: rowOrigin),
-                            cursor: .pointingHand
-                        )
-                    }
-                }
+                installTextCursorRects(at: index)
                 for codeBlock in codeBlockPointerTargets(at: index) {
                     addCursorRect(
                         codeBlock.copyButtonFrame,
@@ -134,6 +100,53 @@ extension NativeTimelineCanvasView {
                 installForwardedSourceCursor(at: index, rowOrigin: rowOrigin)
             }
             index += 1
+        }
+    }
+
+    private func installTextCursorRects(at index: Int) {
+        let item = items[index]
+        let layout = layouts[index]
+        let rowOrigin = displayedRowOrigin(at: index)
+        for selectable in selectableTextRegions(for: item, layout: layout) {
+            addCursorRect(
+                textSelectionInteractionFrame(
+                    region: selectable.region,
+                    frame: selectable.interactionFrame,
+                    rowIndex: index
+                ),
+                cursor: .iBeam
+            )
+            for spoiler in NativeTimelineTextHitTester.spoilerRegions(
+                value: selectable.value,
+                framesetter: selectable.framesetter,
+                frame: selectable.frame
+            ) {
+                guard let key = textSpoilerRevealKey(
+                    itemIdentifier: item.identifier,
+                    region: selectable.region,
+                    rangeLocation: spoiler.range.location
+                ), !spoilerRevealStore.isTextRevealed(key)
+                else { continue }
+                addCursorRect(
+                    spoiler.frame.offsetBy(dx: 0, dy: rowOrigin),
+                    cursor: .pointingHand
+                )
+            }
+        }
+        for mention in mentionPointerRegions(at: index) {
+            addCursorRect(mention.frame, cursor: .pointingHand)
+        }
+        for selectable in linkPointerTextRegions(for: item, layout: layout) {
+            for frame in NativeTimelineTextHitTester.linkFrames(
+                value: selectable.value,
+                framesetter: selectable.framesetter,
+                frame: selectable.frame
+            ) {
+                addCursorRect(
+                    frame.offsetBy(dx: 0, dy: rowOrigin),
+                    cursor: .pointingHand
+                )
+            }
         }
     }
 
@@ -561,7 +574,7 @@ extension NativeTimelineCanvasView {
         }
         if let replyFrame = layout.replyFrame,
            replyFrame.contains(local),
-           let replyID = row.replyPreview?.messageID
+           let replyID = row.replyMessageID
         {
             actions.openReply(replyID)
             return
@@ -590,15 +603,28 @@ extension NativeTimelineCanvasView {
                 in: row.message,
                 selectedReferenceID: linkedImage.reference.id
             ) {
-                model?.mediaViewerPresentation = presentation
+                model?.mediaViewerPresentation = mediaViewerPresentation(
+                    presentation,
+                    sourceFrame: linkedImage.frame,
+                    rowIndex: index,
+                    mediaKey: .media(
+                        linkedImage.reference.displayURL,
+                        maximumPixelDimension:
+                            linkedImage.reference.isEmoji ? 96 : 720
+                    ),
+                    cornerRadius: linkedImage.reference.isEmoji ? 7 : 10,
+                    fillsFrame: !linkedImage.reference.isEmoji
+                        && !linkedImage.reference.isSticker
+                )
             } else {
                 NSWorkspace.shared.open(linkedImage.reference.url)
             }
             return
         }
-        if let attachment = layout.attachmentRegions.first(
+        if let attachmentRegion = layout.attachmentRegions.first(
             where: { $0.frame.contains(local) }
-        )?.attachment {
+        ) {
+            let attachment = attachmentRegion.attachment
             let revealKey = NativeTimelineComponentRevealKey.attachment(
                 messageID: row.id,
                 attachmentID: attachment.id
@@ -621,7 +647,16 @@ extension NativeTimelineCanvasView {
                     }
                 )
             {
-                model?.mediaViewerPresentation = presentation
+                model?.mediaViewerPresentation = mediaViewerPresentation(
+                    presentation,
+                    sourceFrame: attachmentRegion.frame,
+                    rowIndex: index,
+                    mediaKey: NativeTimelineMediaKey.attachment(attachment),
+                    cornerRadius: 8,
+                    fillsFrame: MediaGalleryImagePresentation.fillsFrame(
+                        itemCount: layout.attachmentRegions.count
+                    )
+                )
             } else {
                 NSWorkspace.shared.open(attachment.url)
             }
@@ -634,7 +669,16 @@ extension NativeTimelineCanvasView {
                 in: row.message,
                 id: embedRegion.embedID
             ) {
-                model?.mediaViewerPresentation = presentation
+                model?.mediaViewerPresentation = mediaViewerPresentation(
+                    presentation,
+                    sourceFrame: embedRegion.mediaFrame ?? .zero,
+                    rowIndex: index,
+                    mediaKey: embedRegion.mediaURL.map {
+                        NativeTimelineMediaKey.media($0)
+                    },
+                    cornerRadius: 8,
+                    fillsFrame: false
+                )
             } else if let mediaURL = embedRegion.mediaURL {
                 NSWorkspace.shared.open(mediaURL)
             }
@@ -647,6 +691,8 @@ extension NativeTimelineCanvasView {
             actions.openThread(thread)
             return
         }
+
+        actions.openMessage?(row.message)
 
         }
     }
@@ -693,27 +739,33 @@ extension NativeTimelineCanvasView {
         closeMentionPopover()
         closeMessageProfilePopover()
         let requestID = model.showProfile(for: user)
-        let popover = NSPopover()
-        popover.behavior = .transient
-        popover.animates = true
-        popover.contentViewController = NSHostingController(
-            rootView: MessageProfilePopoverContent(
-                model: model,
-                userID: user.id,
-                requestID: requestID
-            )
+        let popoverAnchor = StablePopoverAnchor(
+            sourceView: self,
+            sourceRect: { anchor }
         )
-        messageProfilePopover = popover
-        popover.show(
-            relativeTo: anchor,
-            of: self,
-            preferredEdge: .maxX
+        activeMessageProfilePopoverAnchor = popoverAnchor
+        messageProfilePopoverCoordinator.update(
+            anchor: popoverAnchor,
+            anchorSnapshot: nil,
+            isPresented: true,
+            configuration: .contextualProfile,
+            onDismiss: { [weak self] in
+                self?.activeMessageProfilePopoverAnchor = nil
+            },
+            presentationIdentity: AnyHashable(user.id),
+            content: AnyView(
+                MessageProfilePopoverContent(
+                    model: model,
+                    userID: user.id,
+                    requestID: requestID
+                )
+            )
         )
     }
 
     func closeMessageProfilePopover() {
-        messageProfilePopover?.performClose(nil)
-        messageProfilePopover = nil
+        messageProfilePopoverCoordinator.close()
+        activeMessageProfilePopoverAnchor = nil
     }
 
     func showMentionProfile(
@@ -731,7 +783,8 @@ extension NativeTimelineCanvasView {
                     requestID: requestID
                 )
             ),
-            anchor: anchor
+            anchor: anchor,
+            configuration: .contextualProfile
         )
     }
 
@@ -755,14 +808,15 @@ extension NativeTimelineCanvasView {
 
     func showMentionPopover(
         _ content: AnyView,
-        anchor: StablePopoverAnchor
+        anchor: StablePopoverAnchor,
+        configuration: StablePopoverConfiguration = .interactive
     ) {
         activeMentionPopoverAnchor = anchor
         mentionPopoverCoordinator.update(
             anchor: anchor,
             anchorSnapshot: nil,
             isPresented: true,
-            configuration: .interactive,
+            configuration: configuration,
             onDismiss: { [weak self] in
                 self?.activeMentionPopoverAnchor = nil
             },
@@ -1230,7 +1284,7 @@ extension NativeTimelineCanvasView {
             return .invocationProfile(message.id)
         }
         if layout.replyFrame?.contains(local) == true,
-           let replyID = row.replyPreview?.messageID
+           let replyID = row.replyMessageID
         {
             return .reply(message.id, replyID)
         }
@@ -1269,6 +1323,11 @@ extension NativeTimelineCanvasView {
            let thread = message.thread
         {
             return .thread(message.id, thread.id)
+        }
+        if actions?.openMessage != nil,
+           layout.searchCardFrame?.contains(local) == true
+        {
+            return .message(message.id)
         }
         return nil
 
@@ -1575,10 +1634,7 @@ extension NativeTimelineCanvasView {
             color: color
         ))
         let host = NativeTimelineReactionCountAnimationHost(rootView: root)
-        let countFont = NSFont.monospacedDigitSystemFont(
-            ofSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize,
-            weight: .semibold
-        )
+        let countFont = NativeTimelineReactionFonts.count
         let stableCountWidth = max(
             countFrame.width,
             ceil((String(from) as NSString).size(withAttributes: [
