@@ -813,7 +813,11 @@ private struct CurrentUserCapsule: View {
     }
 
     private var accountAvatar: some View {
-        ZStack(alignment: .bottomTrailing) {
+        AvatarPresenceView(
+            status: currentStatus,
+            avatarSize: SidebarAccountControlMetrics.avatarSize,
+            indicatorSize: 10
+        ) {
             DecoratedAvatarView(
                 name: displayName,
                 avatarURL: user?.avatarURL,
@@ -821,14 +825,6 @@ private struct CurrentUserCapsule: View {
                 size: SidebarAccountControlMetrics.avatarSize,
                 animatesDecoration: isProfileHovering
             )
-            PresenceIndicator(status: currentStatus, size: 10)
-                .overlay {
-                    Circle().stroke(
-                        Color(nsColor: .controlBackgroundColor),
-                        lineWidth: 2
-                    )
-                }
-                .offset(x: 1, y: 1)
         }
         .frame(
             width: SidebarAccountControlMetrics.avatarSize,

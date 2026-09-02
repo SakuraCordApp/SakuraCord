@@ -16,6 +16,7 @@ nonisolated enum NativeMemberListMetrics {
     static let paintedRowHeight: CGFloat = 44
     static let avatarSize: CGFloat = 34
     static let avatarContainerSize: CGFloat = 38.08
+    static let presenceIndicatorSize: CGFloat = 11
     static let rowCornerRadius: CGFloat = 9
     static let prewarmItemCount = 8
     static let activityEmojiSize: CGFloat = 15
@@ -2051,8 +2052,18 @@ final class NativeMemberListCanvasView: NSView {
         )
         let opacity: CGFloat = presentation.showsActivityDetails
             && !member.isOnline ? 0.55 : 1
+        let presenceIndicatorRect = AvatarPresencePresentation.indicatorRect(
+            avatarRect: avatar,
+            indicatorSize: NativeMemberListMetrics.presenceIndicatorSize
+        )
         context.saveGState()
         context.setAlpha(opacity)
+        context.addRect(context.boundingBoxOfClipPath)
+        context.addEllipse(in: AvatarPresencePresentation.cutoutRect(
+            avatarRect: avatar,
+            indicatorSize: NativeMemberListMetrics.presenceIndicatorSize
+        ))
+        context.clip(using: .evenOdd)
 
         let avatarURL = member.guildAvatarURL ?? member.user.avatarURL
         context.saveGState()
@@ -2102,19 +2113,15 @@ final class NativeMemberListCanvasView: NSView {
             )
         }
 
+        context.restoreGState()
+
         if presentation.showsActivityDetails {
             drawPresenceIndicator(
                 member.status,
-                in: CGRect(
-                    x: container.maxX - 10,
-                    y: container.maxY - 10,
-                    width: 11,
-                    height: 11
-                ),
+                in: presenceIndicatorRect,
                 context: context
             )
         }
-        context.restoreGState()
     }
 
     func drawAvatarFallback(
@@ -2171,40 +2178,19 @@ final class NativeMemberListCanvasView: NSView {
         in rect: CGRect,
         context: CGContext
     ) {
-        let color: NSColor = switch status {
-        case .online: Self.color(hex: 0x23A55A)
-        case .idle: Self.color(hex: 0xF0B232)
-        case .dnd: Self.color(hex: 0xF23F43)
-        case .invisible, .offline: Self.color(hex: 0x80848E)
-        }
-        context.setFillColor(color.cgColor)
-        context.fillEllipse(in: rect)
-        context.setStrokeColor(NSColor.controlBackgroundColor.cgColor)
-        context.setLineWidth(2)
-        context.strokeEllipse(in: rect.insetBy(dx: 1, dy: 1))
-        if status == .dnd {
-            let bar = CGRect(
-                x: rect.midX - rect.width * 0.275,
-                y: rect.midY - 1,
-                width: rect.width * 0.55,
-                height: 2
-            )
-            Self.fillRounded(
-                bar,
-                radius: 1,
-                color: .white,
-                context: context
-            )
-        } else if status == .idle {
-            let size = rect.width * 0.62
-            context.setFillColor(NSColor.controlBackgroundColor.cgColor)
-            context.fillEllipse(in: CGRect(
-                x: rect.midX - size / 2 - rect.width * 0.18,
-                y: rect.midY - size / 2 - rect.height * 0.18,
-                width: size,
-                height: size
-            ))
-        }
+        context.saveGState()
+        context.addEllipse(in: rect)
+        context.clip()
+        context.addPath(
+            PresenceIndicatorPresentation.path(for: status, in: rect).cgPath
+        )
+        context.setFillColor(
+            Self.color(
+                hex: PresenceIndicatorPresentation.colorHex(for: status)
+            ).cgColor
+        )
+        context.drawPath(using: .eoFill)
+        context.restoreGState()
     }
 
     func guildTagPresentation(for identity: PrimaryGuildIdentity) -> GuildTagPresentation? {

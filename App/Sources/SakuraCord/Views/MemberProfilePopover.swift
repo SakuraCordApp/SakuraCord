@@ -285,18 +285,19 @@ private struct ProfileHeroSection: View {
                 .compositingGroup()
 
             HStack(alignment: .bottom, spacing: 6) {
-                DecoratedAvatarView(
-                    name: profile?.displayName ?? member.user.displayName,
-                    avatarURL: profile?.avatarURL ?? member.guildAvatarURL ?? member.user.avatarURL,
-                    decorationURL: profile?.user.avatarDecorationURL ?? member.user.avatarDecorationURL,
-                    size: 70,
-                    animatesDecoration: animatesRemoteMedia
-                )
-                .padding(3)
-                .overlay(alignment: .bottomTrailing) {
-                    PresenceIndicator(status: profile?.status ?? member.status, size: 15)
-                        .overlay(Circle().stroke(avatarCutoutColor, lineWidth: 2.5))
-                        .offset(x: -2, y: -2)
+                AvatarPresenceView(
+                    status: profile?.status ?? member.status,
+                    avatarSize: 70,
+                    indicatorSize: 15
+                ) {
+                    DecoratedAvatarView(
+                        name: profile?.displayName ?? member.user.displayName,
+                        avatarURL: profile?.avatarURL ?? member.guildAvatarURL ?? member.user.avatarURL,
+                        decorationURL: profile?.user.avatarDecorationURL ?? member.user.avatarDecorationURL,
+                        size: 70,
+                        animatesDecoration: animatesRemoteMedia
+                    )
+                    .padding(3)
                 }
                 .offset(y: -34)
 

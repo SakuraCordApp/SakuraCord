@@ -221,18 +221,16 @@ struct DirectMessageAvatar: View {
     let animates: Bool
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            avatar
-            if let status {
-                PresenceIndicator(status: status, size: size * 0.3)
-                    .overlay(
-                        Circle().stroke(
-                            Color(nsColor: .controlBackgroundColor),
-                            lineWidth: 2
-                        )
-                    )
-                    .offset(x: 1, y: 1)
+        if let status {
+            AvatarPresenceView(
+                status: status,
+                avatarSize: size,
+                indicatorSize: size * 0.3
+            ) {
+                avatar
             }
+        } else {
+            avatar
         }
     }
 

@@ -426,15 +426,17 @@ private struct ApplicationCommandSuggestionIcon: View {
                 .font(.system(size: 17))
                 .foregroundStyle(.secondary)
         case let .user(name, avatarURL, decorationURL, status):
-            ZStack(alignment: .bottomTrailing) {
+            AvatarPresenceView(
+                status: status,
+                avatarSize: 25,
+                indicatorSize: 8
+            ) {
                 DecoratedAvatarView(
                     name: name,
                     avatarURL: avatarURL,
                     decorationURL: decorationURL,
                     size: 25
                 )
-                PresenceIndicator(status: status, size: 8)
-                    .overlay(Circle().stroke(Color(nsColor: .controlBackgroundColor), lineWidth: 1.5))
             }
         case let .role(colorHex, iconURL, unicodeEmoji):
             if let iconURL {

@@ -471,16 +471,17 @@ struct MemberAvatar: View {
     let member: Member
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
+        AvatarPresenceView(
+            status: member.status,
+            avatarSize: 34,
+            indicatorSize: 11
+        ) {
             DecoratedAvatarView(
                 name: member.user.displayName,
                 avatarURL: member.guildAvatarURL ?? member.user.avatarURL,
                 decorationURL: member.user.avatarDecorationURL,
                 size: 34
             )
-            PresenceIndicator(status: member.status, size: 11)
-                .overlay(Circle().stroke(Color(nsColor: .controlBackgroundColor), lineWidth: 2))
-                .offset(x: 1, y: 1)
         }
     }
 }
@@ -511,46 +512,6 @@ struct DecoratedAvatarView: View {
 
     var decorationPixelDimension: Int {
         max(1, Int((size * 1.22 * 2).rounded(.up)))
-    }
-}
-
-struct PresenceIndicator: View {
-    let status: PresenceStatus
-    let size: CGFloat
-
-    var body: some View {
-        Circle()
-            .fill(color)
-            .frame(width: size, height: size)
-            .overlay {
-                if status == .online {
-                    Circle().fill(.white).frame(
-                        width: size * 0.32,
-                        height: size * 0.32
-                    )
-                } else if status == .dnd {
-                    Capsule().fill(.white).frame(width: size * 0.55, height: 2)
-                } else if status == .idle {
-                    Circle()
-                        .fill(Color(nsColor: .controlBackgroundColor))
-                        .frame(width: size * 0.62, height: size * 0.62)
-                        .offset(x: -size * 0.18, y: -size * 0.18)
-                } else {
-                    Circle()
-                        .fill(Color(nsColor: .controlBackgroundColor))
-                        .frame(width: size * 0.46, height: size * 0.46)
-                }
-            }
-            .accessibilityHidden(true)
-    }
-
-    private var color: Color {
-        switch status {
-        case .online: Color(hex: 0x23A55A)
-        case .idle: Color(hex: 0xF0B232)
-        case .dnd: Color(hex: 0xF23F43)
-        case .invisible, .offline: Color(hex: 0x80848E)
-        }
     }
 }
 
