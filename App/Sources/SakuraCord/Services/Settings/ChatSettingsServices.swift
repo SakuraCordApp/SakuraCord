@@ -104,6 +104,13 @@ nonisolated struct ChatSettingsSnapshot: Equatable, Sendable {
     var inlineMediaSize: ChatInlineMediaSize
     var reducesAnimatedMedia: Bool
     var emojiSkinTone: NativeEmojiSkinTone
+
+    var automaticallyAcknowledgesMessages: Bool {
+        get { readAcknowledgementMode == .automatic }
+        set {
+            readAcknowledgementMode = newValue ? .automatic : .manual
+        }
+    }
 }
 
 nonisolated enum ChatCharacterLimitPolicy {

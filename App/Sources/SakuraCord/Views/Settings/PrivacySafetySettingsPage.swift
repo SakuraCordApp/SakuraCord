@@ -15,23 +15,43 @@ struct PrivacySafetySettingsPage: View {
     let state: SettingsViewState
 
     @State private var value = PrivacySafetySettingsSnapshot.defaults
+    @State private var chatValue = ChatSettingsSnapshot.defaults
     @State private var confirmation: Confirmation?
     @State private var exportedPreferences: SettingsPreferenceExportFile?
     @State private var isExporting = false
     @State private var operationMessage: String?
+    @State private var navigationPath: [PrivacyDestination] = []
 
     var body: some View {
-        SettingsPageForm(page: .privacySafety, state: state) {
-            discordActivitySection
-            linksAndServicesSection
-            credentialsSection
-            localDataSection
+        NavigationStack(path: $navigationPath) {
+            SettingsPageForm(page: .privacySafety, state: state) {
+                PrivacyDiscordActivitySection(
+                    value: $chatValue,
+                    state: state
+                )
+                PrivacyLinksServicesSection(value: $value, state: state)
+                localDataSection
+            }
+            .navigationDestination(for: PrivacyDestination.self) { destination in
+                switch destination {
+                case .trustedDomains:
+                    TrustedDomainsSettingsPage(trustedDomains: $value.trustedDomains)
+                }
+            }
         }
         .task {
             value = model.privacySafetySettings
+            chatValue = model.chatSettings
         }
         .onChange(of: value) { _, newValue in
             model.applyPrivacySafetySettings(newValue)
+        }
+        .onChange(of: chatValue) { _, newValue in
+            model.applyChatSettings(newValue)
+        }
+        .onChange(of: state.revealRequest?.id) {
+            guard state.revealRequest?.destination.page == .privacySafety else { return }
+            navigationPath.removeAll()
         }
         .confirmationDialog(
             confirmationTitle,
@@ -53,112 +73,17 @@ struct PrivacySafetySettingsPage: View {
             isPresented: $isExporting,
             item: exportedPreferences,
             contentTypes: [.json],
-            defaultFilename: "SakuraCord-Privacy-Safety-v1"
+            defaultFilename: "SakuraCord-Privacy-v1"
         ) { result in
             switch result {
             case .success:
-                operationMessage = "Exported Privacy & Safety preferences."
+                operationMessage = "Exported Privacy preferences."
             case let .failure(error):
                 operationMessage = "Export failed: \(error.localizedDescription)"
             }
             exportedPreferences = nil
         } onCancellation: {
             exportedPreferences = nil
-        }
-    }
-
-    private var discordActivitySection: some View {
-        Section {
-            LabeledContent("Typing indicators") {
-                Text(model.chatSettings.sendsTypingIndicators ? "Enabled" : "Disabled")
-                    .foregroundStyle(.secondary)
-            }
-            Button("Open Typing Indicator Setting in Chat…") {
-                openChat(controlID: .chatTypingIndicators, section: .chatComposer)
-            }
-            .settingsControlAnchor(.privacyTypingIndicators, state: state)
-
-            LabeledContent("Read acknowledgements") {
-                Text(model.chatSettings.readAcknowledgementMode.title)
-                    .foregroundStyle(.secondary)
-            }
-            Button("Open Read Acknowledgement Setting in Chat…") {
-                openChat(controlID: .chatReadAcknowledgement, section: .chatMessages)
-            }
-            .settingsControlAnchor(.privacyReadAcknowledgements, state: state)
-        } header: {
-            Text("Discord Activity", bundle: #bundle)
-        } footer: {
-            Text(
-                "Typing-indicator preference is local to SakuraCord, but enabled indicators "
-                    + "are sent to Discord while you compose. Read acknowledgements alter "
-                    + "Discord unread state and are visible in other clients."
-            )
-        }
-    }
-
-    private var linksAndServicesSection: some View {
-        Section {
-            LabeledContent("External web links") {
-                Label("Always confirm", systemImage: "checkmark.shield")
-                    .foregroundStyle(.secondary)
-            }
-            .settingsControlAnchor(.externalLinkProtection, state: state)
-
-            Button("Open Internal Discord Link Setting in Chat…") {
-                openChat(controlID: .chatInternalDiscordLinks, section: .chatMessages)
-            }
-            .settingsControlAnchor(.privacyInternalDiscordLinks, state: state)
-
-            Picker(
-                "When an attachment exceeds Discord's limit",
-                selection: $value.externalUploaderOfferPolicy
-            ) {
-                ForEach(ExternalUploaderOfferPolicy.allCases) { policy in
-                    Text(policy.title).tag(policy)
-                }
-            }
-            .settingsControlAnchor(.externalUploaderPolicy, state: state)
-        } header: {
-            Text("Links & External Services", bundle: #bundle)
-        } footer: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(
-                    "External links show their destination domain before opening. Warnings cover "
-                        + "specific signals such as HTTP, encoded or malformed hosts, disguised "
-                        + "service names, credentials in a URL, and display/destination mismatch; "
-                        + "they cannot identify every malicious link."
-                )
-                Text(
-                    "The uploader setting can offer Catbox or Litterbox, or never offer either. "
-                        + "SakuraCord has no automatic-upload mode: choosing a service in the "
-                        + "separate prompt is always required before any third-party transfer."
-                )
-            }
-        }
-    }
-
-    private var credentialsSection: some View {
-        Section {
-            Label {
-                Text("Account credentials are excluded from settings exports, caches, drafts, diagnostics, and extension APIs.")
-            } icon: {
-                Image(systemName: "key.fill")
-            }
-            .settingsControlAnchor(.credentialStorage, state: state)
-
-            if model.usesInsecureDebugCredentials {
-                Label(
-                    "This repository-configured debug build enables insecure development credential storage. Release builds use macOS Keychain.",
-                    systemImage: "exclamationmark.triangle.fill"
-                )
-                .foregroundStyle(.orange)
-            } else {
-                Text("Credentials are stored in macOS Keychain and are never part of SakuraCord preference data.")
-                    .foregroundStyle(.secondary)
-            }
-        } header: {
-            Text("Credentials", bundle: #bundle)
         }
     }
 
@@ -224,19 +149,10 @@ struct PrivacySafetySettingsPage: View {
             Text(
                 "Each clear action is independently confirmed. None deletes Discord messages, "
                     + "favorites, server data, credentials, or another account's drafts. "
-                    + "Preference reset/export covers only the registered uploader policy."
+                    + "Preference reset covers external links and trusted domains. Exports omit "
+                    + "the trusted-domain list."
             )
         }
-    }
-
-    private func openChat(
-        controlID: SettingsControlID,
-        section: SettingsSectionID
-    ) {
-        state.navigate(
-            to: SettingsDestination(page: .chat, section: section),
-            controlID: controlID
-        )
     }
 
     private var confirmationTitle: String {
@@ -268,7 +184,8 @@ struct PrivacySafetySettingsPage: View {
         case .emoji:
             "This clears app-wide local emoji recents and learned usage counts. Discord favorites and Discord-provided frequency remain unchanged."
         case .reset:
-            "This restores the registered oversized-uploader offer policy. It does not clear histories, searches, emoji learning, drafts, credentials, or Discord data."
+            "This restores external-link confirmation and trusted domains. It does not clear "
+                + "histories, searches, emoji learning, drafts, credentials, or Discord data."
         case nil:
             "No action has been selected."
         }
@@ -292,7 +209,7 @@ struct PrivacySafetySettingsPage: View {
                 page: .privacySafety
             )
             value = PrivacySafetySettingsStore.shared.load()
-            operationMessage = "Restored Privacy & Safety preferences."
+            operationMessage = "Restored Privacy preferences."
         }
     }
 
@@ -304,5 +221,223 @@ struct PrivacySafetySettingsPage: View {
             )
         )
         isExporting = true
+    }
+}
+
+private enum PrivacyDestination: Hashable {
+    case trustedDomains
+}
+
+private struct PrivacyLinksServicesSection: View {
+    @Binding var value: PrivacySafetySettingsSnapshot
+    let state: SettingsViewState
+
+    var body: some View {
+        Section {
+            Picker(
+                "Ask permission when opening external links",
+                selection: $value.externalLinkConfirmationPolicy
+            ) {
+                ForEach(ExternalLinkConfirmationPolicy.allCases) { policy in
+                    Label(policy.title, systemImage: policy.systemImage)
+                        .tag(policy)
+                }
+            }
+            .settingsControlAnchor(.externalLinkProtection, state: state)
+
+            NavigationLink(value: PrivacyDestination.trustedDomains) {
+                Label("Manage Trusted Domains", systemImage: "checkmark.shield")
+            }
+            .settingsControlAnchor(.trustedDomains, state: state)
+
+        } header: {
+            Text("Links & External Services", bundle: #bundle)
+        }
+    }
+}
+
+private struct TrustedDomainsSettingsPage: View {
+    @Binding var trustedDomains: [String]
+
+    @State private var newDomain = ""
+    @State private var searchText = ""
+    @State private var visibleDomains: [String] = []
+    @State private var isPresentingAddDomain = false
+
+    var body: some View {
+        SettingsForm {
+            Section {
+                if trustedDomains.isEmpty {
+                    TrustedDomainsEmptyState(kind: .noDomains)
+                        .listRowInsets(EdgeInsets())
+                } else if visibleDomains.isEmpty {
+                    TrustedDomainsEmptyState(kind: .noResults(searchText))
+                        .listRowInsets(EdgeInsets())
+                } else {
+                    ForEach(visibleDomains, id: \.self) { domain in
+                        TrustedDomainRow(domain: domain) {
+                            remove(domain)
+                        }
+                    }
+                }
+            } header: {
+                HStack {
+                    Text("Trusted Domains", bundle: #bundle)
+
+                    Spacer()
+
+                    Button {
+                        newDomain = ""
+                        isPresentingAddDomain = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .symbolRenderingMode(.monochrome)
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .help("Add Trusted Domain")
+                    .accessibilityLabel("Add Trusted Domain")
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .navigationTitle("Trusted Domains")
+        .searchable(text: $searchText, prompt: "Search Trusted Domains")
+        .alert("Add Trusted Domain", isPresented: $isPresentingAddDomain) {
+            TextField("example.com", text: $newDomain)
+                .textContentType(.URL)
+
+            Button("Cancel", role: .cancel) {
+                newDomain = ""
+            }
+
+            Button("Add", action: addDomain)
+                .disabled(domainToAdd == nil)
+        } message: {
+            Text(
+                "Enter the domain you want SakuraCord to trust.",
+                bundle: #bundle
+            )
+        }
+        .task(refreshVisibleDomains)
+        .onChange(of: trustedDomains) {
+            refreshVisibleDomains()
+        }
+        .onChange(of: searchText) {
+            refreshVisibleDomains()
+        }
+    }
+
+    private var domainToAdd: String? {
+        guard let normalized = ExternalLinkTrustedDomain.normalized(newDomain),
+              !trustedDomains.contains(normalized)
+        else { return nil }
+        return normalized
+    }
+
+    private func addDomain() {
+        guard let domainToAdd else { return }
+        trustedDomains.append(domainToAdd)
+        trustedDomains.sort()
+        newDomain = ""
+        searchText = ""
+    }
+
+    private func remove(_ domain: String) {
+        trustedDomains.removeAll { $0 == domain }
+    }
+
+    private func refreshVisibleDomains() {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        visibleDomains = query.isEmpty
+            ? trustedDomains
+            : trustedDomains.filter { $0.localizedStandardContains(query) }
+    }
+}
+
+private struct TrustedDomainsEmptyState: View {
+    enum Kind {
+        case noDomains
+        case noResults(String)
+    }
+
+    let kind: Kind
+
+    var body: some View {
+        Group {
+            switch kind {
+            case .noDomains:
+                ContentUnavailableView(
+                    "No Trusted Domains",
+                    systemImage: "globe",
+                    description: Text(
+                        "Domains you trust will appear here.",
+                        bundle: #bundle
+                    )
+                )
+            case let .noResults(searchText):
+                ContentUnavailableView(
+                    "No Results",
+                    systemImage: "magnifyingglass",
+                    description: Text(
+                        "No trusted domains match “\(searchText)”.",
+                        bundle: #bundle,
+                        comment: "Empty search result; the variable is the user's search text."
+                    )
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 260, alignment: .center)
+    }
+}
+
+private struct TrustedDomainRow: View {
+    let domain: String
+    let onRemove: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "globe")
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+                .accessibilityHidden(true)
+
+            Text(domain)
+                .textSelection(.enabled)
+
+            Spacer()
+
+            Button(action: onRemove) {
+                Image(systemName: "trash")
+                    .symbolRenderingMode(.monochrome)
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
+            .help("Remove \(domain)")
+            .accessibilityLabel("Remove \(domain)")
+        }
+    }
+}
+
+private struct PrivacyDiscordActivitySection: View {
+    @Binding var value: ChatSettingsSnapshot
+    let state: SettingsViewState
+
+    var body: some View {
+        Section {
+            Toggle("Send typing indicators", isOn: $value.sendsTypingIndicators)
+                .tint(SakuraCordAccentColor.color)
+                .settingsControlAnchor(.privacyTypingIndicators, state: state)
+
+            Toggle(
+                "Automatically mark messages as read",
+                isOn: $value.automaticallyAcknowledgesMessages
+            )
+            .tint(SakuraCordAccentColor.color)
+            .settingsControlAnchor(.privacyReadAcknowledgements, state: state)
+        } header: {
+            Text("Discord Activity", bundle: #bundle)
+        }
     }
 }

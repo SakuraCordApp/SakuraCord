@@ -165,6 +165,14 @@ disposable media cache: draft content reserves its measured space first, and
 the media cache applies the remainder as its LRU limit. Drafts are never
 evicted automatically.
 
+External-link confirmation is an app-wide preference. Its default mode asks
+before opening domains outside an app-wide, user-managed list of normalized
+exact hostnames; trusting a hostname does not implicitly trust its subdomains.
+The user may instead require confirmation for every external link or suppress
+confirmation for all otherwise valid external links. Unsupported URL schemes
+remain blocked independently of this preference. The trusted-domain list is
+resettable but excluded from preference exports.
+
 Startup and account switching publish READY-derived read state in one atomic
 Main Actor update after building it off-main. Once the initial channel is known,
 the app starts its read-only newest-history request concurrently with the

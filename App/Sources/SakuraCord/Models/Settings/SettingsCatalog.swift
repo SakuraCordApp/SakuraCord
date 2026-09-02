@@ -205,7 +205,6 @@ nonisolated extension SettingsSectionID {
     static let shortcutLocalData = Self(rawValue: "shortcut-local-data")
     static let privacyDiscordActivity = Self(rawValue: "privacy-discord-activity")
     static let privacyLinksServices = Self(rawValue: "privacy-links-services")
-    static let privacyCredentials = Self(rawValue: "privacy-credentials")
     static let privacyLocalData = Self(rawValue: "privacy-local-data")
     static let localStorage = Self(rawValue: "local-storage")
     static let storageDownloads = Self(rawValue: "storage-downloads")
@@ -384,9 +383,7 @@ nonisolated extension SettingsControlID {
     static let privacyTypingIndicators = Self(rawValue: "privacy.typing-indicators")
     static let privacyReadAcknowledgements = Self(rawValue: "privacy.read-acknowledgements")
     static let externalLinkProtection = Self(rawValue: "privacy.external-link-protection")
-    static let privacyInternalDiscordLinks = Self(rawValue: "privacy.internal-discord-links")
-    static let externalUploaderPolicy = Self(rawValue: "privacy.external-uploader-policy")
-    static let credentialStorage = Self(rawValue: "privacy.credential-storage")
+    static let trustedDomains = Self(rawValue: "privacy.trusted-domains")
     static let clearMessageSearches = Self(rawValue: "privacy.clear-message-searches")
     static let clearDestinationHistory = Self(rawValue: "privacy.clear-destination-history")
     static let clearEmojiRanking = Self(rawValue: "privacy.clear-emoji-ranking")
@@ -449,9 +446,9 @@ private nonisolated extension SettingsCatalog {
             keywords: ["keys", "bindings", "hotkeys", "commands", "recorder"]
         ),
         page(
-            .privacySafety, group: .dataSecurity, title: "Privacy & Safety", image: "hand.raised",
-            help: "Control local privacy, external links, third-party uploads, and scoped data clearing.",
-            keywords: ["links", "security", "typing indicators", "read receipts", "uploads", "clear data"]
+            .privacySafety, group: .dataSecurity, title: "Privacy", image: "hand.raised",
+            help: "Control local privacy, external links, and scoped data clearing.",
+            keywords: ["links", "security", "typing indicators", "read receipts", "clear data"]
         ),
         page(
             .storageDownloads, group: .dataSecurity, title: "Storage & Downloads", image: "internaldrive",
@@ -934,7 +931,7 @@ private nonisolated extension SettingsCatalog {
         control(
             .chatEmojiPrivacyLink, page: .chat, section: .chatEmoji,
             label: "Manage Local Emoji Data",
-            help: "Open Privacy & Safety to clear SakuraCord's local emoji recents and learned ranking.",
+            help: "Open Privacy to clear SakuraCord's local emoji recents and learned ranking.",
             keywords: ["recent emoji", "history", "frequency", "ranking", "clear"],
             owner: .appModel, scope: .appWideLocal, persistence: .notApplicable,
             reset: .notApplicable
@@ -1711,46 +1708,34 @@ private nonisolated extension SettingsCatalog {
         ),
         control(
             .privacyTypingIndicators, page: .privacySafety,
-            section: .privacyDiscordActivity, label: "Typing Indicators",
-            help: "Open the canonical Chat control for Discord typing signals.",
-            keywords: ["typing status", "Discord", "composer"], owner: .appModel,
-            scope: .mixed, persistence: .notApplicable, reset: .notApplicable
+            section: .privacyDiscordActivity, label: "Send Typing Indicators",
+            help: "Send Discord typing events while composing.",
+            keywords: ["typing status", "Discord", "composer"],
+            scope: .appWideLocal, persistence: .appPreferences, reset: .notApplicable
         ),
         control(
             .privacyReadAcknowledgements, page: .privacySafety,
-            section: .privacyDiscordActivity, label: "Read Acknowledgements",
-            help: "Open the canonical Chat control for automatic or manual Discord read state.",
-            keywords: ["read receipt", "unread", "manual", "automatic"], owner: .discord,
-            scope: .discordSynchronized, persistence: .notApplicable, reset: .notApplicable
+            section: .privacyDiscordActivity, label: "Automatically Mark Messages as Read",
+            help: "Acknowledge visible messages automatically; turn this off to require an explicit Mark Read action.",
+            keywords: ["read receipt", "unread", "manual", "automatic"], owner: .appModel,
+            scope: .mixed, persistence: .appPreferences, reset: .notApplicable
         ),
         control(
             .externalLinkProtection, page: .privacySafety,
-            section: .privacyLinksServices, label: "External Link Confirmation",
-            help: "Review the destination domain and deterministic suspicious-link warnings before opening a web link.",
-            keywords: ["URL", "domain", "phishing", "warning", "browser"], owner: .appModel,
-            scope: .appWideLocal, persistence: .notApplicable, reset: .notApplicable
-        ),
-        control(
-            .privacyInternalDiscordLinks, page: .privacySafety,
-            section: .privacyLinksServices, label: "Internal Discord Links",
-            help: "Open the canonical Chat preference for resolving Discord channel links inside SakuraCord.",
-            keywords: ["channel URL", "navigate", "browser"], owner: .appModel,
-            scope: .appWideLocal, persistence: .notApplicable, reset: .notApplicable
-        ),
-        control(
-            .externalUploaderPolicy, page: .privacySafety,
-            section: .privacyLinksServices, label: "Oversized Attachment Uploader",
-            help: "Choose whether SakuraCord may offer the existing external uploader. Uploading always requires a separate confirmation.",
-            keywords: ["Catbox", "Litterbox", "third party", "large file"],
+            section: .privacyLinksServices,
+            label: "Ask Permission When Opening External Links",
+            help: "Choose whether SakuraCord asks before opening untrusted domains, all external links, or no external links.",
+            keywords: ["URL", "domain", "phishing", "warning", "browser", "confirm"],
             scope: .appWideLocal, persistence: .appPreferences,
             reset: .registeredLocalValue
         ),
         control(
-            .credentialStorage, page: .privacySafety,
-            section: .privacyCredentials, label: "Credential Protection",
-            help: "Explain Keychain storage and the places from which credentials are excluded.",
-            keywords: ["Keychain", "token", "secret", "export", "logs"], owner: .appModel,
-            scope: .accountLocal, persistence: .systemManaged, reset: .notApplicable
+            .trustedDomains, page: .privacySafety,
+            section: .privacyLinksServices, label: "Manage Trusted Domains",
+            help: "Search, add, or remove exact domains that can open without confirmation under the default policy.",
+            keywords: ["URL", "domain", "allow list", "trusted", "browser"],
+            scope: .appWideLocal, persistence: .appPreferences,
+            reset: .registeredLocalValue
         ),
         control(
             .clearMessageSearches, page: .privacySafety,
@@ -1790,14 +1775,14 @@ private nonisolated extension SettingsCatalog {
         control(
             .privacyExport, page: .privacySafety,
             section: .privacyLocalData, label: "Export Privacy Preferences",
-            help: "Export registered local Privacy & Safety preferences without credentials or private content.",
+            help: "Export registered local Privacy preferences without credentials or private content.",
             keywords: ["JSON", "backup", "inspect"], scope: .appWideLocal,
             persistence: .notApplicable, reset: .notApplicable
         ),
         control(
             .privacyReset, page: .privacySafety,
             section: .privacyLocalData, label: "Reset Privacy Preferences",
-            help: "Restore registered Privacy & Safety preferences without clearing local content or Discord data.",
+            help: "Restore registered Privacy preferences without clearing local content or Discord data.",
             keywords: ["defaults", "restore"], scope: .appWideLocal,
             persistence: .appPreferences, reset: .categoryAction
         ),

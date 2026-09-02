@@ -73,13 +73,16 @@ import Testing
 
     var value = store.load()
     #expect(value == .defaults)
-    value.externalUploaderOfferPolicy = .never
+    value.externalLinkConfirmationPolicy = .allLinks
+    value.trustedDomains = ["Example.COM", "sub.example.com", "example.com"]
     store.save(value)
-    #expect(store.load().externalUploaderOfferPolicy == .never)
+    let reloaded = store.load()
+    #expect(reloaded.externalLinkConfirmationPolicy == .allLinks)
+    #expect(reloaded.trustedDomains == ["example.com", "sub.example.com"])
 
     let export = preferences.export(scope: .appWide, page: .privacySafety)
     #expect(export.values == [
-        SettingsControlID.externalUploaderPolicy.rawValue: .string("never"),
+        SettingsControlID.externalLinkProtection.rawValue: .string("allLinks"),
     ])
     let encoded = try export.encodedData()
     let text = try #require(String(data: encoded, encoding: .utf8))
@@ -90,36 +93,59 @@ import Testing
     #expect(defaults.string(forKey: "unregistered.credential") == "credential-secret")
 }
 
+@Test func `Trusted external link domains normalize to exact safe hostnames`() {
+    #expect(ExternalLinkTrustedDomain.normalized(" Example.COM ") == "example.com")
+    #expect(
+        ExternalLinkTrustedDomain.normalized("https://Sub.Example.com/")
+            == "sub.example.com"
+    )
+    #expect(ExternalLinkTrustedDomain.normalized("example.com.") == "example.com")
+    #expect(ExternalLinkTrustedDomain.normalized("http://example.com") == nil)
+    #expect(ExternalLinkTrustedDomain.normalized("https://example.com/path") == nil)
+    #expect(ExternalLinkTrustedDomain.normalized("https://user@example.com") == nil)
+    #expect(ExternalLinkTrustedDomain.normalized("localhost") == nil)
+    #expect(ExternalLinkTrustedDomain.normalized("-invalid.example") == nil)
+}
+
+@Test func `External link confirmation policy trusts exact domains only`() {
+    let trustedDomains = ["example.com"]
+
+    #expect(!ExternalLinkConfirmationPolicy.untrustedDomains.requiresConfirmation(
+        for: "example.com",
+        trustedDomains: trustedDomains
+    ))
+    #expect(ExternalLinkConfirmationPolicy.untrustedDomains.requiresConfirmation(
+        for: "sub.example.com",
+        trustedDomains: trustedDomains
+    ))
+    #expect(ExternalLinkConfirmationPolicy.allLinks.requiresConfirmation(
+        for: "example.com",
+        trustedDomains: trustedDomains
+    ))
+    #expect(!ExternalLinkConfirmationPolicy.noLinks.requiresConfirmation(
+        for: "unknown.example",
+        trustedDomains: trustedDomains
+    ))
+}
+
 @MainActor
-@Test func `Never offer policy suppresses oversized third party upload prompts`() async throws {
-    let directory = FileManager.default.temporaryDirectory.appending(
-        path: "sakuracord-privacy-upload-\(UUID().uuidString)",
-        directoryHint: .isDirectory
-    )
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let oversized = directory.appending(path: "oversized.bin")
-    FileManager.default.createFile(atPath: oversized.path, contents: nil)
-    let handle = try FileHandle(forWritingTo: oversized)
-    try handle.truncate(atOffset: UInt64(DiscordAttachmentUploadPolicy.baseLimit + 1))
-    try handle.close()
-
+@Test func `External link presenter bypasses prompts according to privacy policy`() throws {
     let preferences = SettingsPreferenceStore(defaults: InMemoryPreferences())
-    let privacySafetySettingsStore = PrivacySafetySettingsStore(preferences: preferences)
-    var privacySettings = privacySafetySettingsStore.load()
-    privacySettings.externalUploaderOfferPolicy = .never
-    privacySafetySettingsStore.save(privacySettings)
-    let model = AppModel(
-        launchMode: .offlineTesting,
-        privacySafetySettingsStore: privacySafetySettingsStore
-    )
-    await model.start()
-    model.snapshot?.currentUser.premiumType = 0
+    let store = PrivacySafetySettingsStore(preferences: preferences)
+    var settings = store.load()
+    settings.externalLinkConfirmationPolicy = .noLinks
+    store.save(settings)
 
-    #expect(model.addComposerAttachments([oversized], to: .channel))
-    #expect(model.channelComposerAttachments.isEmpty)
-    #expect(model.oversizedAttachmentPrompt == nil)
-    #expect(model.errorMessage?.contains("Privacy & Safety") == true)
+    var openedURLs: [URL] = []
+    let presenter = ExternalLinkConfirmationPresenter(
+        settingsStore: store,
+        opener: { openedURLs.append($0) },
+        windowProvider: { nil }
+    )
+    let url = try #require(URL(string: "https://example.com/path"))
+    presenter.present(ExternalLinkSafetyPolicy.assess(url))
+
+    #expect(openedURLs == [url])
 }
 
 @MainActor
@@ -164,8 +190,7 @@ import Testing
 @Test func `Privacy catalog exposes one searchable control for every behavior`() {
     let expected: Set<SettingsControlID> = [
         .privacyTypingIndicators, .privacyReadAcknowledgements,
-        .externalLinkProtection, .privacyInternalDiscordLinks,
-        .externalUploaderPolicy, .credentialStorage,
+        .externalLinkProtection, .trustedDomains,
         .clearMessageSearches, .clearDestinationHistory,
         .clearEmojiRanking, .clearDrafts,
         .privacyNotificationPreviews, .privacyExport, .privacyReset,
@@ -178,8 +203,7 @@ import Testing
     let state = SettingsViewState()
     for (term, control) in [
         ("phishing", SettingsControlID.externalLinkProtection),
-        ("third party", .externalUploaderPolicy),
-        ("Keychain", .credentialStorage),
+        ("allow list", .trustedDomains),
         ("forward history", .clearDestinationHistory),
         ("lock screen", .privacyNotificationPreviews),
     ] {

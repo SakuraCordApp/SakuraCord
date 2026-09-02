@@ -722,10 +722,17 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
-            id: .externalUploaderPolicy,
+            id: .externalLinkProtection,
             page: .privacySafety,
-            storage: .appWide(key: "settings.privacy.externalUploaderPolicy"),
-            defaultValue: .string(ExternalUploaderOfferPolicy.ask.rawValue)
+            storage: .appWide(key: "settings.privacy.externalLinkConfirmationPolicy"),
+            defaultValue: .string(ExternalLinkConfirmationPolicy.untrustedDomains.rawValue)
+        ),
+        SettingsPreferenceRegistration(
+            id: .trustedDomains,
+            page: .privacySafety,
+            storage: .appWide(key: "settings.privacy.trustedDomains"),
+            defaultValue: .strings([]),
+            exports: false
         ),
         SettingsPreferenceRegistration(
             id: .diagnosticDetailedPayloads,

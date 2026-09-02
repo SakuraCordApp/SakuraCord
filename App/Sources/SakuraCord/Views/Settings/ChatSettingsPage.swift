@@ -254,7 +254,7 @@ struct ChatSettingsPage: View {
             }
             .settingsControlAnchor(.chatEmojiSource, state: state)
 
-            Button("Manage Local Emoji Data in Privacy & Safety…") {
+            Button("Manage Local Emoji Data in Privacy…") {
                 state.navigate(
                     to: SettingsDestination(
                         page: .privacySafety,

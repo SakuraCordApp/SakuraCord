@@ -56,16 +56,6 @@ extension AppModel {
         }
 
         guard !oversized.isEmpty else { return accepted }
-        if privacySafetySettings.externalUploaderOfferPolicy == .never {
-            if let first = oversized.first {
-                errorMessage = oversizedAttachmentExplanation(
-                    fileName: first.0.lastPathComponent,
-                    fileSize: first.1,
-                    limit: limit
-                ) + " External upload services are disabled in Privacy & Safety."
-            }
-            return accepted
-        }
         if let destination,
            let channelID = conversationChannelID(for: destination)
         {
