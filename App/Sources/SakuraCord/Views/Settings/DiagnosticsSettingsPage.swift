@@ -9,19 +9,17 @@ struct DiagnosticsSettingsPage: View {
     @ObservedObject var updateController: AppUpdateController
     let state: SettingsViewState
 
-    @AppStorage("saveAPIDiagnosticsToDisk") private var savesAPIDiagnosticsToDisk = false
-    @State private var capturesDetailedAPIPayloads =
-        DiscordAPIDiagnosticStore.shared.capturesPayloadDetails
+    @AppStorage(DiagnosticsPreferences.capturesDetailedPayloadsKey)
+    private var capturesDetailedAPIPayloads = false
+    @AppStorage(DiagnosticsPreferences.savesDiagnosticsToDiskKey)
+    private var savesAPIDiagnosticsToDisk = false
     @State private var apiDiagnosticEntryCount = 0
-    @State private var apiDiagnosticStatus: String?
     @State private var notificationAuthorization: UNAuthorizationStatus?
     @State private var mediaPermissions = VoiceMediaPermissionSnapshot.current()
-    @State private var mediaDevices = MediaDeviceSnapshot.empty
     @State private var mediaCacheCheck = DiagnosticsMediaCacheCheck.checking
     @State private var isRefreshing = false
     @State private var lastRefreshedAt: Date?
     @State private var managedDiagnosticsFolderExists = false
-    @State private var supportSummaryStatus: String?
 
     var body: some View {
         SettingsPageForm(page: .diagnostics, state: state) {
@@ -30,11 +28,6 @@ struct DiagnosticsSettingsPage: View {
             apiLogsSection
         }
         .task { await refresh() }
-        .onReceive(
-            NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
-        ) { _ in
-            Task { await refresh() }
-        }
         .onChange(of: capturesDetailedAPIPayloads) { _, captures in
             DiscordAPIDiagnosticStore.shared.capturesPayloadDetails = captures
         }
@@ -49,9 +42,7 @@ struct DiagnosticsSettingsPage: View {
             updateController: updateController,
             notificationPermissionStatus: notificationAuthorization,
             mediaPermissions: mediaPermissions,
-            mediaDevices: mediaDevices,
-            mediaCacheCheck: mediaCacheCheck,
-            systemChecksAreRunning: isRefreshing
+            mediaCacheCheck: mediaCacheCheck
         )
     }
 
@@ -60,7 +51,7 @@ struct DiagnosticsSettingsPage: View {
             application: DiagnosticsSupportSummary.currentApplication(
                 releaseTrack: updateController.releaseTrack
             ),
-            system: DiagnosticsSupportSummary.currentSystem(),
+            system: DiagnosticsSupportSummary.currentSystemSnapshot,
             statusItems: statusItems,
             diagnosticModes: .init(
                 capturesDetailedSanitizedPayloads: capturesDetailedAPIPayloads,
@@ -101,12 +92,6 @@ struct DiagnosticsSettingsPage: View {
             }
         } header: {
             Text("Status", bundle: #bundle)
-        } footer: {
-            Text(
-                "Connection status updates with the active session. macOS permissions, devices, "
-                    + "notification authorization, and cache state refresh when this page opens, "
-                    + "when SakuraCord becomes active, or when you choose Refresh Status."
-            )
         }
     }
 
@@ -123,21 +108,8 @@ struct DiagnosticsSettingsPage: View {
                 }
                 .settingsControlAnchor(.diagnosticsSupportExport, state: state)
             }
-
-            if let supportSummaryStatus {
-                Text(supportSummaryStatus)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
         } header: {
             Text("Support Summary", bundle: #bundle)
-        } footer: {
-            Text(
-                "The summary contains only SakuraCord version/build/track, macOS version, "
-                    + "architecture, fixed feature-health states, permission states, and diagnostic "
-                    + "modes. It never includes credentials, content, names, filenames, URLs, IDs, "
-                    + "nonces, request IDs, bucket IDs, challenge data, or arbitrary preferences."
-            )
         }
     }
 
@@ -163,16 +135,6 @@ struct DiagnosticsSettingsPage: View {
             }
             .settingsControlAnchor(.diagnosticRetainedEntries, state: state)
 
-            Text(
-                "Exports retained Discord REST, attachment, authentication, Gateway request/response metadata, and voice connection lifecycle events from this app session. "
-                    + "Detailed sanitized payload capture is off by default because processing large responses increases CPU and energy use. "
-                    + "Message text, names, usernames, profile text, credentials, cookies, challenge data, filenames, and URLs are discarded before logging. "
-                    + "IDs, nonces, request IDs, and rate-limit bucket IDs are always redacted. "
-                    + "Disk capture is off by default and keeps at most four private JSON Lines session files of up to 64 MiB each in Application Support/SakuraCord/Diagnostics."
-            )
-            .font(.caption)
-            .foregroundStyle(.secondary)
-
             HStack {
                 Button("Export API Logs…") {
                     Task { await exportAPILogs() }
@@ -192,13 +154,6 @@ struct DiagnosticsSettingsPage: View {
                 }
             }
 
-            if let apiDiagnosticStatus {
-                Text(apiDiagnosticStatus)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                    .tint(SakuraCordAccentColor.color)
-            }
         } header: {
             Text("Discord API Logs", bundle: #bundle)
         }
@@ -219,16 +174,12 @@ struct DiagnosticsSettingsPage: View {
         defer { isRefreshing = false }
 
         async let authorization = model.notificationAuthorizationStatus()
-        async let devices = Task.detached(priority: .userInitiated) {
-            MediaDeviceCatalog.snapshot()
-        }.value
         let cacheTask = Task {
             try await SharedMediaDataLoader.shared.diskCacheStatus()
         }
         let permissions = VoiceMediaPermissionSnapshot.current()
 
         notificationAuthorization = await authorization
-        mediaDevices = await devices
         do {
             if let status = try await cacheTask.value {
                 mediaCacheCheck = .available(status)
@@ -257,19 +208,11 @@ struct DiagnosticsSettingsPage: View {
 
     private func clearAPILogs() {
         let store = DiscordAPIDiagnosticStore.shared
-        let wasSavingToDisk = store.savesDiagnosticsToDisk
         do {
             try store.clearMemoryAndDisk()
             apiDiagnosticEntryCount = 0
-            if wasSavingToDisk, store.savesDiagnosticsToDisk {
-                apiDiagnosticStatus =
-                    "Retained and saved API logs were cleared. Private disk capture continues."
-            } else {
-                apiDiagnosticStatus = "Retained and saved API logs were cleared."
-            }
         } catch {
             savesAPIDiagnosticsToDisk = store.savesDiagnosticsToDisk
-            apiDiagnosticStatus = "Could not clear every managed API log."
         }
         refreshAPIDiagnosticState()
     }
@@ -282,27 +225,14 @@ struct DiagnosticsSettingsPage: View {
         }
         do {
             try store.setSavesDiagnosticsToDisk(savesToDisk)
-            apiDiagnosticStatus = savesToDisk
-                ? "Saving sanitized diagnostics to the managed private folder."
-                : "Diagnostics are no longer being saved to disk."
         } catch {
             savesAPIDiagnosticsToDisk = store.savesDiagnosticsToDisk
-            apiDiagnosticStatus = "Could not change managed diagnostic disk capture."
         }
         refreshAPIDiagnosticState()
     }
 
     private func exportAPILogs() async {
-        do {
-            guard try await DiscordAPILogExporter.export() != nil else {
-                apiDiagnosticStatus = "Export cancelled."
-                refreshAPIDiagnosticState()
-                return
-            }
-            apiDiagnosticStatus = "Exported private sanitized API logs."
-        } catch {
-            apiDiagnosticStatus = "API log export failed."
-        }
+        _ = try? await DiscordAPILogExporter.export()
         refreshAPIDiagnosticState()
     }
 
@@ -310,46 +240,21 @@ struct DiagnosticsSettingsPage: View {
         let url = DiscordAPIDiagnosticStore.shared.diskDirectoryURL
         guard DiagnosticsManagedFolder.exists(at: url) else {
             managedDiagnosticsFolderExists = false
-            apiDiagnosticStatus = "The managed diagnostics folder is unavailable."
             return
         }
         let configuration = NSWorkspace.OpenConfiguration()
-        NSWorkspace.shared.open(url, configuration: configuration) { _, error in
-            Task { @MainActor in
-                apiDiagnosticStatus = error == nil
-                    ? "Opened the managed diagnostics folder."
-                    : "The managed diagnostics folder could not be opened."
-            }
-        }
+        NSWorkspace.shared.open(url, configuration: configuration, completionHandler: nil)
     }
 
     private func copySupportSummary() {
-        do {
-            let pasteboard = NSPasteboard.general
-            pasteboard.clearContents()
-            guard pasteboard.setString(
-                try supportSummary.encodedText(),
-                forType: .string
-            ) else {
-                supportSummaryStatus = "The support summary could not be copied."
-                return
-            }
-            supportSummaryStatus = "Copied the sanitized support summary."
-        } catch {
-            supportSummaryStatus = "The support summary could not be copied."
-        }
+        guard let text = try? supportSummary.encodedText() else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
     }
 
     private func exportSupportSummary() async {
-        do {
-            guard try await DiagnosticsSupportSummaryExporter.export(supportSummary) != nil else {
-                supportSummaryStatus = "Export cancelled."
-                return
-            }
-            supportSummaryStatus = "Exported the private sanitized support summary."
-        } catch {
-            supportSummaryStatus = "The support summary could not be exported."
-        }
+        _ = try? await DiagnosticsSupportSummaryExporter.export(supportSummary)
     }
 }
 
@@ -401,7 +306,7 @@ private struct DiagnosticsSupportSummaryPreview: View {
             GridRow {
                 Text("SakuraCord")
                     .foregroundStyle(.secondary)
-                Text("\(summary.application.version) (\(summary.application.build))")
+                Text(summary.application.version)
             }
             GridRow {
                 Text("Release track")
@@ -411,7 +316,12 @@ private struct DiagnosticsSupportSummaryPreview: View {
             GridRow {
                 Text("System")
                     .foregroundStyle(.secondary)
-                Text("macOS \(summary.system.macOSVersion), \(summary.system.architecture)")
+                Text("macOS \(summary.system.macOSVersion)")
+            }
+            GridRow {
+                Text("Mac")
+                    .foregroundStyle(.secondary)
+                Text(hardwareDescription)
             }
             GridRow {
                 Text("Feature health")
@@ -438,6 +348,22 @@ private struct DiagnosticsSupportSummaryPreview: View {
             + "\(counts[.degraded, default: 0]) degraded, "
             + "\(counts[.failed, default: 0]) failed, "
             + "\(counts[.unavailable, default: 0]) unavailable"
+    }
+
+    private var hardwareDescription: String {
+        var components = [String]()
+        if let chip = summary.system.chip {
+            components.append(chip)
+        }
+        components.append(
+            "\(Int64(clamping: summary.system.memoryBytes).formatted(.byteCount(style: .memory))) memory"
+        )
+        if let storageBytes = summary.system.storageBytes {
+            components.append(
+                "\(Int64(clamping: storageBytes).formatted(.byteCount(style: .file))) storage"
+            )
+        }
+        return components.joined(separator: ", ")
     }
 
     private var diagnosticModeDescription: String {

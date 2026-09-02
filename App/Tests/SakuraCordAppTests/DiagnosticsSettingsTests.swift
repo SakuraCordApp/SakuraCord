@@ -1,9 +1,38 @@
 @testable import SakuraCord
+import DiscordProtocol
 import Foundation
 import MediaPipeline
 import SakuraCordModels
 import Testing
 import UserNotifications
+
+@MainActor
+@Test func `Diagnostics capture preferences restore both modes across launches`() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(
+        path: "SakuraCordDiagnosticsPreferenceTests-\(UUID().uuidString)",
+        directoryHint: .isDirectory
+    )
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let defaults = InMemoryPreferences()
+    let settings = SettingsPreferenceStore(defaults: defaults)
+    settings.set(.bool(true), for: .diagnosticDetailedPayloads)
+    settings.set(.bool(true), for: .diagnosticDiskCapture)
+    let store = DiscordAPIDiagnosticStore(diskDirectoryURL: directory)
+
+    DiagnosticsPreferences.restore(defaults: defaults, store: store)
+
+    #expect(store.capturesPayloadDetails)
+    #expect(store.savesDiagnosticsToDisk)
+    #expect(settings.value(for: .diagnosticDetailedPayloads) == .bool(true))
+    #expect(settings.value(for: .diagnosticDiskCapture) == .bool(true))
+
+    settings.set(.bool(false), for: .diagnosticDetailedPayloads)
+    settings.set(.bool(false), for: .diagnosticDiskCapture)
+    DiagnosticsPreferences.restore(defaults: defaults, store: store)
+
+    #expect(!store.capturesPayloadDetails)
+    #expect(!store.savesDiagnosticsToDisk)
+}
 
 @MainActor
 @Test func `Diagnostics status follows account reset without retaining identity`() {
@@ -17,6 +46,7 @@ import UserNotifications
     model.sessionState = .workspace
     model.connectionState = .ready
     model.voiceSessionState = .connected
+    model.voiceLatencyMilliseconds = 42
     let updateController = AppUpdateController(
         configuration: AppUpdateConfiguration(
             infoDictionary: [:],
@@ -35,16 +65,45 @@ import UserNotifications
         updateController: updateController,
         notificationPermissionStatus: .authorized,
         mediaPermissions: permissions,
-        mediaDevices: .empty,
         mediaCacheCheck: .available(.init(
             currentBytes: 0,
             maximumBytes: 1,
             evictionStatus: .withinLimit
         ))
     )
+    #expect(active.map(\.subsystem) == [
+        .account,
+        .gateway,
+        .voice,
+        .notifications,
+        .mediaCache,
+        .updateService,
+        .voiceLatency,
+        .microphonePermission,
+        .cameraPermission,
+    ])
     #expect(active.first { $0.subsystem == .account }?.health == .healthy)
     #expect(active.first { $0.subsystem == .gateway }?.health == .healthy)
     #expect(active.first { $0.subsystem == .voice }?.health == .healthy)
+    #expect(active.first { $0.subsystem == .voiceLatency }?.detail == "42 ms")
+
+    model.voiceSessionState = .idle
+    model.voiceLatencyMilliseconds = nil
+    model.notificationPreferences.isEnabled = false
+    let resting = DiagnosticsStatusBuilder.make(
+        model: model,
+        updateController: updateController,
+        notificationPermissionStatus: .authorized,
+        mediaPermissions: permissions,
+        mediaCacheCheck: .available(.init(
+            currentBytes: 0,
+            maximumBytes: 1,
+            evictionStatus: .withinLimit
+        ))
+    )
+    #expect(resting.first { $0.subsystem == .voice }?.health == .healthy)
+    #expect(resting.first { $0.subsystem == .voiceLatency }?.health == .healthy)
+    #expect(resting.first { $0.subsystem == .notifications }?.health == .healthy)
 
     model.activeAccountID = nil
     model.sessionState = .signedOut
@@ -55,7 +114,6 @@ import UserNotifications
         updateController: updateController,
         notificationPermissionStatus: .authorized,
         mediaPermissions: permissions,
-        mediaDevices: .empty,
         mediaCacheCheck: .unavailable
     )
 
@@ -89,30 +147,6 @@ import UserNotifications
         ),
         defaults: preferences
     )
-    let devices = MediaDeviceSnapshot(
-        audioInputs: [
-            AudioDeviceInfo(
-                id: 1,
-                uid: "private-input-uid",
-                name: "Owner Microphone",
-                isDefault: false
-            ),
-        ],
-        audioOutputs: [
-            AudioDeviceInfo(
-                id: 2,
-                uid: "private-output-uid",
-                name: "Owner Speaker",
-                isDefault: false
-            ),
-        ],
-        cameras: [
-            CameraDeviceInfo(
-                uniqueID: "private-camera-uid",
-                name: "Owner Camera"
-            ),
-        ]
-    )
     let statuses = DiagnosticsStatusBuilder.make(
         model: model,
         updateController: updateController,
@@ -122,7 +156,6 @@ import UserNotifications
             camera: .restricted,
             screenRecordingAllowed: false
         ),
-        mediaDevices: devices,
         mediaCacheCheck: .available(.init(
             currentBytes: 2,
             maximumBytes: 1,
@@ -131,7 +164,13 @@ import UserNotifications
     )
     let summary = DiagnosticsSupportSummary(
         application: .init(version: "0.1.5", build: "42", releaseTrack: "nightly"),
-        system: .init(macOSVersion: "27.0.0", architecture: "arm64"),
+        system: .init(
+            macOSVersion: "27.0.0",
+            architecture: "arm64",
+            chip: "Apple M2 Pro",
+            memoryBytes: 17_179_869_184,
+            storageBytes: 1_000_000_000_000
+        ),
         statusItems: statuses,
         diagnosticModes: .init(
             capturesDetailedSanitizedPayloads: true,
@@ -142,6 +181,9 @@ import UserNotifications
     let text = try summary.encodedText()
 
     #expect(text.contains(DiagnosticsSupportSummary.format))
+    #expect(text.contains("Apple M2 Pro"))
+    #expect(text.contains("17179869184"))
+    #expect(text.contains("1000000000000"))
     #expect(text.contains("mediaCache"))
     for prohibited in [
         "222222222222222222", "333333333333333333",
@@ -164,7 +206,13 @@ import UserNotifications
     defer { try? FileManager.default.removeItem(at: directory) }
     let summary = DiagnosticsSupportSummary(
         application: .init(version: "0.1.5", build: "42", releaseTrack: "regular"),
-        system: .init(macOSVersion: "27.0.0", architecture: "arm64"),
+        system: .init(
+            macOSVersion: "27.0.0",
+            architecture: "arm64",
+            chip: "Apple M2 Pro",
+            memoryBytes: 17_179_869_184,
+            storageBytes: 1_000_000_000_000
+        ),
         statusItems: [
             DiagnosticsStatusItem(
                 subsystem: .gateway,
@@ -223,7 +271,7 @@ import UserNotifications
     #expect(Set(controls.map(\.id)) == expected)
 
     let state = SettingsViewState()
-    state.searchText = "architecture build"
+    state.searchText = "chip storage"
     #expect(state.searchResults.contains { $0.id == .diagnosticsSupportPreview })
     state.searchText = "Gateway permissions"
     #expect(state.searchResults.contains { $0.id == .diagnosticsStatusOverview })

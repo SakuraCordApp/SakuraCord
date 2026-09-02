@@ -25,20 +25,7 @@ struct SakuraCordApp: App {
     init() {
         AppPerformanceSignposts.beginStartup()
         ComposerPromisedFileStorage.removeAbandonedFilesAtStartup()
-        let savesDiagnosticsToDisk = UserDefaults.standard.bool(
-            forKey: "saveAPIDiagnosticsToDisk"
-        )
-        if savesDiagnosticsToDisk {
-            do {
-                try DiscordAPIDiagnosticStore.shared
-                    .setSavesDiagnosticsToDisk(true)
-            } catch {
-                UserDefaults.standard.set(
-                    false,
-                    forKey: "saveAPIDiagnosticsToDisk"
-                )
-            }
-        }
+        DiagnosticsPreferences.restore()
         let configuration = AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments)
         opensForumPerformanceFixture = configuration.includesForumPerformanceFixture
         opensChatPerformanceFixture = configuration.includesChatPerformanceFixture

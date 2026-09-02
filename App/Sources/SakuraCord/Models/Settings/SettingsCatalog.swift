@@ -1664,8 +1664,8 @@ private nonisolated extension SettingsCatalog {
             page: .diagnostics,
             section: .diagnosticsSupport,
             label: "Support Summary",
-            help: "Preview fixed non-identifying app, system, feature-health, permission, and diagnostic-mode fields.",
-            keywords: ["version", "build", "architecture", "macOS", "track"],
+            help: "Preview fixed non-identifying app, macOS, Mac hardware, feature-health, permission, and diagnostic-mode fields.",
+            keywords: ["version", "macOS", "chip", "memory", "storage", "track"],
             owner: .appModel,
             scope: .mixed,
             persistence: .sessionOnly,
@@ -1716,7 +1716,7 @@ private nonisolated extension SettingsCatalog {
             keywords: ["API", "JSON", "redaction"],
             owner: .appModel,
             scope: .appWideLocal,
-            persistence: .sessionOnly,
+            persistence: .appPreferences,
             reset: .categoryAction
         ),
         control(

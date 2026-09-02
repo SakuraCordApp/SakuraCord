@@ -1,9 +1,32 @@
 import AppKit
+import Darwin
+import DiscordProtocol
 import Foundation
 import MediaPipeline
 import SakuraCordModels
 import UniformTypeIdentifiers
 import UserNotifications
+
+nonisolated enum DiagnosticsPreferences {
+    static let capturesDetailedPayloadsKey = "captureDetailedAPIPayloads"
+    static let savesDiagnosticsToDiskKey = "saveAPIDiagnosticsToDisk"
+
+    static func restore(
+        defaults: any PreferenceStoring = UserDefaults.standard,
+        store: DiscordAPIDiagnosticStore = .shared
+    ) {
+        store.capturesPayloadDetails = defaults.bool(
+            forKey: capturesDetailedPayloadsKey
+        )
+        do {
+            try store.setSavesDiagnosticsToDisk(
+                defaults.bool(forKey: savesDiagnosticsToDiskKey)
+            )
+        } catch {
+            defaults.set(false, forKey: savesDiagnosticsToDiskKey)
+        }
+    }
+}
 
 nonisolated enum DiagnosticsHealth: String, Codable, Equatable, Sendable {
     case unavailable
@@ -37,32 +60,27 @@ nonisolated enum DiagnosticsSubsystem: String, Codable, CaseIterable, Sendable {
     case account
     case gateway
     case voice
-    case microphoneDevice
-    case speakerDevice
-    case cameraDevice
+    case voiceLatency
     case notifications
     case mediaCache
     case updateService
     case microphonePermission
     case cameraPermission
-    case screenRecordingPermission
 
     var title: String {
         switch self {
         case .account: "Active Account"
         case .gateway: "Gateway Session"
         case .voice: "Voice Connection"
-        case .microphoneDevice: "Selected Microphone"
-        case .speakerDevice: "Selected Speaker"
-        case .cameraDevice: "Selected Camera"
+        case .voiceLatency: "Voice Latency"
         case .notifications: "Notifications"
         case .mediaCache: "Media Cache"
         case .updateService: "Update Service"
         case .microphonePermission: "Microphone Permission"
         case .cameraPermission: "Camera Permission"
-        case .screenRecordingPermission: "Screen Recording Permission"
         }
     }
+
 }
 
 nonisolated struct DiagnosticsStatusItem: Identifiable, Equatable, Sendable {
@@ -87,45 +105,21 @@ enum DiagnosticsStatusBuilder {
         updateController: AppUpdateController,
         notificationPermissionStatus: UNAuthorizationStatus?,
         mediaPermissions: VoiceMediaPermissionSnapshot,
-        mediaDevices: MediaDeviceSnapshot,
-        mediaCacheCheck: DiagnosticsMediaCacheCheck,
-        systemChecksAreRunning: Bool = false
+        mediaCacheCheck: DiagnosticsMediaCacheCheck
     ) -> [DiagnosticsStatusItem] {
         [
             accountStatus(model),
             gatewayStatus(model),
             voiceStatus(model),
-            deviceStatus(
-                subsystem: .microphoneDevice,
-                selectedUID: model.voiceVideoPreferences.inputDeviceUID,
-                availableUIDs: Set(mediaDevices.audioInputs.map(\.uid)),
-                isChecking: systemChecksAreRunning
-            ),
-            deviceStatus(
-                subsystem: .speakerDevice,
-                selectedUID: model.voiceVideoPreferences.outputDeviceUID,
-                availableUIDs: Set(mediaDevices.audioOutputs.map(\.uid)),
-                isChecking: systemChecksAreRunning
-            ),
-            deviceStatus(
-                subsystem: .cameraDevice,
-                selectedUID: selectedCameraUID(model),
-                availableUIDs: Set(mediaDevices.cameras.map(\.uniqueID)),
-                isChecking: systemChecksAreRunning
-            ),
             notificationStatus(
                 notificationPermissionStatus,
                 preferences: model.notificationPreferences
             ),
             cacheStatus(mediaCacheCheck),
             updateStatus(updateController),
+            voiceLatencyStatus(model),
             permissionStatus(.microphonePermission, mediaPermissions.microphone),
             permissionStatus(.cameraPermission, mediaPermissions.camera),
-            DiagnosticsStatusItem(
-                subsystem: .screenRecordingPermission,
-                health: mediaPermissions.screenRecordingAllowed ? .healthy : .degraded,
-                detail: mediaPermissions.screenRecordingAllowed ? "Allowed" : "Not allowed"
-            ),
         ]
     }
 
@@ -223,12 +217,14 @@ enum DiagnosticsStatusBuilder {
             )
         }
         return switch model.voiceSessionState {
-        case .idle, .disconnected:
+        case .idle:
             DiagnosticsStatusItem(
                 subsystem: .voice,
-                health: .unavailable,
-                detail: "No active voice connection"
+                health: .healthy,
+                detail: "Ready"
             )
+        case .disconnected:
+            disconnectedVoiceStatus(model)
         case .connecting:
             DiagnosticsStatusItem(
                 subsystem: .voice,
@@ -262,41 +258,70 @@ enum DiagnosticsStatusBuilder {
         }
     }
 
-    private static func selectedCameraUID(_ model: AppModel) -> String {
-        if let selectedCameraUID = model.selectedCameraUID {
-            return selectedCameraUID
-        }
-        return model.voiceVideoPreferences.remembersCamera
-            ? model.voiceVideoPreferences.cameraUID : ""
-    }
-
-    private static func deviceStatus(
-        subsystem: DiagnosticsSubsystem,
-        selectedUID: String,
-        availableUIDs: Set<String>,
-        isChecking: Bool
+    private static func disconnectedVoiceStatus(
+        _ model: AppModel
     ) -> DiagnosticsStatusItem {
-        if isChecking {
+        guard model.activeVoiceChannel != nil else {
             return DiagnosticsStatusItem(
-                subsystem: subsystem,
-                health: .checking,
-                detail: "Checking device availability"
-            )
-        }
-        guard !selectedUID.isEmpty else {
-            return DiagnosticsStatusItem(
-                subsystem: subsystem,
-                health: availableUIDs.isEmpty ? .unavailable : .healthy,
-                detail: availableUIDs.isEmpty
-                    ? "No device detected" : "Using system default"
+                subsystem: .voice,
+                health: .healthy,
+                detail: "Ready"
             )
         }
         return DiagnosticsStatusItem(
-            subsystem: subsystem,
-            health: availableUIDs.contains(selectedUID) ? .healthy : .degraded,
-            detail: availableUIDs.contains(selectedUID)
-                ? "Selected device is available" : "Selected device is unavailable"
+            subsystem: .voice,
+            health: .degraded,
+            detail: "Disconnected"
         )
+    }
+
+    private static func voiceLatencyStatus(_ model: AppModel) -> DiagnosticsStatusItem {
+        guard model.activeAccountID != nil else {
+            return DiagnosticsStatusItem(
+                subsystem: .voiceLatency,
+                health: .unavailable,
+                detail: "No active account"
+            )
+        }
+        switch model.voiceSessionState {
+        case .idle:
+            return DiagnosticsStatusItem(
+                subsystem: .voiceLatency,
+                health: .healthy,
+                detail: "Ready"
+            )
+        case .disconnected where model.activeVoiceChannel == nil:
+            return DiagnosticsStatusItem(
+                subsystem: .voiceLatency,
+                health: .healthy,
+                detail: "Ready"
+            )
+        case .connecting, .connected, .disconnecting:
+            guard let latency = model.voiceLatencyMilliseconds else {
+                return DiagnosticsStatusItem(
+                    subsystem: .voiceLatency,
+                    health: .checking,
+                    detail: "Measuring"
+                )
+            }
+            return DiagnosticsStatusItem(
+                subsystem: .voiceLatency,
+                health: latency <= 150 ? .healthy : .degraded,
+                detail: "\(latency) ms"
+            )
+        case .reconnecting, .disconnected:
+            return DiagnosticsStatusItem(
+                subsystem: .voiceLatency,
+                health: .degraded,
+                detail: "Waiting for connection"
+            )
+        case .failed:
+            return DiagnosticsStatusItem(
+                subsystem: .voiceLatency,
+                health: .failed,
+                detail: "Voice connection failed"
+            )
+        }
     }
 
     private static func notificationStatus(
@@ -306,7 +331,7 @@ enum DiagnosticsStatusBuilder {
         guard preferences.isEnabled else {
             return DiagnosticsStatusItem(
                 subsystem: .notifications,
-                health: .unavailable,
+                health: .healthy,
                 detail: "Disabled in SakuraCord"
             )
         }
@@ -453,6 +478,9 @@ nonisolated struct DiagnosticsSupportSummary: Codable, Equatable, Sendable {
     struct System: Codable, Equatable, Sendable {
         let macOSVersion: String
         let architecture: String
+        let chip: String?
+        let memoryBytes: UInt64
+        let storageBytes: UInt64?
     }
 
     struct Feature: Codable, Equatable, Sendable {
@@ -467,7 +495,8 @@ nonisolated struct DiagnosticsSupportSummary: Codable, Equatable, Sendable {
     }
 
     static let format = "dev.sakuracord.support-summary"
-    static let version = 1
+    static let version = 2
+    static let currentSystemSnapshot = currentSystem()
 
     let format: String
     let formatVersion: Int
@@ -525,8 +554,33 @@ nonisolated struct DiagnosticsSupportSummary: Codable, Equatable, Sendable {
             macOSVersion: "\(operatingSystemVersion.majorVersion)."
                 + "\(operatingSystemVersion.minorVersion)."
                 + "\(operatingSystemVersion.patchVersion)",
-            architecture: currentArchitecture
+            architecture: currentArchitecture,
+            chip: currentChip,
+            memoryBytes: ProcessInfo.processInfo.physicalMemory,
+            storageBytes: currentStorageCapacity
         )
+    }
+
+    private static var currentChip: String? {
+        var size = 0
+        guard sysctlbyname("machdep.cpu.brand_string", nil, &size, nil, 0) == 0,
+              size > 0
+        else { return nil }
+
+        var value = [UInt8](repeating: 0, count: size)
+        guard sysctlbyname("machdep.cpu.brand_string", &value, &size, nil, 0) == 0 else {
+            return nil
+        }
+        return String(bytes: value.prefix { $0 != 0 }, encoding: .utf8)
+    }
+
+    private static var currentStorageCapacity: UInt64? {
+        guard let capacity = try? URL.homeDirectory.resourceValues(
+            forKeys: [.volumeTotalCapacityKey]
+        ).volumeTotalCapacity,
+        capacity > 0
+        else { return nil }
+        return UInt64(capacity)
     }
 
     private static var currentArchitecture: String {

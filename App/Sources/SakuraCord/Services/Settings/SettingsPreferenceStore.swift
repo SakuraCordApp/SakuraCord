@@ -742,9 +742,16 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             defaultValue: .string(ExternalUploaderOfferPolicy.ask.rawValue)
         ),
         SettingsPreferenceRegistration(
+            id: .diagnosticDetailedPayloads,
+            page: .diagnostics,
+            storage: .appWide(key: DiagnosticsPreferences.capturesDetailedPayloadsKey),
+            defaultValue: .bool(false),
+            resets: false
+        ),
+        SettingsPreferenceRegistration(
             id: .diagnosticDiskCapture,
             page: .diagnostics,
-            storage: .appWide(key: "saveAPIDiagnosticsToDisk"),
+            storage: .appWide(key: DiagnosticsPreferences.savesDiagnosticsToDiskKey),
             defaultValue: .bool(false),
             resets: false
         ),
