@@ -25,6 +25,7 @@ struct SakuraCordApp: App {
     init() {
         AppPerformanceSignposts.beginStartup()
         ComposerPromisedFileStorage.removeAbandonedFilesAtStartup()
+        SharedMediaDataLoader.removeAbandonedDownloadsAtStartup()
         DiagnosticsPreferences.restore()
         let configuration = AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments)
         opensForumPerformanceFixture = configuration.includesForumPerformanceFixture
@@ -109,6 +110,7 @@ struct SakuraCordApp: App {
                 }
                 .task {
                     await appDelegate.startSession(for: model)
+                    await model.applyConfiguredLocalStorageLimit()
 #if DEBUG
                     if runsAuthenticatedNavigationBenchmark {
                         await model.runAuthenticatedNavigationPerformanceBenchmark()

@@ -7,7 +7,7 @@ struct MediaViewerMoreMenuButton: NSViewRepresentable {
     let copyImage: () -> Void
     let copyLink: () -> Void
     let copyAttachmentID: () -> Void
-    let save: () -> Void
+    let saveActions: MediaSaveMenuActions
     let open: () -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -36,7 +36,7 @@ struct MediaViewerMoreMenuButton: NSViewRepresentable {
             copyImage: copyImage,
             copyLink: copyLink,
             copyAttachmentID: copyAttachmentID,
-            save: save,
+            saveActions: saveActions,
             open: open
         )
     }
@@ -46,7 +46,7 @@ struct MediaViewerMoreMenuButton: NSViewRepresentable {
         let copyImage: () -> Void
         let copyLink: () -> Void
         let copyAttachmentID: () -> Void
-        let save: () -> Void
+        let saveActions: MediaSaveMenuActions
         let open: () -> Void
     }
 
@@ -106,10 +106,10 @@ struct MediaViewerMoreMenuButton: NSViewRepresentable {
             menu.addItem(detailsItem)
             menu.addItem(.separator())
             menu.addItem(
-                menuItem(
-                    "Save Media…",
+                MediaSaveMenuBuilder.submenuItem(
+                    "Save Media",
                     systemImage: "arrow.down.to.line",
-                    action: #selector(saveFromMenu)
+                    actions: configuration.saveActions
                 )
             )
             menu.addItem(
@@ -232,24 +232,12 @@ struct MediaViewerMoreMenuButton: NSViewRepresentable {
             MediaViewerActionService.copyText(sizeDescription)
         }
 
-        @objc private func saveFromMenu() {
-            perform(
-                #selector(performDeferredSave),
-                with: nil,
-                afterDelay: 0
-            )
-        }
-
         @objc private func openFromMenu() {
             perform(
                 #selector(performDeferredOpen),
                 with: nil,
                 afterDelay: 0
             )
-        }
-
-        @objc private func performDeferredSave() {
-            configuration.save()
         }
 
         @objc private func performDeferredOpen() {

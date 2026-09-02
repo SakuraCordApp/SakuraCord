@@ -1216,15 +1216,14 @@ extension NativeTimelineCanvasView {
                     }
                 }
             },
-            saveImage: { [weak self] in
-                Task { @MainActor [weak self] in
-                    do {
-                        _ = try await MediaViewerActionService.save(item)
-                    } catch {
-                        self?.presentMediaActionError(error)
-                    }
+            save: MediaSaveMenuActions(
+                saveAs: { [weak self] in
+                    self?.saveMedia(item, to: .saveAs)
+                },
+                saveToDefaultFolder: { [weak self] in
+                    self?.saveMedia(item, to: .defaultFolder)
                 }
-            },
+            ),
             copyLink: {
                 MediaViewerActionService.copyText(item.url.absoluteString)
             },
@@ -1232,6 +1231,22 @@ extension NativeTimelineCanvasView {
                 MediaViewerActionService.openInBrowser(item.url)
             }
         )
+    }
+
+    private func saveMedia(
+        _ item: RichMediaItem,
+        to destination: MediaSaveDestination
+    ) {
+        Task { @MainActor [weak self] in
+            do {
+                _ = try await MediaViewerActionService.save(
+                    item,
+                    to: destination
+                )
+            } catch {
+                self?.presentMediaActionError(error)
+            }
+        }
     }
 
     func gifContextMenuActions(

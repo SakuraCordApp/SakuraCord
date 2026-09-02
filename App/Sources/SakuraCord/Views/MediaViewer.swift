@@ -88,7 +88,7 @@ struct MediaViewer: View {
                         },
                         imageContextMenuActions: MediaImageContextMenuActions(
                             copyImage: { copyImage(item) },
-                            saveImage: { save(item) },
+                            save: saveActions(for: item),
                             copyLink: { copyLink(item) },
                             openLink: {
                                 MediaViewerActionService.openInBrowser(item.url)
@@ -130,7 +130,7 @@ struct MediaViewer: View {
                         copyImage: { copyImage(item) },
                         copyLink: { copyLink(item) },
                         copyAttachmentID: { copyAttachmentID(item) },
-                        save: { save(item) },
+                        saveActions: saveActions(for: item),
                         open: {
                             MediaViewerActionService.openInBrowser(item.url)
                         },
@@ -305,14 +305,27 @@ struct MediaViewer: View {
         showFeedback("Attachment ID copied")
     }
 
-    private func save(_ item: RichMediaItem) {
+    private func saveActions(for item: RichMediaItem) -> MediaSaveMenuActions {
+        MediaSaveMenuActions(
+            saveAs: { save(item, to: .saveAs) },
+            saveToDefaultFolder: { save(item, to: .defaultFolder) }
+        )
+    }
+
+    private func save(
+        _ item: RichMediaItem,
+        to destination: MediaSaveDestination
+    ) {
         guard !interaction.isSaving else { return }
         interaction.isSaving = true
         Task {
             defer { interaction.isSaving = false }
             do {
-                if let destination = try await MediaViewerActionService.save(item) {
-                    showFeedback("Saved \(destination.lastPathComponent)")
+                if let savedURL = try await MediaViewerActionService.save(
+                    item,
+                    to: destination
+                ) {
+                    showFeedback("Saved \(savedURL.lastPathComponent)")
                 }
             } catch {
                 interaction.errorMessage = error.localizedDescription

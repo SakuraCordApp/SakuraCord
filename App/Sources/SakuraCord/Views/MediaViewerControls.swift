@@ -80,7 +80,7 @@ struct MediaViewerTopControls: View {
     let copyImage: () -> Void
     let copyLink: () -> Void
     let copyAttachmentID: () -> Void
-    let save: () -> Void
+    let saveActions: MediaSaveMenuActions
     let open: () -> Void
     let close: () -> Void
 
@@ -97,7 +97,9 @@ struct MediaViewerTopControls: View {
                 .help("Share")
                 .accessibilityLabel("Share")
 
-                Button(action: save) {
+                Button {
+                    MediaSaveMenuBuilder.popUp(actions: saveActions)
+                } label: {
                     HoverActionControlLabel(
                         diameter: MediaViewerTopChromeMetrics.actionDiameter
                     ) {
@@ -128,7 +130,7 @@ struct MediaViewerTopControls: View {
                     copyImage: copyImage,
                     copyLink: copyLink,
                     copyAttachmentID: copyAttachmentID,
-                    save: save,
+                    saveActions: saveActions,
                     open: open
                 )
                 .frame(

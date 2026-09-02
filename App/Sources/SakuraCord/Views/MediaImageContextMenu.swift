@@ -4,7 +4,7 @@ import SwiftUI
 
 struct MediaImageContextMenuActions {
     let copyImage: () -> Void
-    let saveImage: () -> Void
+    let save: MediaSaveMenuActions
     let copyLink: () -> Void
     let openLink: () -> Void
 }
@@ -38,10 +38,10 @@ enum MediaImageContextMenuBuilder {
             )
         )
         menu.addItem(
-            actionItem(
-                "Save Image…",
+            MediaSaveMenuBuilder.submenuItem(
+                "Save Image",
                 systemImage: "arrow.down.to.line",
-                action: actions.saveImage
+                actions: actions.save
             )
         )
         guard includesLinkActions else { return }

@@ -370,7 +370,7 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             defaultValue: .string(NativeEmojiSkinTone.standard.rawValue)
         ),
         SettingsPreferenceRegistration(
-            id: .mediaCacheLimit,
+            id: .localStorageLimit,
             page: .storageDownloads,
             storage: .appWide(key: "mediaCacheLimit"),
             defaultValue: .integer(2_147_483_648)
@@ -382,12 +382,6 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             defaultValue: .double(0),
             exports: false,
             resets: false
-        ),
-        SettingsPreferenceRegistration(
-            id: .downloadLocationMode,
-            page: .storageDownloads,
-            storage: .appWide(key: "settings.storage.downloadLocationMode"),
-            defaultValue: .string(DownloadLocationMode.askEveryTime.rawValue)
         ),
         SettingsPreferenceRegistration(
             id: .downloadFolderBookmark,
@@ -402,14 +396,6 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             storage: .appWide(key: "settings.storage.downloadFolderName"),
             defaultValue: .string(""),
             exports: false
-        ),
-        SettingsPreferenceRegistration(
-            id: .downloadCollisionPolicy,
-            page: .storageDownloads,
-            storage: .appWide(key: "settings.storage.downloadCollisionPolicy"),
-            defaultValue: .string(
-                DownloadFilenameCollisionPolicy.automaticallyRename.rawValue
-            )
         ),
         SettingsPreferenceRegistration(
             id: .revealCompletedDownloads,

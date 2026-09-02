@@ -183,9 +183,9 @@ struct PrivacySafetySettingsPage: View {
                 state.navigate(
                     to: SettingsDestination(
                         page: .storageDownloads,
-                        section: .storageLocalData
+                        section: .localStorage
                     ),
-                    controlID: .clearSelectedAccountDrafts
+                    controlID: .clearAllAccountDrafts
                 )
             }
             .settingsControlAnchor(.clearDrafts, state: state)

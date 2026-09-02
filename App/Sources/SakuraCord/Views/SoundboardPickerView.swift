@@ -405,7 +405,7 @@ private struct SoundboardButton: View {
             SoundboardContextMenuBridge(
                 isFavorite: model.isFavoriteSound(sound),
                 toggleFavorite: { Task { await model.toggleFavoriteSound(sound) } },
-                download: download,
+                saveActions: saveActions,
                 copyID: { MediaViewerActionService.copyText(sound.id) }
             )
         }
@@ -436,11 +436,21 @@ private struct SoundboardButton: View {
             : Color(hex: 0xAFAEB4)
     }
 
-    private func download() {
+    private var saveActions: MediaSaveMenuActions {
+        MediaSaveMenuActions(
+            saveAs: { download(to: .saveAs) },
+            saveToDefaultFolder: { download(to: .defaultFolder) }
+        )
+    }
+
+    private func download(to destination: MediaSaveDestination) {
         guard let item = RichMediaItem(soundboardSound: sound) else { return }
         Task { @MainActor in
             do {
-                _ = try await MediaViewerActionService.save(item)
+                _ = try await MediaViewerActionService.save(
+                    item,
+                    to: destination
+                )
             } catch {
                 model.soundboardErrorMessage = error.localizedDescription
             }
@@ -451,7 +461,7 @@ private struct SoundboardButton: View {
 private struct SoundboardContextMenuBridge: NSViewRepresentable {
     let isFavorite: Bool
     let toggleFavorite: () -> Void
-    let download: () -> Void
+    let saveActions: MediaSaveMenuActions
     let copyID: () -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(from: self) }
@@ -475,20 +485,20 @@ private struct SoundboardContextMenuBridge: NSViewRepresentable {
     final class Coordinator: NSObject {
         private var isFavorite: Bool
         private var toggleFavorite: () -> Void
-        private var download: () -> Void
+        private var saveActions: MediaSaveMenuActions
         private var copyID: () -> Void
 
         init(from bridge: SoundboardContextMenuBridge) {
             isFavorite = bridge.isFavorite
             toggleFavorite = bridge.toggleFavorite
-            download = bridge.download
+            saveActions = bridge.saveActions
             copyID = bridge.copyID
         }
 
         func update(from bridge: SoundboardContextMenuBridge) {
             isFavorite = bridge.isFavorite
             toggleFavorite = bridge.toggleFavorite
-            download = bridge.download
+            saveActions = bridge.saveActions
             copyID = bridge.copyID
         }
 
@@ -500,11 +510,13 @@ private struct SoundboardContextMenuBridge: NSViewRepresentable {
                 systemImage: isFavorite ? "star" : "star.fill",
                 action: #selector(toggleFavoriteFromMenu)
             ))
-            menu.addItem(menuItem(
-                "Download Sound",
-                systemImage: "arrow.down.circle",
-                action: #selector(downloadFromMenu)
-            ))
+            menu.addItem(
+                MediaSaveMenuBuilder.submenuItem(
+                    "Download Sound",
+                    systemImage: "arrow.down.circle",
+                    actions: saveActions
+                )
+            )
             menu.addItem(.separator())
             menu.addItem(menuItem(
                 "Copy Sound ID",
@@ -531,7 +543,6 @@ private struct SoundboardContextMenuBridge: NSViewRepresentable {
         }
 
         @objc private func toggleFavoriteFromMenu() { toggleFavorite() }
-        @objc private func downloadFromMenu() { download() }
         @objc private func copyIDFromMenu() { copyID() }
     }
 }

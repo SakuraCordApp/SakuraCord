@@ -479,6 +479,17 @@ actor SharedMediaDataLoader {
             .appendingPathComponent("Media Downloads", isDirectory: true)
     }
 
+    nonisolated static func removeAbandonedDownloadsAtStartup(
+        temporaryDirectory: URL = FileManager.default.temporaryDirectory,
+        fileManager: FileManager = .default
+    ) {
+        try? fileManager.removeItem(
+            at: incompleteDownloadRootDirectory(
+                temporaryDirectory: temporaryDirectory
+            )
+        )
+    }
+
     private func finishRemoteLoad(
         for url: URL,
         loadID: UUID,

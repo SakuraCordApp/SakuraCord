@@ -160,6 +160,10 @@ Credentials never enter GRDB, fixtures, logs, or plugin APIs. Discord
 workspace, message, read, member, and Gateway state is session-memory only. A
 database migration drops the obsolete tables from earlier builds while
 preserving drafts. Normal and offline runs use separate storage behavior.
+The user-configured local storage limit is shared by persistent drafts and the
+disposable media cache: draft content reserves its measured space first, and
+the media cache applies the remainder as its LRU limit. Drafts are never
+evicted automatically.
 
 Startup and account switching publish READY-derived read state in one atomic
 Main Actor update after building it off-main. Once the initial channel is known,

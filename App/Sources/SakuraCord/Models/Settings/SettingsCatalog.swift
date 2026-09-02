@@ -207,9 +207,8 @@ nonisolated extension SettingsSectionID {
     static let privacyLinksServices = Self(rawValue: "privacy-links-services")
     static let privacyCredentials = Self(rawValue: "privacy-credentials")
     static let privacyLocalData = Self(rawValue: "privacy-local-data")
-    static let mediaCache = Self(rawValue: "media-cache")
+    static let localStorage = Self(rawValue: "local-storage")
     static let storageDownloads = Self(rawValue: "storage-downloads")
-    static let storageLocalData = Self(rawValue: "storage-local-data")
     static let diagnosticsStatus = Self(rawValue: "diagnostics-status")
     static let diagnosticsSupport = Self(rawValue: "diagnostics-support")
     static let apiDiagnostics = Self(rawValue: "api-diagnostics")
@@ -295,25 +294,14 @@ nonisolated extension SettingsControlID {
     static let aboutSupport = Self(rawValue: "about.support")
     static let aboutAcknowledgements = Self(rawValue: "about.acknowledgements")
     static let aboutDisclaimer = Self(rawValue: "about.disclaimer")
-    static let mediaCacheLimit = Self(rawValue: "storage.media-cache-limit")
-    static let mediaCacheUsage = Self(rawValue: "storage.media-cache-usage")
+    static let localStorageLimit = Self(rawValue: "storage.local-storage-limit")
+    static let localStorageUsage = Self(rawValue: "storage.local-storage-usage")
     static let mediaCacheClear = Self(rawValue: "storage.media-cache-clear")
     static let mediaCacheLastCleared = Self(rawValue: "storage.media-cache-last-cleared")
-    static let downloadLocationMode = Self(rawValue: "storage.download-location-mode")
     static let downloadFolderBookmark = Self(rawValue: "storage.download-folder-bookmark")
     static let downloadFolderName = Self(rawValue: "storage.download-folder-name")
-    static let downloadCollisionPolicy = Self(rawValue: "storage.download-collision-policy")
     static let revealCompletedDownloads = Self(rawValue: "storage.reveal-completed-downloads")
-    static let incompleteDownloadsUsage = Self(rawValue: "storage.incomplete-downloads-usage")
-    static let incompleteDownloadsClear = Self(rawValue: "storage.incomplete-downloads-clear")
-    static let selectedAccountDrafts = Self(rawValue: "storage.selected-account-drafts")
-    static let allAccountDrafts = Self(rawValue: "storage.all-account-drafts")
-    static let clearSelectedAccountDrafts = Self(rawValue: "storage.clear-selected-drafts")
     static let clearAllAccountDrafts = Self(rawValue: "storage.clear-all-drafts")
-    static let diagnosticDiskUsage = Self(rawValue: "storage.diagnostic-disk-usage")
-    static let storageDiagnosticsLink = Self(rawValue: "storage.diagnostics-link")
-    static let storageExport = Self(rawValue: "storage.export")
-    static let storageReset = Self(rawValue: "storage.reset")
     static let diagnosticsStatusOverview = Self(rawValue: "diagnostics.status-overview")
     static let diagnosticsRefresh = Self(rawValue: "diagnostics.refresh")
     static let diagnosticsSupportPreview = Self(rawValue: "diagnostics.support-preview")
@@ -1023,47 +1011,35 @@ private nonisolated extension SettingsCatalog {
             reset: .notApplicable
         ),
         control(
-            .mediaCacheLimit,
+            .localStorageLimit,
             page: .storageDownloads,
-            section: .mediaCache,
-            label: "Media cache",
-            help: "Set the maximum local media cache size.",
-            keywords: ["disk", "storage", "limit"],
+            section: .localStorage,
+            label: "Local Storage Limit",
+            help: "Set the shared maximum size for drafts and disposable media.",
+            keywords: ["disk", "storage", "limit", "drafts", "media"],
             scope: .appWideLocal
         ),
         control(
-            .mediaCacheUsage, page: .storageDownloads, section: .mediaCache,
-            label: "Media Cache Usage",
-            help: "Measure current disk usage and report whether LRU eviction is converging to the selected limit.",
-            keywords: ["bytes", "size", "eviction", "LRU"], owner: .appModel,
+            .localStorageUsage, page: .storageDownloads, section: .localStorage,
+            label: "Local Storage Usage",
+            help: "Measure the combined space used by drafts and disposable media.",
+            keywords: ["bytes", "size", "drafts", "media"], owner: .appModel,
             scope: .appWideLocal, persistence: .sessionOnly, reset: .notApplicable
         ),
         control(
-            .mediaCacheClear, page: .storageDownloads, section: .mediaCache,
+            .mediaCacheClear, page: .storageDownloads, section: .localStorage,
             label: "Clear Media Cache",
             help: "Clear disposable disk media after confirmation without removing visible in-memory media.",
             keywords: ["delete", "purge", "free space"], owner: .appModel,
             scope: .appWideLocal, persistence: .notApplicable, reset: .categoryAction
         ),
         control(
-            .downloadLocationMode, page: .storageDownloads,
-            section: .storageDownloads, label: "Download Location",
-            help: "Ask for each destination or use a security-scoped default folder.",
-            keywords: ["folder", "save", "bookmark", "panel"], scope: .appWideLocal
-        ),
-        control(
             .downloadFolderName, page: .storageDownloads,
             section: .storageDownloads, label: "Default Download Folder",
-            help: "Choose a sandbox-authorized folder without exposing its full path in settings or exports.",
+            help: "Choose the sandbox-authorized default folder used by direct media saves.",
             keywords: ["directory", "location", "choose"], owner: .macOS,
             scope: .appWideLocal, persistence: .appPreferences,
             reset: .categoryAction
-        ),
-        control(
-            .downloadCollisionPolicy, page: .storageDownloads,
-            section: .storageDownloads, label: "Filename Collisions",
-            help: "Automatically choose an unused filename or ask with the native save panel.",
-            keywords: ["duplicate", "rename", "overwrite"], scope: .appWideLocal
         ),
         control(
             .revealCompletedDownloads, page: .storageDownloads,
@@ -1072,74 +1048,11 @@ private nonisolated extension SettingsCatalog {
             keywords: ["Finder", "show", "completed"], scope: .appWideLocal
         ),
         control(
-            .incompleteDownloadsUsage, page: .storageDownloads,
-            section: .storageDownloads, label: "Incomplete Temporary Downloads",
-            help: "Measure stale files only inside SakuraCord's owned temporary download directory.",
-            keywords: ["partial", "temporary", "failed", "cleanup"], owner: .appModel,
-            scope: .appWideLocal, persistence: .sessionOnly, reset: .notApplicable
-        ),
-        control(
-            .incompleteDownloadsClear, page: .storageDownloads,
-            section: .storageDownloads, label: "Clear Incomplete Downloads",
-            help: "Remove stale SakuraCord-owned temporary downloads without touching user files or active transfers.",
-            keywords: ["partial", "temporary", "delete"], owner: .appModel,
-            scope: .appWideLocal, persistence: .notApplicable, reset: .categoryAction
-        ),
-        control(
-            .selectedAccountDrafts, page: .storageDownloads,
-            section: .storageLocalData, label: "Selected Account Drafts",
-            help: "Show the count and approximate UTF-8 content size of locally saved drafts for the active account.",
-            keywords: ["unsent", "composer", "size"], owner: .appModel,
-            scope: .accountLocal, persistence: .accountPreferences, reset: .notApplicable
-        ),
-        control(
-            .allAccountDrafts, page: .storageDownloads,
-            section: .storageLocalData, label: "All Account Drafts",
-            help: "Summarize locally saved drafts across saved accounts.",
-            keywords: ["total", "accounts", "unsent"], owner: .appModel,
-            scope: .mixed, persistence: .accountPreferences, reset: .notApplicable
-        ),
-        control(
-            .clearSelectedAccountDrafts, page: .storageDownloads,
-            section: .storageLocalData, label: "Clear Selected Account Drafts",
-            help: "Delete local drafts only for the active account after confirmation.",
-            keywords: ["delete", "unsent", "active account"], owner: .appModel,
-            scope: .accountLocal, persistence: .notApplicable, reset: .categoryAction
-        ),
-        control(
             .clearAllAccountDrafts, page: .storageDownloads,
-            section: .storageLocalData, label: "Clear All Account Drafts",
-            help: "Delete local drafts for every saved account after confirmation.",
+            section: .localStorage, label: "Clear Drafts",
+            help: "Delete local drafts for every saved account after confirmation and return their allocation to the media cache.",
             keywords: ["delete", "unsent", "all accounts"], owner: .appModel,
             scope: .mixed, persistence: .notApplicable, reset: .categoryAction
-        ),
-        control(
-            .diagnosticDiskUsage, page: .storageDownloads,
-            section: .storageLocalData, label: "Diagnostic Disk Usage",
-            help: "Measure SakuraCord-managed diagnostic session files.",
-            keywords: ["logs", "JSONL", "support", "size"], owner: .appModel,
-            scope: .appWideLocal, persistence: .sessionOnly, reset: .notApplicable
-        ),
-        control(
-            .storageDiagnosticsLink, page: .storageDownloads,
-            section: .storageLocalData, label: "Manage Diagnostics",
-            help: "Open Diagnostics for capture, export, and clearing controls.",
-            keywords: ["logs", "navigate", "clear"], owner: .appModel,
-            scope: .appWideLocal, persistence: .notApplicable, reset: .notApplicable
-        ),
-        control(
-            .storageExport, page: .storageDownloads,
-            section: .storageLocalData, label: "Export Storage Preferences",
-            help: "Export registered storage preferences without folder bookmarks, paths, drafts, or diagnostic data.",
-            keywords: ["JSON", "backup", "settings"], scope: .appWideLocal,
-            persistence: .notApplicable, reset: .notApplicable
-        ),
-        control(
-            .storageReset, page: .storageDownloads,
-            section: .storageLocalData, label: "Reset Storage Preferences",
-            help: "Restore registered storage and download defaults without deleting local data.",
-            keywords: ["defaults", "restore"], scope: .appWideLocal,
-            persistence: .appPreferences, reset: .categoryAction
         ),
         control(
             .notificationPermission,

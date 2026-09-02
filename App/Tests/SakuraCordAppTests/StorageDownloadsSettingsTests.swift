@@ -18,9 +18,7 @@ import Testing
 
     var value = store.load()
     #expect(value == .defaults)
-    value.mediaCacheLimit = .gigabytes5
-    value.downloadLocationMode = .defaultFolder
-    value.filenameCollisionPolicy = .ask
+    value.localStorageLimit = .gigabytes5
     value.revealsCompletedDownloads = true
     store.save(value)
     try store.saveDefaultFolder(folder)
@@ -35,11 +33,11 @@ import Testing
     )
 
     let export = preferences.export(scope: .appWide, page: .storageDownloads)
-    #expect(export.values[SettingsControlID.mediaCacheLimit.rawValue] == .integer(5_368_709_120))
-    #expect(export.values[SettingsControlID.downloadLocationMode.rawValue] == .string("defaultFolder"))
+    #expect(export.values[SettingsControlID.localStorageLimit.rawValue] == .integer(5_368_709_120))
     #expect(export.values[SettingsControlID.downloadFolderBookmark.rawValue] == nil)
     #expect(export.values[SettingsControlID.downloadFolderName.rawValue] == nil)
     #expect(export.values[SettingsControlID.mediaCacheLastCleared.rawValue] == nil)
+    #expect(export.values[SettingsControlID.revealCompletedDownloads.rawValue] == .bool(true))
     let text = try #require(String(data: export.encodedData(), encoding: .utf8))
     #expect(!text.contains(folder.path))
     #expect(!text.contains(folder.lastPathComponent))
@@ -50,7 +48,7 @@ import Testing
     #expect(store.lastMediaCacheClearDate == Date(timeIntervalSince1970: 123))
 }
 
-@Test func `Download collision policy renames deterministically or asks`() throws {
+@Test func `Direct download chooses an unused filename without overwriting`() throws {
     let proposed = URL(fileURLWithPath: "/Downloads/photo.png")
     let occupied = Set([
         proposed.path,
@@ -58,20 +56,14 @@ import Testing
     ])
 
     #expect(
-        DownloadFilenameCollisionPolicy.automaticallyRename.destination(
+        MediaViewerActionService.availableDestination(
             for: proposed,
             fileExists: occupied.contains
         )?.path == "/Downloads/photo 3.png"
     )
-    #expect(
-        DownloadFilenameCollisionPolicy.ask.destination(
-            for: proposed,
-            fileExists: occupied.contains
-        ) == nil
-    )
 }
 
-@Test func `Incomplete cleanup stays inside owned root and preserves recent work`() async throws {
+@Test func `Startup removes abandoned downloads only inside the owned root`() throws {
     let temporaryRoot = FileManager.default.temporaryDirectory.appending(
         path: "sakuracord-partial-cleanup-\(UUID().uuidString)",
         directoryHint: .isDirectory
@@ -79,37 +71,19 @@ import Testing
     let ownedRoot = SharedMediaDataLoader.incompleteDownloadRootDirectory(
         temporaryDirectory: temporaryRoot
     )
-    let stale = ownedRoot.appending(path: "stale", directoryHint: .isDirectory)
-    let recent = ownedRoot.appending(path: "recent", directoryHint: .isDirectory)
+    let abandoned = ownedRoot.appending(path: "abandoned", directoryHint: .isDirectory)
     let unrelated = temporaryRoot.appending(path: "unrelated", directoryHint: .isDirectory)
-    for directory in [stale, recent, unrelated] {
+    for directory in [abandoned, unrelated] {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try Data("partial".utf8).write(to: directory.appending(path: "download"))
     }
     defer { try? FileManager.default.removeItem(at: temporaryRoot) }
-    let cutoff = Date()
-    try FileManager.default.setAttributes(
-        [.modificationDate: cutoff.addingTimeInterval(-60)],
-        ofItemAtPath: stale.path
-    )
-    try FileManager.default.setAttributes(
-        [.modificationDate: cutoff.addingTimeInterval(60)],
-        ofItemAtPath: recent.path
+
+    SharedMediaDataLoader.removeAbandonedDownloadsAtStartup(
+        temporaryDirectory: temporaryRoot
     )
 
-    let summary = try await SakuraCordStorageInspector.incompleteDownloadSummary(
-        in: ownedRoot,
-        olderThan: cutoff
-    )
-    #expect(summary == StorageByteSummary(fileCount: 1, byteCount: 7))
-
-    let removed = try await SakuraCordStorageInspector.clearIncompleteDownloads(
-        in: ownedRoot,
-        olderThan: cutoff
-    )
-    #expect(removed == summary)
-    #expect(!FileManager.default.fileExists(atPath: stale.path))
-    #expect(FileManager.default.fileExists(atPath: recent.path))
+    #expect(!FileManager.default.fileExists(atPath: ownedRoot.path))
     #expect(FileManager.default.fileExists(atPath: unrelated.path))
 }
 
@@ -132,9 +106,19 @@ import Testing
     model.database = first
 
     let initial = try await model.localDraftStorageSummary()
-    #expect(initial.selectedAccount?.draftCount == 1)
     #expect(initial.allAccounts.draftCount == 2)
-    #expect(initial.accountCount == 2)
+    #expect(
+        LocalStorageBudget.mediaCacheMaximumBytes(
+            totalMaximumBytes: 100,
+            draftBytes: initial.allAccounts.approximateByteCount
+        ) == 89
+    )
+    #expect(
+        LocalStorageBudget.mediaCacheMaximumBytes(
+            totalMaximumBytes: 100,
+            draftBytes: 101
+        ) == 1
+    )
 
     try await model.clearLocalDrafts()
     #expect(try await first.draftStorageSummary().draftCount == 0)
@@ -147,11 +131,11 @@ import Testing
 @MainActor
 @Test func `Storage search exposes live controls and never exposes hidden bookmark state`() {
     let state = SettingsViewState()
-    state.searchText = "eviction LRU"
-    #expect(state.searchResults.contains { $0.id == .mediaCacheUsage })
-    state.searchText = "temporary delete"
-    #expect(state.searchResults.contains { $0.id == .incompleteDownloadsClear })
-    state.searchText = "unsent active account"
-    #expect(state.searchResults.contains { $0.id == .clearSelectedAccountDrafts })
+    state.searchText = "drafts media storage"
+    #expect(state.searchResults.contains { $0.id == .localStorageUsage })
+    state.searchText = "default download folder"
+    #expect(state.searchResults.contains { $0.id == .downloadFolderName })
+    state.searchText = "clear drafts"
+    #expect(state.searchResults.contains { $0.id == .clearAllAccountDrafts })
     #expect(!state.catalog.controls.contains { $0.id == .downloadFolderBookmark })
 }

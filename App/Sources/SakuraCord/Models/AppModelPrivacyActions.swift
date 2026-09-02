@@ -32,6 +32,7 @@ extension AppModel {
         draft = ""
         threadDraft = ""
         quickSwitcherDraftChannelIDs = []
+        await applyConfiguredLocalStorageLimit()
     }
 }
 

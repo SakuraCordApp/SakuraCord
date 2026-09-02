@@ -430,7 +430,10 @@ struct MediaViewerTests {
     @Test func `failed image menu keeps local actions without CDN actions`() {
         let actions = MediaImageContextMenuActions(
             copyImage: {},
-            saveImage: {},
+            save: MediaSaveMenuActions(
+                saveAs: {},
+                saveToDefaultFolder: {}
+            ),
             copyLink: {},
             openLink: {}
         )
@@ -440,7 +443,25 @@ struct MediaViewerTests {
             includesLinkActions: false
         )
 
-        #expect(menu.items.map(\.title) == ["Copy Image", "Save Image…"])
+        #expect(menu.items.map(\.title) == ["Copy Image", "Save Image"])
+        #expect(menu.items.last?.submenu?.items.map(\.title) == [
+            "Save As…",
+            "Save to Default Folder",
+        ])
+        #expect(menu.items.last?.submenu?.items.last?.isEnabled == false)
+    }
+
+    @Test func `Media save menu names the configured default folder`() {
+        let menu = MediaSaveMenuBuilder.make(
+            actions: MediaSaveMenuActions(
+                saveAs: {},
+                saveToDefaultFolder: {}
+            ),
+            defaultFolderName: "Downloads"
+        )
+
+        #expect(menu.items.map(\.title) == ["Save As…", "Save to Downloads"])
+        #expect(menu.items.map(\.isEnabled) == [true, true])
     }
 
     @Test func `escape prioritizer dismisses media before reaching the timeline`() throws {

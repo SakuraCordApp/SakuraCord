@@ -3,33 +3,39 @@ import SakuraCordModels
 import SakuraCordPersistence
 
 nonisolated struct LocalDraftStorageSummary: Equatable, Sendable {
-    let selectedAccount: DraftStorageSummary?
     let allAccounts: DraftStorageSummary
-    let accountCount: Int
 }
 
 extension AppModel {
     func localDraftStorageSummary() async throws -> LocalDraftStorageSummary {
-        let activeID = activeAccountID
         let databases = draftDatabasesByAccountID()
-        var selected: DraftStorageSummary?
         var all = DraftStorageSummary(draftCount: 0, approximateByteCount: 0)
-        var countedAccounts = 0
-        for (accountID, database) in databases {
+        for (_, database) in databases {
             let summary = try await database.draftStorageSummary()
-            countedAccounts += 1
-            if accountID == activeID { selected = summary }
             all = DraftStorageSummary(
                 draftCount: all.draftCount + summary.draftCount,
                 approximateByteCount: all.approximateByteCount
                     + summary.approximateByteCount
             )
         }
-        return LocalDraftStorageSummary(
-            selectedAccount: selected,
-            allAccounts: all,
-            accountCount: countedAccounts
+        return LocalDraftStorageSummary(allAccounts: all)
+    }
+
+    @discardableResult
+    func applyLocalStorageLimit(
+        _ limit: LocalStorageLimit
+    ) async throws -> LocalDraftStorageSummary {
+        let summary = try await localDraftStorageSummary()
+        try await LocalStorageBudgetCoordinator.shared.apply(
+            limit: limit,
+            measuredDraftBytes: summary.allAccounts.approximateByteCount
         )
+        return summary
+    }
+
+    func applyConfiguredLocalStorageLimit() async {
+        let limit = StorageDownloadsSettingsStore.shared.load().localStorageLimit
+        _ = try? await applyLocalStorageLimit(limit)
     }
 
     func clearAllLocalDrafts() async throws {
@@ -45,6 +51,7 @@ extension AppModel {
         draft = ""
         threadDraft = ""
         quickSwitcherDraftChannelIDs = []
+        await applyConfiguredLocalStorageLimit()
     }
 
     private func draftDatabasesByAccountID() -> [(String, SakuraCordDatabase)] {

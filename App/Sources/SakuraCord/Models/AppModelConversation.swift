@@ -1002,6 +1002,7 @@ extension AppModel {
     }
 
     func updateDraft(_ value: String) {
+        let draftByteDelta = Int64(value.utf8.count - draft.utf8.count)
         draft = value
         if value.hasPrefix("/") || commandComposer.activeCommand != nil {
             stopLocalTyping(clearThrottle: false)
@@ -1009,6 +1010,9 @@ extension AppModel {
             scheduleLocalTyping(for: value)
         }
         guard let channelID = selectedChannelID else { return }
+        LocalStorageBudgetCoordinator.shared.scheduleAdjustment(
+            draftByteDelta: draftByteDelta
+        )
         quickSwitcherDraftChannelIDs.removeAll { $0 == channelID }
         if !value.isEmpty {
             quickSwitcherDraftChannelIDs.insert(channelID, at: 0)

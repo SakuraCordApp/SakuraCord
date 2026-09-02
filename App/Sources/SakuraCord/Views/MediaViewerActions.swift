@@ -2,6 +2,11 @@ import AppKit
 import Foundation
 import UniformTypeIdentifiers
 
+nonisolated enum MediaSaveDestination: Sendable {
+    case saveAs
+    case defaultFolder
+}
+
 @MainActor
 enum MediaViewerActionService {
     static func copyText(_ value: String) {
@@ -20,13 +25,16 @@ enum MediaViewerActionService {
         }
     }
 
-    static func save(_ item: RichMediaItem) async throws -> URL? {
+    static func save(
+        _ item: RichMediaItem,
+        to saveDestination: MediaSaveDestination
+    ) async throws -> URL? {
         let settings = StorageDownloadsSettingsStore.shared.load()
         var accessedFolder: URL?
         defer { accessedFolder?.stopAccessingSecurityScopedResource() }
         let destination: URL?
-        switch settings.downloadLocationMode {
-        case .askEveryTime:
+        switch saveDestination {
+        case .saveAs:
             destination = await savePanelDestination(for: item)
         case .defaultFolder:
             guard let folder = try StorageDownloadsSettingsStore.shared
@@ -44,18 +52,10 @@ enum MediaViewerActionService {
                     sourceURL: item.url
                 )
             )
-            if let automaticDestination = settings.filenameCollisionPolicy
-                .destination(for: proposed)
-            {
-                destination = automaticDestination
-            } else if settings.filenameCollisionPolicy == .ask {
-                destination = await savePanelDestination(
-                    for: item,
-                    directory: folder
-                )
-            } else {
+            guard let availableDestination = availableDestination(for: proposed) else {
                 throw MediaViewerActionError.couldNotChooseUniqueFilename
             }
+            destination = availableDestination
         }
 
         guard let destination else { return nil }
@@ -64,6 +64,23 @@ enum MediaViewerActionService {
             NSWorkspace.shared.activateFileViewerSelecting([destination])
         }
         return destination
+    }
+
+    nonisolated static func availableDestination(
+        for proposedURL: URL,
+        fileExists: (String) -> Bool = FileManager.default.fileExists(atPath:)
+    ) -> URL? {
+        guard fileExists(proposedURL.path) else { return proposedURL }
+        let stem = proposedURL.deletingPathExtension().lastPathComponent
+        let pathExtension = proposedURL.pathExtension
+        let directory = proposedURL.deletingLastPathComponent()
+        for index in 2 ... 10_000 {
+            var name = "\(stem) \(index)"
+            if !pathExtension.isEmpty { name += ".\(pathExtension)" }
+            let candidate = directory.appendingPathComponent(name)
+            if !fileExists(candidate.path) { return candidate }
+        }
+        return nil
     }
 
     private static func savePanelDestination(
