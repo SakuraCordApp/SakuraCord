@@ -10,15 +10,21 @@ enum ProfilePresentationLayout {
 struct ProfilePresentationContent<Footer: View>: View {
     let presentation: ProfilePresentationState
     var layout: ProfilePresentationLayout = .popover
+    var maximumPopoverHeight: CGFloat = 560
+    var showsRoles = true
     let footer: Footer
 
     init(
         presentation: ProfilePresentationState,
         layout: ProfilePresentationLayout = .popover,
+        maximumPopoverHeight: CGFloat = 560,
+        showsRoles: Bool = true,
         @ViewBuilder footer: () -> Footer
     ) {
         self.presentation = presentation
         self.layout = layout
+        self.maximumPopoverHeight = maximumPopoverHeight
+        self.showsRoles = showsRoles
         self.footer = footer()
     }
 
@@ -29,6 +35,8 @@ struct ProfilePresentationContent<Footer: View>: View {
             isLoading: presentation.isLoading,
             errorMessage: presentation.errorMessage,
             layout: layout,
+            maximumPopoverHeight: maximumPopoverHeight,
+            showsRoles: showsRoles,
             footer: footer
         )
     }
@@ -37,9 +45,16 @@ struct ProfilePresentationContent<Footer: View>: View {
 extension ProfilePresentationContent where Footer == EmptyView {
     init(
         presentation: ProfilePresentationState,
-        layout: ProfilePresentationLayout = .popover
+        layout: ProfilePresentationLayout = .popover,
+        maximumPopoverHeight: CGFloat = 560,
+        showsRoles: Bool = true
     ) {
-        self.init(presentation: presentation, layout: layout) {
+        self.init(
+            presentation: presentation,
+            layout: layout,
+            maximumPopoverHeight: maximumPopoverHeight,
+            showsRoles: showsRoles
+        ) {
             EmptyView()
         }
     }
@@ -53,14 +68,14 @@ struct MemberProfilePopover<Footer: View>: View {
     let isLoading: Bool
     let errorMessage: String?
     var layout: ProfilePresentationLayout = .popover
+    var maximumPopoverHeight: CGFloat = 560
+    var showsRoles = true
     let footer: Footer
 
     @Environment(\.stablePopoverPresentationContext)
     private var popoverPresentationContext
     @Environment(\.colorScheme) private var colorScheme
     @State private var contentHeight: CGFloat = 320
-
-    private let maximumHeight: CGFloat = 560
 
     var body: some View {
         Group {
@@ -71,7 +86,7 @@ struct MemberProfilePopover<Footer: View>: View {
                         width: width,
                         height: min(
                             contentHeight + surfaceInset * 2,
-                            maximumHeight
+                            maximumPopoverHeight
                         )
                     )
                     .background { popoverBackground }
@@ -143,7 +158,7 @@ struct MemberProfilePopover<Footer: View>: View {
                         if let bio = profile.bio, !bio.isEmpty {
                             ProfileAboutSection(bio: bio)
                         }
-                        if !profile.roles.isEmpty {
+                        if showsRoles, !profile.roles.isEmpty {
                             ProfileRolesSection(roles: profile.roles)
                                 .id(profile.id)
                         }
@@ -161,7 +176,7 @@ struct MemberProfilePopover<Footer: View>: View {
                     }
                 }
             }
-            .scrollIndicators(contentHeight > maximumHeight ? .visible : .hidden)
+            .scrollIndicators(contentHeight > maximumPopoverHeight ? .visible : .hidden)
             .padding(surfaceInset)
 
             if let effect = profile?.effect {

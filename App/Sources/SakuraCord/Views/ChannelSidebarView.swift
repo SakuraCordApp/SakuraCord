@@ -844,7 +844,11 @@ private struct CurrentUserCapsule: View {
            let presentation = model.contextualProfilePresentation,
            presentation.requestID == profileRequestID
         {
-            ProfilePresentationContent(presentation: presentation) {
+            ProfilePresentationContent(
+                presentation: presentation,
+                maximumPopoverHeight: 720,
+                showsRoles: false
+            ) {
                 YouPopoverOptions(
                     currentStatus: currentStatus,
                     isStatusEnabled: isAuthenticated && !isOfflineTesting,
