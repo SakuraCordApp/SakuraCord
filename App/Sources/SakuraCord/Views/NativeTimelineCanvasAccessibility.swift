@@ -1396,7 +1396,7 @@ extension NativeTimelineCanvasView {
         })
         if canDelete {
             result.append(NSAccessibilityCustomAction(
-                name: "Delete Message"
+                name: "Delete Message…"
             ) { [weak self] in
                 self?.requestDelete(message)
                 return self != nil
@@ -1469,7 +1469,7 @@ extension NativeTimelineCanvasView {
         ])
         if canDelete {
             result.append(NSAccessibilityCustomAction(
-                name: "Delete Message"
+                name: "Delete Message…"
             ) { [weak self] in
                 self?.requestDelete(message)
                 return self != nil

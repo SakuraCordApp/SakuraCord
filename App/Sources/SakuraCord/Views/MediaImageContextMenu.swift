@@ -39,7 +39,7 @@ enum MediaImageContextMenuBuilder {
         )
         menu.addItem(
             actionItem(
-                "Save Image",
+                "Save Image…",
                 systemImage: "arrow.down.to.line",
                 action: actions.saveImage
             )

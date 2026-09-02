@@ -1652,7 +1652,7 @@ private struct ForumPostComposer: View {
                     .accessibilityLabel("A tag is required before posting")
             }
             if let topic = channel.topic, !topic.isEmpty {
-                Button("Guidelines", systemImage: "checklist") { showsGuidelines = true }
+                Button("Guidelines…", systemImage: "checklist") { showsGuidelines = true }
                     .buttonStyle(.bordered)
                     .help("View posting guidelines")
             }

@@ -141,9 +141,9 @@ private struct NotificationDeliverySettingsSection: View {
                     ProgressView()
                         .controlSize(.small)
                 } else if authorizationStatus == .notDetermined {
-                    Button("Request Permission", action: requestPermission)
+                    Button("Request Permission…", action: requestPermission)
                 } else {
-                    Button("Open System Settings", action: openSystemSettings)
+                    Button("Open System Settings…", action: openSystemSettings)
                 }
             }
             .settingsControlAnchor(.notificationPermission, state: state)

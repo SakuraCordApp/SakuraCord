@@ -65,7 +65,7 @@ struct MyAccountSettingsPage: View {
             removalTitle,
             isPresented: pendingRemovalBinding
         ) {
-            Button(removalButtonTitle, role: .destructive) {
+            Button(removalConfirmationButtonTitle, role: .destructive) {
                 guard let account = pendingRemoval else { return }
                 pendingRemoval = nil
                 removeSavedSession(for: account)
@@ -313,6 +313,12 @@ struct MyAccountSettingsPage: View {
         selectedAccount?.accountID == model.activeAccountID
             ? "Log Out…"
             : "Remove Saved Account…"
+    }
+
+    private var removalConfirmationButtonTitle: String {
+        pendingRemoval?.accountID == model.activeAccountID
+            ? "Log Out"
+            : "Remove Saved Account"
     }
 
     private var removalTitle: String {

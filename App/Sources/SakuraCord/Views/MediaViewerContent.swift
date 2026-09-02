@@ -644,7 +644,7 @@ private struct MediaViewerFile: View {
                 .font(.title3.weight(.semibold))
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
-            Button("Open File", systemImage: "arrow.up.forward.app", action: open)
+            Button("Open File…", systemImage: "arrow.up.forward.app", action: open)
                 .buttonStyle(.glassProminent)
         }
         .padding(30)

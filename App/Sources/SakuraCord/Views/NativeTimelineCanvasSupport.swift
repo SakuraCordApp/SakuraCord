@@ -278,7 +278,7 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
                 .separator,
                 .action(
                     .discardFailedMessage,
-                    title: "Delete Message",
+                    title: "Delete Message…",
                     systemImage: "trash",
                     isDestructive: true
                 ),
@@ -344,7 +344,7 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
             result.append(.separator)
             result.append(.action(
                 .deleteMessage,
-                title: "Delete Message",
+                title: "Delete Message…",
                 systemImage: "trash",
                 isDestructive: true
             ))
@@ -408,7 +408,7 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
                 .separator,
                 .action(
                     .deleteMessage,
-                    title: "Delete Message",
+                    title: "Delete Message…",
                     systemImage: "trash",
                     isDestructive: true
                 ),

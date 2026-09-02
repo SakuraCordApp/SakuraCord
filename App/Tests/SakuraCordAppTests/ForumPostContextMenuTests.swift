@@ -141,7 +141,7 @@ import Testing
                 "Copy Link",
                 "Copy Thread ID",
                 nil,
-                "Delete Post",
+                "Delete Post…",
             ]
     )
     #expect(
@@ -151,7 +151,7 @@ import Testing
     )
     #expect(items.first?.isEnabled == false)
     let destructiveColor =
-        items.first { $0.title == "Delete Post" }?
+        items.first { $0.title == "Delete Post…" }?
         .attributedTitle?.attribute(
             .foregroundColor,
             at: 0,

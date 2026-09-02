@@ -185,7 +185,7 @@ struct DiagnosticsSettingsPage: View {
                 .settingsControlAnchor(.diagnosticClear, state: state)
 
                 if managedDiagnosticsFolderExists {
-                    Button("Open Diagnostics Folder") {
+                    Button("Open Diagnostics Folder…") {
                         openDiagnosticsFolder()
                     }
                     .settingsControlAnchor(.diagnosticsOpenFolder, state: state)

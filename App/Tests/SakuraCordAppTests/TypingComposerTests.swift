@@ -1967,7 +1967,7 @@ private func downArrowKeyEvent(
             .separator,
             .action(
                 .discardFailedMessage,
-                title: "Delete Message",
+                title: "Delete Message…",
                 systemImage: "trash",
                 isDestructive: true
             ),

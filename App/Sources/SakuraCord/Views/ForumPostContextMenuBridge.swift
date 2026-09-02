@@ -301,7 +301,7 @@ struct ForumPostContextMenuBridge: NSViewRepresentable {
                 menu.addItem(.separator())
                 menu.addItem(
                     menuItem(
-                        "Delete Post",
+                        "Delete Post…",
                         systemImage: "trash",
                         action: #selector(deletePostFromMenu),
                         isDestructive: true

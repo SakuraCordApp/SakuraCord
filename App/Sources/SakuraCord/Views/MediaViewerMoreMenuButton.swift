@@ -107,7 +107,7 @@ struct MediaViewerMoreMenuButton: NSViewRepresentable {
             menu.addItem(.separator())
             menu.addItem(
                 menuItem(
-                    "Save Media...",
+                    "Save Media…",
                     systemImage: "arrow.down.to.line",
                     action: #selector(saveFromMenu)
                 )

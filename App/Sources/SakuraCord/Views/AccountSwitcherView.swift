@@ -227,7 +227,7 @@ struct AccountSwitcherView: View {
             showsLogin = true
         } label: {
             Label(
-                "Add an account",
+                "Add an account…",
                 systemImage: "person.crop.circle.badge.plus"
             )
         }
@@ -346,14 +346,14 @@ private struct NativeAccountOptionsButton: NSViewRepresentable {
         @objc func showMenu(_ sender: NSButton) {
             let menu = NSMenu()
             let item = NSMenuItem(
-                title: "Log Out",
+                title: "Log Out…",
                 action: #selector(logOutSelected),
                 keyEquivalent: ""
             )
             item.target = self
             ContextMenuItemSupport.configure(
                 item,
-                title: "Log Out",
+                title: "Log Out…",
                 systemImage: "rectangle.portrait.and.arrow.right",
                 isDestructive: true
             )

@@ -515,7 +515,7 @@ private struct VoicePermissionsSettingsSection: View {
 
             LabeledContent("Privacy & Security") {
                 Button("Refresh", action: refresh)
-                Button("Open System Settings", action: openSystemSettings)
+                Button("Open System Settings…", action: openSystemSettings)
             }
         } header: {
             Text("Permissions", bundle: #bundle)

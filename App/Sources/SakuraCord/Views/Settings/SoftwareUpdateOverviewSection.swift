@@ -24,7 +24,7 @@ struct SoftwareUpdateOverviewSection<Destination: Hashable>: View {
 
                 Spacer(minLength: 16)
 
-                Button("Check Now") {
+                Button("Check Now…") {
                     updateController.checkForUpdates()
                 }
                 .disabled(!updateController.canCheckForUpdates)

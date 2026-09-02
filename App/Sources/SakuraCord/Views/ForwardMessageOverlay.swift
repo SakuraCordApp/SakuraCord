@@ -2441,7 +2441,7 @@ struct ForwardMessageOverlay: View {
                 .padding(.horizontal, 24)
                 .padding(.top, 16)
             HStack(alignment: .bottom, spacing: 8) {
-                TextField("Add an optional message...", text: $context, axis: .vertical)
+                TextField("Add an optional message…", text: $context, axis: .vertical)
                     .tint(SakuraCordAccentColor.color)
                     .textFieldStyle(.plain)
                     .focused($isContextFocused)

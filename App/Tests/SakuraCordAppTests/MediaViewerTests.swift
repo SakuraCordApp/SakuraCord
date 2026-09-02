@@ -440,7 +440,7 @@ struct MediaViewerTests {
             includesLinkActions: false
         )
 
-        #expect(menu.items.map(\.title) == ["Copy Image", "Save Image"])
+        #expect(menu.items.map(\.title) == ["Copy Image", "Save Image…"])
     }
 
     @Test func `escape prioritizer dismisses media before reaching the timeline`() throws {

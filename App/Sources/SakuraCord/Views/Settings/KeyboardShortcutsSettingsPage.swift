@@ -95,12 +95,12 @@ struct KeyboardShortcutsSettingsPage: View {
             HStack {
                 Text(group.title)
                 Spacer()
-                Button("Reset Section") {
+                Button("Reset Section…") {
                     resetRequest = .group(group)
                 }
                 .buttonStyle(.link)
                 .controlSize(.small)
-                .accessibilityLabel("Reset \(String(localized: group.title)) shortcuts")
+                .accessibilityLabel("Reset \(String(localized: group.title)) shortcuts…")
             }
         } footer: {
             VStack(alignment: .leading, spacing: 4) {
