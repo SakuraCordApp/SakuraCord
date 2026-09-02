@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsSidebar: View {
     let state: SettingsViewState
+    let onSearchResultActivated: () -> Void
 
     var body: some View {
         @Bindable var state = state
@@ -15,37 +16,46 @@ struct SettingsSidebar: View {
                 }
             }
         )
-        List(selection: selection) {
-            if state.searchText.isEmpty {
-                ForEach(SettingsSidebarGroupID.allCases) { group in
-                    Section(group.title) {
-                        ForEach(state.catalog.pages(in: group)) { page in
-                            Label(page.title, systemImage: page.systemImage)
-                                .lineLimit(1)
-                                .labelStyle(
-                                    SettingsSidebarLabelStyle(
-                                        isSelected: state.selectedPage == page.id
+        ScrollViewReader { proxy in
+            List(selection: selection) {
+                if state.searchText.isEmpty {
+                    ForEach(SettingsSidebarGroupID.allCases) { group in
+                        Section(group.title) {
+                            ForEach(state.catalog.pages(in: group)) { page in
+                                Label(page.title, systemImage: page.systemImage)
+                                    .lineLimit(1)
+                                    .labelStyle(
+                                        SettingsSidebarLabelStyle(
+                                            isSelected: state.selectedPage == page.id
+                                        )
                                     )
-                                )
-                                .tag(page.id)
+                                    .tag(page.id)
+                            }
                         }
+                        .collapsible(false)
                     }
-                    .collapsible(false)
+                } else {
+                    SettingsSearchResults(
+                        state: state,
+                        onResultActivated: onSearchResultActivated
+                    )
                 }
-            } else {
-                SettingsSearchResults(state: state)
+            }
+            .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
+            .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 280)
+            .accessibilityLabel(
+                LocalizedStringResource(
+                    "Settings categories",
+                    bundle: #bundle,
+                    comment: "Accessibility label for the Settings source-list sidebar."
+                )
+            )
+            .onChange(of: state.selectedSearchResultID) { _, id in
+                guard !state.searchText.isEmpty, let id else { return }
+                proxy.scrollTo(id, anchor: .center)
             }
         }
-        .listStyle(.sidebar)
-        .scrollContentBackground(.hidden)
-        .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 280)
-        .accessibilityLabel(
-            LocalizedStringResource(
-                "Settings categories",
-                bundle: #bundle,
-                comment: "Accessibility label for the Settings source-list sidebar."
-            )
-        )
     }
 }
 
@@ -67,6 +77,7 @@ private struct SettingsSidebarLabelStyle: LabelStyle {
 
 private struct SettingsSearchResults: View {
     let state: SettingsViewState
+    let onResultActivated: () -> Void
 
     var body: some View {
         Section(
@@ -87,12 +98,23 @@ private struct SettingsSearchResults: View {
                 .foregroundStyle(.secondary)
             } else {
                 ForEach(state.searchResults) { result in
+                    let isSelected = state.selectedSearchResultID == result.id
                     Button {
                         state.activate(result)
+                        onResultActivated()
                     } label: {
                         SettingsSearchResultRow(result: result)
                     }
                     .buttonStyle(.plain)
+                    .id(result.id)
+                    .listRowBackground(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(isSelected ? Color.primary.opacity(0.09) : .clear)
+                    )
+                    .onContinuousHover { phase in
+                        guard case .active = phase else { return }
+                        state.selectSearchResult(result.id)
+                    }
                     .accessibilityHint(
                         LocalizedStringResource(
                             "Opens this Settings control and briefly highlights it.",

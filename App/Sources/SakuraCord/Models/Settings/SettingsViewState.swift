@@ -37,17 +37,23 @@ final class SettingsViewState {
     }
 
     private(set) var searchResults: [SettingsSearchResult] = []
+    private(set) var selectedSearchResultID: SettingsControlID?
     private(set) var revealRequest: SettingsRevealRequest?
     private(set) var highlightedControlID: SettingsControlID?
 
     @ObservationIgnored let catalog: SettingsCatalog
     @ObservationIgnored private let searchEntries: [SearchEntry]
+    @ObservationIgnored private let sectionByControlID: [SettingsControlID: SettingsSectionID]
     @ObservationIgnored private var locale = Locale.current
     @ObservationIgnored private var highlightTask: Task<Void, Never>?
 
     init(catalog: SettingsCatalog = .foundation) {
         self.catalog = catalog
         searchEntries = Self.makeSearchEntries(catalog: catalog)
+        sectionByControlID = Dictionary(uniqueKeysWithValues: catalog.controls.compactMap {
+            guard let section = $0.destination.section else { return nil }
+            return ($0.id, section)
+        })
     }
 
     deinit {
@@ -70,6 +76,33 @@ final class SettingsViewState {
         guard let result = searchResults.first else { return false }
         activate(result)
         return true
+    }
+
+    @discardableResult
+    func activateSelectedSearchResult() -> Bool {
+        guard let selectedSearchResultID,
+              let result = searchResults.first(where: {
+                  $0.id == selectedSearchResultID
+              })
+        else { return false }
+        activate(result)
+        return true
+    }
+
+    func selectSearchResult(_ id: SettingsControlID) {
+        guard searchResults.contains(where: { $0.id == id }) else { return }
+        selectedSearchResultID = id
+    }
+
+    func moveSearchSelection(by delta: Int) {
+        let ids = searchResults.map(\.id)
+        guard !ids.isEmpty else {
+            selectedSearchResultID = nil
+            return
+        }
+        let currentIndex = selectedSearchResultID.flatMap(ids.firstIndex(of:)) ?? -1
+        let nextIndex = (currentIndex + delta + ids.count) % ids.count
+        selectedSearchResultID = ids[nextIndex]
     }
 
     func navigate(
@@ -97,15 +130,20 @@ final class SettingsViewState {
         }
     }
 
+    func sectionID(for controlID: SettingsControlID) -> SettingsSectionID? {
+        sectionByControlID[controlID]
+    }
+
     private func refreshSearchResults() {
         let normalizedQuery = Self.normalized(searchText)
         let terms = normalizedQuery.split(separator: " ").map(String.init)
         guard !terms.isEmpty else {
             searchResults = []
+            selectedSearchResultID = nil
             return
         }
 
-        searchResults = searchEntries
+        let results = searchEntries
             .compactMap { entry -> RankedResult? in
                 let title = localized(entry.result.title)
                 let fields = [title, localized(entry.help)]
@@ -143,6 +181,8 @@ final class SettingsViewState {
             }
             .prefix(12)
             .map(\.result)
+        searchResults = results
+        selectedSearchResultID = results.first?.id
     }
 
     private func localized(_ resource: LocalizedStringResource) -> String {

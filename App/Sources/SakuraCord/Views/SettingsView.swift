@@ -16,7 +16,10 @@ struct SettingsView: View {
     var body: some View {
         @Bindable var state = state
         NavigationSplitView {
-            SettingsSidebar(state: state)
+            SettingsSidebar(
+                state: state,
+                onSearchResultActivated: dismissSearchFocus
+            )
         } detail: {
             SettingsDetailRouter(
                 model: model,
@@ -50,15 +53,8 @@ struct SettingsView: View {
                 SakuraCordTextInputAccentBridge()
             }
         }
-        .onKeyPress(.return) {
-            state.activateFirstSearchResult() ? .handled : .ignored
-        }
-        .onKeyPress(.escape) {
-            guard isSearchPresented else { return .ignored }
-            state.searchText = ""
-            isSearchPresented = false
-            NSApp.keyWindow?.makeFirstResponder(nil)
-            return .handled
+        .onKeyPress(phases: [.down, .repeat]) { press in
+            handleSearchKeyPress(press)
         }
         .task {
             state.updateLocale(locale)
@@ -80,6 +76,45 @@ struct SettingsView: View {
             minHeight: 520,
             idealHeight: 700
         )
+    }
+
+    private func dismissSearchFocus() {
+        isSearchPresented = false
+        NSApp.keyWindow?.makeFirstResponder(nil)
+    }
+
+    private func handleSearchKeyPress(_ press: KeyPress) -> KeyPress.Result {
+        guard isSearchPresented else { return .ignored }
+        switch press.key {
+        case .escape:
+            state.searchText = ""
+            dismissSearchFocus()
+            return .handled
+        case .return:
+            guard state.activateSelectedSearchResult() else { return .ignored }
+            dismissSearchFocus()
+            return .handled
+        case .downArrow:
+            guard !state.searchText.isEmpty else { return .ignored }
+            state.moveSearchSelection(by: 1)
+            return .handled
+        case .upArrow:
+            guard !state.searchText.isEmpty else { return .ignored }
+            state.moveSearchSelection(by: -1)
+            return .handled
+        default:
+            guard press.modifiers.contains(.control) else { return .ignored }
+            switch press.characters.lowercased() {
+            case "n":
+                state.moveSearchSelection(by: 1)
+                return .handled
+            case "p":
+                state.moveSearchSelection(by: -1)
+                return .handled
+            default:
+                return .ignored
+            }
+        }
     }
 }
 

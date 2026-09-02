@@ -48,6 +48,7 @@ import Testing
     #expect(state.selectedPage == .voiceVideo)
     #expect(state.revealRequest?.controlID == .voiceInputVolume)
     #expect(state.highlightedControlID == .voiceInputVolume)
+    #expect(state.sectionID(for: .voiceInputVolume) == .voiceLevels)
     #expect(state.searchText.isEmpty)
 
     state.searchText = "no setting matches this phrase"
@@ -56,6 +57,21 @@ import Testing
 
     state.searchText = "hotkeys"
     #expect(state.searchResults.first?.destination.page == .keyboardShortcuts)
+
+    state.searchText = "autoplay"
+    let autoplayIDs = state.searchResults.map(\.id)
+    #expect(autoplayIDs.count > 2)
+    #expect(state.selectedSearchResultID == autoplayIDs.first)
+    state.moveSearchSelection(by: 1)
+    #expect(state.selectedSearchResultID == autoplayIDs[1])
+    state.moveSearchSelection(by: -1)
+    #expect(state.selectedSearchResultID == autoplayIDs[0])
+    state.moveSearchSelection(by: -1)
+    #expect(state.selectedSearchResultID == autoplayIDs.last)
+    #expect(state.activateSelectedSearchResult())
+    #expect(state.revealRequest?.controlID == autoplayIDs.last)
+    #expect(state.searchText.isEmpty)
+    #expect(state.selectedSearchResultID == nil)
 
     for query in ["Extensions", "plugins", "permissions", "sandboxing"] {
         state.searchText = query

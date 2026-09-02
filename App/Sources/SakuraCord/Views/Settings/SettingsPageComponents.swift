@@ -48,6 +48,12 @@ struct SettingsPageForm<Content: View>: View {
             content
         }
         .navigationTitle(metadata.title)
+        .overlayPreferenceValue(SettingsControlBoundsPreferenceKey.self) { controls in
+            SettingsControlHighlightOverlay(
+                controls: controls,
+                highlightedControlID: state.highlightedControlID
+            )
+        }
     }
 }
 
@@ -102,15 +108,82 @@ private struct SettingsControlAnchorModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .id(id)
-            .overlay {
-                if state.highlightedControlID == id {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .stroke(SakuraCordAccentColor.color, lineWidth: 2)
-                        .padding(-5)
-                        .transition(.opacity)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                }
+            .anchorPreference(
+                key: SettingsControlBoundsPreferenceKey.self,
+                value: .bounds
+            ) { bounds in
+                [
+                    SettingsControlBounds(
+                        controlID: id,
+                        sectionID: state.sectionID(for: id),
+                        bounds: bounds
+                    ),
+                ]
             }
+    }
+}
+
+private struct SettingsControlBounds {
+    let controlID: SettingsControlID
+    let sectionID: SettingsSectionID?
+    let bounds: Anchor<CGRect>
+}
+
+private struct SettingsControlBoundsPreferenceKey: PreferenceKey {
+    static let defaultValue: [SettingsControlBounds] = []
+
+    static func reduce(
+        value: inout [SettingsControlBounds],
+        nextValue: () -> [SettingsControlBounds]
+    ) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+private struct SettingsControlHighlightOverlay: View {
+    let controls: [SettingsControlBounds]
+    let highlightedControlID: SettingsControlID?
+
+    var body: some View {
+        GeometryReader { proxy in
+            if let bounds = highlightedControlBounds(in: proxy) {
+                let highlightedBounds = bounds.insetBy(dx: -16, dy: -10)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(SakuraCordAccentColor.color, lineWidth: 2)
+                    .frame(
+                        width: highlightedBounds.width,
+                        height: highlightedBounds.height
+                    )
+                    .position(
+                        x: highlightedBounds.midX,
+                        y: highlightedBounds.midY
+                    )
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+
+    private func highlightedControlBounds(in proxy: GeometryProxy) -> CGRect? {
+        guard let highlightedControlID,
+              let target = controls.first(where: {
+                  $0.controlID == highlightedControlID
+              }),
+              let sectionID = target.sectionID
+        else { return nil }
+
+        let targetBounds = proxy[target.bounds]
+        let sectionBounds = controls.lazy
+            .filter { $0.sectionID == sectionID }
+            .reduce(targetBounds) { bounds, control in
+                bounds.union(proxy[control.bounds])
+            }
+        return CGRect(
+            x: sectionBounds.minX,
+            y: targetBounds.minY,
+            width: sectionBounds.width,
+            height: targetBounds.height
+        )
     }
 }
