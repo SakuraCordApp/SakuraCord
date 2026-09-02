@@ -1067,8 +1067,8 @@ final class AppModel {
         Task<Void, Never>?
     @ObservationIgnored var contextualProfileTask:
         Task<Void, Never>?
-    @ObservationIgnored var profileCache:
-        [ProfileCacheKey: UserProfile] = [:]
+    @ObservationIgnored var currentUserProfilePrefetch: CurrentUserProfilePrefetch?
+    @ObservationIgnored var profileCache: [ProfileCacheKey: UserProfile] = [:]
     @ObservationIgnored var channelLoadTask: Task<Void, Never>?
     @ObservationIgnored var bootstrapHistoryPrefetch: BootstrapHistoryPrefetch?
     @ObservationIgnored var conversationRefreshJournals:

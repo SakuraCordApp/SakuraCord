@@ -1669,6 +1669,8 @@ extension AppModel {
         dismissInspectorProfile()
         dismissContextualProfile()
         if clearsCache {
+            currentUserProfilePrefetch?.task.cancel()
+            currentUserProfilePrefetch = nil
             profileCache.removeAll(keepingCapacity: false)
         }
     }

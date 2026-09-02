@@ -167,6 +167,11 @@ the app starts its read-only newest-history request concurrently with the
 remaining navigation projection and consumes that single in-flight task when
 the channel loader starts. This prefetch is process-only coordination: it is
 cancelled on account/session reset and never persists messages across launches.
+The current user's full profile is likewise prefetched into the account-scoped
+in-memory profile cache once the initial guild context is known, and again when
+that context changes, so the You Bar can present its final profile card without
+an intermediate loading-sized popover. Prefetch failures remain silent and the
+ordinary on-demand profile loader remains the fallback.
 
 Authenticated performance launch modes retain detailed signposts and exact
 resource windows for startup, account switching, DM/server/channel navigation,

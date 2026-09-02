@@ -3535,6 +3535,29 @@ private actor FailingRemovalCredentialStore: CredentialStore {
 }
 
 @MainActor
+@Test func `startup prefetches current user profile for initial guild`() async throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    await model.start()
+
+    let currentUser = try #require(model.snapshot?.currentUser)
+    let cacheKey = SakuraCord.ProfileCacheKey(
+        userID: currentUser.id,
+        guildID: model.selectedGuildID
+    )
+    #expect(await eventuallyOnMain { model.profileCache[cacheKey] != nil })
+
+    let member = model.membersByID[currentUser.id]
+        ?? Member(user: currentUser, roleName: "You", status: model.currentStatus)
+    let requestID = model.presentProfile(
+        for: member,
+        destination: .contextual
+    )
+    #expect(model.contextualProfilePresentation?.requestID == requestID)
+    #expect(model.contextualProfilePresentation?.profile != nil)
+    #expect(model.contextualProfilePresentation?.isLoading == false)
+}
+
+@MainActor
 private func reactionMutationTestModel(provider: any ChatProvider) -> AppModel {
     AppModel(
         launchMode: .offlineTesting,

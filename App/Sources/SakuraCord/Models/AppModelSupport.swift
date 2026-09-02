@@ -278,6 +278,11 @@ struct ProfileCacheKey: Hashable {
     let guildID: GuildID?
 }
 
+struct CurrentUserProfilePrefetch {
+    let key: ProfileCacheKey
+    let task: Task<Void, Never>
+}
+
 enum ProfilePresentationDestination {
     case inspector
     case contextual

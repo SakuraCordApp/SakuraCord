@@ -793,6 +793,7 @@ extension AppModel {
             in: value,
             retainedChannel: retainedChannel
         )
+        beginCurrentUserProfilePrefetch(in: initialGuildID, account: account)
         let initialHistoryChannelID = AppPerformanceSignposts.measureSync(
             "BootstrapNavigationProjection"
         ) { () -> ChannelID? in
@@ -1492,6 +1493,7 @@ extension AppModel {
         let rememberedChannelID = guildID.flatMap { lastOpenedChannelIDsByGuild[$0] }
         dismissAllProfiles()
         selectedGuildID = guildID
+        beginCurrentUserProfilePrefetch(in: guildID, account: session)
         AppPerformanceSignposts.measureSync(
             "GuildActivationMemberPresentationRestore"
         ) {
