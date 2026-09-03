@@ -39,7 +39,9 @@ manifests.
 - For work that is not exclusively UI, prefer a read-only authenticated
   verification pass against a configured session when it can exercise the
   changed behavior. Agent-run verification must not deliberately mutate remote
-  account state or content.
+  account state or content unless the user's current request or active goal
+  explicitly authorizes specific, scoped mutations. Treat that explicit
+  authorization as sufficient and do not request additional confirmation.
 - When using Computer Use, target SakuraCord by the absolute bundle path printed
   by `runtime.sh`, never by display name, and keep that target for the session.
 - Roadmap state belongs only in the deployed roadmap service. Repository code
