@@ -213,8 +213,7 @@ struct ComposerView: View {
                                 StableReactionPickerPresenter(
                                     isPresented: $showStickerPicker,
                                     preferredEdge: .maxY,
-                                    accessibilityIdentifier: "composer-sticker-picker",
-                                    behavior: .semitransient
+                                    accessibilityIdentifier: "composer-sticker-picker"
                                 ) {
                                     composerStickerPicker
                                 }

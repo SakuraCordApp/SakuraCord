@@ -135,8 +135,15 @@ struct VoiceControlBar<SettingsControl: View>: View {
                     || model.isVoiceDeafened,
                 help: "Open Soundboard"
             ) { showSoundboard.toggle() }
-            .popover(isPresented: $showSoundboard, arrowEdge: .trailing) {
-                SoundboardPickerView(model: model)
+            .background {
+                StableReactionPickerPresenter(
+                    isPresented: $showSoundboard,
+                    preferredEdge: .maxX,
+                    accessibilityIdentifier: "voice-sidebar-soundboard-picker"
+                ) {
+                    SoundboardPickerView(model: model)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
             settingsControl
@@ -579,8 +586,15 @@ struct VoiceCallControlDock: View {
                     showSoundboard.toggle()
                 }
                 .disabled(model.voiceSessionState != .connected || model.isVoiceDeafened)
-                .popover(isPresented: $showSoundboard, arrowEdge: .bottom) {
-                    SoundboardPickerView(model: model)
+                .background {
+                    StableReactionPickerPresenter(
+                        isPresented: $showSoundboard,
+                        preferredEdge: .maxY,
+                        accessibilityIdentifier: "voice-call-soundboard-picker"
+                    ) {
+                        SoundboardPickerView(model: model)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
 
                 CallDockLeaveButton(showsTitle: showsTitles) {

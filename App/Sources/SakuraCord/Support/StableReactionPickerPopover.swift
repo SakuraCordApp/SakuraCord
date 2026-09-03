@@ -14,7 +14,7 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
     @Binding var isPresented: Bool
     let preferredEdge: NSRectEdge
     let accessibilityIdentifier: String
-    var behavior: NSPopover.Behavior = .transient
+    var behavior: NSPopover.Behavior = .semitransient
     @ViewBuilder var content: () -> Content
 
     func makeCoordinator() -> Coordinator {
@@ -47,7 +47,7 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
     @MainActor
     final class Coordinator: NSObject, NSPopoverDelegate {
         private var popover: NSPopover?
-        private var hostingController: NSHostingController<Content>?
+        private var hostingController: StablePopoverHostingController<Content>?
         private weak var snapshotAnchor: NSView?
         private weak var returnWindow: NSWindow?
         private weak var returnResponder: NSResponder?
@@ -60,7 +60,7 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
             isPresented: Bool,
             preferredEdge: NSRectEdge,
             accessibilityIdentifier: String,
-            behavior: NSPopover.Behavior = .transient,
+            behavior: NSPopover.Behavior = .semitransient,
             content: Content,
             setPresented: @escaping (Bool) -> Void
         ) {
@@ -104,7 +104,12 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
             sourceView.layoutSubtreeIfNeeded()
             let snapshotAnchor = sourceView.installSnapshotAnchor(in: window)
 
-            let hostingController = NSHostingController(rootView: content)
+            let hostingController = StablePopoverHostingController(
+                rootView: content,
+                dismiss: { [weak self] in
+                    self?.close(notifyBinding: true)
+                }
+            )
             hostingController.view.setAccessibilityIdentifier(accessibilityIdentifier)
             let popover = NSPopover()
             popover.behavior = behavior
