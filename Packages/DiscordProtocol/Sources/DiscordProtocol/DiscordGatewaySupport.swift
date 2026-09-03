@@ -690,6 +690,7 @@ struct GatewayReadyGuildsDTO: Decodable {
         var features: Set<String>
         var voiceStates: [VoiceStateUpdateDTO]
         var emojis: GatewayGuildEmojiCollectionDTO?
+        var stickers: [MessageStickerDTO]
         var channels: [ChannelDTO]
         var threads: [ChannelDTO]
         var roles: [GuildRoleDTO]
@@ -703,6 +704,7 @@ struct GatewayReadyGuildsDTO: Decodable {
             case defaultMessageNotifications = "default_message_notifications"
             case voiceStates = "voice_states"
             case emojis
+            case stickers
             case channels, threads, roles, members
             case activityInstances = "activity_instances"
         }
@@ -739,6 +741,11 @@ struct GatewayReadyGuildsDTO: Decodable {
                 GatewayGuildEmojiCollectionDTO.self,
                 forKey: .emojis
             )
+            stickers =
+                (try? container.decode(
+                    LossyList<MessageStickerDTO>.self,
+                    forKey: .stickers
+                ))?.elements ?? []
             channels =
                 (try? container.decode(
                     LossyList<ChannelDTO>.self, forKey: .channels

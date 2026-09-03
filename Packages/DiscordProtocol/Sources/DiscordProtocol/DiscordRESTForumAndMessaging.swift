@@ -1164,6 +1164,7 @@ extension DiscordRESTProvider {
     public func supports(_ capability: ChatCapability) async -> Bool {
         capability == .slashCommands || capability == .forums || capability == .gifs
             || capability == .messageForwarding || capability == .soundboard
+            || capability == .stickers || capability == .stickerSending
     }
 
     public func applicationCommandCatalog(for target: ApplicationCommandIndexTarget) async throws
@@ -1569,49 +1570,6 @@ extension DiscordRESTProvider {
             messageSendTasks[key] = nil
             throw error
         }
-    }
-
-    func performSend(
-        _ draft: SendMessageDraft,
-        progress: @escaping @Sendable (MessageSendProgress) -> Void
-    ) async throws -> Message {
-        progress(.preparing)
-        var body: [String: JSONValue] = [
-            "content": .string(draft.content),
-            "nonce": .string(draft.nonce),
-            "enforce_nonce": .bool(true),
-            "tts": .bool(false),
-            "flags": .number(0),
-            // Chromium reports an unknown Network Information API connection
-            // type on the current macOS desktop host. The first-party send
-            // action forwards that value on every ordinary message POST.
-            "mobile_network_type": .string("unknown"),
-        ]
-        if let replyTo = draft.replyTo {
-            body["message_reference"] = draft.replyReferencePayload(for: replyTo)
-            if let allowedMentions = draft.replyAllowedMentionsPayload {
-                body["allowed_mentions"] = allowedMentions
-            }
-        }
-        if !draft.attachmentURLs.isEmpty {
-            body["attachments"] = try await .array(
-                uploadForumAttachments(
-                    draft.attachments, channelID: draft.channelID, progress: progress)
-            )
-        }
-        progress(.submitting)
-        let dto: MessageDTO = try await request(
-            "/channels/\(draft.channelID)/messages",
-            method: "POST",
-            body: body,
-            headers: ["X-Context-Properties": DiscordClientMetadata.messageContextHeader]
-        )
-        var message = try dto.domain()
-        message.nonce = draft.nonce
-        cachedMessages[message.id] = message
-        continuation?.yield(.messageCreated(message))
-        progress(.completed(messageID: message.id))
-        return message
     }
 
     func uploadAttachments(

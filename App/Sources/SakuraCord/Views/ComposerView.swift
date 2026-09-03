@@ -13,12 +13,14 @@ struct ComposerView: View {
     var onEditMessage: (MessageID) -> Void = { _ in }
     @State private var showFileImporter = false
     @State private var showGIFPicker = false
+    @State private var showStickerPicker = false
     @State private var showEmojiPicker = false
     @State private var isFocused = false
     @State private var draftSelection: NSRange?
     @State private var selectionBeforeEmojiPicker: NSRange?
     @State private var isSubmitting = false
     @State private var gifPickerDismissedAt: TimeInterval = -.infinity
+    @State private var stickerPickerDismissedAt: TimeInterval = -.infinity
     @State private var emojiPickerDismissedAt: TimeInterval = -.infinity
     @State private var autocompleteIndex = 0
     @State private var isAutocompleteDismissed = false
@@ -132,7 +134,8 @@ struct ComposerView: View {
                                 capturesUnfocusedTyping:
                                     model.chatSettings.focusesComposerOnTyping
                                         && !showEmojiPicker
-                                        && !showGIFPicker,
+                                        && !showGIFPicker
+                                        && !showStickerPicker,
                                 verticalContentInset: appearance == .defaultStyle
                                     ? ChatChromeMetrics.composerTextVerticalInset
                                     : 0,
@@ -190,6 +193,30 @@ struct ComposerView: View {
                                     accessibilityIdentifier: "composer-gif-picker"
                                 ) {
                                     composerGIFPicker
+                                }
+                                .frame(width: accessoryButtonSize, height: accessoryButtonSize)
+                            }
+                        }
+                        if model.supportedCapabilities.contains(.stickers) {
+                            ComposerActionButton(
+                                icon: Image(systemName: "face.smiling.inverse"),
+                                help: "Choose sticker",
+                                iconSize: 19,
+                                iconWeight: .medium,
+                                size: accessoryButtonSize,
+                                appearance: appearance
+                            ) {
+                                toggleStickerPicker()
+                            }
+                            .fixedSize()
+                            .background {
+                                StableReactionPickerPresenter(
+                                    isPresented: $showStickerPicker,
+                                    preferredEdge: .maxY,
+                                    accessibilityIdentifier: "composer-sticker-picker",
+                                    behavior: .semitransient
+                                ) {
+                                    composerStickerPicker
                                 }
                                 .frame(width: accessoryButtonSize, height: accessoryButtonSize)
                             }
@@ -267,6 +294,11 @@ struct ComposerView: View {
                 gifPickerDismissedAt = ProcessInfo.processInfo.systemUptime
             }
         }
+        .onChange(of: showStickerPicker) { wasPresented, isPresented in
+            if wasPresented, !isPresented {
+                stickerPickerDismissedAt = ProcessInfo.processInfo.systemUptime
+            }
+        }
         .onChange(of: draft) { _, value in
             if completeClosedEmojiName(in: value) {
                 return
@@ -296,6 +328,7 @@ struct ComposerView: View {
             selectionBeforeEmojiPicker = nil
             showFileImporter = false
             showGIFPicker = false
+            showStickerPicker = false
             showEmojiPicker = false
             let isClosedVoiceChat = model.selectedChannel?.kind == .voice
                 && !model.isVoiceChatOpen
@@ -421,6 +454,16 @@ struct ComposerView: View {
         }
     }
 
+    private var composerStickerPicker: some View {
+        StickerPickerView(model: model) {
+            showStickerPicker = false
+            Task { @MainActor in
+                await Task.yield()
+                isFocused = true
+            }
+        }
+    }
+
     private func handleEscapeCommand() {
         guard !model.consumeEscapeForMediaViewer() else { return }
         guard !model.consumeEscapeForPinnedMessages() else { return }
@@ -429,6 +472,8 @@ struct ComposerView: View {
             return
         } else if showGIFPicker {
             showGIFPicker = false
+        } else if showStickerPicker {
+            showStickerPicker = false
         } else if showEmojiPicker {
             dismissEmojiPicker()
         } else if !attachments.isEmpty {
@@ -481,6 +526,7 @@ struct ComposerView: View {
                 ?? NSRange(location: draft.utf16.count, length: 0)
         showEmojiPicker = true
         showGIFPicker = false
+        showStickerPicker = false
     }
 
     private func toggleGIFPicker() {
@@ -492,8 +538,23 @@ struct ComposerView: View {
         let now = ProcessInfo.processInfo.systemUptime
         guard now - gifPickerDismissedAt > 0.25 else { return }
         showEmojiPicker = false
+        showStickerPicker = false
         selectionBeforeEmojiPicker = nil
         showGIFPicker = true
+    }
+
+    private func toggleStickerPicker() {
+        if showStickerPicker {
+            showStickerPicker = false
+            return
+        }
+
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - stickerPickerDismissedAt > 0.25 else { return }
+        showEmojiPicker = false
+        showGIFPicker = false
+        selectionBeforeEmojiPicker = nil
+        showStickerPicker = true
     }
 
     private func send() {

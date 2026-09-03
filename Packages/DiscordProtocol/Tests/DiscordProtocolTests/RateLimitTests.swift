@@ -1979,6 +1979,24 @@ private struct BootstrapRequestScenario {
         #expect(mentionBody["mobile_network_type"] as? String == "unknown")
         #expect(mentionBody["allowed_mentions"] == nil)
 
+        let stickerDraft = SendMessageDraft(
+            channelID: ChannelID(rawValue: 200),
+            content: "",
+            nonce: "sticker-contract-nonce",
+            stickerIDs: ["123456789012345678"]
+        )
+        let requestsBeforeStickerSend = RateLimitURLProtocol.messageRequestCount
+        _ = try await provider.send(stickerDraft)
+        #expect(RateLimitURLProtocol.messageRequestCount == requestsBeforeStickerSend + 1)
+        let stickerBody = try #require(RateLimitURLProtocol.sentMessageBody)
+        #expect(Set(stickerBody.keys) == [
+            "content", "nonce", "tts", "flags", "mobile_network_type", "sticker_ids",
+        ])
+        #expect(stickerBody["content"] as? String == "")
+        #expect(stickerBody["nonce"] as? String == stickerDraft.nonce)
+        #expect(stickerBody["enforce_nonce"] == nil)
+        #expect(stickerBody["sticker_ids"] as? [String] == ["123456789012345678"])
+
         let reply = try await provider.send(SendMessageDraft(
             channelID: ChannelID(rawValue: 200),
             content: "reply",

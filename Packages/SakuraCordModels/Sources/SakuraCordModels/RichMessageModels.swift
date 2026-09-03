@@ -343,6 +343,28 @@ public struct MessageSticker: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
+public struct StickerPack: Identifiable, Codable, Hashable, Sendable {
+    public var id: String
+    public var name: String
+    public var description: String?
+    public var coverStickerID: String?
+    public var stickers: [MessageSticker]
+
+    public init(
+        id: String,
+        name: String,
+        description: String? = nil,
+        coverStickerID: String? = nil,
+        stickers: [MessageSticker]
+    ) {
+        self.id = id
+        self.name = name
+        self.description = description
+        self.coverStickerID = coverStickerID
+        self.stickers = stickers
+    }
+}
+
 public struct MessageThreadSummary: Codable, Hashable, Sendable {
     public var id: ChannelID
     public var guildID: GuildID?

@@ -194,10 +194,16 @@ public extension DiscordRESTProvider {
         let emojiSettings = DiscordSettingsProto.emojiSettings(from: updated)
         let publishesSoundboardSettings = cachedSoundboardUserSettings != nil
         let soundboardSettings = DiscordSettingsProto.soundboardSettings(from: updated)
+        let publishesStickerSettings = cachedStickerUserSettings != nil
         cachedEmojiUserSettings = emojiSettings
         cachedSoundboardUserSettings = soundboardSettings
         cachedGIFFavorites = DiscordSettingsProto.gifFavorites(from: updated)
+        let stickerSettings = DiscordSettingsProto.stickerSettings(from: updated)
+        cachedStickerUserSettings = stickerSettings
         continuation?.yield(.emojiUserSettingsChanged(emojiSettings))
+        if publishesStickerSettings {
+            continuation?.yield(.stickerUserSettingsChanged(stickerSettings))
+        }
         if publishesSoundboardSettings {
             continuation?.yield(.soundboardUserSettingsChanged(soundboardSettings))
         }

@@ -416,7 +416,7 @@ final class AppModel {
     var isLoadingGIFPicker = false
     var gifErrorMessage: String?
     var gifFavoriteMutationURL: URL?
-    var stickersByGuild: [GuildID: [MessageSticker]] = [:]
+    var stickerPickerState = StickerPickerPresentationState()
     var soundboardState = SoundboardPresentationState()
     var supportedCapabilities: Set<ChatCapability> = []
     var componentInteractionPresentation =

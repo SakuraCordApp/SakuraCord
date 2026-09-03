@@ -287,6 +287,8 @@ extension AppModel {
             didAttemptDiscordEmojiSettings = true
             hasLoadedDiscordEmojiSettings = true
             forwardSearchSourceRevision &+= 1
+        case .stickerUserSettingsChanged, .stickersChanged:
+            consumeStickerEvent(event)
         case .soundboardUserSettingsChanged,
              .soundboardSoundsChanged,
              .voiceChannelEffect:

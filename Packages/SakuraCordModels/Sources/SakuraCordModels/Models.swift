@@ -388,6 +388,28 @@ public struct DiscordFrecencyUsage: Codable, Equatable, Sendable {
     }
 }
 
+public struct StickerUserSettings: Equatable, Sendable {
+    public var favoriteIDs: [String]
+    public var frequentlyUsedIDs: [String]
+    public var usageScores: [String: Int]
+    public var usage: [String: DiscordFrecencyUsage]
+    public var usageOrder: [String]
+
+    public init(
+        favoriteIDs: [String] = [],
+        frequentlyUsedIDs: [String] = [],
+        usageScores: [String: Int] = [:],
+        usage: [String: DiscordFrecencyUsage] = [:],
+        usageOrder: [String] = []
+    ) {
+        self.favoriteIDs = favoriteIDs
+        self.frequentlyUsedIDs = frequentlyUsedIDs
+        self.usageScores = usageScores
+        self.usage = usage
+        self.usageOrder = usageOrder
+    }
+}
+
 public enum ChannelKindValue: String, Codable, Hashable, Sendable {
     case text, announcement, forum, voice, directMessage, groupDirectMessage, unknown
 }

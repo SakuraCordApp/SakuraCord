@@ -116,6 +116,11 @@ public protocol ChatProvider: Sendable {
     func setGIFFavorite(_ gif: GIFSearchResult, isFavorite: Bool) async throws
         -> [GIFSearchResult]
     func stickers(in guildID: GuildID) async throws -> [MessageSticker]
+    func standardStickerPacks() async throws -> [StickerPack]
+    func stickerUserSettings() async throws -> StickerUserSettings
+    func setStickerFavorite(_ stickerID: String, isFavorite: Bool) async throws
+        -> StickerUserSettings
+    func recordStickerUse(_ stickerID: String) async throws -> StickerUserSettings
     func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message
     func delete(messageID: MessageID, channelID: ChannelID) async throws
     func acknowledge(
@@ -515,6 +520,22 @@ public extension ChatProvider {
 
     func stickers(in guildID: GuildID) async throws -> [MessageSticker] {
         throw ChatProviderError.capabilityDisabled(.stickers)
+    }
+
+    func standardStickerPacks() async throws -> [StickerPack] { [] }
+
+    func stickerUserSettings() async throws -> StickerUserSettings {
+        StickerUserSettings()
+    }
+
+    func setStickerFavorite(_ stickerID: String, isFavorite: Bool) async throws
+        -> StickerUserSettings
+    {
+        throw ChatProviderError.capabilityDisabled(.stickers)
+    }
+
+    func recordStickerUse(_ stickerID: String) async throws -> StickerUserSettings {
+        StickerUserSettings()
     }
 
     func emojis(in guildID: GuildID) async throws -> [DiscordEmoji] {

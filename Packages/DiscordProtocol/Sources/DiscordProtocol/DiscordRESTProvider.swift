@@ -190,6 +190,14 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var emojiUserSettingsTask: Task<EmojiUserSettings, Error>?
     var cachedFrecencySettingsProto: Data?
     var frecencySettingsTask: Task<Data, Error>?
+    var cachedStickersByGuild: [GuildID: [MessageSticker]] = [:]
+    var cachedStandardStickerPacks: [StickerPack]?
+    var standardStickerPacksTask: Task<[StickerPack], Error>?
+    var cachedStickerUserSettings: StickerUserSettings?
+    var pendingStickerFrecencyPatch: Data?
+    var stickerFrecencyFlushTask: Task<Void, Never>?
+    var stickerFrecencyRevision: UInt64 = 0
+    var stickerFrecencyFlushGeneration: UInt64 = 0
     var cachedDefaultSoundboardSounds: [SoundboardSound]?
     var cachedSoundboardSounds: [GuildID: [SoundboardSound]] = [:]
     var cachedSoundboardUserSettings: SoundboardUserSettings?

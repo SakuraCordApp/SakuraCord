@@ -543,6 +543,119 @@ private func appendETFBinary(_ value: String, to data: inout Data) {
     #expect(settings.frequentlyUsedKeys.last == "e17")
 }
 
+@Test func `sticker settings preserve favorite order and reproduce desktop frecency`() throws {
+    func field(_ number: Int, payload: [UInt8]) -> [UInt8] {
+        encodeProtoVarint(UInt64(number << 3 | 2))
+            + encodeProtoVarint(UInt64(payload.count))
+            + payload
+    }
+    func fixed64(_ value: UInt64) -> [UInt8] {
+        (0 ..< 8).map { UInt8(truncatingIfNeeded: value >> UInt64($0 * 8)) }
+    }
+    func varintField(_ number: Int, _ value: UInt64) -> [UInt8] {
+        encodeProtoVarint(UInt64(number << 3)) + encodeProtoVarint(value)
+    }
+    func usageEntry(
+        id: UInt64,
+        totalUses: UInt64,
+        timestamps: [UInt64],
+        valueSuffix: [UInt8] = [],
+        entrySuffix: [UInt8] = []
+    ) -> [UInt8] {
+        let value = varintField(1, totalUses)
+            + field(2, payload: timestamps.flatMap(encodeProtoVarint))
+            + valueSuffix
+        let mapEntry = encodeProtoVarint(UInt64(1 << 3 | 1)) + fixed64(id)
+            + field(2, payload: value)
+            + entrySuffix
+        return field(1, payload: mapEntry)
+    }
+
+    let now: UInt64 = 1_800_000_000_000
+    let day: UInt64 = 86_400_000
+    let favorites = field(
+        3,
+        payload: field(1, payload: [11, 22, 33].flatMap(fixed64))
+    )
+    let observedWeightAges: [UInt64] = [0, 4, 31, 81, 81, 81, 81, 81, 81, 81]
+    let usage = field(
+        4,
+        payload: usageEntry(
+            id: 22,
+            totalUses: 13,
+            timestamps: observedWeightAges.map { now - $0 * day }
+        ) + usageEntry(id: 11, totalUses: 1, timestamps: [now])
+    )
+
+    let settings = DiscordSettingsProto.stickerSettings(
+        from: Data(favorites + usage),
+        nowMilliseconds: now
+    )
+    #expect(settings.favoriteIDs == ["11", "22", "33"])
+    #expect(settings.frequentlyUsedIDs == ["22", "11"])
+    #expect(settings.usageScores["22"] == 270)
+    #expect(settings.usage["22"]?.totalUses == 13)
+    #expect(settings.usage["22"]?.recentUses.count == 10)
+
+    let removed = try DiscordSettingsProto.updatingStickerFavorite(
+        in: Data(favorites + usage),
+        stickerID: "11",
+        isFavorite: false
+    )
+    #expect(removed.settings.favoriteIDs == ["22", "33"])
+    let emptied = try DiscordSettingsProto.updatingStickerFavorite(
+        in: Data(field(3, payload: field(1, payload: fixed64(11)))),
+        stickerID: "11",
+        isFavorite: false
+    )
+    #expect(emptied.patch == Data([0x1a, 0x00]))
+
+    let targetUnknownValue = varintField(9, 777)
+    let targetUnknownEntry = varintField(8, 42)
+    let untouchedEntry = usageEntry(
+        id: 33,
+        totalUses: 7,
+        timestamps: [now - day],
+        valueSuffix: varintField(9, 999),
+        entrySuffix: field(8, payload: [1, 2, 3])
+    )
+    let preservingUsage = field(
+        4,
+        payload: usageEntry(
+            id: 22,
+            totalUses: 13,
+            timestamps: observedWeightAges.map { now - $0 * day },
+            valueSuffix: targetUnknownValue,
+            entrySuffix: targetUnknownEntry
+        ) + untouchedEntry
+    )
+    let recorded = try DiscordSettingsProto.recordingStickerUse(
+        in: Data(favorites + preservingUsage),
+        stickerID: "22",
+        timestamp: now
+    )
+    #expect(recorded.settings.usage["22"]?.totalUses == 14)
+    #expect(recorded.settings.usage["22"]?.recentUses.first == now)
+    #expect(recorded.patch.range(of: Data(targetUnknownValue)) != nil)
+    #expect(recorded.patch.range(of: Data(targetUnknownEntry)) != nil)
+    #expect(recorded.patch.suffix(untouchedEntry.count) == Data(untouchedEntry))
+}
+
+@Test func `desktop ready decodes guild sticker catalog`() throws {
+    let payload = Data(
+        #"{"guilds":[{"id":"100","name":"Stickers","stickers":[{"id":"200","name":"Wave","format_type":2,"available":true}],"channels":[]}]}"#.utf8
+    )
+    let ready = try JSONDecoder().decode(GatewayReadyGuildsDTO.self, from: payload)
+    let guildID = GuildID(rawValue: 100)
+    let sticker = try #require(
+        ready.guilds.first?.stickers.first?.domain(guildID: guildID)
+    )
+    #expect(sticker.id == "200")
+    #expect(sticker.name == "Wave")
+    #expect(sticker.format == .apng)
+    #expect(sticker.guildID == guildID)
+}
+
 @Test func `soundboard settings keep Discord's 32 ranked frequent candidates`() {
     func field(_ number: Int, payload: [UInt8]) -> [UInt8] {
         encodeProtoVarint(UInt64(number << 3 | 2))

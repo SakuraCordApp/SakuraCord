@@ -168,6 +168,10 @@ extension DiscordRESTProvider {
     }
 
     public func disconnect() async {
+        stickerFrecencyFlushGeneration &+= 1
+        stickerFrecencyFlushTask?.cancel()
+        stickerFrecencyFlushTask = nil
+        await flushStickerFrecencyIfNeeded()
         requestSafetyCircuitIsOpen = true
         cancelStartupSearchCacheLoad()
         await flushForwardSearchPeopleCachePersistence()
@@ -708,6 +712,7 @@ extension DiscordRESTProvider {
                 memberListSubscriptionOrder = [:]
                 cachedGuildChannelDTOs = [:]
                 cachedGuildRoles = [:]
+                cachedStickersByGuild = [:]
                 cachedForumPosts = [:]
                 cachedForumThreadOrder = []
                 cachedJoinedThreads = [:]
@@ -916,6 +921,15 @@ extension DiscordRESTProvider {
                     if let guildID, let emojis = guild.emojis {
                         publishEmojiCollection(emojis, guildID: guildID)
                     }
+                    if let guildID {
+                        let stickers = guild.stickers
+                            .map { $0.domain(guildID: guildID) }
+                            .filter(\.isAvailable)
+                        cachedStickersByGuild[guildID] = stickers
+                        continuation?.yield(
+                            .stickersChanged(guildID: guildID, stickers: stickers)
+                        )
+                    }
                     for state in guild.voiceStates {
                         guard let participant = state.domain(defaultGuildID: guildID) else {
                             continue
@@ -968,6 +982,16 @@ extension DiscordRESTProvider {
             default:
                 return
             }
+        case "GUILD_STICKERS_UPDATE":
+            guard let update = try? JSONDecoder().decode(
+                GatewayGuildStickersUpdateDTO.self,
+                from: data
+            ), let guildID = GuildID(update.guildID) else { return }
+            let stickers = update.stickers
+                .map { $0.domain(guildID: guildID) }
+                .filter(\.isAvailable)
+            cachedStickersByGuild[guildID] = stickers
+            continuation?.yield(.stickersChanged(guildID: guildID, stickers: stickers))
         case "USER_GUILD_SETTINGS_UPDATE":
             guard let update = try? JSONDecoder().decode(
                 GatewayUserGuildSettingsDTO.self, from: data

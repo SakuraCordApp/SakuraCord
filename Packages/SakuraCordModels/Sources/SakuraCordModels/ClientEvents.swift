@@ -42,6 +42,8 @@ public enum ClientEvent: Equatable, Sendable {
         upserted: [DiscordEmoji],
         deletedIDs: [String]
     )
+    case stickersChanged(guildID: GuildID, stickers: [MessageSticker])
+    case stickerUserSettingsChanged(StickerUserSettings)
     case soundboardSoundsChanged(guildID: GuildID?, sounds: [SoundboardSound])
     case voiceChannelEffect(VoiceChannelEffect)
     case voiceStateChanged(VoiceParticipantState)

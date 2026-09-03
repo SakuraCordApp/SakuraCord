@@ -14,6 +14,7 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
     @Binding var isPresented: Bool
     let preferredEdge: NSRectEdge
     let accessibilityIdentifier: String
+    var behavior: NSPopover.Behavior = .transient
     @ViewBuilder var content: () -> Content
 
     func makeCoordinator() -> Coordinator {
@@ -30,6 +31,7 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
             isPresented: isPresented,
             preferredEdge: preferredEdge,
             accessibilityIdentifier: accessibilityIdentifier,
+            behavior: behavior,
             content: content(),
             setPresented: { isPresented = $0 }
         )
@@ -58,6 +60,7 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
             isPresented: Bool,
             preferredEdge: NSRectEdge,
             accessibilityIdentifier: String,
+            behavior: NSPopover.Behavior = .transient,
             content: Content,
             setPresented: @escaping (Bool) -> Void
         ) {
@@ -79,6 +82,7 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
                     sourceView: sourceView,
                     preferredEdge: preferredEdge,
                     accessibilityIdentifier: accessibilityIdentifier,
+                    behavior: behavior,
                     content: content
                 )
             }
@@ -88,6 +92,7 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
             sourceView: StableReactionPickerSourceView,
             preferredEdge: NSRectEdge,
             accessibilityIdentifier: String,
+            behavior: NSPopover.Behavior,
             content: Content
         ) {
             guard popover == nil,
@@ -102,7 +107,7 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
             let hostingController = NSHostingController(rootView: content)
             hostingController.view.setAccessibilityIdentifier(accessibilityIdentifier)
             let popover = NSPopover()
-            popover.behavior = .transient
+            popover.behavior = behavior
             popover.animates = true
             popover.delegate = self
             popover.contentViewController = hostingController

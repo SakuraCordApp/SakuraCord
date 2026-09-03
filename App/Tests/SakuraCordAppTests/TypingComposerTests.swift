@@ -808,6 +808,30 @@ import Testing
     }
 }
 
+@Test func `sticker sending chooses exactly one native or FakeNitro route`() {
+    let currentGuild = GuildID(rawValue: 10)
+    let local = MessageSticker(id: "100", name: "Local", guildID: currentGuild)
+    let remote = MessageSticker(
+        id: "200",
+        name: "Remote",
+        guildID: GuildID(rawValue: 20)
+    )
+    let standard = MessageSticker(id: "300", name: "Standard")
+
+    #expect(StickerSendPolicy.route(
+        for: local, currentGuildID: currentGuild, premiumType: 0
+    ) == .native)
+    #expect(StickerSendPolicy.route(
+        for: standard, currentGuildID: currentGuild, premiumType: 0
+    ) == .native)
+    #expect(StickerSendPolicy.route(
+        for: remote, currentGuildID: currentGuild, premiumType: 0
+    ) == .fakeNitroUpload)
+    #expect(StickerSendPolicy.route(
+        for: remote, currentGuildID: currentGuild, premiumType: 2
+    ) == .native)
+}
+
 @Test func `reaction emoji permissions filter new choices and allow existing reactions`() {
     let currentGuild = GuildID(rawValue: 10)
     let otherGuild = GuildID(rawValue: 20)

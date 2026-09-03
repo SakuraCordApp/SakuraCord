@@ -117,10 +117,12 @@ struct MessageStickerDTO: Decodable {
     var formatType: Int?
     var guildID: String?
     var available: Bool?
+    var sortValue: Int?
     enum CodingKeys: String, CodingKey {
         case id, name, description, tags, available
         case formatType = "format_type"
         case guildID = "guild_id"
+        case sortValue = "sort_value"
     }
 
     var domain: MessageSticker {
@@ -129,6 +131,12 @@ struct MessageStickerDTO: Decodable {
             format: formatType.flatMap(StickerFormat.init(rawValue:)),
             guildID: guildID.flatMap(GuildID.init), isAvailable: available ?? true
         )
+    }
+
+    func domain(guildID fallbackGuildID: GuildID) -> MessageSticker {
+        var value = domain
+        if value.guildID == nil { value.guildID = fallbackGuildID }
+        return value
     }
 }
 

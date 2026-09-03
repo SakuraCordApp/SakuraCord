@@ -1835,6 +1835,11 @@ extension AppModel {
         stickerLoadTasks = [:]
         stickerLoadGeneration &+= 1
         stickersByGuild = [:]
+        standardStickerPacks = []
+        stickerUserSettings = StickerUserSettings()
+        isLoadingStickerPicker = false
+        stickerPickerErrorMessage = nil
+        sendingStickerID = nil
         loadingReactionReactors = []
         failedReactionReactorLoads = [:]
         resetForumLoadAndPresentationState()
