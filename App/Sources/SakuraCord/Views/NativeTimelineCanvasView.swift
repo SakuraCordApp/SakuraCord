@@ -61,6 +61,12 @@ final class NativeTimelineCanvasView: NSView {
         let url: URL
     }
 
+    struct DesiredLottieStickerOverlay {
+        let key: LottieStickerOverlayKey
+        let frame: CGRect
+        let opacity: CGFloat
+    }
+
     enum AnimatedMediaOverlayRole: Hashable {
         case authorAvatar
         case authorAvatarDecoration

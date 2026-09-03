@@ -504,6 +504,21 @@ final class NativeTimelineMediaStore {
         animatedCache.object(forKey: key.cacheKey)?.decoded
     }
 
+    func cacheDecodedImage(
+        _ decoded: DecodedAnimatedImage,
+        for key: NativeTimelineMediaKey
+    ) {
+        let media = NativeTimelineAnimatedMedia(decoded)
+        animatedCache.setObject(
+            media,
+            forKey: key.cacheKey,
+            cost: decoded.estimatedByteCount
+        )
+        if let firstFrame = media.firstFrame {
+            cacheImage(firstFrame, for: key)
+        }
+    }
+
     func requestAnimated(
         _ key: NativeTimelineMediaKey,
         owner: UUID,

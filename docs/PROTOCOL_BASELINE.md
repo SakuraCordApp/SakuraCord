@@ -975,6 +975,11 @@ implementation records.
   `enforce_nonce: true`, `tts: false`, `flags: 0`, the clean macOS host's
   `mobile_network_type: "unknown"`, attachments only when present, and
   `chat_input` context.
+- Native sticker sends enter the same nonce-keyed optimistic outbox as ordinary
+  messages. Picker dismissal and timeline insertion do not wait for REST; the
+  selected sticker's loaded media identity remains attached to the row through
+  confirmation. Definite failures become retryable failed rows, while ambiguous
+  timeouts remain pending for Gateway reconciliation.
 - Local typing waits 1.5 seconds, then sends at most one empty typing POST per
   eight-second activity window. Draft restoration, send, empty draft, channel
   change, and unsupported channel types cancel pending typing.

@@ -603,7 +603,12 @@ extension NativeTimelineCanvasView {
                     ),
                     frame: layout.stickerFrames[stickerIndex],
                     cornerRadius: 8,
-                    isLooping: true
+                    isLooping: true,
+                    opacity: CGFloat(
+                        MessageOutboxPresentation.mediaOpacity(
+                            for: row.message.outboxState
+                        )
+                    )
                 )
             }
 
@@ -916,7 +921,7 @@ extension NativeTimelineCanvasView {
     static let maximumLottieStickerOverlayCount = 4
 
     func reconcileLottieStickerOverlays(reduceMotion: Bool) {
-        var desired: [(LottieStickerOverlayKey, CGRect)] = []
+        var desired: [DesiredLottieStickerOverlay] = []
         desired.reserveCapacity(Self.maximumLottieStickerOverlayCount)
 
         guard var index = rowIndex(at: max(0, visibleRect.minY)) else {
@@ -939,16 +944,19 @@ extension NativeTimelineCanvasView {
                           let url = sticker.mediaURL,
                           urls.contains(url)
                     else { continue }
-                    desired.append((
-                        LottieStickerOverlayKey(
+                    desired.append(DesiredLottieStickerOverlay(
+                        key: LottieStickerOverlayKey(
                             row: identifier,
                             stickerID: sticker.id,
                             url: url
                         ),
-                        frame.offsetBy(
+                        frame: frame.offsetBy(
                             dx: 0,
                             dy: displayedRowOrigin(at: index)
-                        )
+                        ),
+                        opacity: CGFloat(MessageOutboxPresentation.mediaOpacity(
+                            for: row.message.outboxState
+                        ))
                     ))
                     if desired.count == Self.maximumLottieStickerOverlayCount {
                         break
@@ -961,7 +969,7 @@ extension NativeTimelineCanvasView {
             index += 1
         }
 
-        let desiredKeys = Set(desired.map(\.0))
+        let desiredKeys = Set(desired.map(\.key))
         for key in Array(lottieStickerOverlays.keys)
         where !desiredKeys.contains(key) {
             guard let overlay = lottieStickerOverlays.removeValue(forKey: key)
@@ -969,21 +977,22 @@ extension NativeTimelineCanvasView {
             overlay.stop()
             overlay.removeFromSuperview()
         }
-        for (key, frame) in desired {
+        for item in desired {
             let overlay: NativeTimelineLottieStickerOverlay
-            if let existing = lottieStickerOverlays[key] {
+            if let existing = lottieStickerOverlays[item.key] {
                 overlay = existing
             } else {
-                overlay = NativeTimelineLottieStickerOverlay(frame: frame)
+                overlay = NativeTimelineLottieStickerOverlay(frame: item.frame)
                 addSubview(
                     overlay,
                     positioned: .below,
                     relativeTo: mediaViewerHost
                 )
-                lottieStickerOverlays[key] = overlay
+                lottieStickerOverlays[item.key] = overlay
             }
-            overlay.frame = frame
-            overlay.display(key.url, reduceMotion: reduceMotion)
+            overlay.frame = item.frame
+            overlay.alphaValue = item.opacity
+            overlay.display(item.key.url, reduceMotion: reduceMotion)
         }
     }
 
@@ -1010,6 +1019,11 @@ extension NativeTimelineCanvasView {
                     dx: 0,
                     dy: displayedRowOrigin(at: index)
                 )
+            overlay.alphaValue = CGFloat(
+                MessageOutboxPresentation.mediaOpacity(
+                    for: row.message.outboxState
+                )
+            )
         }
         for key in removed {
             lottieStickerOverlays[key] = nil

@@ -484,11 +484,11 @@ struct StickerPickerView: View {
     }
 
     private func activate(_ cell: StickerPickerCell) {
-        guard model.sendingStickerID == nil else { return }
         interaction.select(cell)
+        StickerPreview.prepareTimelinePresentation(for: cell.item.sticker)
+        dismiss()
         Task { @MainActor in
-            guard await model.sendStickerFromPicker(cell.item.sticker) else { return }
-            dismiss()
+            await model.sendStickerFromPicker(cell.item.sticker)
         }
     }
 
@@ -591,7 +591,6 @@ private struct StickerPickerDocumentList: View {
                     row: row,
                     interaction: interaction,
                     isFavorite: document.isFavorite,
-                    isSending: { model.sendingStickerID == $0.id },
                     activate: activate,
                     toggleFavorite: toggleFavorite,
                     becameVisible: becameVisible
@@ -620,7 +619,6 @@ private struct StickerPickerDocumentRowView: View {
     let row: StickerPickerDocumentRow
     let interaction: StickerPickerInteractionModel
     let isFavorite: (StickerPickerItem) -> Bool
-    let isSending: (StickerPickerItem) -> Bool
     let activate: (StickerPickerCell) -> Void
     let toggleFavorite: (StickerPickerItem) -> Void
     let becameVisible: (StickerPickerSectionID) -> Void
@@ -639,7 +637,6 @@ private struct StickerPickerDocumentRowView: View {
                             item: cell.item,
                             isSelected: interaction.selectedCellID == cell.id,
                             isFavorite: isFavorite(cell.item),
-                            isSending: isSending(cell.item),
                             select: { activate(cell) },
                             hover: { interaction.select(cell) },
                             toggleFavorite: { toggleFavorite(cell.item) }
@@ -696,26 +693,17 @@ private struct StickerPickerButton: View {
     let item: StickerPickerItem
     let isSelected: Bool
     let isFavorite: Bool
-    let isSending: Bool
     let select: () -> Void
     let hover: () -> Void
     let toggleFavorite: () -> Void
 
     var body: some View {
         Button(action: select) {
-            ZStack {
-                StickerPreview(sticker: item.sticker)
-                    .frame(
-                        width: StickerPickerMetrics.previewSize,
-                        height: StickerPickerMetrics.previewSize
-                    )
-                if isSending {
-                    ProgressView()
-                        .controlSize(.small)
-                        .padding(7)
-                        .background(.regularMaterial, in: Circle())
-                }
-            }
+            StickerPreview(sticker: item.sticker)
+                .frame(
+                    width: StickerPickerMetrics.previewSize,
+                    height: StickerPickerMetrics.previewSize
+                )
             .frame(width: StickerPickerMetrics.cellWidth, height: StickerPickerMetrics.cellHeight)
             .background {
                 ConcentricRectangle(cornerRadius: 10, style: .continuous)
@@ -778,6 +766,25 @@ struct StickerPreview: View {
             }
         }
         .accessibilityLabel(sticker.name)
+    }
+
+    @MainActor
+    static func prepareTimelinePresentation(for sticker: MessageSticker) {
+        guard sticker.format != .lottie,
+              let url = sticker.pickerMediaURL,
+              let decoded = AnimatedRemoteImageDisplayCache.shared.image(
+                  for: url,
+                  maximumPixelDimension: 240
+              )
+        else { return }
+        NativeTimelineMediaStore.shared.cacheDecodedImage(
+            decoded,
+            for: .media(url, maximumPixelDimension: 384)
+        )
+        NativeTimelineMediaStore.shared.cacheDecodedImage(
+            decoded,
+            for: .media(url)
+        )
     }
 }
 

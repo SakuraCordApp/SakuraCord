@@ -8,7 +8,6 @@ struct StickerPickerPresentationState {
     var userSettings = StickerUserSettings()
     var isLoading = false
     var errorMessage: String?
-    var sendingStickerID: String?
 }
 
 nonisolated enum StickerSendRoute: Equatable {
@@ -75,11 +74,6 @@ extension AppModel {
         set { stickerPickerState.errorMessage = newValue }
     }
 
-    var sendingStickerID: String? {
-        get { stickerPickerState.sendingStickerID }
-        set { stickerPickerState.sendingStickerID = newValue }
-    }
-
     func consumeStickerEvent(_ event: ClientEvent) {
         switch event {
         case .stickerUserSettingsChanged(let settings):
@@ -142,10 +136,6 @@ extension AppModel {
 
     @discardableResult
     func sendStickerFromPicker(_ sticker: MessageSticker) async -> Bool {
-        guard sendingStickerID == nil else { return false }
-        sendingStickerID = sticker.id
-        defer { sendingStickerID = nil }
-
         let route = StickerSendPolicy.route(
             for: sticker,
             currentGuildID: selectedGuildID,
@@ -177,33 +167,90 @@ extension AppModel {
               let remoteURL = sticker.pickerImageLink,
               isCurrentAccountSession(session)
         else { return false }
-        let temporaryURL = FileManager.default.temporaryDirectory
-            .appending(path: "sakuracord-sticker-\(sticker.id)-\(UUID().uuidString)")
+        let directory: URL
+        do {
+            directory = try ComposerPromisedFileStorage.makeReceivingDirectory()
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+        let temporaryURL = directory
+            .appending(path: "sticker-\(sticker.id)")
             .appendingPathExtension("webp")
         do {
-            let (data, response) = try await URLSession.shared.data(from: remoteURL)
-            guard let http = response as? HTTPURLResponse,
-                  (200 ..< 300).contains(http.statusCode),
-                  !data.isEmpty
-            else {
-                throw URLError(.badServerResponse)
+            try Data().write(to: temporaryURL, options: .atomic)
+            let batch = ComposerPromisedFileBatch(
+                directory: directory,
+                urls: [temporaryURL]
+            )
+            guard let attachmentURL = adoptPromisedFileBatch(batch).first else {
+                throw CocoaError(.fileReadNoSuchFile)
             }
-            try data.write(to: temporaryURL, options: .atomic)
-            defer { try? FileManager.default.removeItem(at: temporaryURL) }
-            let draft = SendMessageDraft(
+            let outgoing = SendMessageDraft(
                 channelID: channelID,
                 content: "",
-                attachmentURLs: [temporaryURL]
+                attachments: [ForumPostAttachment(
+                    url: attachmentURL,
+                    filename: "sticker-\(sticker.id).webp"
+                )]
             )
-            let message = try await session.provider.send(draft)
-            guard isCurrentAccountSession(session) else { return false }
-            let reconciled = reconcileVisibleOrCached(message)
-            journalAuthoritativeMessageUpsert(reconciled)
-            completeConversationReadingAndAdvance(channelID: channelID)
-            return true
+            var optimistic = optimisticMessage(
+                for: outgoing,
+                replyPreview: nil
+            )
+            optimistic.outboxState = .uploading
+            optimistic.attachments[0].proxyURL = sticker.pickerMediaURL ?? remoteURL
+            appendOutgoingMessage(optimistic)
+            outgoingMessages.draftsByNonce[outgoing.nonce] = outgoing
+            outgoingMessages.stickerUploadSourceURLByNonce[outgoing.nonce] = remoteURL
+            return await performStickerUpload(
+                outgoing,
+                sourceURL: remoteURL,
+                isRetry: false
+            )
         } catch {
+            ComposerPromisedFileStorage.removeDirectory(directory)
             guard isCurrentAccountSession(session) else { return false }
             errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    func performStickerUpload(
+        _ outgoing: SendMessageDraft,
+        sourceURL: URL,
+        isRetry: Bool
+    ) async -> Bool {
+        let session = accountSession()
+        guard let fileURL = outgoing.attachmentURLs.first else { return false }
+        do {
+            let data = try await SharedMediaDataLoader.shared.data(
+                for: sourceURL,
+                priority: .visible
+            )
+            guard isCurrentAccountSession(session) else { return false }
+            guard !data.isEmpty else { throw URLError(.zeroByteResource) }
+            try data.write(to: fileURL, options: .atomic)
+            updateOutgoingState(
+                .sending,
+                nonce: outgoing.nonce,
+                channelID: outgoing.channelID
+            )
+            let sent = await performOutgoingSend(outgoing, isRetry: isRetry)
+            if sent {
+                completeConversationReadingAndAdvance(channelID: outgoing.channelID)
+            }
+            return sent
+        } catch {
+            guard isCurrentAccountSession(session) else { return false }
+            updateOutgoingState(
+                .failed,
+                nonce: outgoing.nonce,
+                channelID: outgoing.channelID
+            )
+            Self.stickerPickerLogger.error(
+                "Sticker upload preparation failed: \(String(reflecting: error), privacy: .public)"
+            )
             return false
         }
     }

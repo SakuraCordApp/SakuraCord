@@ -1510,25 +1510,26 @@ extension AppModel {
     func sendSticker(_ sticker: MessageSticker) async -> Bool {
         let session = accountSession()
         guard let channelID = selectedChannelID,
-              await session.provider.supports(.stickerSending),
+              supportedCapabilities.contains(.stickerSending),
               isCurrentAccountSession(session)
         else {
             return false
         }
         let draft = SendMessageDraft(channelID: channelID, content: "", stickerIDs: [sticker.id])
-        do {
-            let message = try await session.provider.send(draft)
-            guard isCurrentAccountSession(session) else { return false }
-            let reconciled = reconcileVisibleOrCached(message)
-            journalAuthoritativeMessageUpsert(reconciled)
-            guard isCurrentAccountSession(session) else { return false }
+        var presentedSticker = sticker
+        presentedSticker.assetURL = sticker.pickerMediaURL ?? sticker.mediaURL
+        let optimistic = optimisticMessage(
+            for: draft,
+            replyPreview: nil,
+            stickers: [presentedSticker]
+        )
+        appendOutgoingMessage(optimistic)
+        outgoingMessages.draftsByNonce[draft.nonce] = draft
+        let didSend = await performOutgoingSend(draft, isRetry: false)
+        if didSend {
             completeConversationReadingAndAdvance(channelID: channelID)
-            return true
-        } catch {
-            guard isCurrentAccountSession(session) else { return false }
-            errorMessage = error.localizedDescription
-            return false
         }
+        return didSend
     }
 
     func submitComponent(
@@ -2251,6 +2252,14 @@ extension AppModel {
               outgoingState(nonce: nonce, channelID: message.channelID) == .failed,
               let outgoing = outgoingMessages.draftsByNonce[nonce]
         else { return false }
+        if let sourceURL = outgoingMessages.stickerUploadSourceURLByNonce[nonce] {
+            updateOutgoingState(.uploading, nonce: nonce, channelID: message.channelID)
+            return await performStickerUpload(
+                outgoing,
+                sourceURL: sourceURL,
+                isRetry: true
+            )
+        }
         updateOutgoingState(.sending, nonce: nonce, channelID: message.channelID)
         return await performOutgoingSend(outgoing, isRetry: true)
     }
@@ -2280,6 +2289,7 @@ extension AppModel {
             guard isCurrentAccountSession(session) else { return false }
             let reconciled = reconcileVisibleOrCached(confirmed)
             outgoingMessages.draftsByNonce[outgoing.nonce] = nil
+            outgoingMessages.stickerUploadSourceURLByNonce[outgoing.nonce] = nil
             journalAuthoritativeMessageUpsert(reconciled)
             guard isCurrentAccountSession(session) else { return false }
             Self.messageSendLogger.info(
@@ -2315,7 +2325,8 @@ extension AppModel {
 
     func optimisticMessage(
         for outgoing: SendMessageDraft,
-        replyPreview: MessageReplyPreview?
+        replyPreview: MessageReplyPreview?,
+        stickers: [MessageSticker] = []
     ) -> Message {
         let id = outgoingMessages.nextOptimisticMessageID()
         return Message(
@@ -2337,7 +2348,8 @@ extension AppModel {
                 return presentation
             },
             nonce: outgoing.nonce,
-            outboxState: .sending
+            outboxState: .sending,
+            stickers: stickers
         )
     }
 

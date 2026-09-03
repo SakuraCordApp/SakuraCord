@@ -2159,6 +2159,72 @@ private func downArrowKeyEvent(
 }
 
 @MainActor
+@Test func `native sticker send is optimistic and preserves its loaded media on confirmation`() async throws {
+    let provider = TypingTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let sticker = MessageSticker(
+        id: "sticker-optimistic",
+        name: "Optimistic Sticker",
+        format: .apng
+    )
+
+    await provider.suspendNextSend()
+    let send = Task { @MainActor in
+        await model.sendSticker(sticker)
+    }
+    await provider.waitUntilSendStarts()
+
+    let pending = try #require(model.messages.last { message in
+        message.stickers.contains { $0.id == sticker.id }
+    })
+    let pendingIdentity = MessageRowIdentity(pending)
+    #expect(pending.outboxState == .sending)
+    #expect(pending.stickers.first?.mediaURL == sticker.pickerMediaURL)
+    #expect(MessageOutboxPresentation.mediaOpacity(for: pending.outboxState) == 0.55)
+    let nonce = try #require(pending.nonce)
+    #expect(model.outgoingMessages.draftsByNonce[nonce]?.stickerIDs == [sticker.id])
+
+    await provider.releaseSend()
+    #expect(await send.value)
+    let confirmed = try #require(model.messages.last { $0.nonce == nonce })
+    #expect(confirmed.outboxState == .confirmed)
+    #expect(confirmed.stickers.first?.mediaURL == sticker.pickerMediaURL)
+    #expect(MessageRowIdentity(confirmed) == pendingIdentity)
+    #expect(MessageOutboxPresentation.mediaOpacity(for: confirmed.outboxState) == 1)
+    #expect(model.outgoingMessages.draftsByNonce[nonce] == nil)
+}
+
+@MainActor
+@Test func `failed native sticker send uses the normal retryable outbox state`() async throws {
+    let provider = TypingTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let sticker = MessageSticker(
+        id: "sticker-retry",
+        name: "Retry Sticker",
+        format: .png
+    )
+    await provider.failNextSend()
+
+    let didSend = await model.sendSticker(sticker)
+    #expect(!didSend)
+    let failed = try #require(model.messages.last { message in
+        message.stickers.contains { $0.id == sticker.id }
+    })
+    #expect(failed.outboxState == .failed)
+    #expect(MessageOutboxPresentation.interactionMode(for: failed.outboxState) == .failed)
+    let nonce = try #require(failed.nonce)
+    #expect(model.outgoingMessages.draftsByNonce[nonce]?.stickerIDs == [sticker.id])
+
+    #expect(await model.retrySending(failed))
+    let confirmed = try #require(model.messages.last { $0.nonce == nonce })
+    #expect(confirmed.outboxState == .confirmed)
+    #expect(confirmed.stickers.first?.mediaURL == sticker.pickerMediaURL)
+    #expect(await provider.sendCount == 2)
+}
+
+@MainActor
 @Test func `ambiguous timeout keeps the optimistic message pending`() async {
     let provider = TypingTestProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
@@ -2362,7 +2428,10 @@ private actor TypingTestProvider: ChatProvider {
             attachments: draft.attachmentURLs.enumerated().map {
                 Attachment(id: "\(nextMessageID)-\($0.offset)", filename: $0.element.lastPathComponent, url: $0.element)
             },
-            nonce: draft.nonce
+            nonce: draft.nonce,
+            stickers: draft.stickerIDs.map {
+                MessageSticker(id: $0, name: "Confirmed Sticker", format: .png)
+            }
         )
         continuation?.yield(.messageCreated(message))
         return message
@@ -2391,6 +2460,10 @@ private actor TypingTestProvider: ChatProvider {
     func releaseSend() {
         sendReleaseWaiter?.resume()
         sendReleaseWaiter = nil
+    }
+
+    func supports(_ capability: ChatCapability) async -> Bool {
+        capability == .stickerSending
     }
 
     func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message {

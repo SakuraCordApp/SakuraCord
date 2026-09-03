@@ -11,6 +11,7 @@ extension AppModel {
               ) == .failed
         else { return }
         outgoingMessages.draftsByNonce[nonce] = nil
+        outgoingMessages.stickerUploadSourceURLByNonce[nonce] = nil
         removeOutgoingMessage(
             nonce: nonce,
             channelID: message.channelID
@@ -18,7 +19,7 @@ extension AppModel {
         pruneOwnedPromisedAttachmentFiles()
     }
 
-    func outgoingAttachmentPresentationPreserving(
+    func outgoingMediaPresentationPreserving(
         _ incoming: Message
     ) -> Message {
         let existing: Message? = {
@@ -42,26 +43,40 @@ extension AppModel {
 
         var resolved = incoming
         resolved.nonce = resolved.nonce ?? existing.nonce
-        guard !existing.attachments.isEmpty else { return resolved }
-        for index in resolved.attachments.indices {
-            let attachment = resolved.attachments[index]
-            guard attachment.mediaKind == .image
-                    || attachment.mediaKind == .animatedImage
-            else { continue }
-            let previous = existing.attachments.first(where: {
-                $0.id == attachment.id
-            }) ?? (existing.attachments.indices.contains(index)
-                ? existing.attachments[index]
-                : nil)
-            let localPreviewURL: URL? = if previous?.proxyURL?.isFileURL == true {
-                previous?.proxyURL
-            } else if previous?.url.isFileURL == true {
-                previous?.url
-            } else {
-                nil
+        if !existing.attachments.isEmpty {
+            for index in resolved.attachments.indices {
+                let attachment = resolved.attachments[index]
+                guard attachment.mediaKind == .image
+                        || attachment.mediaKind == .animatedImage
+                else { continue }
+                let previous = existing.attachments.first(where: {
+                    $0.id == attachment.id
+                }) ?? (existing.attachments.indices.contains(index)
+                    ? existing.attachments[index]
+                    : nil)
+                let preservedPreviewURL: URL? = if let proxyURL = previous?.proxyURL {
+                    proxyURL
+                } else if previous?.url.isFileURL == true {
+                    previous?.url
+                } else {
+                    nil
+                }
+                if let preservedPreviewURL, !attachment.url.isFileURL {
+                    resolved.attachments[index].proxyURL = preservedPreviewURL
+                }
             }
-            if let localPreviewURL, !attachment.url.isFileURL {
-                resolved.attachments[index].proxyURL = localPreviewURL
+        }
+        if !existing.stickers.isEmpty {
+            for index in resolved.stickers.indices {
+                let sticker = resolved.stickers[index]
+                let previous = existing.stickers.first(where: {
+                    $0.id == sticker.id
+                }) ?? (existing.stickers.indices.contains(index)
+                    ? existing.stickers[index]
+                    : nil)
+                if let mediaURL = previous?.mediaURL {
+                    resolved.stickers[index].assetURL = mediaURL
+                }
             }
         }
         return resolved

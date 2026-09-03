@@ -1839,7 +1839,6 @@ extension AppModel {
         stickerUserSettings = StickerUserSettings()
         isLoadingStickerPicker = false
         stickerPickerErrorMessage = nil
-        sendingStickerID = nil
         loadingReactionReactors = []
         failedReactionReactorLoads = [:]
         resetForumLoadAndPresentationState()

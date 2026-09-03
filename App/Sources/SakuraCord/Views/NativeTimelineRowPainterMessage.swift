@@ -628,6 +628,14 @@ extension NativeTimelineRowPainter {
                     componentButtonPressProgress
             ))
         }
+        NSGraphicsContext.saveGraphicsState()
+        let stickerContext = NSGraphicsContext.current?.cgContext
+        stickerContext?.setAlpha(
+            CGFloat(MessageOutboxPresentation.mediaOpacity(
+                for: message.outboxState
+            ))
+        )
+        stickerContext?.beginTransparencyLayer(auxiliaryInfo: nil)
         for (index, frame) in layout.stickerFrames.enumerated() {
             let sticker = message.stickers.indices.contains(index)
                 ? message.stickers[index]
@@ -654,6 +662,8 @@ extension NativeTimelineRowPainter {
                 )
             }
         }
+        stickerContext?.endTransparencyLayer()
+        NSGraphicsContext.restoreGraphicsState()
         if let source = layout.forwardedSourceRegion {
             if isForwardedSourceHovered {
                 NSColor.labelColor.withAlphaComponent(0.10).setFill()

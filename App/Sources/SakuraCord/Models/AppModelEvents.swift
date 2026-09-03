@@ -469,7 +469,7 @@ extension AppModel {
         _ message: inout Message,
         preparedTextPlan: NativeTimelineTextPlan?
     ) {
-        message = outgoingAttachmentPresentationPreserving(message)
+        message = outgoingMediaPresentationPreserving(message)
         typingState.clear(userID: message.author.id, in: message.channelID)
         if let nonce = message.nonce {
             commandComposer.enrichInteractionResponse(
@@ -477,6 +477,7 @@ extension AppModel {
             )
             commandComposer.interactionSucceeded(nonce: nonce)
             outgoingMessages.draftsByNonce[nonce] = nil
+            outgoingMessages.stickerUploadSourceURLByNonce[nonce] = nil
             pruneOwnedPromisedAttachmentFiles()
         }
         recordAuthoritativeMessageUpsert(message)
@@ -528,7 +529,7 @@ extension AppModel {
         preparedTextPlan: NativeTimelineTextPlan?
     ) {
         let message = reactionPresentationPreserving(
-            outgoingAttachmentPresentationPreserving(incoming)
+            outgoingMediaPresentationPreserving(incoming)
         )
         recordAuthoritativeMessageUpsert(message)
         if message.channelID == openThread?.id {
@@ -1686,7 +1687,7 @@ extension AppModel {
     @discardableResult
     func reconcileVisibleOrCached(_ incoming: Message) -> Message {
         let message = reactionPresentationPreserving(
-            outgoingAttachmentPresentationPreserving(incoming)
+            outgoingMediaPresentationPreserving(incoming)
         )
         if message.channelID == openThread?.id {
             reconcileThread(message)
