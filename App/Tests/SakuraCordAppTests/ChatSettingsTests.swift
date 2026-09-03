@@ -388,7 +388,7 @@ import Testing
         .chatInternalDiscordLinks, .chatAutoplayGIFs,
         .chatAutoplayStickers, .chatAutoplayVideos, .chatLinkPreviews,
         .chatInlineMediaSize, .reduceAnimatedMedia, .chatEmojiSkinTone,
-        .chatEmojiSource, .chatEmojiPrivacyLink,
+        .chatEmojiSource,
         .chatExport, .chatReset,
     ]
     let controls = SettingsCatalog.foundation.controls.filter {
@@ -402,7 +402,6 @@ import Testing
         ("read receipt", .chatReadAcknowledgement),
         ("unfurl", .chatLinkPreviews),
         ("option click", .chatSpoilerReveal),
-        ("recent emoji", .chatEmojiPrivacyLink),
     ] {
         state.searchText = term
         #expect(

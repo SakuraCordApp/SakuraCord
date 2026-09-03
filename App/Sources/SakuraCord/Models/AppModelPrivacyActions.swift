@@ -1,11 +1,6 @@
 import Foundation
 
 extension AppModel {
-    func clearLocalMessageSearchData() {
-        messageSearch.clear()
-        messageSearch.isPresented = false
-    }
-
     func clearLocalDestinationHistory() {
         forwardDestinationHistory = []
         workspaceNavigationOverlay = nil
@@ -18,6 +13,11 @@ extension AppModel {
     func clearLocallyLearnedEmojiRanking() {
         clearLocalEmojiRecents()
         resetLocalEmojiRanking()
+    }
+
+    func clearLocalActivity() {
+        clearLocalDestinationHistory()
+        clearLocallyLearnedEmojiRanking()
     }
 
     func clearLocalDrafts() async throws {

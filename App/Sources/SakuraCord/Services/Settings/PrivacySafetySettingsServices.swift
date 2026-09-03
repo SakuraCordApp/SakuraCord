@@ -13,9 +13,9 @@ nonisolated enum ExternalLinkConfirmationPolicy: String, CaseIterable, Identifia
         case .untrustedDomains:
             LocalizedStringResource("Untrusted Domains", bundle: #bundle)
         case .allLinks:
-            LocalizedStringResource("All Links", bundle: #bundle)
+            LocalizedStringResource("Always Ask", bundle: #bundle)
         case .noLinks:
-            LocalizedStringResource("No Links", bundle: #bundle)
+            LocalizedStringResource("Never Ask", bundle: #bundle)
         }
     }
 
@@ -24,7 +24,7 @@ nonisolated enum ExternalLinkConfirmationPolicy: String, CaseIterable, Identifia
         case .untrustedDomains:
             "shield"
         case .allLinks:
-            "globe"
+            "hand.raised"
         case .noLinks:
             "hand.raised.slash"
         }

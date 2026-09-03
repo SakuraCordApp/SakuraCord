@@ -149,41 +149,26 @@ import Testing
 }
 
 @MainActor
-@Test func `Local privacy actions clear only their described state`() async throws {
+@Test func `Local activity clears only destinations and learned emoji data`() async throws {
     let model = AppModel(launchMode: .offlineTesting)
     await model.start()
     let channelID = try #require(model.selectedChannelID)
 
     model.messageSearch.queryText = "private query"
-    model.messageSearch.errorMessage = "fixture"
     model.messageSearch.isPresented = true
-    model.clearLocalMessageSearchData()
-    #expect(model.messageSearch.queryText.isEmpty)
-    #expect(model.messageSearch.errorMessage == nil)
-    #expect(!model.messageSearch.isPresented)
-
     model.forwardDestinationHistory = [channelID]
-    model.clearLocalDestinationHistory()
-    #expect(model.forwardDestinationHistory.isEmpty)
-
     model.emojiRecentKeys = ["wave"]
     model.emojiUsageCounts = ["wave": 4]
     model.discordFavoriteEmojiKeys = ["wave"]
-    model.clearLocallyLearnedEmojiRanking()
+
+    model.clearLocalActivity()
+
+    #expect(model.messageSearch.queryText == "private query")
+    #expect(model.messageSearch.isPresented)
+    #expect(model.forwardDestinationHistory.isEmpty)
     #expect(model.emojiRecentKeys.isEmpty)
     #expect(model.emojiUsageCounts.isEmpty)
     #expect(model.discordFavoriteEmojiKeys == ["wave"])
-
-    let database = try #require(model.database)
-    try await database.saveDraft("unsent", channelID: channelID)
-    model.draft = "unsent"
-    model.threadDraft = "thread text"
-    model.quickSwitcherDraftChannelIDs = [channelID]
-    try await model.clearLocalDrafts()
-    #expect(try await database.draft(channelID: channelID).isEmpty)
-    #expect(model.draft.isEmpty)
-    #expect(model.threadDraft.isEmpty)
-    #expect(model.quickSwitcherDraftChannelIDs.isEmpty)
 }
 
 @MainActor
@@ -191,9 +176,7 @@ import Testing
     let expected: Set<SettingsControlID> = [
         .privacyTypingIndicators, .privacyReadAcknowledgements,
         .externalLinkProtection, .trustedDomains,
-        .clearMessageSearches, .clearDestinationHistory,
-        .clearEmojiRanking, .clearDrafts,
-        .privacyNotificationPreviews, .privacyExport, .privacyReset,
+        .clearLocalActivity,
     ]
     let controls = SettingsCatalog.foundation.controls.filter {
         $0.destination.page == .privacySafety
@@ -204,8 +187,8 @@ import Testing
     for (term, control) in [
         ("phishing", SettingsControlID.externalLinkProtection),
         ("allow list", .trustedDomains),
-        ("forward history", .clearDestinationHistory),
-        ("lock screen", .privacyNotificationPreviews),
+        ("forward history", .clearLocalActivity),
+        ("recent emoji", .clearLocalActivity),
     ] {
         state.searchText = term
         #expect(state.searchResults.contains { $0.id == control })

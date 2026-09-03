@@ -254,20 +254,10 @@ struct ChatSettingsPage: View {
             }
             .settingsControlAnchor(.chatEmojiSource, state: state)
 
-            Button("Manage Local Emoji Data in Privacy…") {
-                state.navigate(
-                    to: SettingsDestination(
-                        page: .privacySafety,
-                        section: .privacyLocalData
-                    ),
-                    controlID: .clearEmojiRanking
-                )
-            }
-            .settingsControlAnchor(.chatEmojiPrivacyLink, state: state)
         } header: {
             Text("Emoji", bundle: #bundle)
         } footer: {
-            Text("Discord favorites and frequency remain untouched by the two local cleanup actions.")
+            Text("Discord favorites and frequency remain untouched by local activity cleanup.")
         }
     }
 
