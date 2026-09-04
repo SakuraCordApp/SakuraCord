@@ -207,6 +207,7 @@ private struct ChannelsAndRolesTabBar: View {
       }
       .font(.callout.weight(.semibold))
       .foregroundStyle(selection == tab ? Color.primary : Color.secondary)
+      .frame(height: 20)
       .contentShape(.rect)
     }
     .buttonStyle(
