@@ -120,7 +120,10 @@ private struct ChatRootView: View {
     @State private var modifierPollingTask: Task<Void, Never>?
 
     var body: some View {
-        @Bindable var model = model
+        interactiveWorkspace
+    }
+
+    private var navigationWorkspace: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             HStack(spacing: 0) {
                 ServerRailContainer(model: model)
@@ -129,12 +132,11 @@ private struct ChatRootView: View {
                     voiceModel: model,
                     guild: selectedGuild,
                     channels: model.visibleChannels,
-                    selection: sidebarChannelSelection,
                     channelGroups: model.visibleChannelGroups,
                     unreadCategoryIDs: selectedGuild.map {
                         model.unreadCategoryIDsByGuild[$0.id] ?? []
                     } ?? [],
-                    selection: $model.selectedChannelID,
+                    selection: sidebarChannelSelection,
                     currentUser: model.snapshot?.currentUser,
                     connectionState: model.connectionState,
                     currentStatus: model.currentStatus,
@@ -184,6 +186,10 @@ private struct ChatRootView: View {
                 detailToolbar
             }
         }
+    }
+
+    private var chromeWorkspace: some View {
+        navigationWorkspace
         .task(id: model.selectedGuildID) {
             await model.loadOnboardingIfNeeded(for: model.selectedGuildID)
         }
@@ -293,6 +299,10 @@ private struct ChatRootView: View {
             }
             .frame(width: 1, height: 1)
         }
+    }
+
+    private var interactiveWorkspace: some View {
+        chromeWorkspace
         .overlay {
             if presentsForumComposer,
                let channel = model.selectedChannel,
@@ -324,51 +334,14 @@ private struct ChatRootView: View {
         }
         .dropDestination(
             for: URL.self,
-            action: { urls, location in
-                guard canAcceptWindowDrops,
-                      let destination = composerDestination(at: location)
-                else { return false }
-                hoveredFileDropDestination = destination
-                if NSEvent.modifierFlags.contains(.shift) {
-                    sendDroppedAttachmentsImmediately(urls, to: destination)
-                    return !urls.isEmpty
-                }
-                return model.addComposerAttachments(urls, to: destination)
-            },
-            isTargeted: { targeted in
-                isFileDropTargeted = targeted
-                isInstantUpload = targeted && NSEvent.modifierFlags.contains(.shift)
-                hoveredFileDropDestination =
-                    targeted ? composerDestinationForCurrentPointer() : nil
-                updateModifierPolling(isTargeted: targeted)
-            }
+            action: receiveDroppedURLs,
+            isTargeted: updateFileDropTarget
         )
         .overlay {
             ComposerPromisedFileDropBridge(
                 isEnabled: canAcceptWindowDrops,
-                targetChanged: { targeted, location, instant in
-                    let destination = targeted ? composerDestination(at: location) : nil
-                    isFileDropTargeted = destination != nil
-                    isInstantUpload = destination != nil && instant
-                    hoveredFileDropDestination = destination
-                },
-                receiveFiles: { batch, location, instant in
-                    guard let destination = composerDestination(at: location) else {
-                        batch.discard()
-                        return
-                    }
-                    if instant {
-                        sendDroppedPromisedAttachmentsImmediately(
-                            batch,
-                            to: destination
-                        )
-                    } else {
-                        model.addPromisedComposerAttachments(
-                            batch,
-                            to: destination
-                        )
-                    }
-                }
+                targetChanged: updatePromisedFileDropTarget,
+                receiveFiles: receivePromisedFiles
             )
         }
         .onPreferenceChange(ThreadPaneFramePreferenceKey.self) { frame in
@@ -502,6 +475,14 @@ private struct ChatRootView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
                 }
+            } else if case .channelsAndRoles = model.guildUtilityDestination {
+                ConversationToolbarLabel(
+                    title: "Channels & Roles",
+                    systemImage: ChannelIconPresentation.channelsAndRolesSystemImage,
+                    subtitle: nil
+                )
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
             } else if let channel = model.selectedChannel {
                 ConversationToolbarLabel(
                     title: channel.name,
@@ -512,33 +493,6 @@ private struct ChatRootView: View {
                 )
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
-            }
-            .visibilityPriority(.high)
-        } else {
-            if case .channelsAndRoles = model.guildUtilityDestination {
-                ToolbarItem(placement: .navigation) {
-                    ConversationToolbarLabel(
-                        title: "Channels & Roles",
-                        systemImage: ChannelIconPresentation.channelsAndRolesSystemImage,
-                        subtitle: nil
-                    )
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                }
-                .visibilityPriority(.high)
-            } else if let channel = model.selectedChannel {
-                ToolbarItem(placement: .navigation) {
-                    ConversationToolbarLabel(
-                        title: channel.name,
-                        systemImage: channelToolbarSymbol(channel),
-                        subtitle: isDirectMessageSelected
-                            ? directMessageToolbarSubtitle(for: channel)
-                            : nil
-                    )
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                }
-                .visibilityPriority(.high)
             }
         }
         .visibilityPriority(.high)
@@ -718,6 +672,53 @@ private struct ChatRootView: View {
         return model.isComposerDropEligible(proposed) ? proposed : nil
     }
 
+    private func receiveDroppedURLs(_ urls: [URL], at location: CGPoint) -> Bool {
+        guard canAcceptWindowDrops,
+              let destination = composerDestination(at: location)
+        else { return false }
+        hoveredFileDropDestination = destination
+        if NSEvent.modifierFlags.contains(.shift) {
+            sendDroppedAttachmentsImmediately(urls, to: destination)
+            return !urls.isEmpty
+        }
+        return model.addComposerAttachments(urls, to: destination)
+    }
+
+    private func updateFileDropTarget(_ targeted: Bool) {
+        isFileDropTargeted = targeted
+        isInstantUpload = targeted && NSEvent.modifierFlags.contains(.shift)
+        hoveredFileDropDestination =
+            targeted ? composerDestinationForCurrentPointer() : nil
+        updateModifierPolling(isTargeted: targeted)
+    }
+
+    private func updatePromisedFileDropTarget(
+        _ targeted: Bool,
+        at location: CGPoint,
+        instant: Bool
+    ) {
+        let destination = targeted ? composerDestination(at: location) : nil
+        isFileDropTargeted = destination != nil
+        isInstantUpload = destination != nil && instant
+        hoveredFileDropDestination = destination
+    }
+
+    private func receivePromisedFiles(
+        _ batch: ComposerPromisedFileBatch,
+        at location: CGPoint,
+        instant: Bool
+    ) {
+        guard let destination = composerDestination(at: location) else {
+            batch.discard()
+            return
+        }
+        if instant {
+            sendDroppedPromisedAttachmentsImmediately(batch, to: destination)
+        } else {
+            model.addPromisedComposerAttachments(batch, to: destination)
+        }
+    }
+
     private func proposedComposerDestination(atX horizontalPosition: CGFloat) -> MessageComposerDestination {
         if model.openThread != nil, supplementaryPaneFrame != .zero {
             let localThreadLeadingEdge = supplementaryPaneFrame.minX - workspaceFrame.minX
@@ -830,6 +831,11 @@ private struct ChatRootView: View {
     private var hasOpenSupplementaryToolbarConversation: Bool {
         model.openThread != nil
             || model.isVoiceChatOpen
+            || isChannelsAndRolesPreviewOpen
+    }
+
+    private var isChannelsAndRolesPreviewOpen: Bool {
+        model.channelsAndRolesPreviewChannelID != nil
     }
 
     private var selectedVoiceChannel: Channel? {
@@ -861,10 +867,6 @@ private struct ChatRootView: View {
             systemImage: "bubble.left.fill",
             subtitle: "Voice channel chat"
         )
-    }
-
-    private var supplementaryCloseHelp: String {
-        model.openThread == nil ? "Close voice channel chat" : "Close thread"
     }
 
     private func closeSupplementaryConversation() {

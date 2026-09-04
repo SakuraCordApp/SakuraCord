@@ -55,38 +55,6 @@ struct MentionMemberSearchCacheEntry {
 
 @Observable
 final class AppModel {
-    enum ThreadErrorScope {
-        case initialPage
-        case earlierPage
-        case action
-    }
-
-    struct MemberListViewportRequest: Equatable {
-        var guildID: GuildID
-        var channelID: ChannelID
-        var visibleRange: ClosedRange<Int>
-    }
-
-    struct ReactionReactorLoadKey: Hashable {
-        var channelID: ChannelID
-        var messageID: MessageID
-        var reactionID: String
-    }
-
-    struct ReactionMutationKey: Hashable {
-        var channelID: ChannelID
-        var messageID: MessageID
-        var reactionID: String
-    }
-
-    struct ReactionMutationState {
-        var emoji: String
-        var confirmedReacted: Bool
-        var desiredReacted: Bool
-        var generation: UInt64
-        var isSending: Bool
-    }
-
     static let messageSendLogger = Logger(
         subsystem: "dev.sakuracord.SakuraCord",
         category: "MessageSend"
@@ -104,40 +72,6 @@ final class AppModel {
         category: "PointsOfInterest"
     )
     nonisolated static let maximumConcurrentReactionReactorLoads = 4
-
-    enum SessionState: Equatable {
-        case restoring
-        case signedOut
-        case connecting
-        case workspace
-    }
-
-    struct LocalTypingTiming: Sendable {
-        var debounce: Duration = .seconds(1.5)
-        var throttle: Duration = .seconds(8)
-    }
-
-    struct ReactionMutationTiming: Sendable {
-        var debounce: Duration = .milliseconds(160)
-    }
-
-    struct ReadAcknowledgementTiming: Sendable {
-        var debounce: Duration = .zero
-    }
-
-    struct ReadStateMutation: Sendable {
-        var messageID: MessageID
-        var manual: Bool
-        var mentionCount: Int?
-        var flags: UInt64?
-        var lastViewed: Int
-    }
-
-    struct CategoryCollapseMutationState {
-        var guildID: GuildID
-        var confirmedCollapsed: Bool
-        var desiredCollapsed: Bool
-    }
 
     var snapshot: BootstrapSnapshot? {
         didSet {
@@ -1334,5 +1268,73 @@ final class AppModel {
                 await self?.installMediaDeviceSnapshot(snapshot)
             }
         }
+    }
+}
+
+extension AppModel {
+    enum ThreadErrorScope {
+        case initialPage
+        case earlierPage
+        case action
+    }
+
+    struct MemberListViewportRequest: Equatable {
+        var guildID: GuildID
+        var channelID: ChannelID
+        var visibleRange: ClosedRange<Int>
+    }
+
+    struct ReactionReactorLoadKey: Hashable {
+        var channelID: ChannelID
+        var messageID: MessageID
+        var reactionID: String
+    }
+
+    struct ReactionMutationKey: Hashable {
+        var channelID: ChannelID
+        var messageID: MessageID
+        var reactionID: String
+    }
+
+    struct ReactionMutationState {
+        var emoji: String
+        var confirmedReacted: Bool
+        var desiredReacted: Bool
+        var generation: UInt64
+        var isSending: Bool
+    }
+
+    enum SessionState: Equatable {
+        case restoring
+        case signedOut
+        case connecting
+        case workspace
+    }
+
+    struct LocalTypingTiming: Sendable {
+        var debounce: Duration = .seconds(1.5)
+        var throttle: Duration = .seconds(8)
+    }
+
+    struct ReactionMutationTiming: Sendable {
+        var debounce: Duration = .milliseconds(160)
+    }
+
+    struct ReadAcknowledgementTiming: Sendable {
+        var debounce: Duration = .zero
+    }
+
+    struct ReadStateMutation: Sendable {
+        var messageID: MessageID
+        var manual: Bool
+        var mentionCount: Int?
+        var flags: UInt64?
+        var lastViewed: Int
+    }
+
+    struct CategoryCollapseMutationState {
+        var guildID: GuildID
+        var confirmedCollapsed: Bool
+        var desiredCollapsed: Bool
     }
 }

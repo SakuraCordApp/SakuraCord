@@ -130,10 +130,14 @@ struct ChannelSidebarView: View {
                         checkingChannelIDs: checkingChannelIDs,
                         unreadCategoryIDs: unreadCategoryIDs,
                         selectedChannelID: selection,
+                        showsChannelsAndRoles: showsChannelsAndRoles,
+                        channelsAndRolesIsSelected:
+                            voiceModel.guildUtilityDestination != nil,
                         bottomContentInset: accountControlHeight
                     ),
                     model: voiceModel,
-                    selection: deferredGuildSelection
+                    selection: deferredGuildSelection,
+                    openChannelsAndRoles: openChannelsAndRoles
                 )
                 .equatable()
                 .onChange(of: selection) { _, newSelection in
@@ -280,6 +284,8 @@ nonisolated private struct GuildChannelListInput: Equatable, Sendable {
     let checkingChannelIDs: Set<ChannelID>
     let unreadCategoryIDs: Set<ChannelID>
     let selectedChannelID: ChannelID?
+    let showsChannelsAndRoles: Bool
+    let channelsAndRolesIsSelected: Bool
     let bottomContentInset: CGFloat
 }
 
@@ -287,6 +293,7 @@ private struct GuildChannelList: View, Equatable {
     let input: GuildChannelListInput
     let model: AppModel
     @Binding var selection: ChannelID?
+    let openChannelsAndRoles: () -> Void
 
     nonisolated static func == (
         lhs: GuildChannelList,
@@ -297,6 +304,20 @@ private struct GuildChannelList: View, Equatable {
 
     var body: some View {
         List(selection: $selection) {
+            if input.showsChannelsAndRoles {
+                ChannelsAndRolesSidebarRow(
+                    isSelected: input.channelsAndRolesIsSelected,
+                    action: openChannelsAndRoles
+                )
+                .listRowInsets(
+                    EdgeInsets(top: 5, leading: 8, bottom: 5, trailing: 8)
+                )
+                Divider()
+                    .listRowInsets(
+                        EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12)
+                    )
+                    .environment(\.defaultMinListRowHeight, 1)
+            }
             ForEach(input.channelGroups) { group in
                 ChannelGroupRows(
                     model: model,
@@ -476,125 +497,12 @@ private struct ChannelGroupRows: View {
     }
 
     var body: some View {
-        Section {
-            if group.name == nil || isExpanded {
-                ForEach(group.channels) { channel in
-                    if channel.kind == .voice {
-                        ChannelRow(
-                            model: model,
-                            channel: channel,
-                            rulesChannelID: rulesChannelID,
-                            isVoiceConnected: activeVoiceChannelID == channel.id,
-                            isHidden: hiddenChannelIDs.contains(channel.id),
-                            isChecking: checkingChannelIDs.contains(channel.id)
-                        )
-                        .tag(channel.id)
-                        ForEach(
-                            voiceParticipantEntriesByChannel[channel.id]?.participants
-                                ?? []
-                        ) { participant in
-                            VoiceParticipantRow(participant: participant)
-                        }
-                    } else {
-                        ChannelRow(
-                            model: model,
-                            channel: channel,
-                            rulesChannelID: rulesChannelID,
-                            isHidden: hiddenChannelIDs.contains(channel.id),
-                            isChecking: checkingChannelIDs.contains(channel.id)
-                        )
-                        .tag(channel.id)
-                    }
-                }
-            }
-
-            if bottomContentInset > 0 {
-                SidebarBottomScrollSpacer(height: bottomContentInset)
-            }
-        } header: {
-            VStack(spacing: 0) {
-                if let name = group.name,
-                   let categoryID = group.categoryID,
-                   let guildID = group.guildID
-                {
-                    Button {
-                        let nextValue = !isExpanded
-                        withAnimation(.snappy(duration: 0.18)) {
-                            isExpanded = nextValue
-                        }
-                        model.setCategoryCollapsed(
-                            !nextValue,
-                            guildID: guildID,
-                            categoryID: categoryID
-                        )
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                                .font(.caption2.weight(.semibold))
-                                .frame(width: 8)
-                            Text(name)
-                            Spacer(minLength: 0)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help(isExpanded ? "Collapse \(name)" : "Expand \(name)")
-                    .overlay {
-                        ChannelContextMenuBridge(
-                            subject: .category,
-                            isSelected: false,
-                            isUnread: isUnread,
-                            isMutationPending:
-                                model.isChannelNotificationMutationPending(
-                                    categoryID
-                                ),
-                            directOverride: model.categoryNotificationOverride(
-                                guildID: guildID,
-                                categoryID: categoryID
-                            ),
-                            inheritedLevel:
-                                model.inheritedCategoryNotificationLevel(
-                                    guildID: guildID
-                                ),
-                            inheritanceSource: .server,
-                            markRead: {
-                                model.markCategoryRead(
-                                    categoryID: categoryID,
-                                    guildID: guildID
-                                )
-                            },
-                            mute: { duration in
-                                model.setCategoryMute(
-                                    true,
-                                    until: duration.endDate(),
-                                    guildID: guildID,
-                                    categoryID: categoryID
-                                )
-                            },
-                            unmute: {
-                                model.setCategoryMute(
-                                    false,
-                                    until: nil,
-                                    guildID: guildID,
-                                    categoryID: categoryID
-                                )
-                            },
-                            setNotificationLevel: { level in
-                                model.setCategoryNotificationLevel(
-                                    level,
-                                    guildID: guildID,
-                                    categoryID: categoryID
-                                )
-                            },
-                            copyChannelID: {
-                                ChannelContextMenuValue.copy(
-                                    categoryID.description
-                                )
-                            },
-                            copyLink: {}
-                        )
-                    }
-                }
+        Group {
+            if group.name == nil {
+                channelRows
+                bottomSpacer
+            } else {
+                categorizedRows
             }
         }
         .onChange(of: isCollapsedInModel) { _, isCollapsed in
@@ -602,6 +510,135 @@ private struct ChannelGroupRows: View {
             withAnimation(.snappy(duration: 0.18)) {
                 isExpanded = !isCollapsed
             }
+        }
+    }
+
+    private var categorizedRows: some View {
+        Section {
+            if isExpanded {
+                channelRows
+            }
+            bottomSpacer
+        } header: {
+            if let name = group.name,
+               let categoryID = group.categoryID,
+               let guildID = group.guildID
+            {
+                Button {
+                    let nextValue = !isExpanded
+                    withAnimation(.snappy(duration: 0.18)) {
+                        isExpanded = nextValue
+                    }
+                    model.setCategoryCollapsed(
+                        !nextValue,
+                        guildID: guildID,
+                        categoryID: categoryID
+                    )
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .font(.caption2.weight(.semibold))
+                            .frame(width: 8)
+                        Text(name)
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(isExpanded ? "Collapse \(name)" : "Expand \(name)")
+                .overlay {
+                    ChannelContextMenuBridge(
+                        subject: .category,
+                        isSelected: false,
+                        isUnread: isUnread,
+                        isMutationPending:
+                            model.isChannelNotificationMutationPending(
+                                categoryID
+                            ),
+                        directOverride: model.categoryNotificationOverride(
+                            guildID: guildID,
+                            categoryID: categoryID
+                        ),
+                        inheritedLevel:
+                            model.inheritedCategoryNotificationLevel(
+                                guildID: guildID
+                            ),
+                        inheritanceSource: .server,
+                        markRead: {
+                            model.markCategoryRead(
+                                categoryID: categoryID,
+                                guildID: guildID
+                            )
+                        },
+                        mute: { duration in
+                            model.setCategoryMute(
+                                true,
+                                until: duration.endDate(),
+                                guildID: guildID,
+                                categoryID: categoryID
+                            )
+                        },
+                        unmute: {
+                            model.setCategoryMute(
+                                false,
+                                until: nil,
+                                guildID: guildID,
+                                categoryID: categoryID
+                            )
+                        },
+                        setNotificationLevel: { level in
+                            model.setCategoryNotificationLevel(
+                                level,
+                                guildID: guildID,
+                                categoryID: categoryID
+                            )
+                        },
+                        copyChannelID: {
+                            ChannelContextMenuValue.copy(
+                                categoryID.description
+                            )
+                        },
+                        copyLink: {}
+                    )
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private var channelRows: some View {
+        ForEach(group.channels) { channel in
+            if channel.kind == .voice {
+                ChannelRow(
+                    model: model,
+                    channel: channel,
+                    rulesChannelID: rulesChannelID,
+                    isVoiceConnected: activeVoiceChannelID == channel.id,
+                    isHidden: hiddenChannelIDs.contains(channel.id),
+                    isChecking: checkingChannelIDs.contains(channel.id)
+                )
+                .tag(channel.id)
+                ForEach(
+                    voiceParticipantEntriesByChannel[channel.id]?.participants
+                        ?? []
+                ) { participant in
+                    VoiceParticipantRow(participant: participant)
+                }
+            } else {
+                ChannelRow(
+                    model: model,
+                    channel: channel,
+                    rulesChannelID: rulesChannelID,
+                    isHidden: hiddenChannelIDs.contains(channel.id),
+                    isChecking: checkingChannelIDs.contains(channel.id)
+                )
+                .tag(channel.id)
+            }
+        }
+    }
+
+    @ViewBuilder private var bottomSpacer: some View {
+        if bottomContentInset > 0 {
+            SidebarBottomScrollSpacer(height: bottomContentInset)
         }
     }
 

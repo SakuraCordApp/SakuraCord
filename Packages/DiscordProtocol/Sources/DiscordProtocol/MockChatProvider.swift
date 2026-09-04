@@ -1127,6 +1127,9 @@ public actor MockChatProvider: ChatProvider {
         return message
     }
 
+}
+
+extension MockChatProvider {
     public func supports(_ capability: ChatCapability) async -> Bool {
         capability == .forums || capability == .gifs || capability == .stickers
             || capability == .stickerSending

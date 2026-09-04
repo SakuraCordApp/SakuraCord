@@ -1409,18 +1409,7 @@ extension AppModel {
         // workspace projection may select that guild's first channel while
         // activation is in flight, which must not replace the user's memory.
         let rememberedChannelID = guildID.flatMap { lastOpenedChannelIDsByGuild[$0] }
-        dismissAllProfiles()
-        if guildID != selectedGuildID {
-            channelsAndRolesPreviewChannelID = nil
-            guildUtilityDestination = nil
-        }
-        selectedGuildID = guildID
-        AppPerformanceSignposts.measureSync(
-            "GuildActivationMemberPresentationRestore"
-        ) {
-            restoreMemberPresentation(for: guildID)
-        }
-        mentionAutocompleteMembers = []
+        prepareGuildActivation(guildID)
         var channels =
             snapshot?.channels.filter { channel in
                 guildID == nil ? channel.guildID == nil : channel.guildID == guildID
@@ -1494,6 +1483,21 @@ extension AppModel {
             selectedChannelID = preferredChannelID
         }
         beginMemberLoad(for: guildID)
+    }
+
+    private func prepareGuildActivation(_ guildID: GuildID?) {
+        dismissAllProfiles()
+        if guildID != selectedGuildID {
+            channelsAndRolesPreviewChannelID = nil
+            guildUtilityDestination = nil
+        }
+        selectedGuildID = guildID
+        AppPerformanceSignposts.measureSync(
+            "GuildActivationMemberPresentationRestore"
+        ) {
+            restoreMemberPresentation(for: guildID)
+        }
+        mentionAutocompleteMembers = []
     }
 
     func restoreMemberPresentation(for guildID: GuildID?) {
