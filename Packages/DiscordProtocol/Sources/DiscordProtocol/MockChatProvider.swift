@@ -12,6 +12,7 @@ public actor MockChatProvider: ChatProvider {
     private var profilesByUser: [UserID: UserProfile]
     private var onboardingByGuild: [GuildID: GuildOnboardingConfiguration]
     private let returnsPartialOnboardingMutationResponse: Bool
+    private let emitsChannelOptInSettingsEvents: Bool
     private var privateCallsByChannel: [ChannelID: PrivateCall] = [:]
     private var favoriteGIFValues: [GIFSearchResult] = []
     private var continuation: AsyncStream<ClientEvent>.Continuation?
@@ -92,7 +93,8 @@ public actor MockChatProvider: ChatProvider {
         timelineMessageCount: Int? = nil,
         timelineIncludesAnimatedMedia: Bool = false,
         includesIncomingPrivateCall: Bool = false,
-        returnsPartialOnboardingMutationResponse: Bool = false
+        returnsPartialOnboardingMutationResponse: Bool = false,
+        emitsChannelOptInSettingsEvents: Bool = true
     ) {
         let fixture = MockChatFixture.make(
             includesLongServerList: includesLongServerList,
@@ -130,6 +132,7 @@ public actor MockChatProvider: ChatProvider {
         profilesByUser = fixture.profilesByUser
         onboardingByGuild = Self.makeOnboardingFixtures()
         self.returnsPartialOnboardingMutationResponse = returnsPartialOnboardingMutationResponse
+        self.emitsChannelOptInSettingsEvents = emitsChannelOptInSettingsEvents
         if includesIncomingPrivateCall {
             let channelID = ChannelID(rawValue: 400)
             let callerID = UserID(rawValue: 2)
@@ -496,7 +499,9 @@ public actor MockChatProvider: ChatProvider {
             }
         }
         snapshot.notificationSettings[settingsIndex] = settings
-        continuation?.yield(.notificationSettingsChanged(settings))
+        if emitsChannelOptInSettingsEvents {
+            continuation?.yield(.notificationSettingsChanged(settings))
+        }
     }
 
     private static func makeOnboardingFixtures() -> [GuildID: GuildOnboardingConfiguration] {

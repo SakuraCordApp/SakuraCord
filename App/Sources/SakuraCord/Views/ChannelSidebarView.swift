@@ -123,7 +123,7 @@ struct ChannelSidebarView: View {
                 GuildChannelList(
                     input: GuildChannelListInput(
                         modelIdentity: ObjectIdentifier(voiceModel),
-                        channelGroups: channelGroups,
+                        channelGroups: displayedChannelGroups,
                         rulesChannelID: guild?.rulesChannelID,
                         activeVoiceChannelID: activeVoiceChannelID,
                         hiddenChannelIDs: hiddenChannelIDs,
@@ -234,10 +234,14 @@ struct ChannelSidebarView: View {
         voiceModel.checkingChannelIDs
     }
 
-    private var displayedChannels: [Channel] {
-        guard let guildID = guild?.id else { return channels }
+    private var displayedChannelGroups: [ChannelGroup] {
+        guard let guildID = guild?.id else { return channelGroups }
         let hidden = voiceModel.personalizationHiddenChannelIDs(guildID: guildID)
-        return channels.filter { !hidden.contains($0.id) }
+        return channelGroups.compactMap { group in
+            var group = group
+            group.channels.removeAll { hidden.contains($0.id) }
+            return group.channels.isEmpty ? nil : group
+        }
     }
 
 }

@@ -126,6 +126,7 @@ struct MessageTimelineView: View {
                 } label: {
                     Label("New messages", systemImage: "arrow.down")
                         .font(.callout.weight(.semibold))
+                        .foregroundStyle(.white)
                         .padding(.horizontal, 15)
                         .padding(.vertical, 8)
                         .contentShape(Capsule())
@@ -513,25 +514,27 @@ struct UnreadMessagesBanner: View {
     let markRead: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            Text(message)
-                .lineLimit(1)
-            Spacer(minLength: 8)
-            Button(action: markRead) {
+        Button(action: markRead) {
+            HStack(spacing: 12) {
+                Text(message)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
                 Label("Mark as Read", systemImage: "bell.badge")
                     .labelStyle(.titleAndIcon)
             }
-            .buttonStyle(.plain)
-            .accessibilityHint("Marks this conversation read")
+            .font(.callout.weight(.semibold))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .contentShape(
+                ConcentricRectangle(cornerRadius: 13, style: .continuous)
+            )
+            .glassEffect(
+                .regular.interactive(),
+                in: ConcentricRectangle(cornerRadius: 13, style: .continuous)
+            )
         }
-        .font(.callout.weight(.semibold))
-        .padding(.horizontal, 14)
-        .padding(.vertical, 9)
-        .glassEffect(
-            .regular.interactive(),
-            in: ConcentricRectangle(cornerRadius: 13, style: .continuous)
-        )
-        .accessibilityElement(children: .contain)
+        .buttonStyle(.plain)
+        .accessibilityHint("Marks this conversation read")
     }
 
     private var message: String {

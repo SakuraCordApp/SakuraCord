@@ -80,10 +80,11 @@ struct RootView: View {
             true
         case .workspace:
             model.isSwitchingAccounts
-                || MessageSearchSurfacePolicy.showsToolbar(
+                || (model.channelsAndRolesPreviewChannelID == nil
+                    && MessageSearchSurfacePolicy.showsToolbar(
                     channelKind: model.selectedChannel?.kind,
                     hasOpenThread: model.openThread != nil
-                )
+                    ))
         case .signedOut:
             model.launchMode != .normal
         }
@@ -970,6 +971,7 @@ private struct MessageSearchExperienceModifier: ViewModifier {
             .modifier(MessageSearchToolbarModifier(
                 model: model,
                 search: search,
+                isEnabled: isEnabled,
                 prompt: prompt
             ))
             .overlay(alignment: .topTrailing) {
@@ -1020,24 +1022,30 @@ private struct MessageSearchToolbarBridge: View {
 private struct MessageSearchToolbarModifier: ViewModifier {
     let model: AppModel
     let search: MessageSearchState
+    let isEnabled: Bool
     let prompt: Text
 
+    @ViewBuilder
     func body(content: Content) -> some View {
         @Bindable var model = model
         @Bindable var search = search
-        content
-            .searchable(
-                text: $model.messageSearchInputText,
-                tokens: $search.tokens,
-                isPresented: $search.isInputFocused,
-                placement: .toolbar,
-                prompt: prompt
-            ) { token in
-                Text(token.title)
-            }
-            .onSubmit(of: .search) {
-                model.submitMessageSearchInput()
-            }
+        if isEnabled {
+            content
+                .searchable(
+                    text: $model.messageSearchInputText,
+                    tokens: $search.tokens,
+                    isPresented: $search.isInputFocused,
+                    placement: .toolbar,
+                    prompt: prompt
+                ) { token in
+                    Text(token.title)
+                }
+                .onSubmit(of: .search) {
+                    model.submitMessageSearchInput()
+                }
+        } else {
+            content
+        }
     }
 }
 

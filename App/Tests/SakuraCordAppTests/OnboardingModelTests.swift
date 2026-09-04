@@ -234,7 +234,7 @@ import Testing
     model.selectGuild(guildID)
     model.openChannelsAndRoles(for: guildID)
     let channel = try #require(model.snapshot?.channels.first {
-        $0.guildID == guildID && $0.kind == .text
+        $0.id == ChannelID(rawValue: 210)
     })
 
     model.openChannelsAndRolesPreview(channel)
@@ -243,6 +243,13 @@ import Testing
     #expect(model.channelsAndRolesPreviewChannelID == channel.id)
     #expect(model.selectedChannelID == channel.id)
     #expect(model.readState.presentationState(channelID: channel.id)?.blocksAutomaticAcknowledgement == false)
+
+    model.markConversationRead(channelID: channel.id)
+    #expect(await eventuallyOnboarding {
+        await provider.acknowledgementRequests.contains { request in
+            request.channelID == channel.id
+        }
+    })
 
     var optInSettings = GuildNotificationSettings(
         guildID: guildID,
@@ -270,7 +277,7 @@ import Testing
 
 @MainActor
 @Test func `category opt in and direct channel opt out preserve unrelated flags`() async throws {
-    let provider = MockChatProvider()
+    let provider = MockChatProvider(emitsChannelOptInSettingsEvents: false)
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
     let guildID = GuildID(rawValue: 100)
@@ -290,6 +297,7 @@ import Testing
         ]
     )
     model.applyNotificationSettings(settings)
+    model.openChannelsAndRoles(for: guildID)
 
     await model.setChannelOptIn(false, channel: channel)
     var request = try #require(await provider.channelOptInRequests.last)
@@ -298,6 +306,7 @@ import Testing
     #expect(channelFlags & DiscordChannelSettingsFlags.optInEnabled == 0)
     #expect(channelFlags & DiscordChannelSettingsFlags.favorited == 0)
     #expect(request.guildFlags == settings.flags)
+    #expect(model.personalizationHiddenChannelIDs(guildID: guildID).contains(channel.id))
 
     settings.channelOverrides = []
     model.applyNotificationSettings(settings)

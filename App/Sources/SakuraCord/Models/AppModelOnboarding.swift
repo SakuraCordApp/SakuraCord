@@ -182,6 +182,12 @@ extension AppModel {
                 channelFlags: [channel.id: flags],
                 guildFlags: current.flags
             )
+            guard isCurrentAccountSession(account) else { return }
+            applyAcceptedChannelOptIns(
+                guildID: guildID,
+                channelFlags: [channel.id: flags],
+                guildFlags: current.flags
+            )
         } catch {
             guard isCurrentAccountSession(account) else { return }
             onboardingErrorsByGuild[guildID] = error.localizedDescription
@@ -248,6 +254,12 @@ extension AppModel {
         do {
             try await account.provider.updateChannelOptIns(
                 in: guildID,
+                channelFlags: [categoryID: flags],
+                guildFlags: current.flags
+            )
+            guard isCurrentAccountSession(account) else { return }
+            applyAcceptedChannelOptIns(
+                guildID: guildID,
                 channelFlags: [categoryID: flags],
                 guildFlags: current.flags
             )
@@ -354,6 +366,37 @@ extension AppModel {
             channelFlags: flags,
             guildFlags: current.flags
         )
+        guard isCurrentAccountSession(account) else { return }
+        applyAcceptedChannelOptIns(
+            guildID: guildID,
+            channelFlags: flags,
+            guildFlags: current.flags
+        )
+    }
+
+    private func applyAcceptedChannelOptIns(
+        guildID: GuildID,
+        channelFlags: [ChannelID: UInt64],
+        guildFlags: UInt64?
+    ) {
+        var settings = onboardingGuildSettings(guildID: guildID)
+        if let guildFlags {
+            settings.flags =
+                (guildFlags | DiscordGuildSettingsFlags.optInChannelsOn)
+                    & ~DiscordGuildSettingsFlags.optInChannelsOff
+        }
+        for (channelID, flags) in channelFlags {
+            if let index = settings.channelOverrides.lastIndex(where: {
+                $0.channelID == channelID
+            }) {
+                settings.channelOverrides[index].flags = flags
+            } else {
+                settings.channelOverrides.append(
+                    ChannelNotificationOverride(channelID: channelID, flags: flags)
+                )
+            }
+        }
+        applyNotificationSettings(settings)
     }
 
     private func onboardingSubmission(

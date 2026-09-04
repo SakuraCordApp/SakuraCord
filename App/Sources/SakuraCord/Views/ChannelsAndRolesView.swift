@@ -13,7 +13,7 @@ private enum ChannelPreviewSplitPresentation {
 
 private enum ChannelPreviewMembershipPillMetrics {
   static let minimumPreviewWidth: CGFloat = 500
-  static let topContentInset: CGFloat = 54
+  static let topContentInset: CGFloat = 46
 }
 
 nonisolated enum BrowseChannelPresentation {
