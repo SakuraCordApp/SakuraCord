@@ -4,6 +4,7 @@ import SwiftUI
 struct MessageTimelineView: View {
     let model: AppModel
     let bottomContentInset: CGFloat
+    var topContentInset: CGFloat = 0
     var editRequest: MessageTimelineEditRequest?
     private let runsPerformanceAutoScroll =
         AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments)
@@ -51,6 +52,7 @@ struct MessageTimelineView: View {
                 model.messageLoadErrorIsLaterPage
                     && model.messageLoadError != nil,
             bottomContentInset: bottomContentInset,
+            topContentInset: topContentInset,
             unreadMessageID: exactUnreadBoundaryMessageID,
             highlightedMessageID: highlightedMessageID,
             selectedMessageID: model.replyingTo?.id,
@@ -82,7 +84,8 @@ struct MessageTimelineView: View {
                 messageCount: model.messages.count
             ) {
                 MessageTimelineLoadingSkeleton(
-                    bottomContentInset: bottomContentInset
+                    bottomContentInset: bottomContentInset,
+                    topContentInset: topContentInset
                 )
             }
         }
@@ -99,7 +102,9 @@ struct MessageTimelineView: View {
                     }
                 }
             }
-            .padding(8)
+            .padding(.horizontal, 8)
+            .padding(.top, 8 + topContentInset)
+            .padding(.bottom, 8)
         }
         .overlay(alignment: .bottom) {
             if hasEstablishedInitialPosition,
@@ -121,6 +126,7 @@ struct MessageTimelineView: View {
                 } label: {
                     Label("New messages", systemImage: "arrow.down")
                         .font(.callout.weight(.semibold))
+                        .foregroundStyle(.white)
                         .padding(.horizontal, 15)
                         .padding(.vertical, 8)
                         .contentShape(Capsule())
@@ -508,25 +514,27 @@ struct UnreadMessagesBanner: View {
     let markRead: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            Text(message)
-                .lineLimit(1)
-            Spacer(minLength: 8)
-            Button(action: markRead) {
+        Button(action: markRead) {
+            HStack(spacing: 12) {
+                Text(message)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
                 Label("Mark as Read", systemImage: "bell.badge")
                     .labelStyle(.titleAndIcon)
             }
-            .buttonStyle(.plain)
-            .accessibilityHint("Marks this conversation read")
+            .font(.callout.weight(.semibold))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .contentShape(
+                ConcentricRectangle(cornerRadius: 13, style: .continuous)
+            )
+            .glassEffect(
+                .regular.interactive(),
+                in: ConcentricRectangle(cornerRadius: 13, style: .continuous)
+            )
         }
-        .font(.callout.weight(.semibold))
-        .padding(.horizontal, 14)
-        .padding(.vertical, 9)
-        .glassEffect(
-            .regular.interactive(),
-            in: ConcentricRectangle(cornerRadius: 13, style: .continuous)
-        )
-        .accessibilityElement(children: .contain)
+        .buttonStyle(.plain)
+        .accessibilityHint("Marks this conversation read")
     }
 
     private var message: String {
@@ -648,6 +656,7 @@ nonisolated enum TimelineUnreadBoundaryPolicy {
 
 struct MessageTimelineLoadingSkeleton: View {
     var bottomContentInset: CGFloat = 0
+    var topContentInset: CGFloat = 0
 
     private static let patterns = [
         MessageTimelineSkeletonRow(id: 0, firstLineWidth: 132, secondLineWidth: 330),
@@ -677,11 +686,16 @@ struct MessageTimelineLoadingSkeleton: View {
                         }
                     }
                     .padding(.horizontal, 16)
-                    .padding(.vertical, 18)
+                    .padding(.top, 18 + topContentInset)
+                    .padding(.bottom, 18)
                     .frame(
                         maxWidth: .infinity,
                         minHeight: 0,
-                        maxHeight: max(0, geometry.size.height - bottomContentInset),
+                        maxHeight: max(
+                            0,
+                            geometry.size.height - bottomContentInset
+                                - topContentInset
+                        ),
                         alignment: .topLeading
                     )
                     .clipped()

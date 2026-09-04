@@ -1343,6 +1343,8 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
     /// arrived yet. `roles` contains the corresponding resolved role objects.
     public var roleIDs: [RoleID]
     public var roles: [GuildRole]
+    /// Raw Discord guild-member flags, including onboarding lifecycle bits.
+    public var flags: UInt64
     public var guildAvatarURL: URL?
     /// The account-wide display name before `user.displayName` is replaced by
     /// a guild nickname for presentation.
@@ -1370,6 +1372,7 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
         isRoleCategory: Bool? = nil,
         roleIDs: [RoleID] = [],
         roles: [GuildRole] = [],
+        flags: UInt64 = 0,
         guildAvatarURL: URL? = nil,
         globalDisplayName: String? = nil,
         activityText: String? = nil,
@@ -1385,6 +1388,7 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
         status = isOnline ? .online : .offline
         self.roleIDs = roleIDs
         self.roles = roles
+        self.flags = flags
         self.guildAvatarURL = guildAvatarURL
         self.globalDisplayName = globalDisplayName
         self.activityText = activityText
@@ -1402,6 +1406,7 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
         isRoleCategory: Bool? = nil,
         roleIDs: [RoleID] = [],
         roles: [GuildRole] = [],
+        flags: UInt64 = 0,
         guildAvatarURL: URL? = nil,
         globalDisplayName: String? = nil,
         activityText: String? = nil,
@@ -1417,6 +1422,7 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
         self.status = status
         self.roleIDs = roleIDs
         self.roles = roles
+        self.flags = flags
         self.guildAvatarURL = guildAvatarURL
         self.globalDisplayName = globalDisplayName
         self.activityText = activityText
@@ -1426,7 +1432,7 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case user, roleName, roleID, rolePosition, isRoleCategory, status, roleIDs, roles,
+        case user, roleName, roleID, rolePosition, isRoleCategory, status, roleIDs, roles, flags,
              guildAvatarURL,
              globalDisplayName, activityText, customStatus, memberListIndex
     }
@@ -1441,6 +1447,7 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
         status = try container.decodeIfPresent(PresenceStatus.self, forKey: .status) ?? .offline
         roleIDs = try container.decodeIfPresent([RoleID].self, forKey: .roleIDs) ?? []
         roles = try container.decodeIfPresent([GuildRole].self, forKey: .roles) ?? []
+        flags = try container.decodeIfPresent(UInt64.self, forKey: .flags) ?? 0
         guildAvatarURL = try container.decodeIfPresent(URL.self, forKey: .guildAvatarURL)
         globalDisplayName = try container.decodeIfPresent(String.self, forKey: .globalDisplayName)
         activityText = try container.decodeIfPresent(String.self, forKey: .activityText)

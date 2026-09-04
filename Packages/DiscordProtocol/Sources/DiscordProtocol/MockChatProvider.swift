@@ -10,6 +10,9 @@ public actor MockChatProvider: ChatProvider {
     private var messagesByChannel: [ChannelID: [Message]]
     private var forumPostsByChannel: [ChannelID: [ForumPost]]
     private var profilesByUser: [UserID: UserProfile]
+    private var onboardingByGuild: [GuildID: GuildOnboardingConfiguration]
+    private let returnsPartialOnboardingMutationResponse: Bool
+    private let emitsChannelOptInSettingsEvents: Bool
     private var privateCallsByChannel: [ChannelID: PrivateCall] = [:]
     private var favoriteGIFValues: [GIFSearchResult] = []
     private var continuation: AsyncStream<ClientEvent>.Continuation?
@@ -58,6 +61,20 @@ public actor MockChatProvider: ChatProvider {
     }
 
     public private(set) var categoryNotificationRequests: [CategoryNotificationRequest] = []
+    public struct OnboardingResponseRequest: Equatable, Sendable {
+        public var guildID: GuildID
+        public var submission: GuildOnboardingResponseSubmission
+        public var isInitial: Bool
+    }
+
+    public private(set) var onboardingResponseRequests: [OnboardingResponseRequest] = []
+    public struct ChannelOptInRequest: Equatable, Sendable {
+        public var guildID: GuildID
+        public var channelFlags: [ChannelID: UInt64]
+        public var guildFlags: UInt64?
+    }
+
+    public private(set) var channelOptInRequests: [ChannelOptInRequest] = []
     private var categoryCollapsedUpdatesAreSuspended = false
     private var categoryCollapsedUpdateWaiters: [CheckedContinuation<Void, Never>] = []
     public struct ThreadNotificationRequest: Equatable, Sendable {
@@ -75,7 +92,9 @@ public actor MockChatProvider: ChatProvider {
         forumPostCount: Int? = nil,
         timelineMessageCount: Int? = nil,
         timelineIncludesAnimatedMedia: Bool = false,
-        includesIncomingPrivateCall: Bool = false
+        includesIncomingPrivateCall: Bool = false,
+        returnsPartialOnboardingMutationResponse: Bool = false,
+        emitsChannelOptInSettingsEvents: Bool = true
     ) {
         let fixture = MockChatFixture.make(
             includesLongServerList: includesLongServerList,
@@ -111,6 +130,9 @@ public actor MockChatProvider: ChatProvider {
             }
         }
         profilesByUser = fixture.profilesByUser
+        onboardingByGuild = Self.makeOnboardingFixtures()
+        self.returnsPartialOnboardingMutationResponse = returnsPartialOnboardingMutationResponse
+        self.emitsChannelOptInSettingsEvents = emitsChannelOptInSettingsEvents
         if includesIncomingPrivateCall {
             let channelID = ChannelID(rawValue: 400)
             let callerID = UserID(rawValue: 2)
@@ -406,6 +428,128 @@ public actor MockChatProvider: ChatProvider {
         for waiter in waiters {
             waiter.resume()
         }
+    }
+
+    public func onboardingConfiguration(in guildID: GuildID) async throws
+        -> GuildOnboardingConfiguration
+    {
+        guard let value = onboardingByGuild[guildID] else {
+            throw ChatProviderError.invalidRequest("This demo server does not use onboarding.")
+        }
+        return value
+    }
+
+    public func submitOnboardingResponses(
+        in guildID: GuildID,
+        submission: GuildOnboardingResponseSubmission,
+        isInitial: Bool
+    ) async throws -> GuildOnboardingConfiguration {
+        onboardingResponseRequests.append(
+            OnboardingResponseRequest(
+                guildID: guildID, submission: submission, isInitial: isInitial
+            )
+        )
+        guard var value = onboardingByGuild[guildID] else {
+            throw ChatProviderError.invalidRequest("This demo server does not use onboarding.")
+        }
+        value.selectedOptionIDs = submission.selectedOptionIDs
+        value.promptsSeen = submission.promptsSeen
+        value.optionsSeen = submission.optionsSeen
+        onboardingByGuild[guildID] = value
+        if returnsPartialOnboardingMutationResponse {
+            return GuildOnboardingConfiguration(
+                guildID: guildID,
+                prompts: [],
+                selectedOptionIDs: submission.selectedOptionIDs,
+                promptsSeen: submission.promptsSeen,
+                optionsSeen: submission.optionsSeen
+            )
+        }
+        return value
+    }
+
+    public func updateChannelOptIns(
+        in guildID: GuildID,
+        channelFlags: [ChannelID: UInt64],
+        guildFlags: UInt64?
+    ) async throws {
+        channelOptInRequests.append(ChannelOptInRequest(
+            guildID: guildID,
+            channelFlags: channelFlags,
+            guildFlags: guildFlags
+        ))
+        guard let settingsIndex = snapshot.notificationSettings.lastIndex(where: {
+            $0.guildID == guildID
+        }) else { return }
+        var settings = snapshot.notificationSettings[settingsIndex]
+        if let guildFlags {
+            settings.flags =
+                (guildFlags | DiscordGuildSettingsFlags.optInChannelsOn)
+                    & ~DiscordGuildSettingsFlags.optInChannelsOff
+        }
+        for (channelID, flags) in channelFlags {
+            if let index = settings.channelOverrides.lastIndex(where: {
+                $0.channelID == channelID
+            }) {
+                settings.channelOverrides[index].flags = flags
+            } else {
+                settings.channelOverrides.append(
+                    ChannelNotificationOverride(channelID: channelID, flags: flags)
+                )
+            }
+        }
+        snapshot.notificationSettings[settingsIndex] = settings
+        if emitsChannelOptInSettingsEvents {
+            continuation?.yield(.notificationSettingsChanged(settings))
+        }
+    }
+
+    private static func makeOnboardingFixtures() -> [GuildID: GuildOnboardingConfiguration] {
+        let guildID = GuildID(rawValue: 100)
+        return [
+            guildID: GuildOnboardingConfiguration(
+                guildID: guildID,
+                prompts: [
+                    GuildOnboardingPrompt(
+                        id: "mock-role-prompt",
+                        options: [
+                            GuildOnboardingOption(
+                                id: "mock-design-role",
+                                roleIDs: [RoleID(rawValue: 1002)],
+                                emoji: GuildOnboardingEmoji(name: "🎨"),
+                                title: "Design",
+                                description: "See design discussions and resources."
+                            ),
+                            GuildOnboardingOption(
+                                id: "mock-development-role",
+                                roleIDs: [RoleID(rawValue: 1003)],
+                                emoji: GuildOnboardingEmoji(name: "🛠️"),
+                                title: "Development",
+                                description: "Follow engineering conversations."
+                            ),
+                        ],
+                        title: "What would you like to follow?",
+                        isRequired: true
+                    ),
+                    GuildOnboardingPrompt(
+                        id: "mock-channel-prompt",
+                        type: 1,
+                        options: [
+                            GuildOnboardingOption(
+                                id: "mock-forum-option",
+                                channelIDs: [ChannelID(rawValue: 220)],
+                                title: "Forum updates"
+                            )
+                        ],
+                        title: "Choose an extra channel",
+                        isSingleSelect: true,
+                        isInOnboarding: false
+                    ),
+                ],
+                defaultChannelIDs: [ChannelID(rawValue: 210)],
+                selectedOptionIDs: ["mock-design-role"]
+            )
+        ]
     }
 
     public func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
@@ -988,6 +1132,9 @@ public actor MockChatProvider: ChatProvider {
         return message
     }
 
+}
+
+extension MockChatProvider {
     public func supports(_ capability: ChatCapability) async -> Bool {
         capability == .forums || capability == .gifs || capability == .stickers
             || capability == .stickerSending

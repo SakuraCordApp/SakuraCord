@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ChatDetailView: View {
     let model: AppModel
+    var topContentInset: CGFloat = 0
     @State private var floatingFooterHeight: CGFloat =
         ChatDetailLayoutPolicy.defaultFloatingFooterHeight
     @State private var editRequest: MessageTimelineEditRequest?
@@ -41,6 +42,7 @@ struct ChatDetailView: View {
                     bottomContentInset: ChatDetailLayoutPolicy.bottomContentInset(
                         measuredFooterHeight: floatingFooterHeight
                     ),
+                    topContentInset: topContentInset,
                     editRequest: editRequest
                 )
                 .overlay(alignment: .bottom) {

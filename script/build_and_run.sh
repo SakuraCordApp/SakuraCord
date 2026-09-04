@@ -142,6 +142,10 @@ rm -rf "$APP_BUNDLE"
 mkdir -p "$MACOS" "$FRAMEWORKS" "$RESOURCES"
 cp "$BIN_DIR/$PRODUCT_NAME" "$MACOS/$APP_NAME"
 chmod +x "$MACOS/$APP_NAME"
+BUILD_FRAMEWORK_RPATH="$BIN_DIR/PackageFrameworks"
+if otool -l "$MACOS/$APP_NAME" | grep -Fq "path $BUILD_FRAMEWORK_RPATH "; then
+  install_name_tool -delete_rpath "$BUILD_FRAMEWORK_RPATH" "$MACOS/$APP_NAME"
+fi
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS/$APP_NAME"
 for resource_bundle in "$BIN_DIR"/*.bundle; do
   [[ -d "$resource_bundle" ]] || continue
@@ -153,6 +157,12 @@ for framework in "$BIN_DIR"/*.framework; do
   ditto "$framework" "$FRAMEWORKS/$framework_name"
   codesign --force --sign "$CODE_SIGN_IDENTITY" "$FRAMEWORKS/$framework_name" >/dev/null
 done
+if otool -l "$MACOS/$APP_NAME" \
+  | awk '/cmd LC_RPATH/{read_path=1; next} read_path && /path /{print $2; read_path=0}' \
+  | grep -Eq '^/'; then
+  echo "packaged executable contains an absolute runtime framework path" >&2
+  exit 1
+fi
 cp "$ROOT_DIR/docs/THIRD_PARTY_NOTICES.md" "$RESOURCES/THIRD_PARTY_NOTICES.md"
 if ! grep -Fq "## Zstandard" "$RESOURCES/THIRD_PARTY_NOTICES.md" \
   || ! grep -Fq "Copyright (c) Meta Platforms, Inc. and affiliates." \

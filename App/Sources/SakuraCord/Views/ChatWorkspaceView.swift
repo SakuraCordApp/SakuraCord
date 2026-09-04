@@ -7,6 +7,14 @@ struct ChatWorkspaceView: View {
     let toolbarSearchFieldMetrics: ToolbarSearchFieldMetrics
 
     var body: some View {
+        if case .channelsAndRoles(let guildID) = model.guildUtilityDestination {
+            ChannelsAndRolesView(model: model, guildID: guildID)
+        } else {
+            conversationWorkspace
+        }
+    }
+
+    private var conversationWorkspace: some View {
         let presentation = ChatWorkspacePresentation(
             isVoiceChannel: model.selectedChannel?.kind == .voice,
             isForumChannel: model.selectedChannel?.kind == .forum,
@@ -20,7 +28,7 @@ struct ChatWorkspaceView: View {
                 )
         )
 
-        HStack(spacing: 0) {
+        return HStack(spacing: 0) {
             ChatWorkspacePrimaryContent(
                 model: model,
                 content: presentation.primaryContent,

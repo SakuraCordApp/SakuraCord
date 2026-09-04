@@ -1404,6 +1404,51 @@ capture was used for this recheck.
   exact account/channel/message navigation, and do not add authenticated
   requests.
 
+### Member onboarding and Channels & Roles
+
+The member-onboarding and voluntary channel-list contract was statically
+rechecked on 12 August 2026 against Discord public web build `591604`, the
+public guild, Gateway, status-code, and rate-limit documentation, Paicord
+revision `694761c1938b73bb60bd58942674dfe73aab1135`, and Swiftcord v1 revision
+`14465d927ebe1ba34b3befa00f9365fad7b56eb9`. A clean, unmodified official
+client supplied visible UI and reconciliation behavior where the static shape
+was ambiguous. No authenticated mutation or unsanitized traffic capture was
+performed. The public API documentation does not describe these normal-user
+onboarding or user-guild-settings mutations. Pinned Paicord has related models
+but no complete onboarding UI/mutation path; pinned Swiftcord v1 has no
+corresponding implementation.
+
+- An onboarding-enabled guild uses one coalesced
+  `GET /guilds/{guild_id}/onboarding`, cached for eight hours. Unknown prompt
+  type values remain decodable. An initial response uses one single-attempt
+  `POST /guilds/{guild_id}/onboarding-responses`; an existing member update
+  uses one single-attempt `PUT` to the same route after a one-second debounce.
+  Both send the complete selected option-ID snapshot plus millisecond integer
+  timestamps for every prompt and every option. Superseded debounced updates
+  are cancelled and no mutation is retried after an ambiguous result.
+- Guild-member flag bit 3 (`STARTED_ONBOARDING`) with bit 1
+  (`COMPLETED_ONBOARDING`) clear presents blocking first-run onboarding.
+  A successful POST does not dismiss that presentation. SakuraCord waits for
+  an authoritative Ready, `GUILD_CREATE`, supplemental member, or
+  `GUILD_MEMBER_UPDATE` flag change carrying `COMPLETED_ONBOARDING`.
+- Existing-member customization is additive. When voluntary channel-list mode
+  is not already active, a successful response update enables guild settings
+  bit 14, clears the conflicting opt-out bit 13, and adds bit 12 to the
+  selected options' channels plus default channels. It never removes a channel
+  that the member added manually. Browse toggles update only the selected
+  channel or category override. Opting out also clears favourite bit 11, while
+  all unrelated guild and channel flags are preserved.
+- User-guild-settings mutations use one single-attempt
+  `PATCH /users/@me/guilds/settings` through the central transport and
+  reconcile through `USER_GUILD_SETTINGS_UPDATE`. Category opt-in is inherited
+  by children without rewriting their direct overrides. Permissions remain
+  authoritative: inaccessible channels are never exposed by Browse Channels.
+- Channel-list opt-out changes sidebar inclusion, not Discord permissions.
+  SakuraCord deliberately suppresses ordinary native alerts for opted-out
+  channels. A permitted mention can still notify and temporarily resurface the
+  channel through its mention badge, matching the existing unread and mention
+  safety model without adding a request.
+
 ## Direct-message safety boundary
 
 Opening an existing DM, creating a DM, loading history, and sending are separate

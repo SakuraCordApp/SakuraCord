@@ -179,6 +179,9 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var requestedHistoryMemberIDs: [GuildID: Set<UserID>] = [:]
     var resolvingHistoryMemberIDs: [GuildID: Set<UserID>] = [:]
     var cachedGuilds: [GuildID: Guild] = [:]
+    var cachedOnboardingConfigurations: [GuildID: (value: GuildOnboardingConfiguration, storedAt: Date)] = [:]
+    var onboardingConfigurationTasks:
+        [GuildID: Task<GuildOnboardingConfiguration, Error>] = [:]
     var cachedGuildRailItems: [GuildRailItem] = []
     var cachedGuildLayout: DiscordGuildLayout?
     var cachedProfiles: [ProfileCacheKey: UserProfile] = [:]

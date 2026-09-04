@@ -35,11 +35,17 @@ struct ThreadPaneFramePreferenceKey: PreferenceKey {
 }
 
 struct SupplementaryConversationPane<Content: View>: View {
+    var maximumWidth: CGFloat = 440
     @ViewBuilder let content: Content
 
     var body: some View {
         content
-            .frame(minWidth: 340, idealWidth: 400, maxWidth: 440, maxHeight: .infinity)
+            .frame(
+                minWidth: 340,
+                idealWidth: 400,
+                maxWidth: maximumWidth,
+                maxHeight: .infinity
+            )
             .background {
                 GeometryReader { proxy in
                     Color.clear.preference(

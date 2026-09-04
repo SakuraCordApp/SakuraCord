@@ -461,7 +461,8 @@ private struct MockFixtureAssembly {
             accentHex: 0x8B5CF6,
             unreadCount: 3,
             currentUserPermissions: textPermissions,
-            rulesChannelID: ChannelID(rawValue: 202)
+            rulesChannelID: ChannelID(rawValue: 202),
+            features: ["GUILD_ONBOARDING"]
         )
         let nativeLab = Guild(
             id: nativeLabID,
@@ -706,6 +707,7 @@ private struct MockFixtureAssembly {
                 rolePosition: 18,
                 isRoleCategory: true,
                 roles: [engineeringRole],
+                flags: DiscordGuildMemberFlags.completedOnboarding,
                 activityText: "Polishing a macOS build",
                 customStatus: "<:aurora_glow:900000000000000101> Tea, tabs, and tiny details — polishing one more build before dinner"
             ),

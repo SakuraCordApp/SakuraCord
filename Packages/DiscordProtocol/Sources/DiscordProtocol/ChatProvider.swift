@@ -157,6 +157,18 @@ public protocol ChatProvider: Sendable {
         categoryID: ChannelID,
         isCollapsed: Bool
     ) async throws
+    func onboardingConfiguration(in guildID: GuildID) async throws
+        -> GuildOnboardingConfiguration
+    func submitOnboardingResponses(
+        in guildID: GuildID,
+        submission: GuildOnboardingResponseSubmission,
+        isInitial: Bool
+    ) async throws -> GuildOnboardingConfiguration
+    func updateChannelOptIns(
+        in guildID: GuildID,
+        channelFlags: [ChannelID: UInt64],
+        guildFlags: UInt64?
+    ) async throws
     func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws
     func setReaction(
         _ emoji: String,
@@ -563,6 +575,26 @@ public extension ChatProvider {
         guildID: GuildID,
         categoryID: ChannelID,
         isCollapsed: Bool
+    ) async throws {}
+
+    func onboardingConfiguration(in guildID: GuildID) async throws
+        -> GuildOnboardingConfiguration
+    {
+        throw ChatProviderError.invalidRequest("Onboarding is unavailable for this provider.")
+    }
+
+    func submitOnboardingResponses(
+        in guildID: GuildID,
+        submission: GuildOnboardingResponseSubmission,
+        isInitial: Bool
+    ) async throws -> GuildOnboardingConfiguration {
+        throw ChatProviderError.invalidRequest("Onboarding is unavailable for this provider.")
+    }
+
+    func updateChannelOptIns(
+        in guildID: GuildID,
+        channelFlags: [ChannelID: UInt64],
+        guildFlags: UInt64?
     ) async throws {}
 
     func forumPosts(in channelID: ChannelID, query: ForumPostQuery) async throws -> ForumPostPage {

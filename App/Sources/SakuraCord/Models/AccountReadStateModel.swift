@@ -1408,6 +1408,10 @@ final class AccountReadStateModel {
         return value.canAcknowledge ? newestUnacknowledgedMessage(in: channelID) : nil
     }
 
+    func presentationState(channelID: ChannelID) -> Presentation? {
+        presentations[channelID]
+    }
+
     func markAcknowledgementPending(channelID: ChannelID, messageID: MessageID) {
         var entry = entry(for: channelID)
         if pendingRollbacks[channelID]?[messageID] == nil {
@@ -1987,14 +1991,5 @@ extension AccountReadStateModel {
             result.insert(categoryID)
         }
         return result
-    }
-}
-
-nonisolated private func maximum<T: Comparable>(_ lhs: T?, _ rhs: T?) -> T? {
-    switch (lhs, rhs) {
-    case (.some(let lhs), .some(let rhs)): max(lhs, rhs)
-    case (.some(let lhs), .none): lhs
-    case (.none, .some(let rhs)): rhs
-    case (.none, .none): nil
     }
 }

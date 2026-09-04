@@ -363,6 +363,8 @@ extension AppModel {
         switch event {
         case .currentUserRolesChanged, .currentUserRolesSnapshot:
             consumeCurrentUserRoleEvent(event)
+        case .currentUserMemberFlagsChanged, .currentUserMemberFlagsSnapshot:
+            consumeCurrentUserMemberFlagsEvent(event)
         case .voiceStateChanged(let state):
             consumeVoiceStateChanged(state)
         case .privateCallChanged(var call):
@@ -384,6 +386,24 @@ extension AppModel {
             commandComposer.receiveAutocomplete(result)
         case .interaction(let event):
             consumeInteraction(event)
+        default:
+            break
+        }
+    }
+
+    func consumeCurrentUserMemberFlagsEvent(_ event: ClientEvent) {
+        switch event {
+        case .currentUserMemberFlagsChanged(let guildID, let flags):
+            currentUserMemberFlagsByGuild[guildID] = flags
+            if flags & DiscordGuildMemberFlags.completedOnboarding != 0 {
+                onboardingWaitingGuildIDs.remove(guildID)
+            }
+        case .currentUserMemberFlagsSnapshot(let flagsByGuild):
+            currentUserMemberFlagsByGuild = flagsByGuild
+            onboardingWaitingGuildIDs = onboardingWaitingGuildIDs.filter {
+                flagsByGuild[$0, default: 0]
+                    & DiscordGuildMemberFlags.completedOnboarding == 0
+            }
         default:
             break
         }
@@ -531,7 +551,13 @@ extension AppModel {
         } else {
             refreshUnreadPresentation()
         }
-        if disposition.shouldNotify {
+        let isPermittedMention = disposition.mentionKind != .none
+        if disposition.shouldNotify,
+           isPermittedMention
+            || !suppressesOrdinaryNotificationsForPersonalization(
+                channelID: message.channelID
+            )
+        {
             deliverNativeNotification(for: message)
         }
         if isFlushingCreatedMessageBatch {
@@ -1962,38 +1988,4 @@ extension AppModel {
             }
     }
 
-    func restoreSelectedMessages(
-        _ restoredMessages: [Message],
-        preparedRows: [MessageRowPresentation]?
-    ) {
-        let oldMessages = messages
-        messages = restoredMessages
-        rebuildSelectedMessageIndexes()
-        if let preparedRows,
-           Self.rows(preparedRows, match: restoredMessages)
-        {
-            messageRows = preparedRows
-        } else {
-            messageRows = MessageGrouping.updating(
-                existing: messageRows,
-                oldMessages: oldMessages,
-                newMessages: restoredMessages
-            )
-        }
-        publishMessageRowsUpdate(invalidatesAllRows: true)
-        messageRowsNonAppendRevision &+= 1
-    }
-
-    func reconcileCachedMessageUpdate(_ message: Message) {
-        guard var cached = messageCache[message.channelID],
-              let index = cached.firstIndex(where: { $0.id == message.id })
-        else { return }
-        var resolved = message
-        resolved.replyTo = resolved.replyTo ?? cached[index].replyTo
-        resolved.replyPreview =
-            resolved.replyPreview ?? cached[index].replyPreview
-        guard resolved != cached[index] else { return }
-        cached[index] = resolved
-        messageCache[message.channelID] = cached
-    }
 }

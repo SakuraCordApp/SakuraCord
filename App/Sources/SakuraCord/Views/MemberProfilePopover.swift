@@ -716,8 +716,9 @@ private struct ProfileAboutSection: View {
     }
 }
 
-private struct ProfileRolesSection: View {
+struct ProfileRolesSection: View {
     let roles: [GuildRole]
+    var isAlwaysExpanded = false
     @State private var isExpanded = false
 
     private var normalizedRoles: [ProfileRoleItem] {
@@ -729,7 +730,7 @@ private struct ProfileRolesSection: View {
     }
 
     private var visibleRoles: ArraySlice<ProfileRoleItem> {
-        isExpanded
+        isAlwaysExpanded || isExpanded
             ? normalizedRoles[...]
             : normalizedRoles.prefix(ProfileRolePresentation.collapsedLimit)
     }
@@ -743,12 +744,15 @@ private struct ProfileRolesSection: View {
             ForEach(visibleRoles) { item in
                 RoleChip(item: item)
             }
-            if hiddenCount > 0 {
+            if !isAlwaysExpanded, hiddenCount > 0 {
                 RoleExpansionButton(label: "+\(hiddenCount)") {
                     isExpanded = true
                 }
                 .help("Show \(hiddenCount) more roles")
-            } else if isExpanded, normalizedRoles.count > ProfileRolePresentation.collapsedLimit {
+            } else if !isAlwaysExpanded,
+                      isExpanded,
+                      normalizedRoles.count > ProfileRolePresentation.collapsedLimit
+            {
                 RoleExpansionButton(systemImage: "chevron.left") {
                     isExpanded = false
                 }

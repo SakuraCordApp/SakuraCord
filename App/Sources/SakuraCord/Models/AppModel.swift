@@ -17,6 +17,10 @@ enum ServerRailNavigationDestination: Equatable {
     case guild(GuildID)
 }
 
+enum GuildUtilityDestination: Equatable {
+    case channelsAndRoles(GuildID)
+}
+
 enum ApplicationStreamPlaybackState: Equatable {
     case available
     case connecting
@@ -51,38 +55,6 @@ struct MentionMemberSearchCacheEntry {
 
 @Observable
 final class AppModel {
-    enum ThreadErrorScope {
-        case initialPage
-        case earlierPage
-        case action
-    }
-
-    struct MemberListViewportRequest: Equatable {
-        var guildID: GuildID
-        var channelID: ChannelID
-        var visibleRange: ClosedRange<Int>
-    }
-
-    struct ReactionReactorLoadKey: Hashable {
-        var channelID: ChannelID
-        var messageID: MessageID
-        var reactionID: String
-    }
-
-    struct ReactionMutationKey: Hashable {
-        var channelID: ChannelID
-        var messageID: MessageID
-        var reactionID: String
-    }
-
-    struct ReactionMutationState {
-        var emoji: String
-        var confirmedReacted: Bool
-        var desiredReacted: Bool
-        var generation: UInt64
-        var isSending: Bool
-    }
-
     static let messageSendLogger = Logger(
         subsystem: "dev.sakuracord.SakuraCord",
         category: "MessageSend"
@@ -100,40 +72,6 @@ final class AppModel {
         category: "PointsOfInterest"
     )
     nonisolated static let maximumConcurrentReactionReactorLoads = 4
-
-    enum SessionState: Equatable {
-        case restoring
-        case signedOut
-        case connecting
-        case workspace
-    }
-
-    struct LocalTypingTiming: Sendable {
-        var debounce: Duration = .seconds(1.5)
-        var throttle: Duration = .seconds(8)
-    }
-
-    struct ReactionMutationTiming: Sendable {
-        var debounce: Duration = .milliseconds(160)
-    }
-
-    struct ReadAcknowledgementTiming: Sendable {
-        var debounce: Duration = .zero
-    }
-
-    struct ReadStateMutation: Sendable {
-        var messageID: MessageID
-        var manual: Bool
-        var mentionCount: Int?
-        var flags: UInt64?
-        var lastViewed: Int
-    }
-
-    struct CategoryCollapseMutationState {
-        var guildID: GuildID
-        var confirmedCollapsed: Bool
-        var desiredCollapsed: Bool
-    }
 
     var snapshot: BootstrapSnapshot? {
         didSet {
@@ -519,6 +457,15 @@ final class AppModel {
             serverRailPresentation.updateSelection(selectedGuildID)
         }
     }
+    var guildUtilityDestination: GuildUtilityDestination?
+    var channelsAndRolesPreviewChannelID: ChannelID?
+    var onboardingConfigurationsByGuild: [GuildID: GuildOnboardingConfiguration] = [:]
+    var onboardingLoadingGuildIDs: Set<GuildID> = []
+    var onboardingErrorsByGuild: [GuildID: String] = [:]
+    var currentUserMemberFlagsByGuild: [GuildID: UInt64] = [:]
+    var onboardingSubmissionGuildIDs: Set<GuildID> = []
+    var onboardingWaitingGuildIDs: Set<GuildID> = []
+    @ObservationIgnored var onboardingSaveTasks: [GuildID: Task<Void, Never>] = [:]
     var incomingPrivateCalls: [PrivateCall] {
         guard let currentUserID = snapshot?.currentUser.id else { return [] }
         return privateCallsByChannel.values
@@ -941,6 +888,12 @@ final class AppModel {
     var selectedChannelID: ChannelID? {
         didSet {
             guard selectedChannelID != oldValue else { return }
+            if selectedChannelID != nil,
+               selectedChannelID != channelsAndRolesPreviewChannelID
+            {
+                channelsAndRolesPreviewChannelID = nil
+                guildUtilityDestination = nil
+            }
             timelineSpoilerRevealStore.reset()
             if let previousChannel = selectedChannel,
                let guildID = previousChannel.guildID
@@ -1315,5 +1268,73 @@ final class AppModel {
                 await self?.installMediaDeviceSnapshot(snapshot)
             }
         }
+    }
+}
+
+extension AppModel {
+    enum ThreadErrorScope {
+        case initialPage
+        case earlierPage
+        case action
+    }
+
+    struct MemberListViewportRequest: Equatable {
+        var guildID: GuildID
+        var channelID: ChannelID
+        var visibleRange: ClosedRange<Int>
+    }
+
+    struct ReactionReactorLoadKey: Hashable {
+        var channelID: ChannelID
+        var messageID: MessageID
+        var reactionID: String
+    }
+
+    struct ReactionMutationKey: Hashable {
+        var channelID: ChannelID
+        var messageID: MessageID
+        var reactionID: String
+    }
+
+    struct ReactionMutationState {
+        var emoji: String
+        var confirmedReacted: Bool
+        var desiredReacted: Bool
+        var generation: UInt64
+        var isSending: Bool
+    }
+
+    enum SessionState: Equatable {
+        case restoring
+        case signedOut
+        case connecting
+        case workspace
+    }
+
+    struct LocalTypingTiming: Sendable {
+        var debounce: Duration = .seconds(1.5)
+        var throttle: Duration = .seconds(8)
+    }
+
+    struct ReactionMutationTiming: Sendable {
+        var debounce: Duration = .milliseconds(160)
+    }
+
+    struct ReadAcknowledgementTiming: Sendable {
+        var debounce: Duration = .zero
+    }
+
+    struct ReadStateMutation: Sendable {
+        var messageID: MessageID
+        var manual: Bool
+        var mentionCount: Int?
+        var flags: UInt64?
+        var lastViewed: Int
+    }
+
+    struct CategoryCollapseMutationState {
+        var guildID: GuildID
+        var confirmedCollapsed: Bool
+        var desiredCollapsed: Bool
     }
 }
