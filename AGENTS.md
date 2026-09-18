@@ -1,11 +1,11 @@
-# SakuraCord
+# MarrowChat
 
-SakuraCord is an interactive native macOS Discord client. User-visible actions
+MarrowChat is an interactive native macOS Discord client. User-visible actions
 initiate account actions.
 
 ## Platform posture
 
-SakuraCord targets only the newest macOS beta and its matching Xcode and Swift
+MarrowChat targets only the newest macOS beta and its matching Xcode and Swift
 toolchain. The current required versions live in the root README and package
 manifests.
 
